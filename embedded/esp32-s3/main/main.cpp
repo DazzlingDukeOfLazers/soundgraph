@@ -340,6 +340,41 @@ void erase_deployed_patch() {
 }
 
 // ---------------------------------------------------------------------------------
+// Console byte-level input
+//
+// Command lines come through stdio, but a bulk payload needs a bounded wait — and with
+// the interrupt-driven console driver, getchar() blocks with no timeout at all. These
+// read through the driver itself where it can, and fall back to polled getchar on
+// UART-console builds, where getchar really does return EOF when the buffer is empty.
+// ---------------------------------------------------------------------------------
+
+int console_read_bytes(char* destination, int wanted, int timeout_ms) {
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    return static_cast<int>(usb_serial_jtag_read_bytes(
+        destination, static_cast<uint32_t>(wanted), pdMS_TO_TICKS(timeout_ms)));
+#else
+    int waited_ms = 0;
+    int character = std::getchar();
+    while (character == EOF) {
+        if (waited_ms >= timeout_ms) {
+            return 0;
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));
+        waited_ms += 5;
+        character = std::getchar();
+    }
+    destination[0] = static_cast<char>(character);
+    return 1;
+#endif
+}
+
+void console_drain_input() {
+    char discard[64];
+    while (console_read_bytes(discard, sizeof(discard), 300) > 0) {
+    }
+}
+
+// ---------------------------------------------------------------------------------
 // Golden rendering over serial
 // ---------------------------------------------------------------------------------
 
@@ -483,13 +518,25 @@ void command_load(int byte_count) {
     std::string text(static_cast<std::size_t>(byte_count), '\0');
     std::printf("SEND %d\n", byte_count);
     std::fflush(stdout);
-    for (int i = 0; i < byte_count; ++i) {
-        int character = std::getchar();
-        while (character == EOF) {
-            vTaskDelay(pdMS_TO_TICKS(5));
-            character = std::getchar();
+
+    // A host that promised N bytes and stops sending must not wedge the console — an
+    // unplugged cable mid-deploy is a when, not an if. stdio cannot express "wait at
+    // most this long", so the payload is read through the console driver directly
+    // (stdin is unbuffered, so stdio holds nothing back). Any stall abandons the
+    // transfer, and the input is drained afterwards so stragglers from the aborted
+    // upload cannot be misread as commands.
+    int received = 0;
+    while (received < byte_count) {
+        const int chunk = console_read_bytes(&text[static_cast<std::size_t>(received)],
+                                             byte_count - received, 2000);
+        if (chunk <= 0) {
+            std::printf("ERR upload stalled at byte %d of %d; transfer abandoned\n",
+                        received, byte_count);
+            std::fflush(stdout);
+            console_drain_input();
+            return;
         }
-        text[static_cast<std::size_t>(i)] = static_cast<char>(character);
+        received += chunk;
     }
 
     std::string error;
@@ -623,6 +670,9 @@ extern "C" void app_main(void) {
     if (usb_serial_jtag_driver_install(&console_config) == ESP_OK) {
         usb_serial_jtag_vfs_use_driver();
     }
+    // No stdio read-ahead on stdin: bulk payloads are read through the driver directly,
+    // and any byte stdio had buffered would be a byte the driver never sees.
+    setvbuf(stdin, nullptr, _IONBF, 0);
 #endif
 
     esp_err_t nvs_status = nvs_flash_init();

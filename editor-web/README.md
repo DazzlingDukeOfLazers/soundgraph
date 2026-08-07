@@ -43,6 +43,17 @@ Renders every case in `tests/golden/cases.json` through the WebAssembly module a
 compares it to the vectors the native build recorded. Most cases come out bit-identical;
 the ones using `sin`/`tan` differ in the last mantissa bits because the two libms differ.
 
+## Deploying to hardware
+
+In Chrome (Web Serial), a **Deploy to board** button appears next to Save. It validates
+the patch, opens the serial port you pick, speaks the same `load` protocol as
+`tools/esp32/sg-serial.py`, and stores the patch in the board's NVS — where it survives
+power cycles. If the board rejects the patch, the board's own diagnostics render in the
+problems panel, and they look identical to local ones because they come from the same
+core. The button does not exist in browsers without Web Serial.
+
+Close any serial monitor first; one process owns the port at a time.
+
 ## Two things worth knowing before editing the worklet
 
 **A `WebAssembly.Module` cannot be posted to an AudioWorklet.** An
