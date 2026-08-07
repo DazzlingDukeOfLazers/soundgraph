@@ -31,12 +31,13 @@ hardware, chosen 2026-08-28). Wiring table in embedded/README.md.
 
 ## In progress / blocked
 
-- [ ] **Firmware compiles** — first `idf.py build` is running; everything above is
-      written against IDF v5.5 but not yet compiled. One configure-time bug already
-      found and fixed (include dir must exist before `idf_component_register`).
-- [ ] **Nothing has touched hardware.** Flash, physical audio, and the on-device golden
-      run all need the DevKit + PCM5102 wired and plugged in — see the wiring table in
-      embedded/README.md.
+- [x] **Firmware compiles.** `idf.py build` is clean — 1111/1111 files, no warnings in
+      our code, 393 KB binary with 74% of the app partition free. One configure-time
+      fix along the way (the include dir must exist before `idf_component_register`).
+- [ ] **Nothing has touched hardware.** The only remaining Milestone F work needs the
+      DevKit + PCM5102 wired and plugged in (wiring table in embedded/README.md):
+      `idf.py -p <port> flash monitor`, hear the arpeggio, then
+      `python tools/esp32/sg-serial.py --port <port> verify-goldens`.
 
 ## Next phase
 
