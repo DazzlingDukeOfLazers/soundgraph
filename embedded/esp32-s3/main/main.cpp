@@ -41,6 +41,7 @@
 #include "nvs_flash.h"
 
 #include "board_config.h"
+#include "codec_init.h"
 #include "soundgraph/patch_io.h"
 #include "soundgraph/soundgraph.h"
 
@@ -541,6 +542,8 @@ extern "C" void app_main(void) {
 
     if (!start_i2s()) {
         ESP_LOGE(TAG, "audio startup failed; the console still works");
+    } else if (!codec_init(g_tx_channel, SG_AUDIO_SAMPLE_RATE)) {
+        ESP_LOGE(TAG, "codec startup failed; I2S runs but the speaker may stay silent");
     }
 
     g_sequencer.configure(110.0, SG_AUDIO_SAMPLE_RATE);

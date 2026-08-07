@@ -1,0 +1,10 @@
+## Managed component dependencies for the generic firmware.
+##
+## esp_codec_dev is Espressif's codec abstraction; it carries the ES8311 driver used by
+## codec boards like the Waveshare ESP32-S3-AUDIO-Board. Fetched by the component manager
+## on first build and cached under managed_components/ (gitignored). This is the one
+## network-at-build exception in the repository; vendor it before Knobcon demo prep if
+## offline builds become critical.
+dependencies:
+  idf: "^5.5"
+  espressif/esp_codec_dev: "^1.3"

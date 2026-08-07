@@ -67,10 +67,26 @@ def main() -> None:
         i2c = audio.get("i2c", {})
         lines += [
             "",
+            f'#define SG_CODEC_CHIP "{audio.get("chip", "unknown")}"',
             f"#define SG_CODEC_I2C_SDA {i2c.get('sda', -1)}",
             f"#define SG_CODEC_I2C_SCL {i2c.get('scl', -1)}",
             f"#define SG_CODEC_I2C_ADDRESS {i2c.get('address', -1)}",
         ]
+
+        amp = audio.get("amp", {})
+        if "gpio" in amp:
+            lines += [
+                "#define SG_AMP_KIND 1  // direct GPIO",
+                f"#define SG_AMP_GPIO {amp['gpio']}",
+            ]
+        elif "expander" in amp:
+            lines += [
+                "#define SG_AMP_KIND 2  // behind an I2C I/O expander",
+                f"#define SG_AMP_I2C_ADDRESS {amp.get('i2c_address', -1)}",
+                f"#define SG_AMP_EXPANDER_PIN {amp.get('pin', -1)}",
+            ]
+        else:
+            lines += ["#define SG_AMP_KIND 0  // always on"]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

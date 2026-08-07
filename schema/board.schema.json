@@ -55,6 +55,17 @@
             "scl": { "type": "integer" },
             "address": { "type": "integer" }
           }
+        },
+        "amp": {
+          "description": "The speaker power amplifier's enable line, when it has one. Smart-speaker boards often route it through an I2C I/O expander rather than a chip GPIO.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gpio": { "type": "integer", "description": "Direct chip GPIO, when it is one." },
+            "expander": { "type": "string", "description": "Expander chip, e.g. tca9555." },
+            "i2c_address": { "type": "integer" },
+            "pin": { "type": "integer", "description": "Expander pin number, e.g. 8 for EXIO08." }
+          }
         }
       }
     },

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "esp32-s3-audio-board",
+  "name": "Waveshare ESP32-S3-AUDIO-Board",
+  "vendor": "waveshare",
+  "url": "https://www.waveshare.com/wiki/ESP32-S3-AUDIO-Board",
+  "target": "esp32-s3",
+  "notes": "Smart-speaker devkit: ESP32-S3R8 (8 MB octal PSRAM), 16 MB flash, ES8311 codec DAC into an onboard amp and speaker, ES7210 quad ADC for the dual-mic array, TCA9555 I/O expander (0x20) carrying the amp enable on EXIO08 and three keys, PCF85063 RTC (0x51), RGB ring on GPIO38. The amp enable being behind the expander means the speaker stays silent until the TCA9555 is told otherwise — that is a feature of the board, not a bug in the firmware.",
+  "audio_out": {
+    "kind": "codec",
+    "chip": "ES8311",
+    "sample_rate": 48000,
+    "bits": 16,
+    "i2s": {
+      "bclk": 13,
+      "ws": 14,
+      "dout": 16,
+      "mclk": 12
+    },
+    "i2c": {
+      "sda": 11,
+      "scl": 10,
+      "address": 24
+    },
+    "amp": {
+      "expander": "tca9555",
+      "i2c_address": 32,
+      "pin": 8
+    }
+  },
+  "audio_in": {
+    "kind": "codec",
+    "chip": "ES7210",
+    "i2c_address": 64,
+    "i2s": { "din": 15 },
+    "notes": "Dual-mic array. Not yet driven by the firmware; AudioInput nodes produce silence on this board for now."
+  },
+  "psram": {
+    "present": true,
+    "mode": "octal",
+    "megabytes": 8
+  },
+  "controls": [
+    { "id": "boot_button", "kind": "button", "pin": 0 },
+    { "id": "key1", "kind": "button", "pin": -1 },
+    { "id": "key2", "kind": "button", "pin": -1 },
+    { "id": "key3", "kind": "button", "pin": -1 }
+  ]
+}

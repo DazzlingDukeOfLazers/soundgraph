@@ -41,7 +41,7 @@ set(SG_EMBED_PATCHES
 )
 
 idf_component_register(
-    SRCS main.cpp
+    SRCS main.cpp codec_init.cpp
     INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/generated
     PRIV_REQUIRES soundgraph-core driver nvs_flash
     EMBED_TXTFILES ${SG_EMBED_PATCHES}
