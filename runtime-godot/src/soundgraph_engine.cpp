@@ -35,6 +35,7 @@ void SoundGraphEngine::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_registry_json"), &SoundGraphEngine::get_registry_json);
     ClassDB::bind_method(D_METHOD("search_nodes", "query"), &SoundGraphEngine::search_nodes);
     ClassDB::bind_method(D_METHOD("validate_patch", "patch_json"), &SoundGraphEngine::validate_patch);
+    ClassDB::bind_method(D_METHOD("format_patch", "patch_json"), &SoundGraphEngine::format_patch);
 
     ClassDB::bind_method(D_METHOD("load_patch", "patch_json", "sample_rate"),
                          &SoundGraphEngine::load_patch);
@@ -89,6 +90,17 @@ String SoundGraphEngine::validate_patch(const String& patch_json) const {
                              ",\"diagnostics\":" +
                              soundgraph::write_diagnostics(diagnostics, false) + "}";
     return String::utf8(json.c_str());
+}
+
+String SoundGraphEngine::format_patch(const String& patch_json) const {
+    soundgraph::GraphDescription description;
+    std::vector<soundgraph::Diagnostic> diagnostics;
+    if (!soundgraph::parse_patch(to_utf8(patch_json), description, diagnostics)) {
+        // Better to hand back exactly what came in than to lose the user's work to a
+        // serialiser that could not read it.
+        return patch_json;
+    }
+    return String::utf8(soundgraph::write_patch(description, true).c_str());
 }
 
 // -------------------------------------------------------------------------------------

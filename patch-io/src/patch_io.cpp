@@ -220,6 +220,15 @@ bool parse_patch(const std::string& text,
                     ok = false;
                     continue;
                 }
+                if (const json::Value* waypoint = entry.find("waypoint")) {
+                    const json::Value* x = waypoint->find("x");
+                    const json::Value* y = waypoint->find("y");
+                    if (x != nullptr && x->is_number() && y != nullptr && y->is_number()) {
+                        connection.has_waypoint = true;
+                        connection.waypoint_x = static_cast<float>(x->as_number());
+                        connection.waypoint_y = static_cast<float>(y->as_number());
+                    }
+                }
                 out.connections.push_back(std::move(connection));
             }
         }
@@ -394,6 +403,12 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
         json::Value entry = json::Value::make_object();
         entry.set("from", std::move(from));
         entry.set("to", std::move(to));
+        if (connection.has_waypoint) {
+            json::Value waypoint = json::Value::make_object();
+            waypoint.set("x", json::Value(static_cast<double>(connection.waypoint_x)));
+            waypoint.set("y", json::Value(static_cast<double>(connection.waypoint_y)));
+            entry.set("waypoint", std::move(waypoint));
+        }
         connections.push_back(std::move(entry));
     }
     root.set("connections", std::move(connections));

@@ -12,6 +12,21 @@ extends Control
 ## from the registry anyway, so there is little left worth storing in a scene file.
 
 const Scope := preload("res://scope.gd")
+const PatchGraph := preload("res://patch_graph.gd")
+
+## Layout grid. Everything auto-place produces lands on this, so a hand-aligned patch and
+## a generated one look like they came from the same hand.
+const GRID := 40.0
+## Minimum distance between columns. Wider nodes push their own column out, but never in.
+const COLUMN_PITCH := 400.0
+## Space left beyond the widest node in a column before the next column starts.
+const COLUMN_GUTTER := 80.0
+## Space left beyond the tallest node in a column before the next row starts.
+const ROW_GUTTER := 24.0
+
+
+static func snap_up(value: float, step: float) -> float:
+	return ceilf(value / step) * step
 
 const EXAMPLES := {
 	"First Synth": "res://examples/first-synth.json",
@@ -55,7 +70,8 @@ var scope: Control
 var status_label: Label
 var search_popup: PopupPanel
 var search_field: LineEdit
-var search_results: ItemList
+var search_results: VBoxContainer
+var search_hint: Label
 var file_dialog: FileDialog
 
 var player: AudioStreamPlayer
@@ -116,11 +132,15 @@ func _build_ui() -> void:
 	split.split_offset = 980
 	root.add_child(split)
 
-	graph_edit = GraphEdit.new()
+	graph_edit = PatchGraph.new()
 	graph_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	graph_edit.right_disconnects = true
 	graph_edit.show_grid = true
 	graph_edit.minimap_enabled = true
+	# Snap to the same grid auto-place uses, so dragging a node by hand keeps the pitch.
+	graph_edit.snapping_enabled = true
+	graph_edit.snapping_distance = int(GRID)
+	graph_edit.waypoint_changed.connect(_on_waypoint_changed)
 	# audio and control are both sample streams and interconvert freely; event and note are
 	# discrete and require an exact match. This is the core's rule, not a UI preference.
 	graph_edit.add_valid_connection_type(SLOT_AUDIO, SLOT_CONTROL)
@@ -173,6 +193,12 @@ func _build_toolbar() -> Control:
 	add_button.tooltip_text = "Search by what you want, not only by name (Ctrl+Space)"
 	add_button.pressed.connect(_open_search)
 	bar.add_child(_defocus(add_button))
+
+	var arrange := Button.new()
+	arrange.text = "Auto-place"
+	arrange.tooltip_text = "Lay the graph out left to right on the %d grid" % int(GRID)
+	arrange.pressed.connect(_auto_place)
+	bar.add_child(_defocus(arrange))
 
 	var open_button := Button.new()
 	open_button.text = "Open…"
@@ -336,6 +362,8 @@ func _rebuild_view() -> void:
 		if from_port < 0 or to_port < 0:
 			continue
 		graph_edit.connect_node(widgets[from_id].name, from_port, widgets[to_id].name, to_port)
+
+	_restore_waypoints()
 
 
 func _create_widget(node: Dictionary) -> void:
@@ -659,7 +687,7 @@ func _on_graph_popup_request(at_position: Vector2) -> void:
 
 func _build_search_popup() -> void:
 	search_popup = PopupPanel.new()
-	search_popup.size = Vector2i(460, 340)
+	search_popup.size = Vector2i(560, 420)
 
 	var box := VBoxContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -667,23 +695,73 @@ func _build_search_popup() -> void:
 	search_field = LineEdit.new()
 	search_field.placeholder_text = "What do you want to do?  e.g. \"remove high frequencies\""
 	search_field.text_changed.connect(_on_search_changed)
-	search_field.text_submitted.connect(func(_text: String) -> void: _accept_search())
+	search_field.text_submitted.connect(func(_text: String) -> void: _add_first_result())
 	box.add_child(search_field)
 
-	search_results = ItemList.new()
-	search_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	search_results.item_activated.connect(func(_index: int) -> void: _accept_search())
-	box.add_child(search_results)
+	# A list of rows rather than an ItemList: every result carries its own Add button.
+	# Relying on double-click alone hid the one action the dialog exists for.
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	search_results = VBoxContainer.new()
+	search_results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(search_results)
+	box.add_child(scroll)
+
+	search_hint = Label.new()
+	search_hint.text = "Enter adds the top result. The dialog stays open so you can add several."
+	search_hint.add_theme_font_size_override("font_size", 11)
+	search_hint.modulate = Color(1, 1, 1, 0.6)
+	box.add_child(search_hint)
 
 	search_popup.add_child(box)
 	add_child(search_popup)
 
 
+func _build_result_row(type_name: String) -> Control:
+	var descriptor: Dictionary = registry.get(type_name, {})
+
+	var row := PanelContainer.new()
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 10)
+
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var title := Label.new()
+	title.text = descriptor.get("display_name", type_name)
+	text.add_child(title)
+
+	var summary := Label.new()
+	summary.text = descriptor.get("summary", "")
+	summary.add_theme_font_size_override("font_size", 11)
+	summary.modulate = Color(1, 1, 1, 0.65)
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.custom_minimum_size.x = 380
+	text.add_child(summary)
+
+	line.add_child(text)
+
+	var add := Button.new()
+	add.text = "Add"
+	add.custom_minimum_size = Vector2(72, 40)
+	add.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	add.tooltip_text = "Add a %s to the patch" % descriptor.get("display_name", type_name)
+	add.pressed.connect(func() -> void: _add_from_search(type_name))
+	line.add_child(_defocus(add))
+
+	row.add_child(line)
+	return row
+
+
 var _search_spawn := Vector2.ZERO
+var _search_top_result := ""
+var _added_since_open := 0
 
 
 func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:
 	_search_spawn = at_position
+	_added_since_open = 0
 	search_field.text = ""
 	_on_search_changed("")
 	search_popup.popup_centered()
@@ -691,30 +769,45 @@ func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:
 
 
 func _on_search_changed(query: String) -> void:
-	search_results.clear()
+	for child in search_results.get_children():
+		search_results.remove_child(child)
+		child.queue_free()
+
 	# The ranking is the core's, so "make quieter" finds the same node here, in the
 	# browser, and on the command line.
 	var names: PackedStringArray = engine.search_nodes(query) if query.strip_edges() != "" \
 		else PackedStringArray(registry.keys())
+
+	_search_top_result = names[0] if names.size() > 0 else ""
 	for type_name in names:
-		var descriptor: Dictionary = registry.get(type_name, {})
-		var index := search_results.add_item("%s — %s" % [
-			descriptor.get("display_name", type_name), descriptor.get("summary", "")])
-		search_results.set_item_metadata(index, type_name)
-	if search_results.item_count > 0:
-		search_results.select(0)
+		search_results.add_child(_build_result_row(type_name))
+
+	if names.is_empty():
+		var empty := Label.new()
+		empty.text = "Nothing matches that. Try what you want to do — \"echo\", \"make quieter\"."
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.modulate = Color(1, 1, 1, 0.6)
+		search_results.add_child(empty)
 
 
-func _accept_search() -> void:
-	var selected := search_results.get_selected_items()
-	if selected.is_empty():
-		return
-	var type_name: String = search_results.get_item_metadata(selected[0])
-	search_popup.hide()
-	_add_node(type_name, (_search_spawn + graph_edit.scroll_offset) / graph_edit.zoom)
+func _add_first_result() -> void:
+	if _search_top_result != "":
+		_add_from_search(_search_top_result)
 
 
-func _add_node(type_name: String, at_position: Vector2) -> void:
+## Adds a node and keeps the dialog open — building a patch usually means adding several,
+## and reopening the search for each one is the slow way to do it.
+func _add_from_search(type_name: String) -> void:
+	# Fan successive additions down the grid so they do not land on top of each other.
+	var spawn := (_search_spawn + graph_edit.scroll_offset) / graph_edit.zoom
+	spawn += Vector2(0.0, _added_since_open * GRID * 4.0)
+	_added_since_open += 1
+
+	var node_id := await _add_node(type_name, spawn)
+	search_hint.text = "Added %s. Keep going, or press Escape when you are done." % node_id
+
+
+func _add_node(type_name: String, at_position: Vector2) -> String:
 	var descriptor: Dictionary = registry.get(type_name, {})
 	var base: String = type_name.to_snake_case()
 	var suffix := 1
@@ -735,15 +828,195 @@ func _add_node(type_name: String, at_position: Vector2) -> void:
 		"id": node_id,
 		"type": type_name,
 		"parameters": parameters,
-		"position": {"x": at_position.x, "y": at_position.y},
+		"position": {
+			"x": snappedf(at_position.x, GRID),
+			"y": snappedf(at_position.y, GRID),
+		},
 	})
 	await _rebuild_view()
 	_apply()
+	return node_id
 
 
 # ---------------------------------------------------------------------------------
 # Document
 # ---------------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------------
+# Auto-place
+#
+# Modelled on a layout Daniel aligned by hand: columns follow signal flow left to right
+# on a 40 grid, modulators stack under the signal path they feed, and a source with no
+# inputs sits in the column just before whatever it drives rather than far off at the
+# left edge. Actual widget sizes drive the spacing, so a column of wide nodes pushes the
+# next column out instead of overlapping it.
+# ---------------------------------------------------------------------------------
+
+## Longest-path depth per node, with input-less nodes pulled right to sit just before
+## their consumers — an LFO belongs next to the filter it modulates, not at the origin.
+func _compute_depths() -> Dictionary:
+	var incoming := {}
+	var outgoing := {}
+	for node in patch.get("nodes", []):
+		incoming[node["id"]] = []
+		outgoing[node["id"]] = []
+	for connection in patch.get("connections", []):
+		var from_id: String = connection["from"]["node"]
+		var to_id: String = connection["to"]["node"]
+		if incoming.has(to_id) and outgoing.has(from_id):
+			incoming[to_id].append(from_id)
+			outgoing[from_id].append(to_id)
+
+	var depths := {}
+	for id in incoming:
+		depths[id] = 0
+
+	# Relax until stable. Node counts here are small, and a cycle (legal through a Delay)
+	# simply stops contributing once it can no longer raise anything.
+	for _pass in range(patch.get("nodes", []).size() + 1):
+		var changed := false
+		for id in incoming:
+			var deepest := 0
+			for source in incoming[id]:
+				deepest = maxi(deepest, int(depths[source]) + 1)
+			if deepest != int(depths[id]):
+				depths[id] = deepest
+				changed = true
+		if not changed:
+			break
+
+	for id in incoming:
+		if incoming[id].is_empty() and not outgoing[id].is_empty():
+			var earliest := 1 << 30
+			for target in outgoing[id]:
+				earliest = mini(earliest, int(depths[target]))
+			depths[id] = maxi(0, earliest - 1)
+	return depths
+
+
+## Whether a node's outputs are all control-rate. Audio carries the signal path and sits
+## at the top of a column; modulation hangs below it.
+func _is_modulator(node: Dictionary) -> bool:
+	var outputs: Array = registry.get(node["type"], {}).get("outputs", [])
+	if outputs.is_empty():
+		return false
+	for output in outputs:
+		if output["type"] == "audio":
+			return false
+	return true
+
+
+func _auto_place() -> void:
+	if patch.get("nodes", []).is_empty():
+		return
+
+	var depths := _compute_depths()
+	var columns := {}
+	for node in patch["nodes"]:
+		var depth: int = depths.get(node["id"], 0)
+		if not columns.has(depth):
+			columns[depth] = []
+		columns[depth].append(node)
+
+	# Within a column: signal path first, then modulators ordered by how far downstream
+	# they reach, so a cable never has to travel back past its own column.
+	var reach := {}
+	for node in patch["nodes"]:
+		var nearest := 1 << 30
+		for connection in patch.get("connections", []):
+			if connection["from"]["node"] == node["id"]:
+				nearest = mini(nearest, int(depths.get(connection["to"]["node"], 0)))
+		reach[node["id"]] = nearest
+	for depth in columns:
+		columns[depth].sort_custom(func(a, b):
+			var a_modulator := 1 if _is_modulator(a) else 0
+			var b_modulator := 1 if _is_modulator(b) else 0
+			if a_modulator != b_modulator:
+				return a_modulator < b_modulator
+			return int(reach[a["id"]]) < int(reach[b["id"]]))
+
+	var widget_size := func(node: Dictionary) -> Vector2:
+		var widget: GraphNode = widgets.get(node["id"])
+		return widget.size if widget != null else Vector2(240.0, 140.0)
+
+	var x := 0.0
+	var sorted_depths := columns.keys()
+	sorted_depths.sort()
+
+	for depth in sorted_depths:
+		var column: Array = columns[depth]
+
+		# One pitch for the whole column rather than packing each node against the last:
+		# a set pitch is what makes a graph scan as rows and columns instead of a pile,
+		# and it is what a person aligning by hand naturally produces.
+		var widest := 0.0
+		var tallest := 0.0
+		for node in column:
+			var size: Vector2 = widget_size.call(node)
+			widest = maxf(widest, size.x)
+			tallest = maxf(tallest, size.y)
+		var row_pitch := snap_up(tallest + ROW_GUTTER, GRID)
+
+		var row := 0
+		for node in column:
+			node["position"] = {"x": x, "y": row * row_pitch}
+			row += 1
+		x += maxf(COLUMN_PITCH, snap_up(widest + COLUMN_GUTTER, GRID))
+
+	# Hand-placed cable waypoints describe a layout that no longer exists.
+	graph_edit.clear_waypoints()
+	for connection in patch.get("connections", []):
+		connection.erase("waypoint")
+
+	await _rebuild_view()
+	_apply()
+	status_label.text = "placed %d nodes on the %d grid" % [patch["nodes"].size(), int(GRID)]
+
+
+# ---------------------------------------------------------------------------------
+# Cable waypoints
+# ---------------------------------------------------------------------------------
+
+func _on_waypoint_changed(from_node: StringName, from_port: int, to_node: StringName,
+		to_port: int, point: Variant) -> void:
+	var from_id: String = ids.get(from_node, "")
+	var to_id: String = ids.get(to_node, "")
+	var from_ports := _port_list(from_id, "outputs")
+	var to_ports := _port_list(to_id, "inputs")
+	if from_port >= from_ports.size() or to_port >= to_ports.size():
+		return
+
+	for connection in patch.get("connections", []):
+		if connection["from"]["node"] == from_id \
+			and connection["from"]["port"] == from_ports[from_port]["name"] \
+			and connection["to"]["node"] == to_id \
+			and connection["to"]["port"] == to_ports[to_port]["name"]:
+			if point == null:
+				connection.erase("waypoint")
+			else:
+				connection["waypoint"] = {"x": point.x, "y": point.y}
+			return
+
+
+## Pushes stored waypoints into the canvas after a load or rebuild.
+func _restore_waypoints() -> void:
+	graph_edit.clear_waypoints()
+	for connection in patch.get("connections", []):
+		if not connection.has("waypoint"):
+			continue
+		var from_id: String = connection["from"]["node"]
+		var to_id: String = connection["to"]["node"]
+		if not widgets.has(from_id) or not widgets.has(to_id):
+			continue
+		var from_port := _output_port_index(from_id, connection["from"]["port"])
+		var to_port := _input_port_index(to_id, connection["to"]["port"])
+		if from_port < 0 or to_port < 0:
+			continue
+		var key: String = PatchGraph.connection_key(
+			widgets[from_id].name, from_port, widgets[to_id].name, to_port)
+		graph_edit.set_waypoint(key, Vector2(
+			connection["waypoint"].get("x", 0.0), connection["waypoint"].get("y", 0.0)))
+
 
 func _capture_positions() -> void:
 	for node in patch.get("nodes", []):
@@ -864,7 +1137,9 @@ func _on_file_selected(path: String) -> void:
 		if out == null:
 			status_label.text = "could not write %s" % path
 			return
-		out.store_string(JSON.stringify(patch, "  ") + "\n")
+		# Written through the core's serialiser, not Godot's: the patch format is the
+		# product, and it should read the same whichever editor saved it.
+		out.store_string(engine.format_patch(JSON.stringify(patch, "  ")))
 		status_label.text = "saved"
 		return
 

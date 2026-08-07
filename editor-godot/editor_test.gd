@@ -158,6 +158,67 @@ func _initialize() -> void:
 			recorded = node["parameters"]["cutoff"]
 	check(is_equal_approx(recorded, 3000.0), "and it is recorded in the document for saving")
 
+	# ---- auto-place ------------------------------------------------------------------
+	await main._auto_place()
+	await process_frame
+
+	var on_grid := true
+	var columns := {}
+	for node in main.patch["nodes"]:
+		var x: float = node["position"]["x"]
+		var y: float = node["position"]["y"]
+		if fmod(x, main.GRID) != 0.0 or fmod(y, main.GRID) != 0.0:
+			on_grid = false
+		columns[x] = true
+	check(on_grid, "auto-place lands every node on the %d grid" % int(main.GRID))
+	check(columns.size() == 5, "the demo patch lays out in five columns (%d)" % columns.size())
+
+	# Signal flow reads left to right: nothing may sit left of something it consumes.
+	var placed := {}
+	for node in main.patch["nodes"]:
+		placed[node["id"]] = Vector2(node["position"]["x"], node["position"]["y"])
+	var flows_forward := true
+	for connection in main.patch["connections"]:
+		var from: Vector2 = placed[connection["from"]["node"]]
+		var to: Vector2 = placed[connection["to"]["node"]]
+		if from.x >= to.x:
+			flows_forward = false
+	check(flows_forward, "every cable runs left to right")
+
+	# Nothing overlaps: the whole point of a pitch.
+	var overlapping := false
+	for a in main.patch["nodes"]:
+		for b in main.patch["nodes"]:
+			if a["id"] == b["id"]:
+				continue
+			var wa: GraphNode = main.widgets.get(a["id"])
+			var wb: GraphNode = main.widgets.get(b["id"])
+			if wa == null or wb == null:
+				continue
+			if Rect2(placed[a["id"]], wa.size).intersects(Rect2(placed[b["id"]], wb.size)):
+				overlapping = true
+	check(not overlapping, "no two nodes overlap after auto-place")
+
+	# ---- cable routing ---------------------------------------------------------------
+	# A node dropped on top of a cable must push the cable around it, not be crossed.
+	var route_before: PackedVector2Array = main.graph_edit._route(
+		Vector2(0, 100), Vector2(1200, 100))
+	check(route_before.size() > 0, "a clear span routes")
+
+	var blocker: GraphNode = main.widgets.get("filter")
+	var blocked_from := Vector2(blocker.position_offset.x - 300.0,
+		blocker.position_offset.y + blocker.size.y * 0.5)
+	var blocked_to := Vector2(blocker.position_offset.x + blocker.size.x + 300.0,
+		blocker.position_offset.y + blocker.size.y * 0.5)
+	var detour: PackedVector2Array = main.graph_edit._route(blocked_from, blocked_to)
+	var crosses := false
+	var node_rect := Rect2(blocker.position_offset, blocker.size)
+	for i in range(detour.size() - 1):
+		if main.graph_edit._segment_hits_rect(detour[i], detour[i + 1], node_rect):
+			crosses = true
+	check(not crosses, "a cable routes around a node instead of through it")
+	check(detour.size() > 2, "and it does so with a real detour (%d points)" % detour.size())
+
 	player.queue_free()
 	main.queue_free()
 	await process_frame

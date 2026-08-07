@@ -118,6 +118,15 @@
         "to": {
           "description": "Destination: an input port. An input accepts at most one connection unless the node type declares the port summing.",
           "$ref": "#/$defs/endpoint"
+        },
+        "waypoint": {
+          "description": "Editor layout hint: a point the cable is routed through, set by dragging it. Like node positions, runtimes ignore it and it lives here so a patch looks the same in every editor.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          }
         }
       }
     },

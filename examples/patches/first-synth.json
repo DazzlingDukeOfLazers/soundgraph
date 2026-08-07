@@ -1,100 +1,227 @@
 {
   "schema_version": 1,
   "metadata": {
-    "name": "First Synth",
     "author": "Mutant Factory",
-    "description": "The Knobcon demo patch. A saw oscillator through a resonant lowpass with an LFO on the cutoff, shaped by an envelope. This same file is meant to run in the browser, on the desktop, and on an ESP32-S3.",
     "created": "2026-08-07",
-    "tags": ["demo", "subtractive", "monophonic"]
+    "description": "The Knobcon demo patch. A saw oscillator through a resonant lowpass with an LFO on the cutoff, shaped by an envelope. This same file is meant to run in the browser, on the desktop, and on an ESP32-S3.",
+    "name": "First Synth",
+    "tags": [
+      "demo",
+      "subtractive",
+      "monophonic"
+    ]
   },
   "nodes": [
     {
       "id": "note",
       "type": "NoteInput",
       "name": "Keyboard",
-      "parameters": { "glide": 0, "transpose": 0 },
-      "position": { "x": 0, "y": 160 }
+      "parameters": {
+        "glide": 0,
+        "transpose": 0
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
     },
     {
       "id": "osc",
       "type": "SawOscillator",
       "name": "Main Oscillator",
-      "parameters": { "frequency": 110 },
-      "position": { "x": 240, "y": 80 }
+      "parameters": {
+        "frequency": 110
+      },
+      "position": {
+        "x": 400,
+        "y": 0
+      }
     },
     {
       "id": "lfo",
       "type": "LFO",
       "name": "Filter Sweep",
-      "parameters": { "rate": 0.8, "shape": 0, "amount": 0.6, "offset": 0 },
-      "position": { "x": 240, "y": 340 }
+      "parameters": {
+        "amount": 0.6,
+        "offset": 0,
+        "rate": 0.8,
+        "shape": 0
+      },
+      "position": {
+        "x": 400,
+        "y": 200
+      }
     },
     {
       "id": "filter",
       "type": "StateVariableFilter",
       "name": "Lowpass",
-      "parameters": { "cutoff": 900, "resonance": 0.55, "mode": 0 },
-      "position": { "x": 500, "y": 160 }
+      "parameters": {
+        "cutoff": 900,
+        "mode": 0,
+        "resonance": 0.55
+      },
+      "position": {
+        "x": 800,
+        "y": 0
+      }
     },
     {
       "id": "env",
       "type": "ADSR",
       "name": "Amp Envelope",
-      "parameters": { "attack": 0.01, "decay": 0.25, "sustain": 0.55, "release": 0.3 },
-      "position": { "x": 500, "y": 400 }
+      "parameters": {
+        "attack": 0.01,
+        "decay": 0.25,
+        "release": 0.3,
+        "sustain": 0.55
+      },
+      "position": {
+        "x": 400,
+        "y": 400
+      }
     },
     {
       "id": "amp",
       "type": "Gain",
       "name": "Amplifier",
-      "parameters": { "gain": 0.7 },
-      "position": { "x": 760, "y": 240 }
+      "parameters": {
+        "gain": 0.7
+      },
+      "position": {
+        "x": 1200,
+        "y": 0
+      }
     },
     {
       "id": "out",
       "type": "StereoOutput",
       "name": "Output",
-      "parameters": { "level": 0.8, "safety_limit": 1 },
-      "position": { "x": 1000, "y": 240 }
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      },
+      "position": {
+        "x": 1600,
+        "y": 0
+      }
     }
   ],
   "connections": [
-    { "from": { "node": "note", "port": "frequency" }, "to": { "node": "osc", "port": "frequency" } },
-    { "from": { "node": "note", "port": "gate" }, "to": { "node": "env", "port": "gate" } },
-    { "from": { "node": "osc", "port": "out" }, "to": { "node": "filter", "port": "in" } },
-    { "from": { "node": "lfo", "port": "out" }, "to": { "node": "filter", "port": "cutoff_mod" } },
-    { "from": { "node": "filter", "port": "out" }, "to": { "node": "amp", "port": "in" } },
-    { "from": { "node": "env", "port": "out" }, "to": { "node": "amp", "port": "gain" } },
-    { "from": { "node": "amp", "port": "out" }, "to": { "node": "out", "port": "left" } }
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "lfo",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "cutoff_mod"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
   ],
   "controls": [
     {
       "id": "cutoff",
       "label": "Cutoff",
       "kind": "knob",
-      "target": { "node": "filter", "parameter": "cutoff" },
+      "target": {
+        "node": "filter",
+        "parameter": "cutoff"
+      },
       "min": 40,
       "max": 12000,
       "default": 900,
       "scaling": "exponential",
-      "binding": { "midi_cc": 74, "midi_channel": 1 }
+      "binding": {
+        "midi_cc": 74,
+        "midi_channel": 1
+      }
     },
     {
       "id": "resonance",
       "label": "Resonance",
       "kind": "knob",
-      "target": { "node": "filter", "parameter": "resonance" },
+      "target": {
+        "node": "filter",
+        "parameter": "resonance"
+      },
       "min": 0,
       "max": 1,
       "default": 0.55,
       "scaling": "linear",
-      "binding": { "midi_cc": 71, "midi_channel": 1 }
+      "binding": {
+        "midi_cc": 71,
+        "midi_channel": 1
+      }
     },
     {
       "id": "sweep_rate",
       "label": "Sweep Rate",
       "kind": "knob",
-      "target": { "node": "lfo", "parameter": "rate" },
+      "target": {
+        "node": "lfo",
+        "parameter": "rate"
+      },
       "min": 0.05,
       "max": 20,
       "default": 0.8,
@@ -104,7 +231,10 @@
       "id": "sweep_depth",
       "label": "Sweep Depth",
       "kind": "knob",
-      "target": { "node": "lfo", "parameter": "amount" },
+      "target": {
+        "node": "lfo",
+        "parameter": "amount"
+      },
       "min": 0,
       "max": 3,
       "default": 0.6,
@@ -114,7 +244,10 @@
       "id": "attack",
       "label": "Attack",
       "kind": "slider",
-      "target": { "node": "env", "parameter": "attack" },
+      "target": {
+        "node": "env",
+        "parameter": "attack"
+      },
       "min": 0,
       "max": 2,
       "default": 0.01,
@@ -124,7 +257,10 @@
       "id": "release",
       "label": "Release",
       "kind": "slider",
-      "target": { "node": "env", "parameter": "release" },
+      "target": {
+        "node": "env",
+        "parameter": "release"
+      },
       "min": 0.01,
       "max": 4,
       "default": 0.3,
@@ -134,12 +270,18 @@
       "id": "master",
       "label": "Master",
       "kind": "knob",
-      "target": { "node": "out", "parameter": "level" },
+      "target": {
+        "node": "out",
+        "parameter": "level"
+      },
       "min": 0,
       "max": 1.2,
       "default": 0.8,
       "scaling": "logarithmic",
-      "binding": { "midi_cc": 7, "midi_channel": 1 }
+      "binding": {
+        "midi_cc": 7,
+        "midi_channel": 1
+      }
     }
   ]
 }

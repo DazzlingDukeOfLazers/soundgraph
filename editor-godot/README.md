@@ -33,10 +33,46 @@ two thousand binding files. Afterwards it is incremental.
 
 | | |
 |---|---|
-| Add a node | **Ctrl+Space**, or right-click the canvas, or the toolbar button |
+| Add a node | **Ctrl+Space**, or right-click the canvas, or the toolbar button — every result has its own **Add** button, and the dialog stays open so you can add several |
+| Tidy the graph | **Auto-place** lays it out left to right on the 40 grid |
+| Move a cable | drag it; right-click puts it back |
 | Play | **A W S E D F T G Y H U J K**, with **Z** / **X** to shift octave |
 | Inspect a signal | select a node — the scope shows what its first output is carrying |
 | Fix a problem | the panel names the nodes involved and highlights them in the graph |
+
+## Layout
+
+Everything snaps to a **40 pixel grid** — the graph's major grid lines — so hand-placed
+and auto-placed nodes share a pitch instead of drifting a few pixels apart.
+
+**Auto-place** walks the graph left to right: columns are longest-path depth, so signal
+flow always reads in one direction and no cable runs backwards. A source with no inputs
+sits in the column just before whatever it drives, which is why an LFO lands beside the
+filter it modulates rather than stranded at the far left. Within a column the signal path
+comes first and modulators stack under it, on one pitch derived from the tallest node —
+a set pitch is what makes a patch scan as rows and columns rather than as a pile.
+
+Column and row pitch come from the real widget sizes, so a column of wide nodes pushes
+the next one out instead of overlapping it.
+
+## Cables
+
+A curved cable that passes straight through a node is unreadable — you cannot tell where
+it goes. So a cable stays a smooth curve while its path is clear and switches to a routed
+orthogonal trace with 45-degree corners when it would cross something, which is why PCB
+traces look the way they do.
+
+When the router's choice still is not what you want, **drag the cable**. That drops a
+waypoint it must pass through, snapped to the same grid; right-clicking the cable removes
+it. Waypoints are saved in the patch next to the node positions, so a layout you arranged
+by hand comes back the way you left it.
+
+## Saving
+
+Saved patches go through the core's own serialiser, not Godot's. Godot's `JSON.stringify`
+sorts keys alphabetically and renders every number as a float, so a saved patch would come
+back with `"schema_version": 1.0` and its fields shuffled. The patch format is the
+product; it should not degrade depending on which editor wrote it.
 
 Search accepts intent, not just names: *remove high frequencies*, *make quieter*, *echo*,
 *midi keyboard*. The ranking comes from the core, so it matches the web editor and
