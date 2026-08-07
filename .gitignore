@@ -35,3 +35,6 @@ editor-web/dist/
 embedded/esp32-s3/sdkconfig
 embedded/**/dependencies.lock
 embedded/**/managed_components/
+
+# Daniel's scratch layout file, kept locally
+editor-godot/spacing.json
