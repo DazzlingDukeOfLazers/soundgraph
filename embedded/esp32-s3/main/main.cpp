@@ -12,6 +12,9 @@
 //   off <n>             release it
 //   panic               all notes off
 //   arp on|off          the built-in arpeggiator (on at boot, so power-up makes sound)
+//   arp 45,52,57,60     set the arpeggio pattern (MIDI notes) and start it
+//   bpm <n>             arpeggio tempo
+//   vol <0-100>         codec output volume, on boards that have one
 //   set <node> <param> <value>
 //   info                what is loaded, execution order, memory
 //   load <bytes>        <bytes> of patch JSON follow; stored to NVS and made live
@@ -104,9 +107,33 @@ const char* find_embedded_patch(const std::string& name) {
 
 class Sequencer {
 public:
-    void configure(double bpm, double sample_rate) {
-        samples_per_step_ = static_cast<long long>(sample_rate * 60.0 / bpm);
-        gate_samples_ = samples_per_step_ * 3 / 4;
+    static constexpr int kMaxPattern = 32;
+
+    void configure(double sample_rate) {
+        sample_rate_ = sample_rate;
+        set_bpm(110.0);
+        // The default pattern: a two-octave up-and-down A minor arpeggio — enough
+        // movement to show off the filter sweep without turning into a melody.
+        const int pattern[] = {45, 52, 57, 60, 64, 60, 57, 52};
+        set_pattern(pattern, 8);
+    }
+
+    void set_bpm(double bpm) {
+        if (bpm < 20.0) bpm = 20.0;
+        if (bpm > 480.0) bpm = 480.0;
+        samples_per_step_.store(static_cast<long long>(sample_rate_ * 60.0 / bpm),
+                                std::memory_order_relaxed);
+    }
+
+    // Called from the console task while the audio task is reading. Writes the notes
+    // first and the count last; the audio thread might play one stale note during the
+    // change, which for a dev console beats a lock in the audio path.
+    void set_pattern(const int* notes, int count) {
+        if (count > kMaxPattern) count = kMaxPattern;
+        for (int i = 0; i < count; ++i) {
+            pattern_[i] = notes[i];
+        }
+        pattern_length_.store(count, std::memory_order_release);
     }
 
     void set_running(bool running) { running_.store(running, std::memory_order_relaxed); }
@@ -120,20 +147,27 @@ public:
             }
             return;
         }
+        const long long samples_per_step = samples_per_step_.load(std::memory_order_relaxed);
+        const long long gate_samples = samples_per_step * 3 / 4;
+        const int length = pattern_length_.load(std::memory_order_acquire);
+        if (length <= 0) {
+            return;
+        }
+
         for (int i = 0; i < frames; ++i) {
             if (position_ == 0) {
                 if (sounding_ >= 0) {
                     send(graph, soundgraph::NoteEvent::Kind::NoteOff, sounding_);
                 }
-                sounding_ = kNotes[step_];
+                sounding_ = pattern_[step_ % length];
                 send(graph, soundgraph::NoteEvent::Kind::NoteOn, sounding_);
-            } else if (position_ == gate_samples_ && sounding_ >= 0) {
+            } else if (position_ == gate_samples && sounding_ >= 0) {
                 send(graph, soundgraph::NoteEvent::Kind::NoteOff, sounding_);
                 sounding_ = -1;
             }
-            if (++position_ >= samples_per_step_) {
+            if (++position_ >= samples_per_step) {
                 position_ = 0;
-                step_ = (step_ + 1) % kNoteCount;
+                step_ = (step_ + 1) % length;
             }
         }
     }
@@ -147,10 +181,10 @@ private:
         graph.dispatch_note(event);
     }
 
-    static constexpr int kNotes[] = {45, 48, 52, 55};
-    static constexpr int kNoteCount = 4;
-    long long samples_per_step_ = 1;
-    long long gate_samples_ = 0;
+    double sample_rate_ = 48000.0;
+    int pattern_[kMaxPattern] = {};
+    std::atomic<int> pattern_length_{0};
+    std::atomic<long long> samples_per_step_{1};
     long long position_ = 0;
     int step_ = 0;
     int sounding_ = -1;
@@ -489,8 +523,34 @@ void console_task(void*) {
             graph->all_notes_off();
             std::printf("OK\n");
         } else if (command == "arp" && tokens.size() >= 2) {
-            g_sequencer.set_running(std::strcmp(tokens[1], "on") == 0);
-            std::printf("OK arp %s\n", g_sequencer.running() ? "on" : "off");
+            if (std::strcmp(tokens[1], "on") == 0 || std::strcmp(tokens[1], "off") == 0) {
+                g_sequencer.set_running(std::strcmp(tokens[1], "on") == 0);
+                std::printf("OK arp %s\n", g_sequencer.running() ? "on" : "off");
+            } else {
+                // "arp 45,52,57,60" — set the pattern and start it.
+                int notes[Sequencer::kMaxPattern];
+                int count = 0;
+                for (char* item = std::strtok(tokens[1], ","); item != nullptr &&
+                     count < Sequencer::kMaxPattern; item = std::strtok(nullptr, ",")) {
+                    notes[count++] = std::atoi(item);
+                }
+                if (count > 0) {
+                    g_sequencer.set_pattern(notes, count);
+                    g_sequencer.set_running(true);
+                    std::printf("OK arp pattern of %d notes\n", count);
+                } else {
+                    std::printf("ERR arp takes on, off, or a note list like 45,52,57\n");
+                }
+            }
+        } else if (command == "bpm" && tokens.size() >= 2) {
+            g_sequencer.set_bpm(std::atof(tokens[1]));
+            std::printf("OK\n");
+        } else if (command == "vol" && tokens.size() >= 2) {
+            if (codec_set_volume(static_cast<float>(std::atof(tokens[1])))) {
+                std::printf("OK\n");
+            } else {
+                std::printf("ERR this board has no volume hardware; use `set out level`\n");
+            }
         } else if (command == "set" && tokens.size() >= 4 && graph != nullptr) {
             if (graph->set_parameter(tokens[1], tokens[2],
                                      static_cast<float>(std::atof(tokens[3])))) {
@@ -546,7 +606,7 @@ extern "C" void app_main(void) {
         ESP_LOGE(TAG, "codec startup failed; I2S runs but the speaker may stay silent");
     }
 
-    g_sequencer.configure(110.0, SG_AUDIO_SAMPLE_RATE);
+    g_sequencer.configure(SG_AUDIO_SAMPLE_RATE);
 
     // A deployed patch survives power cycles; the embedded demo is the fallback, so a
     // fresh board makes sound the moment it has power.

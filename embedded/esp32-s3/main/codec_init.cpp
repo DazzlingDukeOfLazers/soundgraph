@@ -6,6 +6,7 @@
 
 // A bare I2S DAC needs no introduction.
 bool codec_init(i2s_chan_handle_t, int) { return true; }
+bool codec_set_volume(float) { return false; }
 
 #else
 
@@ -137,8 +138,8 @@ bool codec_init(i2s_chan_handle_t tx_handle, int sample_rate) {
         return false;
     }
     // Conservative default: the safety limiter in the graph protects the signal, this
-    // protects the room.
-    esp_codec_dev_set_out_vol(g_codec, 70.0);
+    // protects the room. The console's `vol` command adjusts it live.
+    esp_codec_dev_set_out_vol(g_codec, 55.0);
 
     // ---- speaker amplifier ----------------------------------------------------------
 #if SG_AMP_KIND == 2
@@ -155,6 +156,15 @@ bool codec_init(i2s_chan_handle_t tx_handle, int sample_rate) {
 
     ESP_LOGI(TAG, "%s up at %d Hz, amp enabled", SG_CODEC_CHIP, sample_rate);
     return true;
+}
+
+bool codec_set_volume(float percent) {
+    if (g_codec == nullptr) {
+        return false;
+    }
+    if (percent < 0.0f) percent = 0.0f;
+    if (percent > 100.0f) percent = 100.0f;
+    return esp_codec_dev_set_out_vol(g_codec, percent) == ESP_CODEC_DEV_OK;
 }
 
 #endif  // SG_AUDIO_IS_CODEC

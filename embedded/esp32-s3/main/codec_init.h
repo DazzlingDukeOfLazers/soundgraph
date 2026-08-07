@@ -11,3 +11,7 @@
 // Returns false if the codec could not be brought up; I2S keeps running either way, so
 // the console still works and the failure is loggable.
 bool codec_init(i2s_chan_handle_t tx_handle, int sample_rate);
+
+// Output volume, 0-100. Returns false on boards with no volume hardware (a bare I2S DAC
+// is as loud as its samples); use the patch's master level there instead.
+bool codec_set_volume(float percent);

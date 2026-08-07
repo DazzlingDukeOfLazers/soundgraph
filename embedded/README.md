@@ -53,6 +53,9 @@ flash makes sound with no host attached. The serial monitor (115200) is a consol
 info                         what is loaded, execution order, memory
 note 45 / off 45 / panic     play from the keyboard you already have
 arp on|off                   the built-in arpeggiator
+arp 45,52,57,60              set the arpeggio pattern and start it
+bpm 140                      arpeggio tempo
+vol 40                       codec output volume (codec boards only)
 set filter cutoff 3000       move a knob
 load <bytes>                 deploy a patch (stored in NVS, survives power cycles)
 unload                       back to the embedded demo
