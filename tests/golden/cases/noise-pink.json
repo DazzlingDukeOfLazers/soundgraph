@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: pink noise",
+    "description": "Seeded pink noise through the three-pole filter.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "noise",
+      "type": "Noise",
+      "parameters": {
+        "colour": 1,
+        "seed": 20260807
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "noise",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

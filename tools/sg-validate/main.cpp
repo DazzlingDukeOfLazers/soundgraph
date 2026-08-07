@@ -19,6 +19,7 @@ int print_usage() {
         "\n"
         "options:\n"
         "  --explain          print the execution order, feedback edges and resource estimate\n"
+        "  --json             print diagnostics as JSON, for scripts and editors\n"
         "  --quiet            print nothing; report the result through the exit code\n"
         "\n"
         "exit code is 0 when the patch has no errors, 1 otherwise.\n";
@@ -137,9 +138,12 @@ int main(int argc, char** argv) {
     const std::string path = argv[1];
     bool want_explanation = false;
     bool quiet = false;
+    bool as_json = false;
     for (int i = 2; i < argc; ++i) {
         if (std::strcmp(argv[i], "--explain") == 0) {
             want_explanation = true;
+        } else if (std::strcmp(argv[i], "--json") == 0) {
+            as_json = true;
         } else if (std::strcmp(argv[i], "--quiet") == 0) {
             quiet = true;
         } else {
@@ -152,7 +156,9 @@ int main(int argc, char** argv) {
     std::vector<soundgraph::Diagnostic> diagnostics;
 
     if (!soundgraph::load_patch(path, description, diagnostics)) {
-        if (!quiet) {
+        if (as_json) {
+            std::cout << soundgraph::write_diagnostics(diagnostics, true) << "\n";
+        } else if (!quiet) {
             print_diagnostics(diagnostics);
             std::cout << path << ": could not be read.\n";
         }
@@ -161,6 +167,11 @@ int main(int argc, char** argv) {
 
     const soundgraph::NodeRegistry& registry = soundgraph::NodeRegistry::builtin();
     const bool ok = soundgraph::validate(description, registry, diagnostics);
+
+    if (as_json) {
+        std::cout << soundgraph::write_diagnostics(diagnostics, true) << "\n";
+        return ok ? 0 : 1;
+    }
 
     if (!quiet) {
         print_diagnostics(diagnostics);

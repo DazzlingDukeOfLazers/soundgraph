@@ -1,7 +1,11 @@
 #include "soundgraph/patch_io.h"
 
+#if !defined(SOUNDGRAPH_NO_FILE_IO)
 #include <fstream>
 #include <sstream>
+#endif
+
+#include <cstring>
 
 #include "json.h"
 
@@ -314,6 +318,8 @@ bool parse_patch(const std::string& text,
     return ok;
 }
 
+#if !defined(SOUNDGRAPH_NO_FILE_IO)
+
 bool load_patch(const std::string& path,
                 GraphDescription& out,
                 std::vector<Diagnostic>& diagnostics) {
@@ -326,6 +332,8 @@ bool load_patch(const std::string& path,
     contents << file.rdbuf();
     return parse_patch(contents.str(), out, diagnostics);
 }
+
+#endif  // SOUNDGRAPH_NO_FILE_IO
 
 std::string write_patch(const GraphDescription& description, bool pretty) {
     json::Value root = json::Value::make_object();
@@ -457,6 +465,157 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
     return json::serialize(root, pretty);
 }
 
+std::string write_diagnostics(const std::vector<Diagnostic>& diagnostics, bool pretty) {
+    json::Value root = json::Value::make_array();
+    for (const Diagnostic& diagnostic : diagnostics) {
+        json::Value entry = json::Value::make_object();
+        switch (diagnostic.severity) {
+            case Severity::Error:   entry.set("severity", json::Value("error")); break;
+            case Severity::Warning: entry.set("severity", json::Value("warning")); break;
+            case Severity::Info:    entry.set("severity", json::Value("info")); break;
+        }
+        entry.set("code", json::Value(diagnostic.code));
+        entry.set("message", json::Value(diagnostic.message));
+        if (!diagnostic.suggestion.empty()) {
+            entry.set("suggestion", json::Value(diagnostic.suggestion));
+        }
+        if (!diagnostic.node_ids.empty()) {
+            json::Value nodes = json::Value::make_array();
+            for (const std::string& id : diagnostic.node_ids) {
+                nodes.push_back(json::Value(id));
+            }
+            entry.set("nodes", std::move(nodes));
+        }
+        if (!diagnostic.connection_indices.empty()) {
+            json::Value connections = json::Value::make_array();
+            for (int index : diagnostic.connection_indices) {
+                connections.push_back(json::Value(index));
+            }
+            entry.set("connections", std::move(connections));
+        }
+        root.push_back(std::move(entry));
+    }
+    return json::serialize(root, pretty);
+}
+
+namespace {
+
+const char* scaling_name(Scaling scaling) {
+    switch (scaling) {
+        case Scaling::Linear:      return "linear";
+        case Scaling::Exponential: return "exponential";
+        case Scaling::Logarithmic: return "logarithmic";
+    }
+    return "linear";
+}
+
+const char* role_name(NodeRole role) {
+    switch (role) {
+        case NodeRole::Processor:       return "processor";
+        case NodeRole::HostAudioSource: return "host_audio_source";
+        case NodeRole::HostAudioSink:   return "host_audio_sink";
+    }
+    return "processor";
+}
+
+json::Value write_ports(Slice<PortDescriptor> ports, bool is_input) {
+    json::Value array = json::Value::make_array();
+    for (int i = 0; i < ports.size(); ++i) {
+        const PortDescriptor& port = ports[i];
+        json::Value entry = json::Value::make_object();
+        entry.set("name", json::Value(port.name));
+        entry.set("type", json::Value(to_string(port.type)));
+        if (std::strlen(port.unit) > 0) {
+            entry.set("unit", json::Value(port.unit));
+        }
+        if (is_input) {
+            entry.set("required", json::Value(port.required));
+            entry.set("summing", json::Value(port.summing));
+        }
+        entry.set("doc", json::Value(port.doc));
+        array.push_back(std::move(entry));
+    }
+    return array;
+}
+
+}  // namespace
+
+std::string write_registry(const NodeRegistry& registry, bool pretty) {
+    json::Value types = json::Value::make_array();
+
+    for (const NodeTypeDescriptor* type : registry.types()) {
+        json::Value entry = json::Value::make_object();
+        entry.set("name", json::Value(type->name));
+        entry.set("display_name", json::Value(type->display_name));
+        entry.set("category", json::Value(type->category));
+        entry.set("summary", json::Value(type->summary));
+
+        json::Value terms = json::Value::make_array();
+        std::string current;
+        for (const char* cursor = type->search_terms; *cursor != '\0'; ++cursor) {
+            if (*cursor == '|') {
+                if (!current.empty()) {
+                    terms.push_back(json::Value(current));
+                }
+                current.clear();
+            } else {
+                current.push_back(*cursor);
+            }
+        }
+        if (!current.empty()) {
+            terms.push_back(json::Value(current));
+        }
+        entry.set("search_terms", std::move(terms));
+
+        entry.set("inputs", write_ports(type->inputs, true));
+        entry.set("outputs", write_ports(type->outputs, false));
+
+        json::Value parameters = json::Value::make_array();
+        for (int i = 0; i < type->parameters.size(); ++i) {
+            const ParameterDescriptor& parameter = type->parameters[i];
+            json::Value item = json::Value::make_object();
+            item.set("name", json::Value(parameter.name));
+            if (std::strlen(parameter.unit) > 0) {
+                item.set("unit", json::Value(parameter.unit));
+            }
+            item.set("min", json::Value(static_cast<double>(parameter.min_value)));
+            item.set("max", json::Value(static_cast<double>(parameter.max_value)));
+            item.set("default", json::Value(static_cast<double>(parameter.default_value)));
+            item.set("scaling", json::Value(scaling_name(parameter.scaling)));
+            item.set("doc", json::Value(parameter.doc));
+            if (parameter.enum_labels != nullptr) {
+                json::Value labels = json::Value::make_array();
+                for (int e = 0; e < parameter.enum_count; ++e) {
+                    labels.push_back(json::Value(parameter.enum_labels[e]));
+                }
+                item.set("enum", std::move(labels));
+            }
+            parameters.push_back(std::move(item));
+        }
+        entry.set("parameters", std::move(parameters));
+
+        entry.set("breaks_feedback", json::Value(type->breaks_feedback));
+        entry.set("role", json::Value(role_name(type->role)));
+        entry.set("receives_notes", json::Value(type->receives_notes));
+
+        json::Value cost = json::Value::make_object();
+        cost.set("cpu", json::Value(static_cast<double>(type->cost.cpu_cost)));
+        cost.set("state_bytes", json::Value(type->cost.state_bytes));
+        cost.set("heap_bytes", json::Value(type->cost.heap_bytes));
+        entry.set("cost", std::move(cost));
+
+        types.push_back(std::move(entry));
+    }
+
+    json::Value root = json::Value::make_object();
+    root.set("schema_version", json::Value(kSchemaVersion));
+    root.set("block_size", json::Value(kBlockSize));
+    root.set("types", std::move(types));
+    return json::serialize(root, pretty);
+}
+
+#if !defined(SOUNDGRAPH_NO_FILE_IO)
+
 bool save_patch(const std::string& path,
                 const GraphDescription& description,
                 std::string& error_message) {
@@ -472,5 +631,7 @@ bool save_patch(const std::string& path,
     }
     return true;
 }
+
+#endif  // SOUNDGRAPH_NO_FILE_IO
 
 }  // namespace soundgraph

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoundGraph — browser runtime</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>SoundGraph</h1>
+    <p class="tagline">The web app isn't the synth. The graph is the synth.</p>
+  </div>
+  <div class="transport">
+    <button id="start" class="primary">Start audio</button>
+    <div class="meter" title="Output level"><div id="meter-fill"></div></div>
+    <span id="status" class="status">loading…</span>
+  </div>
+</header>
+
+<main>
+  <section class="panel patch">
+    <div class="panel-head">
+      <h2>Patch</h2>
+      <div class="panel-actions">
+        <select id="examples" aria-label="Example patches"></select>
+        <button id="apply">Apply</button>
+        <button id="save">Save .json</button>
+        <label class="file-button">
+          Open&hellip;
+          <input type="file" id="open" accept="application/json,.json">
+        </label>
+      </div>
+    </div>
+    <textarea id="patch" spellcheck="false" aria-label="Patch JSON"></textarea>
+    <div id="diagnostics" class="diagnostics"></div>
+  </section>
+
+  <section class="panel performance">
+    <div class="panel-head"><h2>Controls</h2></div>
+    <div id="controls" class="controls">
+      <p class="hint">Start audio to load the patch's control surfaces.</p>
+    </div>
+
+    <div class="panel-head"><h2>Play</h2></div>
+    <div id="keyboard" class="keyboard" aria-label="On-screen keyboard"></div>
+    <p class="hint">
+      Use your computer keyboard too — <kbd>a</kbd> <kbd>w</kbd> <kbd>s</kbd> <kbd>e</kbd> <kbd>d</kbd> …
+      plays a chromatic octave. <kbd>z</kbd> and <kbd>x</kbd> shift octave.
+      <span id="midi-status"></span>
+    </p>
+
+    <div class="panel-head"><h2>What the graph is doing</h2></div>
+    <div id="info" class="info"></div>
+  </section>
+</main>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

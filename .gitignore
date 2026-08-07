@@ -1,6 +1,9 @@
 build/
 build-*/
 out/
+
+# Built by the WebAssembly configuration and copied in for local serving.
+editor-web/soundgraph.wasm
 *.wav
 !tests/golden/**/*.wav
 !examples/audio/**/*.wav

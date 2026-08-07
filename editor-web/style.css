@@ -1,0 +1,192 @@
+/* SoundGraph web host.
+ *
+ * Following docs/UX_PRINCIPLES.md: readable by default, generous hit targets, no
+ * decorative animation. Expert-density modes can come later. */
+
+:root {
+    --bg: #14161a;
+    --panel: #1c1f25;
+    --panel-2: #23272f;
+    --line: #333944;
+    --text: #e6e9ef;
+    --muted: #98a1b0;
+    --accent: #6ee7b7;
+    --accent-dim: #2f7a63;
+    --error: #ff8a80;
+    --warning: #ffcc80;
+    --radius: 10px;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+}
+
+h1 { font-size: 1.25rem; margin: 0; letter-spacing: 0.01em; }
+h2 { font-size: 0.8rem; margin: 0; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.tagline { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; }
+
+.transport { display: flex; align-items: center; gap: 0.75rem; }
+
+button, .file-button, select {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.9rem;
+    cursor: pointer;
+    min-height: 40px;
+}
+button:hover, .file-button:hover, select:hover { border-color: var(--muted); }
+button.primary { background: var(--accent-dim); border-color: var(--accent); color: #eafff7; font-weight: 600; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.file-button { display: inline-flex; align-items: center; }
+.file-button input { display: none; }
+
+.status { color: var(--muted); font-size: 0.85rem; min-width: 12ch; }
+
+.meter {
+    width: 120px; height: 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+}
+#meter-fill {
+    height: 100%; width: 0%;
+    background: var(--accent);
+    transition: width 60ms linear;
+}
+#meter-fill.hot { background: var(--error); }
+
+main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1rem 1.5rem 3rem;
+    align-items: start;
+}
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1rem;
+}
+.panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.75rem; flex-wrap: wrap;
+    margin: 0.5rem 0 0.6rem;
+}
+.panel-head:first-child { margin-top: 0; }
+.panel-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+textarea {
+    width: 100%;
+    min-height: 340px;
+    resize: vertical;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text);
+    background: #101216;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    tab-size: 2;
+}
+
+.hint { color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0 0; }
+kbd {
+    font-family: var(--mono); font-size: 0.78rem;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 0.05rem 0.35rem;
+}
+
+/* Diagnostics — spatial and actionable, per the UX principles: what is wrong, where,
+ * and what to do about it. */
+.diagnostics { margin-top: 0.75rem; display: grid; gap: 0.5rem; }
+.diagnostic {
+    border-left: 3px solid var(--muted);
+    background: var(--panel-2);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.88rem;
+}
+.diagnostic.error { border-left-color: var(--error); }
+.diagnostic.warning { border-left-color: var(--warning); }
+.diagnostic .where { color: var(--muted); font-family: var(--mono); font-size: 0.8rem; }
+.diagnostic .suggestion { color: var(--accent); margin-top: 0.25rem; }
+.diagnostic.ok { border-left-color: var(--accent); color: var(--muted); }
+
+/* Control surfaces, generated from the patch rather than hard-coded here. */
+.controls { display: grid; gap: 0.9rem; }
+.control label { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.88rem; }
+.control .value { color: var(--accent); font-family: var(--mono); }
+.control .target { color: var(--muted); font-family: var(--mono); font-size: 0.75rem; }
+input[type=range] {
+    width: 100%; height: 32px; accent-color: var(--accent); cursor: pointer;
+}
+
+.keyboard {
+    position: relative;
+    display: flex;
+    height: 130px;
+    user-select: none;
+    margin-bottom: 0.25rem;
+}
+.key {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 0 0 6px 6px;
+    background: #f2f4f7;
+    color: #333;
+    display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 0.4rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+}
+.key.black {
+    position: absolute;
+    top: 0; height: 62%;
+    width: 4.2%;
+    background: #22262d;
+    color: var(--muted);
+    border-color: #000;
+    z-index: 2;
+}
+.key.held { background: var(--accent); color: #08211a; }
+.key.black.held { background: var(--accent-dim); color: #eafff7; }
+
+.info { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+.info table { width: 100%; border-collapse: collapse; }
+.info td { padding: 0.15rem 0.5rem 0.15rem 0; vertical-align: top; }
+.info .order { color: var(--text); }
+.info .feedback { color: var(--warning); }
+.info h3 {
+    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); margin: 0.8rem 0 0.3rem; font-family: var(--font);
+}
+.info h3:first-child { margin-top: 0; }

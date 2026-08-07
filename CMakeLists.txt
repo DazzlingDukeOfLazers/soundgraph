@@ -23,9 +23,22 @@ option(SOUNDGRAPH_BUILD_TESTS "Build the test suite" ON)
 option(SOUNDGRAPH_BUILD_TOOLS "Build the command line tools" ON)
 option(SOUNDGRAPH_BUILD_NATIVE_RUNTIME "Build the native live-audio host" ON)
 
+# A WebAssembly configuration builds only the core and the browser binding. Everything
+# else — device hosts, file tools, the test runners — is a native concern.
+if(EMSCRIPTEN)
+    set(SOUNDGRAPH_BUILD_TESTS OFF)
+    set(SOUNDGRAPH_BUILD_TOOLS OFF)
+    set(SOUNDGRAPH_BUILD_NATIVE_RUNTIME OFF)
+endif()
+
 add_subdirectory(dsp-core)
 add_subdirectory(patch-io)
-add_subdirectory(tools/common)
+
+if(EMSCRIPTEN)
+    add_subdirectory(runtime-wasm)
+else()
+    add_subdirectory(tools/common)
+endif()
 
 if(SOUNDGRAPH_BUILD_TOOLS)
     add_subdirectory(tools)

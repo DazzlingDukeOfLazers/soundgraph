@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: envelope",
+    "description": "Envelope with the gate held open for the whole capture.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "gate",
+      "type": "Constant",
+      "parameters": {
+        "value": 1
+      }
+    },
+    {
+      "id": "env",
+      "type": "ADSR",
+      "parameters": {
+        "attack": 0.01,
+        "decay": 0.03,
+        "sustain": 0.4,
+        "release": 0.05
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

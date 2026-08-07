@@ -1,5 +1,92 @@
 # Decision Log
 
+## 2026-08-14 — Golden vectors are patches, not test code
+
+Decision:
+Every golden case is an ordinary patch under `tests/golden/cases/`, listed in
+`tests/golden/cases.json` with its frame count and note events. The native test, the
+WebAssembly verifier and eventually the embedded runner all read that one manifest.
+
+Reason:
+Milestone B's exit condition is "native and browser behave the same". That is only
+checkable if both are rendering provably the same thing. When the cases lived in C++ test
+code, a WASM runner would have had to reimplement them, and the reimplementation is
+exactly where a discrepancy would hide.
+
+Alternatives:
+Exporting a test harness from the wasm module (ships test code in the shipped binary);
+comparing only end-to-end patches (would not cover individual nodes).
+
+Consequences:
+Node-level cases need a patch that routes the node to a `StereoOutput` at unity level with
+the limiter off, so the recording is the raw node output. Converting the existing vectors
+this way reproduced nine of ten bit-for-bit, which was itself a useful check.
+
+## 2026-08-14 — The browser build ships no JavaScript glue
+
+Decision:
+`runtime-wasm` builds a bare `.wasm` with `-sSTANDALONE_WASM --no-entry` and a flat
+`extern "C"` API. There is no emscripten glue file; the worklet instantiates the module
+by hand. The module has zero imports and is about 180 KB.
+
+Reason:
+The DSP has to run inside an `AudioWorklet`, and `AudioWorkletGlobalScope` has no `fetch`,
+no module imports and no dependable `TextDecoder`. Emscripten's glue assumes several of
+those. Hand-instantiating a module with no imports is less code than working around the
+glue, and it fails in obvious ways instead of subtle ones.
+
+Alternatives:
+`-sMODULARIZE -sSINGLE_FILE` concatenated ahead of the processor (fragile, and the glue
+still probes for environment features that a worklet lacks); emscripten's `-sAUDIO_WORKLET`
+integration (ties the architecture to emscripten's audio abstractions, which we do not
+want on the critical path to ESP32).
+
+Consequences:
+JavaScript does its own string marshalling. All text crosses the worklet port as bytes,
+encoded and decoded on the main thread.
+
+## 2026-08-14 — A WebAssembly.Module cannot be sent to an AudioWorklet
+
+Decision:
+The main thread posts the wasm **bytes** to the worklet, which compiles its own copy at
+start-up, rather than compiling once and posting the `WebAssembly.Module`.
+
+Reason:
+An `AudioWorkletGlobalScope` is a separate agent cluster, so a `Module` fails to
+structured-clone into it — and it fails silently. `postMessage` does not throw, no error
+event fires, and the message simply never arrives; the processor sits there looking dead.
+This cost real debugging time, which is why it is written down.
+
+Alternatives:
+Compiling on the main thread and transferring (does not work, as above); fetching inside
+the worklet (there is no `fetch` there).
+
+Consequences:
+A one-off compile of ~180 KB on the audio thread at start-up, before any rendering block.
+Synchronous compilation is permitted off the main thread, so this is legal and quick.
+
+## 2026-08-14 — Fixed WebAssembly heap, and controls bound to integer handles
+
+Decision:
+The module is built with `ALLOW_MEMORY_GROWTH=0` and a 32 MB heap. Control surfaces are
+resolved to an integer handle once when a patch loads; moving a knob sends only that
+handle and a float.
+
+Reason:
+A growing heap detaches every `Float32Array` view the worklet holds, and re-deriving those
+views on the audio thread is a bug waiting to happen. Binding controls once keeps string
+marshalling off the audio thread entirely. 32 MB leaves room for roughly eighty
+maximum-length delay lines.
+
+Alternatives:
+Growable memory with view invalidation on every call (more moving parts in the one place
+that must not fail); passing parameter names on every knob event (allocation and encoding
+per frame of a drag).
+
+Consequences:
+A patch needing more than 32 MB will fail to load rather than growing. If that ever
+happens the number moves; it is one line.
+
 ## 2026-08-07 — Monorepo with `dsp-core` as the semantic authority
 
 Decision:

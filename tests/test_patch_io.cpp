@@ -241,6 +241,51 @@ TEST(text_with_escapes_and_non_ascii_round_trips) {
     CHECK(reloaded.metadata_value("name") == name);
 }
 
+TEST(diagnostics_serialize_with_the_nodes_and_connections_they_name) {
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(
+        R"({"schema_version": 1,
+            "nodes": [{"id": "a", "type": "Gain"}, {"id": "b", "type": "Gain"}],
+            "connections": [{"from": {"node": "a", "port": "out"}, "to": {"node": "b", "port": "in"}},
+                            {"from": {"node": "b", "port": "out"}, "to": {"node": "a", "port": "in"}}]})",
+        graph, diagnostics));
+    CHECK(!soundgraph::validate(graph, soundgraph::NodeRegistry::builtin(), diagnostics));
+
+    const std::string json = soundgraph::write_diagnostics(diagnostics, false);
+    CHECK(json.find("\"severity\":\"error\"") != std::string::npos);
+    CHECK(json.find("\"code\":\"zero_delay_cycle\"") != std::string::npos);
+    // A frontend has to be able to highlight the actual loop, not just print a sentence.
+    CHECK(json.find("\"nodes\":[\"a\",\"b\"]") != std::string::npos);
+    CHECK(json.find("\"connections\":") != std::string::npos);
+    CHECK(json.find("\"suggestion\":") != std::string::npos);
+}
+
+TEST(the_registry_serializes_everything_an_editor_needs) {
+    const std::string json =
+        soundgraph::write_registry(soundgraph::NodeRegistry::builtin(), false);
+
+    // An editor builds its palette, its type checking and its search from this alone.
+    CHECK(json.find("\"name\":\"StateVariableFilter\"") != std::string::npos);
+    CHECK(json.find("\"display_name\":\"Filter\"") != std::string::npos);
+    CHECK(json.find("\"category\":\"Filters\"") != std::string::npos);
+    CHECK(json.find("\"search_terms\":[") != std::string::npos);
+    CHECK(json.find("remove high frequencies") != std::string::npos);
+    CHECK(json.find("\"required\":true") != std::string::npos);
+    CHECK(json.find("\"summing\":true") != std::string::npos);
+    CHECK(json.find("\"scaling\":\"exponential\"") != std::string::npos);
+    CHECK(json.find("\"enum\":[\"lowpass\"") != std::string::npos);
+    CHECK(json.find("\"breaks_feedback\":true") != std::string::npos);
+    CHECK(json.find("\"role\":\"host_audio_sink\"") != std::string::npos);
+    CHECK(json.find("\"receives_notes\":true") != std::string::npos);
+
+    // And it has to parse back, since that is what the browser actually does with it.
+    GraphDescription unused;
+    std::vector<Diagnostic> diagnostics;
+    soundgraph::parse_patch(json, unused, diagnostics);
+    CHECK_MESSAGE(!has_code(diagnostics, "invalid_json"), "the registry dump must be valid JSON");
+}
+
 TEST(missing_files_are_reported_rather_than_crashing) {
     GraphDescription graph;
     std::vector<Diagnostic> diagnostics;

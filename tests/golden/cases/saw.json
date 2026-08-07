@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: saw",
+    "description": "Band-limited saw. Sensitive to the PolyBLEP correction.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: LFO",
+    "description": "Triangle LFO, bipolar.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "lfo",
+      "type": "LFO",
+      "parameters": {
+        "rate": 3,
+        "shape": 1,
+        "amount": 1,
+        "offset": 0
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "lfo",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

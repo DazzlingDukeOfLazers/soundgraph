@@ -5,24 +5,41 @@
 | Target        | Builds | Unit tests | Golden vectors | Live audio | Status |
 |---------------|--------|-----------|----------------|------------|--------|
 | Windows x64   | yes    | yes       | yes            | yes        | Milestone A done |
+| WASM (Chrome) | yes    | via core  | yes            | yes        | Milestone B done |
 | macOS arm64   | —      | —         | —              | —          | not yet exercised |
 | Linux x64     | —      | —         | —              | —          | not yet exercised |
-| WASM          | —      | —         | —              | —          | Milestone B |
+| Safari        | —      | —         | —              | —          | not yet exercised |
+| Firefox       | —      | —         | —              | —          | not yet exercised |
 | ESP32-S3      | —      | —         | —              | —          | Milestone F |
 
 ## Tolerances
 
 Golden comparisons are tolerance based, never bit-exact.
 
-| Comparison            | Tolerance (peak abs error) |
-|-----------------------|----------------------------|
-| same target, rebuild  | 0.0 (bit exact expected)   |
-| native vs WASM        | 1e-5                       |
-| native vs ESP32-S3    | 1e-4                       |
+| Comparison            | Tolerance (peak abs error) | Measured |
+|-----------------------|----------------------------|----------|
+| same target, rebuild  | 0.0 (bit exact expected)   | 0.0      |
+| native vs WASM        | 1e-5                       | 2.09e-7 worst case |
+| native vs ESP32-S3    | 1e-4                       | not yet measured |
 
 Rationale: ESP32-S3 has no FPU-identical trig; oscillator phase accumulation and filter
 coefficients will diverge in the last few mantissa bits. Any divergence larger than this
 indicates a semantic difference, not a floating-point one.
+
+Measured on 2026-08-14, MSVC 19.39 x64 against Emscripten 6.0.6: seven of ten cases are
+bit-identical. The three that differ (`sine`, `filter-sweep`, `first-synth`) are exactly
+the ones that call `sin` or `tan`, which is the expected shape of a libm difference rather
+than a semantic one.
+
+## Running the comparisons
+
+```bash
+ctest --test-dir build --output-on-failure   # native, including golden vectors
+node runtime-wasm/verify-goldens.mjs         # WebAssembly against the native vectors
+```
+
+Both read `tests/golden/cases.json`, so neither can drift from the other's definition of a
+case. Re-record with `SOUNDGRAPH_UPDATE_GOLDEN=1` and review the diff.
 
 ## Per-node coverage
 

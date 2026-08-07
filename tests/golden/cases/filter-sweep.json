@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: filter sweep",
+    "description": "Saw through a resonant lowpass swept by an LFO. The vector most likely to move if scheduling or filter coefficients change.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "parameters": {
+        "frequency": 110
+      }
+    },
+    {
+      "id": "lfo",
+      "type": "LFO",
+      "parameters": {
+        "rate": 2,
+        "amount": 1.5
+      }
+    },
+    {
+      "id": "filter",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "cutoff": 600,
+        "resonance": 0.7,
+        "mode": 0
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 0.3,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "lfo",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "cutoff_mod"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

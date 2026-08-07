@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: white noise",
+    "description": "Seeded white noise. Pins the PRNG sequence across targets.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "noise",
+      "type": "Noise",
+      "parameters": {
+        "colour": 0,
+        "seed": 20260807
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "noise",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

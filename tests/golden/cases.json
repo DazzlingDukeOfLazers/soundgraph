@@ -1,0 +1,69 @@
+{
+  "sample_rate": 48000,
+  "comment": "Shared definition of the golden set. Native, WebAssembly and embedded runners all render these same cases and compare against tests/golden/vectors/. Frames are mono unless stated.",
+  "cases": [
+    {
+      "name": "sine",
+      "patch": "cases/sine.json",
+      "frames": 4800
+    },
+    {
+      "name": "saw",
+      "patch": "cases/saw.json",
+      "frames": 4800
+    },
+    {
+      "name": "square",
+      "patch": "cases/square.json",
+      "frames": 4800
+    },
+    {
+      "name": "noise",
+      "patch": "cases/noise.json",
+      "frames": 4800
+    },
+    {
+      "name": "noise-pink",
+      "patch": "cases/noise-pink.json",
+      "frames": 4800
+    },
+    {
+      "name": "lfo",
+      "patch": "cases/lfo.json",
+      "frames": 4800
+    },
+    {
+      "name": "adsr",
+      "patch": "cases/adsr.json",
+      "frames": 4800
+    },
+    {
+      "name": "filter-sweep",
+      "patch": "cases/filter-sweep.json",
+      "frames": 24000
+    },
+    {
+      "name": "delay-feedback",
+      "patch": "cases/delay-feedback.json",
+      "frames": 12000
+    },
+    {
+      "name": "first-synth",
+      "patch": "../../examples/patches/first-synth.json",
+      "frames": 24000,
+      "events": [
+        {
+          "frame": 0,
+          "type": "note_on",
+          "note": 45,
+          "velocity": 0.9
+        },
+        {
+          "frame": 12000,
+          "type": "note_off",
+          "note": 45
+        }
+      ]
+    }
+  ]
+}

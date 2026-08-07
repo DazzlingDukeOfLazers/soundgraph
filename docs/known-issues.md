@@ -4,6 +4,16 @@ Open problems, ordered by how much they threaten the Knobcon demo.
 
 ## Open
 
+- **The web page has never been looked at.** Every element was verified functionally, but
+  the browser pane used during development did not composite frames, so nobody has seen
+  the layout render. Open `editor-web/` and check it before showing it to anyone.
+- **Only Chrome has run the browser build.** Safari and Firefox are untested. Safari is
+  the one to worry about: its AudioWorklet implementation has historically been the
+  fussiest, and it matters for the "open a URL on a phone" story.
+- **No `getUserMedia` in the browser.** `AudioInput` nodes schedule correctly but receive
+  silence, so `delay-echo.json` loads and validates in the browser without doing anything
+  audible. Live input is second-vertical-slice work.
+
 - **`set_audio_input` assumes the host's frame count lines up with block boundaries.**
   The graph runs whole 64-frame blocks; if a host delivers input in a size that is not a
   multiple of 64, the tail of a period is read as silence rather than being carried into
