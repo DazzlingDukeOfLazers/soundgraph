@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "esp32-s3-devkitc-pcm5102",
+  "name": "ESP32-S3 DevKitC + PCM5102 DAC",
+  "vendor": "generic",
+  "target": "esp32-s3",
+  "notes": "The generic route: any ESP32-S3 DevKitC-style board wired to a PCM5102/PCM5102A I2S DAC module. Wire DAC VIN->3V3, GND->GND, BCK->GPIO15, LCK->GPIO16, DIN->GPIO17. On most PCM5102 modules also tie SCK to GND (enables the internal PLL, so no master clock is needed), and check the solder-jumper defaults: FLT=GND, DEMP=GND, XSMT=3V3, FMT=GND.",
+  "audio_out": {
+    "kind": "i2s-dac",
+    "chip": "PCM5102A",
+    "sample_rate": 48000,
+    "bits": 16,
+    "i2s": {
+      "bclk": 15,
+      "ws": 16,
+      "dout": 17,
+      "mclk": -1
+    }
+  },
+  "psram": {
+    "present": true,
+    "mode": "octal",
+    "megabytes": 8
+  },
+  "controls": [
+    { "id": "boot_button", "kind": "button", "pin": 0 }
+  ]
+}

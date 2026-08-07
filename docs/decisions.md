@@ -1,5 +1,61 @@
 # Decision Log
 
+## 2026-08-28 — ESP-IDF v5.5, not v6.x
+
+Decision:
+The embedded target builds against ESP-IDF release/v5.5, installed at
+`C:\Users\danie\esp-idf`.
+
+Reason:
+v6.0/v6.1 exist, but nearly all ESP32-S3 audio examples, community fixes and I2S
+discussion target the v5.x line. Five weeks before a public demo is the wrong time to be
+the first person hitting a new major version's I2S regressions.
+
+Alternatives:
+v6.1 (newest, least travelled); v5.3/v5.4 (older with no benefit over 5.5).
+
+Consequences:
+Revisit after Knobcon. The firmware uses only the std I2S driver, NVS and FreeRTOS tasks,
+so a later major-version move should be small.
+
+## 2026-08-28 — First board: generic DevKitC + PCM5102, chosen by Daniel
+
+Decision:
+The first embedded target is any ESP32-S3 DevKitC-style board wired to a PCM5102 I2S DAC
+module (profile `esp32-s3-devkitc-pcm5102`). Pins and codec details live in `board.json`;
+a header is generated from it at build time by `tools/board-generator`.
+
+Reason:
+It is the hardware on hand, it is the most common wiring in tutorials (good for the
+"board support should create publishable work" goal), and the PCM5102 needs no I2C codec
+init — the thinnest possible HAL for the first target.
+
+Consequences:
+No audio input on this profile, so the second vertical slice (live input through a delay)
+waits for a codec board. The board.schema.json already models codecs and inputs.
+
+## 2026-08-28 — On-device golden verification is host-driven
+
+Decision:
+The firmware embeds the golden case patches and exposes one dumb command —
+`render <name> <frames> [events]` — streaming float32 samples back as per-line base64.
+The host script (`tools/esp32/sg-serial.py verify-goldens`) reads `cases.json`, drives
+the device case by case, and compares against `tests/golden/vectors/` at 1e-4.
+
+Reason:
+The device should not parse the manifest or store the vectors: that would be a second
+copy of the test definition, on the target least convenient to update. Keeping the
+device dumb means the manifest stays the single source of truth for native, WASM and
+embedded alike.
+
+Alternatives:
+Comparing on device against vectors in flash (burns ~400 KB of flash and duplicates the
+comparison logic); a fourth bespoke test format (no).
+
+Consequences:
+Verification needs a serial link and is slow (~30 s per long case at 115200 baud), which
+is fine for a check that runs when the DSP changes, not on every build.
+
 ## 2026-08-21 — Godot talks to the core through a GDExtension, not a reimplementation
 
 Decision:

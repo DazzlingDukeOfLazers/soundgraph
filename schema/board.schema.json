@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://soundgraph.dev/schema/board.schema.json",
+  "title": "SoundGraph Board Profile",
+  "description": "Describes one physical board: which processor target it uses and how audio and controls are wired. A board profile is data consumed by the generic firmware — it must never alter graph semantics. Target (esp32-s3) and board (this file) are deliberately separate: the target defines architecture and memory constraints, the board defines pins and peripherals.",
+  "type": "object",
+  "required": ["schema_version", "id", "name", "target", "audio_out"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "id": {
+      "description": "Stable identifier, used to select the profile at build time.",
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "name": { "type": "string" },
+    "vendor": { "type": "string" },
+    "url": { "type": "string" },
+    "target": {
+      "description": "Processor target the generic firmware is built for.",
+      "type": "string",
+      "enum": ["esp32-s3", "esp32-p4"]
+    },
+    "notes": { "type": "string" },
+    "audio_out": {
+      "type": "object",
+      "required": ["kind", "sample_rate"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "i2s-dac: an external or onboard DAC driven over plain I2S with no control channel (PCM5102 and friends). codec: a chip that also needs I2C configuration.",
+          "type": "string",
+          "enum": ["i2s-dac", "codec"]
+        },
+        "chip": { "type": "string" },
+        "sample_rate": { "type": "integer", "enum": [44100, 48000] },
+        "bits": { "type": "integer", "enum": [16, 24, 32], "default": 16 },
+        "i2s": {
+          "type": "object",
+          "required": ["bclk", "ws", "dout"],
+          "additionalProperties": false,
+          "properties": {
+            "bclk": { "type": "integer" },
+            "ws": { "type": "integer" },
+            "dout": { "type": "integer" },
+            "mclk": { "type": "integer", "description": "-1 or absent when the DAC needs no master clock." }
+          }
+        },
+        "i2c": {
+          "description": "Only for kind=codec.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sda": { "type": "integer" },
+            "scl": { "type": "integer" },
+            "address": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "audio_in": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Shape mirrors audio_out. Absent means the board has no audio input; AudioInput nodes then produce silence, exactly as in a browser without getUserMedia."
+    },
+    "psram": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "present": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["quad", "octal"] },
+        "megabytes": { "type": "integer" }
+      }
+    },
+    "controls": {
+      "description": "Physical performance controls, for later mapping onto patch control surfaces.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["button", "encoder", "pot", "touch"] },
+          "pin": { "type": "integer" },
+          "pin_b": { "type": "integer" }
+        }
+      }
+    }
+  }
+}
