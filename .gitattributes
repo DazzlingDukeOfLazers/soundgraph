@@ -1,0 +1,11 @@
+# Normalise line endings in the repository. The project is developed across macOS and
+# Windows, and a patch file or a golden vector that differs only by line ending would
+# show up as a spurious diff.
+* text=auto eol=lf
+
+*.wav binary
+*.png binary
+*.jpg binary
+
+# Vendored third-party code is not ours to reformat.
+runtime-native/third_party/** -text -diff linguist-vendored

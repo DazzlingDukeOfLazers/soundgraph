@@ -1,0 +1,21 @@
+build/
+build-*/
+out/
+*.wav
+!tests/golden/**/*.wav
+!examples/audio/**/*.wav
+
+# editors / os
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# godot (later)
+editor-godot/.godot/
+editor-godot/.import/
+
+# web (later)
+node_modules/
+editor-web/dist/

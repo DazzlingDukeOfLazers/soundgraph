@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://soundgraph.dev/schema/patch.schema.json",
+  "title": "SoundGraph Patch",
+  "description": "The canonical, portable representation of a SoundGraph patch. This document is the product; editors, runtimes and hardware targets are consumers of it. Anything a frontend needs in order to reproduce a patch must round-trip through this format.",
+  "type": "object",
+  "required": ["schema_version", "nodes", "connections"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Incremented only for breaking changes. A runtime must refuse a patch whose schema_version it does not implement.",
+      "type": "integer",
+      "const": 1
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string" },
+        "author": { "type": "string" },
+        "description": { "type": "string" },
+        "created": { "type": "string" },
+        "modified": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "connections": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/connection" }
+    },
+    "controls": {
+      "description": "Performance surface. Deliberately separate from the DSP graph: the same parameter may be driven by a Godot knob, a browser slider, a DAW automation lane, a MIDI CC or a physical encoder without changing the graph.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/control" }
+    },
+    "automation": {
+      "description": "Recorded or authored parameter movement. Graph data, never hidden frontend state.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/automation_lane" }
+    }
+  },
+  "$defs": {
+    "node_id": {
+      "description": "Stable identity. Must survive rename, move, and re-serialization; connections and automation refer to it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "port_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_]+$"
+    },
+    "signal_type": {
+      "description": "audio and control are sample streams and interconvert freely. event and note are discrete messages and require an exact match.",
+      "type": "string",
+      "enum": ["audio", "control", "event", "note"]
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/node_id" },
+        "type": {
+          "description": "Registry node type name, e.g. SawOscillator. Unknown types are a validation error, never a silent no-op.",
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "description": "Human-facing label. Purely cosmetic; never used for identity.",
+          "type": "string"
+        },
+        "parameters": {
+          "description": "Parameter values by name. Omitted parameters take the registry default, so a minimal patch stays readable.",
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        },
+        "position": {
+          "description": "Editor layout hint. Runtimes ignore it; it lives here so a patch opens the same way in every editor.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          }
+        },
+        "collapsed": {
+          "description": "Progressive disclosure state for editors.",
+          "type": "boolean"
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "required": ["node", "port"],
+      "additionalProperties": false,
+      "properties": {
+        "node": { "$ref": "#/$defs/node_id" },
+        "port": { "$ref": "#/$defs/port_name" }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "description": "Source: an output port.",
+          "$ref": "#/$defs/endpoint"
+        },
+        "to": {
+          "description": "Destination: an input port. An input accepts at most one connection unless the node type declares the port summing.",
+          "$ref": "#/$defs/endpoint"
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "required": ["id", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/node_id" },
+        "label": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["knob", "slider", "toggle", "button", "xy", "keyboard"]
+        },
+        "target": {
+          "description": "The graph parameter this surface drives.",
+          "type": "object",
+          "required": ["node", "parameter"],
+          "additionalProperties": false,
+          "properties": {
+            "node": { "$ref": "#/$defs/node_id" },
+            "parameter": { "$ref": "#/$defs/port_name" }
+          }
+        },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "default": { "type": "number" },
+        "scaling": {
+          "type": "string",
+          "enum": ["linear", "exponential", "logarithmic"]
+        },
+        "binding": {
+          "description": "Optional physical or protocol binding. Absent means the surface is on-screen only.",
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "midi_cc": { "type": "integer", "minimum": 0, "maximum": 127 },
+            "midi_channel": { "type": "integer", "minimum": 1, "maximum": 16 },
+            "encoder": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "automation_lane": {
+      "type": "object",
+      "required": ["target", "points"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/node_id" },
+        "target": {
+          "type": "object",
+          "required": ["node", "parameter"],
+          "additionalProperties": false,
+          "properties": {
+            "node": { "$ref": "#/$defs/node_id" },
+            "parameter": { "$ref": "#/$defs/port_name" }
+          }
+        },
+        "loop": { "type": "boolean" },
+        "length_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "interpolation": {
+          "type": "string",
+          "enum": ["step", "linear", "smooth"]
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["time", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "time": { "type": "number", "minimum": 0 },
+              "value": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

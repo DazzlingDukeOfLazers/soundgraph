@@ -1,0 +1,260 @@
+// Terminals: where a graph meets whatever is hosting it.
+//
+// The runtime fills a HostAudioSource node's outputs before calling process(), and reads
+// a HostAudioSink node's outputs after. That keeps the one genuinely target-specific
+// thing — how samples reach a device — out of the nodes themselves.
+#include <cmath>
+
+#include "dsp_math.h"
+#include "nodes/node_types.h"
+
+namespace soundgraph {
+namespace nodes {
+namespace {
+
+// ---------------------------------------------------------------------------------
+// Note input
+//
+// Monophonic, last-note priority, with a held-note stack so that releasing the top note
+// falls back to the one still held underneath. Polyphony is deliberately deferred; see
+// docs/known-issues.md.
+// ---------------------------------------------------------------------------------
+
+constexpr int kMaxHeldNotes = 16;
+
+constexpr PortDescriptor kNoteOutputs[] = {
+    {"frequency", SignalType::Control, "Hz", false, false, "Pitch of the note being played."},
+    {"gate", SignalType::Control, "", false, false, "1 while a note is held, 0 otherwise."},
+    {"velocity", SignalType::Control, "", false, false, "How hard the note was struck, 0 to 1."},
+};
+
+constexpr ParameterDescriptor kNoteParameters[] = {
+    {"glide", "s", 0.0f, 2.0f, 0.0f, Scaling::Exponential,
+     "Time to slide from the previous pitch to the new one. 0 jumps.", nullptr, 0},
+    {"transpose", "semitones", -24.0f, 24.0f, 0.0f, Scaling::Linear,
+     "Shifts every incoming note. 12 is one octave up.", nullptr, 0},
+};
+
+class NoteInputNode final : public DspNode {
+public:
+    enum Param { kGlide = 0, kTranspose = 1 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        reset();
+    }
+
+    void reset() override {
+        held_count_ = 0;
+        gate_ = 0.0f;
+        velocity_ = 0.0f;
+        target_note_ = 60.0f;
+        current_note_ = 60.0f;
+    }
+
+    void handle_note_event(const NoteEvent& event) override {
+        switch (event.kind) {
+            case NoteEvent::Kind::NoteOn:
+                push_note(event.note);
+                velocity_ = dsp::clampf(event.velocity, 0.0f, 1.0f);
+                gate_ = 1.0f;
+                break;
+            case NoteEvent::Kind::NoteOff:
+                remove_note(event.note);
+                if (held_count_ == 0) {
+                    gate_ = 0.0f;
+                }
+                break;
+            case NoteEvent::Kind::AllNotesOff:
+                held_count_ = 0;
+                gate_ = 0.0f;
+                break;
+        }
+        if (held_count_ > 0) {
+            target_note_ = static_cast<float>(held_notes_[held_count_ - 1]);
+        }
+    }
+
+    void process(const ProcessContext& context) override {
+        float* frequency_out = context.outputs[0];
+        float* gate_out = context.outputs[1];
+        float* velocity_out = context.outputs[2];
+
+        const float glide = parameter(kGlide);
+        const float transpose = parameter(kTranspose);
+        // Glide runs in note space rather than hertz, so a slide covers the same musical
+        // distance whether it starts low or high.
+        const float coefficient =
+            glide > 0.0f ? std::exp(-6.907755f / (glide * sample_rate_)) : 0.0f;
+
+        for (int i = 0; i < context.frames; ++i) {
+            current_note_ = target_note_ + (current_note_ - target_note_) * coefficient;
+            frequency_out[i] = dsp::note_to_frequency(current_note_ + transpose);
+            gate_out[i] = gate_;
+            velocity_out[i] = velocity_;
+        }
+    }
+
+private:
+    void push_note(int note) {
+        remove_note(note);
+        if (held_count_ >= kMaxHeldNotes) {
+            // Drop the oldest rather than the newest: the player expects the key they
+            // just pressed to sound.
+            for (int i = 1; i < kMaxHeldNotes; ++i) {
+                held_notes_[i - 1] = held_notes_[i];
+            }
+            held_count_ = kMaxHeldNotes - 1;
+        }
+        held_notes_[held_count_++] = note;
+    }
+
+    void remove_note(int note) {
+        int write = 0;
+        for (int read = 0; read < held_count_; ++read) {
+            if (held_notes_[read] != note) {
+                held_notes_[write++] = held_notes_[read];
+            }
+        }
+        held_count_ = write;
+    }
+
+    float sample_rate_ = 48000.0f;
+    int held_notes_[kMaxHeldNotes] = {};
+    int held_count_ = 0;
+    float gate_ = 0.0f;
+    float velocity_ = 0.0f;
+    float target_note_ = 60.0f;
+    float current_note_ = 60.0f;
+};
+
+// ---------------------------------------------------------------------------------
+// Audio input
+// ---------------------------------------------------------------------------------
+
+constexpr PortDescriptor kAudioInputOutputs[] = {
+    {"left", SignalType::Audio, "", false, false, "Left channel from the host."},
+    {"right", SignalType::Audio, "", false, false, "Right channel from the host."},
+};
+
+constexpr ParameterDescriptor kAudioInputParameters[] = {
+    {"gain", "", 0.0f, 4.0f, 1.0f, Scaling::Logarithmic, "Input level.", nullptr, 0},
+};
+
+class AudioInputNode final : public DspNode {
+public:
+    // The runtime has already written the host's samples into the output buffers.
+    void process(const ProcessContext& context) override {
+        const float gain = parameter(0);
+        if (gain == 1.0f) {
+            return;
+        }
+        for (int channel = 0; channel < 2; ++channel) {
+            float* out = context.outputs[channel];
+            for (int i = 0; i < context.frames; ++i) {
+                out[i] *= gain;
+            }
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------------
+// Stereo output
+// ---------------------------------------------------------------------------------
+
+constexpr const char* kSafetyLabels[] = {"off", "on"};
+
+constexpr PortDescriptor kStereoInputs[] = {
+    {"left", SignalType::Audio, "", true, true, "Left channel. Also used for the right if that is empty."},
+    {"right", SignalType::Audio, "", false, true, "Right channel."},
+};
+
+constexpr PortDescriptor kStereoOutputs[] = {
+    {"left", SignalType::Audio, "", false, false, "Post-level tap of the left channel."},
+    {"right", SignalType::Audio, "", false, false, "Post-level tap of the right channel."},
+};
+
+constexpr ParameterDescriptor kStereoParameters[] = {
+    {"level", "", 0.0f, 2.0f, 0.8f, Scaling::Logarithmic, "Master level.", nullptr, 0},
+    {"safety_limit", "", 0.0f, 1.0f, 1.0f, Scaling::Linear,
+     "Softly limits anything above full scale. Leave this on unless you know why not.",
+     kSafetyLabels, 2},
+};
+
+class StereoOutputNode final : public DspNode {
+public:
+    enum Param { kLevel = 0, kSafetyLimit = 1 };
+
+    void process(const ProcessContext& context) override {
+        const float* left_in = context.inputs[0];
+        const float* right_in = context.inputs[1];
+        // A patch wired in mono should still come out of both speakers.
+        if (right_in == nullptr) {
+            right_in = left_in;
+        }
+
+        const float level = parameter(kLevel);
+        const bool limit = parameter(kSafetyLimit) >= 0.5f;
+
+        const float* sources[2] = {left_in, right_in};
+        for (int channel = 0; channel < 2; ++channel) {
+            float* out = context.outputs[channel];
+            const float* in = sources[channel];
+            for (int i = 0; i < context.frames; ++i) {
+                float sample = (in != nullptr ? in[i] : 0.0f) * level;
+                if (limit && (sample > 1.0f || sample < -1.0f)) {
+                    // Soft knee above full scale. A runaway feedback loop should be
+                    // startling, not damaging, in front of an audience.
+                    sample = std::tanh(sample);
+                }
+                out[i] = sample;
+            }
+        }
+    }
+};
+
+template <typename T>
+std::unique_ptr<DspNode> make() {
+    return std::unique_ptr<DspNode>(new T());
+}
+
+}  // namespace
+
+const NodeTypeDescriptor kNoteInput = {
+    "NoteInput", "Note Input", "Terminals",
+    "Turns played notes into pitch, gate and velocity signals.",
+    "note|midi|keyboard|key|play|pitch|gate|velocity|trigger|input",
+    Slice<PortDescriptor>(),
+    Slice<PortDescriptor>(kNoteOutputs),
+    Slice<ParameterDescriptor>(kNoteParameters),
+    false, NodeRole::Processor, true,
+    ResourceCost{1.0f, 96, 0},
+    &make<NoteInputNode>,
+};
+
+const NodeTypeDescriptor kAudioInput = {
+    "AudioInput", "Audio Input", "Terminals",
+    "Live audio from the host: a microphone, an instrument, or a DAW track.",
+    "audio input|input|mic|microphone|line in|guitar|live|record|adc",
+    Slice<PortDescriptor>(),
+    Slice<PortDescriptor>(kAudioInputOutputs),
+    Slice<ParameterDescriptor>(kAudioInputParameters),
+    false, NodeRole::HostAudioSource, false,
+    ResourceCost{1.0f, 0, 0},
+    &make<AudioInputNode>,
+};
+
+const NodeTypeDescriptor kStereoOutput = {
+    "StereoOutput", "Stereo Output", "Terminals",
+    "Where the patch leaves the graph and reaches the speakers.",
+    "output|out|speakers|master|dac|stereo|headphones|listen",
+    Slice<PortDescriptor>(kStereoInputs),
+    Slice<PortDescriptor>(kStereoOutputs),
+    Slice<ParameterDescriptor>(kStereoParameters),
+    false, NodeRole::HostAudioSink, false,
+    ResourceCost{1.0f, 0, 0},
+    &make<StereoOutputNode>,
+};
+
+}  // namespace nodes
+}  // namespace soundgraph
