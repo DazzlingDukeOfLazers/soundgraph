@@ -1,5 +1,74 @@
 # Decision Log
 
+## 2026-08-21 — Godot talks to the core through a GDExtension, not a reimplementation
+
+Decision:
+`runtime-godot` is a GDExtension (godot-cpp) exposing a single `SoundGraphEngine` class
+over the same `dsp-core` and `patch-io`. The editor asks it for the node vocabulary,
+connection legality, validation results, and the signal on any wire. There is no DSP in
+GDScript and no second copy of the node table.
+
+Reason:
+ARCHITECTURE.md says Godot is a UI and education frontend, not a graph authority. The way
+that stops being a slogan is if the editor cannot answer a question about a graph without
+asking the core. Adding a node type to `dsp-core` now makes it appear in Godot — ports,
+units, ranges, enum labels, tooltips, search ranking — with no GDScript change.
+
+Alternatives:
+A pure-GDScript editor reading the schema (would need its own node table, which is the
+duplication we are trying to avoid, and could not make sound); driving `sg-play` as a
+subprocess (fragile for a live demo, and no signal inspection).
+
+Consequences:
+Godot needs a compiled binary per platform, so `editor-godot` cannot run from a fresh
+clone until `runtime-godot` is built. The extension binary and the mirrored example
+patches are build output, not repository content.
+
+## 2026-08-21 — Cross-editor round trips are checked by rendering, not by diffing text
+
+Decision:
+`tools/verify-roundtrip.mjs` pushes each example through the Godot editor's real
+load-and-save path, then renders the original and the result with `sg-render` and requires
+the audio to be identical sample for sample.
+
+Reason:
+Two patch files can differ in key order, number formatting and whitespace while describing
+the same graph — Godot writes `240.0` where the file said `240` — and can just as easily
+look similar while describing different graphs. A textual comparison would fail on the
+first difference and pass on the second, which is exactly backwards. Milestone C's exit
+condition is about meaning, so the check has to be about meaning.
+
+Alternatives:
+Normalising both files and diffing (needs a canonical form we do not have a reason to
+define yet); comparing parsed structures (closer, but still silent about whether a
+difference matters).
+
+Consequences:
+The round-trip check needs a built `sg-render` and a Godot binary, so it is not part of
+`ctest`. It is its own step, alongside `verify-goldens.mjs`.
+
+## 2026-08-21 — Knob movement never rebuilds the graph
+
+Decision:
+Parameter changes in the Godot editor go straight to the running engine and are recorded
+in the in-memory document. Only structural edits — add, delete, connect, disconnect —
+re-serialise and reload the patch.
+
+Reason:
+UX_PRINCIPLES.md requires that ordinary edits not require compilation, and a reload
+restarts every oscillator and empties every delay line. Turning a filter knob and hearing
+the sound restart would undermine the central claim of the demo.
+
+Alternatives:
+Reloading on every change (simple, and audibly wrong); debouncing reloads (still audible,
+just less often).
+
+Consequences:
+Two paths write to the document, so the serialiser reads slider values from the model
+rather than the widgets. Widgets are set from the model at build time and never read back,
+which also avoids a scaling round trip through the slider's 0..1 position introducing
+drift into saved values.
+
 ## 2026-08-14 — Golden vectors are patches, not test code
 
 Decision:

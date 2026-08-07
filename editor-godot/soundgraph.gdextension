@@ -1,0 +1,22 @@
+[configuration]
+
+entry_symbol = "soundgraph_library_init"
+compatibility_minimum = "4.4"
+reloadable = true
+
+[libraries]
+
+; Godot 4.2+ feature tags. The editor itself matches "editor"; exported builds match one
+; of the "template_" tags. The older "debug"/"release" spellings are not looked up here,
+; so a library listed only under those is silently never loaded.
+windows.editor.x86_64 = "res://bin/soundgraph_godot.dll"
+windows.template_debug.x86_64 = "res://bin/soundgraph_godot.dll"
+windows.template_release.x86_64 = "res://bin/soundgraph_godot.dll"
+
+macos.editor = "res://bin/libsoundgraph_godot.dylib"
+macos.template_debug = "res://bin/libsoundgraph_godot.dylib"
+macos.template_release = "res://bin/libsoundgraph_godot.dylib"
+
+linux.editor.x86_64 = "res://bin/libsoundgraph_godot.so"
+linux.template_debug.x86_64 = "res://bin/libsoundgraph_godot.so"
+linux.template_release.x86_64 = "res://bin/libsoundgraph_godot.so"

@@ -6,6 +6,7 @@
 |---------------|--------|-----------|----------------|------------|--------|
 | Windows x64   | yes    | yes       | yes            | yes        | Milestone A done |
 | WASM (Chrome) | yes    | via core  | yes            | yes        | Milestone B done |
+| Godot 4.7 win | yes    | 30 checks | via round trip | yes        | Milestone C done |
 | macOS arm64   | —      | —         | —              | —          | not yet exercised |
 | Linux x64     | —      | —         | —              | —          | not yet exercised |
 | Safari        | —      | —         | —              | —          | not yet exercised |
@@ -36,10 +37,37 @@ than a semantic one.
 ```bash
 ctest --test-dir build --output-on-failure   # native, including golden vectors
 node runtime-wasm/verify-goldens.mjs         # WebAssembly against the native vectors
+godot --headless --path editor-godot --script res://editor_test.gd   # the Godot editor
+node tools/verify-roundtrip.mjs              # Godot editor round trip, compared by audio
 ```
 
-Both read `tests/golden/cases.json`, so neither can drift from the other's definition of a
-case. Re-record with `SOUNDGRAPH_UPDATE_GOLDEN=1` and review the diff.
+A Godot project must be imported once before its extension is registered — a plain
+`--headless --quit` run does not scan the filesystem and the class will appear missing:
+
+```bash
+godot --headless --path editor-godot --import
+```
+
+The first two read `tests/golden/cases.json`, so neither can drift from the other's
+definition of a case. Re-record with `SOUNDGRAPH_UPDATE_GOLDEN=1` and review the diff.
+
+The third is not part of `ctest` because it needs a built `sg-render` and a Godot binary.
+It checks meaning rather than text: a patch goes through the editor's real load-and-save
+path, and the rendered audio before and after must be identical sample for sample. Set
+`GODOT` if the executable is not on the path.
+
+## Editor agreement
+
+| Property | Checked by |
+|----------|-----------|
+| Godot round trip preserves the graph | `verify-roundtrip.mjs`, identical audio |
+| Godot round trip preserves controls, automation and metadata | `verify-roundtrip.mjs`, counts compared |
+| Both editors offer the same node vocabulary | both build their palette from `write_registry` |
+| Both editors rank intent search identically | both call the core's `search` |
+| Both editors report the same problems | both render `write_diagnostics` output |
+
+The last three are structural rather than tested: neither editor holds a copy of the
+vocabulary, the ranking or the validator, so there is nothing to drift.
 
 ## Per-node coverage
 

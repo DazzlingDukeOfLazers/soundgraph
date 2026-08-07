@@ -1,70 +1,78 @@
 # Current Phase
 
-**Milestone B — Browser Runtime**
-Knobcon week 2 (Aug 14–20, 2026). Branch `milestone-b-browser`.
+**Milestone C — Two Editors** — complete.
+Knobcon week 3 (Aug 21–27, 2026). Branch `milestone-c-editors`.
 
 ## Goal
 
-```text
-same dsp-core -> WASM -> AudioWorklet -> live browser audio
-```
-
-Exit condition: native and browser behaviour match within declared tolerances.
-
-## Done
-
-- [x] Emscripten 6.0.6 installed at `C:\Users\danie\emsdk` (no permanent PATH changes)
-- [x] `runtime-wasm` — flat `extern "C"` API over `dsp-core` + `patch-io`, no JS glue,
-      zero imports, ~180 KB
-- [x] `patch-io` file entry points excluded from targets without a filesystem
-- [x] `write_registry` / `write_diagnostics` — the node vocabulary and validation results
-      as JSON, so frontends reuse the core instead of reimplementing it
-- [x] Golden cases converted to ordinary patches driven by a shared manifest
-- [x] AudioWorklet processor, DSP entirely off the main thread
-- [x] Web host page: load/save patch, live controls generated from the patch's own control
-      surfaces, on-screen and computer keyboard, Web MIDI, peak meter, execution-order and
-      cost readout
-- [x] `runtime-wasm/verify-goldens.mjs` — the exit condition, runnable headlessly
+A simple web reference editor and a Godot primary editor, both opening and saving the same
+graph and preserving semantics. The web editor landed in Milestone B; this phase is the
+Godot editor and the proof that the two agree.
 
 ## Exit condition: met
 
-All 10 golden cases match the native vectors within 1e-5:
+A patch edited in the web editor opens in Godot and vice versa.
 
 ```text
-exact  saw, square, noise, noise-pink, lfo, adsr, delay-feedback
-ok     sine          5.96e-8
-ok     filter-sweep  1.79e-7
-ok     first-synth   2.09e-7
+node tools/verify-roundtrip.mjs
+  ok  first-synth.json   identical audio, 7 nodes, controls 7/7, metadata 5/5
+  ok  delay-echo.json    identical audio, 6 nodes, controls 4/4, metadata 5/5
 ```
 
-Seven of ten are bit-identical between MSVC/x64 and Clang/WASM. The three that differ all
-use `sin` or `tan`, where the two libms disagree in the last mantissa bits — five orders
-of magnitude inside tolerance.
+Checked by rendering rather than by diffing text: each patch goes through the Godot
+editor's real load-and-save path, then the original and the result are rendered with
+`sg-render` and required to be identical sample for sample.
 
-Verified in the browser: execution order, feedback-edge detection and cost estimate are
-identical to what `sg-validate --explain` reports natively, for both example patches; the
-note lifecycle produces silence → attack → release → exact silence; and a zero-delay cycle
-surfaces the same spatial, actionable diagnostic the native validator produces.
+Closed the other way too — a patch written by Godot was fed back to the native validator
+and to the browser WebAssembly engine, and all three produce the same execution order
+(`note → lfo → osc → env → filter → amp → out`) and the same cost estimate.
+
+## Done
+
+- [x] `dsp-core`: `Graph::port_signal` — read-only access to the buffers that already
+      exist, so an editor shows what is on a wire instead of re-deriving it
+- [x] `runtime-godot`: `SoundGraphEngine` GDExtension over the same core — registry,
+      intent search, validation, notes, parameters, audio, scope, per-port signal
+- [x] `editor-godot`: GraphEdit view generated from the registry, typed ports with units
+      written out, parameter widgets from declared ranges and enums, progressive
+      disclosure of advanced parameters, live audio, computer-keyboard playing
+- [x] Intent search using the core's ranking, spatial diagnostics, signal scope
+- [x] `editor-godot/editor_test.gd` — 30 headless checks on the editor itself
+- [x] `tools/verify-roundtrip.mjs` — the exit condition
+
+All four suites pass:
+
+```text
+ctest --test-dir build                  4/4 suites
+node runtime-wasm/verify-goldens.mjs    10/10 cases within 1e-5
+godot --script res://editor_test.gd     30/30 checks
+node tools/verify-roundtrip.mjs         2/2 patches, identical audio
+```
 
 ## Not yet exercised
 
-- **Visual inspection of the page.** The browser pane in this environment does not
-  composite frames, so the layout was verified functionally (element by element) rather
-  than by looking at it. Someone should open it and actually look.
-- Safari and Firefox. Only one engine has run this.
-- Web MIDI with real hardware.
-- `AudioInput` in the browser — `getUserMedia` is not wired up, so `delay-echo.json` loads
-  and schedules correctly but has nothing to process.
+- **The Godot editor has never been looked at either.** Everything is verified headlessly;
+  nobody has opened the project and seen the graph render, dragged a wire, or heard it
+  through a real device. The same is still true of the web page.
+- Godot on macOS and Linux. The extension builds only on Windows so far.
+- Deleting nodes, dragging connections, and the search popup are implemented and unit
+  covered at the model level, but no human has clicked them.
 
 ## Next phase
 
-**Milestone C — Two Editors** (Aug 21–27): the Godot graph editor, checked against this
-web frontend. Both open the same file and must preserve semantics. `write_registry` is
-what Godot should build its palette from.
+Per KNOBCon_2026.md, **Aug 28–Sep 3 is the hardware escape** — one ESP32-S3 board, board
+profile, codec/I2S HAL, patch loader, deployment. That is the critical path. Milestone D
+(automation) is on the roadmap but not on the Knobcon path.
+
+The groundwork that matters for embedded is already in place: the golden cases are
+ordinary patches driven by a shared manifest, so an ESP32 runner compares against exactly
+the vectors native and WebAssembly already agree on.
 
 ## Invariants being protected
 
 - `dsp-core` depends on nothing but the C++ standard library.
 - JSON never enters `dsp-core`; `patch-io` translates at the edge.
 - No allocation, locks, or I/O in steady-state `process()`.
-- No DSP in JavaScript. The browser is a host, not a second implementation.
+- No DSP in JavaScript and none in GDScript. Both editors are hosts.
+- Neither editor keeps its own copy of the node vocabulary, the search ranking, or the
+  validator. There is nothing for them to drift from.

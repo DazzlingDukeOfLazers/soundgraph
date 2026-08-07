@@ -4,6 +4,15 @@ Open problems, ordered by how much they threaten the Knobcon demo.
 
 ## Open
 
+- **Neither editor has been looked at.** Both are verified headlessly — 30 checks on the
+  Godot editor, functional element-by-element checks on the web page — but nobody has
+  opened either one and seen it render, dragged a wire, or heard it through a real device.
+  Do that before showing either to anyone.
+- **A Godot project must be imported before its extension registers.** `--headless --quit`
+  does not scan the filesystem, so `SoundGraphEngine` appears missing and the editor shows
+  its "build the extension first" message even when the DLL is present. Run
+  `godot --headless --path editor-godot --import` once. Noted here because the symptom
+  points at the wrong cause.
 - **The web page has never been looked at.** Every element was verified functionally, but
   the browser pane used during development did not composite frames, so nobody has seen
   the layout render. Open `editor-web/` and check it before showing it to anyone.

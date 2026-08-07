@@ -15,9 +15,14 @@ editor-web/soundgraph.wasm
 .DS_Store
 Thumbs.db
 
-# godot (later)
+# godot
 editor-godot/.godot/
 editor-godot/.import/
+# Build output: the extension binary and the example patches mirrored in from examples/.
+editor-godot/bin/
+editor-godot/examples/
+runtime-godot/build/
+runtime-godot/third_party/godot-cpp/
 
 # web (later)
 node_modules/

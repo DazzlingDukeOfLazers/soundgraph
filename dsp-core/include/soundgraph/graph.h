@@ -104,6 +104,15 @@ public:
     const float* master_left() const { return master_left_.data(); }
     const float* master_right() const { return master_right_.data(); }
 
+    // The most recent block a given output port produced — kBlockSize samples, or null if
+    // the node or port does not exist. This is what lets an editor answer "what is
+    // actually on this wire?" by pointing at the real buffer rather than re-deriving the
+    // signal, which would be a second implementation and would eventually disagree.
+    //
+    // Read between blocks, from the thread that calls render().
+    const float* port_signal(int node_index, int port_index) const;
+    int port_signal_length() const { return kBlockSize; }
+
 private:
     struct InputBinding {
         // Resolved sources for one input port.

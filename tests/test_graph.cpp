@@ -481,6 +481,40 @@ TEST(multiple_outputs_are_summed_onto_the_master_bus) {
     CHECK_NEAR(output[64], 0.5, 1e-6);
 }
 
+TEST(the_signal_on_any_port_can_be_inspected) {
+    GraphDescription graph = simple_chain();
+    set(graph, "osc", "frequency", 440.0);
+    set(graph, "amp", "gain", 0.25);
+    set(graph, "out", "level", 1.0);
+
+    soundgraph::Graph runtime;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(), diagnostics));
+
+    std::vector<float> output(soundgraph::kBlockSize, 0.0f);
+    runtime.render(output.data(), nullptr, soundgraph::kBlockSize);
+
+    const int oscillator = runtime.node_index("osc");
+    const int amplifier = runtime.node_index("amp");
+    const float* raw = runtime.port_signal(oscillator, 0);
+    const float* scaled = runtime.port_signal(amplifier, 0);
+    CHECK(raw != nullptr);
+    CHECK(scaled != nullptr);
+
+    // The wire after the gain should carry exactly a quarter of what went into it —
+    // an editor showing these two waveforms is showing the real buffers, not a guess.
+    for (int i = 0; i < runtime.port_signal_length(); ++i) {
+        CHECK_NEAR(scaled[i], raw[i] * 0.25f, 1e-6);
+    }
+    // And the master bus is what the output node produced.
+    for (int i = 0; i < runtime.port_signal_length(); ++i) {
+        CHECK_NEAR(output[static_cast<std::size_t>(i)], scaled[i], 1e-6);
+    }
+
+    CHECK(runtime.port_signal(-1, 0) == nullptr);
+    CHECK(runtime.port_signal(oscillator, 9) == nullptr);
+}
+
 TEST(the_registry_finds_nodes_by_intent_not_only_by_name) {
     const NodeRegistry& registry = NodeRegistry::builtin();
 

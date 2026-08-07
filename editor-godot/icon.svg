@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#1c1f25"/>
+  <!-- Three nodes and the wires between them: the graph is the product. -->
+  <path d="M34 64 H56 M72 44 H94 M72 84 H94" stroke="#6ee7b7" stroke-width="4" fill="none"/>
+  <path d="M56 64 C64 64 64 44 72 44 M56 64 C64 64 64 84 72 84" stroke="#6ee7b7" stroke-width="4" fill="none"/>
+  <circle cx="28" cy="64" r="10" fill="#6ee7b7"/>
+  <circle cx="64" cy="64" r="9" fill="#23272f" stroke="#6ee7b7" stroke-width="4"/>
+  <circle cx="100" cy="44" r="8" fill="#8fb8ff"/>
+  <circle cx="100" cy="84" r="8" fill="#8fb8ff"/>
+</svg>

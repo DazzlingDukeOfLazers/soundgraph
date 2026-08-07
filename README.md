@@ -17,7 +17,9 @@ dsp-core/        portable C++ DSP nodes, graph validation, scheduler (no UI, no 
 patch-io/        patch JSON <-> dsp-core graph description
 runtime-native/  native live-audio host
 runtime-wasm/    WebAssembly binding, plus the native/browser comparison runner
+runtime-godot/   GDExtension binding for the Godot editor
 editor-web/      zero-install browser frontend, DSP in an AudioWorklet
+editor-godot/    primary visual editor, DSP in the same core via GDExtension
 tools/           sg-validate, sg-render command line tools
 examples/        example patches and reference audio
 tests/           golden vectors and integration tests
@@ -68,6 +70,28 @@ To check that the browser build still sounds like the native one:
 node runtime-wasm/verify-goldens.mjs
 ```
 
+## In Godot
+
+The visual editor. Same core again, this time through a GDExtension — there is no DSP in
+GDScript, and no second copy of the node vocabulary.
+
+```bash
+cmake -S runtime-godot -B runtime-godot/build -DCMAKE_BUILD_TYPE=Release
+cmake --build runtime-godot/build
+```
+
+Then open `editor-godot/` in Godot 4.7. See [editor-godot/README.md](editor-godot/README.md).
+Opening the project once registers the extension; from a script, run
+`godot --headless --path editor-godot --import` first.
+
+To check that a patch survives a trip through the editor unchanged:
+
+```bash
+node tools/verify-roundtrip.mjs
+```
+
 ## Status
 
-Milestone B — *Browser Runtime* — complete. See [docs/current-phase.md](docs/current-phase.md).
+Milestone C — *Two Editors* — complete. The same graph now runs natively, in a browser,
+and in Godot, and a patch survives a trip through either editor unchanged. See
+[docs/current-phase.md](docs/current-phase.md).

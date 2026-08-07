@@ -983,6 +983,17 @@ const NodeTypeDescriptor* Graph::node_type(int index) const {
     return nodes_[static_cast<std::size_t>(index)].type;
 }
 
+const float* Graph::port_signal(int index, int port) const {
+    if (index < 0 || index >= static_cast<int>(nodes_.size())) {
+        return nullptr;
+    }
+    const NodeSlot& slot = nodes_[static_cast<std::size_t>(index)];
+    if (port < 0 || port >= static_cast<int>(slot.output_buffers.size())) {
+        return nullptr;
+    }
+    return buffer(slot.output_buffers[static_cast<std::size_t>(port)]);
+}
+
 ResourceCost Graph::estimated_cost() const {
     ResourceCost total = cost_;
     // Buffers are part of the honest answer to "does this fit on that board?".
