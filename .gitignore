@@ -27,3 +27,8 @@ runtime-godot/third_party/godot-cpp/
 # web (later)
 node_modules/
 editor-web/dist/
+
+# ESP-IDF build output; sdkconfig.defaults is the source
+embedded/esp32-s3/sdkconfig
+embedded/**/dependencies.lock
+embedded/**/managed_components/
