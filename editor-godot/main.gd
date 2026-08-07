@@ -142,6 +142,15 @@ func _build_ui() -> void:
 	add_child(file_dialog)
 
 
+# Mouse-operated controls must not hold keyboard focus. The computer keyboard is the
+# piano: a slider that keeps focus after a drag silently eats the next note the user
+# plays, which reads as "the synth stopped working". Text fields (search, dialogs) keep
+# focus because typing into them is the point.
+func _defocus(control: Control) -> Control:
+	control.focus_mode = Control.FOCUS_NONE
+	return control
+
+
 func _build_toolbar() -> Control:
 	var bar := HBoxContainer.new()
 	bar.custom_minimum_size.y = 44
@@ -157,13 +166,13 @@ func _build_toolbar() -> Control:
 		examples.add_item(name)
 	examples.item_selected.connect(func(index: int) -> void:
 		_load_example(examples.get_item_text(index)))
-	bar.add_child(examples)
+	bar.add_child(_defocus(examples))
 
 	var add_button := Button.new()
 	add_button.text = "Add node…"
 	add_button.tooltip_text = "Search by what you want, not only by name (Ctrl+Space)"
 	add_button.pressed.connect(_open_search)
-	bar.add_child(add_button)
+	bar.add_child(_defocus(add_button))
 
 	var open_button := Button.new()
 	open_button.text = "Open…"
@@ -171,7 +180,7 @@ func _build_toolbar() -> Control:
 		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 		file_dialog.title = "Open patch"
 		file_dialog.popup_centered_ratio(0.6))
-	bar.add_child(open_button)
+	bar.add_child(_defocus(open_button))
 
 	var save_button := Button.new()
 	save_button.text = "Save as…"
@@ -180,14 +189,14 @@ func _build_toolbar() -> Control:
 		file_dialog.title = "Save patch"
 		file_dialog.current_file = "patch.json"
 		file_dialog.popup_centered_ratio(0.6))
-	bar.add_child(save_button)
+	bar.add_child(_defocus(save_button))
 
 	var panic := Button.new()
 	panic.text = "All notes off"
 	panic.pressed.connect(func() -> void:
 		engine.all_notes_off()
 		held_notes.clear())
-	bar.add_child(panic)
+	bar.add_child(_defocus(panic))
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -422,7 +431,7 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 		for row in extra:
 			row.visible = pressed
 		toggle.text = "fewer" if pressed else "%d more" % extra.size())
-	widget.add_child(toggle)
+	widget.add_child(_defocus(toggle))
 
 
 func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
@@ -446,7 +455,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		options.item_selected.connect(func(index: int) -> void:
 			_set_parameter(node_id, name, float(index)))
-		row.add_child(options)
+		row.add_child(_defocus(options))
 		return row
 
 	var slider := HSlider.new()
@@ -468,7 +477,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		readout.text = _format_value(value)
 		_set_parameter(node_id, name, value))
 
-	row.add_child(slider)
+	row.add_child(_defocus(slider))
 	row.add_child(readout)
 	return row
 

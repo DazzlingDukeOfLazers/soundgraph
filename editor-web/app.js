@@ -174,6 +174,9 @@ function buildControls(patch) {
             readout.textContent = format(value);
             engine.setParameter(node, parameter, value);
         });
+        // Release focus when the drag ends, so arrow keys go back to being arrow keys
+        // instead of nudging the last-touched knob.
+        slider.addEventListener('pointerup', () => slider.blur());
 
         wrapper.append(label, slider, target);
         ui.controls.append(wrapper);
@@ -317,7 +320,13 @@ ui.keyboard.addEventListener('pointerleave', () => {
 });
 
 window.addEventListener('keydown', (event) => {
-    if (event.repeat || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) {
+    if (event.repeat || event.target instanceof HTMLTextAreaElement) {
+        return;
+    }
+    // Text fields keep their keys — but a slider is not a text field. Blocking on any
+    // focused input meant that after adjusting a knob, the next note played on the
+    // keyboard was silently eaten.
+    if (event.target instanceof HTMLInputElement && event.target.type !== 'range') {
         return;
     }
     if (event.key === 'z') { octave = Math.max(0, octave - 1); buildKeyboard(); return; }
@@ -408,7 +417,17 @@ ui.open.addEventListener('change', async (event) => {
     event.target.value = '';
 });
 
-ui.examples.addEventListener('change', () => loadExample(ui.examples.value));
+ui.examples.addEventListener('change', () => {
+    loadExample(ui.examples.value);
+    // A focused <select> turns letter keys into type-ahead option changes, which would
+    // swap the patch mid-performance.
+    ui.examples.blur();
+});
+
+// Buttons hold focus after a click too, where Enter would re-trigger them.
+for (const button of [ui.apply, ui.save, ui.start]) {
+    button.addEventListener('click', () => button.blur());
+}
 
 let validateTimer = 0;
 ui.patch.addEventListener('input', () => {
