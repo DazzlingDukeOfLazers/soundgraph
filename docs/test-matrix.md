@@ -7,6 +7,7 @@
 | Windows x64   | yes    | yes       | yes            | yes        | Milestone A done |
 | WASM (Chrome) | yes    | via core  | yes            | yes        | Milestone B done |
 | Godot 4.7 win | yes    | 30 checks | via round trip | yes        | Milestone C done |
+| ESP32-S3      | yes    | via core  | yes            | yes (Waveshare audio board) | Milestone F done |
 | macOS arm64   | —      | —         | —              | —          | not yet exercised |
 | Linux x64     | —      | —         | —              | —          | not yet exercised |
 | Safari        | —      | —         | —              | —          | not yet exercised |
@@ -21,7 +22,7 @@ Golden comparisons are tolerance based, never bit-exact.
 |-----------------------|----------------------------|----------|
 | same target, rebuild  | 0.0 (bit exact expected)   | 0.0      |
 | native vs WASM        | 1e-5                       | 2.09e-7 worst case |
-| native vs ESP32-S3    | 1e-4                       | not yet measured |
+| native vs ESP32-S3    | 1e-4                       | 1.90e-5 worst case (delay-feedback); noise and lfo bit-exact |
 
 Rationale: ESP32-S3 has no FPU-identical trig; oscillator phase accumulation and filter
 coefficients will diverge in the last few mantissa bits. Any divergence larger than this

@@ -1,20 +1,32 @@
 # Current Phase
 
-**Milestone F — Hardware Escape (Knobcon critical path)**
+**Milestone F — Hardware Escape (Knobcon critical path)** — complete.
 Knobcon week 4 (Aug 28–Sep 3, 2026). Branch `milestone-f-esp32`.
 
-## Goal
+## Exit condition: met
 
-One ESP32-S3 board: board profile, I2S HAL, patch loader, runtime, deployment, physical
-audio. Exit: the same first-synth graph makes sound on real S3 hardware, and the golden
-cases rendered on device match the native vectors within 1e-4.
+The Waveshare ESP32-S3-AUDIO-Board plays `first-synth.json` through its speaker from
+power-on, patches deploy over serial into NVS and survive power cycles, and all ten
+golden cases rendered on device match the native vectors:
 
-Milestone D (automation) is a roadmap item but not on the Knobcon path; it waits.
+```text
+python tools/esp32/sg-serial.py --port COM3 verify-goldens
+  worst case  delay-feedback  1.90e-5   (tolerance 1e-4)
+  bit-exact   noise, lfo
+```
+
+One graph model now behaves identically (within declared tolerances) under four
+compilers on four architectures: MSVC/x64, Clang/WASM, GCC/Godot, Xtensa/ESP32-S3.
 
 ## Board
 
-`esp32-s3-devkitc-pcm5102` — a generic DevKitC wired to a PCM5102 I2S DAC (Daniel's
-hardware, chosen 2026-08-28). Wiring table in embedded/README.md.
+Planned: `esp32-s3-devkitc-pcm5102`. Actually shipped first: `esp32-s3-audio-board`
+(Waveshare smart-speaker kit, Daniel's hardware) — which exercised the codec path, an
+amp-enable behind an I/O expander, and proved the board-as-manifest promise: the swap
+cost one board.json and one codec-init module, no firmware fork. The DevKitC+PCM5102
+profile remains and is untested on hardware.
+
+Milestone D (automation) is a roadmap item but not on the Knobcon path; it waits.
 
 ## Done
 
@@ -29,15 +41,14 @@ hardware, chosen 2026-08-28). Wiring table in embedded/README.md.
 - [x] `tools/esp32/sg-serial.py` — deploy, play, and `verify-goldens` driving the shared
       cases.json manifest against the native vectors
 
-## In progress / blocked
+## Verified on hardware
 
-- [x] **Firmware compiles.** `idf.py build` is clean — 1111/1111 files, no warnings in
-      our code, 393 KB binary with 74% of the app partition free. One configure-time
-      fix along the way (the include dir must exist before `idf_component_register`).
-- [ ] **Nothing has touched hardware.** The only remaining Milestone F work needs the
-      DevKit + PCM5102 wired and plugged in (wiring table in embedded/README.md):
-      `idf.py -p <port> flash monitor`, hear the arpeggio, then
-      `python tools/esp32/sg-serial.py --port <port> verify-goldens`.
+- Boot-to-sound: the arpeggio (8-note pattern, runtime-settable, `bpm`/`vol` commands)
+  plays from power-on with no host attached.
+- Serial console bidirectional over the board's USB port; patch deploy to NVS works.
+- All ten golden cases within 1e-4 of the native vectors (worst 1.9e-5).
+- Host tooling is self-contained: the repo's `.venv` (pyserial + esptool) can flash the
+  firmware and drive the board with no ESP-IDF environment.
 
 ## Next phase
 
