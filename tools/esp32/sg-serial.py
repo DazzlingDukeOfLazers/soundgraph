@@ -35,9 +35,19 @@ EMBEDDED_TOLERANCE = 1.0e-4
 
 def open_port(port: str, baud: int) -> "serial.Serial":
     connection = serial.Serial(port, baud, timeout=2)
-    # Opening the port usually resets the board (DTR/RTS toggle). Give it a moment and
-    # swallow the boot chatter so command responses start clean.
-    time.sleep(1.5)
+    # Opening the port resets the board (DTR/RTS toggle), so a burst of boot logging is
+    # on its way. Drain until the line has been quiet for a moment rather than sleeping a
+    # fixed time — the boot log's tail interleaving with the first command's response was
+    # a real failure mode, not a theoretical one.
+    deadline = time.monotonic() + 6.0
+    quiet_since = time.monotonic()
+    connection.timeout = 0.1
+    while time.monotonic() < deadline:
+        if connection.read(4096):
+            quiet_since = time.monotonic()
+        elif time.monotonic() - quiet_since > 0.5:
+            break
+    connection.timeout = 2
     connection.reset_input_buffer()
     return connection
 
@@ -136,7 +146,13 @@ def render_case(connection: "serial.Serial", case: dict) -> list:
         if line.startswith("RENDER-END"):
             break
         if line.startswith("D "):
-            block = base64.b64decode(line[2:])
+            try:
+                _, declared, payload = line.split(" ", 2)
+                block = base64.b64decode(payload, validate=True)
+                if len(block) != int(declared) or len(block) % 4 != 0:
+                    raise ValueError(f"declared {declared} bytes, decoded {len(block)}")
+            except (ValueError, IndexError) as error:
+                raise RuntimeError(f"corrupt data line at {len(samples)} samples: {error}")
             samples.extend(struct.unpack(f"<{len(block) // 4}f", block))
         elif line.startswith("ERR"):
             raise RuntimeError(line)

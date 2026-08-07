@@ -42,6 +42,12 @@
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "sdkconfig.h"
+
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
+#endif
 
 #include "board_config.h"
 #include "codec_init.h"
@@ -420,14 +426,26 @@ void command_render(const std::string& name, int frames, const std::vector<Rende
         }
         graph->render(left, nullptr, count);
 
-        // Each line is standalone base64 of this block's bytes; the host decodes lines
-        // independently and concatenates. Keeps the device free of any big buffer.
-        base64_line(reinterpret_cast<const unsigned char*>(left),
-                    static_cast<std::size_t>(count) * sizeof(float), encoded);
-        std::printf("D %s\n", encoded);
+        // Each line is standalone base64 of this block's bytes, prefixed with the byte
+        // count so the host can *detect* a corrupted or truncated line rather than
+        // misinterpret it. The host decodes lines independently and concatenates.
+        const std::size_t bytes = static_cast<std::size_t>(count) * sizeof(float);
+        base64_line(reinterpret_cast<const unsigned char*>(left), bytes, encoded);
+        std::printf("D %u %s\n", static_cast<unsigned>(bytes), encoded);
+        std::fflush(stdout);
         position += count;
+
+        // Yield periodically. A console task that prints flat-out can both starve the
+        // idle task (whose watchdog complaint then deadlocks on the console lock this
+        // task holds) and outrun the USB console's transmit buffer, which drops bytes
+        // mid-line rather than blocking. A short pause every few blocks costs the
+        // transfer little and keeps the stream intact.
+        if ((position / kBlock) % 4 == 0) {
+            vTaskDelay(2);
+        }
     }
     std::printf("RENDER-END\n");
+    std::fflush(stdout);
 }
 
 // ---------------------------------------------------------------------------------
@@ -594,6 +612,19 @@ void console_task(void*) {
 }  // namespace
 
 extern "C" void app_main(void) {
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    // Put the console on the real interrupt-driven driver. The default polling path has
+    // no buffering to speak of and can wedge under sustained output — which is exactly
+    // what the golden-render streaming produces.
+    usb_serial_jtag_driver_config_t console_config = {
+        .tx_buffer_size = 4096,
+        .rx_buffer_size = 1024,
+    };
+    if (usb_serial_jtag_driver_install(&console_config) == ESP_OK) {
+        usb_serial_jtag_vfs_use_driver();
+    }
+#endif
+
     esp_err_t nvs_status = nvs_flash_init();
     if (nvs_status == ESP_ERR_NVS_NO_FREE_PAGES || nvs_status == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         nvs_flash_erase();

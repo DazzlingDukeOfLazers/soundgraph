@@ -8,6 +8,9 @@ editor-web/soundgraph.wasm
 !tests/golden/**/*.wav
 !examples/audio/**/*.wav
 
+# host tooling venv (pyserial + esptool); see embedded/README.md
+.venv/
+
 # editors / os
 .vs/
 .vscode/

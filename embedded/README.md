@@ -61,11 +61,23 @@ load <bytes>                 deploy a patch (stored in NVS, survives power cycle
 unload                       back to the embedded demo
 ```
 
-Or from the host side, with `pip install pyserial`:
+Or from the host side. The repo keeps its own venv for this (gitignored):
 
 ```bash
-python tools/esp32/sg-serial.py --port COM5 deploy examples/patches/first-synth.json
-python tools/esp32/sg-serial.py --port COM5 note 45
+python -m venv .venv
+.venv/Scripts/python -m pip install pyserial esptool
+```
+
+```bash
+.venv/Scripts/python tools/esp32/sg-serial.py --port COM3 deploy examples/patches/first-synth.json
+.venv/Scripts/python tools/esp32/sg-serial.py --port COM3 note 45
+```
+
+The venv's esptool can also flash a built firmware without the IDF environment:
+
+```bash
+cd embedded/esp32-s3/build
+../../../.venv/Scripts/python -m esptool --chip esp32s3 -p COM3 -b 460800 --before default_reset --after hard_reset write_flash @flash_args
 ```
 
 ## Verification
