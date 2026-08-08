@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "laser-shoot-5",
+    "description": "Generated from sfxr parameters by sfxr-ref patch. Do not edit by hand.",
+    "tags": ["sfxr"]
+  },
+  "nodes": [
+    {
+      "id": "pitch",
+      "type": "Constant",
+      "parameters": {
+        "value": 3176.16
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "slide": -41.9775,
+        "acceleration": 0,
+        "limit": 560.918
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SineOscillator"
+    },
+    {
+      "id": "highpass",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "cutoff": 14.1106,
+        "resonance": 0,
+        "mode": 1,
+        "cutoff_sweep": 0
+      }
+    },
+    {
+      "id": "phaser",
+      "type": "Phaser",
+      "parameters": {
+        "offset": 0,
+        "sweep": 0,
+        "depth": 1
+      }
+    },
+    {
+      "id": "trigger",
+      "type": "Constant",
+      "parameters": {
+        "value": 1
+      }
+    },
+    {
+      "id": "envelope",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.097765,
+        "decay": 0.298401,
+        "punch": 0.27681
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.05
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {"node": "pitch", "port": "out"},
+      "to": {"node": "slide", "port": "frequency"}
+    },
+    {
+      "from": {"node": "slide", "port": "frequency"},
+      "to": {"node": "osc", "port": "frequency"}
+    },
+    {
+      "from": {"node": "osc", "port": "out"},
+      "to": {"node": "highpass", "port": "in"}
+    },
+    {
+      "from": {"node": "highpass", "port": "out"},
+      "to": {"node": "phaser", "port": "in"}
+    },
+    {
+      "from": {"node": "trigger", "port": "out"},
+      "to": {"node": "envelope", "port": "gate"}
+    },
+    {
+      "from": {"node": "phaser", "port": "out"},
+      "to": {"node": "amp", "port": "in"}
+    },
+    {
+      "from": {"node": "envelope", "port": "out"},
+      "to": {"node": "amp", "port": "gain"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "left"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "right"}
+    }
+  ]
+}

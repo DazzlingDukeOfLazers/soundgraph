@@ -116,11 +116,61 @@ That is sfxr's real behaviour and the reference reproduces it faithfully. But a 
 a NaN in it cannot discriminate between a good port and a bad one, so it is not a test
 case. `sfxr-ref` rejects any case with a non-finite sample and says why.
 
-## What is not here yet
+## Where the port stands
 
-**The port.** The vocabulary can now express sfxr's signal path, but nothing yet maps a
-parameter set onto a patch, so there is no candidate to compare against and no green test
-claiming otherwise.
+**24 of 41 cases match within the current thresholds.**
+
+```bash
+node tools/sfxr-report.mjs        # the table
+ctest --test-dir build -R sfxr    # comparator, reproducibility, and the ratchet
+```
+
+| generator | passing | median spectral distance |
+|---|---|---|
+| pickup-coin | 6/6 | 2.7 dB |
+| jump | 6/6 | 3.3 dB |
+| blip-select | 5/5 | 2.6 dB |
+| laser-shoot | 5/6 | 4.4 dB |
+| powerup | 2/6 | 7.2 dB |
+| hit-hurt | 0/6 | 20.2 dB |
+| explosion | 0/6 | 22.6 dB |
+
+By waveform, which is where the remaining failures actually live: square 14/18, saw 8/14,
+sine 2/2, **noise 0/7**.
+
+The ctest entry is a ratchet, not a target — it fails if fewer than 24 pass. Raise it when
+the port improves; that is what it is for.
+
+### What is still wrong, and why
+
+**Noise, 0 of 7.** sfxr's noise is not noise. It refills a 32-entry buffer with random
+values once per cycle and reads it back indexed by phase — a random *wavetable*, played at
+the oscillator's pitch, with a spectrum shaped by that period. The `Noise` node is white
+and has no pitch at all, so these are not the same signal and no amount of parameter
+mapping will make them one. Fixing it means a pitched-noise mode on `Noise`, or a
+wavetable node.
+
+**Saw, 8 of 14.** The remaining failures cluster just over the threshold at 6.8–7.5 dB.
+`SawOscillator` is band-limited by PolyBLEP; sfxr's is naive and aliases freely, and those
+alias images are real energy in the spectrum being compared. Ours is the better oscillator
+and that is exactly why it does not match.
+
+**Two outliers**, `hit-hurt-5` and `explosion-5`, are wrong on gain by 5.8 dB and 2.5 dB
+and have not been explained.
+
+### Divergences that are deliberate
+
+- sfxr **stops the sound** when a downward slide reaches `p_freq_limit`. Nothing in the
+  graph ends a patch, so the rendered length comes from the reference.
+- sfxr's highpass is one-pole; `StateVariableFilter` is two-pole. Twice the slope.
+- sfxr's zero-length envelope stage emits NaN; `AhdEnvelope` does not.
+
+## The mapping
+
+`tools/sfxr-ref/to_patch.cpp` turns a parameter set into a patch, and `sfxr-ref corpus`
+writes one beside every reference vector. Every conversion has its derivation written next
+to it, because a bare constant like `3528` is unreviewable and getting one wrong produces a
+sound that is merely plausible — the hardest kind of wrong to notice.
 
 | sfxr | SoundGraph |
 |---|---|
@@ -146,5 +196,20 @@ is a per-sample multiplier on a period, which is a rate in semitones per second 
 algebra is done. That arithmetic belongs in the mapper, not in the nodes — the nodes are
 in seconds and hertz because everything else in the vocabulary is.
 
-When the mapper lands, the port is a `.json` patch per case and the rig runs `sg-render`
-against it. The comparator already accepts any two WAVs; nothing here needs to change.
+Three of these conversions were wrong on the first run, and the rig is what found them —
+each had produced a perfectly plausible sound. None is guessable from reading sfxr
+casually:
+
+- **sfxr's phaser is never off.** The buffer is written and read unconditionally, so at
+  zero offset the tap reads the sample just written and the signal is simply doubled.
+  Every sfxr sound is 6 dB louder than its oscillator. This showed up as exactly −6 dB on
+  every case that did *not* have a phaser, and 0 dB on every case that did.
+- **sfxr's lowpass is a damped oscillator, not a one-pole.** `fltw` is a spring constant,
+  so the cutoff is `sqrt(fltw)`. Reading it the obvious way put the cutoff out by three
+  octaves and the resonance out with it.
+- **The frequency floor is unconditional.** `p_freq_limit > 0` controls whether reaching
+  the floor *ends* the sound, not whether there is one. Treating zero as "no limit" let
+  steep downward slides run the pitch to DC.
+
+Fixing the first two took the port from 0 to 7 of 41; the third and a correction to the
+comparator took it to 24.

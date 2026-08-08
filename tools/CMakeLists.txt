@@ -8,6 +8,7 @@ target_link_libraries(sg-render PRIVATE soundgraph::patch_io soundgraph::wav)
 # nothing else: dsp-core must not acquire a dependency on the thing it is measured against.
 add_executable(sfxr-ref
     sfxr-ref/main.cpp
+    sfxr-ref/to_patch.cpp
     ${CMAKE_SOURCE_DIR}/tests/sfxr/reference/sfxr_reference.cpp
 )
 target_include_directories(sfxr-ref PRIVATE ${CMAKE_SOURCE_DIR}/tests/sfxr/reference)

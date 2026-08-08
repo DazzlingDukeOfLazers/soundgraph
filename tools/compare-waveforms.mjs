@@ -37,6 +37,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 // ---------------------------------------------------------------------------------
 // WAV
@@ -186,6 +187,10 @@ function rms(samples) {
 
 const db = (x) => 20 * Math.log10(x + 1e-9);
 
+// Bins quieter than this fraction of the loudest bin in their frame are treated as equal
+// to it. -60 dB: comfortably below anything audible against the rest of the frame.
+const SPECTRAL_FLOOR = 1e-3;
+
 // ---------------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------------
@@ -233,8 +238,22 @@ export function compare(referencePath, candidatePath) {
     if (refSpectra[f].every((v) => v < 1e-7) && canSpectra[f].every((v) => v < 1e-7)) {
       continue;
     }
+
+    // Both spectra are floored relative to the loudest bin in the frame before comparing.
+    //
+    // Without this the metric is dominated by bins nobody can hear. A pure sine has an
+    // almost empty spectrum, and sfxr's — computed from an integer period counter — has
+    // quantisation noise in those empty bins where a band-limited oscillator has none.
+    // Comparing 1e-9 against 1e-3 is a 120 dB difference in a bin 100 dB below the tone,
+    // which is why the two *sine* cases scored worse than anything else in the corpus
+    // despite being the easiest waveform to reproduce. The floor is set well below
+    // anything audible, so a real difference in a real partial still counts in full.
+    const floorRef = Math.max(...refSpectra[f]) * SPECTRAL_FLOOR;
+    const floorCan = Math.max(...canSpectra[f]) * SPECTRAL_FLOOR;
     for (let bin = 0; bin < refSpectra[f].length; bin++) {
-      spectralSum += Math.abs(db(refSpectra[f][bin]) - db(canSpectra[f][bin]));
+      const a = Math.max(refSpectra[f][bin], floorRef);
+      const b = Math.max(canSpectra[f][bin], floorCan);
+      spectralSum += Math.abs(db(a) - db(b));
       spectralCount++;
     }
   }
@@ -386,8 +405,14 @@ function compareSignals(reference, candidate) {
 
 // ---------------------------------------------------------------------------------
 
-const args = process.argv.slice(2);
-if (args[0] === '--self-test') {
+// Only when run directly. sfxr-report.mjs imports compare() and verdict() from here, and
+// without this guard that import would run the CLI and exit before the report started.
+const runDirectly = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
+
+const args = runDirectly ? process.argv.slice(2) : [];
+if (!runDirectly) {
+  // imported as a library
+} else if (args[0] === '--self-test') {
   process.exit(selfTest(args[1] ?? 'tests/sfxr'));
 } else if (args.length >= 2) {
   const metrics = compare(args[0], args[1]);

@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "jump-2",
+    "description": "Generated from sfxr parameters by sfxr-ref patch. Do not edit by hand.",
+    "tags": ["sfxr"]
+  },
+  "nodes": [
+    {
+      "id": "pitch",
+      "type": "Constant",
+      "parameters": {
+        "value": 587.966
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "slide": 54.565,
+        "acceleration": 0,
+        "limit": 3.528
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SquareOscillator",
+      "parameters": {
+        "pulse_width": 0.30071,
+        "pulse_width_sweep": -0
+      }
+    },
+    {
+      "id": "lowpass",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "cutoff": 7905.3,
+        "resonance": 0.482519,
+        "mode": 0,
+        "cutoff_sweep": 0
+      }
+    },
+    {
+      "id": "highpass",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "cutoff": 132.992,
+        "resonance": 0,
+        "mode": 1,
+        "cutoff_sweep": 0
+      }
+    },
+    {
+      "id": "phaser",
+      "type": "Phaser",
+      "parameters": {
+        "offset": 0,
+        "sweep": 0,
+        "depth": 1
+      }
+    },
+    {
+      "id": "trigger",
+      "type": "Constant",
+      "parameters": {
+        "value": 1
+      }
+    },
+    {
+      "id": "envelope",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.0681411,
+        "decay": 0.0800258,
+        "punch": 0
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.025
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {"node": "pitch", "port": "out"},
+      "to": {"node": "slide", "port": "frequency"}
+    },
+    {
+      "from": {"node": "slide", "port": "frequency"},
+      "to": {"node": "osc", "port": "frequency"}
+    },
+    {
+      "from": {"node": "osc", "port": "out"},
+      "to": {"node": "lowpass", "port": "in"}
+    },
+    {
+      "from": {"node": "lowpass", "port": "out"},
+      "to": {"node": "highpass", "port": "in"}
+    },
+    {
+      "from": {"node": "highpass", "port": "out"},
+      "to": {"node": "phaser", "port": "in"}
+    },
+    {
+      "from": {"node": "trigger", "port": "out"},
+      "to": {"node": "envelope", "port": "gate"}
+    },
+    {
+      "from": {"node": "phaser", "port": "out"},
+      "to": {"node": "amp", "port": "in"}
+    },
+    {
+      "from": {"node": "envelope", "port": "out"},
+      "to": {"node": "amp", "port": "gain"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "left"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "right"}
+    }
+  ]
+}

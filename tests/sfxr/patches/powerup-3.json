@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "powerup-3",
+    "description": "Generated from sfxr parameters by sfxr-ref patch. Do not edit by hand.",
+    "tags": ["sfxr"]
+  },
+  "nodes": [
+    {
+      "id": "pitch",
+      "type": "Constant",
+      "parameters": {
+        "value": 563.136
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "slide": 14.3185,
+        "acceleration": 0,
+        "limit": 3.528
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SawOscillator"
+    },
+    {
+      "id": "vibrato",
+      "type": "LFO",
+      "parameters": {
+        "rate": 15.4082,
+        "shape": 0,
+        "amount": 0.474142,
+        "offset": 0
+      }
+    },
+    {
+      "id": "phaser",
+      "type": "Phaser",
+      "parameters": {
+        "offset": 0,
+        "sweep": 0,
+        "depth": 1
+      }
+    },
+    {
+      "id": "trigger",
+      "type": "Constant",
+      "parameters": {
+        "value": 1
+      }
+    },
+    {
+      "id": "envelope",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.149631,
+        "decay": 0.0946636,
+        "punch": 0
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.05
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {"node": "pitch", "port": "out"},
+      "to": {"node": "slide", "port": "frequency"}
+    },
+    {
+      "from": {"node": "slide", "port": "frequency"},
+      "to": {"node": "osc", "port": "frequency"}
+    },
+    {
+      "from": {"node": "vibrato", "port": "out"},
+      "to": {"node": "osc", "port": "fm"}
+    },
+    {
+      "from": {"node": "osc", "port": "out"},
+      "to": {"node": "phaser", "port": "in"}
+    },
+    {
+      "from": {"node": "trigger", "port": "out"},
+      "to": {"node": "envelope", "port": "gate"}
+    },
+    {
+      "from": {"node": "phaser", "port": "out"},
+      "to": {"node": "amp", "port": "in"}
+    },
+    {
+      "from": {"node": "envelope", "port": "out"},
+      "to": {"node": "amp", "port": "gain"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "left"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "right"}
+    }
+  ]
+}

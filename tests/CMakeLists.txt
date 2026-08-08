@@ -38,3 +38,14 @@ add_test(NAME sfxr_corpus_is_reproducible
         -DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/sfxr
         -DSCRATCH=${CMAKE_CURRENT_BINARY_DIR}/sfxr-regenerated
         -P ${CMAKE_CURRENT_SOURCE_DIR}/sfxr/reproducible.cmake)
+
+# The port itself, measured against sfxr. A ratchet, not a target: the honest number today
+# is not 41, and what this catches is that number going *down* while something else is
+# being changed. Raise --min-pass whenever the port improves.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME sfxr_port_does_not_regress
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/sfxr-report.mjs
+                --dir ${CMAKE_CURRENT_SOURCE_DIR}/sfxr
+                --render $<TARGET_FILE:sg-render>
+                --min-pass 24)
+endif()
