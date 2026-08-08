@@ -34,10 +34,14 @@ const SWEEPS := 8
 
 ## request:
 ##   nodes         Array of node ids to place
-##   edges         Array of [from_id, to_id]; endpoints outside `nodes` are anchors
+##   edges         Array of [from_id, to_id] or [from_id, to_id, weight]; endpoints
+##                 outside `nodes` are anchors. Weight decides how hard an edge pulls its
+##                 ends into line — the audio path is weighted far above modulation, so
+##                 the signal chain comes out as one straight spine with the control
+##                 sources hanging beneath it, which is how a patch is read.
 ##   sizes         id -> Vector2, for every node and anchor
 ##   anchors       id -> Vector2, fixed positions of nodes that must not move
-##   grid, column_pitch, column_gutter, row_gutter
+##   grid, column_pitch, column_gutter, row_step
 ##
 ## Returns id -> Vector2 for every id in `nodes`.
 static func arrange(request: Dictionary) -> Dictionary:
@@ -50,11 +54,15 @@ static func arrange(request: Dictionary) -> Dictionary:
 	var grid: float = request.get("grid", 40.0)
 	var column_pitch: float = request.get("column_pitch", 400.0)
 	var column_gutter: float = request.get("column_gutter", 80.0)
-	var row_gutter: float = request.get("row_gutter", 24.0)
+	var row_step: float = request.get("row_step", 200.0)
 
 	var movable := {}
 	for id in ids:
 		movable[id] = true
+
+	var weights := {}
+	for edge in request["edges"]:
+		weights["%s>%s" % [edge[0], edge[1]]] = float(edge[2]) if edge.size() > 2 else 1.0
 
 	# Only edges between movable nodes shape the hierarchy; edges to anchors pull on the
 	# coordinates later without dictating the columns.
@@ -62,14 +70,20 @@ static func arrange(request: Dictionary) -> Dictionary:
 	var external := []
 	for edge in request["edges"]:
 		if movable.has(edge[0]) and movable.has(edge[1]):
-			edges.append(edge)
+			edges.append([edge[0], edge[1]])
 		elif movable.has(edge[0]) or movable.has(edge[1]):
-			external.append(edge)
+			external.append([edge[0], edge[1]])
 
 	edges = _remove_cycles(ids, edges)
 	var depths := _assign_layers(ids, edges)
 
-	var built := _build_layers(ids, edges, depths)
+	# Weights ride along into the layering so dummy chains inherit the pull of the edge
+	# they stand in for.
+	var weighted := []
+	for edge in edges:
+		weighted.append([edge[0], edge[1], weights.get("%s>%s" % [edge[0], edge[1]], 1.0)])
+
+	var built := _build_layers(ids, weighted, depths)
 	var layers: Array = built["layers"]
 	var chain_edges: Array = built["edges"]
 	var dummies: Dictionary = built["dummies"]
@@ -78,9 +92,9 @@ static func arrange(request: Dictionary) -> Dictionary:
 
 	return _assign_coordinates({
 		"layers": layers, "edges": chain_edges, "dummies": dummies,
-		"sizes": sizes, "anchors": anchors, "external": external,
+		"sizes": sizes, "anchors": anchors, "external": external, "weights": weights,
 		"grid": grid, "column_pitch": column_pitch,
-		"column_gutter": column_gutter, "row_gutter": row_gutter,
+		"column_gutter": column_gutter, "row_step": row_step,
 	})
 
 
@@ -190,10 +204,11 @@ static func _build_layers(ids: Array, edges: Array, depths: Dictionary) -> Dicti
 	var counter := 0
 
 	for edge in edges:
+		var span_weight = edge[2] if edge.size() > 2 else 1.0
 		var from_depth: int = depths[edge[0]]
 		var to_depth: int = depths[edge[1]]
 		if to_depth - from_depth <= 1:
-			chain_edges.append(edge)
+			chain_edges.append([edge[0], edge[1], span_weight])
 			continue
 		var previous = edge[0]
 		for depth in range(from_depth + 1, to_depth):
@@ -203,9 +218,9 @@ static func _build_layers(ids: Array, edges: Array, depths: Dictionary) -> Dicti
 			counter += 1
 			dummies[dummy] = true
 			layers[depth].append(dummy)
-			chain_edges.append([previous, dummy])
+			chain_edges.append([previous, dummy, span_weight])
 			previous = dummy
-		chain_edges.append([previous, edge[1]])
+		chain_edges.append([previous, edge[1], span_weight])
 
 	return {"layers": layers, "edges": chain_edges, "dummies": dummies}
 
@@ -217,6 +232,7 @@ static func _build_layers(ids: Array, edges: Array, depths: Dictionary) -> Dicti
 static func _adjacency(edges: Array) -> Dictionary:
 	var down := {}
 	var up := {}
+	var weight := {}
 	for edge in edges:
 		if not down.has(edge[0]):
 			down[edge[0]] = []
@@ -224,7 +240,8 @@ static func _adjacency(edges: Array) -> Dictionary:
 		if not up.has(edge[1]):
 			up[edge[1]] = []
 		up[edge[1]].append(edge[0])
-	return {"down": down, "up": up}
+		weight["%s>%s" % [edge[0], edge[1]]] = float(edge[2]) if edge.size() > 2 else 1.0
+	return {"down": down, "up": up, "weight": weight}
 
 
 static func _positions(layer: Array) -> Dictionary:
@@ -397,7 +414,10 @@ static func _assign_coordinates(request: Dictionary) -> Dictionary:
 	var sizes: Dictionary = request["sizes"]
 	var anchors: Dictionary = request["anchors"]
 	var grid: float = request["grid"]
-	var row_gutter: float = request["row_gutter"]
+	# Rows land on a coarse step rather than on every grid line. A patch aligned by hand
+	# uses the major lines and one pitch for the whole stack; medians alone would scatter
+	# rows onto arbitrary multiples of 40 and lose that.
+	var row_step: float = request["row_step"]
 
 	var adjacency := _adjacency(request["edges"])
 	# Edges to nodes outside the selection pull on coordinates without shaping the layers.
@@ -427,13 +447,20 @@ static func _assign_coordinates(request: Dictionary) -> Dictionary:
 		x += maxf(float(request["column_pitch"]),
 			ceilf((widest + float(request["column_gutter"])) / grid) * grid)
 
+	# Vertical separation is a whole number of row steps, so a stack of nodes lands on
+	# consecutive major lines instead of wherever their heights happen to end.
+	var step_for := func(node) -> float:
+		if dummies.has(node):
+			return row_step
+		return ceilf(float(sizes.get(node, Vector2(240, 140)).y) / row_step) * row_step
+
 	# ---- y: start stacked, then pull toward neighbours ------------------------------
 	var y := {}
 	for layer in layers:
 		var cursor := 0.0
 		for node in layer:
 			y[node] = cursor
-			cursor += height.call(node) + row_gutter
+			cursor += step_for.call(node)
 
 	# Alternating sweeps: downward passes align a node under what feeds it, upward passes
 	# under what it feeds. Several rounds let alignment propagate along a whole chain.
@@ -452,16 +479,37 @@ static func _assign_coordinates(request: Dictionary) -> Dictionary:
 			var offset := 0.0
 			for i in layer.size():
 				var node = layer[i]
-				var centres := []
+
+				# The pull toward each neighbour is weighted by the edge. Audio edges
+				# weigh far more than control ones, so the signal chain straightens into
+				# a spine and the modulation sources give way around it — which is the
+				# shape a person draws by hand.
+				var pulls := []
+				var strongest := 0.0
 				for neighbour in neighbours.get(node, []):
-					if y.has(neighbour):
-						centres.append(float(y[neighbour]) + height.call(neighbour) * 0.5)
+					if not y.has(neighbour):
+						continue
+					var key := "%s>%s" % [neighbour, node] if round % 2 == 0 \
+						else "%s>%s" % [node, neighbour]
+					var pull: float = adjacency["weight"].get(key, 1.0)
+					pulls.append([float(y[neighbour]) + height.call(neighbour) * 0.5, pull])
+					strongest = maxf(strongest, pull)
 				for neighbour in external_up.get(node, []):
 					var anchor: Vector2 = anchors[neighbour]
-					centres.append(anchor.y + float(sizes.get(neighbour, Vector2(240, 140)).y) * 0.5)
+					pulls.append([anchor.y
+						+ float(sizes.get(neighbour, Vector2(240, 140)).y) * 0.5, 1.0])
 
 				var want: float = float(y[node])
-				if not centres.is_empty():
+				if not pulls.is_empty():
+					# Only the strongest class of edge decides the row: averaging an audio
+					# spine against a modulation cable would bend the spine.
+					var centres := []
+					for entry in pulls:
+						if entry[1] >= strongest - 0.001:
+							centres.append(float(entry[0]))
+					if centres.is_empty():
+						for entry in pulls:
+							centres.append(float(entry[0]))
 					centres.sort()
 					var middle := centres.size() / 2
 					var centre: float = centres[middle] if centres.size() % 2 == 1 \
@@ -471,32 +519,126 @@ static func _assign_coordinates(request: Dictionary) -> Dictionary:
 				# PAVA works on a non-decreasing sequence; removing the cumulative minimum
 				# spacing is what converts the separation constraints into that.
 				desired.append(want - offset)
-				# A dummy is a point on a long cable. Weighting the chain heavily is what
-				# keeps that cable straight instead of letting nodes bend it.
-				weights.append(4.0 if dummies.has(node) else 1.0)
-				offset += height.call(node) + row_gutter
+				# A dummy is a point on a long cable, and a node on the audio spine is the
+				# line everything else should bend around. Both resist being moved.
+				weights.append(4.0 if dummies.has(node) else maxf(1.0, strongest))
+				offset += step_for.call(node)
 
 			var fitted := _fit(desired, weights)
 			var cursor := 0.0
 			for i in layer.size():
 				y[layer[i]] = fitted[i] + cursor
-				cursor += height.call(layer[i]) + row_gutter
+				cursor += step_for.call(layer[i])
 
-	# ---- snap, then guarantee separation on the grid --------------------------------
+	# ---- straighten the strongest chains --------------------------------------------
+	#
+	# The sweeps get every node close to its neighbours, but a weighted median is still a
+	# compromise: a spine node sitting above two modulators gets pulled down a little by
+	# both, and once that is snapped to a row it lands on the wrong one. The audio path
+	# is not a compromise — it is the line everything else should arrange itself around —
+	# so the strongest chains are put on a single row outright.
+	var pinned := _pin_strong_chains(layers, request["edges"], y, dummies, row_step)
+
+	# ---- snap to the row step, then guarantee separation ----------------------------
 	var result := {}
 	for layer_index in layers.size():
 		var layer: Array = layers[layer_index]
-		var lowest := INF
-		for node in layer:
-			lowest = minf(lowest, float(y[node]))
+		if layer.is_empty():
+			continue
 
-		var cursor := -INF
+		var rows := []
 		for node in layer:
-			var snapped: float = roundf(float(y[node]) / grid) * grid
-			if cursor > -INF:
-				snapped = maxf(snapped, cursor)
-			if not dummies.has(node):
-				result[node] = Vector2(xs[layer_index], snapped)
-			# Gaps are grid multiples, so enforcing them cannot knock anything off-grid.
-			cursor = snapped + ceilf((height.call(node) + row_gutter) / grid) * grid
+			rows.append(roundf(float(y[node]) / row_step) * row_step)
+
+		# A pinned node holds its row and the rest of the column gives way around it,
+		# rather than the whole column sliding down from whatever sits at the top.
+		var anchor := -1
+		for i in layer.size():
+			if pinned.has(layer[i]):
+				anchor = i
+				break
+		if anchor >= 0:
+			rows[anchor] = float(pinned[layer[anchor]])
+			for i in range(anchor - 1, -1, -1):
+				rows[i] = minf(rows[i], rows[i + 1] - step_for.call(layer[i]))
+			for i in range(anchor + 1, layer.size()):
+				rows[i] = maxf(rows[i], rows[i - 1] + step_for.call(layer[i - 1]))
+		else:
+			for i in range(1, layer.size()):
+				rows[i] = maxf(rows[i], rows[i - 1] + step_for.call(layer[i - 1]))
+
+		for i in layer.size():
+			if not dummies.has(layer[i]):
+				result[layer[i]] = Vector2(xs[layer_index], rows[i])
 	return result
+
+
+## Groups nodes joined by the heaviest edges and puts each group on one row. Returns
+## node -> row for the nodes that were placed this way.
+static func _pin_strong_chains(layers: Array, edges: Array, y: Dictionary,
+		dummies: Dictionary, row_step: float) -> Dictionary:
+	var strongest := 1.0
+	for edge in edges:
+		if edge.size() > 2:
+			strongest = maxf(strongest, float(edge[2]))
+	if strongest <= 1.0:
+		return {}   # nothing is more important than anything else
+
+	# Union-find over the heaviest edges only.
+	var parent := {}
+	var find := func(node):
+		var root = node
+		while parent.get(root, root) != root:
+			root = parent[root]
+		return root
+	for edge in edges:
+		if edge.size() <= 2 or float(edge[2]) < strongest - 0.001:
+			continue
+		parent[edge[0]] = parent.get(edge[0], edge[0])
+		parent[edge[1]] = parent.get(edge[1], edge[1])
+		var a = find.call(edge[0])
+		var b = find.call(edge[1])
+		if a != b:
+			parent[a] = b
+
+	var groups := {}
+	for node in parent:
+		var root = find.call(node)
+		if not groups.has(root):
+			groups[root] = []
+		groups[root].append(node)
+
+	# Which layer each node is in, so a group with two members in one layer is skipped —
+	# they cannot share a row.
+	var layer_of := {}
+	for i in layers.size():
+		for node in layers[i]:
+			layer_of[node] = i
+
+	var pinned := {}
+	for root in groups:
+		var members: Array = groups[root]
+		if members.size() < 2:
+			continue
+		var seen := {}
+		var conflict := false
+		for node in members:
+			var layer: int = layer_of.get(node, -1)
+			if seen.has(layer):
+				conflict = true
+			seen[layer] = true
+		if conflict:
+			continue
+
+		var rows := []
+		for node in members:
+			rows.append(float(y.get(node, 0.0)))
+		rows.sort()
+		var middle := rows.size() / 2
+		var centre: float = rows[middle] if rows.size() % 2 == 1 \
+			else (rows[middle - 1] + rows[middle]) * 0.5
+		var row := roundf(centre / row_step) * row_step
+		for node in members:
+			if not dummies.has(node):
+				pinned[node] = row
+	return pinned

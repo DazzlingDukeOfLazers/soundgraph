@@ -70,6 +70,17 @@ them a long cable is invisible to both the crossing count and the spacing, so it
 cuts across whatever is in the way. Dummy chains are weighted heavily in phase 4, which is
 what keeps a long cable straight instead of bowed.
 
+**Cables are weighted by what they carry.** An audio cable pulls its ends into line far
+harder than a control cable does, so the signal chain comes out as one straight spine with
+the modulation sources arranged beneath it — the shape a person draws by hand. A weighted
+median is still a compromise, though, and a spine node sitting above two modulators gets
+tugged down by both; so after the sweeps, the strongest chains are put on a single row
+outright and the rest of each column gives way around them.
+
+**Rows land on the major grid lines** (multiples of 200), not on every grid line.
+Vertical separation is a whole number of those steps, so a stack reads as a stack instead
+of landing on whatever arithmetic the node heights happened to produce.
+
 Column and row pitch come from real widget sizes, so a column of wide nodes pushes the
 next one out instead of overlapping it.
 
@@ -92,6 +103,13 @@ A curved cable that passes straight through a node is unreadable — you cannot 
 it goes. So a cable stays a smooth curve while its path is clear and switches to a routed
 orthogonal trace with 45-degree corners when it would cross something, which is why PCB
 traces look the way they do.
+
+A graph dense enough will always have some crossings left. Where two cables do cross, the
+one underneath is **broken with a short gap**, exactly as a schematic does it, so the
+upper cable reads as continuous and the eye can follow either one through the junction.
+That is drawn on a Control inserted directly after GraphEdit's own connection layer —
+above the cables, below the nodes — and recomputed only when the view actually changes,
+since rerouting every cable on every frame is enough work to hold a core down by itself.
 
 When the router's choice still is not what you want, **drag the cable**. That drops a
 waypoint it must pass through, snapped to the same grid; right-clicking the cable removes

@@ -24,6 +24,17 @@ func _initialize() -> void:
 	root.add_child(main)
 	await process_frame
 
+	# A script that failed to parse leaves a bare Control here. Without this check the
+	# first await lands on a coroutine that never resolves and the run hangs rather than
+	# reporting the parse error — which is a miserable way to find a missing type hint.
+	if not main.has_method("_load_text") or main.graph_edit == null:
+		# A script that failed to compile leaves the editor half-built. Bailing out here
+		# reports the parse error above instead of letting every later check fail for a
+		# reason that has nothing to do with what it was testing.
+		print("  FAIL the editor did not build; look for a parse error above")
+		quit(1)
+		return
+
 	if main.engine == null:
 		print("  FAIL the SoundGraphEngine extension did not load")
 		quit(1)
@@ -218,6 +229,30 @@ func _initialize() -> void:
 			crosses = true
 	check(not crosses, "a cable routes around a node instead of through it")
 	check(detour.size() > 2, "and it does so with a real detour (%d points)" % detour.size())
+
+	# ---- crossing marks ---------------------------------------------------------------
+	# Two cables that genuinely cross must be marked, and the mark must follow the cable
+	# rather than sit at an arbitrary angle.
+	var horizontal := PackedVector2Array([Vector2(0, 100), Vector2(400, 100)])
+	var vertical := PackedVector2Array([Vector2(200, 0), Vector2(200, 300)])
+	var hits: Array = main.graph_edit._intersections(horizontal, vertical)
+	check(hits.size() == 1, "a crossing is found once, not twice")
+	if hits.size() == 1:
+		check(hits[0].is_equal_approx(Vector2(200, 100)), "at the point they actually meet")
+	var along: Vector2 = main.graph_edit._direction_at(vertical, Vector2(200, 100))
+	check(absf(along.y) > 0.9, "the break runs along the cable it interrupts")
+
+	var parallel := PackedVector2Array([Vector2(0, 200), Vector2(400, 200)])
+	check(main.graph_edit._intersections(horizontal, parallel).is_empty(),
+		"cables that never meet are not marked")
+
+	# The overlay has to sit above the cables and below the nodes, or the mark is
+	# invisible or covers a node.
+	var connection_layer: Node = main.graph_edit.get_child(0)
+	var overlay: Node = main.graph_edit.get_child(1)
+	check(connection_layer.name == "_connection_layer", "the connection layer is still first")
+	check(overlay is Control and overlay.get_script() != null,
+		"and the crossing overlay is drawn immediately after it")
 
 	# ---- undo -------------------------------------------------------------------------
 	var file2 := FileAccess.open("res://examples/first-synth.json", FileAccess.READ)

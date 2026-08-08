@@ -35,6 +35,11 @@ const GRAB_DISTANCE := 12.0
 ## improve a cable that is going to look crowded regardless.
 const MAX_CANDIDATES := 192
 
+## Half-length of the break drawn in the cable that passes underneath at a crossing.
+const CROSSING_BREAK := 7.0
+## How much wider than the cable the break is, so it clears the line underneath.
+const CROSSING_PAD := 5.0
+
 ## Graph-space point each cable must pass through, keyed by connection.
 var waypoints: Dictionary = {}
 
@@ -452,6 +457,149 @@ func _gui_input(event: InputEvent) -> void:
 		queue_redraw()
 		accept_event()
 		return
+
+
+# ---------------------------------------------------------------------------------
+# Crossings
+#
+# Routing removes most crossings, but a graph dense enough will always produce some, and
+# where two cables meet at a point there is no way to tell which is which. Schematics
+# solve this by breaking the line that passes underneath, and that is what this draws: a
+# short gap in the lower cable, so the upper one reads as continuous and the eye can
+# follow either one through the junction.
+#
+# The drawing happens on a Control inserted directly after GraphEdit's own connection
+# layer, so it sits above the cables and below the nodes.
+# ---------------------------------------------------------------------------------
+
+class CrossingOverlay extends Control:
+	var graph: GraphEdit
+	var _fingerprint := ""
+
+	func _ready() -> void:
+		# Deliberately left with no size and no anchors. GraphEdit lays out its children,
+		# and a full-rect child inside it bounces resize notifications back and forth.
+		# Drawing is not clipped to a Control's rect, so a zero-sized overlay still paints
+		# anywhere on the canvas.
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _process(_delta: float) -> void:
+		# There is no signal for "a cable moved", so the view is watched instead — but
+		# only redrawn when it actually changed. Recomputing every route on every frame
+		# is enough work to hold a core down all by itself.
+		if graph == null:
+			return
+		var current: String = graph._view_fingerprint()
+		if current != _fingerprint:
+			_fingerprint = current
+			queue_redraw()
+
+	func _draw() -> void:
+		if graph != null:
+			graph._draw_crossings(self)
+
+
+## Cheap summary of everything the crossing marks depend on.
+func _view_fingerprint() -> String:
+	var parts := PackedStringArray()
+	parts.append("%.2f,%.1f,%.1f" % [zoom, scroll_offset.x, scroll_offset.y])
+	parts.append(str(connections.size()))
+	parts.append(str(waypoints.size()))
+	for child in get_children():
+		if child is GraphNode:
+			parts.append("%s:%.0f,%.0f,%.0f,%.0f" % [child.name,
+				child.position_offset.x, child.position_offset.y, child.size.x, child.size.y])
+	return "|".join(parts)
+
+
+var _overlay: CrossingOverlay
+
+
+func _ready() -> void:
+	_overlay = CrossingOverlay.new()
+	_overlay.graph = self
+	add_child(_overlay)
+	# Straight after the connection layer: above the cables, below the nodes.
+	move_child(_overlay, 1)
+
+
+## Every cable's current route in graph space, with the colour GraphEdit drew it in.
+func _routes() -> Array:
+	var routes := []
+	for connection in connections:
+		var ends := _endpoints(connection)
+		if ends.is_empty():
+			continue
+		var fields := _connection_fields(connection)
+		var stored = waypoints.get(connection_key(fields[0], fields[1], fields[2], fields[3]))
+		var points := _route_through(ends[0], ends[1], stored) if stored != null \
+			else _route(ends[0], ends[1])
+
+		var colour := Color.WHITE
+		var from_node := get_node_or_null(NodePath(fields[0])) as GraphNode
+		if from_node != null and fields[1] < from_node.get_output_port_count():
+			colour = from_node.get_output_port_color(fields[1])
+		routes.append({"points": points, "colour": colour, "fields": fields})
+	return routes
+
+
+func _draw_crossings(canvas: CanvasItem) -> void:
+	var scale := zoom if zoom > 0.0 else 1.0
+	var to_local := func(point: Vector2) -> Vector2:
+		return point * scale - scroll_offset
+
+	# The colour a break is painted in. Taken from the theme so it keeps matching the
+	# canvas rather than being a constant that drifts out of step with it.
+	var background := get_theme_color("bg", "GraphEdit") if has_theme_color("bg", "GraphEdit") \
+		else Color(0.13, 0.14, 0.17)
+
+	var routes := _routes()
+	for i in routes.size():
+		for j in range(i + 1, routes.size()):
+			var a: Dictionary = routes[i]
+			var b: Dictionary = routes[j]
+			# Cables leaving the same port, or arriving at the same one, meet by design.
+			if a["fields"][0] == b["fields"][0] or a["fields"][2] == b["fields"][2]:
+				continue
+
+			# The cable drawn later passes underneath, matching GraphEdit's own order, so
+			# the break appears where the eye already expects the junction to resolve.
+			var over: Dictionary = a
+			var under: Dictionary = b
+
+			for point in _intersections(over["points"], under["points"]):
+				var direction := _direction_at(under["points"], point)
+				if direction == Vector2.ZERO:
+					continue
+				var half := direction * CROSSING_BREAK
+				canvas.draw_line(to_local.call(point - half), to_local.call(point + half),
+					background, (connection_lines_thickness + CROSSING_PAD) * scale, true)
+
+
+## Points where two routes cross.
+func _intersections(first: PackedVector2Array, second: PackedVector2Array) -> Array:
+	var points := []
+	for i in range(first.size() - 1):
+		for j in range(second.size() - 1):
+			var hit = Geometry2D.segment_intersects_segment(
+				first[i], first[i + 1], second[j], second[j + 1])
+			if hit != null:
+				points.append(hit)
+	return points
+
+
+## Direction of the route where it passes through a point, so the break follows the
+## cable rather than being drawn at an arbitrary angle.
+func _direction_at(points: PackedVector2Array, point: Vector2) -> Vector2:
+	var best := Vector2.ZERO
+	var best_distance := INF
+	for i in range(points.size() - 1):
+		var closest := Geometry2D.get_closest_point_to_segment(point, points[i], points[i + 1])
+		var distance := point.distance_to(closest)
+		if distance < best_distance:
+			best_distance = distance
+			best = (points[i + 1] - points[i]).normalized()
+	return best
 
 
 func set_waypoint(key: String, point: Variant) -> void:

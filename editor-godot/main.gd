@@ -22,8 +22,13 @@ const GRID := 40.0
 const COLUMN_PITCH := 400.0
 ## Space left beyond the widest node in a column before the next column starts.
 const COLUMN_GUTTER := 80.0
-## Space left beyond the tallest node in a column before the next row starts.
-const ROW_GUTTER := 24.0
+## Rows land on multiples of this — the major grid lines. Aligning to every 40 scatters
+## rows onto arbitrary values; one coarse pitch is what makes a stack read as a stack.
+const ROW_STEP := 200.0
+## How much harder an audio cable pulls its ends into line than a control cable does.
+## This is what makes the signal chain come out as one straight spine with the modulation
+## sources arranged around it, rather than everything averaged into a gentle zig-zag.
+const AUDIO_PULL := 8.0
 
 
 static func snap_up(value: float, step: float) -> float:
@@ -949,14 +954,22 @@ func _auto_place() -> void:
 			anchors[node["id"]] = Vector2(
 				node.get("position", {}).get("x", 0.0), node.get("position", {}).get("y", 0.0))
 
+	# Each cable carries the weight of what it actually transports. The port's declared
+	# signal type comes from the core's registry, so "the audio path" is the core's own
+	# notion of audio, not a guess made here.
 	var edges := []
 	for connection in patch.get("connections", []):
-		edges.append([connection["from"]["node"], connection["to"]["node"]])
+		var from_id: String = connection["from"]["node"]
+		var port_index := _output_port_index(from_id, connection["from"]["port"])
+		var ports := _port_list(from_id, "outputs")
+		var is_audio: bool = port_index >= 0 and port_index < ports.size() \
+			and ports[port_index]["type"] == "audio"
+		edges.append([from_id, connection["to"]["node"], AUDIO_PULL if is_audio else 1.0])
 
 	var placed: Dictionary = Layout.arrange({
 		"nodes": movable, "edges": edges, "sizes": sizes, "anchors": anchors,
 		"grid": GRID, "column_pitch": COLUMN_PITCH,
-		"column_gutter": COLUMN_GUTTER, "row_gutter": ROW_GUTTER,
+		"column_gutter": COLUMN_GUTTER, "row_step": ROW_STEP,
 	})
 
 	# Straightening pulls nodes toward their neighbours, which routinely lands the result

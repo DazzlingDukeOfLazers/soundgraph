@@ -56,7 +56,7 @@ func uniform_sizes(ids: Array) -> Dictionary:
 func arrange(ids: Array, edges: Array, extra: Dictionary = {}) -> Dictionary:
 	var request := {
 		"nodes": ids, "edges": edges, "sizes": uniform_sizes(ids),
-		"grid": 40.0, "column_pitch": 400.0, "column_gutter": 80.0, "row_gutter": 24.0,
+		"grid": 40.0, "column_pitch": 400.0, "column_gutter": 80.0, "row_step": 200.0,
 	}
 	for key in extra:
 		request[key] = extra[key]
@@ -131,6 +131,31 @@ func _initialize() -> void:
 				overlapping = true
 	check(not overlapping, "and nothing overlaps")
 
+	# The shape Daniel aligned by hand: the audio path is one straight spine, and the
+	# control sources hang beneath it on a single coarse pitch.
+	ids = ["note", "osc", "lfo", "filter", "env", "amp", "out"]
+	var AUDIO := 8.0
+	edges = [["note", "osc", 1.0], ["note", "env", 1.0], ["osc", "filter", AUDIO],
+		["lfo", "filter", 1.0], ["filter", "amp", AUDIO], ["env", "amp", 1.0],
+		["amp", "out", AUDIO]]
+	placed = arrange(ids, edges)
+	var spine := ["osc", "filter", "amp", "out"]
+	var spine_straight := true
+	for id in spine:
+		if not is_equal_approx(placed[id].y, placed["osc"].y):
+			spine_straight = false
+	check(spine_straight, "the audio path comes out as one straight line")
+	check(placed["lfo"].y > placed["osc"].y and placed["env"].y > placed["lfo"].y,
+		"and the modulators hang beneath it")
+
+	var on_step := true
+	for id in ids:
+		if fmod(placed[id].y, 200.0) != 0.0:
+			on_step = false
+	check(on_step, "every row lands on a major grid line")
+	check(count_crossings(edges, placed, uniform_sizes(ids)) == 0,
+		"with no crossed cables")
+
 	# A feedback loop must not defeat layering.
 	ids = ["src", "mix", "delay", "regen", "out"]
 	edges = [["src", "mix"], ["mix", "delay"], ["delay", "regen"], ["regen", "mix"],
@@ -148,7 +173,7 @@ func _initialize() -> void:
 	var sizes := uniform_sizes(ids)
 	placed = Layout.arrange({
 		"nodes": ["b", "c"], "edges": edges, "sizes": sizes, "anchors": anchors,
-		"grid": 40.0, "column_pitch": 400.0, "column_gutter": 80.0, "row_gutter": 24.0,
+		"grid": 40.0, "column_pitch": 400.0, "column_gutter": 80.0, "row_step": 200.0,
 	})
 	check(placed.size() == 2, "only the selected nodes are placed")
 	check(not placed.has("a") and not placed.has("d"), "anchors are left untouched")
