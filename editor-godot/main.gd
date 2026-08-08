@@ -254,6 +254,9 @@ func _build_ui() -> void:
 	file_dialog.file_selected.connect(_on_file_selected)
 	add_child(file_dialog)
 
+	if _on_web():
+		_install_web_file_bridge()
+
 
 # Mouse-operated controls must not hold keyboard focus. The computer keyboard is the
 # piano: a slider that keeps focus after a drag silently eats the next note the user
@@ -319,6 +322,9 @@ func _build_toolbar() -> Control:
 	var open_button := Button.new()
 	open_button.text = "Open…"
 	open_button.pressed.connect(func() -> void:
+		if _on_web():
+			_web_open()
+			return
 		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 		file_dialog.title = "Open patch"
 		file_dialog.popup_centered_ratio(0.6))
@@ -327,6 +333,9 @@ func _build_toolbar() -> Control:
 	var save_button := Button.new()
 	save_button.text = "Save as…"
 	save_button.pressed.connect(func() -> void:
+		if _on_web():
+			_web_save()
+			return
 		file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
 		file_dialog.title = "Save patch"
 		file_dialog.current_file = "patch.json"
@@ -1409,6 +1418,64 @@ func _on_file_selected(path: String) -> void:
 		status_label.text = "could not open %s" % path
 		return
 	_load_text(file.get_as_text())
+
+
+# ---------------------------------------------------------------------------------
+# Files in a browser
+#
+# A web export has no filesystem to show a dialog for. Opening goes through a real
+# <input type="file"> so the browser's own picker appears, and saving goes through a
+# download — which is what a browser considers "save as" and what a phone will do
+# something sensible with.
+# ---------------------------------------------------------------------------------
+
+var _web_callback   # must outlive the call; a collected callback crashes the bridge
+
+
+func _on_web() -> bool:
+	return OS.has_feature("web")
+
+
+func _install_web_file_bridge() -> void:
+	JavaScriptBridge.eval("""
+		window.soundgraphPickFile = function (callback) {
+			const input = document.createElement('input');
+			input.type = 'file';
+			input.accept = '.json,application/json';
+			input.onchange = function () {
+				const file = input.files && input.files[0];
+				if (!file) { return; }
+				const reader = new FileReader();
+				reader.onload = function () { callback(String(reader.result)); };
+				reader.readAsText(file);
+			};
+			input.click();
+		};
+	""", true)
+
+
+func _web_open() -> void:
+	_web_callback = JavaScriptBridge.create_callback(_on_web_file_chosen)
+	var window = JavaScriptBridge.get_interface("window")
+	if window == null:
+		status_label.text = "this browser did not expose a file picker"
+		return
+	window.soundgraphPickFile(_web_callback)
+
+
+func _on_web_file_chosen(arguments: Array) -> void:
+	if arguments.is_empty():
+		return
+	_load_text(str(arguments[0]))
+
+
+func _web_save() -> void:
+	_capture_positions()
+	var text: String = engine.format_patch(JSON.stringify(patch, "  "))
+	var name: String = patch.get("metadata", {}).get("name", "patch")
+	var file_name := name.to_lower().replace(" ", "-") + ".json"
+	JavaScriptBridge.download_buffer(text.to_utf8_buffer(), file_name, "application/json")
+	status_label.text = "downloaded %s" % file_name
 
 
 func _load_text(text: String) -> void:

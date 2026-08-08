@@ -13,6 +13,54 @@ Concretely, that means adding a node type to `dsp-core` makes it appear in this 
 with its ports, units, ranges, enum labels, tooltips and search terms — without a line of
 GDScript changing.
 
+## Running it in a browser
+
+The same editor, exported to WebAssembly, so the demo's "open a URL" and "the real editor"
+can be the same thing. The extension is built again for `platform=web` — the fifth
+compiler the core has been through — and loaded as an Emscripten side module.
+
+```bash
+emcmake cmake -S runtime-godot -B runtime-godot/build-web -DCMAKE_BUILD_TYPE=Release
+cmake --build runtime-godot/build-web
+godot --headless --path editor-godot --export-release Web ../build-godot-web/index.html
+python -m http.server 8178 --directory build-godot-web
+```
+
+**The Emscripten version must match the one Godot's template was built with.** For Godot
+4.7.1 that is **4.0.20**. A side module and the engine that loads it share an ABI, and a
+mismatch shows up as `function signature mismatch` on a blank canvas, which says nothing
+about versions at all. To find the right one for a future Godot release, look inside
+`web_dlink_nothreads_release.zip` in the export templates and grep `godot.js` for a
+version string.
+
+```bash
+C:\Users\danie\emsdk\emsdk.bat install 4.0.20
+C:\Users\danie\emsdk\emsdk.bat activate 4.0.20
+```
+
+The extension is built against godot-cpp's **`template_release`**, so only the release
+entries appear in `soundgraph.gdextension`. A debug export will fail to find a library,
+which says what is wrong; pointing it at the release build would be a quiet mismatch.
+
+godot-cpp ships a workaround that teaches CMake to emit Emscripten shared libraries, but
+it is installed through `CMAKE_PROJECT_godot-cpp_INCLUDE` and only applies inside
+godot-cpp's own project scope. Our library lives in the parent project, never saw it, and
+linked as an executable — failing with `undefined symbol: main`, which points nowhere near
+the cause. `runtime-godot/CMakeLists.txt` applies the same settings where our target can
+see them.
+
+Two settings in `export_presets.cfg` are load-bearing and easy to get wrong:
+
+- **`variant/extensions_support=true`** selects a `dlink` template. Without it the engine
+  has no dynamic loader and the extension simply never loads.
+- **`variant/thread_support=false`** must match the extension, which is built with
+  `GODOTCPP_THREADS=OFF`. A mismatch fails in confusing ways. Single-threaded also avoids
+  `SharedArrayBuffer`, which would otherwise require cross-origin isolation headers — and
+  a zero-install URL that only works behind special headers is not zero-install.
+
+In a browser there is no filesystem to show a dialog for, so **Open** goes through a real
+`<input type="file">` and **Save as** through a download.
+
 ## Build and run
 
 The extension binary and the example patches are build output, not repository content.

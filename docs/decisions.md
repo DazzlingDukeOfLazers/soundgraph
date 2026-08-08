@@ -412,3 +412,40 @@ timing invisibly); solving cycles numerically (out of scope).
 Consequences:
 The second vertical slice (delay with feedback) must route feedback through the `Delay`
 node, which is the intended design anyway.
+
+## 2026-08-08 — The Godot editor ships as a web export, and the side module hides its symbols
+
+Decision:
+The Godot editor is exported to WebAssembly and served as a static page, so the demo
+surface and the authoring tool are the same program. Every translation unit that ends up
+in the extension is compiled `-fvisibility=hidden -fvisibility-inlines-hidden`.
+
+Reason:
+A Godot web export loads a GDExtension as an Emscripten `SIDE_MODULE`. Any symbol left at
+default visibility joins the dynamic symbol table, and Emscripten then emits code that is
+*statically linked into the module* as an import: the first build asked `env` for
+`_ZN10soundgraph16GraphDescriptionD2Ev` and `std::to_string`. Godot cannot supply those, so
+the loader substitutes a stub of another arity, and the first indirect call through it
+aborts the engine with `function signature mismatch` — a message that names neither the
+symbol nor the module. godot-cpp puts `-fvisibility=hidden` in `target_link_options`
+(`cmake/web.cmake`), where it has no effect; visibility is fixed when a translation unit is
+compiled. A stock GDExtension never trips this because it uses only Godot's own `String`.
+This one links the C++ standard library, so it does.
+
+Two further constraints, both load-bearing:
+the extension must be built against the *same* Emscripten as the export template
+(4.7.1 is 4.0.20 — `Build configuration:` in the browser console states it), and against
+godot-cpp's `template_release`, because a release export looks up the `template_release`
+feature tag. Mismatching either fails the same way.
+
+Alternatives:
+Serving the plain `editor-web` page as the demo (a different, lesser editor, and a second
+UI to maintain); a native build behind a download (not a URL, so not zero-install).
+
+Consequences:
+Imports dropped from 410 to 64 and the module went from a hard abort to a clean boot. First
+load is ~46 MB uncompressed, ~10 MB gzipped — whatever hosts it must serve compressed. The
+export is `nothreads`, so no SharedArrayBuffer and no cross-origin isolation headers, which
+is what keeps it servable from any static host. Browser audio still needs a user gesture,
+and `AudioStreamGenerator` warns that it cannot be sampled on the web path — the audio
+route through the exported editor is not yet verified.

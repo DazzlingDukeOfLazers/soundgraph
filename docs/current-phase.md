@@ -58,29 +58,47 @@ and a repo-local `.venv` with pyserial and esptool.
   PCB-style cable routing with draggable waypoints, grid tiers that mean something,
   intent search with per-row Add buttons, Atkinson Hyperlegible throughout.
 
-## Open decision: which surface is the demo?
+## Resolved: the demo surface is the Godot editor, in the browser
 
-The 90-second script in `KNOBCon_2026.md` says "play the **browser** synth" and "connect
-LFO to filter modulation". The web editor cannot do the second one — it is the "simple web
-reference editor" the roadmap asked for, a JSON pane plus generated controls, so connecting
-a node there means typing JSON in front of an audience.
+The 90-second script in `KNOBCon_2026.md` assumed a browser that patches visually, and the
+`editor-web` page cannot do that — it is the "simple web reference editor" the roadmap
+asked for, a JSON pane plus generated controls, so connecting a node there means typing
+JSON in front of an audience. That looked like a fork: rebuild the web editor, or drop the
+browser from the demo.
 
-The divergence is intentional (PLAN.md principle 8), but the demo script assumes a browser
-that patches visually, and that was never built.
+It was neither. The Godot editor now **exports to WebAssembly and runs as a static page**,
+extension and all. Same program, same layout engine, same `dsp-core` — reached by a URL.
+The script's "play the browser synth" and "connect LFO to filter modulation" are the same
+nine steps that already work, and the QR code points at the real editor rather than a
+lesser one.
 
-Recommendation: **demo in Godot, and use the browser as the QR-code moment** — "scan this,
-same file, runs on your phone". Godot does all nine steps today. Adding drag-to-connect to
-the web editor is real work on a surface nobody has used yet, inside the freeze window.
+```bash
+godot --headless --path editor-godot --import
+godot --headless --path editor-godot --export-release Web ../build-godot-web/index.html
+python -m http.server 8178 --directory build-godot-web
+```
 
-Not yet decided. If the answer is "the browser must patch visually", that is the largest
-remaining piece of work and it should start immediately.
+Two things that build depends on, both easy to get wrong and both documented in
+`docs/decisions.md`: the extension must be compiled with hidden visibility, and against the
+same Emscripten as the export template (4.0.20 for Godot 4.7.1). Either one wrong aborts
+the engine with `function signature mismatch`, which names neither cause.
+
+Still unverified: **audio through the exported editor.** It boots and the extension loads,
+but Godot warns that `AudioStreamGenerator` cannot be sampled on the web backend, and the
+autoplay gesture requirement has not been exercised. Until that is tested with sound, the
+browser demo is a visual demo.
 
 ## Open
 
 - **The Web Serial deploy button has never been clicked.** It is gesture-gated by design,
   so it needs a human. Everything around it is verified; the button itself is not.
 - **The web editor has never been looked at.** The Godot editor now has, repeatedly; the
-  browser page has only ever been checked element by element from a script.
+  browser page has only ever been checked element by element from a script. It matters less
+  than it did, now that the Godot editor is itself reachable from a URL.
+- **No audio has come out of the exported web editor.** It boots with the extension loaded
+  and the UI live; the audio path is untested. See the warning noted above.
+- The exported editor is ~46 MB uncompressed, ~10 MB gzipped. Whatever hosts it must serve
+  compressed, or the QR-code moment is a thirty-second wait.
 - Safari and Firefox are untested. Only Chrome has run the browser build.
 - macOS and Linux have never been compiled — CMake and miniaudio cover them, unexercised.
 - `AudioInput` in the browser has no `getUserMedia`, so `delay-echo.json` loads and
