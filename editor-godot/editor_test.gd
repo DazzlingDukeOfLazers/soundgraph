@@ -219,6 +219,99 @@ func _initialize() -> void:
 	check(not crosses, "a cable routes around a node instead of through it")
 	check(detour.size() > 2, "and it does so with a real detour (%d points)" % detour.size())
 
+	# ---- undo -------------------------------------------------------------------------
+	var file2 := FileAccess.open("res://examples/first-synth.json", FileAccess.READ)
+	await main._load_text(file2.get_as_text())
+	await process_frame
+	await process_frame
+
+	check(not main.undo_redo.has_undo(), "a freshly loaded patch has nothing to undo")
+
+	var original_nodes: int = main.patch["nodes"].size()
+	var original_connections: int = main.patch["connections"].size()
+
+	# Add, then undo: the node goes away and the history empties.
+	await main._add_node("Delay", Vector2(2000, 0))
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes + 1, "adding a node grows the patch")
+	check(main.undo_redo.has_undo(), "and it is undoable")
+
+	main._undo()
+	await process_frame
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes, "undo removes the added node")
+	check(main.widgets.size() == original_nodes, "and the view follows the document")
+
+	main._redo()
+	await process_frame
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes + 1, "redo puts it back")
+	main._undo()
+	await process_frame
+	await process_frame
+
+	# Deleting a node takes its connections with it; undo must restore both.
+	main._on_delete_nodes_request([main.widgets["filter"].name] as Array[StringName])
+	await process_frame
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes - 1, "deleting removes the node")
+	check(main.patch["connections"].size() < original_connections,
+		"and the cables that touched it")
+
+	main._undo()
+	await process_frame
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes, "undo restores the deleted node")
+	check(main.patch["connections"].size() == original_connections,
+		"and every cable that went with it")
+
+	# A knob turn is undoable without rebuilding the graph — the whole point of the fast
+	# path, since a rebuild would restart the sound.
+	var cutoff_before := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			cutoff_before = node["parameters"]["cutoff"]
+	main._begin_edit()
+	main._set_parameter("filter", "cutoff", 5000.0)
+	main._commit_edit("set cutoff")
+	await process_frame
+	var widget_before: GraphNode = main.widgets["filter"]
+
+	main._undo()
+	await process_frame
+	var restored := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			restored = node["parameters"]["cutoff"]
+	check(is_equal_approx(restored, cutoff_before), "undo restores a knob value")
+	check(main.widgets["filter"] == widget_before,
+		"without rebuilding the graph, so the sound does not restart")
+
+	# Auto-place is one step, not one per node.
+	var before_layout := []
+	for node in main.patch["nodes"]:
+		before_layout.append(Vector2(node["position"]["x"], node["position"]["y"]))
+	main._begin_edit()
+	for node in main.patch["nodes"]:
+		node["position"] = {"x": 17.0, "y": 23.0}
+	main._commit_edit("scramble")
+	main._undo()
+	await process_frame
+	await process_frame
+	var layout_restored := true
+	for i in main.patch["nodes"].size():
+		var node = main.patch["nodes"][i]
+		if not Vector2(node["position"]["x"], node["position"]["y"]).is_equal_approx(before_layout[i]):
+			layout_restored = false
+	check(layout_restored, "undo restores positions exactly")
+
+	# A drag that ends where it began is not an edit.
+	var depth_before: bool = main.undo_redo.has_undo()
+	main._begin_edit()
+	main._commit_edit("no-op")
+	check(main.undo_redo.has_undo() == depth_before,
+		"a drag that changed nothing adds nothing to the history")
+
 	player.queue_free()
 	main.queue_free()
 	await process_frame

@@ -34,6 +34,7 @@ two thousand binding files. Afterwards it is incremental.
 | | |
 |---|---|
 | Add a node | **Ctrl+Space**, or right-click the canvas, or the toolbar button — every result has its own **Add** button, and the dialog stays open so you can add several |
+| Undo / redo | **Ctrl+Z** / **Ctrl+Shift+Z** (or Ctrl+Y), and the toolbar buttons, which name what they will undo |
 | Tidy the graph | **Auto-place** lays it out left to right on the 40 grid |
 | Move a cable | drag it; right-click puts it back |
 | Play | **A W S E D F T G Y H U J K**, with **Z** / **X** to shift octave |
@@ -66,6 +67,29 @@ When the router's choice still is not what you want, **drag the cable**. That dr
 waypoint it must pass through, snapped to the same grid; right-clicking the cable removes
 it. Waypoints are saved in the patch next to the node positions, so a layout you arranged
 by hand comes back the way you left it.
+
+## Undo
+
+Undo works on whole-document snapshots rather than a hand-written inverse per operation.
+A patch is a few kilobytes, and the code that turns a document into a view is the same
+path used for loading — so "undo an edit" reduces to "load the previous document", which
+cannot drift out of step with the edits the way per-operation inverses eventually do.
+
+Two details matter in use:
+
+**A drag is one step.** Node moves bracket on `begin_node_move`/`end_node_move`, knob
+turns on the slider's `drag_started`/`drag_ended`, and cable drags on their own signal.
+Without that, one sweep of a filter knob would bury the history under hundreds of entries.
+A drag that ends where it started records nothing.
+
+**Undoing a knob turn does not restart the sound.** If two snapshots differ only in
+parameter values, the values are pushed straight to the running engine and the knobs move
+to match — no rebuild, so oscillators keep their phase and delay lines keep their
+contents. Rebuilding on every undo would make the feature unusable while playing, which is
+the same reason knob movement never reloads the patch in the first place.
+
+Opening a file starts a new history: undoing across a load would restore another patch's
+nodes into this one.
 
 ## Saving
 

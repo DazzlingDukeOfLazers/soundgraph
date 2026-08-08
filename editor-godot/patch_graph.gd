@@ -18,6 +18,9 @@ extends GraphEdit
 
 signal waypoint_changed(from_node: StringName, from_port: int, to_node: StringName,
 	to_port: int, point)
+## Emitted when a cable drag begins, so the editor can take an undo snapshot before the
+## first movement rather than reconstructing where the cable used to be.
+signal cable_drag_started
 
 ## Extra room left around a node when routing past it.
 const CLEARANCE := 26.0
@@ -319,6 +322,7 @@ func _gui_input(event: InputEvent) -> void:
 				var fields := _connection_fields(connection)
 				_dragging_key = connection_key(fields[0], fields[1], fields[2], fields[3])
 				_drag_connection = connection
+				cable_drag_started.emit()
 				accept_event()
 				return
 		elif _dragging_key != "":
@@ -338,6 +342,7 @@ func _gui_input(event: InputEvent) -> void:
 			var fields := _connection_fields(connection)
 			var key := connection_key(fields[0], fields[1], fields[2], fields[3])
 			if waypoints.has(key):
+				cable_drag_started.emit()
 				waypoints.erase(key)
 				waypoint_changed.emit(fields[0], fields[1], fields[2], fields[3], null)
 				queue_redraw()

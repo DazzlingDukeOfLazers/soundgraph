@@ -82,6 +82,19 @@ var held_notes := {}
 var inspecting := {}                   # {"node": id, "port": name} or empty
 var suppress_reload := false
 
+## Undo works on whole-document snapshots rather than per-operation inverses. A patch is
+## a few kilobytes, and the code that turns one into a view is the same well-exercised
+## path used for loading — so "undo an edit" reduces to "load the previous document",
+## which cannot drift out of step with the operations the way hand-written inverses do.
+var undo_redo := UndoRedo.new()
+var _pending_snapshot: Dictionary = {}
+var undo_button: Button
+var redo_button: Button
+
+## node id -> parameter name -> {"slider": Control, "readout": Label, "descriptor": Dictionary}
+## Kept so an undone knob turn can move the knob back without rebuilding the graph.
+var parameter_widgets := {}
+
 
 func _ready() -> void:
 	if not ClassDB.class_exists("SoundGraphEngine"):
@@ -150,6 +163,11 @@ func _build_ui() -> void:
 	graph_edit.delete_nodes_request.connect(_on_delete_nodes_request)
 	graph_edit.node_selected.connect(_on_node_selected)
 	graph_edit.popup_request.connect(_on_graph_popup_request)
+	# Node drags and cable drags bracket their own undo entries, so a drag is one step
+	# rather than one per pixel of mouse movement.
+	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
+	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
+	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
 	split.add_child(graph_edit)
 
 	split.add_child(_build_side_panel())
@@ -199,6 +217,20 @@ func _build_toolbar() -> Control:
 	arrange.tooltip_text = "Lay the graph out left to right on the %d grid" % int(GRID)
 	arrange.pressed.connect(_auto_place)
 	bar.add_child(_defocus(arrange))
+
+	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
+	# time user does not know they have.
+	undo_button = Button.new()
+	undo_button.text = "Undo"
+	undo_button.disabled = true
+	undo_button.pressed.connect(_undo)
+	bar.add_child(_defocus(undo_button))
+
+	redo_button = Button.new()
+	redo_button.text = "Redo"
+	redo_button.disabled = true
+	redo_button.pressed.connect(_redo)
+	bar.add_child(_defocus(redo_button))
 
 	var open_button := Button.new()
 	open_button.text = "Open…"
@@ -346,6 +378,7 @@ func _rebuild_view() -> void:
 			child.queue_free()
 	widgets.clear()
 	ids.clear()
+	parameter_widgets.clear()
 
 	for node in patch.get("nodes", []):
 		_create_widget(node)
@@ -482,8 +515,11 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		options.selected = clampi(int(round(current)), 0, parameter["enum"].size() - 1)
 		options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		options.item_selected.connect(func(index: int) -> void:
-			_set_parameter(node_id, name, float(index)))
+			_begin_edit()
+			_set_parameter(node_id, name, float(index))
+			_commit_edit("set %s" % name))
 		row.add_child(_defocus(options))
+		_remember_parameter_widget(node_id, name, options, null, parameter)
 		return row
 
 	var slider := HSlider.new()
@@ -505,9 +541,28 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		readout.text = _format_value(value)
 		_set_parameter(node_id, name, value))
 
+	# A whole drag is one undo step. Bracketing on the drag rather than on each value
+	# change is what stops a single sweep of a knob from filling the history.
+	slider.drag_started.connect(func() -> void: _begin_edit())
+	slider.drag_ended.connect(func(changed: bool) -> void:
+		if changed:
+			_commit_edit("set %s" % name)
+		else:
+			_pending_snapshot = {})
+
 	row.add_child(_defocus(slider))
 	row.add_child(readout)
+	_remember_parameter_widget(node_id, name, slider, readout, parameter)
 	return row
+
+
+func _remember_parameter_widget(node_id: String, parameter_name: String, control: Control,
+		readout: Label, descriptor: Dictionary) -> void:
+	if not parameter_widgets.has(node_id):
+		parameter_widgets[node_id] = {}
+	parameter_widgets[node_id][parameter_name] = {
+		"slider": control, "readout": readout, "descriptor": descriptor,
+	}
 
 
 # Parameter scaling, taken from the descriptor the core publishes rather than guessed at.
@@ -600,12 +655,14 @@ func _on_connection_request(from_node: StringName, from_port: int, to_node: Stri
 	if from_port >= from_ports.size() or to_port >= to_ports.size():
 		return
 
+	_begin_edit()
 	patch["connections"].append({
 		"from": {"node": from_id, "port": from_ports[from_port]["name"]},
 		"to": {"node": to_id, "port": to_ports[to_port]["name"]},
 	})
 	graph_edit.connect_node(from_node, from_port, to_node, to_port)
 	_apply()
+	_commit_edit("connect")
 
 
 func _on_disconnection_request(from_node: StringName, from_port: int, to_node: StringName,
@@ -617,6 +674,7 @@ func _on_disconnection_request(from_node: StringName, from_port: int, to_node: S
 	if from_port >= from_ports.size() or to_port >= to_ports.size():
 		return
 
+	_begin_edit()
 	var from_name: String = from_ports[from_port]["name"]
 	var to_name: String = to_ports[to_port]["name"]
 	var remaining := []
@@ -631,9 +689,11 @@ func _on_disconnection_request(from_node: StringName, from_port: int, to_node: S
 
 	graph_edit.disconnect_node(from_node, from_port, to_node, to_port)
 	_apply()
+	_commit_edit("disconnect")
 
 
 func _on_delete_nodes_request(nodes: Array[StringName]) -> void:
+	_begin_edit()
 	for godot_name in nodes:
 		var node_id: String = ids.get(godot_name, "")
 		if node_id == "":
@@ -658,6 +718,7 @@ func _on_delete_nodes_request(nodes: Array[StringName]) -> void:
 	inspecting = {}
 	await _rebuild_view()
 	_apply()
+	_commit_edit("delete" if nodes.size() == 1 else "delete %d nodes" % nodes.size())
 
 
 func _without_target(entries: Array, node_id: String) -> Array:
@@ -808,6 +869,7 @@ func _add_from_search(type_name: String) -> void:
 
 
 func _add_node(type_name: String, at_position: Vector2) -> String:
+	_begin_edit()
 	var descriptor: Dictionary = registry.get(type_name, {})
 	var base: String = type_name.to_snake_case()
 	var suffix := 1
@@ -835,6 +897,7 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 	})
 	await _rebuild_view()
 	_apply()
+	_commit_edit("add %s" % registry.get(type_name, {}).get("display_name", type_name))
 	return node_id
 
 
@@ -909,6 +972,7 @@ func _is_modulator(node: Dictionary) -> bool:
 func _auto_place() -> void:
 	if patch.get("nodes", []).is_empty():
 		return
+	_begin_edit()
 
 	var depths := _compute_depths()
 	var columns := {}
@@ -970,7 +1034,119 @@ func _auto_place() -> void:
 
 	await _rebuild_view()
 	_apply()
+	_commit_edit("auto-place")
 	status_label.text = "placed %d nodes on the %d grid" % [patch["nodes"].size(), int(GRID)]
+
+
+# ---------------------------------------------------------------------------------
+# Undo
+# ---------------------------------------------------------------------------------
+
+func _snapshot() -> Dictionary:
+	_capture_positions()
+	return patch.duplicate(true)
+
+
+## Records the start of an edit. Paired with _commit_edit; safe to call again before
+## committing, which is what happens when a drag is interrupted.
+func _begin_edit() -> void:
+	_pending_snapshot = _snapshot()
+
+
+func _commit_edit(label: String) -> void:
+	if _pending_snapshot.is_empty():
+		return
+	var before := _pending_snapshot
+	_pending_snapshot = {}
+	var after := _snapshot()
+	if JSON.stringify(before) == JSON.stringify(after):
+		return  # a drag that went nowhere is not an edit
+
+	undo_redo.create_action(label)
+	undo_redo.add_do_method(_restore.bind(after))
+	undo_redo.add_undo_method(_restore.bind(before))
+	# The change is already applied; committing must not run it a second time.
+	undo_redo.commit_action(false)
+	_refresh_undo_buttons()
+
+
+## True when two documents differ only in parameter values — the common case for a knob
+## turn, and the one where rebuilding the graph would be audible.
+func _differs_only_in_parameters(a: Dictionary, b: Dictionary) -> bool:
+	var without_parameters := func(document: Dictionary) -> String:
+		var copy: Dictionary = document.duplicate(true)
+		for node in copy.get("nodes", []):
+			node.erase("parameters")
+		return JSON.stringify(copy)
+	return without_parameters.call(a) == without_parameters.call(b)
+
+
+func _restore(snapshot: Dictionary) -> void:
+	var live_parameters := _differs_only_in_parameters(patch, snapshot)
+	patch = snapshot.duplicate(true)
+
+	if live_parameters:
+		# Undoing a knob turn moves the knob, it does not restart the sound. Rebuilding
+		# here would empty every delay line and retrigger every oscillator.
+		for node in patch.get("nodes", []):
+			for parameter_name in node.get("parameters", {}):
+				var value: float = node["parameters"][parameter_name]
+				engine.set_parameter(node["id"], parameter_name, value)
+				_show_parameter(node["id"], parameter_name, value)
+		status_label.text = "playing"
+	else:
+		_rebuild_and_apply()
+	_refresh_undo_buttons()
+
+
+## Not a coroutine: UndoRedo calls its actions synchronously, so the rebuild is started
+## and allowed to finish on its own frames.
+func _rebuild_and_apply() -> void:
+	await _rebuild_view()
+	_apply()
+
+
+func _show_parameter(node_id: String, parameter_name: String, value: float) -> void:
+	var entry: Dictionary = parameter_widgets.get(node_id, {}).get(parameter_name, {})
+	if entry.is_empty():
+		return
+	var slider = entry.get("slider")
+	var readout: Label = entry.get("readout")
+	if slider is OptionButton:
+		slider.selected = clampi(int(round(value)), 0, slider.item_count - 1)
+		return
+	if slider is HSlider:
+		# set_value_no_signal, or restoring a value would look like the user turning it.
+		slider.set_value_no_signal(_to_position(entry["descriptor"], value))
+	if readout != null:
+		readout.text = _format_value(value)
+
+
+func _undo() -> void:
+	if not undo_redo.has_undo():
+		return
+	var label := undo_redo.get_current_action_name()
+	undo_redo.undo()
+	status_label.text = "undid %s" % label
+	_refresh_undo_buttons()
+
+
+func _redo() -> void:
+	if not undo_redo.has_redo():
+		return
+	undo_redo.redo()
+	status_label.text = "redid %s" % undo_redo.get_current_action_name()
+	_refresh_undo_buttons()
+
+
+func _refresh_undo_buttons() -> void:
+	if undo_button == null:
+		return
+	undo_button.disabled = not undo_redo.has_undo()
+	redo_button.disabled = not undo_redo.has_redo()
+	undo_button.tooltip_text = "Undo %s (Ctrl+Z)" % undo_redo.get_current_action_name() \
+		if undo_redo.has_undo() else "Nothing to undo"
+	redo_button.tooltip_text = "Redo (Ctrl+Shift+Z)"
 
 
 # ---------------------------------------------------------------------------------
@@ -995,6 +1171,7 @@ func _on_waypoint_changed(from_node: StringName, from_port: int, to_node: String
 				connection.erase("waypoint")
 			else:
 				connection["waypoint"] = {"x": point.x, "y": point.y}
+			_commit_edit("move cable" if point != null else "straighten cable")
 			return
 
 
@@ -1161,8 +1338,13 @@ func _load_text(text: String) -> void:
 	if not patch.has("connections"):
 		patch["connections"] = []
 	inspecting = {}
+	# Opening a document starts a new history. Undoing across a load would restore a
+	# different patch's nodes into this one, which is never what anyone means.
+	undo_redo.clear_history(true)
+	_pending_snapshot = {}
 	await _rebuild_view()
 	_apply()
+	_refresh_undo_buttons()
 
 
 # ---------------------------------------------------------------------------------
@@ -1175,15 +1357,32 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if search_popup.visible:
 		return
+	if key.pressed and key.keycode == KEY_SPACE and key.ctrl_pressed:
+		_open_search()
+		accept_event()
+		return
+
+	# Undo before the octave shortcut: Z is both, and Ctrl+Z has to win.
+	if key.pressed and key.ctrl_pressed and key.keycode == KEY_Z:
+		if key.shift_pressed:
+			_redo()
+		else:
+			_undo()
+		accept_event()
+		return
+	if key.pressed and key.ctrl_pressed and key.keycode == KEY_Y:
+		_redo()
+		accept_event()
+		return
+
+	if key.ctrl_pressed:
+		return  # no note or octave shortcut fires with Ctrl held
 
 	if key.pressed and key.keycode == KEY_Z:
 		octave = maxi(0, octave - 1)
 		return
 	if key.pressed and key.keycode == KEY_X:
 		octave = mini(7, octave + 1)
-		return
-	if key.pressed and key.keycode == KEY_SPACE and key.ctrl_pressed:
-		_open_search()
 		return
 
 	if not KEY_NOTES.has(key.keycode):
