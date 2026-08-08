@@ -32,10 +32,9 @@
     },
     {
       "id": "highpass",
-      "type": "StateVariableFilter",
+      "type": "OnePoleFilter",
       "parameters": {
         "cutoff": 151.537,
-        "resonance": 0,
         "mode": 1,
         "cutoff_sweep": 0
       }

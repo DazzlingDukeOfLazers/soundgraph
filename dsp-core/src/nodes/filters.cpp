@@ -131,6 +131,106 @@ private:
 };
 
 // ---------------------------------------------------------------------------------
+// One-pole filter
+//
+// Six decibels per octave, where StateVariableFilter is twelve. A gentler slope is not a
+// worse filter, it is a different tool: it thins or warms a sound without carving a hole
+// in it, and it is what most hardware puts in front of an output to block DC.
+//
+// The two are worth having side by side because the difference is large where it matters
+// most — far from the cutoff. Two octaves below a highpass, one pole takes 12 dB off and
+// two poles take 24. That gap is the whole of the remaining error on sfxr's hit-hurt
+// sounds, which spend most of their length at a frequency floor far below their highpass.
+//
+// The highpass is the DC-blocker form, y = r*(y + x - x_prev), which is the same structure
+// sfxr uses and the standard way to write a one-pole highpass without a subtraction that
+// loses precision at low cutoffs.
+// ---------------------------------------------------------------------------------
+
+constexpr const char* kOnePoleModeLabels[] = {"lowpass", "highpass"};
+
+constexpr PortDescriptor kOnePoleInputs[] = {
+    {"in", SignalType::Audio, "", true, true, "Signal to filter."},
+    {"cutoff", SignalType::Control, "Hz", false, false,
+     "Cutoff in hertz. Replaces the cutoff parameter while connected."},
+};
+
+constexpr PortDescriptor kOnePoleOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "Filtered signal."},
+};
+
+constexpr ParameterDescriptor kOnePoleParameters[] = {
+    {"cutoff", "Hz", 1.0f, 20000.0f, 1000.0f, Scaling::Exponential,
+     "The frequency the filter turns around.", nullptr, 0},
+    {"mode", "", 0.0f, 1.0f, 0.0f, Scaling::Linear,
+     "Which side of the cutoff to keep.", kOnePoleModeLabels, 2},
+    {"cutoff_sweep", "octaves/s", -20.0f, 20.0f, 0.0f, Scaling::Linear,
+     "How fast the cutoff moves on its own.", nullptr, 0},
+};
+
+class OnePoleFilterNode final : public DspNode {
+public:
+    enum Param { kCutoff = 0, kMode = 1, kCutoffSweep = 2 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        reset();
+    }
+
+    void reset() override {
+        state_ = 0.0f;
+        previous_input_ = 0.0f;
+        swept_octaves_ = 0.0f;
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        const float* cutoff_in = context.inputs[1];
+        float* out = context.outputs[0];
+
+        if (in == nullptr) {
+            for (int i = 0; i < context.frames; ++i) {
+                out[i] = 0.0f;
+            }
+            return;
+        }
+
+        float cutoff = cutoff_in != nullptr ? cutoff_in[0] : parameter(kCutoff);
+        const float sweep = parameter(kCutoffSweep);
+        if (sweep != 0.0f) {
+            cutoff *= std::pow(2.0f, swept_octaves_);
+            swept_octaves_ += sweep * static_cast<float>(context.frames) / sample_rate_;
+        }
+        cutoff = dsp::clampf(cutoff, 0.1f, sample_rate_ * 0.45f);
+
+        // One coefficient per block, as the state variable filter does, and for the same
+        // reason: it keeps the exponential out of the inner loop.
+        const float w = dsp::kTwoPi * cutoff / sample_rate_;
+        const float r = std::exp(-w);
+
+        if (static_cast<int>(parameter(kMode) + 0.5f) == 0) {
+            const float a = 1.0f - r;
+            for (int i = 0; i < context.frames; ++i) {
+                state_ += (in[i] - state_) * a;
+                out[i] = state_;
+            }
+        } else {
+            for (int i = 0; i < context.frames; ++i) {
+                state_ = r * (state_ + in[i] - previous_input_);
+                previous_input_ = in[i];
+                out[i] = state_;
+            }
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    float state_ = 0.0f;
+    float previous_input_ = 0.0f;
+    float swept_octaves_ = 0.0f;
+};
+
+// ---------------------------------------------------------------------------------
 // Delay
 //
 // The only node that currently breaks a feedback loop. A cycle through anything else is
@@ -248,6 +348,19 @@ const NodeTypeDescriptor kStateVariableFilter = {
     false, NodeRole::Processor, false,
     ResourceCost{6.0f, 12, 0},
     &make<StateVariableFilterNode>,
+};
+
+const NodeTypeDescriptor kOnePoleFilter = {
+    "OnePoleFilter", "One-pole Filter", "Filters",
+    "A gentle filter, half the slope of the other one. Warms or thins without carving.",
+    "one pole|onepole|6db|gentle filter|tilt|shelf|dc block|dc blocker|rumble|"
+    "warm|thin|soften|take the edge off|remove rumble|high pass gentle|low pass gentle",
+    Slice<PortDescriptor>(kOnePoleInputs),
+    Slice<PortDescriptor>(kOnePoleOutputs),
+    Slice<ParameterDescriptor>(kOnePoleParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{2.5f, 16, 0},
+    &make<OnePoleFilterNode>,
 };
 
 const NodeTypeDescriptor kDelay = {

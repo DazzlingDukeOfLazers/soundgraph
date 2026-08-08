@@ -360,10 +360,18 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     }
 
     if (highpass_active(p)) {
+        // One pole, not two. sfxr's highpass is
+        //
+        //     fltphp += fltp - pp;  fltphp -= fltphp * flthp;
+        //
+        // which is a DC blocker: 6 dB per octave. StateVariableFilter is 12, and the
+        // difference is invisible near the cutoff and enormous away from it. These sounds
+        // slide down to a 3.5 Hz floor, two hundred times below a 133 Hz corner, where one
+        // pole takes about 32 dB off and two take about 63 — so the tail of the sound was
+        // 30 dB quieter than sfxr's for most of its length.
         nodes.push_back({"highpass",
-                         "StateVariableFilter",
+                         "OnePoleFilter",
                          {{"cutoff", highpass_cutoff_hz(p)},
-                          {"resonance", 0.0},
                           {"mode", 1.0},
                           {"cutoff_sweep", highpass_sweep_octaves_per_second(p)}}});
         connections.push_back({signal, signal_port, "highpass", "in"});

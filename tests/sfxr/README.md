@@ -161,12 +161,20 @@ makes it impossible to do better.
 
 ### What is still wrong, and why
 
-**hit-hurt, 2 of 6.** The two worst cases spend most of their length at the 3.5 Hz
-frequency floor, where the signal is very nearly DC — and both have a highpass. sfxr's
-highpass is **one-pole**; `StateVariableFilter` is two-pole. Against a 133 Hz cutoff, 3.5 Hz
-comes out 32 dB down through sfxr's and 63 dB down through ours, so sfxr's tail is some
-30 dB louder than ours for most of the sound. That is the whole of the remaining error on
-those two, and fixing it means a one-pole filter node.
+**hit-hurt, 2 of 6.** The one-pole highpass fixed most of this: `hit-hurt-5` went from an
+envelope distance of 67 dB and a spectral distance of 70 dB to 3.1 and 4.8, and now misses
+only on gain, by 0.19 dB. The generator's median spectral distance fell from 9.6 dB to 6.8.
+
+`hit-hurt-4` is the one that will not close, and it is a property of the material rather
+than a bug. It slides from 823 Hz down to the 3.5 Hz floor through a 28 Hz highpass, so for
+most of its length the signal is below the corner and every individual square edge becomes
+a transient that dominates its whole window. The two renderings have the *same* pitch
+trajectory — 9 edges against 10 in the first 10 ms, 4 against 5 in the next — but sfxr
+accumulates phase as an integer supersample counter with an integer period, and we
+accumulate in float. After 60 ms of continuous sliding the two are a fraction of a cycle
+apart, which moves an edge from one 10 ms window into the next and swings the envelope
+metric by 20 to 28 dB. Matching it would mean adopting sfxr's integer phase counter, which
+is a worse oscillator.
 
 **Marginal cases**, 6.2 to 6.8 dB against a 6 dB threshold: `laser-shoot-3`, `powerup-2`,
 `powerup-3`, `hit-hurt-1`. `SawOscillator` is band-limited by PolyBLEP and sfxr's is naive
@@ -198,7 +206,7 @@ sound that is merely plausible — the hardest kind of wrong to notice.
 | repeat: restart the sound on a timer | `Retrigger`, wired to whichever gates should restart |
 | square with variable duty, and duty sweep | `SquareOscillator` — `pulse_width`, `pulse_width_sweep` |
 | lowpass with resonance and sweep | `StateVariableFilter` — `cutoff_sweep` |
-| highpass with sweep | same node in highpass mode |
+| highpass with sweep | `OnePoleFilter` in highpass mode — sfxr's is one-pole, not two |
 | vibrato | `LFO` into the oscillator's `fm` |
 | noise | `NoiseOscillator` — pitched, 32 steps, different PRNG so spectral comparison only |
 

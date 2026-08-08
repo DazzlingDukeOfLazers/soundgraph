@@ -494,6 +494,64 @@ TEST(parameters_are_clamped_to_their_declared_range) {
     CHECK_NEAR(harness.output()[0], 0.0, 1e-6);
 }
 
+// ---- one-pole filter ------------------------------------------------------------------
+
+namespace {
+
+// Drives a filter with a steady sine and returns the settled amplitude, measured over the
+// second half so the filter's own start-up transient is not in the answer.
+float settled_amplitude(const std::string& type, float cutoff, float mode, float tone) {
+    const int frames = 24000;
+    NodeHarness harness(type, frames, kSampleRate);
+    harness.set("cutoff", cutoff);
+    harness.set("mode", mode);
+    std::vector<float>& in = harness.input("in");
+    for (std::size_t i = 0; i < in.size(); ++i) {
+        in[i] = std::sin(6.2831853f * tone * static_cast<float>(i) / 48000.0f);
+    }
+    harness.process();
+
+    float peak = 0.0f;
+    for (std::size_t i = in.size() / 2; i < in.size(); ++i) {
+        peak = std::max(peak, std::fabs(harness.output()[i]));
+    }
+    return peak;
+}
+
+}  // namespace
+
+TEST(one_pole_lowpass_passes_below_and_cuts_above) {
+    CHECK_NEAR(settled_amplitude("OnePoleFilter", 1000.0f, 0.0f, 50.0f), 1.0, 0.02);
+    // A one-pole is 3 dB down at its own cutoff.
+    CHECK_NEAR(settled_amplitude("OnePoleFilter", 1000.0f, 0.0f, 1000.0f), 0.707, 0.03);
+    CHECK(settled_amplitude("OnePoleFilter", 1000.0f, 0.0f, 8000.0f) < 0.2f);
+}
+
+TEST(one_pole_highpass_blocks_dc_and_passes_above) {
+    NodeHarness harness("OnePoleFilter", 8000, kSampleRate);
+    harness.set("cutoff", 100.0f);
+    harness.set("mode", 1.0f);
+    harness.connect("in", 1.0f);  // pure DC
+    harness.process();
+    CHECK(std::fabs(harness.output()[7999]) < 0.01f);
+
+    CHECK_NEAR(settled_amplitude("OnePoleFilter", 100.0f, 1.0f, 4000.0f), 1.0, 0.02);
+}
+
+TEST(one_pole_has_half_the_slope_of_the_state_variable_filter) {
+    // The reason both exist, and the whole of the remaining error on sfxr's hit-hurt
+    // sounds: they sit far below a highpass cutoff, where the slope is everything.
+    // Two octaves down, one pole should take about 12 dB off and two poles about 24.
+    const float one_pole = settled_amplitude("OnePoleFilter", 500.0f, 1.0f, 125.0f);
+    const float two_pole = settled_amplitude("StateVariableFilter", 500.0f, 1.0f, 125.0f);
+
+    CHECK(one_pole > two_pole * 3.0f);
+    // 12 dB down is a quarter of full scale; allow the usual slack near the corner.
+    CHECK(one_pole > 0.15f);
+    CHECK(one_pole < 0.40f);
+    CHECK(two_pole < 0.12f);
+}
+
 // ---- pitched noise --------------------------------------------------------------------
 
 TEST(noise_oscillator_repeats_at_its_frequency) {
@@ -811,7 +869,7 @@ TEST(filter_cutoff_sweep_closes_the_filter_over_time) {
 
 TEST(every_registered_type_can_be_created_with_working_defaults) {
     const soundgraph::NodeRegistry& registry = soundgraph::NodeRegistry::builtin();
-    CHECK(registry.types().size() >= 22);
+    CHECK(registry.types().size() >= 23);
 
     for (const soundgraph::NodeTypeDescriptor* type : registry.types()) {
         NodeHarness harness(type->name, 128, kSampleRate);

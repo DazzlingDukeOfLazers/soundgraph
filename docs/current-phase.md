@@ -13,10 +13,10 @@ architectures:
 
 | target | how it runs | verified by |
 |---|---|---|
-| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 7 ctest suites, 17 golden vectors |
-| Browser | WebAssembly in an AudioWorklet | `verify-goldens.mjs`, 17 cases, worst 2.09e-7 |
+| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 7 ctest suites, 18 golden vectors |
+| Browser | WebAssembly in an AudioWorklet | `verify-goldens.mjs`, 18 cases, worst 2.09e-7 |
 | Godot 4.7 | GDExtension | 78 editor checks, 18 layout checks |
-| ESP32-S3 | generic firmware, Waveshare audio board | `sg-serial.py verify-goldens`, worst 1.90e-5 — **10 of the 17, the seven new ones unflashed** |
+| ESP32-S3 | generic firmware, Waveshare audio board | `sg-serial.py verify-goldens`, worst 1.90e-5 — **10 of the 18, the eight new ones unflashed** |
 
 `dsp-core` still depends on nothing but the C++ standard library, and no editor or host
 holds a second copy of the node vocabulary, the search ranking or the validator.

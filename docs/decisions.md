@@ -583,3 +583,41 @@ changed. That failure is now loud rather than a silent fallback.
 Still open: sfxr's highpass is one-pole and `StateVariableFilter` is two-pole, which is
 30 dB of difference at the frequency floor and the whole of the remaining error on the two
 worst hit-hurt cases.
+
+## 2026-08-08 — A one-pole filter beside the two-pole one
+
+Decision:
+`OnePoleFilter` joins the vocabulary: 6 dB per octave, lowpass or highpass, with the same
+cutoff sweep as `StateVariableFilter`. The sfxr mapping uses it for the highpass stage.
+Twenty-three node types.
+
+Reason:
+sfxr's highpass is `fltphp += fltp - pp; fltphp -= fltphp * flthp` — a DC blocker, one
+pole. `StateVariableFilter` is two. Near the cutoff the difference is invisible; far from
+it, it is everything. sfxr's hit-hurt sounds slide down to a 3.5 Hz floor two hundred times
+below their highpass corner, where one pole takes about 32 dB off and two take about 63, so
+our rendering was 30 dB quieter than sfxr's for most of the sound. `hit-hurt-5` went from
+an envelope distance of 67 dB to 3.1.
+
+A gentler slope is also not a worse filter. It thins or warms without carving a hole, and
+blocking DC is what most hardware puts in front of an output — the node earns its place
+whatever sfxr does.
+
+Alternatives:
+A slope parameter on `StateVariableFilter` (a two-pole topology asked to be one pole is a
+special case in the inner loop, and the two have genuinely different state).
+
+Consequences:
+Three new node tests, 53 in total, one of which pins the thing that matters: two octaves
+below a highpass corner, one pole must be at least three times louder than two. An
+eighteenth golden vector, matching between MSVC/x64 and Clang/WASM.
+
+The count stayed at 32 of 41, which is worth stating plainly: the fix moved one case from
+catastrophically wrong to 0.19 dB short of passing, and moved the generator's median from
+9.6 dB to 6.8, without crossing a threshold. A ratchet that only counts passes would have
+recorded nothing.
+
+`hit-hurt-4` is now explained rather than fixed. It differs from sfxr by a fraction of a
+cycle after 60 ms of continuous pitch sliding — integer phase accumulation against float —
+and below the highpass corner a single square edge landing one window later swings the
+envelope metric by more than 20 dB. The pitch trajectories match; the phase does not.

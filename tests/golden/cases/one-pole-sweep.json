@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: one-pole filter",
+    "description": "A saw through a one-pole highpass, sweeping. Records the 6 dB/octave slope, which is the whole reason this node exists beside the two-pole filter-self-sweep case.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "filter",
+      "type": "OnePoleFilter",
+      "parameters": {
+        "cutoff": 80,
+        "cutoff_sweep": 7,
+        "mode": 1
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

@@ -191,6 +191,10 @@ const db = (x) => 20 * Math.log10(x + 1e-9);
 // to it. -60 dB: comfortably below anything audible against the rest of the frame.
 const SPECTRAL_FLOOR = 1e-3;
 
+// The same idea for the loudness contour: frames quieter than this fraction of the loudest
+// frame count as equally quiet. -60 dB below the peak of a game sound is silence.
+const ENVELOPE_FLOOR = 1e-3;
+
 // ---------------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------------
@@ -217,10 +221,19 @@ export function compare(referencePath, candidatePath) {
   const canEnvelope = frameRms(levelled);
   const frames = Math.min(refEnvelope.length, canEnvelope.length);
 
+  // Floored against the loudest frame, for the same reason the spectrum is floored against
+  // the loudest bin: a difference between -80 dB and -60 dB is 20 dB of arithmetic and
+  // nothing at all to a listener. Sounds that decay to silence — which is most of them,
+  // since these are one-shot game sounds — spend much of their length down there, and
+  // without a floor that inaudible tail dominates the average and hides what the attack is
+  // doing. Set once from the reference so both sides are held to the same line.
+  const envelopeFloor = Math.max(...refEnvelope, 1e-12) * ENVELOPE_FLOOR;
   let envelopeSum = 0;
   let envelopeWorst = 0;
   for (let i = 0; i < frames; i++) {
-    const difference = Math.abs(db(refEnvelope[i]) - db(canEnvelope[i]));
+    const a = Math.max(refEnvelope[i], envelopeFloor);
+    const b = Math.max(canEnvelope[i], envelopeFloor);
+    const difference = Math.abs(db(a) - db(b));
     envelopeSum += difference;
     envelopeWorst = Math.max(envelopeWorst, difference);
   }

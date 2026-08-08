@@ -99,6 +99,11 @@
       "name": "noise-oscillator",
       "patch": "cases/noise-oscillator.json",
       "frames": 24000
+    },
+    {
+      "name": "one-pole-sweep",
+      "patch": "cases/one-pole-sweep.json",
+      "frames": 24000
     }
   ]
 }
