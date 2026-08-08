@@ -41,10 +41,32 @@ two thousand binding files. Afterwards it is incremental.
 | Inspect a signal | select a node — the scope shows what its first output is carrying |
 | Fix a problem | the panel names the nodes involved and highlights them in the graph |
 
+## The grid
+
+The canvas draws its own three-tier grid, and each tier **is** one of the layout's
+pitches:
+
+| line | spacing | means |
+|---|---|---|
+| faint | 40 | the snap step — where a dragged node lands |
+| medium | 200 | a **row** — the vertical pitch auto-place uses |
+| heavy | 400 | a **column** — the horizontal pitch auto-place uses |
+
+GraphEdit's own grid draws minor lines at the snap distance and major lines at some
+multiple of it, which leaves you counting minor lines to find the one you meant to align
+to. Here there is nothing to count: the heavy line *is* the column and the medium line
+*is* the row, so "line it up with a major line" and "put it where the layout would" are
+the same instruction. GraphEdit's grid is switched off so only one grid is drawn.
+
+Loading a patch snaps every node — and every cable waypoint — onto the 40 grid. A file
+written by another editor, or by hand, otherwise lands on arbitrary pixels and every
+alignment cue on the canvas is off by a few, which reads as the grid being broken rather
+than the file.
+
 ## Layout
 
-Everything snaps to a **40 pixel grid** — the graph's major grid lines — so hand-placed
-and auto-placed nodes share a pitch instead of drifting a few pixels apart.
+Everything snaps to a **40 pixel grid**, so hand-placed and auto-placed nodes share a
+pitch instead of drifting a few pixels apart.
 
 **Auto-place** (`layout.gd`) is the Sugiyama framework for layered graph drawing. Placing
 nodes by depth alone — which is all the first version did — gets the columns right and
@@ -105,8 +127,10 @@ orthogonal trace with 45-degree corners when it would cross something, which is 
 traces look the way they do.
 
 A graph dense enough will always have some crossings left. Where two cables do cross, the
-one underneath is **broken with a short gap**, exactly as a schematic does it, so the
-upper cable reads as continuous and the eye can follow either one through the junction.
+lower one **darkens as it approaches, cuts out beneath the junction, and fades back** —
+so it reads as one cable passing under another rather than as two cables that happen to
+end near each other. The upper cable is then laid back over the shadow so it stays
+unbroken.
 That is drawn on a Control inserted directly after GraphEdit's own connection layer —
 above the cables, below the nodes — and recomputed only when the view actually changes,
 since rerouting every cable on every frame is enough work to hold a core down by itself.

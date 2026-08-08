@@ -35,10 +35,38 @@ const GRAB_DISTANCE := 12.0
 ## improve a cable that is going to look crowded regardless.
 const MAX_CANDIDATES := 192
 
-## Half-length of the break drawn in the cable that passes underneath at a crossing.
-const CROSSING_BREAK := 7.0
+## Half-length of the fully-broken part of the cable that passes underneath a crossing.
+const CROSSING_BREAK := 13.0
+## How far the shadow fades out either side of that break.
+const CROSSING_FADE := 20.0
 ## How much wider than the cable the break is, so it clears the line underneath.
-const CROSSING_PAD := 5.0
+const CROSSING_PAD := 6.0
+## Steps used to draw the fade. Enough to read as a gradient, few enough to be free.
+const CROSSING_STEPS := 12
+
+# ---------------------------------------------------------------------------------
+# Grid
+#
+# GraphEdit's own grid draws minor lines at the snap distance and major lines at some
+# multiple of it, which leaves you counting minor lines to find the one you want to align
+# to. Here the tiers are the layout's own constants instead: a major line is a column, a
+# half-major is a row. The line you align to is the line the layout uses, so there is
+# nothing to count.
+# ---------------------------------------------------------------------------------
+
+## Set GraphEdit's own show_grid to false and let this draw instead; the two would
+## otherwise overlay two unrelated sets of major lines.
+var draw_grid := true
+## The snap step — faintest lines.
+var grid_minor := 40.0
+## Row pitch — the "half-major" lines.
+var grid_half_major := 200.0
+## Column pitch — the heaviest lines.
+var grid_major := 400.0
+
+var grid_minor_colour := Color(1, 1, 1, 0.035)
+var grid_half_major_colour := Color(1, 1, 1, 0.10)
+var grid_major_colour := Color(1, 1, 1, 0.22)
 
 ## Graph-space point each cable must pass through, keyed by connection.
 var waypoints: Dictionary = {}
@@ -523,6 +551,41 @@ func _ready() -> void:
 	move_child(_overlay, 1)
 
 
+## The grid is drawn on the GraphEdit's own canvas item, which sits below the connection
+## layer — so cables and nodes stay on top of it.
+func _draw() -> void:
+	if not draw_grid:
+		return
+	var scale := zoom if zoom > 0.0 else 1.0
+	var left := scroll_offset.x / scale
+	var top := scroll_offset.y / scale
+	var right := (scroll_offset.x + size.x) / scale
+	var bottom := (scroll_offset.y + size.y) / scale
+
+	# Heaviest last, so a column line is drawn over the row and snap lines that share it.
+	for tier in [
+		[grid_minor, grid_minor_colour, 1.0],
+		[grid_half_major, grid_half_major_colour, 1.0],
+		[grid_major, grid_major_colour, 2.0],
+	]:
+		var step: float = tier[0]
+		if step <= 0.0 or step * scale < 5.0:
+			continue   # too dense to read at this zoom, and expensive to draw
+		var colour: Color = tier[1]
+		var width: float = tier[2]
+
+		var x := floorf(left / step) * step
+		while x <= right:
+			var screen := x * scale - scroll_offset.x
+			draw_line(Vector2(screen, 0.0), Vector2(screen, size.y), colour, width)
+			x += step
+		var y := floorf(top / step) * step
+		while y <= bottom:
+			var screen := y * scale - scroll_offset.y
+			draw_line(Vector2(0.0, screen), Vector2(size.x, screen), colour, width)
+			y += step
+
+
 ## Every cable's current route in graph space, with the colour GraphEdit drew it in.
 func _routes() -> Array:
 	var routes := []
@@ -568,12 +631,39 @@ func _draw_crossings(canvas: CanvasItem) -> void:
 			var under: Dictionary = b
 
 			for point in _intersections(over["points"], under["points"]):
-				var direction := _direction_at(under["points"], point)
-				if direction == Vector2.ZERO:
+				var under_direction := _direction_at(under["points"], point)
+				var over_direction := _direction_at(over["points"], point)
+				if under_direction == Vector2.ZERO:
 					continue
-				var half := direction * CROSSING_BREAK
-				canvas.draw_line(to_local.call(point - half), to_local.call(point + half),
-					background, (connection_lines_thickness + CROSSING_PAD) * scale, true)
+
+				# The lower cable does not simply stop. It darkens as it approaches, cuts
+				# out under the crossing, then fades back — which reads as one cable
+				# passing beneath another rather than as two cables that happen to end.
+				var reach: float = CROSSING_BREAK + CROSSING_FADE
+				var width: float = (connection_lines_thickness + CROSSING_PAD) * scale
+				var span := reach * 2.0 / CROSSING_STEPS
+				for step_index in CROSSING_STEPS:
+					var from_offset: float = -reach + step_index * span
+					var centre: float = absf(from_offset + span * 0.5)
+					var strength := 1.0
+					if centre > CROSSING_BREAK:
+						strength = 1.0 - (centre - CROSSING_BREAK) / CROSSING_FADE
+					if strength <= 0.0:
+						continue
+					var shade := background
+					shade.a = clampf(strength, 0.0, 1.0)
+					canvas.draw_line(
+						to_local.call(point + under_direction * from_offset),
+						to_local.call(point + under_direction * (from_offset + span)),
+						shade, width, true)
+
+				# Then the upper cable is laid back over the shadow, so it stays unbroken
+				# across the junction. Locally a route is straight, so a segment along its
+				# direction follows it exactly.
+				if over_direction != Vector2.ZERO:
+					var extent := over_direction * reach
+					canvas.draw_line(to_local.call(point - extent), to_local.call(point + extent),
+						over["colour"], connection_lines_thickness * scale, true)
 
 
 ## Points where two routes cross.

@@ -248,6 +248,17 @@ func _initialize() -> void:
 
 	# The overlay has to sit above the cables and below the nodes, or the mark is
 	# invisible or covers a node.
+	# The grid tiers must be the layout's own pitches, or "align to a major line" and
+	# "the column the layout uses" stop meaning the same thing.
+	check(is_equal_approx(main.graph_edit.grid_minor, main.GRID),
+		"the faint grid lines are the snap step")
+	check(is_equal_approx(main.graph_edit.grid_half_major, main.ROW_STEP),
+		"the medium lines are the row pitch")
+	check(is_equal_approx(main.graph_edit.grid_major, main.COLUMN_PITCH),
+		"the heavy lines are the column pitch")
+	check(not main.graph_edit.show_grid,
+		"and GraphEdit's own grid is off, so only one grid is drawn")
+
 	var connection_layer: Node = main.graph_edit.get_child(0)
 	var overlay: Node = main.graph_edit.get_child(1)
 	check(connection_layer.name == "_connection_layer", "the connection layer is still first")
@@ -261,6 +272,43 @@ func _initialize() -> void:
 	await process_frame
 
 	check(not main.undo_redo.has_undo(), "a freshly loaded patch has nothing to undo")
+
+	# Whatever a patch arrives with, it lands on the grid — otherwise every alignment cue
+	# on the canvas is off by a few pixels and the grid looks broken rather than the file.
+	var off_grid := {
+		"schema_version": 1,
+		"nodes": [
+			{"id": "a", "type": "SineOscillator", "position": {"x": 17, "y": 23}},
+			{"id": "out", "type": "StereoOutput", "position": {"x": 511, "y": 349}},
+		],
+		"connections": [{"from": {"node": "a", "port": "out"},
+			"to": {"node": "out", "port": "left"},
+			"waypoint": {"x": 263, "y": 91}}],
+	}
+	await main._load_text(JSON.stringify(off_grid))
+	await process_frame
+	await process_frame
+	var snapped := true
+	for node in main.patch["nodes"]:
+		if fmod(node["position"]["x"], main.GRID) != 0.0 \
+			or fmod(node["position"]["y"], main.GRID) != 0.0:
+			snapped = false
+	check(snapped, "an off-grid patch is snapped when it loads")
+	var waypoint: Dictionary = main.patch["connections"][0]["waypoint"]
+	check(fmod(waypoint["x"], main.GRID) == 0.0 and fmod(waypoint["y"], main.GRID) == 0.0,
+		"and so are its cable waypoints")
+
+	# Reload the demo so the checks below start from a known patch.
+	var restore := FileAccess.open(main._example_path("first-synth.json"), FileAccess.READ)
+	await main._load_text(restore.get_as_text())
+	await process_frame
+	await process_frame
+	var demo_on_grid := true
+	for node in main.patch["nodes"]:
+		if fmod(node["position"]["x"], main.GRID) != 0.0 \
+			or fmod(node["position"]["y"], main.GRID) != 0.0:
+			demo_on_grid = false
+	check(demo_on_grid, "and the shipped demo patch is already on it")
 
 	var original_nodes: int = main.patch["nodes"].size()
 	var original_connections: int = main.patch["connections"].size()

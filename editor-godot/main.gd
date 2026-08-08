@@ -35,8 +35,8 @@ static func snap_up(value: float, step: float) -> float:
 	return ceilf(value / step) * step
 
 const EXAMPLES := {
-	"First Synth": "res://examples/first-synth.json",
-	"Delay Echo": "res://examples/delay-echo.json",
+	"First Synth": "first-synth.json",
+	"Delay Echo": "delay-echo.json",
 }
 
 # Signal types, mapped to GraphEdit slot types so the engine's own compatibility rule is
@@ -154,11 +154,18 @@ func _build_ui() -> void:
 	graph_edit = PatchGraph.new()
 	graph_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	graph_edit.right_disconnects = true
-	graph_edit.show_grid = true
+	graph_edit.show_grid = false   # the canvas draws its own; see below
 	graph_edit.minimap_enabled = true
 	# Snap to the same grid auto-place uses, so dragging a node by hand keeps the pitch.
 	graph_edit.snapping_enabled = true
 	graph_edit.snapping_distance = int(GRID)
+	# The canvas draws its own grid, whose tiers are the layout's own pitches: a heavy
+	# line is a column, a medium one is a row, a faint one is the snap step. GraphEdit's
+	# built-in grid would otherwise draw a second, unrelated set of major lines over it.
+	graph_edit.show_grid_buttons = false
+	graph_edit.grid_minor = GRID
+	graph_edit.grid_half_major = ROW_STEP
+	graph_edit.grid_major = COLUMN_PITCH
 	graph_edit.waypoint_changed.connect(_on_waypoint_changed)
 	# audio and control are both sample streams and interconvert freely; event and note are
 	# discrete and require an exact match. This is the core's rule, not a UI preference.
@@ -1267,12 +1274,29 @@ func _show_info() -> void:
 	info_label.text = text
 
 
+## Where an example actually lives.
+##
+## The copy under res://examples is mirrored in from examples/patches by the build, which
+## means it goes stale the moment a patch is edited without rebuilding the extension —
+## and the editor then quietly opens an old layout while the repository has a new one.
+## That is a genuinely confusing failure, so the repository copy wins whenever it is
+## reachable, and res:// is the fallback for an exported build that has no repository
+## around it.
+func _example_path(file_name: String) -> String:
+	var repository := ProjectSettings.globalize_path("res://") \
+		.path_join("../examples/patches").path_join(file_name)
+	if FileAccess.file_exists(repository):
+		return repository
+	return "res://examples/" + file_name
+
+
 func _load_example(name: String) -> void:
 	if not EXAMPLES.has(name):
 		return
-	var file := FileAccess.open(EXAMPLES[name], FileAccess.READ)
+	var path := _example_path(EXAMPLES[name])
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		status_label.text = "could not open %s" % EXAMPLES[name]
+		status_label.text = "could not open %s" % path
 		return
 	_load_text(file.get_as_text())
 
@@ -1308,6 +1332,27 @@ func _load_text(text: String) -> void:
 	if not patch.has("connections"):
 		patch["connections"] = []
 	inspecting = {}
+
+	# Snap whatever arrives onto the grid. A patch written by another editor, or by hand,
+	# lands on arbitrary pixels, and then every alignment cue in the canvas is off by a
+	# few — which reads as the grid being broken rather than the file. Only positions
+	# move; nothing about the graph changes.
+	var moved := 0
+	for node in patch["nodes"]:
+		if not node.has("position"):
+			continue
+		var before := Vector2(node["position"].get("x", 0.0), node["position"].get("y", 0.0))
+		var after := (before / GRID).round() * GRID
+		if not before.is_equal_approx(after):
+			node["position"] = {"x": after.x, "y": after.y}
+			moved += 1
+	for connection in patch.get("connections", []):
+		if connection.has("waypoint"):
+			var point := Vector2(connection["waypoint"].get("x", 0.0),
+				connection["waypoint"].get("y", 0.0))
+			point = (point / GRID).round() * GRID
+			connection["waypoint"] = {"x": point.x, "y": point.y}
+
 	# Opening a document starts a new history. Undoing across a load would restore a
 	# different patch's nodes into this one, which is never what anyone means.
 	undo_redo.clear_history(true)
@@ -1315,6 +1360,8 @@ func _load_text(text: String) -> void:
 	await _rebuild_view()
 	_apply()
 	_refresh_undo_buttons()
+	if moved > 0:
+		status_label.text = "snapped %d node%s to the grid" % [moved, "" if moved == 1 else "s"]
 
 
 # ---------------------------------------------------------------------------------
