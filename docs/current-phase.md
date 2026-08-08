@@ -1,47 +1,107 @@
 # Current Phase
 
-**Knobcon hardening** — "can this demo work thirty consecutive times in front of
-strangers?" Branch `knobcon-hardening`. Sep 4 freeze, Sep 11 show.
+**Knobcon hardening and editor polish.** Branch `knobcon-hardening`, 8 commits ahead of
+`main`. Feature freeze Sep 4, show Sep 11.
 
-All six milestones on the critical path (A, B, C, F) are merged to `main`. What remains
-is reliability and demo polish, not features.
+Milestones A, B, C and F are all on `main` and all complete. What remains before the show
+is reliability and presentation, not features.
 
-## The checklist
+## Where the project stands
 
-- [x] **Malformed patches on device.** `sg-serial.py abuse`: plain garbage, truncated
-      JSON, wrong schema version, unknown node, zero-delay cycle, truncated upload. All
-      rejected cleanly with the core's own diagnostics; device stays alive and playing;
-      nothing bad persists to NVS; a good deploy works immediately after. Two real bugs
-      found and fixed on the way (below).
-- [x] **Power-cycle soak.** `sg-serial.py soak --cycles 30`: thirty consecutive clean
-      boots, arpeggiator up every time, internal heap spread across all cycles **0
-      bytes** — byte-identical free memory after every boot. Resets via close/reopen
-      (which also exercises USB re-enumeration each cycle) after RTS-pulse resets proved
-      stateful on the USB-JTAG bridge — the second pulse parked the chip in silent
-      download mode.
-- [x] **One-click deploy from the web editor** — written, not yet clicked. Chrome's Web
-      Serial speaks the same `load` protocol as the python tool; board-side rejection
-      diagnostics render in the same problems panel as local ones. Needs a human click
-      to test: the serial port chooser is gesture-gated by design.
-- [ ] **Human eyes on both editors.** Still nobody has looked at either UI. This is
-      Daniel's item; everything else has been verified headlessly.
+One graph model runs, within declared tolerances, under four compilers on four
+architectures:
 
-## Bugs the hardening has caught so far
+| target | how it runs | verified by |
+|---|---|---|
+| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 4 ctest suites, 10 golden vectors |
+| Browser | WebAssembly in an AudioWorklet | `verify-goldens.mjs`, worst case 2.09e-7 |
+| Godot 4.7 | GDExtension | 68 editor checks, 18 layout checks |
+| ESP32-S3 | generic firmware, Waveshare audio board | `sg-serial.py verify-goldens`, worst 1.90e-5 |
 
-- A truncated upload wedged the device console forever: with the interrupt-driven USB
-  console driver, `getchar()` blocks with no timeout. Payloads now read through the
-  driver directly with a bounded wait, an abandoned transfer drains stragglers, and
-  stdio read-ahead is disabled so the two paths cannot fight over bytes.
-- RTS-pulse resets are not idempotent on the USB-Serial-JTAG bridge. The reliable reset
-  is opening the port. Encoded in `sg-serial.py`.
+`dsp-core` still depends on nothing but the C++ standard library, and no editor or host
+holds a second copy of the node vocabulary, the search ranking or the validator.
 
-## Remaining before the show (docs/KNOBCon_2026.md)
+## Run everything
 
-Landing page, README pass, QR, getting-started, architecture diagram, board page, short
-video, backup firmware/cables/board. None of it is code.
+```bash
+# native
+cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure
 
-## Invariants being protected
+# browser
+emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release && cmake --build build-wasm
+node runtime-wasm/verify-goldens.mjs
+python -m http.server 8177          # then open /editor-web/
 
-- The device rejects; it never crashes, never persists garbage, never stops playing.
-- The deploy protocol is identical from python and from the browser.
-- Every diagnostic a user sees, on any surface, comes from the one validator in dsp-core.
+# godot
+cmake -S runtime-godot -B runtime-godot/build -DCMAKE_BUILD_TYPE=Release
+cmake --build runtime-godot/build
+godot --headless --path editor-godot --script res://editor_test.gd
+godot --headless --path editor-godot --script res://layout_test.gd
+node tools/verify-roundtrip.mjs
+
+# hardware (board on COM3)
+.venv/Scripts/python tools/esp32/sg-serial.py --port COM3 verify-goldens
+.venv/Scripts/python tools/esp32/sg-serial.py --port COM3 abuse
+.venv/Scripts/python tools/esp32/sg-serial.py --port COM3 soak --cycles 30
+```
+
+Toolchains live outside the repository: ESP-IDF v5.5 at `C:\Users\danie\esp-idf`,
+Emscripten at `C:\Users\danie\emsdk`, Godot 4.7.1 under `C:\Users\danie\Downloads\gofo\`,
+and a repo-local `.venv` with pyserial and esptool.
+
+## Done in this phase
+
+- Device reliability: malformed-patch abuse suite, thirty-cycle power soak with **0 bytes**
+  of heap drift, and a truncated upload no longer wedges the console.
+- One-click deploy from the web editor over Web Serial (written, never clicked — see below).
+- Godot editor: undo/redo, layered layout with crossing reduction and straightening,
+  PCB-style cable routing with draggable waypoints, grid tiers that mean something,
+  intent search with per-row Add buttons, Atkinson Hyperlegible throughout.
+
+## Open
+
+- **The Web Serial deploy button has never been clicked.** It is gesture-gated by design,
+  so it needs a human. Everything around it is verified; the button itself is not.
+- **The web editor has never been looked at.** The Godot editor now has, repeatedly; the
+  browser page has only ever been checked element by element from a script.
+- Safari and Firefox are untested. Only Chrome has run the browser build.
+- macOS and Linux have never been compiled — CMake and miniaudio cover them, unexercised.
+- `AudioInput` in the browser has no `getUserMedia`, so `delay-echo.json` loads and
+  schedules correctly but has nothing to process.
+- The Waveshare board's ES7210 microphone array is described in its board profile but not
+  driven by the firmware.
+
+## Remaining before the show
+
+Per `KNOBCon_2026.md`, none of it is code: landing page, README pass, QR, getting-started,
+architecture diagram, board page, short video, and spare hardware.
+
+## Traps worth knowing
+
+These all cost real time once and are written up in `decisions.md` or the component
+READMEs. Collected here because the pattern is the same each time — the symptom pointed
+somewhere other than the cause.
+
+- A **GDScript type-inference error** leaves a half-built editor, and the headless test
+  then awaits a coroutine that never resolves. It *hangs* instead of printing the parse
+  error. `editor_test.gd` now bails out early; if a run ever hangs again, look for a parse
+  error first.
+- **`editor-godot/examples/` is build output** mirrored from `examples/patches/`. It goes
+  stale the moment an example is edited without rebuilding the extension. The editor now
+  prefers the repository copy, but the mirror still exists for exported builds.
+- A **`WebAssembly.Module` cannot be cloned into an AudioWorklet** — separate agent
+  cluster — and it fails silently, with no throw and no error event.
+- **RTS-pulse resets are stateful** on the USB-Serial-JTAG bridge; the second pulse parks
+  the chip in download mode. Opening the port is the reliable reset.
+- **godot-cpp forces the static MSVC runtime**, so our libraries must be created after
+  that is set or the link fails on duplicate CRT symbols.
+- A Godot project must be **imported once** (`--import`) before its extension registers.
+
+## Invariants
+
+- `dsp-core` depends on nothing but the C++ standard library.
+- JSON never enters `dsp-core`; `patch-io` translates at the edge.
+- No allocation, locks, or I/O in steady-state `process()`.
+- No DSP in JavaScript and none in GDScript. Both editors are hosts.
+- Neither editor keeps its own copy of the node vocabulary, the ranking, or the validator.
+- The golden manifest is the single definition of correctness for every target.

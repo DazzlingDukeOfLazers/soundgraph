@@ -1,5 +1,66 @@
 # Decision Log
 
+## 2026-08-08 — Auto-place is a pure function of the graph
+
+Decision:
+Auto-place arranges the whole graph and depends only on nodes, edges and widget sizes —
+never on current positions and never on the selection. Arranging a selection is a separate
+action with its own button.
+
+Reason:
+It previously switched to selection-only mode whenever two or more nodes were selected,
+and a drag leaves what it dragged selected — so pressing the button after moving things
+arranged a subset anchored to the rest, giving a different answer each time for reasons
+invisible from outside. The layout algorithm itself was already deterministic; the button
+was not. A tidy command whose meaning depends on hidden state is worse than no tidy
+command.
+
+Alternatives:
+A modifier key for selection-only (still hidden state, just harder to trigger by accident);
+keeping the automatic switch but announcing it (announcing a surprise is not the same as
+removing it).
+
+Consequences:
+Two buttons instead of one. Three checks scatter the graph and re-arrange to prove the
+answer does not move, and a fourth proves a lingering selection cannot change it.
+
+## 2026-08-08 — The editor is set in Atkinson Hyperlegible
+
+Decision:
+The Godot editor uses Atkinson Hyperlegible Next at bold weight throughout, at sizes well
+above the usual editor default, with high-contrast colours. The font is vendored under
+`editor-godot/fonts/` with its OFL licence.
+
+Reason:
+`UX_PRINCIPLES.md` opens with "avoid tiny text, tiny hit targets, cryptic abbreviations,
+and maximum-density layouts as the default", and the first pass wrote that down without
+following it. Atkinson Hyperlegible exists specifically to keep `I l 1`, `O 0` and `b d`
+apart at small sizes and for low vision, which is the same problem a dense patch editor
+has for everyone.
+
+Consequences:
+Dimmed text is a lighter grey rather than white at reduced opacity — fading alpha costs
+contrast twice, against the background and against neighbouring elements. 300 KB of
+vendored font, which also has to be imported by Godot before the project will run.
+
+## 2026-08-08 — The canvas draws its own grid
+
+Decision:
+GraphEdit's built-in grid is switched off and the canvas draws a three-tier grid whose
+tiers are the layout's own pitches: faint at the snap step, medium at the row pitch, heavy
+at the column pitch.
+
+Reason:
+GraphEdit draws minor lines at the snap distance and major lines at some multiple of it
+that has nothing to do with the layout, which leaves you counting minor lines to find the
+one you meant to align to. Making the heavy line *be* the column means "line it up with a
+major line" and "put it where auto-place would" are the same instruction.
+
+Consequences:
+Two constants now have a visual meaning and cannot be changed casually. Loading a patch
+also snaps every node and cable waypoint onto the grid, so a file from any source lands
+where the grid says.
+
 ## 2026-08-28 — ESP-IDF v5.5, not v6.x
 
 Decision:
