@@ -58,6 +58,23 @@ and a repo-local `.venv` with pyserial and esptool.
   PCB-style cable routing with draggable waypoints, grid tiers that mean something,
   intent search with per-row Add buttons, Atkinson Hyperlegible throughout.
 
+## Open decision: which surface is the demo?
+
+The 90-second script in `KNOBCon_2026.md` says "play the **browser** synth" and "connect
+LFO to filter modulation". The web editor cannot do the second one — it is the "simple web
+reference editor" the roadmap asked for, a JSON pane plus generated controls, so connecting
+a node there means typing JSON in front of an audience.
+
+The divergence is intentional (PLAN.md principle 8), but the demo script assumes a browser
+that patches visually, and that was never built.
+
+Recommendation: **demo in Godot, and use the browser as the QR-code moment** — "scan this,
+same file, runs on your phone". Godot does all nine steps today. Adding drag-to-connect to
+the web editor is real work on a surface nobody has used yet, inside the freeze window.
+
+Not yet decided. If the answer is "the browser must patch visually", that is the largest
+remaining piece of work and it should start immediately.
+
 ## Open
 
 - **The Web Serial deploy button has never been clicked.** It is gesture-gated by design,
