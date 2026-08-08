@@ -61,6 +61,39 @@ Two settings in `export_presets.cfg` are load-bearing and easy to get wrong:
 In a browser there is no filesystem to show a dialog for, so **Open** goes through a real
 `<input type="file">` and **Save as** through a download.
 
+### It downloads once
+
+The export is ~46 MB, so it is a progressive web app: a service worker caches the whole
+thing and later visits touch the network for nothing. Verified by loading it, killing the
+web server, and reloading — the editor still came up, with `transferSize: 0` against
+`decodedBodySize: 44077147` for `index.side.wasm`. It can also be installed to a home
+screen, which is the point for a QR code at a stand.
+
+Godot generates the worker and the manifest; the settings live under
+`progressive_web_app/` in `export_presets.cfg`. The icons are rasterised from the one
+`icon.svg` — regenerate them rather than editing the PNGs:
+
+```bash
+godot --headless --path editor-godot --script res://make_icons.gd
+```
+
+Three things about the caching are worth knowing before relying on it:
+
+- **It is cached from the *second* visit, not the first.** The worker installs on the first
+  load but does not control that page, so the four large files still come over the network.
+  Godot can hand the worker control immediately, but only sends it that message when
+  `ensure_cross_origin_isolation_headers` is on — and that adds COOP/COEP headers to every
+  response, which is exactly the "any static host will do" property `nothreads` was chosen
+  to keep. Not worth trading for one load.
+- **Serve it gzipped anyway.** ~10 MB compressed versus ~46 MB raw, and that first load is
+  the one an audience watches.
+- **Updates land a visit late.** The worker is strictly cache-first with no revalidation. A
+  new export changes the worker, which installs a fresh cache and drops the old one, but the
+  new build appears on the visit after that. Deploy before the day, then load it twice.
+
+Service workers need a secure context, so this works on `localhost` and over HTTPS, and not
+over plain HTTP to a LAN address.
+
 ## Build and run
 
 The extension binary and the example patches are build output, not repository content.

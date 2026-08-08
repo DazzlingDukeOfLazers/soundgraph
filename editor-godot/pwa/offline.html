@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<!--
+  Shown when the browser is offline and the service worker has no cached copy of what was
+  asked for. Once the editor has been opened once it is cached whole, so reaching this page
+  normally means the very first visit happened without a connection.
+
+  Self-contained on purpose: no fonts, no stylesheets, no images. A page that needs the
+  network to explain that the network is missing is not much use.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoundGraph Editor — offline</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: #1c1f25; color: #f5f5f7;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 18px; line-height: 1.6;
+  }
+  main { max-width: 32rem; padding: 2rem; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 1rem; }
+  p { margin: 0 0 1rem; color: #b8bcc4; }
+  b { color: #6ee7b7; font-weight: 700; }
+  svg { display: block; margin-bottom: 1.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <svg width="64" height="64" viewBox="0 0 128 128" aria-hidden="true">
+    <rect width="128" height="128" rx="24" fill="#23272f"/>
+    <path d="M34 64 H56 M72 44 H94 M72 84 H94" stroke="#6ee7b7" stroke-width="4" fill="none"/>
+    <path d="M56 64 C64 64 64 44 72 44 M56 64 C64 64 64 84 72 84" stroke="#6ee7b7" stroke-width="4" fill="none"/>
+    <circle cx="28" cy="64" r="10" fill="#6ee7b7"/>
+    <circle cx="64" cy="64" r="9" fill="#23272f" stroke="#6ee7b7" stroke-width="4"/>
+    <circle cx="100" cy="44" r="8" fill="#8fb8ff"/>
+    <circle cx="100" cy="84" r="8" fill="#8fb8ff"/>
+  </svg>
+  <h1>You are offline</h1>
+  <p>
+    The SoundGraph editor has not finished downloading yet, so there is nothing cached to
+    open. Reconnect and reload — after that first load it runs <b>entirely offline</b>.
+  </p>
+  <p>
+    Patches are plain JSON files on your machine. Nothing you make here is uploaded
+    anywhere, online or off.
+  </p>
+</main>
+</body>
+</html>

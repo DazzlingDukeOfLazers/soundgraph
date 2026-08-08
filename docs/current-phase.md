@@ -97,8 +97,10 @@ browser demo is a visual demo.
   than it did, now that the Godot editor is itself reachable from a URL.
 - **No audio has come out of the exported web editor.** It boots with the extension loaded
   and the UI live; the audio path is untested. See the warning noted above.
-- The exported editor is ~46 MB uncompressed, ~10 MB gzipped. Whatever hosts it must serve
-  compressed, or the QR-code moment is a thirty-second wait.
+- The exported editor is ~46 MB uncompressed, ~10 MB gzipped. It is a PWA, so that cost is
+  paid once and later visits are offline — but the *first* load is still the one an audience
+  watches, so whatever hosts it must serve compressed, over HTTPS (service workers need a
+  secure context). Caching begins on the second visit; see `editor-godot/README.md`.
 - Safari and Firefox are untested. Only Chrome has run the browser build.
 - macOS and Linux have never been compiled — CMake and miniaudio cover them, unexercised.
 - `AudioInput` in the browser has no `getUserMedia`, so `delay-echo.json` loads and
