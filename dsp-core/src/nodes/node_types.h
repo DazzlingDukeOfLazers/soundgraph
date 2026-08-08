@@ -17,6 +17,13 @@ extern const NodeTypeDescriptor kConstant;
 // Filters and time
 extern const NodeTypeDescriptor kStateVariableFilter;
 extern const NodeTypeDescriptor kDelay;
+extern const NodeTypeDescriptor kPhaser;
+
+// Shaping: envelopes, pitch movement and retriggering
+extern const NodeTypeDescriptor kAhdEnvelope;
+extern const NodeTypeDescriptor kSlide;
+extern const NodeTypeDescriptor kArpeggio;
+extern const NodeTypeDescriptor kRetrigger;
 
 // Amplitude and maths
 extern const NodeTypeDescriptor kGain;

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: Filter self-sweep",
+    "description": "A saw through a lowpass that closes on its own. Distinct from the filter-sweep case, which is driven by an LFO.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "parameters": {
+        "frequency": 110
+      }
+    },
+    {
+      "id": "filter",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "cutoff": 6000,
+        "cutoff_sweep": -14,
+        "mode": 0,
+        "resonance": 0.4
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

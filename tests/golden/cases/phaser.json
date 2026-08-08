@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: Phaser",
+    "description": "A saw through a sweeping short delay. The comb moving through the harmonics is the whole point, so the sweep is non-zero.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "phaser",
+      "type": "Phaser",
+      "parameters": {
+        "depth": 1,
+        "offset": 1.5,
+        "sweep": 12
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "phaser",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "phaser",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

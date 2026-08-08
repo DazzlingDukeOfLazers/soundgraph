@@ -44,11 +44,14 @@ constexpr ParameterDescriptor kFilterParameters[] = {
      "Emphasis at the cutoff. High values whistle.", nullptr, 0},
     {"mode", "", 0.0f, 3.0f, 0.0f, Scaling::Linear,
      "Which part of the spectrum to keep.", kFilterModeLabels, 4},
+    {"cutoff_sweep", "octaves/s", -20.0f, 20.0f, 0.0f, Scaling::Linear,
+     "How fast the cutoff moves on its own, without an LFO or an envelope. Negative "
+     "closes the filter as the sound plays, positive opens it.", nullptr, 0},
 };
 
 class StateVariableFilterNode final : public DspNode {
 public:
-    enum Param { kCutoff = 0, kResonance = 1, kMode = 2 };
+    enum Param { kCutoff = 0, kResonance = 1, kMode = 2, kCutoffSweep = 3 };
 
     void prepare(const PrepareContext& context) override {
         sample_rate_ = static_cast<float>(context.sample_rate);
@@ -58,6 +61,7 @@ public:
     void reset() override {
         ic1_ = 0.0f;
         ic2_ = 0.0f;
+        swept_octaves_ = 0.0f;
     }
 
     void process(const ProcessContext& context) override {
@@ -78,6 +82,14 @@ public:
         float cutoff = cutoff_in != nullptr ? cutoff_in[0] : parameter(kCutoff);
         if (cutoff_mod_in != nullptr) {
             cutoff *= std::pow(2.0f, cutoff_mod_in[0]);
+        }
+        // The sweep advances once per block, for the same reason the coefficients are
+        // computed once per block: it keeps a transcendental out of the inner loop, which
+        // is what would cost on ESP32. At 64 frames that is a 750 Hz update rate.
+        const float sweep = parameter(kCutoffSweep);
+        if (sweep != 0.0f) {
+            cutoff *= std::pow(2.0f, swept_octaves_);
+            swept_octaves_ += sweep * static_cast<float>(context.frames) / sample_rate_;
         }
         cutoff = dsp::clampf(cutoff, 10.0f, sample_rate_ * 0.45f);
 
@@ -115,6 +127,7 @@ private:
     float sample_rate_ = 48000.0f;
     float ic1_ = 0.0f;
     float ic2_ = 0.0f;
+    float swept_octaves_ = 0.0f;
 };
 
 // ---------------------------------------------------------------------------------

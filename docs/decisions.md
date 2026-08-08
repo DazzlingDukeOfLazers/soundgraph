@@ -488,3 +488,51 @@ Ten more editor checks, 78 in total. Dragging a cable waypoint is a PCB-mode ges
 hanging cable has no corners to grab, which is part of what the A/B is trading. The rack
 does not yet repatch — connections are made in the graph view — which is the obvious next
 piece if the rack wins.
+
+## 2026-08-08 — Five shaping nodes, in seconds and hertz rather than sfxr's units
+
+Decision:
+`AhdEnvelope`, `Slide`, `Arpeggio`, `Phaser` and `Retrigger` join the vocabulary, and
+`SquareOscillator` and `StateVariableFilter` gain `pulse_width_sweep` and `cutoff_sweep`.
+Twenty-one node types, up from sixteen. Every one is expressed in the units the rest of the
+vocabulary already uses; none of them knows that sfxr exists.
+
+Reason:
+A graph could not previously say the things a game sound says — "drop the pitch fast",
+"jump up a fifth after 40 ms", "do that again every 100 ms". The vocabulary was built for
+held notes, where pitch comes from a keyboard and an envelope sustains until the key is
+released. A coin sound has no key and no sustain.
+
+Shaping them to sfxr would have been quicker and wrong. sfxr's envelope stage length is
+`p² × 100000` in samples at a fixed 44100 Hz; its frequency ramp is a per-sample multiplier
+on a period. Those numbers mean nothing to somebody dragging nodes around, and they would
+have made the nodes useless for anything but reproducing sfxr. The conversion belongs in
+the mapper from a preset to a patch, which is one place, rather than smeared through seven
+node implementations.
+
+`AhdEnvelope` sits beside `ADSR` rather than replacing it. ADSR is the wrong shape here,
+not a worse one: it is built around a note being let go.
+
+`Retrigger` is a separate node rather than a property of the envelope, because *what*
+restarts is a decision per patch — sfxr's repeat restarts the pitch but not the amplitude,
+and being able to say that by wiring one gate and not the other is what having a graph is
+for.
+
+Alternatives:
+An `Sfxr` node that took the twenty-four parameters directly (one node nobody could edit,
+and the one sound in the project that is not a graph); reproducing sfxr's units (fast to
+write, incomprehensible to use).
+
+Consequences:
+Both sweeps default to zero and take the old code path exactly when they are zero, so every
+patch already written renders the same samples — the golden vectors check it. Six new golden
+cases, sixteen in total, all matching between MSVC/x64 and Clang/WASM. Thirteen new node
+tests, 47 in total.
+
+`cutoff_sweep` advances once per block. That is deliberate — it keeps a transcendental out
+of the inner loop, which is what would cost on ESP32 — and it stays host-buffer independent
+because `graph.cpp` calls every node with exactly `kBlockSize` frames behind the output
+FIFO. The rate is correct at any block size; only the granularity follows the block.
+
+The ESP32 has not run the six new vectors yet. It needs the board flashed, and that is a
+person with a cable, not a build step.

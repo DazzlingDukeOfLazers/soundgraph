@@ -118,24 +118,33 @@ case. `sfxr-ref` rejects any case with a non-finite sample and says why.
 
 ## What is not here yet
 
-**The port.** Nothing in `dsp-core` can express sfxr's model, so there is no candidate to
-compare against and no green test claiming otherwise.
-
-Missing nodes, from sfxr's own signal path:
+**The port.** The vocabulary can now express sfxr's signal path, but nothing yet maps a
+parameter set onto a patch, so there is no candidate to compare against and no green test
+claiming otherwise.
 
 | sfxr | SoundGraph |
 |---|---|
-| envelope: attack / sustain / decay, with punch | **missing** |
-| frequency slide, and slide-of-slide | **missing** |
-| arpeggio: one frequency jump at a set time | **missing** |
-| phaser: modulated delay, ±1023 samples | **missing** |
-| repeat: restart the sound on a timer | **missing** |
-| square with variable duty, and duty sweep | partial — `SquareOscillator` has `pulse_width`, no sweep |
-| lowpass with resonance and sweep | partial — `StateVariableFilter` has no sweep |
-| highpass with sweep | partial — same |
-| vibrato | expressible with `LFO` |
+| envelope: attack / sustain / decay, with punch | `AhdEnvelope` |
+| frequency slide, and slide-of-slide | `Slide` — `slide` and `acceleration` |
+| arpeggio: one frequency jump at a set time | `Arpeggio` |
+| phaser: modulated delay, ±1023 samples | `Phaser` |
+| repeat: restart the sound on a timer | `Retrigger`, wired to whichever gates should restart |
+| square with variable duty, and duty sweep | `SquareOscillator` — `pulse_width`, `pulse_width_sweep` |
+| lowpass with resonance and sweep | `StateVariableFilter` — `cutoff_sweep` |
+| highpass with sweep | same node in highpass mode |
+| vibrato | `LFO` into the oscillator's `fm` |
 | noise | `Noise`, different PRNG — spectral comparison only |
 
-When those land, the port is a `.json` patch per case and the rig runs
-`sg-render` against it. The comparator already accepts any two WAVs; nothing here needs to
-change to start using it.
+An earlier version of this table said the envelope was missing. That was wrong: `ADSR`
+already existed. It is the wrong *shape* — it sustains until a key is released, and these
+sounds are over before anyone releases anything — which is why `AhdEnvelope` was added
+beside it rather than instead of it.
+
+What remains is the mapping: sfxr's parameters are in its own units, and every one of them
+needs converting. `p_env_attack` is `attack² × 100000` samples at 44100 Hz; `p_freq_ramp`
+is a per-sample multiplier on a period, which is a rate in semitones per second once the
+algebra is done. That arithmetic belongs in the mapper, not in the nodes — the nodes are
+in seconds and hertz because everything else in the vocabulary is.
+
+When the mapper lands, the port is a `.json` patch per case and the rig runs `sg-render`
+against it. The comparator already accepts any two WAVs; nothing here needs to change.

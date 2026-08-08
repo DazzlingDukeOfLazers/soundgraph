@@ -64,6 +64,36 @@
           "note": 45
         }
       ]
+    },
+    {
+      "name": "ahd-envelope",
+      "patch": "cases/ahd-envelope.json",
+      "frames": 24000
+    },
+    {
+      "name": "slide",
+      "patch": "cases/slide.json",
+      "frames": 36000
+    },
+    {
+      "name": "arpeggio",
+      "patch": "cases/arpeggio.json",
+      "frames": 9600
+    },
+    {
+      "name": "phaser",
+      "patch": "cases/phaser.json",
+      "frames": 24000
+    },
+    {
+      "name": "pulse-sweep",
+      "patch": "cases/pulse-sweep.json",
+      "frames": 24000
+    },
+    {
+      "name": "filter-self-sweep",
+      "patch": "cases/filter-self-sweep.json",
+      "frames": 24000
     }
   ]
 }

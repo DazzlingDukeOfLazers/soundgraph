@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: Slide",
+    "description": "A sine bent downwards by an accelerating slide that stops at a limit.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "pitch",
+      "type": "Constant",
+      "parameters": {
+        "value": 1200
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "acceleration": -36,
+        "limit": 300,
+        "slide": -24
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 440
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "slide",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "slide",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

@@ -9,6 +9,7 @@ add_library(soundgraph-dsp STATIC
     src/nodes/filters.cpp
     src/nodes/amplitude.cpp
     src/nodes/terminals.cpp
+    src/nodes/shaping.cpp
 )
 
 target_include_directories(soundgraph-dsp

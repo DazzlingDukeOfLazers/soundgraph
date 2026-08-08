@@ -90,15 +90,44 @@ protected:
 class SquareOscillator final : public OscillatorBase {
 public:
     static constexpr int kPulseWidth = 1;
+    static constexpr int kPulseWidthSweep = 2;
+
+    void reset() override {
+        OscillatorBase::reset();
+        swept_width_ = kUnstarted;
+    }
 
 protected:
     float render(float phase, float increment) override {
-        const float width = dsp::clampf(parameter(kPulseWidth), 0.01f, 0.99f);
+        const float sweep = parameter(kPulseWidthSweep);
+
+        // With no sweep the width is read straight from the parameter, exactly as before
+        // this sweep existed. That is not only simpler: it means every patch that does not
+        // use the sweep renders the same samples it always did, which the golden vectors
+        // check. A swept width has to carry state, and state that turning a knob cannot
+        // reach is state that makes the knob feel broken.
+        float width;
+        if (sweep == 0.0f) {
+            width = parameter(kPulseWidth);
+            swept_width_ = kUnstarted;
+        } else {
+            if (swept_width_ == kUnstarted) {
+                swept_width_ = parameter(kPulseWidth);
+            }
+            width = swept_width_;
+            swept_width_ = dsp::clampf(swept_width_ + sweep / sample_rate_, 0.01f, 0.99f);
+        }
+
+        width = dsp::clampf(width, 0.01f, 0.99f);
         float value = phase < width ? 1.0f : -1.0f;
         value += dsp::poly_blep(phase, increment);
         value -= dsp::poly_blep(dsp::wrap01(phase + (1.0f - width)), increment);
         return value;
     }
+
+private:
+    static constexpr float kUnstarted = -1.0f;
+    float swept_width_ = kUnstarted;
 };
 
 constexpr ParameterDescriptor kSquareParameters[] = {
@@ -106,6 +135,9 @@ constexpr ParameterDescriptor kSquareParameters[] = {
      "Pitch when nothing is connected to the frequency input.", nullptr, 0},
     {"pulse_width", "", 0.01f, 0.99f, 0.5f, Scaling::Linear,
      "Fraction of each cycle spent high. 0.5 is a square wave.", nullptr, 0},
+    {"pulse_width_sweep", "1/s", -4.0f, 4.0f, 0.0f, Scaling::Linear,
+     "How fast the width moves. Sweeping it thins or fattens the tone as the sound "
+     "plays; zero holds it still.", nullptr, 0},
 };
 
 // ---------------------------------------------------------------------------------
