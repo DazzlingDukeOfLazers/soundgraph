@@ -1,16 +1,8 @@
 # dsp-core owns graph semantics. It links against nothing.
-add_library(soundgraph-dsp STATIC
-    src/types.cpp
-    src/node.cpp
-    src/graph_description.cpp
-    src/graph.cpp
-    src/registry.cpp
-    src/nodes/sources.cpp
-    src/nodes/filters.cpp
-    src/nodes/amplitude.cpp
-    src/nodes/terminals.cpp
-    src/nodes/shaping.cpp
-)
+# The file list is shared with the ESP-IDF component; see sources.cmake for why.
+include(${CMAKE_CURRENT_LIST_DIR}/sources.cmake)
+
+add_library(soundgraph-dsp STATIC ${SOUNDGRAPH_DSP_SOURCES})
 
 target_include_directories(soundgraph-dsp
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include

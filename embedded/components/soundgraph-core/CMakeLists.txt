@@ -6,19 +6,21 @@
 # serial or out of flash, never from a filesystem path.
 set(SG_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../..)
 
+# The file list comes from dsp-core/sources.cmake, which the CMake builds also include.
+# Two hand-copied lists that had to agree is exactly how shaping.cpp came to be missing
+# here for a while — the firmware built cleanly and simply did not contain five nodes.
+include(${SG_ROOT}/dsp-core/sources.cmake)
+
+set(SG_SOURCES "")
+foreach(source IN LISTS SOUNDGRAPH_DSP_SOURCES)
+    list(APPEND SG_SOURCES ${SG_ROOT}/dsp-core/${source})
+endforeach()
+foreach(source IN LISTS SOUNDGRAPH_PATCH_IO_SOURCES)
+    list(APPEND SG_SOURCES ${SG_ROOT}/patch-io/${source})
+endforeach()
+
 idf_component_register(
-    SRCS
-        ${SG_ROOT}/dsp-core/src/types.cpp
-        ${SG_ROOT}/dsp-core/src/node.cpp
-        ${SG_ROOT}/dsp-core/src/graph_description.cpp
-        ${SG_ROOT}/dsp-core/src/graph.cpp
-        ${SG_ROOT}/dsp-core/src/registry.cpp
-        ${SG_ROOT}/dsp-core/src/nodes/sources.cpp
-        ${SG_ROOT}/dsp-core/src/nodes/filters.cpp
-        ${SG_ROOT}/dsp-core/src/nodes/amplitude.cpp
-        ${SG_ROOT}/dsp-core/src/nodes/terminals.cpp
-        ${SG_ROOT}/patch-io/src/json.cpp
-        ${SG_ROOT}/patch-io/src/patch_io.cpp
+    SRCS ${SG_SOURCES}
     INCLUDE_DIRS
         ${SG_ROOT}/dsp-core/include
         ${SG_ROOT}/patch-io/include
