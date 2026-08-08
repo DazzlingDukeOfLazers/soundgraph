@@ -25,6 +25,33 @@ const COLUMN_GUTTER := 80.0
 ## Rows land on multiples of this — the major grid lines. Aligning to every 40 scatters
 ## rows onto arbitrary values; one coarse pitch is what makes a stack read as a stack.
 const ROW_STEP := 200.0
+# ---------------------------------------------------------------------------------
+# Typography
+#
+# Atkinson Hyperlegible, from the Braille Institute, drawn specifically so that letters
+# which usually blur together — I l 1, O 0, b d — stay distinguishable at small sizes and
+# low vision. Used at bold weight throughout, with sizes well above the usual editor
+# default, and high-contrast colours, following the same reasoning the Braille Institute
+# applies to its own material: legibility first, density second.
+#
+# This also matches the project's own rule from docs/UX_PRINCIPLES.md — "avoid tiny text,
+# tiny hit targets, cryptic abbreviations" — which the first pass paid lip service to.
+# ---------------------------------------------------------------------------------
+
+const FONT_PATH := "res://fonts/AtkinsonHyperlegibleNext.ttf"
+const FONT_WEIGHT := 700          # bold
+const FONT_SIZE := 18             # body
+const FONT_SIZE_SMALL := 15       # captions, port labels, parameter names
+const FONT_SIZE_HEADING := 15     # section headings, letterspaced and upper case
+const FONT_SIZE_TITLE := 24
+
+## High contrast, and warmer than a pure grey so long sessions are easier on the eye.
+const INK := Color(0.96, 0.96, 0.97)
+const INK_DIM := Color(0.72, 0.74, 0.78)
+const ACCENT := Color(0.43, 0.91, 0.72)
+const WARNING := Color(1.0, 0.80, 0.45)
+const ERROR := Color(1.0, 0.55, 0.50)
+
 ## How much harder an audio cable pulls its ends into line than a control cable does.
 ## This is what makes the signal chain come out as one straight spine with the modulation
 ## sources arranged around it, rather than everything averaged into a gentle zig-zag.
@@ -96,6 +123,7 @@ var undo_redo := UndoRedo.new()
 var _pending_snapshot: Dictionary = {}
 var undo_button: Button
 var redo_button: Button
+var arrange_selection_button: Button
 
 ## node id -> parameter name -> {"slider": Control, "readout": Label, "descriptor": Dictionary}
 ## Kept so an undone knob turn can move the knob back without rebuilding the graph.
@@ -119,9 +147,41 @@ func _ready() -> void:
 	for type in registry_json["types"]:
 		registry[type["name"]] = type
 
+	_apply_theme()
 	_build_ui()
 	_start_audio()
 	_load_example("First Synth")
+
+
+## One theme on the root, inherited by everything — including the GraphNodes generated for
+## each patch node, which would otherwise each need their own overrides.
+func _apply_theme() -> void:
+	var face := load(FONT_PATH)
+	if face == null:
+		push_warning("Atkinson Hyperlegible is missing; falling back to the default font")
+		return
+
+	var bold := FontVariation.new()
+	bold.base_font = face
+	bold.variation_opentype = {&"wght": FONT_WEIGHT}
+
+	var editor_theme := Theme.new()
+	editor_theme.default_font = bold
+	editor_theme.default_font_size = FONT_SIZE
+
+	# Text colour is set per type rather than globally: Godot has no single "text colour",
+	# and leaving these at the defaults would undo the contrast the font is here for.
+	for type_name in ["Label", "Button", "CheckButton", "OptionButton", "LineEdit",
+			"RichTextLabel", "ItemList", "PopupMenu", "TabBar"]:
+		editor_theme.set_color("font_color", type_name, INK)
+	editor_theme.set_color("default_color", "RichTextLabel", INK)
+	editor_theme.set_color("font_placeholder_color", "LineEdit", INK_DIM)
+	editor_theme.set_color("title_color", "GraphNode", INK)
+
+	# Roomier controls. A slider you can actually hit matters as much as type you can
+	# read, and both are the same principle.
+	editor_theme.set_constant("outline_size", "Label", 0)
+	theme = editor_theme
 
 
 func _fatal(message: String) -> void:
@@ -175,6 +235,8 @@ func _build_ui() -> void:
 	graph_edit.disconnection_request.connect(_on_disconnection_request)
 	graph_edit.delete_nodes_request.connect(_on_delete_nodes_request)
 	graph_edit.node_selected.connect(_on_node_selected)
+	graph_edit.node_selected.connect(func(_n): _refresh_selection_button())
+	graph_edit.node_deselected.connect(func(_n): _refresh_selection_button())
 	graph_edit.popup_request.connect(_on_graph_popup_request)
 	# Node drags and cable drags bracket their own undo entries, so a drag is one step
 	# rather than one per pixel of mouse movement.
@@ -209,7 +271,7 @@ func _build_toolbar() -> Control:
 
 	var title := Label.new()
 	title.text = "  SoundGraph"
-	title.add_theme_font_size_override("font_size", 17)
+	title.add_theme_font_size_override("font_size", FONT_SIZE_TITLE)
 	bar.add_child(title)
 
 	var examples := OptionButton.new()
@@ -227,9 +289,18 @@ func _build_toolbar() -> Control:
 
 	var arrange := Button.new()
 	arrange.text = "Auto-place"
-	arrange.tooltip_text = "Lay the graph out left to right on the %d grid" % int(GRID)
+	arrange.tooltip_text = "Lay the whole graph out left to right. The same patch always " \
+		+ "lands the same way, wherever things were before."
 	arrange.pressed.connect(_auto_place)
 	bar.add_child(_defocus(arrange))
+
+	arrange_selection_button = Button.new()
+	arrange_selection_button.text = "Arrange selection"
+	arrange_selection_button.tooltip_text = "Arrange only the selected nodes, leaving the " \
+		+ "rest where they are"
+	arrange_selection_button.disabled = true
+	arrange_selection_button.pressed.connect(_arrange_selection)
+	bar.add_child(_defocus(arrange_selection_button))
 
 	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
 	# time user does not know they have.
@@ -295,8 +366,8 @@ func _build_side_panel() -> Control:
 
 	var hint := Label.new()
 	hint.text = "Select a node to see what it is putting out."
-	hint.add_theme_font_size_override("font_size", 11)
-	hint.modulate = Color(1, 1, 1, 0.6)
+	hint.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	hint.modulate = INK_DIM
 	panel.add_child(hint)
 
 	panel.add_child(_section_heading("Problems"))
@@ -317,8 +388,8 @@ func _build_side_panel() -> Control:
 
 	var keys := Label.new()
 	keys.text = "Play with A W S E D F T G Y H U J K. Z and X shift octave."
-	keys.add_theme_font_size_override("font_size", 11)
-	keys.modulate = Color(1, 1, 1, 0.6)
+	keys.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	keys.modulate = INK_DIM
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel.add_child(keys)
 
@@ -328,8 +399,8 @@ func _build_side_panel() -> Control:
 func _section_heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text.to_upper()
-	label.add_theme_font_size_override("font_size", 11)
-	label.modulate = Color(1, 1, 1, 0.55)
+	label.add_theme_font_size_override("font_size", FONT_SIZE_HEADING)
+	label.modulate = INK_DIM
 	return label
 
 
@@ -500,7 +571,7 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 
 	var toggle := CheckButton.new()
 	toggle.text = "%d more" % extra.size()
-	toggle.add_theme_font_size_override("font_size", 11)
+	toggle.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
 	toggle.toggled.connect(func(pressed: bool) -> void:
 		for row in extra:
 			row.visible = pressed
@@ -518,7 +589,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	label.text = name
 	label.custom_minimum_size.x = 92
 	label.tooltip_text = str(parameter.get("doc", ""))
-	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
 	row.add_child(label)
 
 	if parameter.has("enum"):
@@ -547,7 +618,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	readout.text = _format_value(current)
 	readout.custom_minimum_size.x = 62
 	readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	readout.add_theme_font_size_override("font_size", 11)
+	readout.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
 
 	slider.value_changed.connect(func(position: float) -> void:
 		var value := _to_value(parameter, position)
@@ -784,8 +855,8 @@ func _build_search_popup() -> void:
 
 	search_hint = Label.new()
 	search_hint.text = "Enter adds the top result. The dialog stays open so you can add several."
-	search_hint.add_theme_font_size_override("font_size", 11)
-	search_hint.modulate = Color(1, 1, 1, 0.6)
+	search_hint.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	search_hint.modulate = INK_DIM
 	box.add_child(search_hint)
 
 	search_popup.add_child(box)
@@ -808,8 +879,8 @@ func _build_result_row(type_name: String) -> Control:
 
 	var summary := Label.new()
 	summary.text = descriptor.get("summary", "")
-	summary.add_theme_font_size_override("font_size", 11)
-	summary.modulate = Color(1, 1, 1, 0.65)
+	summary.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	summary.modulate = INK_DIM
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	summary.custom_minimum_size.x = 380
 	text.add_child(summary)
@@ -860,7 +931,7 @@ func _on_search_changed(query: String) -> void:
 		var empty := Label.new()
 		empty.text = "Nothing matches that. Try what you want to do — \"echo\", \"make quieter\"."
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		empty.modulate = Color(1, 1, 1, 0.6)
+		empty.modulate = INK_DIM
 		search_results.add_child(empty)
 
 
@@ -927,6 +998,11 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 # does not fight the part you already arranged.
 # ---------------------------------------------------------------------------------
 
+func _refresh_selection_button() -> void:
+	if arrange_selection_button != null:
+		arrange_selection_button.disabled = _selected_ids().size() < 2
+
+
 func _selected_ids() -> Array:
 	var selected := []
 	for id in widgets:
@@ -935,15 +1011,30 @@ func _selected_ids() -> Array:
 	return selected
 
 
+## Arranges the whole graph. The result depends only on the graph — the same patch always
+## lands the same way, no matter where anything happened to be first.
 func _auto_place() -> void:
-	if patch.get("nodes", []).is_empty():
-		return
+	var everything := []
+	for node in patch.get("nodes", []):
+		everything.append(node["id"])
+	await _arrange(everything)
 
+
+## Arranges just the selected nodes, treating the rest as fixed anchors. Kept as its own
+## action rather than something Auto-place decides for you: an arrangement that silently
+## changed meaning depending on what happened to still be selected — which, after a drag,
+## is whatever was just dragged — is exactly what made this feel unpredictable.
+func _arrange_selection() -> void:
 	var selected := _selected_ids()
-	var movable := selected if selected.size() >= 2 else []
-	if movable.is_empty():
-		for node in patch["nodes"]:
-			movable.append(node["id"])
+	if selected.size() < 2:
+		status_label.text = "select two or more nodes to arrange them together"
+		return
+	await _arrange(selected)
+
+
+func _arrange(movable: Array) -> void:
+	if patch.get("nodes", []).is_empty() or movable.is_empty():
+		return
 
 	_begin_edit()
 
@@ -1205,7 +1296,7 @@ func _show_diagnostics(diagnostics: Array) -> void:
 	if diagnostics.is_empty():
 		var ok := Label.new()
 		ok.text = "No problems."
-		ok.modulate = Color(0.6, 0.85, 0.7)
+		ok.modulate = ACCENT
 		diagnostics_list.add_child(ok)
 		_highlight([])
 		return
@@ -1217,8 +1308,7 @@ func _show_diagnostics(diagnostics: Array) -> void:
 		var message := Label.new()
 		message.text = diagnostic["message"]
 		message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		message.modulate = Color(1.0, 0.55, 0.5) if diagnostic["severity"] == "error" \
-			else Color(1.0, 0.8, 0.5)
+		message.modulate = ERROR if diagnostic["severity"] == "error" else WARNING
 		card.add_child(message)
 
 		# Spatial, not just textual: the offending nodes are named and highlighted in the
@@ -1228,16 +1318,16 @@ func _show_diagnostics(diagnostics: Array) -> void:
 				to_highlight.append(node_id)
 			var where := Label.new()
 			where.text = "  " + " → ".join(diagnostic["nodes"])
-			where.add_theme_font_size_override("font_size", 11)
-			where.modulate = Color(1, 1, 1, 0.65)
+			where.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+			where.modulate = INK_DIM
 			card.add_child(where)
 
 		if diagnostic.has("suggestion"):
 			var suggestion := Label.new()
 			suggestion.text = diagnostic["suggestion"]
 			suggestion.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			suggestion.add_theme_font_size_override("font_size", 11)
-			suggestion.modulate = Color(0.55, 0.85, 0.75)
+			suggestion.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+			suggestion.modulate = ACCENT
 			card.add_child(suggestion)
 
 		var rule := HSeparator.new()

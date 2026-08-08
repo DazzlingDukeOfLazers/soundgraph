@@ -35,7 +35,7 @@ two thousand binding files. Afterwards it is incremental.
 |---|---|
 | Add a node | **Ctrl+Space**, or right-click the canvas, or the toolbar button — every result has its own **Add** button, and the dialog stays open so you can add several |
 | Undo / redo | **Ctrl+Z** / **Ctrl+Shift+Z** (or Ctrl+Y), and the toolbar buttons, which name what they will undo |
-| Tidy the graph | **Auto-place** lays it out left to right on the 40 grid |
+| Tidy the graph | **Auto-place** lays the whole graph out; **Arrange selection** does only what you have selected |
 | Move a cable | drag it; right-click puts it back |
 | Play | **A W S E D F T G Y H U J K**, with **Z** / **X** to shift octave |
 | Inspect a signal | select a node — the scope shows what its first output is carrying |
@@ -106,10 +106,17 @@ of landing on whatever arithmetic the node heights happened to produce.
 Column and row pitch come from real widget sizes, so a column of wide nodes pushes the
 next one out instead of overlapping it.
 
-**With nodes selected**, only those are arranged; everything else becomes a fixed anchor
-that still pulls on the result, and the arrangement is translated back to where the
-selection already sat. Tidying one corner does not move it across the canvas or fight the
-part you already arranged by hand.
+**Auto-place is deterministic.** The result depends only on the graph — the same patch
+lands the same way no matter where anything was beforehand, and no matter what happens to
+be selected. That last part was a real trap: Auto-place used to switch to selection-only
+mode whenever two or more nodes were selected, and a drag leaves what it dragged selected,
+so pressing the button after moving things quietly did something different each time.
+
+**Arrange selection** is now its own action. It arranges only the selected nodes, treats
+everything else as a fixed anchor that still pulls on the result, and translates the
+arrangement back to where the selection already sat — so tidying one corner does not move
+it across the canvas or fight the part you arranged by hand. It refuses a selection of
+fewer than two nodes rather than silently doing something else.
 
 References: Sugiyama, Tagawa & Toda (1981); Gansner, Koutsofios, North & Vo, *A Technique
 for Drawing Directed Graphs* (1993) for median + transpose; Brandes & Köpf, *Fast and
@@ -127,10 +134,9 @@ orthogonal trace with 45-degree corners when it would cross something, which is 
 traces look the way they do.
 
 A graph dense enough will always have some crossings left. Where two cables do cross, the
-lower one **darkens as it approaches, cuts out beneath the junction, and fades back** —
-so it reads as one cable passing under another rather than as two cables that happen to
-end near each other. The upper cable is then laid back over the shadow so it stays
-unbroken.
+lower one is **cut with a generous gap** and the upper one laid back over it, so it reads
+as one cable passing beneath another. The gap is deliberately large: a timid one reads as
+a rendering artefact rather than as a deliberate mark.
 That is drawn on a Control inserted directly after GraphEdit's own connection layer —
 above the cables, below the nodes — and recomputed only when the view actually changes,
 since rerouting every cable on every frame is enough work to hold a core down by itself.
@@ -162,6 +168,22 @@ the same reason knob movement never reloads the patch in the first place.
 
 Opening a file starts a new history: undoing across a load would restore another patch's
 nodes into this one.
+
+## Type
+
+The editor is set in **Atkinson Hyperlegible Next**, bold, at sizes well above the usual
+editor default. It is the Braille Institute's typeface, drawn so that characters which
+normally blur into one another — `I l 1`, `O 0`, `b d` — stay distinguishable at small
+sizes and for low vision, and it is bundled here under the SIL Open Font License
+(`fonts/OFL.txt`).
+
+Colours are high contrast rather than the usual scale of greys: dimmed text is a lighter
+grey, not white at reduced opacity, because fading the alpha costs contrast twice — once
+against the background and again against everything around it.
+
+This is the project's own rule from `docs/UX_PRINCIPLES.md` finally taken seriously:
+*avoid tiny text, tiny hit targets, cryptic abbreviations, and maximum-density layouts as
+the default.*
 
 ## Saving
 

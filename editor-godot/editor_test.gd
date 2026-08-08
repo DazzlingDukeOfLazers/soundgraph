@@ -173,6 +173,56 @@ func _initialize() -> void:
 	await main._auto_place()
 	await process_frame
 
+	# The same graph must land the same way wherever it happened to be. Without this the
+	# button is a dice roll: press it twice after nudging something and get two answers.
+	var arranged := []
+	for node in main.patch["nodes"]:
+		arranged.append("%s(%d,%d)" % [node["id"], node["position"]["x"], node["position"]["y"]])
+	var reference := " ".join(arranged)
+
+	for scatter in [[317, 511], [97, 233]]:
+		for i in main.patch["nodes"].size():
+			main.patch["nodes"][i]["position"] = {
+				"x": (i * scatter[0]) % 2000, "y": (i * scatter[1]) % 1200}
+		await main._rebuild_view()
+		await process_frame
+		await main._auto_place()
+		await process_frame
+		var again := []
+		for node in main.patch["nodes"]:
+			again.append("%s(%d,%d)" % [node["id"], node["position"]["x"], node["position"]["y"]])
+		check(" ".join(again) == reference,
+			"auto-place gives the same answer after scattering by %d,%d" % [scatter[0], scatter[1]])
+
+	# A lingering selection must not quietly change what Auto-place does — that was the
+	# whole source of it feeling unpredictable, since a drag leaves what it dragged selected.
+	for id in main.widgets:
+		main.widgets[id].selected = (id == "osc" or id == "lfo")
+	await process_frame
+	await main._auto_place()
+	await process_frame
+	var with_selection := []
+	for node in main.patch["nodes"]:
+		with_selection.append("%s(%d,%d)" % [node["id"],
+			node["position"]["x"], node["position"]["y"]])
+	check(" ".join(with_selection) == reference,
+		"and ignores whatever happens to be selected")
+
+	# Arranging a selection is its own action, and refuses a selection too small to mean
+	# anything rather than silently arranging everything.
+	for id in main.widgets:
+		main.widgets[id].selected = (id == "osc")
+	await main._arrange_selection()
+	await process_frame
+	var after_one := []
+	for node in main.patch["nodes"]:
+		after_one.append("%s(%d,%d)" % [node["id"], node["position"]["x"], node["position"]["y"]])
+	check(" ".join(after_one) == reference, "arranging a one-node selection does nothing")
+
+	for id in main.widgets:
+		main.widgets[id].selected = false
+	await process_frame
+
 	var on_grid := true
 	var columns := {}
 	for node in main.patch["nodes"]:

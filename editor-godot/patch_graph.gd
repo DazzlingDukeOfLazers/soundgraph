@@ -35,14 +35,12 @@ const GRAB_DISTANCE := 12.0
 ## improve a cable that is going to look crowded regardless.
 const MAX_CANDIDATES := 192
 
-## Half-length of the fully-broken part of the cable that passes underneath a crossing.
-const CROSSING_BREAK := 13.0
-## How far the shadow fades out either side of that break.
-const CROSSING_FADE := 20.0
+## Half-length of the break in the cable that passes underneath a crossing. The break is
+## deliberately generous: a timid gap reads as a rendering artefact, a clear one reads as
+## one cable passing beneath another.
+const CROSSING_BREAK := 52.0
 ## How much wider than the cable the break is, so it clears the line underneath.
 const CROSSING_PAD := 6.0
-## Steps used to draw the fade. Enough to read as a gradient, few enough to be free.
-const CROSSING_STEPS := 12
 
 # ---------------------------------------------------------------------------------
 # Grid
@@ -636,32 +634,17 @@ func _draw_crossings(canvas: CanvasItem) -> void:
 				if under_direction == Vector2.ZERO:
 					continue
 
-				# The lower cable does not simply stop. It darkens as it approaches, cuts
-				# out under the crossing, then fades back — which reads as one cable
-				# passing beneath another rather than as two cables that happen to end.
-				var reach: float = CROSSING_BREAK + CROSSING_FADE
+				# The lower cable is cut clean at the junction.
 				var width: float = (connection_lines_thickness + CROSSING_PAD) * scale
-				var span := reach * 2.0 / CROSSING_STEPS
-				for step_index in CROSSING_STEPS:
-					var from_offset: float = -reach + step_index * span
-					var centre: float = absf(from_offset + span * 0.5)
-					var strength := 1.0
-					if centre > CROSSING_BREAK:
-						strength = 1.0 - (centre - CROSSING_BREAK) / CROSSING_FADE
-					if strength <= 0.0:
-						continue
-					var shade := background
-					shade.a = clampf(strength, 0.0, 1.0)
-					canvas.draw_line(
-						to_local.call(point + under_direction * from_offset),
-						to_local.call(point + under_direction * (from_offset + span)),
-						shade, width, true)
+				var half := under_direction * CROSSING_BREAK
+				canvas.draw_line(to_local.call(point - half), to_local.call(point + half),
+					background, width, true)
 
-				# Then the upper cable is laid back over the shadow, so it stays unbroken
+				# Then the upper cable is laid back over the break, so it stays unbroken
 				# across the junction. Locally a route is straight, so a segment along its
 				# direction follows it exactly.
 				if over_direction != Vector2.ZERO:
-					var extent := over_direction * reach
+					var extent := over_direction * CROSSING_BREAK
 					canvas.draw_line(to_local.call(point - extent), to_local.call(point + extent),
 						over["colour"], connection_lines_thickness * scale, true)
 
