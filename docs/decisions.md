@@ -449,3 +449,42 @@ export is `nothreads`, so no SharedArrayBuffer and no cross-origin isolation hea
 is what keeps it servable from any static host. Browser audio still needs a user gesture,
 and `AudioStreamGenerator` warns that it cannot be sampled on the web path — the audio
 route through the exported editor is not yet verified.
+
+## 2026-08-08 — The rack is a second view, not a second editor
+
+Decision:
+`editor-godot/rack.gd` draws the current patch as a Eurorack case, in a tab beside the
+graph view. It reads the same document, the same registry descriptors and the same
+layering, and writes parameter changes back through the same path. Module order comes from
+`layout.gd` — the layering the graph view already computed — rather than a second
+algorithm, and a module's knobs and jacks are whatever the node's descriptor says it has.
+
+Reason:
+A signal-flow graph is the honest picture of what the core does, but a rack is the picture
+musicians can already read, and the hunch is that it is the one that stops people walking
+past a stand. Both can be true at once, so both are drawn. Making the rack an editor in its
+own right would have meant a second place where a patch can be built, and eventually two
+places that disagree about what a patch is.
+
+Cables can hang as a catenary or route orthogonally, on a toolbar toggle that both views
+honour, so the comparison is between two ways of drawing a cable rather than between two
+views that happen to differ. Which one wins is a question for people at Knobcon, not for
+argument now — hence the toggle rather than a choice.
+
+The catenary is solved properly (`a·cosh(x/a)`, with `a` found by bisection from the
+requested sag) rather than faked with a parabola. The shape is the entire reason the view
+exists; a cable that hangs correctly is what makes a rack read as an instrument rather than
+a diagram. Between jacks at different heights the curve is sheared to meet both ends, which
+is an approximation — the exact answer is a plain catenary with its low point off-centre,
+found by a second solve for arc length, for a difference invisible at these spans.
+
+Alternatives:
+A rack-only editor (throws away the graph, which is the thing that generalises to DAW and
+firmware); a toggle between views rather than tabs (makes it a mode, and modes are the
+thing you cannot A/B side by side).
+
+Consequences:
+Ten more editor checks, 78 in total. Dragging a cable waypoint is a PCB-mode gesture: a
+hanging cable has no corners to grab, which is part of what the A/B is trading. The rack
+does not yet repatch — connections are made in the graph view — which is the obvious next
+piece if the rack wins.

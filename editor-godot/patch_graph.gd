@@ -54,6 +54,10 @@ const CROSSING_PAD := 6.0
 
 ## Set GraphEdit's own show_grid to false and let this draw instead; the two would
 ## otherwise overlay two unrelated sets of major lines.
+## Matches Rack.CableStyle. The graph view honours the same choice so the two views can be
+## compared on the thing being tested rather than on an incidental difference.
+var cable_style: int = 1   # PCB, which is what this view was built around
+
 var draw_grid := true
 ## The snap step — faintest lines.
 var grid_minor := 40.0
@@ -373,6 +377,17 @@ func _get_connection_line(from_position: Vector2, to_position: Vector2) -> Packe
 	var scale := zoom if zoom > 0.0 else 1.0
 	var a := from_position / scale
 	var b := to_position / scale
+
+	# The rack's cable styles apply here too, so the A/B is a fair one. A hanging cable
+	# ignores obstacles by design — that is the trade being compared, not a shortcut.
+	if cable_style == Rack.CableStyle.CATENARY:
+		var span := absf(b.x - a.x)
+		var sag := clampf(span * Rack.SAG_FRACTION, Rack.SAG_MIN, Rack.SAG_MAX)
+		var hung := Rack.catenary(a, b, sag)
+		var hung_scaled := PackedVector2Array()
+		for point in hung:
+			hung_scaled.append(point * scale)
+		return hung_scaled
 
 	var waypoint = _waypoint_for(a, b)
 	var route := _route_through(a, b, waypoint) if waypoint != null else _route(a, b)

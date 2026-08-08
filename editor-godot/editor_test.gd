@@ -445,6 +445,95 @@ func _initialize() -> void:
 	check(main.undo_redo.has_undo() == depth_before,
 		"a drag that changed nothing adds nothing to the history")
 
+	# ---- the rack view ---------------------------------------------------------------
+	# The rack is a second drawing of the same document. What matters is that it stays a
+	# drawing: same nodes, same ports, same parameter scaling, no private opinions.
+	main.rack.rebuild()
+	await process_frame
+
+	var modules := 0
+	for child in main.rack.get_children():
+		if child is Rack.RackModule:
+			modules += 1
+	check(modules == main.patch["nodes"].size(),
+		"the rack has one module per node in the patch")
+
+	var order: Array = main.rack._module_order()
+	var output_index := -1
+	for i in order.size():
+		if main.rack._type_of(order[i]) == "StereoOutput":
+			output_index = i
+	check(output_index == order.size() - 1,
+		"and orders them by signal flow, with the output last")
+
+	var cables: Array = main.rack.cable_endpoints()
+	check(cables.size() == main.patch["connections"].size(),
+		"every connection in the document becomes a cable in the rack")
+
+	# A jack that no module owns would silently drop a cable, which is the one failure
+	# that looks like a design choice rather than a bug.
+	var endpoints_distinct := true
+	for cable in cables:
+		if (cable[0] as Vector2).is_equal_approx(cable[1] as Vector2):
+			endpoints_distinct = false
+	check(endpoints_distinct, "and lands on two different jacks")
+
+	# ---- catenary --------------------------------------------------------------------
+	# The curve is solved numerically, so it is worth pinning: the ends must meet the
+	# jacks exactly, and the sag must be the sag that was asked for.
+	var a := Vector2(100.0, 200.0)
+	var b := Vector2(400.0, 260.0)
+	var curve: PackedVector2Array = Rack.catenary(a, b, 90.0)
+	check(curve[0].is_equal_approx(a) and curve[curve.size() - 1].is_equal_approx(b),
+		"a catenary starts and ends exactly on its two jacks")
+
+	# Sag is measured against the chord at the midpoint, not as the lowest point on the
+	# curve: between jacks at different heights the low point sits off-centre, so the two
+	# are not the same number.
+	var chord_mid := (a.y + b.y) * 0.5
+	var mid: Vector2 = curve[curve.size() / 2]
+	check(absf((mid.y - chord_mid) - 90.0) < 2.0,
+		"and hangs by the sag it was given, to within a pixel or two")
+
+	var always_below := true
+	for i in curve.size():
+		var t := float(i) / float(curve.size() - 1)
+		if curve[i].y < lerpf(a.y, b.y, t) - 0.001:
+			always_below = false
+	check(always_below, "and never rises above the line between its ends")
+
+	# Reversing the endpoints must give the same physical cable, or a patch would appear
+	# to change shape depending on which end was drawn first.
+	var reversed: PackedVector2Array = Rack.catenary(b, a, 90.0)
+	var mirrored := true
+	for i in curve.size():
+		if not curve[i].is_equal_approx(reversed[reversed.size() - 1 - i]):
+			mirrored = false
+	check(mirrored, "and hangs the same way whichever end it is drawn from")
+
+	# ---- knobs -----------------------------------------------------------------------
+	# A knob and a slider are two handles on one value; if their scaling disagreed, the
+	# same patch would sound different depending on which view last touched it.
+	var filter_id := ""
+	for node in main.patch["nodes"]:
+		if node["type"] == "StateVariableFilter":
+			filter_id = node["id"]
+	if filter_id != "":
+		var knobs: Dictionary = main.rack._knobs[filter_id]
+		var cutoff: Rack.Knob = knobs["cutoff"]
+		cutoff.set_value_silently(2500.0)
+		check(absf(cutoff.value() - 2500.0) < 1.0,
+			"a knob round-trips a value through the descriptor's own scaling")
+
+		# mode is an enum: a filter set to 1.7 is not a thing the core can represent.
+		var mode: Rack.Knob = knobs["mode"]
+		var whole := true
+		for step in 20:
+			mode.set_value_silently(float(step) * 0.15)
+			if not is_equal_approx(mode.value(), floor(mode.value())):
+				whole = false
+		check(whole, "and an enum knob only ever produces whole positions")
+
 	player.queue_free()
 	main.queue_free()
 	await process_frame

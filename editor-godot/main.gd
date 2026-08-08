@@ -97,6 +97,8 @@ var widgets: Dictionary = {}           # patch node id -> GraphNode
 var ids: Dictionary = {}               # GraphNode.name -> patch node id
 
 var graph_edit: GraphEdit
+var views: TabContainer
+var rack: Rack
 var diagnostics_list: VBoxContainer
 var info_label: RichTextLabel
 var scope: Control
@@ -243,7 +245,37 @@ func _build_ui() -> void:
 	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
 	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
-	split.add_child(graph_edit)
+
+	# Two views of one document, side by side in tabs rather than as a mode: the graph is
+	# the honest picture of signal flow, the rack is the picture a musician already knows
+	# how to read. Which one leads at Knobcon is a question to settle by watching people.
+	views = TabContainer.new()
+	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	graph_edit.name = "Graph"
+	views.add_child(graph_edit)
+
+	var rack_scroll := ScrollContainer.new()
+	rack_scroll.name = "Rack"
+	rack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	rack = Rack.new()
+	rack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rack.type_colours = TYPE_COLOURS
+	rack.ink = INK
+	rack.ink_dim = INK_DIM
+	rack.parameter_changed.connect(_on_rack_parameter_changed)
+	rack.edit_started.connect(func() -> void: _begin_edit())
+	rack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
+	rack.node_selected.connect(_on_rack_node_selected)
+	rack_scroll.add_child(rack)
+	views.add_child(rack_scroll)
+	# Both views start on the style the toolbar says they are on. Worth knowing when
+	# comparing them: dragging a cable waypoint is a PCB-mode gesture — a hanging cable
+	# has no corners to grab, which is part of what is being traded.
+	graph_edit.cable_style = Rack.CableStyle.CATENARY
+	# The rack lays out against the width it is given, so it has to be told when the tab
+	# is first shown — before that it has no size to flow modules into.
+	views.tab_changed.connect(func(_index: int) -> void: rack.rebuild())
+	split.add_child(views)
 
 	split.add_child(_build_side_panel())
 	_build_search_popup()
@@ -341,6 +373,20 @@ func _build_toolbar() -> Control:
 		file_dialog.current_file = "patch.json"
 		file_dialog.popup_centered_ratio(0.6))
 	bar.add_child(_defocus(save_button))
+
+	# The A/B. Both views honour it, so the comparison is between two ways of drawing a
+	# cable rather than between two views that happen to draw them differently.
+	var cables := OptionButton.new()
+	cables.add_item("Catenary")
+	cables.add_item("PCB")
+	cables.selected = 0
+	cables.tooltip_text = "How patch cables are drawn: hanging under their own weight, " \
+		+ "or routed at right angles around what is in the way"
+	cables.item_selected.connect(func(index: int) -> void:
+		rack.cable_style = index
+		graph_edit.cable_style = index
+		graph_edit.queue_redraw())
+	bar.add_child(_defocus(cables))
 
 	var panic := Button.new()
 	panic.text = "All notes off"
@@ -490,6 +536,13 @@ func _rebuild_view() -> void:
 		graph_edit.connect_node(widgets[from_id].name, from_port, widgets[to_id].name, to_port)
 
 	_restore_waypoints()
+
+	# The rack reads the same document, so it is rebuilt from the same place rather than
+	# kept in step by hand.
+	if rack != null:
+		rack.registry = registry
+		rack.patch = patch
+		rack.rebuild()
 
 
 func _create_widget(node: Dictionary) -> void:
@@ -829,6 +882,32 @@ func _on_node_selected(node: Node) -> void:
 		inspecting = {}
 		return
 	inspecting = {"node": node_id, "port": outputs[0]["name"]}
+
+
+## A knob in the rack and a slider in the graph are two handles on one value. The edit goes
+## through the same path either way; the other view is then told what to show, so the two
+## cannot drift apart while both are open.
+func _on_rack_parameter_changed(node_id: String, parameter: String, value: float) -> void:
+	_set_parameter(node_id, parameter, value)
+	var entry: Dictionary = parameter_widgets.get(node_id, {}).get(parameter, {})
+	if entry.is_empty():
+		return
+	var control: Control = entry["slider"]
+	if control is HSlider:
+		# set_value_no_signal, or the slider's own handler would write the value back and
+		# the two would fight over every drag.
+		control.set_value_no_signal(_to_position(entry["descriptor"], value))
+	elif control is OptionButton:
+		control.selected = int(round(value))
+	var readout: Label = entry["readout"]
+	if readout != null:
+		readout.text = _format_value(value)
+
+
+func _on_rack_node_selected(node_id: String) -> void:
+	var outputs := _port_list(node_id, "outputs")
+	inspecting = {"node": node_id, "port": outputs[0]["name"]} if not outputs.is_empty() \
+		else {}
 
 
 func _on_graph_popup_request(at_position: Vector2) -> void:
