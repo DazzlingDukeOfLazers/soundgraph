@@ -15,7 +15,7 @@ architectures:
 |---|---|---|
 | Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 7 ctest suites, 18 golden vectors |
 | Browser | WebAssembly in an AudioWorklet | `verify-goldens.mjs`, 18 cases, worst 2.09e-7 |
-| Godot 4.7 | GDExtension | 78 editor checks, 18 layout checks |
+| Godot 4.7 | GDExtension | 89 editor checks, 18 layout checks |
 | ESP32-S3 | generic firmware, Waveshare audio board | `sg-serial.py verify-goldens`, worst 1.90e-5 — **10 of the 18, the eight new ones unflashed** |
 
 `dsp-core` still depends on nothing but the C++ standard library, and no editor or host
@@ -133,6 +133,14 @@ somewhere other than the cause.
 - **godot-cpp forces the static MSVC runtime**, so our libraries must be created after
   that is set or the link fails on duplicate CRT symbols.
 - A Godot project must be **imported once** (`--import`) before its extension registers.
+- **The web extension is a second build.** `runtime-godot/build` is the desktop DLL,
+  `runtime-godot/build-web` is the wasm. Rebuilding only the first leaves the browser on a
+  stale extension, and it fails nowhere near the cause: patches refuse to load because the
+  engine "does not know about" a node type that plainly exists.
+- **A service worker will serve you an old build for as long as a tab stays open.** Godot's
+  worker is cache-first with no `skipWaiting`, so a waiting replacement never activates
+  while a client is open. Unregister it before concluding anything about a re-export; check
+  which `index.pck` size actually loaded first.
 
 ## Invariants
 

@@ -115,5 +115,9 @@ add_custom_command(TARGET soundgraph_godot POST_BUILD
             ${SOUNDGRAPH_ROOT}/examples/patches/first-synth.json ${SOUNDGRAPH_GODOT_EXAMPLES}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${SOUNDGRAPH_ROOT}/examples/patches/delay-echo.json ${SOUNDGRAPH_GODOT_EXAMPLES}
+    # The sandbox's sounds, as a directory: they are ordinary patches and the count will
+    # grow, so this copies the folder rather than naming each file.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${SOUNDGRAPH_ROOT}/examples/patches/game ${SOUNDGRAPH_GODOT_EXAMPLES}/game
     COMMENT "Copying the extension and example patches into editor-godot/"
 )

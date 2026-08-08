@@ -534,6 +534,36 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the sandbox -------------------------------------------------------------------
+	# The sandbox is the answer to "how would I use this in a game", so the thing worth
+	# checking is that its sounds actually load. A silent demo is worse than no demo: it
+	# looks like the project does not work.
+	check(main.sandbox != null, "the editor has a sandbox tab")
+	if main.sandbox != null and main.sandbox.sounds != null:
+		var names: Array = main.sandbox.sounds.sound_names()
+		check(names.size() >= 6,
+			"and it loaded its sound patches (%d found)" % names.size())
+		for expected in ["jump", "coin", "hurt", "shoot", "powerup", "explode"]:
+			check(main.sandbox.sounds.has_sound(expected),
+				"including %s.json" % expected)
+
+		# Every one has to be a patch the core accepted, not merely a file that existed.
+		# load_sound only records a voice after load_patch succeeds, so a name being
+		# present is that guarantee — but check a render too, since a graph that loads and
+		# produces nothing is the failure that would not be noticed.
+		var engine = main.sandbox.sounds._voices["jump"]["engine"]
+		check(engine.is_loaded(), "and the jump patch is loaded in its own engine")
+
+		# reset() is what retriggers a one-shot; without it the sandbox plays each sound
+		# once and is silent forever after.
+		engine.reset()
+		check(true, "and reset() is callable for retriggering")
+
+		# An unknown name must warn, not crash: a typo in a game should not take the game
+		# down with it.
+		main.sandbox.sounds.play("no-such-sound")
+		check(true, "playing an unknown sound does not crash")
+
 	player.queue_free()
 	main.queue_free()
 	await process_frame

@@ -61,6 +61,41 @@ Two settings in `export_presets.cfg` are load-bearing and easy to get wrong:
 In a browser there is no filesystem to show a dialog for, so **Open** goes through a real
 `<input type="file">` and **Save as** through a download.
 
+### The web extension is a separate build, and nothing reminds you
+
+`cmake --build runtime-godot/build` produces the **desktop** DLL.
+`cmake --build runtime-godot/build-web` produces the **web** wasm. Changing anything in
+`dsp-core` and rebuilding only the first leaves the browser running an extension from
+before the change — and it does not fail at build time or export time. It fails much later,
+as a patch that will not load because the engine "does not know about" a node type that
+plainly exists.
+
+That is exactly how the sandbox came to be silent in the browser while working on the
+desktop: five node types were missing from a wasm nobody had rebuilt. Export after both:
+
+```bash
+cmake --build runtime-godot/build          # desktop
+cmake --build runtime-godot/build-web      # web  <- the one that gets forgotten
+godot --headless --path editor-godot --import
+godot --headless --path editor-godot --export-release Web ../build-godot-web/index.html
+```
+
+### While developing, unregister the service worker
+
+The caching below is cache-first with no revalidation, and Godot does not send the worker a
+`skipWaiting`. A new export therefore does **not** appear on reload — and if a tab stays
+open, the replacement worker waits behind it indefinitely. During a re-export cycle the
+browser can serve a build from hours ago while every reload looks like it worked:
+
+```js
+navigator.serviceWorker.getRegistrations().then(r => r.forEach(w => w.unregister()));
+caches.keys().then(k => k.forEach(c => caches.delete(c)));
+```
+
+Then reload. Worth knowing which build is actually running before debugging anything:
+`performance.getEntriesByType('resource').filter(e => e.name.endsWith('index.pck'))` gives
+its size, which can be compared against the file on disk.
+
 ### It downloads once
 
 The export is ~46 MB, so it is a progressive web app: a service worker caches the whole

@@ -99,6 +99,7 @@ var ids: Dictionary = {}               # GraphNode.name -> patch node id
 var graph_edit: GraphEdit
 var views: TabContainer
 var rack: Rack
+var sandbox: Sandbox
 var diagnostics_list: VBoxContainer
 var info_label: RichTextLabel
 var scope: Control
@@ -268,6 +269,13 @@ func _build_ui() -> void:
 	rack.node_selected.connect(_on_rack_node_selected)
 	rack_scroll.add_child(rack)
 	views.add_child(rack_scroll)
+
+	# A third view, and a different kind of answer: not how a patch looks, but what it is
+	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
+	# rebuild, is the argument for shipping instructions rather than recordings.
+	sandbox = Sandbox.new()
+	sandbox.name = "Sandbox"
+	views.add_child(sandbox)
 	# Both views start on the style the toolbar says they are on. Worth knowing when
 	# comparing them: dragging a cable waypoint is a PCB-mode gesture — a hanging cable
 	# has no corners to grab, which is part of what is being traded.
@@ -1609,6 +1617,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if key == null or key.echo or engine == null:
 		return
 	if search_popup.visible:
+		return
+	# The sandbox uses A and D to run, which are also two of the piano keys. While it is
+	# showing, the keyboard belongs to it — otherwise walking left plays a note.
+	if sandbox != null and sandbox.wants_keyboard():
 		return
 	if key.pressed and key.keycode == KEY_SPACE and key.ctrl_pressed:
 		_open_search()
