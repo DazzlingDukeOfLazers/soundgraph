@@ -118,11 +118,12 @@ case. `sfxr-ref` rejects any case with a non-finite sample and says why.
 
 ## Where the port stands
 
-**24 of 41 cases match within the current thresholds.**
+**32 of 41 cases match within the current thresholds.**
 
 ```bash
-node tools/sfxr-report.mjs        # the table
-ctest --test-dir build -R sfxr    # comparator, reproducibility, and the ratchet
+node tools/sfxr-report.mjs          # the table
+node tools/sfxr-report.mjs --floor  # how close anything could get
+ctest --test-dir build -R sfxr      # comparator, reproducibility, and the ratchet
 ```
 
 | generator | passing | median spectral distance |
@@ -131,32 +132,48 @@ ctest --test-dir build -R sfxr    # comparator, reproducibility, and the ratchet
 | jump | 6/6 | 3.3 dB |
 | blip-select | 5/5 | 2.6 dB |
 | laser-shoot | 5/6 | 4.4 dB |
-| powerup | 2/6 | 7.2 dB |
-| hit-hurt | 0/6 | 20.2 dB |
-| explosion | 0/6 | 22.6 dB |
+| explosion | 4/6 | 7.1 dB |
+| powerup | 4/6 | 4.8 dB |
+| hit-hurt | 2/6 | 9.6 dB |
 
-By waveform, which is where the remaining failures actually live: square 14/18, saw 8/14,
-sine 2/2, **noise 0/7**.
+The ctest entry is a ratchet, not a target: it fails if fewer than 32 pass. Raise it when
+the port improves.
 
-The ctest entry is a ratchet, not a target — it fails if fewer than 24 pass. Raise it when
-the port improves; that is what it is for.
+### The floor: how close could anything get?
+
+sfxr's noise is a random draw, so two runs of sfxr *itself* on the same sound do not have
+the same spectrum. `--floor` measures that by rendering each case twice with different
+noise seeds:
+
+| waveform | sfxr against itself |
+|---|---|
+| square, saw, sine | **0.00 dB** — deterministic, as expected |
+| noise | **5.57 dB median**, range 4.67 to 6.08 |
+
+That zero for the deterministic waveforms is what makes the number trustworthy: the mode is
+measuring what it claims to.
+
+It also means a flat 6 dB threshold was demanding that noise cases be reproduced *better
+than sfxr reproduces itself*, which nothing can do. The spectral threshold is now
+`max(6, floor + 1.5)` per case, measured on every run rather than stored, and it is exactly
+6 for every deterministic waveform — the threshold only moves where randomness genuinely
+makes it impossible to do better.
 
 ### What is still wrong, and why
 
-**Noise, 0 of 7.** sfxr's noise is not noise. It refills a 32-entry buffer with random
-values once per cycle and reads it back indexed by phase — a random *wavetable*, played at
-the oscillator's pitch, with a spectrum shaped by that period. The `Noise` node is white
-and has no pitch at all, so these are not the same signal and no amount of parameter
-mapping will make them one. Fixing it means a pitched-noise mode on `Noise`, or a
-wavetable node.
+**hit-hurt, 2 of 6.** The two worst cases spend most of their length at the 3.5 Hz
+frequency floor, where the signal is very nearly DC — and both have a highpass. sfxr's
+highpass is **one-pole**; `StateVariableFilter` is two-pole. Against a 133 Hz cutoff, 3.5 Hz
+comes out 32 dB down through sfxr's and 63 dB down through ours, so sfxr's tail is some
+30 dB louder than ours for most of the sound. That is the whole of the remaining error on
+those two, and fixing it means a one-pole filter node.
 
-**Saw, 8 of 14.** The remaining failures cluster just over the threshold at 6.8–7.5 dB.
-`SawOscillator` is band-limited by PolyBLEP; sfxr's is naive and aliases freely, and those
-alias images are real energy in the spectrum being compared. Ours is the better oscillator
-and that is exactly why it does not match.
+**Marginal cases**, 6.2 to 6.8 dB against a 6 dB threshold: `laser-shoot-3`, `powerup-2`,
+`powerup-3`, `hit-hurt-1`. `SawOscillator` is band-limited by PolyBLEP and sfxr's is naive
+and aliases freely; those alias images are real energy in the spectrum being compared. Ours
+is the better oscillator and that is why it does not match.
 
-**Two outliers**, `hit-hurt-5` and `explosion-5`, are wrong on gain by 5.8 dB and 2.5 dB
-and have not been explained.
+**`explosion-5`** fails on envelope (3.5 dB against 3.0) and is not explained.
 
 ### Divergences that are deliberate
 
@@ -183,7 +200,7 @@ sound that is merely plausible — the hardest kind of wrong to notice.
 | lowpass with resonance and sweep | `StateVariableFilter` — `cutoff_sweep` |
 | highpass with sweep | same node in highpass mode |
 | vibrato | `LFO` into the oscillator's `fm` |
-| noise | `Noise`, different PRNG — spectral comparison only |
+| noise | `NoiseOscillator` — pitched, 32 steps, different PRNG so spectral comparison only |
 
 An earlier version of this table said the envelope was missing. That was wrong: `ADSR`
 already existed. It is the wrong *shape* — it sustains until a key is released, and these

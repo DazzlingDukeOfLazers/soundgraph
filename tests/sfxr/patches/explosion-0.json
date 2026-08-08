@@ -7,10 +7,26 @@
   },
   "nodes": [
     {
-      "id": "osc",
-      "type": "Noise",
+      "id": "pitch",
+      "type": "Constant",
       "parameters": {
-        "colour": 0,
+        "value": 229.673
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "slide": -0,
+        "acceleration": 0,
+        "limit": 3.528
+      }
+    },
+    {
+      "id": "osc",
+      "type": "NoiseOscillator",
+      "parameters": {
+        "steps": 32,
         "seed": 12345
       }
     },
@@ -57,6 +73,14 @@
     }
   ],
   "connections": [
+    {
+      "from": {"node": "pitch", "port": "out"},
+      "to": {"node": "slide", "port": "frequency"}
+    },
+    {
+      "from": {"node": "slide", "port": "frequency"},
+      "to": {"node": "osc", "port": "frequency"}
+    },
     {
       "from": {"node": "osc", "port": "out"},
       "to": {"node": "phaser", "port": "in"}

@@ -127,6 +127,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kSawOscillator,
         &nodes::kSquareOscillator,
         &nodes::kNoise,
+        &nodes::kNoiseOscillator,
         &nodes::kStateVariableFilter,
         &nodes::kDelay,
         &nodes::kPhaser,

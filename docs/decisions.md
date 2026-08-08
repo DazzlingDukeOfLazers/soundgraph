@@ -536,3 +536,50 @@ FIFO. The rate is correct at any block size; only the granularity follows the bl
 
 The ESP32 has not run the six new vectors yet. It needs the board flashed, and that is a
 person with a cable, not a build step.
+
+## 2026-08-08 — A threshold measured against what is possible, not chosen
+
+Decision:
+`NoiseOscillator` joins the vocabulary: noise with a pitch, a short random table read once
+per cycle. `Slide` widens from +/-240 to +/-9600 semitones per second. And the sfxr
+report's spectral threshold is `max(6 dB, floor + 1.5)` per case, where the floor is
+measured on every run by rendering sfxr twice with different noise seeds.
+
+Reason:
+sfxr's noise is not noise. It is a random *wavetable* played at the oscillator's pitch, and
+`Noise` is white and unpitched, so the seven noise cases were not merely inaccurate — they
+were a different kind of signal. Building the node took their median spectral distance from
+22.6 dB to 7.1 dB. It is also the retro sound-chip noise channel, which is worth having on
+its own account.
+
+The `Slide` range was the more embarrassing find. +/-240 semitones per second was chosen as
+"surely nobody needs twenty octaves a second". Twelve of the forty-one cases exceeded it and
+every hit-hurt case did, and because parameters clamp on load, the patch carried the right
+number and the sound came out ten times too slow. A percussive hit lasts a few milliseconds
+and its pitch has to collapse inside that; -2000 semitones per second is under an octave in
+5 ms, which is an ordinary drum, not an extreme.
+
+The threshold is the part worth defending. Two runs of sfxr itself, on the same sound with a
+different noise draw, sit 4.7 to 6.1 dB apart — so a flat 6 dB threshold was demanding that
+noise be reproduced better than sfxr reproduces itself. Raising it *because cases were
+failing* would be moving the goalposts. Raising it to a separately measured floor is not:
+the same measurement returns exactly 0.00 dB for every deterministic waveform, which is what
+makes it trustworthy, and the threshold is unchanged at 6 dB for all of them.
+
+Alternatives:
+A pitched mode on `Noise` (overloads a node whose whole character is being unpitched);
+storing the floor in the manifest (goes stale silently); leaving noise failing (hides real
+progress behind a number that could never be reached).
+
+Consequences:
+24 -> 32 of 41. Three new node tests, 50 in total; a seventeenth golden vector, matching
+between MSVC/x64 and Clang/WASM. The ratchet moves to 32.
+
+It also caught its own wiring: under ctest the working directory differs, the default
+relative path to sfxr-ref did not resolve, every floor came back zero, and four cases were
+held to a threshold nothing could meet. The report said "regression" when the port had not
+changed. That failure is now loud rather than a silent fallback.
+
+Still open: sfxr's highpass is one-pole and `StateVariableFilter` is two-pole, which is
+30 dB of difference at the frequency floor and the whole of the remaining error on the two
+worst hit-hurt cases.

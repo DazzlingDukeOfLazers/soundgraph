@@ -47,5 +47,6 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/sfxr-report.mjs
                 --dir ${CMAKE_CURRENT_SOURCE_DIR}/sfxr
                 --render $<TARGET_FILE:sg-render>
-                --min-pass 24)
+                --ref $<TARGET_FILE:sfxr-ref>
+                --min-pass 32)
 endif()

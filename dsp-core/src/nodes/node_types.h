@@ -11,6 +11,7 @@ extern const NodeTypeDescriptor kSineOscillator;
 extern const NodeTypeDescriptor kSawOscillator;
 extern const NodeTypeDescriptor kSquareOscillator;
 extern const NodeTypeDescriptor kNoise;
+extern const NodeTypeDescriptor kNoiseOscillator;
 extern const NodeTypeDescriptor kLfo;
 extern const NodeTypeDescriptor kConstant;
 

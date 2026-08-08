@@ -270,7 +270,7 @@ const char* oscillator_type(int wave_type) {
         case 0: return "SquareOscillator";
         case 1: return "SawOscillator";
         case 2: return "SineOscillator";
-        default: return "Noise";
+        default: return "NoiseOscillator";
     }
 }
 
@@ -282,14 +282,13 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     std::vector<Node> nodes;
     std::vector<Connection> connections;
 
-    const bool is_noise = p.wave_type == 3;
-
+    // sfxr's noise is a random wavetable read at the oscillator's period, so its pitch
+    // matters as much as any other waveform's. NoiseOscillator takes a frequency, so the
+    // pitch chain below is built for every waveform — earlier this was skipped for noise
+    // and the whole slide, limit and arpeggio was thrown away with it.
     // --- pitch chain -----------------------------------------------------------------
-    // Noise in sfxr is a random wavetable read at the oscillator's period, so its pitch
-    // matters. The Noise node has no frequency input, so for noise the whole pitch chain
-    // is dropped rather than built and left dangling. See the divergences below.
     std::string pitch_source;
-    if (!is_noise) {
+    {
         nodes.push_back({"pitch", "Constant", {{"value", base_frequency_hz(p)}}});
         pitch_source = "pitch";
 
@@ -323,8 +322,9 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
         oscillator.parameters.push_back({"pulse_width", pulse_width(p)});
         oscillator.parameters.push_back({"pulse_width_sweep", pulse_width_sweep(p)});
     }
-    if (is_noise) {
-        oscillator.parameters.push_back({"colour", 0.0});
+    if (p.wave_type == 3) {
+        // 32 steps per cycle is sfxr's buffer size, not a preference.
+        oscillator.parameters.push_back({"steps", 32.0});
         oscillator.parameters.push_back({"seed", 12345.0});
     }
     nodes.push_back(oscillator);
@@ -333,7 +333,7 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                                "osc", "frequency"});
     }
 
-    if (!is_noise && vibrato_active(p)) {
+    if (vibrato_active(p)) {
         nodes.push_back({"vibrato",
                          "LFO",
                          {{"rate", vibrato_rate_hz(p)},
@@ -401,7 +401,7 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     connections.push_back({"envelope", "out", "amp", "gain"});
 
     // --- retrigger -------------------------------------------------------------------
-    if (repeat_active(p) && !is_noise) {
+    if (repeat_active(p)) {
         nodes.push_back({"repeat", "Retrigger", {{"rate", repeat_rate_hz(p)}, {"width", 1.0}}});
         for (Node& node : nodes) {
             if (node.id == "slide") connections.push_back({"repeat", "gate", "slide", "gate"});

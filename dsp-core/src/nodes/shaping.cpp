@@ -171,9 +171,19 @@ constexpr PortDescriptor kSlideOutputs[] = {
     {"frequency", SignalType::Control, "Hz", false, false, "Bent frequency."},
 };
 constexpr ParameterDescriptor kSlideParameters[] = {
-    {"slide", "semitones/s", -240.0f, 240.0f, 0.0f, Scaling::Linear,
-     "How fast the pitch moves. Negative falls, positive rises.", nullptr, 0},
-    {"acceleration", "semitones/s^2", -480.0f, 480.0f, 0.0f, Scaling::Linear,
+    // The range looks absurd for a musical control and is not. A percussive hit lasts a
+    // few milliseconds, and its pitch has to collapse inside that: -2000 semitones per
+    // second is 167 octaves per second, which over 5 ms is a little under one octave.
+    // That is an ordinary drum sound, not an extreme one.
+    //
+    // The first range here was +/-240, chosen as "surely nobody needs more than twenty
+    // octaves a second". Twelve of the forty-one sfxr cases exceeded it, every one of the
+    // hit-hurt generator's did, and because parameters clamp on load the patches carried
+    // the right number and the sound came out ten times too slow.
+    {"slide", "semitones/s", -9600.0f, 9600.0f, 0.0f, Scaling::Linear,
+     "How fast the pitch moves. Negative falls, positive rises. Large values are for "
+     "percussive sounds, where the whole drop happens in a few milliseconds.", nullptr, 0},
+    {"acceleration", "semitones/s^2", -19200.0f, 19200.0f, 0.0f, Scaling::Linear,
      "How fast the slide itself speeds up or slows down.", nullptr, 0},
     {"limit", "Hz", 0.0f, 20000.0f, 0.0f, Scaling::Linear,
      "Frequency the slide stops at. Zero means no limit.", nullptr, 0},

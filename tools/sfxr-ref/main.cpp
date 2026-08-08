@@ -124,7 +124,8 @@ Rendered render_case(const sfxr_reference::Params& params, unsigned int seed) {
 int usage() {
     std::fprintf(stderr,
                  "usage: sfxr-ref corpus <dir> [--per-preset N]\n"
-                 "       sfxr-ref render --preset <name> --seed <n> --out <file.wav>\n"
+                 "       sfxr-ref render --preset <name> --seed <n> [--noise-seed <n>] "
+                 "--out <file.wav>\n"
                  "       sfxr-ref patch  --preset <name> --seed <n> --out <file.json>\n");
     return 2;
 }
@@ -241,14 +242,14 @@ int command_corpus(const std::string& directory, int per_preset) {
 }
 
 int command_render(const std::string& preset_name, unsigned int seed,
-                   const std::string& out_path) {
+                   unsigned int noise_seed, const std::string& out_path) {
     sfxr_reference::Preset preset;
     if (!sfxr_reference::preset_from_name(preset_name.c_str(), &preset)) {
         std::fprintf(stderr, "unknown preset: %s\n", preset_name.c_str());
         return 2;
     }
     const sfxr_reference::Params params = sfxr_reference::generate(preset, seed);
-    const Rendered rendered = render_case(params, seed);
+    const Rendered rendered = render_case(params, noise_seed);
 
     soundgraph::AudioFile audio;
     audio.sample_rate = sfxr_reference::kSampleRate;
@@ -319,18 +320,27 @@ int main(int argc, char** argv) {
         std::string preset;
         std::string out_path;
         unsigned int seed = 12345u;
+        // The parameters and the noise waveform come from the same seed by default, but
+        // they are separate draws. Varying only the noise seed renders *the same sound*
+        // twice with a different random realisation — which is how far apart two runs of
+        // sfxr itself are, and therefore the closest any port could possibly score.
+        bool have_noise_seed = false;
+        unsigned int noise_seed = 0u;
         for (int i = 2; i < argc; i++) {
             if (std::strcmp(argv[i], "--preset") == 0 && i + 1 < argc)
                 preset = argv[++i];
             else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc)
                 seed = static_cast<unsigned int>(std::strtoul(argv[++i], nullptr, 10));
-            else if (std::strcmp(argv[i], "--out") == 0 && i + 1 < argc)
+            else if (std::strcmp(argv[i], "--noise-seed") == 0 && i + 1 < argc) {
+                noise_seed = static_cast<unsigned int>(std::strtoul(argv[++i], nullptr, 10));
+                have_noise_seed = true;
+            } else if (std::strcmp(argv[i], "--out") == 0 && i + 1 < argc)
                 out_path = argv[++i];
             else
                 return usage();
         }
         if (preset.empty() || out_path.empty()) return usage();
-        return command_render(preset, seed, out_path);
+        return command_render(preset, seed, have_noise_seed ? noise_seed : seed, out_path);
     }
 
     return usage();

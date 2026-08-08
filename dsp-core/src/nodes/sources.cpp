@@ -130,6 +130,78 @@ private:
     float swept_width_ = kUnstarted;
 };
 
+// ---------------------------------------------------------------------------------
+// Noise oscillator
+//
+// Noise with a pitch. A short table of random values is read once per cycle and thrown
+// away, so the sound has a definite period — a rasp rather than a hiss — and follows a
+// frequency input like any other oscillator.
+//
+// This is what a retro sound chip's noise channel does, and what sfxr calls its noise
+// waveform. Plain white noise cannot stand in for it: white noise has a flat spectrum and
+// no pitch, and this has a harmonic comb at the oscillator's frequency. Reaching for
+// `Noise` when a game sound wants this is the difference between an explosion and a hiss.
+//
+// The table is refilled every cycle rather than held, which is what stops it turning into
+// a buzzing fixed waveform. Fewer steps make it coarser and more tonal.
+// ---------------------------------------------------------------------------------
+
+class NoiseOscillator final : public OscillatorBase {
+public:
+    static constexpr int kSteps = 1;
+    static constexpr int kSeed = 2;
+    static constexpr int kMaxSteps = 64;
+
+    void reset() override {
+        OscillatorBase::reset();
+        random_.seed(static_cast<unsigned int>(parameter(kSeed)));
+        last_phase_ = 1.0f;  // forces a refill on the first sample
+        for (float& value : table_) {
+            value = 0.0f;
+        }
+    }
+
+protected:
+    float render(float phase, float) override {
+        const int steps = static_cast<int>(dsp::clampf(parameter(kSteps), 2.0f,
+                                                       static_cast<float>(kMaxSteps)));
+        // A wrap is the only signal that a cycle finished: render() is handed the phase
+        // before it advances, so a phase that went backwards means it passed 1.
+        if (phase < last_phase_) {
+            for (int i = 0; i < steps; ++i) {
+                table_[i] = random_.next_bipolar();
+            }
+        }
+        last_phase_ = phase;
+
+        int index = static_cast<int>(phase * static_cast<float>(steps));
+        if (index < 0) index = 0;
+        if (index >= steps) index = steps - 1;
+        return table_[index];
+    }
+
+    void on_parameter_changed(int index) override {
+        if (index == kSeed) {
+            random_.seed(static_cast<unsigned int>(parameter(kSeed)));
+        }
+    }
+
+private:
+    dsp::Xorshift32 random_;
+    float table_[kMaxSteps] = {0.0f};
+    float last_phase_ = 1.0f;
+};
+
+constexpr ParameterDescriptor kNoiseOscillatorParameters[] = {
+    {"frequency", "Hz", 0.01f, 20000.0f, 440.0f, Scaling::Exponential,
+     "Pitch when nothing is connected to the frequency input.", nullptr, 0},
+    {"steps", "", 2.0f, 64.0f, 32.0f, Scaling::Linear,
+     "How many random values make up one cycle. Fewer is coarser and more tonal; 32 is "
+     "what most retro sound chips used.", nullptr, 0},
+    {"seed", "", 1.0f, 2147483000.0f, 12345.0f, Scaling::Linear,
+     "Fixes the random sequence so a patch renders identically every time.", nullptr, 0},
+};
+
 constexpr ParameterDescriptor kSquareParameters[] = {
     {"frequency", "Hz", 0.01f, 20000.0f, 440.0f, Scaling::Exponential,
      "Pitch when nothing is connected to the frequency input.", nullptr, 0},
@@ -353,6 +425,19 @@ const NodeTypeDescriptor kNoise = {
     false, NodeRole::Processor, false,
     ResourceCost{1.5f, 20, 0},
     &make<NoiseNode>,
+};
+
+const NodeTypeDescriptor kNoiseOscillator = {
+    "NoiseOscillator", "Noise Oscillator", "Sources",
+    "Noise with a pitch. A rasp rather than a hiss — the retro sound-chip noise channel.",
+    "noise oscillator|pitched noise|tuned noise|rasp|buzz|retro noise|chip noise|"
+    "noise channel|nes noise|explosion|engine|growl|gritty|lo-fi noise",
+    Slice<PortDescriptor>(kOscInputs),
+    Slice<PortDescriptor>(kAudioOut),
+    Slice<ParameterDescriptor>(kNoiseOscillatorParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{2.0f, 288, 0},
+    &make<NoiseOscillator>,
 };
 
 const NodeTypeDescriptor kLfo = {

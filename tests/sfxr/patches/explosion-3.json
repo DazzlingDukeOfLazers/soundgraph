@@ -7,11 +7,45 @@
   },
   "nodes": [
     {
-      "id": "osc",
-      "type": "Noise",
+      "id": "pitch",
+      "type": "Constant",
       "parameters": {
-        "colour": 0,
+        "value": 104.177
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "slide": -87.3311,
+        "acceleration": 0,
+        "limit": 3.528
+      }
+    },
+    {
+      "id": "arpeggio",
+      "type": "Arpeggio",
+      "parameters": {
+        "time": 0.00817924,
+        "interval": 0.264357
+      }
+    },
+    {
+      "id": "osc",
+      "type": "NoiseOscillator",
+      "parameters": {
+        "steps": 32,
         "seed": 12345
+      }
+    },
+    {
+      "id": "vibrato",
+      "type": "LFO",
+      "parameters": {
+        "rate": 21.405,
+        "shape": 0,
+        "amount": 0.48318,
+        "offset": 0
       }
     },
     {
@@ -48,6 +82,14 @@
       }
     },
     {
+      "id": "repeat",
+      "type": "Retrigger",
+      "parameters": {
+        "rate": 6.34603,
+        "width": 1
+      }
+    },
+    {
       "id": "out",
       "type": "StereoOutput",
       "parameters": {
@@ -57,6 +99,22 @@
     }
   ],
   "connections": [
+    {
+      "from": {"node": "pitch", "port": "out"},
+      "to": {"node": "slide", "port": "frequency"}
+    },
+    {
+      "from": {"node": "slide", "port": "frequency"},
+      "to": {"node": "arpeggio", "port": "frequency"}
+    },
+    {
+      "from": {"node": "arpeggio", "port": "frequency"},
+      "to": {"node": "osc", "port": "frequency"}
+    },
+    {
+      "from": {"node": "vibrato", "port": "out"},
+      "to": {"node": "osc", "port": "fm"}
+    },
     {
       "from": {"node": "osc", "port": "out"},
       "to": {"node": "phaser", "port": "in"}
@@ -72,6 +130,14 @@
     {
       "from": {"node": "envelope", "port": "out"},
       "to": {"node": "amp", "port": "gain"}
+    },
+    {
+      "from": {"node": "repeat", "port": "gate"},
+      "to": {"node": "slide", "port": "gate"}
+    },
+    {
+      "from": {"node": "repeat", "port": "gate"},
+      "to": {"node": "arpeggio", "port": "gate"}
     },
     {
       "from": {"node": "amp", "port": "out"},

@@ -7,11 +7,45 @@
   },
   "nodes": [
     {
-      "id": "osc",
-      "type": "Noise",
+      "id": "pitch",
+      "type": "Constant",
       "parameters": {
-        "colour": 0,
+        "value": 1675.6
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "slide": -0,
+        "acceleration": 0,
+        "limit": 3.528
+      }
+    },
+    {
+      "id": "arpeggio",
+      "type": "Arpeggio",
+      "parameters": {
+        "time": 0.0269941,
+        "interval": -26.8512
+      }
+    },
+    {
+      "id": "osc",
+      "type": "NoiseOscillator",
+      "parameters": {
+        "steps": 32,
         "seed": 12345
+      }
+    },
+    {
+      "id": "vibrato",
+      "type": "LFO",
+      "parameters": {
+        "rate": 22.4929,
+        "shape": 0,
+        "amount": 0.405217,
+        "offset": 0
       }
     },
     {
@@ -57,6 +91,22 @@
     }
   ],
   "connections": [
+    {
+      "from": {"node": "pitch", "port": "out"},
+      "to": {"node": "slide", "port": "frequency"}
+    },
+    {
+      "from": {"node": "slide", "port": "frequency"},
+      "to": {"node": "arpeggio", "port": "frequency"}
+    },
+    {
+      "from": {"node": "arpeggio", "port": "frequency"},
+      "to": {"node": "osc", "port": "frequency"}
+    },
+    {
+      "from": {"node": "vibrato", "port": "out"},
+      "to": {"node": "osc", "port": "fm"}
+    },
     {
       "from": {"node": "osc", "port": "out"},
       "to": {"node": "phaser", "port": "in"}

@@ -94,6 +94,11 @@
       "name": "filter-self-sweep",
       "patch": "cases/filter-self-sweep.json",
       "frames": 24000
+    },
+    {
+      "name": "noise-oscillator",
+      "patch": "cases/noise-oscillator.json",
+      "frames": 24000
     }
   ]
 }

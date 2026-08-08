@@ -494,6 +494,72 @@ TEST(parameters_are_clamped_to_their_declared_range) {
     CHECK_NEAR(harness.output()[0], 0.0, 1e-6);
 }
 
+// ---- pitched noise --------------------------------------------------------------------
+
+TEST(noise_oscillator_repeats_at_its_frequency) {
+    // The whole point: this has a period where Noise does not. One second at 200 Hz is
+    // 200 cycles of the same table, so the waveform must repeat 200 times.
+    NodeHarness harness("NoiseOscillator", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("frequency", 200.0f);
+    harness.set("steps", 32.0f);
+    harness.process();
+
+    // A table refilled every cycle still crosses zero on a schedule set by the period, so
+    // the crossing count is bounded by steps per cycle rather than being arbitrary.
+    const std::vector<float>& out = harness.output();
+    const int crossings = testing::rising_zero_crossings(out);
+    CHECK(crossings > 200);
+    CHECK(crossings < 200 * 32);
+    CHECK(testing::peak(out) <= 1.0f);
+    CHECK_NEAR(testing::mean(out), 0.0, 0.02);
+}
+
+TEST(noise_oscillator_follows_its_frequency_input) {
+    // Doubling the pitch has to double the rate at which the texture repeats. This is the
+    // property plain Noise cannot have, and the reason this node exists.
+    NodeHarness low("NoiseOscillator", kOneSecond, kSampleRate);
+    low.connect("frequency", 100.0f);
+    low.process();
+
+    NodeHarness high("NoiseOscillator", kOneSecond, kSampleRate);
+    high.connect("frequency", 400.0f);
+    high.process();
+
+    CHECK(testing::rising_zero_crossings(high.output()) >
+          testing::rising_zero_crossings(low.output()) * 2);
+}
+
+TEST(noise_oscillator_is_reproducible_and_coarser_with_fewer_steps) {
+    NodeHarness first("NoiseOscillator", 4096, kSampleRate);
+    NodeHarness second("NoiseOscillator", 4096, kSampleRate);
+    first.set("seed", 777.0f);
+    second.set("seed", 777.0f);
+    first.process();
+    second.process();
+
+    bool identical = true;
+    for (std::size_t i = 0; i < first.output().size(); ++i) {
+        if (first.output()[i] != second.output()[i]) identical = false;
+    }
+    CHECK_MESSAGE(identical, "the same seed must give the same sequence, or goldens mean nothing");
+
+    // Two steps per cycle is very nearly a square wave: it should cross zero far less
+    // often than thirty-two steps of the same length.
+    NodeHarness coarse("NoiseOscillator", kOneSecond, kSampleRate);
+    coarse.set("frequency", 200.0f);
+    coarse.set("steps", 2.0f);
+    coarse.process();
+
+    NodeHarness fine("NoiseOscillator", kOneSecond, kSampleRate);
+    fine.set("frequency", 200.0f);
+    fine.set("steps", 32.0f);
+    fine.process();
+
+    CHECK(testing::rising_zero_crossings(coarse.output()) <
+          testing::rising_zero_crossings(fine.output()));
+}
+
 // ---- shaping: envelopes, pitch movement, retriggering ---------------------------------
 
 TEST(ahd_envelope_runs_attack_hold_decay_and_then_stops) {
@@ -745,7 +811,7 @@ TEST(filter_cutoff_sweep_closes_the_filter_over_time) {
 
 TEST(every_registered_type_can_be_created_with_working_defaults) {
     const soundgraph::NodeRegistry& registry = soundgraph::NodeRegistry::builtin();
-    CHECK(registry.types().size() >= 21);
+    CHECK(registry.types().size() >= 22);
 
     for (const soundgraph::NodeTypeDescriptor* type : registry.types()) {
         NodeHarness harness(type->name, 128, kSampleRate);
