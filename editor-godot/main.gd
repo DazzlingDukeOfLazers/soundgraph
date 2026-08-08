@@ -13,6 +13,7 @@ extends Control
 
 const Scope := preload("res://scope.gd")
 const PatchGraph := preload("res://patch_graph.gd")
+const Layout := preload("res://layout.gd")
 
 ## Layout grid. Everything auto-place produces lands on this, so a hand-aligned patch and
 ## a generated one look like they came from the same hand.
@@ -908,134 +909,90 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 # ---------------------------------------------------------------------------------
 # Auto-place
 #
-# Modelled on a layout Daniel aligned by hand: columns follow signal flow left to right
-# on a 40 grid, modulators stack under the signal path they feed, and a source with no
-# inputs sits in the column just before whatever it drives rather than far off at the
-# left edge. Actual widget sizes drive the spacing, so a column of wide nodes pushes the
-# next column out instead of overlapping it.
+# The layered layout lives in layout.gd; this gathers the graph, hands it over, and
+# writes the result back. With nodes selected it arranges only those, treating everything
+# else as a fixed anchor that still pulls on the result — so tidying part of a patch
+# does not fight the part you already arranged.
 # ---------------------------------------------------------------------------------
 
-## Longest-path depth per node, with input-less nodes pulled right to sit just before
-## their consumers — an LFO belongs next to the filter it modulates, not at the origin.
-func _compute_depths() -> Dictionary:
-	var incoming := {}
-	var outgoing := {}
-	for node in patch.get("nodes", []):
-		incoming[node["id"]] = []
-		outgoing[node["id"]] = []
-	for connection in patch.get("connections", []):
-		var from_id: String = connection["from"]["node"]
-		var to_id: String = connection["to"]["node"]
-		if incoming.has(to_id) and outgoing.has(from_id):
-			incoming[to_id].append(from_id)
-			outgoing[from_id].append(to_id)
-
-	var depths := {}
-	for id in incoming:
-		depths[id] = 0
-
-	# Relax until stable. Node counts here are small, and a cycle (legal through a Delay)
-	# simply stops contributing once it can no longer raise anything.
-	for _pass in range(patch.get("nodes", []).size() + 1):
-		var changed := false
-		for id in incoming:
-			var deepest := 0
-			for source in incoming[id]:
-				deepest = maxi(deepest, int(depths[source]) + 1)
-			if deepest != int(depths[id]):
-				depths[id] = deepest
-				changed = true
-		if not changed:
-			break
-
-	for id in incoming:
-		if incoming[id].is_empty() and not outgoing[id].is_empty():
-			var earliest := 1 << 30
-			for target in outgoing[id]:
-				earliest = mini(earliest, int(depths[target]))
-			depths[id] = maxi(0, earliest - 1)
-	return depths
-
-
-## Whether a node's outputs are all control-rate. Audio carries the signal path and sits
-## at the top of a column; modulation hangs below it.
-func _is_modulator(node: Dictionary) -> bool:
-	var outputs: Array = registry.get(node["type"], {}).get("outputs", [])
-	if outputs.is_empty():
-		return false
-	for output in outputs:
-		if output["type"] == "audio":
-			return false
-	return true
+func _selected_ids() -> Array:
+	var selected := []
+	for id in widgets:
+		if widgets[id].selected:
+			selected.append(id)
+	return selected
 
 
 func _auto_place() -> void:
 	if patch.get("nodes", []).is_empty():
 		return
+
+	var selected := _selected_ids()
+	var movable := selected if selected.size() >= 2 else []
+	if movable.is_empty():
+		for node in patch["nodes"]:
+			movable.append(node["id"])
+
 	_begin_edit()
 
-	var depths := _compute_depths()
-	var columns := {}
+	var sizes := {}
 	for node in patch["nodes"]:
-		var depth: int = depths.get(node["id"], 0)
-		if not columns.has(depth):
-			columns[depth] = []
-		columns[depth].append(node)
-
-	# Within a column: signal path first, then modulators ordered by how far downstream
-	# they reach, so a cable never has to travel back past its own column.
-	var reach := {}
-	for node in patch["nodes"]:
-		var nearest := 1 << 30
-		for connection in patch.get("connections", []):
-			if connection["from"]["node"] == node["id"]:
-				nearest = mini(nearest, int(depths.get(connection["to"]["node"], 0)))
-		reach[node["id"]] = nearest
-	for depth in columns:
-		columns[depth].sort_custom(func(a, b):
-			var a_modulator := 1 if _is_modulator(a) else 0
-			var b_modulator := 1 if _is_modulator(b) else 0
-			if a_modulator != b_modulator:
-				return a_modulator < b_modulator
-			return int(reach[a["id"]]) < int(reach[b["id"]]))
-
-	var widget_size := func(node: Dictionary) -> Vector2:
 		var widget: GraphNode = widgets.get(node["id"])
-		return widget.size if widget != null else Vector2(240.0, 140.0)
+		sizes[node["id"]] = widget.size if widget != null else Vector2(240.0, 140.0)
 
-	var x := 0.0
-	var sorted_depths := columns.keys()
-	sorted_depths.sort()
+	var anchors := {}
+	var moving := {}
+	for id in movable:
+		moving[id] = true
+	for node in patch["nodes"]:
+		if not moving.has(node["id"]):
+			anchors[node["id"]] = Vector2(
+				node.get("position", {}).get("x", 0.0), node.get("position", {}).get("y", 0.0))
 
-	for depth in sorted_depths:
-		var column: Array = columns[depth]
+	var edges := []
+	for connection in patch.get("connections", []):
+		edges.append([connection["from"]["node"], connection["to"]["node"]])
 
-		# One pitch for the whole column rather than packing each node against the last:
-		# a set pitch is what makes a graph scan as rows and columns instead of a pile,
-		# and it is what a person aligning by hand naturally produces.
-		var widest := 0.0
-		var tallest := 0.0
-		for node in column:
-			var size: Vector2 = widget_size.call(node)
-			widest = maxf(widest, size.x)
-			tallest = maxf(tallest, size.y)
-		var row_pitch := snap_up(tallest + ROW_GUTTER, GRID)
+	var placed: Dictionary = Layout.arrange({
+		"nodes": movable, "edges": edges, "sizes": sizes, "anchors": anchors,
+		"grid": GRID, "column_pitch": COLUMN_PITCH,
+		"column_gutter": COLUMN_GUTTER, "row_gutter": ROW_GUTTER,
+	})
 
-		var row := 0
-		for node in column:
-			node["position"] = {"x": x, "y": row * row_pitch}
-			row += 1
-		x += maxf(COLUMN_PITCH, snap_up(widest + COLUMN_GUTTER, GRID))
+	# Straightening pulls nodes toward their neighbours, which routinely lands the result
+	# above and left of the origin. A partial arrangement is translated back to where the
+	# selection already sat, so tidying one corner does not move it across the canvas; a
+	# whole-graph arrangement is normalised to the origin instead.
+	var old_origin := Vector2(INF, INF)
+	var new_origin := Vector2(INF, INF)
+	for node in patch["nodes"]:
+		if not moving.has(node["id"]) or not placed.has(node["id"]):
+			continue
+		old_origin.x = minf(old_origin.x, node.get("position", {}).get("x", 0.0))
+		old_origin.y = minf(old_origin.y, node.get("position", {}).get("y", 0.0))
+		new_origin.x = minf(new_origin.x, placed[node["id"]].x)
+		new_origin.y = minf(new_origin.y, placed[node["id"]].y)
+
+	var shift := Vector2.ZERO
+	if new_origin.x < INF:
+		var target: Vector2 = old_origin if not anchors.is_empty() else Vector2.ZERO
+		shift = ((target - new_origin) / GRID).round() * GRID
+
+	for node in patch["nodes"]:
+		if placed.has(node["id"]):
+			var point: Vector2 = placed[node["id"]] + shift
+			node["position"] = {"x": point.x, "y": point.y}
 
 	# Hand-placed cable waypoints describe a layout that no longer exists.
-	graph_edit.clear_waypoints()
 	for connection in patch.get("connections", []):
-		connection.erase("waypoint")
+		if moving.has(connection["from"]["node"]) or moving.has(connection["to"]["node"]):
+			connection.erase("waypoint")
 
 	await _rebuild_view()
 	_apply()
 	_commit_edit("auto-place")
-	status_label.text = "placed %d nodes on the %d grid" % [patch["nodes"].size(), int(GRID)]
+	status_label.text = "placed %d node%s" % [
+		placed.size(), "" if placed.size() == 1 else "s"]
 
 
 # ---------------------------------------------------------------------------------

@@ -46,15 +46,45 @@ two thousand binding files. Afterwards it is incremental.
 Everything snaps to a **40 pixel grid** — the graph's major grid lines — so hand-placed
 and auto-placed nodes share a pitch instead of drifting a few pixels apart.
 
-**Auto-place** walks the graph left to right: columns are longest-path depth, so signal
-flow always reads in one direction and no cable runs backwards. A source with no inputs
-sits in the column just before whatever it drives, which is why an LFO lands beside the
-filter it modulates rather than stranded at the far left. Within a column the signal path
-comes first and modulators stack under it, on one pitch derived from the tallest node —
-a set pitch is what makes a patch scan as rows and columns rather than as a pile.
+**Auto-place** (`layout.gd`) is the Sugiyama framework for layered graph drawing. Placing
+nodes by depth alone — which is all the first version did — gets the columns right and
+nothing else: it says nothing about which node sits above which, so cables cross for no
+reason, and it stacks each column from the top, so a chain that should read as a straight
+line zig-zags. The four phases:
 
-Column and row pitch come from the real widget sizes, so a column of wide nodes pushes
-the next one out instead of overlapping it.
+1. **Cycle removal.** A feedback loop is temporarily reversed so the rest can assume a
+   DAG. SoundGraph only permits cycles through a `Delay` anyway, so this draws a loop the
+   way a person would: forward along the signal, back underneath.
+2. **Layer assignment.** Longest path, then sources pulled right to sit beside whatever
+   they drive — which is why an LFO lands next to its filter instead of stranded at the
+   far left.
+3. **Crossing reduction.** The median heuristic swept in both directions, then
+   adjacent-swap transposition, keeping the ordering whose crossings were *actually
+   measured* to be lowest rather than assumed.
+4. **Coordinate assignment.** Each node is pulled toward the median of its neighbours,
+   resolved against the no-overlap constraints by isotonic regression — which gives the
+   closest legal placement rather than an approximation of it.
+
+Edges spanning more than one column get **dummy nodes** in the layers they cross. Without
+them a long cable is invisible to both the crossing count and the spacing, so it happily
+cuts across whatever is in the way. Dummy chains are weighted heavily in phase 4, which is
+what keeps a long cable straight instead of bowed.
+
+Column and row pitch come from real widget sizes, so a column of wide nodes pushes the
+next one out instead of overlapping it.
+
+**With nodes selected**, only those are arranged; everything else becomes a fixed anchor
+that still pulls on the result, and the arrangement is translated back to where the
+selection already sat. Tidying one corner does not move it across the canvas or fight the
+part you already arranged by hand.
+
+References: Sugiyama, Tagawa & Toda (1981); Gansner, Koutsofios, North & Vo, *A Technique
+for Drawing Directed Graphs* (1993) for median + transpose; Brandes & Köpf, *Fast and
+Simple Horizontal Coordinate Assignment* (2002).
+
+`layout_test.gd` checks it against graphs with an obvious right answer — parallel chains,
+a fully reversed bipartite graph, a chain that must come out perfectly straight — by
+measuring crossings on the final coordinates rather than comparing to a recorded layout.
 
 ## Cables
 

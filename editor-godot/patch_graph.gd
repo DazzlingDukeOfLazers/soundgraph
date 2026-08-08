@@ -30,12 +30,17 @@ const STUB := 30.0
 const CHAMFER := 14.0
 ## How close a click must be to a cable to grab it.
 const GRAB_DISTANCE := 12.0
+## Ceiling on how many detours are scored when none of them is clear. Routing runs per
+## cable per frame, so an unbounded search in a dense patch would cost frame rate to
+## improve a cable that is going to look crowded regardless.
+const MAX_CANDIDATES := 192
 
 ## Graph-space point each cable must pass through, keyed by connection.
 var waypoints: Dictionary = {}
 
 var _obstacles: Array[Rect2] = []
 var _obstacles_frame := -1
+var _route_cache := {}
 var _dragging_key := ""
 var _drag_connection: Dictionary = {}
 
@@ -82,6 +87,7 @@ func _current_obstacles() -> Array[Rect2]:
 		return _obstacles
 	_obstacles_frame = frame
 	_obstacles.clear()
+	_route_cache.clear()
 	for child in get_children():
 		if child is GraphNode and child.visible:
 			_obstacles.append(Rect2(child.position_offset, child.size).grow(CLEARANCE))
@@ -172,6 +178,24 @@ func _chamfer(points: PackedVector2Array) -> PackedVector2Array:
 	return result
 
 
+## Clear vertical gaps between obstacles, nearest the reference first. A columnar layout
+## always leaves these between its columns, and they are where a trace should make its
+## vertical moves — turning at a fixed distance from the port instead lands inside
+## whatever node happens to occupy the next column.
+func _vertical_channels(reference: float, low: float, high: float) -> Array:
+	var candidates := [reference]
+	for rect in _current_obstacles():
+		candidates.append(rect.position.x - CLEARANCE * 0.5)
+		candidates.append(rect.end.x + CLEARANCE * 0.5)
+
+	var usable := []
+	for x in candidates:
+		if x >= low and x <= high:
+			usable.append(x)
+	usable.sort_custom(func(p, q): return absf(p - reference) < absf(q - reference))
+	return usable
+
+
 ## Candidate orthogonal routes from a to b, cheapest first.
 func _orthogonal_candidates(a: Vector2, b: Vector2) -> Array:
 	var start := a + Vector2(STUB, 0.0)
@@ -192,41 +216,109 @@ func _orthogonal_candidates(a: Vector2, b: Vector2) -> Array:
 			continue
 		candidates.append(PackedVector2Array([a, start, Vector2(x, a.y), Vector2(x, b.y), finish, b]))
 
-	# Family two: a horizontal channel above or below everything in the way. Needed when
-	# the two ports share a row (no vertical channel exists) or the cable runs backwards.
+	# Family two: a horizontal channel above or below whatever is in the way. Needed when
+	# the two ports share a row — no vertical channel between them can help, because the
+	# route would be a straight line through the obstacle — or when the cable runs
+	# backwards.
+	#
+	# The vertical moves happen in clear gaps between obstacles rather than at a fixed
+	# distance from the port: in a columnar layout a fixed stub lands inside the next
+	# column, which is exactly the case of two same-row nodes with a third between them.
 	var middle_y := (a.y + b.y) * 0.5
 	var channel_ys := []
 	for rect in _current_obstacles():
 		channel_ys.append(rect.position.y - CLEARANCE * 0.5)
 		channel_ys.append(rect.end.y + CLEARANCE * 0.5)
 	channel_ys.sort_custom(func(p, q): return absf(p - middle_y) < absf(q - middle_y))
+
+	var low: float = minf(start.x, finish.x)
+	var high: float = maxf(start.x, finish.x)
+	# Two turn points at each end, not four. Every extra combination multiplies how many
+	# candidates must be examined before the next horizontal channel is even tried — and
+	# the channel matters far more than the exact turn, so spending the budget on rows
+	# rather than on columns finds a clear route much sooner.
+	var leaving := _vertical_channels(start.x, low, high).slice(0, 2)
+	var arriving := _vertical_channels(finish.x, low, high).slice(0, 2)
+	if leaving.is_empty():
+		leaving = [start.x]
+	if arriving.is_empty():
+		arriving = [finish.x]
+
 	for y in channel_ys:
-		candidates.append(PackedVector2Array([
-			a, start, Vector2(start.x, y), Vector2(finish.x, y), finish, b,
-		]))
+		for x1 in leaving:
+			for x2 in arriving:
+				candidates.append(PackedVector2Array([
+					a, Vector2(x1, a.y), Vector2(x1, y), Vector2(x2, y), Vector2(x2, b.y), b,
+				]))
 
 	return candidates
 
 
+## How many obstacles a path crosses. Zero means clear; the count is used to pick the
+## least bad route when a dense patch leaves no clear one at all.
+func _blocked_count(points: PackedVector2Array, ignore: Array[Rect2]) -> int:
+	var obstacles := _current_obstacles()
+	var blocked := 0
+	for i in range(points.size() - 1):
+		for rect in obstacles:
+			if ignore.has(rect):
+				continue
+			if _segment_hits_rect(points[i], points[i + 1], rect):
+				blocked += 1
+	return blocked
+
+
+func _path_length(points: PackedVector2Array) -> float:
+	var total := 0.0
+	for i in range(points.size() - 1):
+		total += points[i].distance_to(points[i + 1])
+	return total
+
+
 func _route(a: Vector2, b: Vector2) -> PackedVector2Array:
+	# Routing is not cheap and every cable is routed on every frame it is drawn, so
+	# results are kept for the life of a frame. The obstacle list is rebuilt per frame
+	# too, so the cache can never outlive the geometry it was computed against.
+	_current_obstacles()
+	var key := "%.1f,%.1f>%.1f,%.1f" % [a.x, a.y, b.x, b.y]
+	if _route_cache.has(key):
+		return _route_cache[key]
+
 	var own := _own_rects(a, b)
+	var result: PackedVector2Array
 
 	var smooth := _smooth_curve(a, b)
 	if _path_is_clear(smooth, own):
-		return smooth
+		result = smooth
+	else:
+		var best: PackedVector2Array
+		var best_blocked := 1 << 30
+		var best_length := INF
+		var examined := 0
 
-	for candidate in _orthogonal_candidates(a, b):
-		var simplified := _simplify(candidate)
-		if _path_is_clear(simplified, own):
-			return _chamfer(simplified)
+		# Candidates arrive best-first, so the first clear one wins and the search stops
+		# there. Scoring the rest only matters when a dense patch leaves nothing clear at
+		# all, where the least-blocked route still reads better than a line through three
+		# nodes — and even then the search is capped, because this runs per cable per frame.
+		for candidate in _orthogonal_candidates(a, b):
+			var simplified := _simplify(candidate)
+			var blocked := _blocked_count(simplified, own)
+			if blocked == 0:
+				best = simplified
+				best_blocked = 0
+				break
+			var length := _path_length(simplified)
+			if blocked < best_blocked or (blocked == best_blocked and length < best_length):
+				best_blocked = blocked
+				best_length = length
+				best = simplified
+			examined += 1
+			if examined >= MAX_CANDIDATES:
+				break
+		result = _chamfer(best) if not best.is_empty() else smooth
 
-	# Nothing is clear — a dense patch will do this. A staircase through the middle is
-	# still more readable than a curve straight through a node.
-	var middle := (a.x + b.x) * 0.5
-	return _chamfer(_simplify(PackedVector2Array([
-		a, a + Vector2(STUB, 0.0), Vector2(middle, a.y), Vector2(middle, b.y),
-		b - Vector2(STUB, 0.0), b,
-	])))
+	_route_cache[key] = result
+	return result
 
 
 func _route_through(a: Vector2, b: Vector2, waypoint: Vector2) -> PackedVector2Array:
