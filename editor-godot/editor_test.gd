@@ -563,6 +563,74 @@ func _initialize() -> void:
 		"and every computer key is lettered on the key it plays (%d of %d)"
 			% [mapped, main.KEY_NOTES.size()])
 
+	# ---- moving and resizing the keyboard -----------------------------------------------
+	var start_octave: int = main.octave
+	var start_width: int = main.keyboard_octaves
+
+	# The bar itself, since the buttons below are called directly and would pass even if
+	# nothing had been built for anyone to press.
+	check(main.keyboard_bar != null, "the keyboard has a control bar")
+	var buttons := 0
+	for child in main.keyboard_bar.get_children():
+		if child is Button:
+			buttons += 1
+	check(buttons == 4, "with four buttons on it (%d)" % buttons)
+
+	# The label is the only part of this that says anything, so it is the only part that
+	# can say something wrong. C3 to C5 at octave 3 two wide, and it has to track both.
+	var range_label := main.keyboard_bar.get_node_or_null("KeyboardRange") as Label
+	main.octave = 3
+	main.keyboard_octaves = 2
+	main._refresh_keyboard_range()
+	check(range_label != null and range_label.text == "C3 – C5",
+		"and a label naming the range (%s)" % (range_label.text if range_label else "missing"))
+	main._show_octaves(4)
+	check(range_label.text == "C3 – C7", "which follows the width (%s)" % range_label.text)
+	main._shift_octave(1)
+	check(range_label.text == "C4 – C8", "and the octave (%s)" % range_label.text)
+	main._shift_octave(-1)
+	main._show_octaves(start_width)
+	main.octave = start_octave
+	main._refresh_keyboard_range()
+
+	main._shift_octave(1)
+	check(main.keyboard.first_note == (start_octave + 1) * 12 + 12,
+		"the octave buttons move the keyboard (first note %d)" % main.keyboard.first_note)
+	main._shift_octave(-1)
+	check(main.octave == start_octave, "and back again")
+
+	main._show_octaves(4)
+	check(main.keyboard.octaves == 4,
+		"the width buttons show more octaves (%d)" % main.keyboard.octaves)
+	# Both ends clamp, and the check is that they clamp rather than that they refuse: a
+	# button that stops working at the limit is fine, one that scrolls past it is not.
+	main._show_octaves(99)
+	check(main.keyboard.octaves <= 6, "and stop at a sensible maximum (%d)" % main.keyboard.octaves)
+	main._show_octaves(0)
+	check(main.keyboard.octaves >= 1, "and never reach zero (%d)" % main.keyboard.octaves)
+	main._show_octaves(start_width)
+
+	# The one that actually bites. Notes are held by number, so a key still down when the
+	# range moves would be released as a *different* note and the original would sound
+	# forever — a stuck note in front of an audience, from a mis-click.
+	var stuck_probe: int = main.octave * 12 + 12
+	main.keyboard.note_pressed.emit(stuck_probe)
+	check(main.held_notes.has(stuck_probe), "a note is held before the octave moves")
+	main._shift_octave(1)
+	check(main.held_notes.is_empty(),
+		"moving the keyboard while a key is down lets it go (%d left holding)"
+			% main.held_notes.size())
+	main._shift_octave(-1)
+
+	# Narrowing takes keys away, so the same applies; widening cannot, so it must not.
+	main.keyboard.note_pressed.emit(stuck_probe)
+	main._show_octaves(main.keyboard_octaves + 1)
+	check(main.held_notes.has(stuck_probe), "widening leaves a held note alone")
+	main._show_octaves(1)
+	check(main.held_notes.is_empty(), "narrowing lets it go")
+	main._show_octaves(start_width)
+	main._shift_octave(0)
+
 	# ---- the open document is named -----------------------------------------------------
 	await main._load_example("Delay Echo")
 	await process_frame

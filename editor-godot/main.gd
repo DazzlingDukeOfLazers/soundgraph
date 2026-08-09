@@ -121,6 +121,7 @@ var views: TabContainer
 var rack: Rack
 var sandbox: Sandbox
 var keyboard: Keyboard
+var keyboard_bar: Control
 ## What is open, shown so "which patch am I looking at" is never a guess.
 var document_label: Label
 var document_name := "untitled"
@@ -138,6 +139,9 @@ var player: AudioStreamPlayer
 var playback: AudioStreamGeneratorPlayback
 
 var octave := 3
+## How many octaves the on-screen keyboard shows. Two fits a laptop; a wide screen has
+## room for a patch's whole range at once, and a small one is better off with big keys.
+var keyboard_octaves := 2
 var held_notes := {}
 var inspecting := {}                   # {"node": id, "port": name} or empty
 var suppress_reload := false
@@ -318,6 +322,7 @@ func _build_ui() -> void:
 
 	# Under the tabs rather than inside one: the graph and the rack are two views of the
 	# same running patch, and the thing that plays it belongs to neither.
+	root.add_child(_build_keyboard_bar())
 	keyboard = Keyboard.new()
 	keyboard.note_pressed.connect(_on_keyboard_pressed)
 	keyboard.note_released.connect(_on_keyboard_released)
@@ -1052,8 +1057,84 @@ func _let_go_note(note: int) -> void:
 		keyboard.set_held_notes(held_notes)
 
 
-## The keyboard shows the octave the computer keys are playing, plus one above it, with the
-## mapped keys lettered on the keys themselves.
+## The strip above the keyboard: where it sits, and how much of it you can see.
+##
+## Both were already reachable — octave by Z and X, width not at all — and a shortcut
+## nobody has been told about is a feature that does not exist. Somebody sitting down at
+## this for the first time at a show will not guess Z and X, so the buttons say what they
+## do and the shortcut is written on them for whoever wants it afterwards.
+func _build_keyboard_bar() -> Control:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 6)
+	bar.alignment = BoxContainer.ALIGNMENT_END
+
+	var range_label := Label.new()
+	range_label.name = "KeyboardRange"
+	range_label.custom_minimum_size.x = 132
+	range_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	range_label.add_theme_color_override("font_color", Color(0.55, 0.58, 0.64))
+
+	var make := func(text: String, tooltip: String, action: Callable) -> Button:
+		var button := Button.new()
+		button.text = text
+		button.tooltip_text = tooltip
+		button.custom_minimum_size.x = 34
+		button.pressed.connect(action)
+		return _defocus(button) as Button
+
+	bar.add_child(range_label)
+	bar.add_child(make.call("−8va", "Down an octave  (Z)",
+		func() -> void: _shift_octave(-1)))
+	bar.add_child(make.call("+8va", "Up an octave  (X)",
+		func() -> void: _shift_octave(1)))
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size.x = 10
+	bar.add_child(spacer)
+
+	bar.add_child(make.call("−", "Show fewer octaves",
+		func() -> void: _show_octaves(keyboard_octaves - 1)))
+	bar.add_child(make.call("+", "Show more octaves",
+		func() -> void: _show_octaves(keyboard_octaves + 1)))
+
+	keyboard_bar = bar
+	return bar
+
+
+## Moves the keyboard, letting go first.
+##
+## Notes are held by number, so a key still down when the range moves is released as a
+## different note and the original never stops. With Z and X that took a deliberate effort;
+## with a button under the mouse it would take a moment's inattention, and a stuck note in
+## front of an audience is not recoverable by explaining it.
+func _shift_octave(delta: int) -> void:
+	var moved: int = clampi(octave + delta, 0, 7)
+	if moved == octave:
+		return
+	_release_all_notes()
+	octave = moved
+	_refresh_keyboard_range()
+
+
+func _show_octaves(count: int) -> void:
+	var wanted: int = clampi(count, 1, 6)
+	if wanted == keyboard_octaves:
+		return
+	# Widening does not move any key that was already showing, so nothing needs releasing.
+	# Narrowing takes keys away, and a held note on one of them could never be let go.
+	if wanted < keyboard_octaves:
+		_release_all_notes()
+	keyboard_octaves = wanted
+	_refresh_keyboard_range()
+
+
+func _release_all_notes() -> void:
+	for note in held_notes.keys():
+		_let_go_note(note)
+
+
+## The keyboard starts at the octave the computer keys are playing and runs as wide as the
+## buttons above it say, with the mapped keys lettered on the keys themselves.
 func _refresh_keyboard_range() -> void:
 	if keyboard == null:
 		return
@@ -1062,7 +1143,24 @@ func _refresh_keyboard_range() -> void:
 	for keycode in KEY_NOTES:
 		labels[base + KEY_NOTES[keycode]] = OS.get_keycode_string(keycode)
 	keyboard.key_labels = labels
-	keyboard.set_range(base, 2)
+	keyboard.set_range(base, keyboard_octaves)
+	_refresh_keyboard_label(base)
+
+
+## Names the range in notes rather than in octave numbers, because "C3 to C5" is something
+## you can check against the keys in front of you and "octave 3, 2 wide" is not.
+func _refresh_keyboard_label(base: int) -> void:
+	if keyboard_bar == null:
+		return
+	var label := keyboard_bar.get_node_or_null("KeyboardRange") as Label
+	if label == null:
+		return
+	label.text = "%s – %s" % [_note_name(base), _note_name(base + keyboard_octaves * 12)]
+
+
+func _note_name(note: int) -> String:
+	const NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+	return "%s%d" % [NAMES[note % 12], note / 12 - 1]
 
 
 ## Names the open document. Called from every route in — the file dialog, the browser's
@@ -1919,13 +2017,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if key.ctrl_pressed:
 		return  # no note or octave shortcut fires with Ctrl held
 
+	# Through the same two functions the buttons call, so the shortcut cannot end up doing
+	# something subtly different from the thing sitting next to it saying "(Z)".
 	if key.pressed and key.keycode == KEY_Z:
-		octave = maxi(0, octave - 1)
-		_refresh_keyboard_range()
+		_shift_octave(-1)
 		return
 	if key.pressed and key.keycode == KEY_X:
-		octave = mini(7, octave + 1)
-		_refresh_keyboard_range()
+		_shift_octave(1)
 		return
 
 	if not KEY_NOTES.has(key.keycode):
