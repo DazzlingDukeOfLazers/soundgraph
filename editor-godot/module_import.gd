@@ -16,6 +16,14 @@ extends RefCounted
 ## module's edges, and wiring them up is the user's job — which is the same job they would
 ## have with a hardware module, and takes about as long.
 
+## Separates a module name from the node's own id: "echo.delay".
+##
+## A dot rather than the slash this first used. Node ids are ^[A-Za-z0-9_.:-]+$ in
+## schema/patch.schema.json, so a slash produced files that our own parser happily accepted
+## and a conforming validator would reject — an interop bug that would only have surfaced
+## in somebody else's implementation.
+const SEPARATOR := "."
+
 ## What an import did, so the editor can say it rather than the user having to notice.
 class Result extends RefCounted:
 	var nodes_added: Array = []       # new ids, in document order
@@ -95,7 +103,7 @@ static func merge(target: Dictionary, source: Dictionary, prefix: String,
 		if skipped.has(old_id):
 			continue
 		var copy: Dictionary = node.duplicate(true)
-		copy["id"] = "%s/%s" % [unique_prefix, old_id]
+		copy["id"] = "%s%s%s" % [unique_prefix, SEPARATOR, old_id]
 		var position: Dictionary = node.get("position", {})
 		copy["position"] = {
 			"x": float(position.get("x", 0.0)) - origin.x + at.x,
@@ -111,8 +119,8 @@ static func merge(target: Dictionary, source: Dictionary, prefix: String,
 			result.connections_dropped += 1
 			continue
 		var copy: Dictionary = connection.duplicate(true)
-		copy["from"]["node"] = "%s/%s" % [unique_prefix, from_id]
-		copy["to"]["node"] = "%s/%s" % [unique_prefix, to_id]
+		copy["from"]["node"] = "%s%s%s" % [unique_prefix, SEPARATOR, from_id]
+		copy["to"]["node"] = "%s%s%s" % [unique_prefix, SEPARATOR, to_id]
 		target["connections"].append(copy)
 
 	if result.nodes_added.is_empty():
@@ -122,7 +130,7 @@ static func merge(target: Dictionary, source: Dictionary, prefix: String,
 
 static func _prefix_in_use(target: Dictionary, prefix: String) -> bool:
 	for node in target.get("nodes", []):
-		if str(node["id"]).begins_with(prefix + "/"):
+		if str(node["id"]).begins_with(prefix + SEPARATOR):
 			return true
 	return false
 

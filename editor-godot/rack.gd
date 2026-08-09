@@ -99,13 +99,23 @@ var case_hp: int = 0:
 
 var selected_id := ""
 
+## The document key a hand-set rack order is stored under.
+##
+## In metadata, which is already a free-form string map that the core round-trips and the
+## schema already declares additionalProperties — so this needs no schema change, no C++
+## change, and nothing in any other target has to know it exists.
+##
+## A separate .rack file beside the patch was the other candidate and is worse: the browser
+## has no filesystem, so Open is a file picker and Save is a download, and a sidecar would
+## mean two of each and a patch that arrives without its layout whenever somebody forgets
+## the second file. One file that carries its own presentation travels properly.
+##
+## Comma-separated because node ids cannot contain a comma — schema/patch.schema.json
+## constrains them to ^[A-Za-z0-9_.:-]+$ — so the separator can never collide with a name.
+const ORDER_KEY := "rack_order"
+
 ## Explicit rack order, set by dragging. Empty means "use the layering", which is the
 ## default and what a freshly loaded patch gets.
-##
-## Held here rather than written into the document: where a module sits on a rail is a
-## presentation choice, and the patch format has no place to say it. Persisting it would
-## mean a schema change and a field every other target has to carry and ignore, which is a
-## larger decision than "let me put the filter next to the oscillator".
 var _order_override: Array = []
 
 var _modules: Dictionary = {}          # node id -> RackModule
@@ -145,6 +155,18 @@ func rebuild() -> void:
 					still_here.append(id)
 					break
 		_order_override = still_here
+
+	# A document arriving with a remembered order takes it, so loading a patch puts the
+	# modules back where they were left.
+	if _order_override.is_empty():
+		var stored := str(patch.get("metadata", {}).get(ORDER_KEY, ""))
+		if not stored.is_empty():
+			var present := {}
+			for node in patch.get("nodes", []):
+				present[str(node["id"])] = true
+			for id in stored.split(",", false):
+				if present.has(id):
+					_order_override.append(id)
 
 	for node in patch.get("nodes", []):
 		var module := RackModule.new()
@@ -290,13 +312,23 @@ func move_module_to(node_id: String, at: Vector2) -> void:
 	order.remove_at(from)
 	order.insert(target, node_id)
 	_order_override = order
+	_store_order()
 	_relayout()
 
 
 ## Back to the order the layering gives, which is what a freshly loaded patch shows.
 func clear_order_override() -> void:
 	_order_override.clear()
+	if patch.has("metadata"):
+		patch["metadata"].erase(ORDER_KEY)
 	_relayout()
+
+
+## Writes the order into the document so that saving keeps it.
+func _store_order() -> void:
+	if not patch.has("metadata"):
+		patch["metadata"] = {}
+	patch["metadata"][ORDER_KEY] = ",".join(_order_override)
 
 
 func select(node_id: String) -> void:

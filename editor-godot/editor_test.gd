@@ -551,7 +551,7 @@ func _initialize() -> void:
 	var prefixed := 0
 	var terminals := 0
 	for node in main.patch["nodes"]:
-		if str(node["id"]).begins_with("echo/"):
+		if str(node["id"]).begins_with("echo" + ModuleImport.SEPARATOR):
 			prefixed += 1
 			if str(main.registry.get(node["type"], {}).get("category", "")) == "Terminals":
 				terminals += 1
@@ -565,7 +565,7 @@ func _initialize() -> void:
 	await process_frame
 	var second := 0
 	for node in main.patch["nodes"]:
-		if str(node["id"]).begins_with("echo-2/"):
+		if str(node["id"]).begins_with("echo-2" + ModuleImport.SEPARATOR):
 			second += 1
 	check(second > 0 and second == prefixed,
 		"importing the same file twice gives a second, separate module")
@@ -612,6 +612,38 @@ func _initialize() -> void:
 		"and fitting the window spreads them far wider than that")
 
 	main.rack.case_hp = 0
+
+	# ---- rack order survives a save and a load -----------------------------------------
+	# The whole reason it lives in the document rather than in the view. Written and read
+	# back through the core's own serialiser, because a round trip that only goes through
+	# Godot's JSON would not prove the core carries it.
+	main.rack.rebuild()
+	await process_frame
+	var natural: Array = main.rack._module_order()
+	check(natural.size() >= 3, "the demo patch has enough modules to reorder")
+
+	if natural.size() >= 3:
+		var moved: String = natural[natural.size() - 1]
+		var target: Rack.RackModule = main.rack._modules[natural[0]]
+		main.rack.move_module_to(moved, target.position + target.size * 0.5)
+		var reordered: Array = main.rack._module_order()
+		check(reordered[0] == moved, "dragging a module to the front puts it there")
+
+		var saved: String = main.engine.format_patch(JSON.stringify(main.patch, "  "))
+		check(saved.contains("rack_order"),
+			"and the order is written into the patch the core serialises")
+
+		await main._load_text(saved)
+		await process_frame
+		await process_frame
+		main.rack.rebuild()
+		await process_frame
+		check(main.rack._module_order()[0] == moved,
+			"and it is still there after saving and loading")
+
+		main.rack.clear_order_override()
+		await main._load_example("First Synth")
+		await process_frame
 
 	# ---- the sandbox -------------------------------------------------------------------
 	# The sandbox is the answer to "how would I use this in a game", so the thing worth
