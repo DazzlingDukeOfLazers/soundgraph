@@ -133,10 +133,13 @@ gesture. Synthetic events do not lift that; only a person clicking does.
   paid once and later visits are offline — but the *first* load is still the one an audience
   watches, so whatever hosts it must serve compressed, over HTTPS (service workers need a
   secure context). Caching begins on the second visit; see `editor-godot/README.md`.
-- The **keyboard's octave and width buttons have not been looked at**, only tested. The
-  editor test checks the bar exists, has four buttons, and that the range label tracks both
-  controls — but nobody has seen it laid out. Two minutes with the editor open would settle
-  whether it sits where it should.
+- The editor can now be **rendered to a PNG** and looked at:
+  `godot --path editor-godot --script res://screenshot.gd -- shot.png 1400 900`. Not
+  `--headless` — headless has no rendering server, so there is nothing to capture. Worth
+  knowing why it exists: the design work had been running entirely on measurement, and the
+  first time anybody rendered it, the inspector turned out to be off the right-hand edge of
+  the window with its text cut in half. Every automated check had passed, because measuring
+  a widget cannot tell you the widget is outside the window.
 - **The sandbox leaks a variable number of `AudioStreamGeneratorPlayback` objects at exit** —
   11, 2 and 0 across three runs of identical code. Not new and not growing, but it is the
   same class of thing that caused the 0xC0000005 shutdown crash, so a leak count from a

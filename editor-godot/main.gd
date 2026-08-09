@@ -121,6 +121,13 @@ var views: TabContainer
 var rack: Rack
 var sandbox: Sandbox
 var keyboard: Keyboard
+## Wide enough for a scope and a stack of readouts, narrow enough to leave the
+## graph the hero.
+const SIDE_PANEL_WIDTH := 380
+
+var split: HSplitContainer
+var arrange_popup: PopupMenu
+var view_popup: PopupMenu
 var keyboard_bar: Control
 var keyboard_dock: PanelContainer
 var keyboard_toggle: Button
@@ -159,7 +166,6 @@ var undo_redo := UndoRedo.new()
 var _pending_snapshot: Dictionary = {}
 var undo_button: Button
 var redo_button: Button
-var arrange_selection_button: Button
 
 ## node id -> parameter name -> {"slider": Control, "readout": Label, "descriptor": Dictionary}
 ## Kept so an undone knob turn can move the knob back without rebuilding the graph.
@@ -337,10 +343,16 @@ func _build_ui() -> void:
 
 	root.add_child(_build_toolbar())
 
-	var split := HSplitContainer.new()
+	split = HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	split.split_offset = 980
 	root.add_child(split)
+	# The divider is placed from the right, on every resize. It used to be a constant
+	# split_offset, which is measured from the *first* child rather than from the
+	# window — so the inspector sat at the same absolute x whatever the window size,
+	# and on anything narrower than about 1790px it hung off the right-hand edge with
+	# its contents cut in half. Every automated check passed the whole time, because
+	# nothing that measures a widget notices the widget is outside the window.
+	split.resized.connect(_fit_side_panel)
 
 	graph_edit = PatchGraph.new()
 	graph_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -417,6 +429,7 @@ func _build_ui() -> void:
 	split.add_child(views)
 
 	split.add_child(_build_side_panel())
+	_fit_side_panel()
 
 	# Under the tabs rather than inside one: the graph and the rack are two views of the
 	# same running patch, and the thing that plays it belongs to neither.
@@ -509,20 +522,24 @@ func _build_toolbar() -> Control:
 	add_button.pressed.connect(_open_search)
 	graph_group.add_child(Design.make_primary(_defocus(add_button) as Button))
 
-	var arrange := Button.new()
-	arrange.text = "Auto-place"
-	arrange.tooltip_text = "Lay the whole graph out left to right. The same patch always " \
-		+ "lands the same way, wherever things were before."
-	arrange.pressed.connect(_auto_place)
-	graph_group.add_child(_defocus(arrange))
-
-	arrange_selection_button = Button.new()
-	arrange_selection_button.text = "Arrange selection"
-	arrange_selection_button.tooltip_text = "Arrange only the selected nodes, leaving the " \
-		+ "rest where they are"
-	arrange_selection_button.disabled = true
-	arrange_selection_button.pressed.connect(_arrange_selection)
-	graph_group.add_child(_defocus(arrange_selection_button))
+	# Auto-place and Arrange selection behind one menu, for the same reason. Both are
+	# occasional; the second is usually unavailable anyway, and a permanently greyed
+	# button is chrome that has never done anything for anyone.
+	var arrange_menu := MenuButton.new()
+	arrange_menu.text = "Arrange"
+	arrange_menu.flat = false
+	arrange_popup = arrange_menu.get_popup()
+	arrange_popup.add_item("Auto-place everything", 0)
+	arrange_popup.add_item("Arrange selection", 1)
+	arrange_popup.set_item_tooltip(0, "Lay the whole graph out left to right. The same "
+		+ "patch always lands the same way, wherever things were before.")
+	arrange_popup.set_item_disabled(1, true)
+	arrange_popup.id_pressed.connect(func(id: int) -> void:
+		if id == 0:
+			_auto_place()
+		else:
+			_arrange_selection())
+	graph_group.add_child(_defocus(arrange_menu))
 
 	# ---- edit --------------------------------------------------------------------
 	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
@@ -540,78 +557,44 @@ func _build_toolbar() -> Control:
 	redo_button.pressed.connect(_redo)
 	edit_group.add_child(_defocus(redo_button))
 
-	var open_button := Button.new()
-	open_button.text = "Open…"
-	open_button.pressed.connect(func() -> void:
-		_importing_module = false
-		if _on_web():
-			_web_open()
-			return
-		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-		file_dialog.title = "Open patch"
-		file_dialog.popup_centered_ratio(0.6))
-	project.add_child(_defocus(open_button))
+	# Open, Add module and Save as behind one menu.
+	#
+	# Not tidiness for its own sake: with every command exposed the toolbar had a
+	# minimum width of 1786px, so on any window narrower than that the whole layout
+	# was forced wider than the window and the inspector hung off the right-hand edge
+	# with its text cut in half. These three are reached once per session; Add node is
+	# reached constantly. Only one of them earns permanent space.
+	var file_menu := MenuButton.new()
+	file_menu.text = "File"
+	file_menu.flat = false
+	var file_popup := file_menu.get_popup()
+	file_popup.add_item("Open…", 0)
+	file_popup.add_item("Add module…", 1)
+	file_popup.add_item("Save as…", 2)
+	file_popup.set_item_tooltip(1, "Add an existing patch into this one. Its nodes are "
+		+ "copied in with their names prefixed; its own inputs and outputs are left out, "
+		+ "because those belong to a finished patch rather than to a module.")
+	file_popup.id_pressed.connect(_on_file_menu)
+	project.add_child(_defocus(file_menu))
 
-	var import_button := Button.new()
-	import_button.text = "Add module…"
-	import_button.tooltip_text = "Add an existing patch into this one. Its nodes are " 		+ "copied in with their names prefixed; its own inputs and outputs are left out, " 		+ "because those belong to a finished patch rather than to a module."
-	import_button.pressed.connect(func() -> void:
-		_importing_module = true
-		if _on_web():
-			_web_open()
-			return
-		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-		file_dialog.title = "Add a patch as a module"
-		file_dialog.popup_centered_ratio(0.6))
-	project.add_child(_defocus(import_button))
-
-	var save_button := Button.new()
-	save_button.text = "Save as…"
-	save_button.pressed.connect(func() -> void:
-		_importing_module = false
-		if _on_web():
-			_web_save()
-			return
-		file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-		file_dialog.title = "Save patch"
-		file_dialog.current_file = "patch.json"
-		file_dialog.popup_centered_ratio(0.6))
-	project.add_child(_defocus(save_button))
-
-	# The A/B. Both views honour it, so the comparison is between two ways of drawing a
-	# cable rather than between two views that happen to draw them differently.
 	var view_group := _toolbar_group(bar)
-	var cables := OptionButton.new()
-	cables.add_item("Catenary")
-	cables.add_item("PCB")
-	cables.selected = 0
-	cables.tooltip_text = "How patch cables are drawn: hanging under their own weight, " \
-		+ "or routed at right angles around what is in the way"
-	cables.item_selected.connect(func(index: int) -> void:
-		rack.cable_style = index
-		graph_edit.cable_style = index
-		graph_edit.refresh_cables())
-	view_group.add_child(_defocus(cables))
+	# Cable style is the A/B for Knobcon and the case width is set once per patch, so
+	# both are radio groups in one menu rather than two dropdowns holding 266px of bar
+	# open all the time.
+	var view_menu := MenuButton.new()
+	view_menu.text = "View"
+	view_menu.flat = false
+	view_popup = view_menu.get_popup()
+	view_popup.add_radio_check_item("Cables: catenary", 0)
+	view_popup.add_radio_check_item("Cables: PCB", 1)
+	view_popup.set_item_checked(0, true)
+	view_popup.add_separator()
+	for index in CASE_LABELS.size():
+		view_popup.add_radio_check_item(CASE_LABELS[index], 10 + index)
+	view_popup.set_item_checked(3, true)
+	view_popup.id_pressed.connect(_on_view_menu)
+	view_group.add_child(_defocus(view_menu))
 
-	# How wide the rack's case is. Filling the window is the default — the window is the
-	# case — but a patch built to fit 84 or 104 HP is one that would fit real hardware.
-	var case_width := OptionButton.new()
-	case_width.add_item("Case: fit window")
-	case_width.add_item("Case: 84 HP")
-	case_width.add_item("Case: 104 HP")
-	case_width.add_item("Case: 168 HP")
-	case_width.selected = 0
-	case_width.tooltip_text = "How wide the rack is. HP is the Eurorack width unit; a " \
-		+ "typical case is 84 or 104 of them."
-	const CASE_WIDTHS := [0, 84, 104, 168]
-	case_width.item_selected.connect(func(index: int) -> void:
-		rack.case_hp = CASE_WIDTHS[index])
-	view_group.add_child(_defocus(case_width))
-
-	# One-shot patches — the game sounds, anything gated by a constant — fire on the first
-	# sample and are then silent forever. The keyboard cannot retrigger them because they
-	# have no NoteInput to send a note to, so without this an opened coin sound plays once
-	# on load and can never be heard again while you edit it.
 	# ---- performance, pinned to the right ----------------------------------------
 	var pin := Control.new()
 	pin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -662,6 +645,42 @@ func _build_toolbar() -> Control:
 	return bar
 
 
+const CASE_LABELS := ["Case: fit window", "Case: 84 HP", "Case: 104 HP", "Case: 168 HP"]
+const CASE_WIDTHS := [0, 84, 104, 168]
+
+
+func _on_file_menu(id: int) -> void:
+	_importing_module = id == 1
+	if _on_web():
+		if id == 2:
+			_web_save()
+		else:
+			_web_open()
+		return
+	if id == 2:
+		file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+		file_dialog.title = "Save patch"
+		file_dialog.current_file = "patch.json"
+	else:
+		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		file_dialog.title = "Add a patch as a module" if id == 1 else "Open patch"
+	file_dialog.popup_centered_ratio(0.6)
+
+
+func _on_view_menu(id: int) -> void:
+	if id < 10:
+		for index in 2:
+			view_popup.set_item_checked(index, index == id)
+		rack.cable_style = id
+		graph_edit.cable_style = id
+		graph_edit.refresh_cables()
+		return
+	var choice := id - 10
+	for index in CASE_LABELS.size():
+		view_popup.set_item_checked(index + 3, index == choice)
+	rack.case_hp = CASE_WIDTHS[choice]
+
+
 ## Stops every sounding note. Wired to both the panic button and Escape, because a
 ## panic control that needs the mouse is one you cannot reach while holding a chord.
 func _all_notes_off() -> void:
@@ -672,9 +691,18 @@ func _all_notes_off() -> void:
 		keyboard.set_held_notes(held_notes)
 
 
+## Keeps the inspector at a fixed width against the right edge, whatever the window
+## is doing, and gives everything else to the graph.
+func _fit_side_panel() -> void:
+	if split == null or views == null:
+		return
+	var graph_minimum := views.get_combined_minimum_size().x
+	split.split_offset = int(split.size.x - SIDE_PANEL_WIDTH - graph_minimum)
+
+
 func _build_side_panel() -> Control:
 	var panel := VBoxContainer.new()
-	panel.custom_minimum_size.x = 380
+	panel.custom_minimum_size.x = SIDE_PANEL_WIDTH
 	panel.add_theme_constant_override("separation", 6)
 
 	panel.add_child(_section_heading("Signal"))
@@ -1686,8 +1714,8 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 # ---------------------------------------------------------------------------------
 
 func _refresh_selection_button() -> void:
-	if arrange_selection_button != null:
-		arrange_selection_button.disabled = _selected_ids().size() < 2
+	if arrange_popup != null:
+		arrange_popup.set_item_disabled(1, _selected_ids().size() < 2)
 
 
 func _selected_ids() -> Array:

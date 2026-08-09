@@ -30,7 +30,7 @@ const BLACK_POSITIONS := {1: 0.7, 3: 1.7, 6: 3.7, 8: 4.7, 10: 5.7}
 # is still unmistakably a piano and no longer the brightest thing on screen — the
 # graph is the hero. Not dimmed into uselessness either: the held colours are the
 # application accent, so what you are playing still reads instantly.
-const WHITE := Color("d6d9df")
+const WHITE := Color("c3c8d2")
 static var WHITE_HELD := Design.ACCENT
 const BLACK := Color("1b1e24")
 static var BLACK_HELD := Design.ACCENT.darkened(0.35)
@@ -51,7 +51,7 @@ var _mouse_note := -1
 
 
 func _ready() -> void:
-	custom_minimum_size.y = Design.scale(128)
+	custom_minimum_size.y = Design.scale(96)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	# Never takes focus. Taking it is the exact failure this exists to diagnose.
 	focus_mode = Control.FOCUS_NONE

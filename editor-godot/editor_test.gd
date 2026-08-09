@@ -534,6 +534,26 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the editor fits on a screen ---------------------------------------------
+	# The one defect in this redesign that no measurement caught, because measuring a
+	# widget cannot tell you the widget is off the edge of the window. The toolbar had
+	# a minimum width of 1786px with every command exposed, which forced the whole
+	# layout wider than any normal window and pushed the inspector off the right side
+	# with its text cut in half. It took rendering the editor to a PNG and looking at
+	# it. This is the assertion that would have caught it without that.
+	var column: Control = main.split.get_parent()
+	var needed: float = column.get_combined_minimum_size().x
+	check(needed <= 1280.0,
+		"the editor fits a 1280px window (needs %.0f)" % needed)
+
+	# And the inspector is actually inside it, which is the thing that went wrong
+	# rather than the cause of it.
+	var inspector: Control = main.scope.get_parent()
+	var window_width: float = main.get_viewport().get_visible_rect().size.x
+	check(inspector.global_position.x + inspector.size.x <= window_width + 1.0,
+		"and the inspector sits inside it (right edge %.0f, window %.0f)"
+			% [inspector.global_position.x + inspector.size.x, window_width])
+
 	# ---- the design system reached the widgets ------------------------------------------
 	# Setting a theme item Godot does not have is accepted and ignored, exactly like the
 	# font weight bug that started this pass — three of these were already in the code and
