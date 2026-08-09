@@ -122,6 +122,9 @@ var rack: Rack
 var sandbox: Sandbox
 var keyboard: Keyboard
 var keyboard_bar: Control
+var keyboard_dock: PanelContainer
+var keyboard_toggle: Button
+var keyboard_expanded := true
 ## What is open, shown so "which patch am I looking at" is never a guess.
 var document_label: Label
 var document_name := "untitled"
@@ -417,11 +420,8 @@ func _build_ui() -> void:
 
 	# Under the tabs rather than inside one: the graph and the rack are two views of the
 	# same running patch, and the thing that plays it belongs to neither.
-	root.add_child(_build_keyboard_bar())
-	keyboard = Keyboard.new()
-	keyboard.note_pressed.connect(_on_keyboard_pressed)
-	keyboard.note_released.connect(_on_keyboard_released)
-	root.add_child(keyboard)
+	root.add_child(_build_keyboard_dock())
+	_set_keyboard_expanded(true)
 	_refresh_keyboard_range()
 	_build_search_popup()
 
@@ -444,36 +444,77 @@ func _defocus(control: Control) -> Control:
 	return control
 
 
+## Somewhere to put a group of related controls, with a rule before it.
+##
+## The toolbar read as one long sentence — Add node, Auto-place, Arrange selection,
+## Undo, Redo, Open, Add module, Save as, Catenary, Case, Fire, All notes off — with
+## nothing to say where one idea ended and the next began. Same controls, grouped:
+## project, edit, graph, view, and performance pinned to the right.
+func _toolbar_group(bar: HBoxContainer, first: bool = false) -> HBoxContainer:
+	if not first:
+		var rule := VSeparator.new()
+		rule.add_theme_constant_override("separation", Design.SPACE_M)
+		bar.add_child(rule)
+	var group := HBoxContainer.new()
+	group.add_theme_constant_override("separation", Design.SPACE_XS)
+	bar.add_child(group)
+	return group
+
+
 func _build_toolbar() -> Control:
 	var bar := HBoxContainer.new()
-	bar.custom_minimum_size.y = 44
-	bar.add_theme_constant_override("separation", 8)
+	bar.custom_minimum_size.y = Design.scale(52)
+	bar.add_theme_constant_override("separation", Design.SPACE_S)
+
+	# ---- who and what: context before actions -----------------------------------
+	# The product name and the open document were at opposite ends of the bar with
+	# nine buttons between them. Together, top left, they answer "where am I" before
+	# anything asks "what do you want to do".
+	var identity := VBoxContainer.new()
+	identity.add_theme_constant_override("separation", 0)
+	identity.custom_minimum_size.x = Design.scale(150)
 
 	var title := Label.new()
-	title.text = "  SoundGraph"
-	title.add_theme_font_size_override("font_size", FONT_SIZE_TITLE)
-	bar.add_child(title)
+	title.text = "SoundGraph"
+	title.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+	title.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_APP_TITLE))
+	title.add_theme_color_override("font_color", Design.INK_BRIGHT)
+	identity.add_child(title)
 
+	document_label = Label.new()
+	document_label.text = document_name
+	document_label.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_SECONDARY))
+	document_label.add_theme_color_override("font_color", Design.INK_SECOND)
+	identity.add_child(document_label)
+	bar.add_child(identity)
+
+	var project := _toolbar_group(bar, true)
 	var examples := OptionButton.new()
 	_scan_examples()
 	for name in _examples:
 		examples.add_item(name)
 	examples.item_selected.connect(func(index: int) -> void:
 		_load_example(examples.get_item_text(index)))
-	bar.add_child(_defocus(examples))
+	project.add_child(_defocus(examples))
 
+	# ---- graph: the core verb, and the two that tidy up after it -----------------
+	# Add node is what this application is for, so it is the one filled button in the
+	# chrome and it comes first. Everything having equal weight meant reading all
+	# thirteen controls to find the one that matters.
+	var graph_group := _toolbar_group(bar)
 	var add_button := Button.new()
-	add_button.text = "Add node…"
+	add_button.text = "+  Add node"
 	add_button.tooltip_text = "Search by what you want, not only by name (Ctrl+Space)"
 	add_button.pressed.connect(_open_search)
-	bar.add_child(_defocus(add_button))
+	graph_group.add_child(Design.make_primary(_defocus(add_button) as Button))
 
 	var arrange := Button.new()
 	arrange.text = "Auto-place"
 	arrange.tooltip_text = "Lay the whole graph out left to right. The same patch always " \
 		+ "lands the same way, wherever things were before."
 	arrange.pressed.connect(_auto_place)
-	bar.add_child(_defocus(arrange))
+	graph_group.add_child(_defocus(arrange))
 
 	arrange_selection_button = Button.new()
 	arrange_selection_button.text = "Arrange selection"
@@ -481,21 +522,23 @@ func _build_toolbar() -> Control:
 		+ "rest where they are"
 	arrange_selection_button.disabled = true
 	arrange_selection_button.pressed.connect(_arrange_selection)
-	bar.add_child(_defocus(arrange_selection_button))
+	graph_group.add_child(_defocus(arrange_selection_button))
 
+	# ---- edit --------------------------------------------------------------------
 	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
 	# time user does not know they have.
+	var edit_group := _toolbar_group(bar)
 	undo_button = Button.new()
 	undo_button.text = "Undo"
 	undo_button.disabled = true
 	undo_button.pressed.connect(_undo)
-	bar.add_child(_defocus(undo_button))
+	edit_group.add_child(_defocus(undo_button))
 
 	redo_button = Button.new()
 	redo_button.text = "Redo"
 	redo_button.disabled = true
 	redo_button.pressed.connect(_redo)
-	bar.add_child(_defocus(redo_button))
+	edit_group.add_child(_defocus(redo_button))
 
 	var open_button := Button.new()
 	open_button.text = "Open…"
@@ -507,7 +550,7 @@ func _build_toolbar() -> Control:
 		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 		file_dialog.title = "Open patch"
 		file_dialog.popup_centered_ratio(0.6))
-	bar.add_child(_defocus(open_button))
+	project.add_child(_defocus(open_button))
 
 	var import_button := Button.new()
 	import_button.text = "Add module…"
@@ -520,7 +563,7 @@ func _build_toolbar() -> Control:
 		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 		file_dialog.title = "Add a patch as a module"
 		file_dialog.popup_centered_ratio(0.6))
-	bar.add_child(_defocus(import_button))
+	project.add_child(_defocus(import_button))
 
 	var save_button := Button.new()
 	save_button.text = "Save as…"
@@ -533,10 +576,11 @@ func _build_toolbar() -> Control:
 		file_dialog.title = "Save patch"
 		file_dialog.current_file = "patch.json"
 		file_dialog.popup_centered_ratio(0.6))
-	bar.add_child(_defocus(save_button))
+	project.add_child(_defocus(save_button))
 
 	# The A/B. Both views honour it, so the comparison is between two ways of drawing a
 	# cable rather than between two views that happen to draw them differently.
+	var view_group := _toolbar_group(bar)
 	var cables := OptionButton.new()
 	cables.add_item("Catenary")
 	cables.add_item("PCB")
@@ -547,7 +591,7 @@ func _build_toolbar() -> Control:
 		rack.cable_style = index
 		graph_edit.cable_style = index
 		graph_edit.refresh_cables())
-	bar.add_child(_defocus(cables))
+	view_group.add_child(_defocus(cables))
 
 	# How wide the rack's case is. Filling the window is the default — the window is the
 	# case — but a patch built to fit 84 or 104 HP is one that would fit real hardware.
@@ -562,14 +606,20 @@ func _build_toolbar() -> Control:
 	const CASE_WIDTHS := [0, 84, 104, 168]
 	case_width.item_selected.connect(func(index: int) -> void:
 		rack.case_hp = CASE_WIDTHS[index])
-	bar.add_child(_defocus(case_width))
+	view_group.add_child(_defocus(case_width))
 
 	# One-shot patches — the game sounds, anything gated by a constant — fire on the first
 	# sample and are then silent forever. The keyboard cannot retrigger them because they
 	# have no NoteInput to send a note to, so without this an opened coin sound plays once
 	# on load and can never be heard again while you edit it.
+	# ---- performance, pinned to the right ----------------------------------------
+	var pin := Control.new()
+	pin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(pin)
+	var performance := _toolbar_group(bar)
+
 	var retrigger := Button.new()
-	retrigger.text = "Fire"
+	retrigger.text = "▶  Fire"
 	retrigger.tooltip_text = "Play a one-shot patch again from the start. Does nothing " 		+ "audible to a patch that waits for notes."
 	retrigger.pressed.connect(func() -> void:
 		if engine == null or not engine.is_loaded():
@@ -581,39 +631,45 @@ func _build_toolbar() -> Control:
 		_let_go_note(60)
 		_hold_note(60)
 		status_label.text = "fired")
-	bar.add_child(_defocus(retrigger))
+	performance.add_child(_defocus(retrigger))
 
+	# The panic control. Everything else in this bar can be hunted for; this one
+	# cannot, because the reason you want it is that something is already wrong and
+	# loud. So it is the only error-coloured thing in the chrome, it carries a stop
+	# glyph, and it is pinned to the right edge — a fixed place, not a position that
+	# depends on how many other buttons happen to be showing.
 	var panic := Button.new()
-	panic.text = "All notes off"
-	panic.pressed.connect(func() -> void:
-		engine.all_notes_off()
-		held_notes.clear()
-		if keyboard != null:
-			keyboard.set_held_notes(held_notes))
-	bar.add_child(_defocus(panic))
+	panic.text = "■  Silence"
+	panic.tooltip_text = "Stop every sounding note immediately (Escape)"
+	panic.pressed.connect(_all_notes_off)
+	performance.add_child(Design.make_panic(_defocus(panic) as Button))
 
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(spacer)
-
-	document_label = Label.new()
-	document_label.text = document_name
-	document_label.add_theme_color_override("font_color", ACCENT)
-	bar.add_child(document_label)
-
-	var separator := Label.new()
-	separator.text = "·"
-	separator.add_theme_color_override("font_color", INK_DIM)
-	bar.add_child(separator)
-
+	# ---- status ------------------------------------------------------------------
+	# One short line rather than prose: what state the engine is in, and whether the
+	# graph is valid. Set from _refresh_status().
+	var status_group := _toolbar_group(bar)
 	status_label = Label.new()
 	status_label.text = "starting…"
-	bar.add_child(status_label)
+	status_label.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_SECONDARY))
+	status_label.add_theme_color_override("font_color", Design.INK_SECOND)
+	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	status_group.add_child(status_label)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_right", Design.SPACE_M)
 	bar.add_child(margin)
 	return bar
+
+
+## Stops every sounding note. Wired to both the panic button and Escape, because a
+## panic control that needs the mouse is one you cannot reach while holding a chord.
+func _all_notes_off() -> void:
+	if engine != null:
+		engine.all_notes_off()
+	held_notes.clear()
+	if keyboard != null:
+		keyboard.set_held_notes(held_notes)
 
 
 func _build_side_panel() -> Control:
@@ -950,15 +1006,22 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 
 func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	var row := HBoxContainer.new()
+	# Name, control, value and unit on one line at a fixed height, so a stack of
+	# parameters reads as a table rather than as a pile.
+	row.custom_minimum_size.y = Design.scale(Design.NODE_ROW_HEIGHT)
+	row.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	var name: String = parameter["name"]
 	var node_id: String = node["id"]
 	var current: float = float(node.get("parameters", {}).get(name, parameter["default"]))
 
 	var label := Label.new()
 	label.text = name
-	label.custom_minimum_size.x = 92
+	label.custom_minimum_size.x = Design.scale(96)
 	label.tooltip_text = str(parameter.get("doc", ""))
-	label.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	label.add_theme_color_override("font_color", Design.INK_SECOND)
 	row.add_child(label)
 
 	if parameter.has("enum"):
@@ -981,17 +1044,33 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	slider.step = 0.0001
 	slider.value = _to_position(parameter, current)
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slider.custom_minimum_size.x = 110
+	slider.custom_minimum_size.x = Design.scale(112)
+
+	# Bipolar controls show where zero is. Modulation depth, transpose and offsets all
+	# have a meaningful centre, and a slider that gives no hint of it makes finding
+	# "no modulation" a matter of watching the number. Only when zero really does sit
+	# in the middle — an exponential or asymmetric range would put a tick in a place
+	# that means nothing, which is worse than no tick at all.
+	if float(parameter["min"]) < 0.0 and float(parameter["max"]) > 0.0:
+		var centre := _to_position(parameter, 0.0)
+		if absf(centre - 0.5) < 0.01:
+			slider.tick_count = 3
+			slider.ticks_on_borders = false
 
 	var readout := Label.new()
-	readout.text = _format_value(current)
-	readout.custom_minimum_size.x = 62
+	readout.text = _format_with_unit(parameter, current)
+	readout.custom_minimum_size.x = Design.scale(84)
 	readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	readout.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# Tabular figures, so a value counting through 111.0 to 888.0 does not shuffle
+	# sideways under the cursor that is dragging it.
+	readout.add_theme_font_override("font", Design.numeric_font())
+	readout.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NUMERIC))
+	readout.add_theme_color_override("font_color", Design.INK_BRIGHT)
 
 	slider.value_changed.connect(func(position: float) -> void:
 		var value := _to_value(parameter, position)
-		readout.text = _format_value(value)
+		readout.text = _format_with_unit(parameter, value)
 		_set_parameter(node_id, name, value))
 
 	# A whole drag is one undo step. Bracketing on the drag rather than on each value
@@ -1043,6 +1122,24 @@ func _to_position(parameter: Dictionary, value: float) -> float:
 		"logarithmic":
 			return clampf(sqrt(maxf(0.0, (value - low) / (high - low))), 0.0, 1.0)
 	return clampf((value - low) / (high - low), 0.0, 1.0)
+
+
+## The value as somebody would say it out loud: "10 ms", not "0.010".
+##
+## A patch format stores seconds and hertz, and a person reading a node should not
+## have to hold the native representation in their head to know what they are looking
+## at. So the unit is always shown, and it changes with the magnitude — milliseconds
+## under a second, kilohertz over a thousand — because that is how the number would
+## be spoken and written down anywhere else.
+func _format_with_unit(parameter: Dictionary, value: float) -> String:
+	var unit := str(parameter.get("unit", ""))
+	if unit == "s" and absf(value) < 1.0:
+		return "%s ms" % _format_value(value * 1000.0)
+	if unit == "Hz" and absf(value) >= 1000.0:
+		return "%s kHz" % _format_value(value / 1000.0)
+	if unit == "":
+		return _format_value(value)
+	return "%s %s" % [_format_value(value), unit]
 
 
 func _format_value(value: float) -> String:
@@ -1208,7 +1305,7 @@ func _on_rack_parameter_changed(node_id: String, parameter: String, value: float
 		control.selected = int(round(value))
 	var readout: Label = entry["readout"]
 	if readout != null:
-		readout.text = _format_value(value)
+		readout.text = _format_with_unit(entry["descriptor"], value)
 
 
 func _on_rack_node_selected(node_id: String) -> void:
@@ -1252,22 +1349,74 @@ func _let_go_note(note: int) -> void:
 ## nobody has been told about is a feature that does not exist. Somebody sitting down at
 ## this for the first time at a show will not guess Z and X, so the buttons say what they
 ## do and the shortcut is written on them for whoever wants it afterwards.
+## The keyboard, as a dock that can get out of the way.
+##
+## Its white keys carry more contrast and more apparent mass than anything in the
+## graph, so the eye landed on it first and stayed there — it was winning a fight it
+## should not have been in. Three things put it back in its place: it collapses to a
+## strip, its keys are off-white rather than paper, and its controls sit on the same
+## surface as the rest of the chrome instead of looking like a widget from another
+## library glued to the bottom of the window.
+func _build_keyboard_dock() -> Control:
+	keyboard_dock = PanelContainer.new()
+	keyboard_dock.add_theme_stylebox_override("panel",
+		Design.padded_panel(Design.Surface.NODE, Design.SPACE_M, Design.SPACE_S))
+
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", Design.SPACE_S)
+	keyboard_dock.add_child(column)
+	column.add_child(_build_keyboard_bar())
+
+	keyboard = Keyboard.new()
+	keyboard.note_pressed.connect(_on_keyboard_pressed)
+	keyboard.note_released.connect(_on_keyboard_released)
+	column.add_child(keyboard)
+	return keyboard_dock
+
+
+## Collapses the dock to its control strip, or opens it again.
+func _set_keyboard_expanded(expanded: bool) -> void:
+	keyboard_expanded = expanded
+	if keyboard != null:
+		# Hidden rather than shrunk: a keyboard two pixels tall is a row of slivers
+		# that still take clicks.
+		keyboard.visible = expanded
+		if not expanded:
+			_release_all_notes()
+	if keyboard_toggle != null:
+		keyboard_toggle.text = "▾  Keyboard" if expanded else "▸  Keyboard"
+		keyboard_toggle.tooltip_text = ("Collapse the keyboard" if expanded
+			else "Show the keyboard")
+
+
 func _build_keyboard_bar() -> Control:
 	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", 6)
-	bar.alignment = BoxContainer.ALIGNMENT_END
+	bar.add_theme_constant_override("separation", Design.SPACE_XS)
+
+	keyboard_toggle = Button.new()
+	keyboard_toggle.pressed.connect(func() -> void:
+		_set_keyboard_expanded(not keyboard_expanded))
+	bar.add_child(_defocus(keyboard_toggle))
+
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(gap)
 
 	var range_label := Label.new()
 	range_label.name = "KeyboardRange"
-	range_label.custom_minimum_size.x = 132
+	range_label.custom_minimum_size.x = Design.scale(132)
 	range_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	range_label.add_theme_color_override("font_color", Color(0.55, 0.58, 0.64))
+	range_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	range_label.add_theme_font_override("font", Design.numeric_font())
+	range_label.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_NUMERIC))
+	range_label.add_theme_color_override("font_color", Design.INK_SECOND)
 
 	var make := func(text: String, tooltip: String, action: Callable) -> Button:
 		var button := Button.new()
 		button.text = text
 		button.tooltip_text = tooltip
-		button.custom_minimum_size.x = 34
+		button.custom_minimum_size.x = Design.scale(36)
 		button.pressed.connect(action)
 		return _defocus(button) as Button
 
@@ -1724,8 +1873,10 @@ func _show_parameter(node_id: String, parameter_name: String, value: float) -> v
 	if slider is HSlider:
 		# set_value_no_signal, or restoring a value would look like the user turning it.
 		slider.set_value_no_signal(_to_position(entry["descriptor"], value))
+	# The same formatter as the row builds with. Two places writing the readout in two
+	# different formats would make an undo look like it had changed the units.
 	if readout != null:
-		readout.text = _format_value(value)
+		readout.text = _format_with_unit(entry["descriptor"], value)
 
 
 func _undo() -> void:
@@ -2187,6 +2338,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if key.pressed and key.keycode == KEY_SPACE and key.ctrl_pressed:
 		_open_search()
+		accept_event()
+		return
+
+	# Panic, on the key everybody already tries. A stop control you can only reach
+	# with the mouse is one you cannot use while holding a chord down.
+	if key.pressed and key.keycode == KEY_ESCAPE:
+		_all_notes_off()
 		accept_event()
 		return
 

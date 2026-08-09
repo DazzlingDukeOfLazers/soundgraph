@@ -572,6 +572,30 @@ func _initialize() -> void:
 			"and are larger than body text (%d vs %d)"
 				% [title_size, Design.scale(Design.SIZE_BODY)])
 
+	# ---- values carry their units -------------------------------------------------
+	# A patch stores seconds and hertz; a person should not have to convert in their
+	# head to know whether an attack is fast. Checked through the same formatter the
+	# rows and the undo path both use, so they cannot disagree.
+	var seconds := {"name": "attack", "unit": "s", "default": 0.005}
+	check(main._format_with_unit(seconds, 0.010) == "10.0 ms",
+		"a short time reads in milliseconds (%s)" % main._format_with_unit(seconds, 0.010))
+	check(main._format_with_unit(seconds, 2.5).ends_with(" s"),
+		"and a long one in seconds (%s)" % main._format_with_unit(seconds, 2.5))
+	var hertz := {"name": "cutoff", "unit": "Hz", "default": 1000.0}
+	check(main._format_with_unit(hertz, 900.0) == "900.0 Hz",
+		"a frequency reads in hertz (%s)" % main._format_with_unit(hertz, 900.0))
+	check(main._format_with_unit(hertz, 4800.0) == "4.80 kHz",
+		"and a high one in kilohertz (%s)" % main._format_with_unit(hertz, 4800.0))
+	check(not main._format_with_unit({"name": "mix", "unit": "", "default": 0.5}, 0.55)
+		.contains(" "), "a unitless parameter stays a bare number")
+
+	# The readout the editor actually built, rather than the formatter in isolation.
+	var cutoff_entry: Dictionary = main.parameter_widgets["filter"]["cutoff"]
+	var cutoff_readout: Label = cutoff_entry["readout"]
+	check(cutoff_readout != null and cutoff_readout.text.contains("Hz"),
+		"and a live node shows its unit (%s)"
+			% (cutoff_readout.text if cutoff_readout else "no readout"))
+
 	# ---- the on-screen keyboard ---------------------------------------------------------
 	# It exists to answer "did the editor hear me", so the thing to check is that its
 	# lights follow what the engine was actually told, not what was clicked.
@@ -612,7 +636,37 @@ func _initialize() -> void:
 	for child in main.keyboard_bar.get_children():
 		if child is Button:
 			buttons += 1
-	check(buttons == 4, "with four buttons on it (%d)" % buttons)
+	check(buttons == 5, "with five buttons on it: collapse, two octave, two width (%d)"
+		% buttons)
+
+	# The dock. The keyboard was the brightest, heaviest thing on screen and the eye
+	# went straight to it, so it has to be able to get out of the way.
+	check(main.keyboard_dock != null, "the keyboard lives in a dock")
+	var tall: float = main.keyboard_dock.get_combined_minimum_size().y
+	main._set_keyboard_expanded(false)
+	await process_frame
+	var short: float = main.keyboard_dock.get_combined_minimum_size().y
+	check(short < tall * 0.6,
+		"which collapses to a strip (%.0f px, from %.0f)" % [short, tall])
+	check(not main.keyboard.visible, "and the keys are hidden rather than squashed")
+	main._set_keyboard_expanded(true)
+	await process_frame
+	check(main.keyboard.visible, "and come back")
+
+	# Collapsing while a key is down would leave it sounding with nothing on screen
+	# to release it — the same stuck note as moving the octave, by a different route.
+	main.keyboard.note_pressed.emit(main.octave * 12 + 12)
+	check(not main.held_notes.is_empty(), "a note is held before the dock closes")
+	main._set_keyboard_expanded(false)
+	check(main.held_notes.is_empty(), "collapsing the dock lets go of what was held")
+	main._set_keyboard_expanded(true)
+
+	# ---- the panic control ------------------------------------------------------
+	main.keyboard.note_pressed.emit(60)
+	main.keyboard.note_pressed.emit(64)
+	main._all_notes_off()
+	check(main.held_notes.is_empty(), "panic stops every sounding note")
+	check(main.keyboard.held.is_empty(), "and the keys go dark with them")
 
 	# The label is the only part of this that says anything, so it is the only part that
 	# can say something wrong. C3 to C5 at octave 3 two wide, and it has to track both.

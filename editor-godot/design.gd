@@ -220,6 +220,50 @@ static func padded_panel(level: int, horizontal: int, vertical: int,
 	return box
 
 
+## Marks one button in a group as the primary verb.
+##
+## Not everything deserves equal weight. A toolbar where thirteen controls look identical
+## makes the reader parse all thirteen to find the one they want; giving the main verb a
+## filled accent treatment means it is found without reading. Used sparingly — one per
+## region, or it stops meaning anything.
+static func make_primary(button: Button) -> Button:
+	var normal := padded_panel(Surface.RAISED, SPACE_M, SPACE_S, RADIUS_BUTTON)
+	normal.bg_color = ACCENT.darkened(0.55)
+	normal.border_color = ACCENT
+	button.add_theme_stylebox_override("normal", normal)
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = ACCENT.darkened(0.42)
+	button.add_theme_stylebox_override("hover", hover)
+	var pressed := normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = ACCENT.darkened(0.3)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_color_override("font_color", INK_BRIGHT)
+	button.add_theme_color_override("font_hover_color", INK_BRIGHT)
+	button.add_theme_font_override("font", font(WEIGHT_SEMIBOLD))
+	return button
+
+
+## Marks a button as the one that stops everything.
+##
+## A panic control has to be findable without reading the toolbar, so it gets the only
+## error-coloured treatment in the chrome and never moves. Outlined rather than filled: it
+## should be unmistakable when looked for, not shouting the whole time.
+static func make_panic(button: Button) -> Button:
+	var normal := padded_panel(Surface.RAISED, SPACE_M, SPACE_S, RADIUS_BUTTON)
+	normal.border_color = ERROR
+	button.add_theme_stylebox_override("normal", normal)
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = ERROR.darkened(0.6)
+	button.add_theme_stylebox_override("hover", hover)
+	var pressed := hover.duplicate() as StyleBoxFlat
+	pressed.bg_color = ERROR.darkened(0.45)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_color_override("font_color", ERROR)
+	button.add_theme_color_override("font_hover_color", INK_BRIGHT)
+	button.add_theme_font_override("font", font(WEIGHT_MEDIUM))
+	return button
+
+
 ## An outline with nothing inside it, for focus rings — drawn over whatever is already
 ## there so it reads the same on every surface.
 static func focus_ring(colour: Color = ACCENT, width: int = 2) -> StyleBoxFlat:

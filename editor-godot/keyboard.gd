@@ -23,12 +23,19 @@ const BLACK_OFFSETS := [1, 3, 6, 8, 10]
 ## Where each black key sits, as a fraction of a white key's width from the octave's left.
 const BLACK_POSITIONS := {1: 0.7, 3: 1.7, 6: 3.7, 8: 4.7, 10: 5.7}
 
-const WHITE := Color(0.90, 0.91, 0.93)
-const WHITE_HELD := Color(0.43, 0.91, 0.72)
-const BLACK := Color(0.14, 0.15, 0.18)
-const BLACK_HELD := Color(0.28, 0.62, 0.50)
-const EDGE := Color(0.05, 0.05, 0.06)
-const LABEL := Color(0.35, 0.37, 0.42)
+# Off-white rather than paper.
+#
+# At full white the keys carried more contrast and more apparent mass than anything
+# in the graph, and the eye went to the bottom of the window and stayed there. This
+# is still unmistakably a piano and no longer the brightest thing on screen — the
+# graph is the hero. Not dimmed into uselessness either: the held colours are the
+# application accent, so what you are playing still reads instantly.
+const WHITE := Color("d6d9df")
+static var WHITE_HELD := Design.ACCENT
+const BLACK := Color("1b1e24")
+static var BLACK_HELD := Design.ACCENT.darkened(0.35)
+const EDGE := Color("101216")
+const LABEL := Color("5c6371")
 
 var first_note := 48
 var octaves := 2
@@ -44,7 +51,7 @@ var _mouse_note := -1
 
 
 func _ready() -> void:
-	custom_minimum_size.y = 104
+	custom_minimum_size.y = Design.scale(128)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	# Never takes focus. Taking it is the exact failure this exists to diagnose.
 	focus_mode = Control.FOCUS_NONE
@@ -127,7 +134,12 @@ func _notification(what: int) -> void:
 
 
 func _draw() -> void:
-	var font: Font = get_theme_default_font()
+	# The application face, at the size the design system gives secondary text, so the
+	# letters on the keys are part of the same type system as everything else rather
+	# than whatever the default theme happened to supply.
+	var font: Font = Design.font(Design.WEIGHT_MEDIUM)
+	if font == null:
+		font = get_theme_default_font()
 	var white_width := _white_width()
 
 	for index in _white_count():
@@ -141,7 +153,8 @@ func _draw() -> void:
 		# Every C is named, so the octave is readable without counting keys.
 		if note % 12 == 0:
 			draw_string(font, rect.position + Vector2(4.0, size.y - 6.0),
-				"C%d" % (note / 12 - 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, LABEL)
+				"C%d" % (note / 12 - 1), HORIZONTAL_ALIGNMENT_LEFT, -1,
+					Design.scale(Design.SIZE_SECONDARY), LABEL)
 		if key_labels.has(note):
 			var letter: String = key_labels[note]
 			var width := font.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
