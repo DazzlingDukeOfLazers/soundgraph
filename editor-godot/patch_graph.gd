@@ -839,16 +839,22 @@ class GlowOverlay extends Control:
 		var glow_material := CanvasItemMaterial.new()
 		glow_material.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 		material = glow_material
+		# Drawn above the nodes by z-index, not by reordering.
+		#
+		# The first version moved itself to the end of GraphEdit's children every frame,
+		# on the theory that the move would happen once. It never stopped: GraphEdit keeps
+		# its own internal children — the minimap, the zoom menu — and puts them back on
+		# top, so the two of us reordered the same list sixty times a second. The round
+		# trip went from 12 runs in 12 to 9 in 12, crashing at shutdown with 0xC0000005,
+		# and I spent three fixes on the teardown path before measuring the commit before
+		# this one and finding the flake was mine. z_index gets the same result without
+		# touching the tree at all.
+		z_index = 100
 
 	func _process(_delta: float) -> void:
 		if graph == null:
 			return
-		# Kept last among the graph's children, because every GraphNode is appended after
-		# this one was created and children draw in tree order — so at rest the glow sat
-		# underneath the nodes and each halo was sliced off wherever a node covered it.
-		# A comparison every frame and a move almost never.
-		if get_index() != graph.get_child_count() - 1:
-			graph.move_child(self, graph.get_child_count() - 1)
+
 		if not graph.port_levels.is_empty() or not graph.hovered_port.is_empty():
 			queue_redraw()
 

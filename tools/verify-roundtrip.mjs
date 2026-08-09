@@ -128,11 +128,16 @@ try {
                 '--', original, tripped,
             ], { stdio: 'pipe', timeout: 120000 });
         } catch (error) {
-            // The status is worth printing: a crash during shutdown reports 3221225477
-            // (0xC0000005) with nothing on either stream, which is otherwise indis-
-            // tinguishable from the editor quietly refusing the patch.
-            console.log(`  FAIL ${name}: the editor could not round trip it` +
-                ` (exit status ${error.status})`);
+            // 0xC0000005 is a crash, and saying so matters: it comes with nothing on
+            // either stream, so it reads exactly like the editor quietly refusing the
+            // patch and sent me chasing three imaginary bugs in the teardown path
+            // before I measured an older commit and found the fault was newer than
+            // the code I was blaming. Named, it is at least the right question.
+            const crashed = error.status === 3221225477;
+            console.log(`  FAIL ${name}: ` + (crashed
+                ? `the editor CRASHED at exit (0xC0000005) — see docs/current-phase.md;`
+                    + ` the patch itself may well have round tripped`
+                : `the editor could not round trip it (exit status ${error.status})`));
             const detail = (error.stderr || error.stdout || '').toString().trim();
             if (detail) console.log(detail.split('\n').map((l) => `         ${l}`).join('\n'));
             failures += 1;

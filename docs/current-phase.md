@@ -140,6 +140,28 @@ gesture. Synthetic events do not lift that; only a person clicking does.
   first time anybody rendered it, the inspector turned out to be off the right-hand edge of
   the window with its text cut in half. Every automated check had passed, because measuring
   a widget cannot tell you the widget is outside the window.
+- **The editor crashes at shutdown in roughly one run in five, and it is new.** Exit status
+  0xC0000005, *after* the work has succeeded — the round trip's audio comparison never
+  disagrees when the run completes, so this costs confidence rather than correctness.
+
+  Measured rather than assumed, because the first assumption was wrong. Commit `20d8280`,
+  immediately before the design work, passes 20 of 20 and 12 of 12. Every design commit
+  through `fdffc9c` passes 10 of 10. The current tree passes 15 to 17 of 20. The regression
+  is mine and it arrived in the last two commits.
+
+  What has been ruled out, each with 15–20 runs: the glow overlay existing at all (16/20
+  without it), the per-frame port sampling (15/20 without it), the GraphEdit menu-button
+  toggles (9/15 without them), and the teardown path — three fixes there moved nothing.
+  One real bug was found and fixed on the way: the glow overlay reordered GraphEdit's
+  children every frame, because GraphEdit keeps its own internal children and puts them
+  back on top, so the two fought sixty times a second. `z_index` does the same job without
+  touching the tree, and that took the failure rate from 9/12 to 17/20 — better, not fixed.
+
+  The honest position is that 15-run samples cannot separate a 15% effect from a 25% one,
+  and further bisection needs either a much larger sample or a debugger on the crash dump.
+  Next step is the latter: run the failing case under `--verbose` with a crash handler and
+  read the stack rather than guessing at it from pass rates.
+
 - **The sandbox leaks a variable number of `AudioStreamGeneratorPlayback` objects at exit** —
   11, 2 and 0 across three runs of identical code. Not new and not growing, but it is the
   same class of thing that caused the 0xC0000005 shutdown crash, so a leak count from a

@@ -62,4 +62,16 @@ func _initialize() -> void:
 	print("round tripped %s -> %s (%d nodes, %d connections)" % [
 		input_path.get_file(), output_path.get_file(),
 		main.patch["nodes"].size(), main.patch["connections"].size()])
+
+	# Torn down deliberately, before quitting.
+	#
+	# quit() only schedules an exit, so the editor was being dismantled during
+	# interpreter shutdown in an order nothing here controls — with an audio player
+	# still holding a generator playback and the graph still holding GDExtension
+	# objects. That is the 0xC0000005 this check has been failing with about one run in
+	# five: a crash *after* the work succeeded, which reads exactly like a refusal to
+	# round trip the patch and is nothing of the sort.
+	root.remove_child(main)
+	main.free()
+	await process_frame
 	quit(0)

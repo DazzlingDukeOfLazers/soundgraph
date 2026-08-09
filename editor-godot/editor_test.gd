@@ -534,6 +534,64 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- three node states, told apart at a glance ---------------------------------
+	# GraphNode ships with normal and selected and nothing between them, so a node under
+	# the pointer looked exactly like one three columns away — and in a patch dense enough
+	# to need the mouse, "which one am I about to click" is a real question.
+	var hover_target: GraphNode = main.widgets["osc"]
+	hover_target.selected = false
+	main._set_node_hovered(hover_target, false)
+	check(not hover_target.has_theme_stylebox_override("panel"),
+		"a node at rest uses the plain style")
+
+	main._set_node_hovered(hover_target, true)
+	check(hover_target.has_theme_stylebox_override("panel"),
+		"hovering one gives it a state of its own")
+	var hovered_box := hover_target.get_theme_stylebox("panel") as StyleBoxFlat
+	var resting_box := main.theme.get_stylebox("panel", "GraphNode") as StyleBoxFlat
+	check(hovered_box.border_color != resting_box.border_color,
+		"which differs from resting")
+	# And differs from selected, or three states would be two.
+	var selected_box := main.theme.get_stylebox("panel_selected", "GraphNode") as StyleBoxFlat
+	check(hovered_box.border_color != selected_box.border_color,
+		"and from selected, so the three are told apart rather than compared")
+	check(hovered_box.bg_color == resting_box.bg_color,
+		"hover moves the border only, leaving the lift to mean selected")
+
+	# A selected node stays looking selected when the pointer crosses it. Otherwise
+	# reaching for a node would make the current selection flicker.
+	hover_target.selected = true
+	main._set_node_hovered(hover_target, true)
+	check(not hover_target.has_theme_stylebox_override("panel"),
+		"and hovering a selected node leaves it selected-looking")
+	hover_target.selected = false
+	main._set_node_hovered(hover_target, false)
+
+	# ---- unsaved changes are visible ------------------------------------------------
+	# One of the few questions an editor should never make somebody guess at, and it was
+	# not answerable here at all: the toolbar said "playing" whatever had happened.
+	await main._load_example("First Synth")
+	await process_frame
+	check(not main.unsaved, "a freshly opened patch has nothing unsaved")
+	check(not main.document_label.text.contains("●"),
+		"and its name is plain (%s)" % main.document_label.text)
+
+	main._begin_edit()
+	main._set_parameter("filter", "cutoff", 2500.0)
+	main._commit_edit("set cutoff")
+	await process_frame
+	check(main.unsaved, "changing something marks it unsaved")
+	check(main.document_label.text.contains("●"),
+		"and the document name says so (%s)" % main.document_label.text)
+
+	# Opening another document clears it, or the mark would follow you around for the
+	# rest of the session and stop meaning anything.
+	await main._load_example("Delay Echo")
+	await process_frame
+	check(not main.unsaved, "opening another one clears the mark")
+	await main._load_example("First Synth")
+	await process_frame
+
 	# ---- ports behave like jacks ---------------------------------------------------
 	# GraphEdit has no hover signal for ports and a large invisible hot zone around each
 	# one, so the thing you are about to connect to gave no sign of being the thing you

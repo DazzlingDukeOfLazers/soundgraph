@@ -332,6 +332,31 @@ func _apply_theme() -> void:
 	# Ports: the jack you see stays small, the target you have to hit does not. WCAG 2.2
 	# asks for 24x24 as a minimum and this is a patching interface, where missing the
 	# port is the single most common way to fail at the main thing the app does.
+	# The minimap. It was the last thing on the canvas the design system had not
+	# touched: a flat grey rectangle with no border, no relationship to any other
+	# surface, and nodes drawn in the same grey as the background it sat on — which
+	# read as a panel that had failed to draw rather than as a map of anything.
+	#
+	# On the ladder now, one level above the canvas it floats over, with the viewport
+	# rectangle in the accent so "where am I" is answerable without squinting.
+	Design.set_box(editor_theme, "panel", "GraphEditMinimap",
+		Design.panel(Design.Surface.NODE, Design.RADIUS_PANEL))
+	var minimap_node := Design.panel(Design.Surface.ACTIVE, 1, 0)
+	Design.set_box(editor_theme, "node", "GraphEditMinimap", minimap_node)
+	var minimap_camera := StyleBoxFlat.new()
+	minimap_camera.draw_center = false
+	minimap_camera.set_border_width_all(2)
+	minimap_camera.border_color = Design.ACCENT
+	minimap_camera.set_corner_radius_all(2)
+	Design.set_box(editor_theme, "camera", "GraphEditMinimap", minimap_camera)
+	Design.set_colour(editor_theme, "resizer_color", "GraphEditMinimap",
+		Design.INK_SECOND)
+
+	# The zoom and minimap buttons float over the canvas with nothing behind them, so
+	# they get the panel the rest of the chrome uses.
+	Design.set_box(editor_theme, "menu_panel", "GraphEdit",
+		Design.padded_panel(Design.Surface.NODE, Design.SPACE_S, Design.SPACE_XS))
+
 	Design.set_constant(editor_theme, "port_hotzone_inner_extent", "GraphEdit",
 		Design.scale(14))
 	Design.set_constant(editor_theme, "port_hotzone_outer_extent", "GraphEdit",
@@ -389,7 +414,9 @@ func _build_ui() -> void:
 	# to draw. Smaller, and on the same surface ladder as everything else.
 	graph_edit.minimap_enabled = true
 	graph_edit.minimap_size = Vector2(180, 110)
-	graph_edit.minimap_opacity = 0.5
+	# Opaque, now that it is a surface rather than a grey box: it was faded to hide
+	# how out of place it looked, which is treating the symptom.
+	graph_edit.minimap_opacity = 0.9
 	# Snap to the same grid auto-place uses, so dragging a node by hand keeps the pitch.
 	graph_edit.snapping_enabled = true
 	graph_edit.snapping_distance = int(GRID)
@@ -1000,6 +1027,31 @@ func _start_audio() -> void:
 	playback = player.get_stream_playback()
 
 
+## Stops calling into the extension before the extension goes away.
+##
+## Every frame this reaches across the GDExtension boundary several times — filling
+## the playback, reading the scope, sampling a port for the glow. During teardown the
+## tree is dismantled in an order nothing here controls, and a frame that lands after
+## the engine has been released is an access violation rather than an error.
+##
+## The round trip has been failing with exit status 3221225477 — 0xC0000005, a crash
+## at shutdown *after* the work succeeded — in roughly one run in five. That predates
+## this pass and is documented in current-phase.md, but adding more per-frame calls
+## across that boundary can only have made it likelier, so the frames stop first.
+func _exit_tree() -> void:
+	set_process(false)
+	if engine != null:
+		engine.all_notes_off()
+	# The player goes first and its stream with it. It is the one object here running
+	# on somebody else's schedule, and a playback still held by a stopped player is
+	# what GameSounds had to be taught the same lesson about.
+	if player != null:
+		player.stop()
+		player.stream = null
+	playback = null
+	engine = null
+
+
 func _process(_delta: float) -> void:
 	if engine == null or playback == null:
 		return
@@ -1159,6 +1211,15 @@ func _create_widget(node: Dictionary) -> void:
 	widget.set_meta("type", type_name)
 
 	_style_node_title(widget, descriptor)
+	# Hover is its own state, distinct from selection.
+	#
+	# GraphNode has normal and selected and nothing between them, so a node under the
+	# pointer looked exactly like one three columns away — and in a patch dense enough
+	# to need the mouse, "which node am I about to click" is a real question. One step
+	# of border brightening: enough to answer it, not enough to be mistaken for the
+	# accent outline that means selected.
+	widget.mouse_entered.connect(func() -> void: _set_node_hovered(widget, true))
+	widget.mouse_exited.connect(func() -> void: _set_node_hovered(widget, false))
 
 	var inputs: Array = descriptor.get("inputs", [])
 	var outputs: Array = descriptor.get("outputs", [])
@@ -1877,8 +1938,11 @@ func _note_name(note: int) -> String:
 ## file input, the examples menu — so the label cannot go stale by one of them forgetting.
 func _set_document_name(name: String) -> void:
 	document_name = name if not name.is_empty() else "untitled"
-	if document_label != null:
-		document_label.text = document_name
+	# Opening or saving a document is the moment it stops being unsaved, and every
+	# route in and out already comes through here — which is why the name lives in one
+	# function rather than being set at each call site.
+	unsaved = false
+	_refresh_document_label()
 
 
 func _on_graph_popup_request(at_position: Vector2) -> void:
@@ -2180,6 +2244,28 @@ func _begin_edit() -> void:
 	_pending_snapshot = _snapshot()
 
 
+## Whether the document has changed since it was opened or last written out.
+##
+## "Have I saved this" is one of the few questions an editor should never make
+## somebody guess at, and it was not answerable here at all — the toolbar said
+## "playing" whatever had happened to the patch.
+var unsaved := false:
+	set(value):
+		unsaved = value
+		_refresh_document_label()
+
+
+func _refresh_document_label() -> void:
+	if document_label == null:
+		return
+	# A dot rather than an asterisk, and the name goes bright rather than gaining
+	# punctuation — the change should be noticeable without the label jumping about,
+	# and a leading "*" shifts every character along by one.
+	document_label.text = document_name + ("  ●" if unsaved else "")
+	document_label.add_theme_color_override("font_color",
+		Design.INK_NORMAL if unsaved else Design.INK_SECOND)
+
+
 func _commit_edit(label: String) -> void:
 	if _pending_snapshot.is_empty():
 		return
@@ -2189,6 +2275,7 @@ func _commit_edit(label: String) -> void:
 	if JSON.stringify(before) == JSON.stringify(after):
 		return  # a drag that went nowhere is not an edit
 
+	unsaved = true
 	undo_redo.create_action(label)
 	undo_redo.add_do_method(_restore.bind(after))
 	undo_redo.add_undo_method(_restore.bind(before))
@@ -2526,6 +2613,29 @@ func _on_port_hovered(widget_name: String, side: String, index: int) -> void:
 	graph_edit.tooltip_text = "  ·  ".join(parts) + ("\n" + summary if summary != "" else "")
 
 
+## Brightens a node's border while the pointer is on it.
+##
+## Only the border, and only when the node is not selected: a hover that also changed the
+## fill would compete with the selected state, and the whole value of having three states
+## is that they are told apart at a glance rather than compared.
+func _set_node_hovered(widget: GraphNode, hovered: bool) -> void:
+	if widget.selected:
+		widget.remove_theme_stylebox_override("panel")
+		widget.remove_theme_stylebox_override("titlebar")
+		return
+	if not hovered:
+		widget.remove_theme_stylebox_override("panel")
+		widget.remove_theme_stylebox_override("titlebar")
+		return
+
+	var body := (theme.get_stylebox("panel", "GraphNode") as StyleBoxFlat).duplicate()
+	body.border_color = Design.BORDERS[Design.Surface.ACTIVE]
+	widget.add_theme_stylebox_override("panel", body)
+	var head := (theme.get_stylebox("titlebar", "GraphNode") as StyleBoxFlat).duplicate()
+	head.border_color = Design.BORDERS[Design.Surface.ACTIVE]
+	widget.add_theme_stylebox_override("titlebar", head)
+
+
 func _highlight(node_ids: Array) -> void:
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
@@ -2636,6 +2746,10 @@ func _on_file_selected(path: String) -> void:
 	if file == null:
 		status_label.text = "could not open %s" % path
 		return
+	# Named, which opening through the dialog never did — the toolbar went on showing
+	# whatever had been open before, and the one place that says which file you are
+	# editing was quietly lying.
+	_set_document_name(path.get_file())
 	_load_text(file.get_as_text())
 
 
@@ -2745,6 +2859,10 @@ func _load_text(text: String) -> void:
 		status_label.text = "that file is not a patch"
 		return
 	patch = parsed
+	# A freshly opened document has no unsaved changes in it by definition, and every
+	# way of opening one lands here — the examples menu, the file dialog, the browser
+	# file input and module import all call this.
+	unsaved = false
 	if not patch.has("nodes"):
 		patch["nodes"] = []
 	if not patch.has("connections"):
