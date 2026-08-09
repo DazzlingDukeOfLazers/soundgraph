@@ -86,6 +86,17 @@ var cable_style: int = CableStyle.CATENARY:
 		if _cables != null:
 			_cables.queue_redraw()
 
+## Case width in HP, or 0 to fill whatever space there is.
+##
+## Filling the window is the default because the window is the case: on a wide screen a
+## fixed width leaves a stripe of empty rail doing nothing. But a real rack does have a
+## width — 84 HP and 104 HP are the common ones — and building a patch that would actually
+## fit a case you own is a reasonable thing to want, so it stays available.
+var case_hp: int = 0:
+	set(value):
+		case_hp = value
+		_relayout()
+
 var selected_id := ""
 
 var _modules: Dictionary = {}          # node id -> RackModule
@@ -194,6 +205,8 @@ func _type_of(node_id: String) -> String:
 ## would not look like a rack.
 func _relayout() -> void:
 	var available := maxf(size.x - CASE_MARGIN * 2.0, 200.0)
+	if case_hp > 0:
+		available = minf(available, case_hp * HP)
 	var x := CASE_MARGIN
 	var y := CASE_MARGIN + RAIL
 	var row_widest := 0.0

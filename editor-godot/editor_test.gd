@@ -534,6 +534,35 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- rack case width ---------------------------------------------------------------
+	# Filling the window is the default; a fixed case is the setting. Both have to actually
+	# change where modules wrap, or the option is decoration.
+	main.rack.size = Vector2(4000, 900)
+	main.rack.case_hp = 0
+	main.rack.rebuild()
+	await process_frame
+	var widest_free := 0.0
+	for child in main.rack.get_children():
+		if child is Rack.RackModule:
+			widest_free = maxf(widest_free, child.position.x + child.size.x)
+
+	# Narrow enough to force wrapping. An 84 HP case proves nothing on this patch: seven
+	# modules fit in one row at 84 HP and at 4000 pixels alike, so both come out the same
+	# width and the check passes without having tested anything.
+	main.rack.case_hp = 16
+	await process_frame
+	var widest_cased := 0.0
+	for child in main.rack.get_children():
+		if child is Rack.RackModule:
+			widest_cased = maxf(widest_cased, child.position.x + child.size.x)
+
+	check(widest_cased <= 16 * Rack.HP + Rack.CASE_MARGIN * 2.0,
+		"a 16 HP case wraps its modules inside 16 HP")
+	check(widest_free > widest_cased * 1.5,
+		"and fitting the window spreads them far wider than that")
+
+	main.rack.case_hp = 0
+
 	# ---- the sandbox -------------------------------------------------------------------
 	# The sandbox is the answer to "how would I use this in a game", so the thing worth
 	# checking is that its sounds actually load. A silent demo is worse than no demo: it

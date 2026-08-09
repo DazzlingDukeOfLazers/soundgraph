@@ -18,7 +18,16 @@ config/icon="res://icon.svg"
 
 window/size/viewport_width=1440
 window/size/viewport_height=900
+; canvas_items keeps the UI at a readable scale on any display — 1440x900 is the size the
+; type and hit targets were chosen for, and everything is scaled from it rather than
+; rendered in raw pixels that shrink as the screen grows.
+;
+; "expand" is the half that was missing. The default aspect is "keep", which fits that
+; 1440x900 box inside the window and puts bars round it: a bigger browser gave bigger
+; pixels and not one more module. With "expand" the scale is held and the viewport grows
+; into whatever space there is, so a wide window means a wider rack.
 window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [rendering]
 

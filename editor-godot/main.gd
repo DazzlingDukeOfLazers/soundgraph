@@ -396,6 +396,21 @@ func _build_toolbar() -> Control:
 		graph_edit.queue_redraw())
 	bar.add_child(_defocus(cables))
 
+	# How wide the rack's case is. Filling the window is the default — the window is the
+	# case — but a patch built to fit 84 or 104 HP is one that would fit real hardware.
+	var case_width := OptionButton.new()
+	case_width.add_item("Case: fit window")
+	case_width.add_item("Case: 84 HP")
+	case_width.add_item("Case: 104 HP")
+	case_width.add_item("Case: 168 HP")
+	case_width.selected = 0
+	case_width.tooltip_text = "How wide the rack is. HP is the Eurorack width unit; a " \
+		+ "typical case is 84 or 104 of them."
+	const CASE_WIDTHS := [0, 84, 104, 168]
+	case_width.item_selected.connect(func(index: int) -> void:
+		rack.case_hp = CASE_WIDTHS[index])
+	bar.add_child(_defocus(case_width))
+
 	var panic := Button.new()
 	panic.text = "All notes off"
 	panic.pressed.connect(func() -> void:
