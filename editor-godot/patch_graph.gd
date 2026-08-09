@@ -589,7 +589,16 @@ func _view_fingerprint() -> String:
 	return "|".join(parts)
 
 
+## How brightly each output port is glowing. node id -> port index -> 0..1.
+##
+## Fed from the running graph rather than from anything the editor imagines: the
+## levels are measured off the same buffers the scope reads, so a port that lights up
+## is a port with sound coming out of it. That is the entire point — an editor that
+## animated on a guess would be decoration, and worse than none.
+var port_levels: Dictionary = {}
+
 var _overlay: CrossingOverlay
+var _glow: GlowOverlay
 
 
 func _ready() -> void:
@@ -598,6 +607,11 @@ func _ready() -> void:
 	add_child(_overlay)
 	# Straight after the connection layer: above the cables, below the nodes.
 	move_child(_overlay, 1)
+	# Above the nodes, so a glow reads as light coming off the jack rather than as
+	# something buried under the panel it belongs to.
+	_glow = GlowOverlay.new()
+	_glow.graph = self
+	add_child(_glow)
 	begin_node_move.connect(func() -> void: _grid_target = 1.0)
 	end_node_move.connect(func() -> void: _grid_target = 0.0)
 	set_process(true)
@@ -782,3 +796,72 @@ func _update_detail() -> void:
 		return
 	detail = level
 	detail_changed.emit(level)
+
+
+## The one piece of movement in the editor.
+##
+## When a port is carrying something, it and the first stretch of its cable pick up a
+## faint halo in the signal-type colour, proportional to level. No colour cycling, no
+## pulsing, nothing that moves when the graph is silent — the intent is that a running
+## instrument looks different from a stopped one at a glance, which is true of every
+## piece of hardware on a rack and true of almost no software patcher.
+##
+## Off entirely under reduced motion; see Design.reduced_motion.
+class GlowOverlay extends Control:
+	var graph: GraphEdit
+
+	## Peak alpha at full scale. Deliberately low: this should be noticed out of the
+	## corner of an eye and never read as a highlight, which is a different state.
+	const MAX_ALPHA := 0.55
+	const MIN_RADIUS := 8.0
+	const MAX_RADIUS := 18.0
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		# Additive, which is the whole difference between a glow and a smudge. A
+		# translucent circle *mixes* with what is under it, so over a node body — which
+		# is lighter than the canvas — it came out darker than its surroundings and read
+		# as a stain rather than as light. Adding can only ever brighten.
+		var glow_material := CanvasItemMaterial.new()
+		glow_material.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+		material = glow_material
+
+	func _process(_delta: float) -> void:
+		if graph == null:
+			return
+		# Kept last among the graph's children, because every GraphNode is appended after
+		# this one was created and children draw in tree order — so at rest the glow sat
+		# underneath the nodes and each halo was sliced off wherever a node covered it.
+		# A comparison every frame and a move almost never.
+		if get_index() != graph.get_child_count() - 1:
+			graph.move_child(self, graph.get_child_count() - 1)
+		if not graph.port_levels.is_empty():
+			queue_redraw()
+
+	func _draw() -> void:
+		if graph == null or Design.reduced_motion:
+			return
+		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		for node_name in graph.port_levels:
+			var node := graph.get_node_or_null(NodePath(node_name)) as GraphNode
+			if node == null:
+				continue
+			var ports: Dictionary = graph.port_levels[node_name]
+			for port_index: int in ports:
+				var level: float = ports[port_index]
+				if level <= 0.01 or port_index >= node.get_output_port_count():
+					continue
+				var spot: Vector2 = node.position_offset \
+					+ node.get_output_port_position(port_index)
+				var screen := spot * scale - graph.scroll_offset
+				var colour: Color = node.get_output_port_color(port_index)
+				# Two rings rather than a blur, because a blurred sprite at this size on a
+				# dark background turns into a grey smudge.
+				var radius: float = lerpf(MIN_RADIUS, MAX_RADIUS, level) * scale
+				# Three rings rather than a blur. A blurred sprite at this size on a dark
+				# background turns into a grey disc; concentric additive circles fall off
+				# steeply enough to read as light coming off a jack.
+				for ring in [[1.0, 0.22], [0.62, 0.38], [0.3, 1.0]]:
+					draw_circle(screen, radius * ring[0],
+						Color(colour.r, colour.g, colour.b, MAX_ALPHA * level * ring[1]))

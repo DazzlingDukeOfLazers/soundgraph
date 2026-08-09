@@ -534,6 +534,61 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the signal glow reflects signal ------------------------------------------
+	# The one piece of movement in the editor, and the whole of its value is that it is
+	# measured rather than imagined. An editor that animated on a guess would be
+	# decoration and worse than none, so the test is that a silent graph does not glow
+	# and a sounding one does.
+	Design.reduced_motion = false
+	main._rebuild_level_targets()
+	check(main._level_targets.size() > 0,
+		"every output port is on the sweep list (%d)" % main._level_targets.size())
+
+	main.engine.all_notes_off()
+	main.engine.reset()
+	for i in 40:
+		main.engine.fill_playback(playback, 256)
+		main._update_port_levels(0.05)
+		await process_frame
+	# One named audio port rather than the loudest thing anywhere, because the loudest
+	# thing anywhere is the LFO — it runs free whether or not a note is held, so the
+	# graph is never truly still and a max-over-everything comparison measures the
+	# modulator instead of the sound. That is correct behaviour and a wrong test.
+	var amp_widget: String = String(main.widgets["amp"].name)
+	var quiet_glow: float = main.graph_edit.port_levels.get(amp_widget, {}).get(0, 0.0)
+
+	main.engine.note_on(57, 0.9)
+	for i in 60:
+		main.engine.fill_playback(playback, 256)
+		main._update_port_levels(0.05)
+		await process_frame
+	var loud_glow: float = main.graph_edit.port_levels.get(amp_widget, {}).get(0, 0.0)
+
+	check(loud_glow > quiet_glow + 0.1,
+		"the amplifier output glows when it is making sound and not when it is not "
+			+ "(%.3f vs %.3f)" % [loud_glow, quiet_glow])
+
+	# And a pitch that is merely present does not count as activity. The keyboard's
+	# frequency output sits at a steady 440-odd hertz forever; if that lit up, every
+	# control port in every graph would be permanently on and the glow would carry no
+	# information at all. This is the check that stopped exactly that shipping.
+	var note_widget: String = String(main.widgets["note"].name)
+	var pitch_glow: float = main.graph_edit.port_levels.get(note_widget, {}).get(0, 0.0)
+	check(pitch_glow < 0.1,
+		"a steady pitch is not activity and does not glow (%.3f)" % pitch_glow)
+
+	# Reduced motion is not a preference that gets ignored. Nothing here depends on
+	# animation to be usable, so the switch turns it off rather than slowing it down.
+	Design.reduced_motion = true
+	main.graph_edit.port_levels.clear()
+	for i in 20:
+		main._update_port_levels(0.05)
+		await process_frame
+	check(main.graph_edit.port_levels.is_empty(),
+		"reduced motion stops the glow being computed at all")
+	Design.reduced_motion = false
+	main.engine.all_notes_off()
+
 	# ---- the number is a control ---------------------------------------------------
 	# A slider 112px wide cannot resolve 20 Hz to 20 kHz. At the bottom of an exponential
 	# range one pixel is several hertz, so asking for exactly 440 meant dragging until it

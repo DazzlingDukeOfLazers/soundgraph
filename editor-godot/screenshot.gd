@@ -37,6 +37,15 @@ func _initialize() -> void:
 	for i in SETTLE_FRAMES:
 		await process_frame
 
+	# A fifth argument holds a note down and pumps the graph, so the signal glow has
+	# something to show. A screenshot of a silent instrument cannot tell you whether
+	# the "this is running" cue works.
+	if arguments.size() > 4 and arguments[4] == "play":
+		main.engine.note_on(57, 0.9)
+		for i in 90:
+			main._update_port_levels(0.05)
+			await process_frame
+
 	if select != "":
 		await process_frame
 		main._focus_node(select)

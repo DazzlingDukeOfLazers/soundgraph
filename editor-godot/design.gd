@@ -134,6 +134,14 @@ const SCALE_FACTORS := [0.875, 1.0, 1.15, 1.35]
 
 static var ui_scale: int = Scale.COMFORTABLE
 
+## Turns off everything that moves on its own: the signal glow and the grid fade.
+##
+## Motion in an interface is a cost some people pay and others do not notice, and an
+## accessibility feature that only exists as a hope is not one. Nothing here depends
+## on animation to be usable — the glow says "this is running", which the transport
+## also says in words.
+static var reduced_motion := false
+
 
 ## Rounds so that a scaled size is still a whole pixel — a half-pixel font size is how
 ## hinting stops working and everything goes soft at exactly the setting somebody chose

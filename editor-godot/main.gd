@@ -136,6 +136,10 @@ var keyboard_expanded := true
 var document_label: Label
 var document_name := "untitled"
 var diagnostics_list: VBoxContainer
+## Round-robin state for the signal glow; see _update_port_levels().
+var _level_targets: Array = []
+var _level_cursor := 0
+
 var health_label: Label
 var diagnostics_heading: Label
 var context_heading: Label
@@ -606,6 +610,12 @@ func _build_toolbar() -> Control:
 	for index in CASE_LABELS.size():
 		view_popup.add_radio_check_item(CASE_LABELS[index], 10 + index)
 	view_popup.set_item_checked(3, true)
+	view_popup.add_separator()
+	# An accessibility switch that only exists as a hope is not one. Everything that
+	# moves on its own in this editor is off behind this: the signal glow and the grid
+	# fade, both of which say something the interface also says without moving.
+	view_popup.add_check_item("Reduce motion", 20)
+	view_popup.set_item_checked(view_popup.get_item_index(20), Design.reduced_motion)
 	view_popup.id_pressed.connect(_on_view_menu)
 	view_group.add_child(_defocus(view_menu))
 
@@ -682,6 +692,15 @@ func _on_file_menu(id: int) -> void:
 
 
 func _on_view_menu(id: int) -> void:
+	if id == 20:
+		Design.reduced_motion = not Design.reduced_motion
+		view_popup.set_item_checked(view_popup.get_item_index(20), Design.reduced_motion)
+		if Design.reduced_motion and graph_edit != null:
+			# Cleared rather than frozen, or the last frame of glow would sit there
+			# forever looking like a port that is stuck on.
+			graph_edit.port_levels.clear()
+			graph_edit.queue_redraw()
+		return
 	if id < 10:
 		for index in 2:
 			view_popup.set_item_checked(index, index == id)
@@ -962,6 +981,77 @@ func _process(_delta: float) -> void:
 	if engine.is_loaded():
 		engine.fill_playback(playback, playback.get_frames_available())
 	_update_scope()
+	_update_port_levels(_delta)
+
+
+## Measures what every output port is actually carrying, for the signal glow.
+##
+## One port per frame, round-robin. Reading all of them every frame means a call across
+## the extension boundary and a buffer allocation per port per frame, which is real work
+## on the audio thread's doorstep for something nobody would notice being a tenth of a
+## second stale. A dozen ports at 60fps is still five full sweeps a second.
+##
+## Levels fall faster than they rise on purpose. A glow that tracked the waveform exactly
+## would flicker at audio rate; this is an envelope follower, the same thing a VU meter is.
+func _update_port_levels(delta: float) -> void:
+	if graph_edit == null or Design.reduced_motion or not engine.is_loaded():
+		return
+
+	if _level_targets.is_empty():
+		_rebuild_level_targets()
+	if _level_targets.is_empty():
+		return
+
+	_level_cursor = (_level_cursor + 1) % _level_targets.size()
+	var target: Dictionary = _level_targets[_level_cursor]
+	var samples: PackedFloat32Array = engine.get_port_signal(target["node"], target["port"])
+	var peak := 0.0
+	var lowest := INF
+	var highest := -INF
+	for value in samples:
+		peak = maxf(peak, absf(value))
+		lowest = minf(lowest, value)
+		highest = maxf(highest, value)
+
+	# Audio is judged on level and control on *movement*, and the difference matters.
+	#
+	# A control wire is not bounded to +/-1 — a frequency sits at 440 whether or not
+	# anything is happening — so "is it non-zero" lights every control port in the graph
+	# permanently, which is a glow that tells you nothing. What is worth seeing is an
+	# envelope opening or an LFO sweeping, and both of those are change over the block.
+	# A pitch that is holding steady is not activity, and should not look like it.
+	var level := 0.0
+	if target["audio"]:
+		level = clampf(peak, 0.0, 1.0)
+	elif highest > lowest:
+		level = clampf(highest - lowest, 0.0, 1.0)
+
+	var widget_name: String = target["widget"]
+	if not graph_edit.port_levels.has(widget_name):
+		graph_edit.port_levels[widget_name] = {}
+	var existing: float = graph_edit.port_levels[widget_name].get(target["index"], 0.0)
+	var rate: float = 18.0 if level > existing else 6.0
+	graph_edit.port_levels[widget_name][target["index"]] = \
+		lerpf(existing, level, clampf(delta * rate, 0.0, 1.0))
+
+
+## The list of output ports to sweep, rebuilt when the graph changes.
+func _rebuild_level_targets() -> void:
+	_level_targets.clear()
+	_level_cursor = 0
+	if graph_edit != null:
+		graph_edit.port_levels.clear()
+	for node_id in widgets:
+		var widget: GraphNode = widgets[node_id]
+		var outputs := _port_list(node_id, "outputs")
+		for index in outputs.size():
+			_level_targets.append({
+				"node": node_id,
+				"widget": String(widget.name),
+				"port": str(outputs[index]["name"]),
+				"index": index,
+				"audio": str(outputs[index]["type"]) == "audio",
+			})
 
 
 func _update_scope() -> void:
@@ -2229,6 +2319,9 @@ func _apply() -> void:
 
 	if typeof(report) == TYPE_DICTIONARY and report["ok"]:
 		engine.load_patch(text, 48000.0)
+		# The sweep list names ports by node and index, so it has to be rebuilt whenever
+		# the graph is — otherwise the glow keeps lighting ports that no longer exist.
+		_rebuild_level_targets()
 		_show_info()
 		status_label.text = "playing"
 	else:
