@@ -66,9 +66,27 @@ var grid_half_major := 200.0
 ## Column pitch — the heaviest lines.
 var grid_major := 400.0
 
-var grid_minor_colour := Color(1, 1, 1, 0.035)
-var grid_half_major_colour := Color(1, 1, 1, 0.10)
-var grid_major_colour := Color(1, 1, 1, 0.22)
+# Two states, because a grid has two jobs and they want opposite things.
+#
+# While you are reading a node it should be almost gone: at 0.22 the major lines were
+# competing with node borders and cables for the same attention, and a background
+# that argues with the foreground makes everything harder to read. While you are
+# *moving* a node it is the whole point — it is what you are aligning to.
+#
+# So it fades in when a drag starts and back out when it ends. Same lines, and they
+# arrive exactly when they are useful.
+const GRID_RESTING := [0.018, 0.045, 0.09]
+const GRID_MOVING := [0.05, 0.12, 0.26]
+## Seconds for the fade. Long enough not to flicker on a click, short enough that the
+## grid is already there by the time the node has moved anywhere.
+const GRID_FADE := 0.14
+
+var grid_minor_colour := Color(1, 1, 1, GRID_RESTING[0])
+var grid_half_major_colour := Color(1, 1, 1, GRID_RESTING[1])
+var grid_major_colour := Color(1, 1, 1, GRID_RESTING[2])
+
+var _grid_emphasis := 0.0
+var _grid_target := 0.0
 
 ## Graph-space point each cable must pass through, keyed by connection.
 var waypoints: Dictionary = {}
@@ -562,6 +580,20 @@ func _ready() -> void:
 	add_child(_overlay)
 	# Straight after the connection layer: above the cables, below the nodes.
 	move_child(_overlay, 1)
+	begin_node_move.connect(func() -> void: _grid_target = 1.0)
+	end_node_move.connect(func() -> void: _grid_target = 0.0)
+	set_process(true)
+
+
+func _process(delta: float) -> void:
+	if is_equal_approx(_grid_emphasis, _grid_target):
+		return
+	var step := delta / GRID_FADE
+	_grid_emphasis = move_toward(_grid_emphasis, _grid_target, step)
+	grid_minor_colour.a = lerpf(GRID_RESTING[0], GRID_MOVING[0], _grid_emphasis)
+	grid_half_major_colour.a = lerpf(GRID_RESTING[1], GRID_MOVING[1], _grid_emphasis)
+	grid_major_colour.a = lerpf(GRID_RESTING[2], GRID_MOVING[2], _grid_emphasis)
+	queue_redraw()
 
 
 ## The grid is drawn on the GraphEdit's own canvas item, which sits below the connection

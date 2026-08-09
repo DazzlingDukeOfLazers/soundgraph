@@ -7,10 +7,17 @@ extends Control
 
 var samples: PackedFloat32Array = PackedFloat32Array()
 var label: String = "output"
-var accent := Color(0.43, 0.91, 0.72)
+static var accent := Design.ACCENT
 
-const BACKGROUND := Color(0.06, 0.07, 0.09)
-const GRID := Color(0.2, 0.22, 0.26)
+## The scope is a window onto the signal, so it sits *below* the canvas rather than
+## on the panel it lives in — a display recessed into the surface, which is what a
+## meter on a piece of hardware looks like.
+static var BACKGROUND := Design.SURFACES[Design.Surface.CANVAS]
+static var GRID := Design.BORDERS[Design.Surface.RAISED]
+## Inset from the edges. The peak readout used to be positioned by guessing a width
+## in pixels, so it hung off the right-hand side the moment the font or the panel
+## changed size; it is measured now.
+const PAD := 8.0
 
 
 func show_samples(new_samples: PackedFloat32Array, new_label: String) -> void:
@@ -29,14 +36,15 @@ func _draw() -> void:
 	draw_line(Vector2(0, 2), Vector2(size.x, 2), GRID, 1.0)
 	draw_line(Vector2(0, size.y - 2), Vector2(size.x, size.y - 2), GRID, 1.0)
 
-	var font := get_theme_default_font()
-	var font_size := 11
-	draw_string(font, Vector2(6, 14), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size,
-		Color(0.6, 0.65, 0.72))
+	var font: Font = Design.numeric_font()
+	var font_size := Design.scale(Design.SIZE_SECONDARY)
+	var ascent := font.get_ascent(font_size)
+	draw_string(font, Vector2(PAD, PAD + ascent), label, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		font_size, Design.INK_SECOND)
 
 	if samples.size() < 2:
-		draw_string(font, Vector2(6, size.y - 8), "no signal", HORIZONTAL_ALIGNMENT_LEFT, -1,
-			font_size, Color(0.45, 0.49, 0.56))
+		draw_string(font, Vector2(PAD, size.y - PAD), "no signal",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Design.INK_DISABLED)
 		return
 
 	var points := PackedVector2Array()
@@ -51,5 +59,9 @@ func _draw() -> void:
 	var peak := 0.0
 	for value in samples:
 		peak = maxf(peak, absf(value))
-	draw_string(font, Vector2(size.x - 74, 14), "peak %.3f" % peak, HORIZONTAL_ALIGNMENT_LEFT,
-		-1, font_size, Color(0.6, 0.65, 0.72))
+	# Right-aligned by measuring the string rather than by assuming it is 74px wide,
+	# which is what put "peak 0.033" half outside the box.
+	var readout := "peak %.3f" % peak
+	var width := font.get_string_size(readout, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	draw_string(font, Vector2(size.x - width - PAD, PAD + ascent), readout,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Design.INK_SECOND)

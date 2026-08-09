@@ -534,6 +534,59 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the signal path -----------------------------------------------------------
+	# Selecting a node lights the whole chain it sits on, because "where does this sound
+	# go" is the question the cables exist to answer and the one they are worst at when
+	# every cable looks like every other cable. GraphEdit does not read connection
+	# activity back, so the thing tested is the reachability that drives it — which is
+	# also the part that could be wrong.
+	var downstream: Array = main._reachable_from("filter", true)
+	downstream.sort()
+	check(downstream == ["amp", "filter", "out"],
+		"downstream of the filter is the filter, the amp and the output (%s)" % str(downstream))
+
+	var upstream: Array = main._reachable_from("filter", false)
+	upstream.sort()
+	check(upstream.has("osc") and upstream.has("note") and upstream.has("lfo"),
+		"upstream reaches the oscillator, the keyboard and the modulator (%s)" % str(upstream))
+	check(not upstream.has("amp"),
+		"and does not wander downstream on the way (%s)" % str(upstream))
+
+	# The envelope feeds the amp, not the filter, so it is off this path. If everything
+	# came back lit the highlight would be telling you nothing.
+	var lit := {}
+	for id in downstream: lit[id] = true
+	for id in upstream: lit[id] = true
+	check(not lit.has("env"),
+		"the envelope is not on the filter's path, so the highlight means something")
+
+	# A feedback patch is a cycle, and this project deliberately supports those. Without
+	# a seen-set the walk would follow the loop forever and the editor would hang on
+	# selection — a much worse failure than a wrong colour.
+	var looped := {
+		"schema_version": 1,
+		"nodes": [
+			{"id": "a", "type": "Delay"}, {"id": "b", "type": "Gain"},
+			{"id": "out", "type": "StereoOutput"},
+		],
+		"connections": [
+			{"from": {"node": "a", "port": "out"}, "to": {"node": "b", "port": "in"}},
+			{"from": {"node": "b", "port": "out"}, "to": {"node": "a", "port": "in"}},
+			{"from": {"node": "b", "port": "out"}, "to": {"node": "out", "port": "left"}},
+		],
+	}
+	await main._load_text(JSON.stringify(looped))
+	await process_frame
+	var around: Array = main._reachable_from("a", true)
+	around.sort()
+	check(around == ["a", "b", "out"],
+		"a feedback loop is walked once rather than forever (%s)" % str(around))
+
+	# Back to the patch the rest of these checks assume.
+	await main._load_text(file.get_as_text())
+	await process_frame
+	await process_frame
+
 	# ---- the inspector earns its width -------------------------------------------
 	# It used to be two mostly-empty regions and a line of grey text. The test is not
 	# that it has content but that the content *changes with what is selected* — a panel

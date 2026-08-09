@@ -361,7 +361,17 @@ func _build_ui() -> void:
 	graph_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	graph_edit.right_disconnects = true
 	graph_edit.show_grid = false   # the canvas draws its own; see below
+	# Thinner than the default. A cable is a relationship between two nodes, and at 4px
+	# it was drawing more attention than either of them; the path highlight is what
+	# makes a cable loud, and that only works if the resting state is quiet.
+	graph_edit.connection_lines_thickness = 2.5
+	graph_edit.connection_lines_antialiased = true
+	# The minimap was a flat grey rectangle sitting over the canvas with no border and
+	# no relationship to anything else on screen — it read as a panel that had failed
+	# to draw. Smaller, and on the same surface ladder as everything else.
 	graph_edit.minimap_enabled = true
+	graph_edit.minimap_size = Vector2(180, 110)
+	graph_edit.minimap_opacity = 0.5
 	# Snap to the same grid auto-place uses, so dragging a node by hand keeps the pitch.
 	graph_edit.snapping_enabled = true
 	graph_edit.snapping_distance = int(GRID)
@@ -1500,6 +1510,7 @@ func _on_node_selected(node: Node) -> void:
 		return
 	inspecting = {"node": node_id, "port": outputs[0]["name"]}
 	_refresh_context()
+	_light_signal_path(node_id)
 
 
 ## A knob in the rack and a slider in the graph are two handles on one value. The edit goes
@@ -2252,6 +2263,57 @@ func _show_diagnostics(diagnostics: Array) -> void:
 		diagnostics_list.add_child(card)
 
 	_highlight(to_highlight)
+
+
+## Lights the whole signal path a node sits on.
+##
+## Selecting a filter tells you where the filter is. What you actually want to know is
+## where the sound goes — what feeds this, and what this feeds, all the way to the output.
+## In a patch of any size that is the question the cables are there to answer and the one
+## they are worst at, because at a glance every cable looks like every other cable.
+##
+## GraphEdit already has the mechanism: connection activity tints a cable toward the
+## theme accent. So the path is simply every connection reachable from the selection in
+## either direction, turned up; everything else turned down.
+func _light_signal_path(node_id: String) -> void:
+	if graph_edit == null:
+		return
+	var lit := {}
+	if node_id != "":
+		for id in _reachable_from(node_id, true):
+			lit[id] = true
+		for id in _reachable_from(node_id, false):
+			lit[id] = true
+
+	for connection in graph_edit.connections:
+		var from_id: String = ids.get(str(connection["from_node"]), "")
+		var to_id: String = ids.get(str(connection["to_node"]), "")
+		var on_path := lit.has(from_id) and lit.has(to_id)
+		graph_edit.set_connection_activity(connection["from_node"],
+			int(connection["from_port"]), connection["to_node"],
+			int(connection["to_port"]), 1.0 if on_path else 0.0)
+
+
+## Every node reachable from this one, following cables downstream or upstream.
+func _reachable_from(node_id: String, downstream: bool) -> Array:
+	var seen := {node_id: true}
+	var queue := [node_id]
+	while not queue.is_empty():
+		var current: String = queue.pop_back()
+		for connection in patch.get("connections", []):
+			var from_id := str(connection["from"]["node"])
+			var to_id := str(connection["to"]["node"])
+			var step := ""
+			if downstream and from_id == current:
+				step = to_id
+			elif not downstream and to_id == current:
+				step = from_id
+			# The guard is the cycle: a feedback patch would otherwise walk its own loop
+			# forever, and feedback is a thing this editor deliberately supports.
+			if step != "" and not seen.has(step):
+				seen[step] = true
+				queue.append(step)
+	return seen.keys()
 
 
 func _highlight(node_ids: Array) -> void:
