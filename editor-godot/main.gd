@@ -117,6 +117,10 @@ var graph_edit: GraphEdit
 var views: TabContainer
 var rack: Rack
 var sandbox: Sandbox
+var keyboard: Keyboard
+## What is open, shown so "which patch am I looking at" is never a guess.
+var document_label: Label
+var document_name := "untitled"
 var diagnostics_list: VBoxContainer
 var info_label: RichTextLabel
 var scope: Control
@@ -305,6 +309,14 @@ func _build_ui() -> void:
 	split.add_child(views)
 
 	split.add_child(_build_side_panel())
+
+	# Under the tabs rather than inside one: the graph and the rack are two views of the
+	# same running patch, and the thing that plays it belongs to neither.
+	keyboard = Keyboard.new()
+	keyboard.note_pressed.connect(_on_keyboard_pressed)
+	keyboard.note_released.connect(_on_keyboard_released)
+	root.add_child(keyboard)
+	_refresh_keyboard_range()
 	_build_search_popup()
 
 	file_dialog = FileDialog.new()
@@ -462,12 +474,24 @@ func _build_toolbar() -> Control:
 	panic.text = "All notes off"
 	panic.pressed.connect(func() -> void:
 		engine.all_notes_off()
-		held_notes.clear())
+		held_notes.clear()
+		if keyboard != null:
+			keyboard.set_held_notes(held_notes))
 	bar.add_child(_defocus(panic))
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(spacer)
+
+	document_label = Label.new()
+	document_label.text = document_name
+	document_label.add_theme_color_override("font_color", ACCENT)
+	bar.add_child(document_label)
+
+	var separator := Label.new()
+	separator.text = "·"
+	separator.add_theme_color_override("font_color", INK_DIM)
+	bar.add_child(separator)
 
 	status_label = Label.new()
 	status_label.text = "starting…"
@@ -984,6 +1008,56 @@ func _on_rack_node_selected(node_id: String) -> void:
 	var outputs := _port_list(node_id, "outputs")
 	inspecting = {"node": node_id, "port": outputs[0]["name"]} if not outputs.is_empty() \
 		else {}
+
+
+func _on_keyboard_pressed(note: int) -> void:
+	_hold_note(note)
+
+
+func _on_keyboard_released(note: int) -> void:
+	_let_go_note(note)
+
+
+## Every note goes through these two, whether a mouse or a computer key started it. The
+## on-screen keyboard lights up from held_notes rather than from its own clicks, so what
+## you see is what the engine was actually told.
+func _hold_note(note: int) -> void:
+	if engine == null or held_notes.has(note):
+		return
+	held_notes[note] = true
+	engine.note_on(note, 0.9)
+	if keyboard != null:
+		keyboard.set_held_notes(held_notes)
+
+
+func _let_go_note(note: int) -> void:
+	if engine == null or not held_notes.has(note):
+		return
+	held_notes.erase(note)
+	engine.note_off(note)
+	if keyboard != null:
+		keyboard.set_held_notes(held_notes)
+
+
+## The keyboard shows the octave the computer keys are playing, plus one above it, with the
+## mapped keys lettered on the keys themselves.
+func _refresh_keyboard_range() -> void:
+	if keyboard == null:
+		return
+	var base: int = octave * 12 + 12
+	var labels := {}
+	for keycode in KEY_NOTES:
+		labels[base + KEY_NOTES[keycode]] = OS.get_keycode_string(keycode)
+	keyboard.key_labels = labels
+	keyboard.set_range(base, 2)
+
+
+## Names the open document. Called from every route in — the file dialog, the browser's
+## file input, the examples menu — so the label cannot go stale by one of them forgetting.
+func _set_document_name(name: String) -> void:
+	document_name = name if not name.is_empty() else "untitled"
+	if document_label != null:
+		document_label.text = document_name
 
 
 func _on_graph_popup_request(at_position: Vector2) -> void:
@@ -1561,6 +1635,7 @@ func _load_example(name: String) -> void:
 	if file == null:
 		status_label.text = "could not open %s" % path
 		return
+	_set_document_name(path.get_file())
 	_load_text(file.get_as_text())
 
 
@@ -1574,6 +1649,7 @@ func _on_file_selected(path: String) -> void:
 		# Written through the core's serialiser, not Godot's: the patch format is the
 		# product, and it should read the same whichever editor saved it.
 		out.store_string(engine.format_patch(JSON.stringify(patch, "  ")))
+		_set_document_name(path.get_file())
 		status_label.text = "saved"
 		return
 
@@ -1610,7 +1686,9 @@ func _install_web_file_bridge() -> void:
 				const file = input.files && input.files[0];
 				if (!file) { return; }
 				const reader = new FileReader();
-				reader.onload = function () { callback(String(reader.result)); };
+				// The name as well as the contents: without it the editor cannot say what is
+			// open, and in a browser there is no path to fall back on.
+			reader.onload = function () { callback(String(reader.result), file.name); };
 				reader.readAsText(file);
 			};
 			input.click();
@@ -1630,12 +1708,13 @@ func _web_open() -> void:
 func _on_web_file_chosen(arguments: Array) -> void:
 	if arguments.is_empty():
 		return
+	var chosen_name: String = str(arguments[1]) if arguments.size() > 1 else ""
 	if _importing_module:
 		_importing_module = false
-		# The browser hands back contents, not a path, so the module gets a generic name.
 		_import_module(str(arguments[0]),
-			str(arguments[1]) if arguments.size() > 1 else "module")
+			ModuleImport.name_from_path(chosen_name) if not chosen_name.is_empty() else "module")
 		return
+	_set_document_name(chosen_name)
 	_load_text(str(arguments[0]))
 
 
@@ -1677,6 +1756,7 @@ func _web_save() -> void:
 	var name: String = patch.get("metadata", {}).get("name", "patch")
 	var file_name := name.to_lower().replace(" ", "-") + ".json"
 	JavaScriptBridge.download_buffer(text.to_utf8_buffer(), file_name, "application/json")
+	_set_document_name(file_name)
 	status_label.text = "downloaded %s" % file_name
 
 
@@ -1784,17 +1864,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	if key.pressed and key.keycode == KEY_Z:
 		octave = maxi(0, octave - 1)
+		_refresh_keyboard_range()
 		return
 	if key.pressed and key.keycode == KEY_X:
 		octave = mini(7, octave + 1)
+		_refresh_keyboard_range()
 		return
 
 	if not KEY_NOTES.has(key.keycode):
 		return
 	var note: int = octave * 12 + 12 + KEY_NOTES[key.keycode]
-	if key.pressed and not held_notes.has(note):
-		held_notes[note] = true
-		engine.note_on(note, 0.9)
-	elif not key.pressed and held_notes.has(note):
-		held_notes.erase(note)
-		engine.note_off(note)
+	if key.pressed:
+		_hold_note(note)
+	else:
+		_let_go_note(note)

@@ -534,6 +534,45 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the on-screen keyboard ---------------------------------------------------------
+	# It exists to answer "did the editor hear me", so the thing to check is that its
+	# lights follow what the engine was actually told, not what was clicked.
+	check(main.keyboard != null, "the editor has an on-screen keyboard")
+	main.engine.all_notes_off()
+	main.held_notes.clear()
+	main.keyboard.set_held_notes(main.held_notes)
+
+	var probe_note: int = main.octave * 12 + 12
+	main.keyboard.note_pressed.emit(probe_note)
+	check(main.held_notes.has(probe_note), "clicking a key sounds the note")
+	check(main.keyboard.held.has(probe_note), "and the key lights up")
+
+	main.keyboard.note_released.emit(probe_note)
+	check(not main.held_notes.has(probe_note), "releasing it stops the note")
+	check(not main.keyboard.held.has(probe_note), "and the light goes out")
+
+	# The mapping shown on the keys has to be the mapping the computer keyboard uses, or
+	# the letters are a lie and worse than nothing.
+	main._refresh_keyboard_range()
+	var mapped := 0
+	for keycode in main.KEY_NOTES:
+		var note: int = main.octave * 12 + 12 + main.KEY_NOTES[keycode]
+		if main.keyboard.key_labels.has(note):
+			mapped += 1
+	check(mapped == main.KEY_NOTES.size(),
+		"and every computer key is lettered on the key it plays (%d of %d)"
+			% [mapped, main.KEY_NOTES.size()])
+
+	# ---- the open document is named -----------------------------------------------------
+	await main._load_example("Delay Echo")
+	await process_frame
+	check(main.document_name == "delay-echo.json",
+		"opening a patch names it in the toolbar (%s)" % main.document_name)
+	await main._load_example("First Synth")
+	await process_frame
+	check(main.document_name == "first-synth.json",
+		"and opening another one renames it (%s)" % main.document_name)
+
 	# ---- adding a patch as a module ----------------------------------------------------
 	var before_import: int = main.patch["nodes"].size()
 	var delay_text := FileAccess.get_file_as_string("res://examples/delay-echo.json")
