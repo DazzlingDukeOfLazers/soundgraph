@@ -57,3 +57,4 @@ static func apply() -> void:
 	Design.use_palette(int(fetch("palette", Design.Palette.LAB)))
 	Design.ui_scale = int(fetch("ui_scale", Design.Scale.COMFORTABLE))
 	Design.reduced_motion = bool(fetch("reduced_motion", false))
+	Rack.density = int(fetch("rack_density", Rack.Density.INSTRUMENT))

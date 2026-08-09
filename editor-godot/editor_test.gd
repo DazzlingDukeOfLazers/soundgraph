@@ -534,6 +534,47 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the rack fits its content ---------------------------------------------------
+	# Module height was a flat 404 for everything, so a Gain with one knob got the same
+	# panel as a six-parameter filter and spent most of it on nothing.
+	var sparse := [{"type": "Gain"}]
+	var busy := [{"type": "StateVariableFilter"}]
+	Rack.density = Rack.Density.INSTRUMENT
+	var sparse_height: float = Rack.measure(sparse, main.registry)
+	var busy_height: float = Rack.measure(busy, main.registry)
+	check(busy_height > sparse_height,
+		"a module with more parameters needs a taller rack (%.0f vs %.0f)"
+			% [busy_height, sparse_height])
+
+	# Uniform within a rack, though: real modules share a rail, and a row of ragged panels
+	# stops looking like hardware. The fault was matching a *constant*, not matching.
+	var mixed: float = Rack.measure(sparse + busy, main.registry)
+	check(is_equal_approx(mixed, busy_height),
+		"and a mixed rack takes the height of its busiest module (%.0f)" % mixed)
+
+	# Three densities, and Compact really is compact.
+	Rack.density = Rack.Density.COMPACT
+	var compact: float = Rack.measure(busy, main.registry)
+	Rack.density = Rack.Density.ANALYSIS
+	var analysis: float = Rack.measure(busy, main.registry)
+	Rack.density = Rack.Density.INSTRUMENT
+	check(compact < busy_height and busy_height < analysis,
+		"the density modes are a real range (%.0f / %.0f / %.0f)"
+			% [compact, busy_height, analysis])
+	check(compact < 404.0,
+		"and Compact is shorter than the old fixed height (%.0f)" % compact)
+
+	# Category strips are muted so the signal colours keep the loudest voice. Two colour
+	# languages at the same volume is one the reader has to keep apart.
+	var loudest_category := 0.0
+	for category in Rack.CATEGORY_TINT:
+		loudest_category = maxf(loudest_category, Rack.category_tint(category).s)
+	var quietest_signal: float = minf(Design.AUDIO.s, minf(Design.CONTROL.s,
+		Design.TRIGGER.s))
+	check(loudest_category < quietest_signal,
+		"every category strip is less saturated than every signal colour (%.2f vs %.2f)"
+			% [loudest_category, quietest_signal])
+
 	# ---- the accent button is readable in every theme -------------------------------
 	# Checked on the button rather than on the token, which is the difference between a
 	# passing test and a working button: the contrast figures were fine the whole time

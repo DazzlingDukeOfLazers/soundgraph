@@ -746,6 +746,11 @@ func _build_toolbar() -> Control:
 	# moves on its own in this editor is off behind this: the signal glow and the grid
 	# fade, both of which say something the interface also says without moving.
 	view_popup.add_separator()
+	for index in Rack.DENSITY_NAMES.size():
+		view_popup.add_radio_check_item("Rack: %s" % Rack.DENSITY_NAMES[index],
+			40 + index)
+	view_popup.set_item_checked(view_popup.get_item_index(40 + Rack.density), true)
+	view_popup.add_separator()
 	for index in Design.PALETTE_NAMES.size():
 		view_popup.add_radio_check_item(Design.PALETTE_NAMES[index], 30 + index)
 	view_popup.add_separator()
@@ -864,6 +869,15 @@ func _on_file_menu(id: int) -> void:
 
 
 func _on_view_menu(id: int) -> void:
+	if id >= 40:
+		Rack.density = id - 40
+		Settings.store("rack_density", Rack.density)
+		for entry in Rack.DENSITY_NAMES.size():
+			view_popup.set_item_checked(view_popup.get_item_index(40 + entry),
+				entry == Rack.density)
+		rack.rebuild()
+		_say("rack: %s" % Rack.DENSITY_NAMES[Rack.density])
+		return
 	if id >= 30:
 		_use_palette(id - 30)
 		return
@@ -898,13 +912,21 @@ func _on_view_menu(id: int) -> void:
 func _use_palette(index: int) -> void:
 	Design.use_palette(index)
 	Settings.store("palette", index)
-	for entry in Design.PALETTE_NAMES.size():
-		view_popup.set_item_checked(view_popup.get_item_index(30 + entry), entry == index)
+	# Guarded, because this is reachable before the toolbar exists — from settings at
+	# startup, and from the screenshot tool, both of which set a palette without a menu
+	# to tick.
+	if view_popup != null:
+		for entry in Design.PALETTE_NAMES.size():
+			view_popup.set_item_checked(view_popup.get_item_index(30 + entry),
+				entry == index)
 
 	# The theme carries most of it. What it cannot reach is anything styled per widget —
 	# node titles, the port icons, the scope — so the graph is rebuilt, which is cheap and
 	# is the same path a reload takes.
 	_apply_theme()
+	# Nothing below exists until the editor has been built, and a palette can be set
+	if graph_edit == null:
+		return
 	# Per-instance overrides are invisible to a theme rebuild, so anything styled
 	# directly has to be restyled by hand. Without this the accent and panic buttons
 	# kept whatever palette was active when they were built and every other palette

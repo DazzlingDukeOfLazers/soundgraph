@@ -33,7 +33,51 @@ enum CableStyle { CATENARY, PCB }
 # up the way a real case does.
 const HP := 24.0
 const MIN_HP := 6
-const MODULE_HEIGHT := 404.0
+## How tall a module is, in three settings.
+##
+## It was a flat 404 for everything, so a Gain with one knob got the same panel as a
+## filter with six and spent most of it empty — half a screen of blank aluminium per
+## module. Height comes from content now: title, however many knob rows there are,
+## two rows of jacks, and a per-density allowance for the space between them.
+##
+## Compact spends nothing on that space. Instrument leaves a modest band, which is
+## what makes a rack read as hardware rather than as a list. Analysis leaves room for
+## a module to show what it is doing — and a simple oscillator stays short in all
+## three, because the point is not to fill the space but to stop reserving it.
+enum Density { COMPACT, INSTRUMENT, ANALYSIS }
+
+const DENSITY_NAMES := ["Compact", "Instrument", "Analysis"]
+const DENSITY_BAND := [0.0, 54.0, 150.0]
+
+static var density: int = Density.INSTRUMENT
+
+## The floor, so a module with no knobs at all is still a module.
+const MODULE_MIN_HEIGHT := 190.0
+
+## The height every module in this rack shares, worked out from the busiest one.
+##
+## Uniform on purpose: modules in a real case share a rail, and a rack of ragged
+## panels stops looking like hardware. What was wrong was not that they matched, it
+## was that they matched a constant — so a patch of two-knob oscillators reserved the
+## same 404px as a patch with a six-parameter filter in it, and spent the difference
+## on nothing.
+static var module_height := 404.0
+
+
+## The height a module needs for its own content, before the density band.
+static func content_height(parameters: int) -> float:
+	var knob_rows: int = int(ceil(parameters / 2.0))
+	return TITLE_BAND + 16.0 + knob_rows * KNOB_CELL.y + JACK_ROW_HEIGHT * 2.0 + 10.0
+
+
+## Recomputed whenever the rack is rebuilt or the density changes.
+static func measure(patch_nodes: Array, registry: Dictionary) -> float:
+	var tallest := MODULE_MIN_HEIGHT
+	for node in patch_nodes:
+		var descriptor: Dictionary = registry.get(str(node.get("type", "")), {})
+		tallest = maxf(tallest,
+			content_height(int(descriptor.get("parameters", []).size())))
+	return tallest + DENSITY_BAND[density]
 const RAIL := 16.0
 const ROW_GAP := 34.0
 const CASE_MARGIN := 26.0
@@ -62,8 +106,17 @@ const KNOB_BODY := Color(0.235, 0.251, 0.290)
 const KNOB_TRACK := Color(1, 1, 1, 0.13)
 const SELECTED := Color(0.43, 0.91, 0.72)
 
-# Category tints. Colour is decoration here, never the only carrier of meaning: every
-# module is also titled, and every jack is labelled.
+# Category tints, deliberately muted.
+#
+# These were at full saturation, which put a red AMPLIFIER stripe and an orange
+# FILTERS stripe in direct competition with the mint audio cable and the blue
+# modulation cable — two colour languages at the same volume, and the reader has to
+# keep them apart. The highest saturation in this application belongs to signal
+# semantics; a category is a hint about what a module is for, and a hint should look
+# like one. Colour was never the only carrier here anyway: every module is titled and
+# every jack is labelled.
+const CATEGORY_SATURATION := 0.42
+
 const CATEGORY_TINT := {
 	"Terminals": Color(0.55, 0.72, 1.00),
 	"Sources": Color(0.43, 0.91, 0.72),
@@ -73,6 +126,13 @@ const CATEGORY_TINT := {
 	"Modulation": Color(0.55, 0.86, 0.95),
 	"Maths": Color(0.72, 0.76, 0.84),
 }
+
+
+## A category colour, quietened so the signal colours keep the loudest voice.
+static func category_tint(category: String) -> Color:
+	var base: Color = CATEGORY_TINT.get(category, Color(0.72, 0.76, 0.84))
+	var muted := Color.from_hsv(base.h, base.s * CATEGORY_SATURATION, base.v)
+	return muted
 
 var registry: Dictionary = {}
 var patch: Dictionary = {}
@@ -139,6 +199,8 @@ func _ready() -> void:
 # ---------------------------------------------------------------------------------
 
 func rebuild() -> void:
+	# Before anything is placed, because every module is built against it.
+	module_height = measure(patch.get("nodes", []), registry)
 	for child in get_children():
 		if child is RackModule:
 			remove_child(child)
@@ -200,7 +262,7 @@ func _module_order() -> Array:
 		var id := str(node["id"])
 		ids.append(id)
 		var module: RackModule = _modules.get(id)
-		sizes[id] = module.size if module != null else Vector2(144, MODULE_HEIGHT)
+		sizes[id] = module.size if module != null else Vector2(144, module_height)
 	if ids.is_empty():
 		return []
 
@@ -271,7 +333,7 @@ func _relayout() -> void:
 			continue
 		if x > CASE_MARGIN and x + module.size.x > CASE_MARGIN + available:
 			x = CASE_MARGIN
-			y += MODULE_HEIGHT + RAIL * 2.0 + ROW_GAP
+			y += module_height + RAIL * 2.0 + ROW_GAP
 		module.position = Vector2(x, y)
 		x += module.size.x
 		row_widest = maxf(row_widest, x)
@@ -279,7 +341,7 @@ func _relayout() -> void:
 	# Room below the last row for cables to hang into. Without it a catenary between two
 	# modules on the bottom row is clipped off by the scroll extent.
 	_content_size = Vector2(row_widest + CASE_MARGIN,
-		y + MODULE_HEIGHT + RAIL + CASE_MARGIN + SAG_MAX * 0.5)
+		y + module_height + RAIL + CASE_MARGIN + SAG_MAX * 0.5)
 	custom_minimum_size = Vector2(0.0, _content_size.y)
 	queue_redraw()
 	if _cables != null:
@@ -311,8 +373,8 @@ func move_module_to(node_id: String, at: Vector2) -> void:
 		if module == null:
 			continue
 		var centre := module.position + module.size * 0.5
-		var a_row_below := centre.y > at.y + MODULE_HEIGHT * 0.5
-		var further_right := absf(centre.y - at.y) <= MODULE_HEIGHT * 0.5 and centre.x > at.x
+		var a_row_below := centre.y > at.y + module_height * 0.5
+		var further_right := absf(centre.y - at.y) <= module_height * 0.5 and centre.x > at.x
 		if a_row_below or further_right:
 			insert_at = index
 			break
@@ -363,12 +425,12 @@ func show_parameter(node_id: String, parameter: String, value: float) -> void:
 func _draw() -> void:
 	# Rails behind every row, drawn the full width so the case reads as continuous even
 	# where a row is not full.
-	var row_pitch := MODULE_HEIGHT + RAIL * 2.0 + ROW_GAP
+	var row_pitch := module_height + RAIL * 2.0 + ROW_GAP
 	var rows := int(ceil(maxf(_content_size.y - CASE_MARGIN, 1.0) / row_pitch))
 	for row in maxi(rows, 1):
 		var top := CASE_MARGIN + row * row_pitch
 		_draw_rail(Rect2(CASE_MARGIN * 0.5, top, size.x - CASE_MARGIN, RAIL))
-		_draw_rail(Rect2(CASE_MARGIN * 0.5, top + RAIL + MODULE_HEIGHT,
+		_draw_rail(Rect2(CASE_MARGIN * 0.5, top + RAIL + module_height,
 			size.x - CASE_MARGIN, RAIL))
 
 
@@ -543,7 +605,7 @@ class RackModule extends Control:
 		var needed := maxi(int(ceil(knob_columns * Rack.KNOB_CELL.x / Rack.HP)),
 			int(ceil(jack_columns * 46.0 / Rack.HP)) + 1)
 		var hp := maxi(Rack.MIN_HP, needed)
-		size = Vector2(hp * Rack.HP, Rack.MODULE_HEIGHT)
+		size = Vector2(hp * Rack.HP, Rack.module_height)
 		custom_minimum_size = size
 
 		var knobs: Dictionary = {}
@@ -569,6 +631,9 @@ class RackModule extends Control:
 		# Jacks along the bottom: inputs on their own row, outputs beneath, which is the
 		# convention the eye already has from the hardware.
 		_jacks.clear()
+		# Measured from the bottom, so the jack rows stay on the same line across a rack
+		# of modules with different numbers of knobs — which is what makes a row of them
+		# read as one instrument rather than several.
 		var jack_top := size.y - Rack.JACK_ROW_HEIGHT * 2.0 - 10.0
 		_place_jack_row(inputs, true, jack_top)
 		_place_jack_row(outputs, false, jack_top + Rack.JACK_ROW_HEIGHT)
@@ -622,9 +687,10 @@ class RackModule extends Control:
 			accept_event()
 
 	func _draw() -> void:
-		var font: Font = get_theme_default_font()
-		var tint: Color = Rack.CATEGORY_TINT.get(
-			str(descriptor.get("category", "")), Color(0.7, 0.7, 0.75))
+		var font: Font = Design.font(Design.WEIGHT_MEDIUM)
+		if font == null:
+			font = get_theme_default_font()
+		var tint: Color = Rack.category_tint(str(descriptor.get("category", "")))
 
 		# Panel, with a faint vertical gradient. Aluminium is not flat.
 		draw_rect(Rect2(Vector2.ZERO, size), Rack.PANEL)
@@ -676,10 +742,23 @@ class RackModule extends Control:
 			draw_circle(centre, Rack.JACK_RADIUS - 5.5, colour)
 
 		if font != null:
+			# Clipped to its own column rather than centred at full length.
+			#
+			# A jack label was drawn at whatever width the name happened to be, so on a
+			# narrow module "cutoff_mod" and "resonance" ran into each other and neither
+			# could be read. The name is available in full from the tooltip; what the panel
+			# needs is enough of it to tell one jack from the next.
 			var text := str(jack["name"])
-			var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
-			draw_string(font, centre + Vector2(-width * 0.5, Rack.JACK_RADIUS + 13.0),
-				text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, rack.ink_dim)
+			var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
+			if label_font == null:
+				label_font = font
+			var label_size := Design.scale(Design.SIZE_SECONDARY)
+			var column := Rack.JACK_ROW_HEIGHT - 4.0
+			var width: float = minf(label_font.get_string_size(text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, label_size).x, column)
+			draw_string(label_font,
+				centre + Vector2(-width * 0.5, Rack.JACK_RADIUS + 14.0), text,
+				HORIZONTAL_ALIGNMENT_CENTER, column, label_size, rack.ink_dim)
 
 
 # ---------------------------------------------------------------------------------
@@ -786,19 +865,31 @@ class Knob extends Control:
 
 		if font == null:
 			return
+		# Names in Medium at the secondary size, values in the tabular face at the
+		# numeric size — which is larger, not smaller.
+		#
+		# Both were 11px, and the value was being treated as metadata attached to the
+		# name. It is the other way round: the name tells you which knob this is, which
+		# you learn once, and the value tells you where it is set, which is what you came
+		# to read and what changes while you watch. At 11px it was the weakest text in
+		# the application.
+		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
+		var label_size := Design.scale(Design.SIZE_SECONDARY)
 		var name_text := str(descriptor["name"])
-		var name_width := font.get_string_size(name_text, HORIZONTAL_ALIGNMENT_LEFT,
-			-1, 11).x
-		draw_string(font, Vector2((size.x - name_width) * 0.5, size.y - 15.0), name_text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, rack.ink_dim)
+		var name_width := label_font.get_string_size(name_text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, label_size).x
+		draw_string(label_font, Vector2((size.x - name_width) * 0.5, size.y - 17.0),
+			name_text, HORIZONTAL_ALIGNMENT_LEFT, -1, label_size, rack.ink_dim)
 		var value_text := Rack.format_value(value())
 		if descriptor.has("enum"):
 			var options: Array = descriptor["enum"]
 			value_text = str(options[clampi(int(value()), 0, options.size() - 1)])
-		var value_width := font.get_string_size(value_text, HORIZONTAL_ALIGNMENT_LEFT,
-			-1, 11).x
-		draw_string(font, Vector2((size.x - value_width) * 0.5, size.y - 3.0), value_text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, rack.ink)
+		var value_font: Font = Design.numeric_font()
+		var value_size := Design.scale(Design.SIZE_NUMERIC)
+		var value_width := value_font.get_string_size(value_text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, value_size).x
+		draw_string(value_font, Vector2((size.x - value_width) * 0.5, size.y - 2.0),
+			value_text, HORIZONTAL_ALIGNMENT_LEFT, -1, value_size, rack.ink)
 
 
 static func format_value(value: float) -> String:

@@ -44,6 +44,16 @@ func _initialize() -> void:
 	for i in SETTLE_FRAMES:
 		await process_frame
 
+	# A seventh argument switches to a tab by name. After the settle loop, because
+	# before it there is no tab container to switch — the first attempt ran here on
+	# frame zero and found `views` still null.
+	if arguments.size() > 6 and arguments[6] != "":
+		for index in main.views.get_tab_count():
+			if main.views.get_tab_title(index).to_lower() == arguments[6].to_lower():
+				main.views.current_tab = index
+		for i in 10:
+			await process_frame
+
 	# A fifth argument holds a note down and pumps the graph, so the signal glow has
 	# something to show. A screenshot of a silent instrument cannot tell you whether
 	# the "this is running" cue works.
