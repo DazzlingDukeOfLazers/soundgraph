@@ -79,6 +79,26 @@ if(SOUNDGRAPH_NODE)
                 --verify $<TARGET_FILE:sg-render>)
 endif()
 
+# The design system's own claims: that the surface levels are a measurable ladder rather
+# than four names for one grey, that every text colour clears its contrast floor on every
+# surface it can land on, and that the font really is delivering the weights the hierarchy
+# is built out of. That last one is not hypothetical — the editor asked for bold through a
+# key Godot silently ignores and got Regular for months, which is most of why nothing in it
+# looked ranked.
+#
+# Needs Godot, so it is skipped rather than failed where there is none; the C++ suite is
+# what has to run everywhere.
+find_program(SOUNDGRAPH_GODOT
+    NAMES godot Godot_v4.7.1-stable_win64_console.exe Godot_v4.7.1-stable_win64.exe
+    PATHS "C:/Users/danie/Downloads/gofo/Godot_v4.7.1-stable_win64.exe")
+if(SOUNDGRAPH_GODOT)
+    add_test(NAME editor_design
+        COMMAND ${SOUNDGRAPH_GODOT} --headless --path ${CMAKE_SOURCE_DIR}/editor-godot
+                --script res://design_test.gd)
+else()
+    message(STATUS "Godot not found, so the design-system test will not run.")
+endif()
+
 # The port itself, measured against sfxr. A ratchet, not a target: the honest number today
 # is not 41, and what this catches is that number going *down* while something else is
 # being changed. Raise --min-pass whenever the port improves.

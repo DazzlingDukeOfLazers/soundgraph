@@ -534,6 +534,44 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the design system reached the widgets ------------------------------------------
+	# Setting a theme item Godot does not have is accepted and ignored, exactly like the
+	# font weight bug that started this pass — three of these were already in the code and
+	# had never done anything. So the guard's findings are a failure, not a warning.
+	check(Design.unknown_items.is_empty(),
+		"every theme item the editor sets is one Godot has%s"
+			% ("" if Design.unknown_items.is_empty() else ": " + ", ".join(Design.unknown_items)))
+
+	# Signal type is carried by shape as well as colour, so it survives a colour-blind
+	# viewer and a greyscale printout. Compared as pixels, because two icons that differ
+	# only in tint would pass any check that just asked whether they were both present.
+	var audio_icon: Image = main._port_icon("audio").get_image()
+	var control_icon: Image = main._port_icon("control").get_image()
+	var differing := 0
+	for y in audio_icon.get_height():
+		for x in audio_icon.get_width():
+			if absf(audio_icon.get_pixel(x, y).a - control_icon.get_pixel(x, y).a) > 0.5:
+				differing += 1
+	check(differing > 12,
+		"audio and control ports are different shapes, not just different colours (%d px)"
+			% differing)
+
+	# The node title has to be heavier than body text, which is only true because the
+	# weight axis works — see Design._weight_tag().
+	var sample_widget: GraphNode = main.widgets.values()[0]
+	var title_label: Label = null
+	for child in sample_widget.get_titlebar_hbox().get_children():
+		if child is Label and str((child as Label).text) != "":
+			title_label = child
+			break
+	check(title_label != null and title_label.has_theme_font_override("font"),
+		"node titles are styled directly, since GraphNode has no title font in its theme")
+	if title_label != null:
+		var title_size: int = title_label.get_theme_font_size("font_size")
+		check(title_size > Design.scale(Design.SIZE_BODY),
+			"and are larger than body text (%d vs %d)"
+				% [title_size, Design.scale(Design.SIZE_BODY)])
+
 	# ---- the on-screen keyboard ---------------------------------------------------------
 	# It exists to answer "did the editor hear me", so the thing to check is that its
 	# lights follow what the engine was actually told, not what was clicked.

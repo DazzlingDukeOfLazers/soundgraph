@@ -189,32 +189,127 @@ func _ready() -> void:
 ## One theme on the root, inherited by everything — including the GraphNodes generated for
 ## each patch node, which would otherwise each need their own overrides.
 func _apply_theme() -> void:
-	var face := load(FONT_PATH)
-	if face == null:
+	if Design.font() == null:
 		push_warning("Atkinson Hyperlegible is missing; falling back to the default font")
 		return
 
-	var bold := FontVariation.new()
-	bold.base_font = face
-	bold.variation_opentype = {&"wght": FONT_WEIGHT}
-
+	Design.unknown_items.clear()
 	var editor_theme := Theme.new()
-	editor_theme.default_font = bold
-	editor_theme.default_font_size = FONT_SIZE
+	editor_theme.default_font = Design.font(Design.WEIGHT_REGULAR)
+	editor_theme.default_font_size = Design.scale(Design.SIZE_BODY)
 
-	# Text colour is set per type rather than globally: Godot has no single "text colour",
-	# and leaving these at the defaults would undo the contrast the font is here for.
-	for type_name in ["Label", "Button", "CheckButton", "OptionButton", "LineEdit",
-			"RichTextLabel", "ItemList", "PopupMenu", "TabBar"]:
-		editor_theme.set_color("font_color", type_name, INK)
-	editor_theme.set_color("default_color", "RichTextLabel", INK)
-	editor_theme.set_color("font_placeholder_color", "LineEdit", INK_DIM)
-	editor_theme.set_color("title_color", "GraphNode", INK)
+	# ---- type by role ---------------------------------------------------------------
+	# Regular for labels, Medium for anything you operate. That single distinction does
+	# more for hierarchy than any amount of colour, and it was unavailable until the
+	# weight axis started working — see Design._weight_tag().
+	Design.set_type(editor_theme, "Label", Design.WEIGHT_REGULAR, Design.SIZE_BODY,
+		Design.INK_NORMAL)
+	Design.set_type(editor_theme, "RichTextLabel", Design.WEIGHT_REGULAR, Design.SIZE_BODY,
+		Design.INK_NORMAL, "default_color")
+	for pressable in ["Button", "CheckButton", "CheckBox", "OptionButton", "MenuButton"]:
+		Design.set_type(editor_theme, pressable, Design.WEIGHT_MEDIUM, Design.SIZE_CONTROL,
+			Design.INK_NORMAL)
+	Design.set_type(editor_theme, "LineEdit", Design.WEIGHT_REGULAR, Design.SIZE_CONTROL,
+		Design.INK_BRIGHT)
+	Design.set_type(editor_theme, "PopupMenu", Design.WEIGHT_REGULAR, Design.SIZE_BODY,
+		Design.INK_NORMAL)
+	Design.set_type(editor_theme, "ItemList", Design.WEIGHT_REGULAR, Design.SIZE_BODY,
+		Design.INK_NORMAL)
+	Design.set_type(editor_theme, "TabBar", Design.WEIGHT_MEDIUM, Design.SIZE_CONTROL,
+		Design.INK_SECOND, "font_unselected_color")
+	Design.set_colour(editor_theme, "font_selected_color", "TabBar", Design.INK_BRIGHT)
+	Design.set_colour(editor_theme, "font_hovered_color", "TabBar", Design.INK_NORMAL)
+	Design.set_colour(editor_theme, "font_placeholder_color", "LineEdit", Design.INK_SECOND)
+	Design.set_colour(editor_theme, "font_disabled_color", "Button", Design.INK_DISABLED)
+	Design.set_colour(editor_theme, "font_hover_color", "Button", Design.INK_BRIGHT)
+	Design.set_constant(editor_theme, "outline_size", "Label", 0)
 
-	# Roomier controls. A slider you can actually hit matters as much as type you can
-	# read, and both are the same principle.
-	editor_theme.set_constant("outline_size", "Label", 0)
+	# ---- surfaces -------------------------------------------------------------------
+	Design.set_box(editor_theme, "panel", "PanelContainer",
+		Design.panel(Design.Surface.NODE))
+	Design.set_box(editor_theme, "panel", "Panel", Design.panel(Design.Surface.NODE))
+
+	# A button is a raised thing you press into the active level. Three states, each a
+	# real step, plus a focus ring that is its own state rather than a recoloured hover —
+	# keyboard focus has to be visible on its own terms.
+	Design.set_box(editor_theme, "normal", "Button",
+		Design.padded_panel(Design.Surface.RAISED, Design.SPACE_M, Design.SPACE_S,
+			Design.RADIUS_BUTTON))
+	var hovered := Design.padded_panel(Design.Surface.ACTIVE, Design.SPACE_M,
+		Design.SPACE_S, Design.RADIUS_BUTTON)
+	Design.set_box(editor_theme, "hover", "Button", hovered)
+	var pressed := Design.padded_panel(Design.Surface.ACTIVE, Design.SPACE_M,
+		Design.SPACE_S, Design.RADIUS_BUTTON)
+	pressed.border_color = Design.ACCENT
+	Design.set_box(editor_theme, "pressed", "Button", pressed)
+	var disabled := Design.padded_panel(Design.Surface.NODE, Design.SPACE_M,
+		Design.SPACE_S, Design.RADIUS_BUTTON)
+	Design.set_box(editor_theme, "disabled", "Button", disabled)
+	Design.set_box(editor_theme, "focus", "Button", Design.focus_ring())
+	Design.set_box(editor_theme, "focus", "LineEdit", Design.focus_ring())
+	Design.set_box(editor_theme, "normal", "LineEdit",
+		Design.padded_panel(Design.Surface.CANVAS, Design.SPACE_M, Design.SPACE_S,
+			Design.RADIUS_BUTTON))
+	Design.set_box(editor_theme, "panel", "PopupMenu",
+		Design.padded_panel(Design.Surface.RAISED, Design.SPACE_S, Design.SPACE_S))
+
+	# ---- nodes ----------------------------------------------------------------------
+	# A node is one level above the canvas and its header one above that, so the header
+	# reads as part of the node rather than as a window title bar bolted to it.
+	var node_body := Design.padded_panel(Design.Surface.NODE, Design.NODE_PADDING_H,
+		Design.NODE_PADDING_V, Design.RADIUS_NODE)
+	node_body.border_width_top = 0
+	Design.set_box(editor_theme, "panel", "GraphNode", node_body)
+	var node_head := Design.padded_panel(Design.Surface.RAISED, Design.NODE_PADDING_H,
+		Design.SPACE_S, Design.RADIUS_NODE)
+	node_head.corner_radius_bottom_left = 0
+	node_head.corner_radius_bottom_right = 0
+	node_head.border_width_bottom = 0
+	Design.set_box(editor_theme, "titlebar", "GraphNode", node_head)
+
+	# Selection is meant to be findable from peripheral vision: a 2px accent outline on
+	# both halves, and the whole node lifted a level. One of those alone reads as a
+	# hover; together they read as "this is the one".
+	var selected_body := node_body.duplicate() as StyleBoxFlat
+	selected_body.bg_color = Design.SURFACES[Design.Surface.RAISED]
+	selected_body.set_border_width_all(2)
+	selected_body.border_width_top = 0
+	selected_body.border_color = Design.ACCENT
+	Design.set_box(editor_theme, "panel_selected", "GraphNode", selected_body)
+	var selected_head := node_head.duplicate() as StyleBoxFlat
+	selected_head.bg_color = Design.SURFACES[Design.Surface.ACTIVE]
+	selected_head.set_border_width_all(2)
+	selected_head.border_width_bottom = 0
+	selected_head.border_color = Design.ACCENT
+	Design.set_box(editor_theme, "titlebar_selected", "GraphNode", selected_head)
+
+	# GraphNode has no title colour or title font in the theme at all — the title is a
+	# plain Label inside the titlebar, so it is styled per node in _style_node_title().
+	# The previous code set "title_color" here and it had never done anything, which is
+	# the same silent-ignore this guard exists to catch.
+	Design.set_constant(editor_theme, "separation", "GraphNode", Design.SPACE_S)
+
+	# ---- canvas ---------------------------------------------------------------------
+	# The grid was competing with the node borders and the cables. Minor lines are now
+	# barely there and major lines only just present: invisible while you read a node,
+	# and enough to align against the moment you start moving one.
+	Design.set_colour(editor_theme, "grid_minor", "GraphEdit", Color("1a1d22"))
+	Design.set_colour(editor_theme, "grid_major", "GraphEdit", Color("222630"))
+	Design.set_colour(editor_theme, "activity", "GraphEdit", Design.ACCENT)
+	Design.set_box(editor_theme, "panel", "GraphEdit",
+		Design.panel(Design.Surface.CANVAS, 0, 0))
+
+	# Ports: the jack you see stays small, the target you have to hit does not. WCAG 2.2
+	# asks for 24x24 as a minimum and this is a patching interface, where missing the
+	# port is the single most common way to fail at the main thing the app does.
+	Design.set_constant(editor_theme, "port_hotzone_inner_extent", "GraphEdit",
+		Design.scale(14))
+	Design.set_constant(editor_theme, "port_hotzone_outer_extent", "GraphEdit",
+		Design.scale(18))
+
 	theme = editor_theme
+	if not Design.unknown_items.is_empty():
+		push_warning("theme items Godot does not know: " + ", ".join(Design.unknown_items))
 
 
 func _fatal(message: String) -> void:
@@ -680,16 +775,23 @@ func _create_widget(node: Dictionary) -> void:
 	widget.set_meta("patch_id", node["id"])
 	widget.set_meta("type", type_name)
 
+	_style_node_title(widget, descriptor)
+
 	var inputs: Array = descriptor.get("inputs", [])
 	var outputs: Array = descriptor.get("outputs", [])
 
-	# One row per port pair. The port name and its unit are written out, so the type is
-	# never carried by colour alone.
+	# One row per port pair, at a fixed height off the spacing scale. Rows that each took
+	# whatever height their label happened to measure is most of what "crowded" meant.
 	var rows: int = maxi(inputs.size(), outputs.size())
 	for row in rows:
 		var line := HBoxContainer.new()
+		line.custom_minimum_size.y = Design.scale(Design.NODE_ROW_HEIGHT)
+		line.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
+		line.alignment = BoxContainer.ALIGNMENT_CENTER
+
 		var left := Label.new()
 		left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		left.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		if row < inputs.size():
 			left.text = _port_caption(inputs[row])
 			if inputs[row].get("required", false):
@@ -700,6 +802,7 @@ func _create_widget(node: Dictionary) -> void:
 
 		var right := Label.new()
 		right.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		right.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if row < outputs.size():
 			right.text = _port_caption(outputs[row])
@@ -715,11 +818,97 @@ func _create_widget(node: Dictionary) -> void:
 			has_output, _slot_type(outputs[row]["type"]) if has_output else 0,
 			TYPE_COLOURS.get(outputs[row]["type"], Color.WHITE) if has_output else Color.WHITE)
 
+		# Shape as well as colour. Audio is a filled circle, control a diamond, event a
+		# square, note a ring — so the signal type survives a colour-blind viewer, a
+		# greyscale printout and a projector that has given up on saturation. Colour was
+		# doing this on its own, which meant for some people it was not being done.
+		if has_input:
+			widget.set_slot_custom_icon_left(row, _port_icon(inputs[row]["type"]))
+		if has_output:
+			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
+
 	_add_parameter_rows(widget, node, descriptor)
 
 	graph_edit.add_child(widget)
 	widgets[node["id"]] = widget
 	ids[widget.name] = node["id"]
+
+
+## GraphNode draws its title as a plain Label in the titlebar, with no theme entry of its
+## own — so a title font and colour set on the theme does nothing at all, which is what the
+## previous code did. Styled here instead, and while the titlebar is open, the node's
+## category goes in on the right: one quiet word saying what kind of thing this is.
+func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
+	var titlebar := widget.get_titlebar_hbox()
+	if titlebar == null:
+		return
+	for child in titlebar.get_children():
+		var label := child as Label
+		if label == null:
+			continue
+		label.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+		label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NODE_TITLE))
+		label.add_theme_color_override("font_color", Design.INK_BRIGHT)
+		break
+
+	var category := str(descriptor.get("category", ""))
+	if category == "":
+		return
+	var tag := Label.new()
+	tag.text = category.to_upper()
+	tag.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	tag.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_HEADING))
+	tag.add_theme_color_override("font_color", Design.INK_SECOND)
+	tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# Right-aligned and last, which reserves that end of the header for node actions
+	# later without the category having to move when they arrive.
+	tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	titlebar.add_child(tag)
+
+
+## A small texture per signal type, drawn once and shared.
+##
+## Filled circle for audio, diamond for control, square for event, ring for note. The port
+## you see stays around 10px; the region that accepts a drag is set far larger by the
+## GraphEdit hotzone constants, so this is about telling the types apart, not about aim.
+static var _port_icons: Dictionary = {}
+
+func _port_icon(type_name: String) -> Texture2D:
+	if _port_icons.has(type_name):
+		return _port_icons[type_name]
+
+	const SIZE := 20
+	var image := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0, 0, 0, 0))
+	var colour: Color = TYPE_COLOURS.get(type_name, Design.INK_NORMAL)
+	var centre := Vector2(SIZE * 0.5 - 0.5, SIZE * 0.5 - 0.5)
+	var radius := 5.0
+
+	for y in SIZE:
+		for x in SIZE:
+			var point := Vector2(x, y) - centre
+			var distance := 0.0
+			match type_name:
+				"control":
+					distance = absf(point.x) + absf(point.y)          # diamond
+				"event":
+					distance = maxf(absf(point.x), absf(point.y)) * 1.35   # square
+				_:
+					distance = point.length()                          # circle
+			var edge := radius + 1.0
+			if distance > edge:
+				continue
+			# A dark rim, so a port stays visible against a node body of any lightness.
+			var alpha: float = clampf(edge - distance, 0.0, 1.0)
+			var fill := colour
+			if type_name == "note" and distance < radius - 2.0:
+				fill = Design.SURFACES[Design.Surface.NODE]        # ring, not disc
+			image.set_pixel(x, y, Color(fill.r, fill.g, fill.b, alpha))
+
+	var texture := ImageTexture.create_from_image(image)
+	_port_icons[type_name] = texture
+	return texture
 
 
 func _port_caption(port: Dictionary) -> String:
