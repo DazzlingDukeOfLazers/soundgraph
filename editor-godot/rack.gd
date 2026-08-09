@@ -137,6 +137,13 @@ static func category_tint(category: String) -> Color:
 var registry: Dictionary = {}
 var patch: Dictionary = {}
 var type_colours: Dictionary = {}
+
+## Returns the samples on a node's output, or an empty array. Set by the editor.
+##
+## A callable rather than a reference to the engine, so the rack goes on knowing
+## nothing about the extension — it asks a question and gets numbers back, which is
+## also what makes it testable without an audio device.
+var read_port: Callable = Callable()
 var ink := Color(0.96, 0.96, 0.97)
 var ink_dim := Color(0.72, 0.74, 0.78)
 
@@ -197,6 +204,34 @@ func _ready() -> void:
 # ---------------------------------------------------------------------------------
 # Building
 # ---------------------------------------------------------------------------------
+
+## Redraws the analysis displays. Called by the editor while the rack is on screen.
+##
+## Every third frame rather than every one: this is a meter, and a meter that updates
+## twenty times a second is already faster than anybody can read. Doing it per frame
+## would mean a call across the extension boundary per module per frame for a picture
+## nobody could tell apart from this one.
+var _display_tick := 0
+
+## The module showing a given patch node, or null.
+func module_for(node_id: String):
+	for child in get_children():
+		if child is RackModule and (child as RackModule).node_id == node_id:
+			return child
+	return null
+
+
+func refresh_displays() -> void:
+	if density != Density.ANALYSIS:
+		return
+	_display_tick += 1
+	if _display_tick % 3 != 0:
+		return
+	for child in get_children():
+		if child is RackModule:
+			(child as RackModule).accumulate()
+			child.queue_redraw()
+
 
 func rebuild() -> void:
 	# Before anything is placed, because every module is built against it.
@@ -686,6 +721,100 @@ class RackModule extends Control:
 			rack.queue_redraw()
 			accept_event()
 
+	## What this module is doing, in the band Analysis density reserves.
+	##
+	## The whole argument for a hardware metaphor is that hardware tells you something
+	## by being looked at — a meter moves, a scope draws, an envelope lamp dims. A
+	## panel that only holds knobs is a picture of hardware rather than an instrument,
+	## and the blank middle of these modules was the clearest evidence of it.
+	##
+	## Read from the running graph's own buffers, like the scope in the inspector: this
+	## draws what is on the wire rather than a guess at what ought to be.
+	## How much history each display keeps.
+	##
+	## A single read returns one processing block — 64 samples. At 110 Hz that is a
+	## seventh of a cycle, so a sawtooth drew as a straight diagonal and every display
+	## looked like a ramp regardless of what was actually on the wire. Six blocks is
+	## about a cycle at the low end and several at the top, which is enough to see the
+	## shape of the thing.
+	const HISTORY := 384
+
+	var _history := PackedFloat32Array()
+
+	## Pulls the latest block onto the end of the history and drops the oldest.
+	func accumulate() -> void:
+		if rack == null or not rack.read_port.is_valid():
+			return
+		var outputs: Array = descriptor.get("outputs", [])
+		if outputs.is_empty():
+			return
+		var block: PackedFloat32Array = rack.read_port.call(node_id,
+			str(outputs[0]["name"]))
+		if block.is_empty():
+			return
+		_history.append_array(block)
+		if _history.size() > HISTORY:
+			_history = _history.slice(_history.size() - HISTORY)
+
+
+	func _draw_analysis() -> void:
+		if Rack.density != Rack.Density.ANALYSIS or rack == null:
+			return
+		if not rack.read_port.is_valid():
+			return
+		var outputs: Array = descriptor.get("outputs", [])
+		if outputs.is_empty():
+			return
+
+		var knob_rows: int = int(ceil(descriptor.get("parameters", []).size() / 2.0))
+		var top: float = Rack.TITLE_BAND + 16.0 + knob_rows * Rack.KNOB_CELL.y + 6.0
+		var bottom: float = size.y - Rack.JACK_ROW_HEIGHT * 2.0 - 16.0
+		if bottom - top < 24.0:
+			return
+		var area := Rect2(12.0, top, size.x - 24.0, bottom - top)
+
+		# Recessed into the panel, the way a display on a real module is.
+		draw_rect(area, Rack.JACK_HOLE)
+		draw_rect(area, Rack.PANEL_EDGE, false, 1.0)
+
+		var samples := _history
+		var colour: Color = rack.type_colours.get(str(outputs[0]["type"]),
+			Design.INK_NORMAL)
+		if samples.size() < 2:
+			return
+
+		# Audio is drawn against a fixed full scale so two modules can be compared.
+		# Control is drawn against its own range, because a frequency wire sits at 440
+		# and would otherwise be a flat line pinned to the top of every display.
+		var is_audio := str(outputs[0]["type"]) == "audio"
+		var low := INF
+		var high := -INF
+		for value in samples:
+			low = minf(low, value)
+			high = maxf(high, value)
+		if is_audio:
+			low = -1.0
+			high = 1.0
+		elif high - low < 1e-6:
+			# A control that is holding still is a flat line through the middle, which is
+			# the truth about it and reads better than a full-scale line at the top.
+			low -= 1.0
+			high += 1.0
+
+		var middle := area.position.y + area.size.y * 0.5
+		draw_line(Vector2(area.position.x, middle),
+			Vector2(area.end.x, middle), Rack.KNOB_TRACK, 1.0)
+
+		var points := PackedVector2Array()
+		points.resize(samples.size())
+		var step := area.size.x / float(samples.size() - 1)
+		for i in samples.size():
+			var t: float = inverse_lerp(low, high, clampf(samples[i], low, high))
+			points[i] = Vector2(area.position.x + i * step,
+				area.end.y - 3.0 - t * (area.size.y - 6.0))
+		draw_polyline(points, colour, 1.5, true)
+
+
 	func _draw() -> void:
 		var font: Font = Design.font(Design.WEIGHT_MEDIUM)
 		if font == null:
@@ -715,6 +844,8 @@ class RackModule extends Control:
 			# sits on the same baseline at the same size, as a row of panels does.
 			draw_string(font, Vector2((size.x - width) * 0.5, 26.0), label,
 				HORIZONTAL_ALIGNMENT_LEFT, size.x - 12.0, 14, rack.ink)
+
+		_draw_analysis()
 
 		for jack in _jacks:
 			_draw_jack(font, jack)

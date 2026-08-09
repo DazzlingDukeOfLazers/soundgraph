@@ -47,6 +47,13 @@ func _initialize() -> void:
 	# A seventh argument switches to a tab by name. After the settle loop, because
 	# before it there is no tab container to switch — the first attempt ran here on
 	# frame zero and found `views` still null.
+	# An eighth argument sets the rack density.
+	if arguments.size() > 7 and arguments[7] != "":
+		Rack.density = int(arguments[7])
+		main.rack.rebuild()
+		for i in 4:
+			await process_frame
+
 	if arguments.size() > 6 and arguments[6] != "":
 		for index in main.views.get_tab_count():
 			if main.views.get_tab_title(index).to_lower() == arguments[6].to_lower():

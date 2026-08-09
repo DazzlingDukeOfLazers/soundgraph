@@ -11,6 +11,10 @@ extends SceneTree
 var failures := 0
 
 
+func rack_ready(main) -> void:
+	main.rack.rebuild()
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -533,6 +537,45 @@ func _initialize() -> void:
 			if not is_equal_approx(mode.value(), floor(mode.value())):
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
+
+	# ---- rack modules show what they are doing --------------------------------------
+	# The argument for a hardware metaphor is that hardware tells you something by being
+	# looked at. A panel that only holds knobs is a picture of hardware.
+	main.views.current_tab = 1
+	Rack.density = Rack.Density.ANALYSIS
+	rack_ready(main)
+	main.engine.note_on(45, 0.9)
+	for i in 40:
+		main.engine.fill_playback(playback, 256)
+		main.rack.refresh_displays()
+		await process_frame
+
+	var osc_module = main.rack.module_for("osc")
+	var filter_module = main.rack.module_for("filter")
+	check(osc_module != null and filter_module != null,
+		"the oscillator and the filter both have modules")
+	if osc_module != null and filter_module != null:
+		check(osc_module._history.size() > 64,
+			"a display keeps more than one block of history (%d samples)"
+				% osc_module._history.size())
+		check(osc_module._history.size() <= osc_module.HISTORY,
+			"and stops growing at its limit (%d)" % osc_module._history.size())
+
+		# The one that matters: the filter's display is not the oscillator's. If every
+		# module drew the same trace the panel would be decoration.
+		var differ := 0
+		var shared: int = mini(osc_module._history.size(), filter_module._history.size())
+		for i in shared:
+			if absf(osc_module._history[i] - filter_module._history[i]) > 0.01:
+				differ += 1
+		check(differ > shared / 10,
+			"and the filter shows something different from its own input (%d of %d samples)"
+				% [differ, shared])
+
+	main.engine.all_notes_off()
+	Rack.density = Rack.Density.INSTRUMENT
+	main.views.current_tab = 0
+	await process_frame
 
 	# ---- the rack fits its content ---------------------------------------------------
 	# Module height was a flat 404 for everything, so a Gain with one knob got the same

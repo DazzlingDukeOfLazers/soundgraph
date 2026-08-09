@@ -530,6 +530,11 @@ func _build_ui() -> void:
 	rack = Rack.new()
 	rack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rack.type_colours = TYPE_COLOURS
+	# The rack asks a question and gets numbers; it never learns what an engine is.
+	rack.read_port = func(node_id: String, port: String) -> PackedFloat32Array:
+		if engine == null or not engine.is_loaded():
+			return PackedFloat32Array()
+		return engine.get_port_signal(node_id, port)
 	rack.ink = INK
 	rack.ink_dim = INK_DIM
 	rack.parameter_changed.connect(_on_rack_parameter_changed)
@@ -1325,6 +1330,8 @@ func _process(_delta: float) -> void:
 		engine.fill_playback(playback, playback.get_frames_available())
 	_update_scope()
 	_update_port_levels(_delta)
+	if rack != null and rack.is_visible_in_tree():
+		rack.refresh_displays()
 	if message_label != null and message_label.text != "" \
 			and Time.get_ticks_msec() > _message_clears_at:
 		message_label.text = ""
