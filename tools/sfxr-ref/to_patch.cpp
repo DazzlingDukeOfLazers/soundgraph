@@ -39,10 +39,20 @@ std::string number(double value) {
     return buffer;
 }
 
+// Column and lane rather than pixels. A patch is a graph and the editor has a proper
+// layout engine, but a file with no coordinates at all opens as a heap in anything that
+// does not — so the mapper says roughly where things go and lets a real editor improve on
+// it. The grid matches the Godot editor's own column pitch and row step, so a generated
+// patch lands on the same lines a hand-placed one does.
+constexpr double kColumnPitch = 400.0;
+constexpr double kRowStep = 200.0;
+
 struct Node {
     std::string id;
     std::string type;
     std::vector<std::pair<std::string, double>> parameters;
+    int column = 0;
+    int lane = 0;
 };
 
 struct Connection {
@@ -281,6 +291,7 @@ const char* oscillator_type(int wave_type) {
 std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     std::vector<Node> nodes;
     std::vector<Connection> connections;
+    int column = 0;
 
     // sfxr's noise is a random wavetable read at the oscillator's period, so its pitch
     // matters as much as any other waveform's. NoiseOscillator takes a frequency, so the
@@ -289,7 +300,7 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     // --- pitch chain -----------------------------------------------------------------
     std::string pitch_source;
     {
-        nodes.push_back({"pitch", "Constant", {{"value", base_frequency_hz(p)}}});
+        nodes.push_back({"pitch", "Constant", {{"value", base_frequency_hz(p)}}, column++, 0});
         pitch_source = "pitch";
 
         const double slide = slide_semitones_per_second(p);
@@ -300,7 +311,8 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                              "Slide",
                              {{"slide", slide},
                               {"acceleration", acceleration},
-                              {"limit", limit}}});
+                              {"limit", limit}},
+                             column++, 0});
             connections.push_back({pitch_source, "out", "slide", "frequency"});
             pitch_source = "slide";
         }
@@ -309,7 +321,8 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
             nodes.push_back({"arpeggio",
                              "Arpeggio",
                              {{"time", arpeggio_time_seconds(p)},
-                              {"interval", arpeggio_interval_semitones(p)}}});
+                              {"interval", arpeggio_interval_semitones(p)}},
+                             column++, 0});
             connections.push_back({pitch_source, pitch_source == "pitch" ? "out" : "frequency",
                                    "arpeggio", "frequency"});
             pitch_source = "arpeggio";
@@ -317,7 +330,7 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     }
 
     // --- oscillator ------------------------------------------------------------------
-    Node oscillator{"osc", oscillator_type(p.wave_type), {}};
+    Node oscillator{"osc", oscillator_type(p.wave_type), {}, column++, 0};
     if (p.wave_type == 0) {
         oscillator.parameters.push_back({"pulse_width", pulse_width(p)});
         oscillator.parameters.push_back({"pulse_width_sweep", pulse_width_sweep(p)});
@@ -339,7 +352,8 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                          {{"rate", vibrato_rate_hz(p)},
                           {"shape", 0.0},
                           {"amount", vibrato_octaves(p)},
-                          {"offset", 0.0}}});
+                          {"offset", 0.0}},
+                         oscillator.column - 1, -1});
         connections.push_back({"vibrato", "out", "osc", "fm"});
     }
 
@@ -353,7 +367,8 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                          {{"cutoff", lowpass_cutoff_hz(p)},
                           {"resonance", lowpass_resonance(p)},
                           {"mode", 0.0},
-                          {"cutoff_sweep", lowpass_sweep_octaves_per_second(p)}}});
+                          {"cutoff_sweep", lowpass_sweep_octaves_per_second(p)}},
+                         column++, 0});
         connections.push_back({signal, signal_port, "lowpass", "in"});
         signal = "lowpass";
         signal_port = "out";
@@ -373,7 +388,8 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                          "OnePoleFilter",
                          {{"cutoff", highpass_cutoff_hz(p)},
                           {"mode", 1.0},
-                          {"cutoff_sweep", highpass_sweep_octaves_per_second(p)}}});
+                          {"cutoff_sweep", highpass_sweep_octaves_per_second(p)}},
+                         column++, 0});
         connections.push_back({signal, signal_port, "highpass", "in"});
         signal = "highpass";
         signal_port = "out";
@@ -384,7 +400,8 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                          "Phaser",
                          {{"offset", phaser_offset_ms(p)},
                           {"sweep", phaser_sweep_ms_per_second(p)},
-                          {"depth", 1.0}}});
+                          {"depth", 1.0}},
+                         column++, 0});
         connections.push_back({signal, signal_port, "phaser", "in"});
         signal = "phaser";
         signal_port = "out";
@@ -395,22 +412,24 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     // again. That is exactly sfxr's envelope: it fires once and runs to the end, and it is
     // deliberately *not* wired to the retrigger below — sfxr's repeat restarts the pitch
     // and leaves the amplitude alone.
-    nodes.push_back({"trigger", "Constant", {{"value", 1.0}}});
+    nodes.push_back({"trigger", "Constant", {{"value", 1.0}}, column - 2, 1});
     nodes.push_back({"envelope",
                      "AhdEnvelope",
                      {{"attack", envelope_seconds(p.p_env_attack)},
                       {"hold", envelope_seconds(p.p_env_sustain)},
                       {"decay", envelope_seconds(p.p_env_decay)},
-                      {"punch", static_cast<double>(p.p_env_punch)}}});
+                      {"punch", static_cast<double>(p.p_env_punch)}},
+                     column - 1, 1});
     connections.push_back({"trigger", "out", "envelope", "gate"});
 
-    nodes.push_back({"amp", "Gain", {{"gain", master_gain(p)}}});
+    nodes.push_back({"amp", "Gain", {{"gain", master_gain(p)}}, column++, 0});
     connections.push_back({signal, signal_port, "amp", "in"});
     connections.push_back({"envelope", "out", "amp", "gain"});
 
     // --- retrigger -------------------------------------------------------------------
     if (repeat_active(p)) {
-        nodes.push_back({"repeat", "Retrigger", {{"rate", repeat_rate_hz(p)}, {"width", 1.0}}});
+        nodes.push_back({"repeat", "Retrigger", {{"rate", repeat_rate_hz(p)}, {"width", 1.0}},
+                         0, -1});
         for (Node& node : nodes) {
             if (node.id == "slide") connections.push_back({"repeat", "gate", "slide", "gate"});
             if (node.id == "arpeggio")
@@ -418,7 +437,8 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
         }
     }
 
-    nodes.push_back({"out", "StereoOutput", {{"level", 1.0}, {"safety_limit", 0.0}}});
+    nodes.push_back({"out", "StereoOutput", {{"level", 1.0}, {"safety_limit", 0.0}},
+                     column++, 0});
     connections.push_back({"amp", "out", "out", "left"});
     connections.push_back({"amp", "out", "out", "right"});
 
@@ -434,7 +454,12 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     json += "  \"nodes\": [\n";
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         json += "    {\n      \"id\": \"" + nodes[i].id + "\",\n";
-        json += "      \"type\": \"" + nodes[i].type + "\"";
+        json += "      \"type\": \"" + nodes[i].type + "\",\n";
+        // A rough placement, not a considered one. The editor's layout engine will do
+        // better and is welcome to; the point is that a file with no coordinates opens as
+        // a heap in anything that has no layout engine at all.
+        json += "      \"position\": {\"x\": " + number(nodes[i].column * kColumnPitch) +
+                ", \"y\": " + number(nodes[i].lane * kRowStep) + "}";
         if (!nodes[i].parameters.empty()) {
             json += ",\n      \"parameters\": {\n";
             for (std::size_t k = 0; k < nodes[i].parameters.size(); ++k) {

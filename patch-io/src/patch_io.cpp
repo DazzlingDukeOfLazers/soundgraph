@@ -111,6 +111,23 @@ bool parse_patch(const std::string& text,
     }
     out.schema_version = static_cast<int>(version->as_number());
 
+    // Presentation only. An unreadable hint is dropped rather than reported: a patch whose
+    // rack order is malformed still makes exactly the right sound, and refusing to open it
+    // over a picture would be the wrong trade.
+    if (const json::Value* arrangement = root.find("arrangement")) {
+        if (arrangement->is_object()) {
+            if (const json::Value* order = arrangement->find("rack_order")) {
+                if (order->is_array()) {
+                    for (const json::Value& id : order->array()) {
+                        if (id.is_string()) {
+                            out.arrangement.rack_order.push_back(id.as_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (const json::Value* metadata = root.find("metadata")) {
         if (metadata->is_object()) {
             for (const auto& entry : metadata->object()) {
@@ -347,6 +364,16 @@ bool load_patch(const std::string& path,
 std::string write_patch(const GraphDescription& description, bool pretty) {
     json::Value root = json::Value::make_object();
     root.set("schema_version", json::Value(description.schema_version));
+
+    if (!description.arrangement.empty()) {
+        json::Value arrangement = json::Value::make_object();
+        json::Value order = json::Value::make_array();
+        for (const std::string& id : description.arrangement.rack_order) {
+            order.push_back(json::Value(id));
+        }
+        arrangement.set("rack_order", std::move(order));
+        root.set("arrangement", std::move(arrangement));
+    }
 
     if (!description.metadata.empty() || !description.tags.empty()) {
         json::Value metadata = json::Value::make_object();

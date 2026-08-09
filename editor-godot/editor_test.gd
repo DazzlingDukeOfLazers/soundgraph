@@ -706,8 +706,8 @@ func _initialize() -> void:
 				% [landed, again.size()])
 
 		var saved: String = main.engine.format_patch(JSON.stringify(main.patch, "  "))
-		check(saved.contains("rack_order"),
-			"and the order is written into the patch the core serialises")
+		check(saved.contains("arrangement") and saved.contains("rack_order"),
+			"and the order is written into the patch as an arrangement hint")
 
 		await main._load_text(saved)
 		await process_frame

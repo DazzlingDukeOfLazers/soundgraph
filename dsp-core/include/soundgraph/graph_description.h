@@ -86,8 +86,20 @@ struct MetadataEntry {
     std::string value;
 };
 
+// Presentation hints. Carried through the format and ignored by everything that makes
+// sound — dropping the lot costs a nicer picture and nothing else.
+//
+// Positions and waypoints are not here: they belong on the node and the connection they
+// describe. This is for hints about a whole view, which have nothing to hang off.
+struct Arrangement {
+    std::vector<std::string> rack_order;   // node ids, left to right in the rack view
+
+    bool empty() const { return rack_order.empty(); }
+};
+
 struct GraphDescription {
     int schema_version = kSchemaVersion;
+    Arrangement arrangement;
     std::vector<MetadataEntry> metadata;
     std::vector<std::string> tags;
     std::vector<NodeDescription> nodes;

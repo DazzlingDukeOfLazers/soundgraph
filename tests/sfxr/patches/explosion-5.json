@@ -9,6 +9,7 @@
     {
       "id": "pitch",
       "type": "Constant",
+      "position": {"x": 0, "y": 0},
       "parameters": {
         "value": 19.0317
       }
@@ -16,6 +17,7 @@
     {
       "id": "slide",
       "type": "Slide",
+      "position": {"x": 400, "y": 0},
       "parameters": {
         "slide": -243.58,
         "acceleration": 0,
@@ -25,6 +27,7 @@
     {
       "id": "osc",
       "type": "NoiseOscillator",
+      "position": {"x": 800, "y": 0},
       "parameters": {
         "steps": 32,
         "seed": 12345
@@ -33,6 +36,7 @@
     {
       "id": "vibrato",
       "type": "LFO",
+      "position": {"x": 400, "y": -200},
       "parameters": {
         "rate": 15.1763,
         "shape": 0,
@@ -43,6 +47,7 @@
     {
       "id": "phaser",
       "type": "Phaser",
+      "position": {"x": 1200, "y": 0},
       "parameters": {
         "offset": 0.381973,
         "sweep": -1.99207,
@@ -52,6 +57,7 @@
     {
       "id": "trigger",
       "type": "Constant",
+      "position": {"x": 800, "y": 200},
       "parameters": {
         "value": 1
       }
@@ -59,6 +65,7 @@
     {
       "id": "envelope",
       "type": "AhdEnvelope",
+      "position": {"x": 1200, "y": 200},
       "parameters": {
         "attack": 0,
         "hold": 0.200883,
@@ -69,6 +76,7 @@
     {
       "id": "amp",
       "type": "Gain",
+      "position": {"x": 1600, "y": 0},
       "parameters": {
         "gain": 0.05
       }
@@ -76,6 +84,7 @@
     {
       "id": "out",
       "type": "StereoOutput",
+      "position": {"x": 2000, "y": 0},
       "parameters": {
         "level": 1,
         "safety_limit": 0

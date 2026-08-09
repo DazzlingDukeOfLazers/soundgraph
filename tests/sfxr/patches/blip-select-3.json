@@ -9,6 +9,7 @@
     {
       "id": "pitch",
       "type": "Constant",
+      "position": {"x": 0, "y": 0},
       "parameters": {
         "value": 721.763
       }
@@ -16,6 +17,7 @@
     {
       "id": "slide",
       "type": "Slide",
+      "position": {"x": 400, "y": 0},
       "parameters": {
         "slide": -0,
         "acceleration": 0,
@@ -24,11 +26,13 @@
     },
     {
       "id": "osc",
-      "type": "SawOscillator"
+      "type": "SawOscillator",
+      "position": {"x": 800, "y": 0}
     },
     {
       "id": "highpass",
       "type": "OnePoleFilter",
+      "position": {"x": 1200, "y": 0},
       "parameters": {
         "cutoff": 56.1499,
         "mode": 1,
@@ -38,6 +42,7 @@
     {
       "id": "phaser",
       "type": "Phaser",
+      "position": {"x": 1600, "y": 0},
       "parameters": {
         "offset": 0,
         "sweep": 0,
@@ -47,6 +52,7 @@
     {
       "id": "trigger",
       "type": "Constant",
+      "position": {"x": 1200, "y": 200},
       "parameters": {
         "value": 1
       }
@@ -54,6 +60,7 @@
     {
       "id": "envelope",
       "type": "AhdEnvelope",
+      "position": {"x": 1600, "y": 200},
       "parameters": {
         "attack": 0,
         "hold": 0.0240847,
@@ -64,6 +71,7 @@
     {
       "id": "amp",
       "type": "Gain",
+      "position": {"x": 2000, "y": 0},
       "parameters": {
         "gain": 0.05
       }
@@ -71,6 +79,7 @@
     {
       "id": "out",
       "type": "StereoOutput",
+      "position": {"x": 2400, "y": 0},
       "parameters": {
         "level": 1,
         "safety_limit": 0

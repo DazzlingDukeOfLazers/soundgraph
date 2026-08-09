@@ -345,4 +345,69 @@ TEST(an_empty_patch_is_valid_but_silent) {
     CHECK(has_code(diagnostics, "empty_patch"));
 }
 
+TEST(arrangement_hints_survive_a_round_trip) {
+    // Presentation only, and optional — but optional does not mean droppable. An editor
+    // that arranges a rack and saves has to get the same rack back on open, or the hint
+    // is decorative and nobody will trust it.
+    const char* text = R"({
+      "schema_version": 1,
+      "arrangement": {"rack_order": ["out", "amp", "osc"]},
+      "nodes": [
+        {"id": "osc", "type": "SineOscillator"},
+        {"id": "amp", "type": "Gain"},
+        {"id": "out", "type": "StereoOutput"}
+      ],
+      "connections": [
+        {"from": {"node": "osc", "port": "out"}, "to": {"node": "amp", "port": "in"}},
+        {"from": {"node": "amp", "port": "out"}, "to": {"node": "out", "port": "left"}}
+      ]
+    })";
+
+    std::vector<soundgraph::Diagnostic> diagnostics;
+    soundgraph::GraphDescription description;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+    CHECK(description.arrangement.rack_order.size() == 3);
+    CHECK(description.arrangement.rack_order[0] == "out");
+    CHECK(description.arrangement.rack_order[2] == "osc");
+
+    const std::string written = soundgraph::write_patch(description);
+    soundgraph::GraphDescription reloaded;
+    std::vector<soundgraph::Diagnostic> again;
+    CHECK(soundgraph::parse_patch(written, reloaded, again));
+    CHECK(reloaded.arrangement.rack_order == description.arrangement.rack_order);
+}
+
+TEST(a_patch_with_no_arrangement_does_not_grow_one) {
+    // The hint is optional in both directions: a file that never had one must not come
+    // back with an empty object in it, or every patch in the repository changes the first
+    // time it is opened and saved.
+    const char* text = R"({
+      "schema_version": 1,
+      "nodes": [{"id": "out", "type": "StereoOutput"}],
+      "connections": []
+    })";
+
+    std::vector<soundgraph::Diagnostic> diagnostics;
+    soundgraph::GraphDescription description;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+    CHECK(description.arrangement.empty());
+    CHECK(soundgraph::write_patch(description).find("arrangement") == std::string::npos);
+}
+
+TEST(a_malformed_arrangement_is_ignored_rather_than_fatal) {
+    // A patch whose rack order is nonsense still makes exactly the right sound. Refusing
+    // to open it over a picture would be the wrong trade.
+    const char* text = R"({
+      "schema_version": 1,
+      "arrangement": {"rack_order": "not an array"},
+      "nodes": [{"id": "out", "type": "StereoOutput"}],
+      "connections": []
+    })";
+
+    std::vector<soundgraph::Diagnostic> diagnostics;
+    soundgraph::GraphDescription description;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+    CHECK(description.arrangement.empty());
+}
+
 TEST_MAIN("patch io tests")

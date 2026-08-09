@@ -12,6 +12,18 @@
       "type": "integer",
       "const": 1
     },
+    "arrangement": {
+      "description": "Optional presentation hints. Never affects what a patch sounds like, and a runtime that only wants to make sound should ignore this whole object. Node positions and cable waypoints stay on the elements they describe; this is for hints about a whole view, which have nothing to hang off. Every field is optional and dropping any of them costs a nicer picture and nothing else.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rack_order": {
+          "description": "Left-to-right order of modules in the rack view. Ids not in the patch are ignored, and nodes missing from the list are appended, so an out-of-date list degrades rather than breaks.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/node_id" }
+        }
+      }
+    },
     "metadata": {
       "type": "object",
       "additionalProperties": true,
