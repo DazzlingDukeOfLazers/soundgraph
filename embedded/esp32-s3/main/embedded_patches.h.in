@@ -1,0 +1,20 @@
+// Generated from tests/golden/cases.json by main/CMakeLists.txt. Do not edit.
+//
+// The golden manifest is the single definition of what the golden set is, so it is also
+// the definition of what this firmware has to carry. Both halves of that — which files to
+// embed, and the name each one answers to — used to be hand-written here and drifted the
+// first time cases were added.
+#pragma once
+
+extern "C" {
+@SG_PATCH_EXTERNS@
+}
+
+struct EmbeddedPatch {
+    const char* name;
+    const char* text;
+};
+
+inline constexpr EmbeddedPatch kEmbeddedPatches[] = {
+@SG_PATCH_TABLE@
+};

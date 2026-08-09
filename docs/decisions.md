@@ -621,3 +621,38 @@ recorded nothing.
 cycle after 60 ms of continuous pitch sliding — integer phase accumulation against float —
 and below the highpass corner a single square edge landing one window later swings the
 envelope metric by more than 20 dB. The pitch trajectories match; the phase does not.
+
+## 2026-08-08 — Compute from a sample count, do not accumulate
+
+Decision:
+`Slide` and `Phaser` derive their swept quantity from a sample counter rather than adding a
+small step every sample. Both stay in float.
+
+Reason:
+The ESP32 disagreed with MSVC on exactly these two of the eighteen golden cases, at 1.03e-4
+and 1.42e-4 against a 1e-4 tolerance. Where they failed said why: the slide parted company
+at sample 32455 of 36000 while matching at the start, which is accumulated rounding error
+growing with the total; the phaser failed at sample 1177, which is not.
+
+Adding `rate * dt` every sample lets the error grow with the number of samples. The closed
+form of the same integral — `(slide + acceleration*t/2) * t` — is one multiply-add and its
+error is a fixed ulp rather than a growing one. For the phaser it matters more sharply than
+that: a swept delay reads its line at a fractional position, so a few ulps can land on the
+other side of a sample boundary and interpolate between a different pair, which is a step
+rather than a nudge.
+
+Deliberately still float. The ESP32-S3 emulates doubles in software, and buying agreement
+with a per-sample double add on the audio path is the wrong trade when a better formula
+costs nothing — it is both faster, having no loop-carried dependency, and more accurate.
+
+Alternatives:
+Raising the ESP32 tolerance (hides a real defect and makes every future comparison weaker);
+double accumulators (real cost on the target that needs the cycles most).
+
+Consequences:
+The slide's worst-case device difference fell from 1.03e-4 to 4.77e-6, and the phaser's from
+1.42e-4 to 9.16e-5. All eighteen golden cases now agree across MSVC/x64, Clang/WASM and
+Xtensa/ESP32-S3. Two vectors were re-recorded; both are unchanged in character.
+
+The phaser remains the worst case by an order of magnitude, and that is inherent: fractional
+delay has a discretisation cliff that no amount of precision removes, only makes rarer.

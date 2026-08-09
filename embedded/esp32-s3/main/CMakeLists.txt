@@ -26,19 +26,46 @@ if(NOT SG_BOARD_RESULT EQUAL 0)
 endif()
 
 # Patches baked into the firmware: the demo patch that plays at boot, and every golden
-# case so the host can verify this target against the same vectors native and WASM use.
-set(SG_EMBED_PATCHES
-    ${SG_ROOT}/examples/patches/first-synth.json
-    ${SG_ROOT}/tests/golden/cases/sine.json
-    ${SG_ROOT}/tests/golden/cases/saw.json
-    ${SG_ROOT}/tests/golden/cases/square.json
-    ${SG_ROOT}/tests/golden/cases/noise.json
-    ${SG_ROOT}/tests/golden/cases/noise-pink.json
-    ${SG_ROOT}/tests/golden/cases/lfo.json
-    ${SG_ROOT}/tests/golden/cases/adsr.json
-    ${SG_ROOT}/tests/golden/cases/filter-sweep.json
-    ${SG_ROOT}/tests/golden/cases/delay-feedback.json
-)
+# case, so the host can verify this target against the same vectors native and WASM use.
+#
+# Read out of the golden manifest rather than listed here. This was a hand-written list
+# twice over — the files to embed, and a name-to-symbol table in main.cpp — and both went
+# stale the moment eight cases were added. The device answered "no embedded patch named
+# 'slide'" for every one of them, which reads like a device problem and is a build-script
+# problem. tests/golden/cases.json is the single definition of what the golden set is; it
+# should be the only place that knows.
+file(READ ${SG_ROOT}/tests/golden/cases.json SG_GOLDEN_MANIFEST)
+string(JSON SG_CASE_COUNT LENGTH "${SG_GOLDEN_MANIFEST}" cases)
+
+set(SG_EMBED_PATCHES ${SG_ROOT}/examples/patches/first-synth.json)
+set(SG_PATCH_EXTERNS "")
+set(SG_PATCH_TABLE "")
+
+# The boot patch is not a golden case, so it is named explicitly; the rest come from the
+# manifest in its own order.
+set(SG_PATCH_NAMES "first-synth")
+math(EXPR SG_LAST_CASE "${SG_CASE_COUNT} - 1")
+foreach(index RANGE ${SG_LAST_CASE})
+    string(JSON SG_CASE_NAME GET "${SG_GOLDEN_MANIFEST}" cases ${index} name)
+    list(APPEND SG_EMBED_PATCHES ${SG_ROOT}/tests/golden/cases/${SG_CASE_NAME}.json)
+    list(APPEND SG_PATCH_NAMES ${SG_CASE_NAME})
+endforeach()
+
+# ESP-IDF turns each embedded file into _binary_<name>_start, with every character that is
+# not a letter or a digit replaced by an underscore. Deriving the symbol the same way is
+# what lets the table below be generated rather than typed.
+foreach(patch_name IN LISTS SG_PATCH_NAMES)
+    string(REGEX REPLACE "[^A-Za-z0-9]" "_" SG_SYMBOL "${patch_name}")
+    string(APPEND SG_PATCH_EXTERNS
+        "extern const char _binary_${SG_SYMBOL}_json_start[];
+")
+    string(APPEND SG_PATCH_TABLE
+        "    {\"${patch_name}\", _binary_${SG_SYMBOL}_json_start},
+")
+endforeach()
+
+configure_file(${CMAKE_CURRENT_LIST_DIR}/embedded_patches.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_patches.h @ONLY)
 
 idf_component_register(
     SRCS main.cpp codec_init.cpp

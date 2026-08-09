@@ -199,8 +199,7 @@ public:
     }
 
     void reset() override {
-        semitones_ = 0.0f;
-        elapsed_ = 0.0f;
+        sample_index_ = 0;
         gate_was_open_ = false;
         started_ = false;
         start_frequency_ = 0.0f;
@@ -221,19 +220,30 @@ public:
         const float slide = parameter(kSlide);
         const float acceleration = parameter(kAcceleration);
         const float limit = parameter(kLimit);
-        const float dt = 1.0f / sample_rate_;
 
         for (int i = 0; i < context.frames; ++i) {
             const bool open = gate_open(gate, i);
             if ((open && !gate_was_open_) || !started_) {
-                semitones_ = 0.0f;
-                elapsed_ = 0.0f;
+                sample_index_ = 0;
                 started_ = true;
                 start_frequency_ = frequency[i];
             }
             gate_was_open_ = open;
 
-            float bent = frequency[i] * std::pow(2.0f, semitones_ / 12.0f);
+            // Computed from the sample count rather than accumulated. Adding a small
+            // step to a running total every sample lets the rounding error grow with the
+            // total, and over a long slide the two ends of a render disagree by more than
+            // the tolerance: the ESP32 and MSVC parted company at sample 32455 of 36000
+            // while matching perfectly at the start. The closed form of
+            // integral(slide + acceleration*t) dt is exact in one multiply-add, and its
+            // error is a fixed ulp rather than a growing one.
+            //
+            // Deliberately still float. The ESP32-S3 emulates doubles in software, and
+            // buying agreement with a per-sample double add on the audio path is the wrong
+            // trade when a better formula costs nothing.
+            const float t = static_cast<float>(sample_index_) / sample_rate_;
+            const float semitones = (slide + 0.5f * acceleration * t) * t;
+            float bent = frequency[i] * std::pow(2.0f, semitones / 12.0f);
 
             // The limit is a stop, not a fold: whichever side of it the slide started on
             // is the side it stays on. Written this way so the same parameter works for a
@@ -247,16 +257,13 @@ public:
             }
 
             out[i] = bent;
-
-            semitones_ += (slide + acceleration * elapsed_) * dt;
-            elapsed_ += dt;
+            sample_index_++;
         }
     }
 
 private:
     float sample_rate_ = 48000.0f;
-    float semitones_ = 0.0f;
-    float elapsed_ = 0.0f;
+    long sample_index_ = 0;
     float start_frequency_ = 0.0f;
     bool gate_was_open_ = false;
     bool started_ = false;
@@ -391,8 +398,7 @@ public:
             sample = 0.0f;
         }
         write_index_ = 0;
-        offset_ms_ = 0.0f;
-        started_ = false;
+        sample_index_ = 0;
     }
 
     void process(const ProcessContext& context) override {
@@ -407,19 +413,21 @@ public:
             return;
         }
 
-        if (!started_) {
-            offset_ms_ = parameter(kOffset);
-            started_ = true;
-        }
-
         const int capacity = static_cast<int>(line_.size());
+        const float start_offset = parameter(kOffset);
         const float sweep = parameter(kSweep);
         const float depth = parameter(kDepth);
-        const float dt = 1.0f / sample_rate_;
 
         for (int i = 0; i < context.frames; ++i) {
+            // From the sample count, not a running total. A swept delay reads the line
+            // at a fractional position, so a rounding difference of a few ulps can land on
+            // the other side of a sample boundary and pick a different pair to interpolate
+            // between — which is a step, not a nudge, and is why this drifted past
+            // tolerance on the ESP32 within the first 1200 samples.
+            const float swept = start_offset +
+                sweep * static_cast<float>(sample_index_) / sample_rate_;
             const float offset_ms =
-                offset_in != nullptr ? offset_in[i] : offset_ms_;
+                offset_in != nullptr ? offset_in[i] : dsp::clampf(swept, 0.0f, kMaxPhaserMs);
             const float delay_samples = dsp::clampf(offset_ms, 0.0f, kMaxPhaserMs) *
                                         0.001f * sample_rate_;
 
@@ -438,7 +446,7 @@ public:
             out[i] = in[i] + delayed * depth;
 
             write_index_ = (write_index_ + 1) % capacity;
-            offset_ms_ = dsp::clampf(offset_ms_ + sweep * dt, 0.0f, kMaxPhaserMs);
+            sample_index_++;
         }
     }
 
@@ -446,8 +454,7 @@ private:
     float sample_rate_ = 48000.0f;
     std::vector<float> line_;
     int write_index_ = 0;
-    float offset_ms_ = 0.0f;
-    bool started_ = false;
+    long sample_index_ = 0;
 };
 
 // ---------------------------------------------------------------------------------

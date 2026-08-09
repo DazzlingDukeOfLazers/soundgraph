@@ -66,36 +66,11 @@ constexpr char kNvsPatchKey[] = "patch";
 // Embedded patches
 // ---------------------------------------------------------------------------------
 
-extern "C" {
-extern const char _binary_first_synth_json_start[];
-extern const char _binary_sine_json_start[];
-extern const char _binary_saw_json_start[];
-extern const char _binary_square_json_start[];
-extern const char _binary_noise_json_start[];
-extern const char _binary_noise_pink_json_start[];
-extern const char _binary_lfo_json_start[];
-extern const char _binary_adsr_json_start[];
-extern const char _binary_filter_sweep_json_start[];
-extern const char _binary_delay_feedback_json_start[];
-}
-
-struct EmbeddedPatch {
-    const char* name;
-    const char* text;
-};
-
-const EmbeddedPatch kEmbeddedPatches[] = {
-    {"first-synth", _binary_first_synth_json_start},
-    {"sine", _binary_sine_json_start},
-    {"saw", _binary_saw_json_start},
-    {"square", _binary_square_json_start},
-    {"noise", _binary_noise_json_start},
-    {"noise-pink", _binary_noise_pink_json_start},
-    {"lfo", _binary_lfo_json_start},
-    {"adsr", _binary_adsr_json_start},
-    {"filter-sweep", _binary_filter_sweep_json_start},
-    {"delay-feedback", _binary_delay_feedback_json_start},
-};
+// The embedded patch table is generated from tests/golden/cases.json at build time; see
+// main/CMakeLists.txt. It was written by hand until eight golden cases were added and the
+// device reported "no embedded patch named 'slide'" for every one of them — which sounds
+// like a device fault and was a stale list.
+#include "embedded_patches.h"
 
 const char* find_embedded_patch(const std::string& name) {
     for (const EmbeddedPatch& patch : kEmbeddedPatches) {
