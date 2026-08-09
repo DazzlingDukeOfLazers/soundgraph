@@ -443,6 +443,74 @@ TEST(note_input_falls_back_to_the_note_still_held) {
     CHECK_NEAR(harness.output("gate")[0], 1.0, 1e-6);
 }
 
+// The bug this guards: a one-shot patch played by jabbing at a key sounded once and then
+// went quiet. Two notes overlapping keep the gate high the whole way through, so an AHD
+// envelope watching the gate never sees a second rising edge. The trigger output exists to
+// carry "a note started" through a signal that otherwise only says "a note is held".
+TEST(note_input_triggers_on_a_note_played_over_a_held_one) {
+    // Long enough that a whole pulse fits inside one block with room to spare, so "the
+    // pulse ended" and "the pulse never came" are distinguishable.
+    constexpr int kBlock = 256;
+    NodeHarness harness("NoteInput", kBlock, kSampleRate);
+    auto send = [&](int note) {
+        soundgraph::NoteEvent event;
+        event.kind = soundgraph::NoteEvent::Kind::NoteOn;
+        event.note = note;
+        event.velocity = 1.0f;
+        harness.node().handle_note_event(event);
+    };
+    auto pulsed = [&]() {
+        for (int i = 0; i < kBlock; ++i) {
+            if (harness.output("trigger")[i] > 0.5f) return true;
+        }
+        return false;
+    };
+    auto gate_ever_low = [&]() {
+        for (int i = 0; i < kBlock; ++i) {
+            if (harness.output("gate")[i] < 0.5f) return true;
+        }
+        return false;
+    };
+
+    send(60);
+    harness.process();
+    CHECK(pulsed());
+
+    // Nothing happened here, so nothing should fire. This is what separates a trigger from
+    // a gate: without it the whole test would pass against the old behaviour, where the
+    // trigger and the gate were the same signal.
+    harness.process();
+    CHECK(!pulsed());
+
+    // The second note arrives with the first still down, which is the case that failed.
+    send(64);
+    harness.process();
+    CHECK(pulsed());
+    // And it is genuinely the overlapping case: nothing released the gate in between, so
+    // an edge detector watching the gate would have had nothing to find.
+    CHECK(!gate_ever_low());
+}
+
+TEST(note_input_trigger_is_a_pulse_not_a_level) {
+    NodeHarness harness("NoteInput", 4096, kSampleRate);
+    soundgraph::NoteEvent event;
+    event.kind = soundgraph::NoteEvent::Kind::NoteOn;
+    event.note = 60;
+    event.velocity = 1.0f;
+    harness.node().handle_note_event(event);
+    harness.process();
+
+    int high = 0;
+    for (int i = 0; i < 4096; ++i) {
+        if (harness.output("trigger")[i] > 0.5f) high++;
+    }
+    // About a millisecond, and over well before the block ends — a trigger that stayed
+    // high would be a gate by another name and would retrigger nothing.
+    CHECK(high > 0 && high < 4096);
+    CHECK_NEAR(static_cast<double>(high) / kSampleRate, 0.001, 0.0005);
+    CHECK_NEAR(harness.output("trigger")[4095], 0.0, 1e-6);
+}
+
 TEST(note_input_transpose_shifts_by_semitones) {
     NodeHarness harness("NoteInput", 64, kSampleRate);
     harness.set("transpose", 12.0f);

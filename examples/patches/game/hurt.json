@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "metadata": {
-    "name": "hit-hurt",
-    "description": "Generated from sfxr parameters by sfxr-ref patch. Do not edit by hand.",
-    "tags": ["sfxr"]
+    "name": "hurt",
+    "description": "Taking damage. Generated from sfxr case hit-hurt-2 by tools/game-sounds.mjs. Do not edit by hand.",
+    "tags": ["sfxr", "game"]
   },
   "nodes": [
     {
@@ -91,7 +91,7 @@
       "to": {"node": "phaser", "port": "in"}
     },
     {
-      "from": {"node": "trigger", "port": "gate"},
+      "from": {"node": "trigger", "port": "trigger"},
       "to": {"node": "envelope", "port": "gate"}
     },
     {
@@ -101,6 +101,10 @@
     {
       "from": {"node": "envelope", "port": "out"},
       "to": {"node": "amp", "port": "gain"}
+    },
+    {
+      "from": {"node": "trigger", "port": "trigger"},
+      "to": {"node": "slide", "port": "gate"}
     },
     {
       "from": {"node": "amp", "port": "out"},

@@ -56,6 +56,12 @@ and a repo-local `.venv` with pyserial and esptool.
   the firmware carrying all eighteen embedded golden patches — the earlier numbers were a
   different binary, so they were not evidence about this one.
 - One-click deploy from the web editor over Web Serial (written, never clicked — see below).
+- `NoteInput.trigger`, and every generated patch rewired to it, so a one-shot fires on every
+  note instead of only on the first of an overlapping run. Four notes that used to make one
+  burst now make four.
+- Two generated-file drift traps closed with scripts that both sync and `--check`, wired
+  into the main suite: `tools/game-sounds.mjs` (the eight game sounds, whose recipe used to
+  live only in a shell history) and `tools/mirror-examples.mjs` (`editor-godot/examples`).
 - Godot editor: undo/redo, layered layout with crossing reduction and straightening,
   PCB-style cable routing with draggable waypoints, grid tiers that mean something,
   intent search with per-row Add buttons, Atkinson Hyperlegible throughout.
@@ -132,9 +138,20 @@ somewhere other than the cause.
   then awaits a coroutine that never resolves. It *hangs* instead of printing the parse
   error. `editor_test.gd` now bails out early; if a run ever hangs again, look for a parse
   error first.
-- **`editor-godot/examples/` is build output** mirrored from `examples/patches/`. It goes
-  stale the moment an example is edited without rebuilding the extension. The editor now
-  prefers the repository copy, but the mirror still exists for exported builds.
+- **`editor-godot/examples/` is build output** mirrored from `examples/patches/`. It has now
+  gone stale twice, by two different routes: first as a POST_BUILD step that only ran when
+  the extension relinked, then as an always-run target in the *Godot* build directory —
+  which nobody runs when only a patch has changed. `tools/mirror-examples.mjs` does the sync
+  now, and `godot_examples_are_mirrored` in the main suite is what notices. The lesson is
+  narrower than "mirror carefully": **a guard that lives in one build only guards that
+  build.**
+- **A gate is not a trigger.** A one-shot patch gated by `NoteInput.gate` fired once and
+  then went quiet under rolling key presses, because overlapping notes never let the gate
+  fall and an AHD envelope has no edge to find. Worse in the sandbox, where `all_notes_off()`
+  followed by `note_on()` in the same frame produced *no* low sample at all — control events
+  drain at block boundaries — so it worked or didn't depending on where the block edge fell.
+  `NoteInput.trigger` pulses on every note; percussion takes the trigger, anything that
+  sustains takes the gate.
 - A **`WebAssembly.Module` cannot be cloned into an AudioWorklet** — separate agent
   cluster — and it fails silently, with no throw and no error event.
 - **RTS-pulse resets are stateful** on the USB-Serial-JTAG bridge; the second pulse parks

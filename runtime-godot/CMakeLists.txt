@@ -117,16 +117,22 @@ add_custom_command(TARGET soundgraph_godot POST_BUILD
 #
 # These were copied by the POST_BUILD above, which only runs when the extension itself
 # relinks — so editing or regenerating a patch left editor-godot/examples holding the
-# previous one, and the editor went on showing a file that no longer existed anywhere else.
-# Nothing failed; it was just quietly out of date, which is the same shape of bug as the
-# firmware's stale source list and is worth spending a target on.
-add_custom_target(soundgraph_godot_examples ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${SOUNDGRAPH_GODOT_EXAMPLES}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${SOUNDGRAPH_ROOT}/examples/patches/first-synth.json ${SOUNDGRAPH_GODOT_EXAMPLES}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${SOUNDGRAPH_ROOT}/examples/patches/delay-echo.json ${SOUNDGRAPH_GODOT_EXAMPLES}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${SOUNDGRAPH_ROOT}/examples/patches/game ${SOUNDGRAPH_GODOT_EXAMPLES}/game
-    COMMENT "Mirroring the example patches into editor-godot/examples"
-)
+# previous one. Making it an always-run target fixed that here, and here is a separate
+# build directory that nobody runs when only a patch has changed: regenerating the sfxr
+# corpus left the mirror stale a second time, by a different route.
+#
+# The sync itself now lives in tools/mirror-examples.mjs, outside any one build, and the
+# main test suite checks it. This target is the convenience, not the guarantee — and it
+# walks the tree rather than naming three paths, so a new example is not a fourth way to
+# be out of date.
+find_program(SOUNDGRAPH_MIRROR_NODE node)
+if(SOUNDGRAPH_MIRROR_NODE)
+    add_custom_target(soundgraph_godot_examples ALL
+        COMMAND ${SOUNDGRAPH_MIRROR_NODE} ${SOUNDGRAPH_ROOT}/tools/mirror-examples.mjs
+        COMMENT "Mirroring the example patches into editor-godot/examples"
+    )
+else()
+    message(WARNING
+        "node was not found, so editor-godot/examples will not be mirrored. "
+        "Run tools/mirror-examples.mjs by hand after changing an example patch.")
+endif()

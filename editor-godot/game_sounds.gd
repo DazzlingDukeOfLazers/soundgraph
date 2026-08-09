@@ -97,20 +97,26 @@ func load_sound(sound_name: String, patch_path: String) -> bool:
 
 ## Fires a sound from the beginning.
 ##
-## The patches are gated by a NoteInput, so firing one is playing a note — which is also
-## what makes them usable as modules and playable in the editor. The note is released
-## first: an AHD envelope triggers on the gate's rising edge, so a note that was already
-## held would not give it one.
+## The patches are triggered by a NoteInput, so firing one is playing a note — which is
+## also what makes them usable as modules and playable in the editor.
 ##
-## The pitch is ignored by these patches, which take only the gate; a coin has a pitch of
-## its own. Passing one anyway means a patch that *does* use the frequency will follow it,
-## which is how a game would want to play a footstep at different pitches.
+## This used to release the note first, because an AHD envelope triggers on a rising edge
+## and a key already held gives it none. That worked most of the time, which is worse than
+## not working: control events are drained at block boundaries, so a release and a press in
+## the same frame produce no sample where the gate is low, and the envelope sees a gate
+## that never moved. A double jump fired one sound instead of two, sometimes, depending on
+## where the block edges fell. The patches now take NoteInput's `trigger` output, which
+## pulses on every note whether or not one is held, so the release is gone and so is the
+## intermittency.
+##
+## The pitch is ignored by these patches, which take only the trigger; a coin has a pitch
+## of its own. Passing one anyway means a patch that *does* use the frequency will follow
+## it, which is how a game would want to play a footstep at different pitches.
 func play(sound_name: String, note: int = 60) -> void:
 	var voice: Dictionary = _voices.get(sound_name, {})
 	if voice.is_empty():
 		push_warning("GameSounds: no sound named '%s'" % sound_name)
 		return
-	voice["engine"].all_notes_off()
 	voice["engine"].note_on(note, 1.0)
 
 

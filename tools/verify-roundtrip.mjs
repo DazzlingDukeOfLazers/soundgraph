@@ -18,7 +18,10 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const PATCHES = ['first-synth.json', 'delay-echo.json'];
+// game/jump.json earns its place by being generated rather than hand-written: it is the
+// one that uses whatever the mapper emitted most recently, so it is the one that notices
+// when the editor and the mapper disagree about a port that only just started existing.
+const PATCHES = ['first-synth.json', 'delay-echo.json', 'game/jump.json'];
 const RENDER_SECONDS = 2;
 const NOTES = '45,52,57';
 
@@ -112,7 +115,10 @@ try {
 
     for (const name of PATCHES) {
         const original = join(repoRoot, 'examples', 'patches', name);
-        const tripped = join(work, `tripped-${name}`);
+        // Flattened, because a patch named game/jump.json would otherwise want a
+        // subdirectory in the scratch dir that nothing creates, and the editor's failure
+        // to write there reads exactly like a refusal to round trip the patch.
+        const tripped = join(work, `tripped-${name.replace(/[\\/]/g, '-')}`);
 
         try {
             execFileSync(godot, [

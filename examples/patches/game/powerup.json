@@ -2,8 +2,8 @@
   "schema_version": 1,
   "metadata": {
     "name": "powerup",
-    "description": "Generated from sfxr parameters by sfxr-ref patch. Do not edit by hand.",
-    "tags": ["sfxr"]
+    "description": "Getting a power-up. Generated from sfxr case powerup-0 by tools/game-sounds.mjs. Do not edit by hand.",
+    "tags": ["sfxr", "game"]
   },
   "nodes": [
     {
@@ -96,7 +96,7 @@
       "to": {"node": "phaser", "port": "in"}
     },
     {
-      "from": {"node": "trigger", "port": "gate"},
+      "from": {"node": "trigger", "port": "trigger"},
       "to": {"node": "envelope", "port": "gate"}
     },
     {

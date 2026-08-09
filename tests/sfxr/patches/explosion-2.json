@@ -128,7 +128,7 @@
       "to": {"node": "phaser", "port": "in"}
     },
     {
-      "from": {"node": "trigger", "port": "gate"},
+      "from": {"node": "trigger", "port": "trigger"},
       "to": {"node": "envelope", "port": "gate"}
     },
     {

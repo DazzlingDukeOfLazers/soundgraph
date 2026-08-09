@@ -26,6 +26,10 @@ constexpr PortDescriptor kNoteOutputs[] = {
     {"frequency", SignalType::Control, "Hz", false, false, "Pitch of the note being played."},
     {"gate", SignalType::Control, "", false, false, "1 while a note is held, 0 otherwise."},
     {"velocity", SignalType::Control, "", false, false, "How hard the note was struck, 0 to 1."},
+    {"trigger", SignalType::Control, "", false, false,
+     "A brief pulse on every note, including one played while another is still held. "
+     "Use it for percussive sounds that should fire again each time a key goes down; "
+     "gate is the one to use for anything that sustains."},
 };
 
 constexpr ParameterDescriptor kNoteParameters[] = {
@@ -50,6 +54,7 @@ public:
         velocity_ = 0.0f;
         target_note_ = 60.0f;
         current_note_ = 60.0f;
+        trigger_remaining_ = 0;
     }
 
     void handle_note_event(const NoteEvent& event) override {
@@ -58,6 +63,13 @@ public:
                 push_note(event.note);
                 velocity_ = dsp::clampf(event.velocity, 0.0f, 1.0f);
                 gate_ = 1.0f;
+                // Every note, not every *first* note. A gate that is already high stays
+                // high when a second key goes down, which is right for anything that
+                // sustains and wrong for a drum: roll two keys together and a one-shot
+                // envelope sees no new edge and stays silent. The pulse is what carries
+                // "a note started" through a signal that otherwise only carries "a note
+                // is being held".
+                trigger_remaining_ = trigger_samples();
                 break;
             case NoteEvent::Kind::NoteOff:
                 remove_note(event.note);
@@ -79,6 +91,7 @@ public:
         float* frequency_out = context.outputs[0];
         float* gate_out = context.outputs[1];
         float* velocity_out = context.outputs[2];
+        float* trigger_out = context.outputs[3];
 
         const float glide = parameter(kGlide);
         const float transpose = parameter(kTranspose);
@@ -92,10 +105,22 @@ public:
             frequency_out[i] = dsp::note_to_frequency(current_note_ + transpose);
             gate_out[i] = gate_;
             velocity_out[i] = velocity_;
+            trigger_out[i] = trigger_remaining_ > 0 ? 1.0f : 0.0f;
+            if (trigger_remaining_ > 0) {
+                --trigger_remaining_;
+            }
         }
     }
 
 private:
+    // A millisecond. One sample would be enough for anything reading per sample, but a
+    // pulse shorter than a block is invisible to anything that samples at block rate, and
+    // there is no reason to make that a trap for a future node.
+    int trigger_samples() const {
+        const int samples = static_cast<int>(sample_rate_ * 0.001f);
+        return samples > 1 ? samples : 1;
+    }
+
     void push_note(int note) {
         remove_note(note);
         if (held_count_ >= kMaxHeldNotes) {
@@ -123,6 +148,7 @@ private:
     int held_notes_[kMaxHeldNotes] = {};
     int held_count_ = 0;
     float gate_ = 0.0f;
+    int trigger_remaining_ = 0;
     float velocity_ = 0.0f;
     float target_note_ = 60.0f;
     float current_note_ = 60.0f;

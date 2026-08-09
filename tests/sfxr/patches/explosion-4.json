@@ -119,7 +119,7 @@
       "to": {"node": "phaser", "port": "in"}
     },
     {
-      "from": {"node": "trigger", "port": "gate"},
+      "from": {"node": "trigger", "port": "trigger"},
       "to": {"node": "envelope", "port": "gate"}
     },
     {
@@ -129,6 +129,14 @@
     {
       "from": {"node": "envelope", "port": "out"},
       "to": {"node": "amp", "port": "gain"}
+    },
+    {
+      "from": {"node": "trigger", "port": "trigger"},
+      "to": {"node": "slide", "port": "gate"}
+    },
+    {
+      "from": {"node": "trigger", "port": "trigger"},
+      "to": {"node": "arpeggio", "port": "gate"}
     },
     {
       "from": {"node": "amp", "port": "out"},

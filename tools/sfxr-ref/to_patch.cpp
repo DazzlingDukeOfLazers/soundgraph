@@ -424,6 +424,11 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     // sg-render puts the first note_on at frame zero. sfxr's envelope fires once and runs
     // to the end; letting go early does nothing, which is what an AHD envelope does too.
     //
+    // The trigger output rather than the gate, because these are one-shots. A gate stays
+    // high while any key is held, so pressing a second key before releasing the first —
+    // which is what jabbing at a jump button looks like — produced no new edge and no
+    // second sound. The trigger pulses on every note whether or not one is already down.
+    //
     // Deliberately only the gate is taken, not the frequency: a coin has a pitch of its
     // own and playing it up the keyboard would be a different sound.
     nodes.push_back({"trigger", "NoteInput", {}, column - 2, 1});
@@ -434,21 +439,28 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                       {"decay", envelope_seconds(p.p_env_decay)},
                       {"punch", static_cast<double>(p.p_env_punch)}},
                      column - 1, 1});
-    connections.push_back({"trigger", "gate", "envelope", "gate"});
+    connections.push_back({"trigger", "trigger", "envelope", "gate"});
 
     nodes.push_back({"amp", "Gain", {{"gain", master_gain(p)}}, column++, 0});
     connections.push_back({signal, signal_port, "amp", "in"});
     connections.push_back({"envelope", "out", "amp", "gain"});
 
     // --- retrigger -------------------------------------------------------------------
+    // Slide and arpeggio hold a position in time too, so a second note has to rewind them
+    // or it gets the tail of the first one's sweep — a bloop that already finished bending.
+    // Retrigger, when present, owns that job and rewinds them on its own schedule; two
+    // sources fighting over one gate would be worse than either alone.
+    const char* const restart_from = repeat_active(p) ? "repeat" : "trigger";
+    const char* const restart_port = repeat_active(p) ? "gate" : "trigger";
     if (repeat_active(p)) {
         nodes.push_back({"repeat", "Retrigger", {{"rate", repeat_rate_hz(p)}, {"width", 1.0}},
                          0, -1});
-        for (Node& node : nodes) {
-            if (node.id == "slide") connections.push_back({"repeat", "gate", "slide", "gate"});
-            if (node.id == "arpeggio")
-                connections.push_back({"repeat", "gate", "arpeggio", "gate"});
-        }
+    }
+    for (Node& node : nodes) {
+        if (node.id == "slide")
+            connections.push_back({restart_from, restart_port, "slide", "gate"});
+        if (node.id == "arpeggio")
+            connections.push_back({restart_from, restart_port, "arpeggio", "gate"});
     }
 
     nodes.push_back({"out", "StereoOutput", {{"level", 1.0}, {"safety_limit", 0.0}},
