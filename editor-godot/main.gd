@@ -121,11 +121,26 @@ var views: TabContainer
 var rack: Rack
 var sandbox: Sandbox
 var keyboard: Keyboard
-## Wide enough for a scope and a stack of readouts, narrow enough to leave the
-## graph the hero.
-const SIDE_PANEL_WIDTH := 380
+## The inspector's width, and the range a person may drag it through.
+##
+## It was a constant, which meant 380px of the window belonged to the inspector
+## whether it was showing a node's parameters or the words "Graph valid". Graph work
+## wants horizontal room more than almost anything else, so this is now a setting
+## with a floor, a ceiling and a way to take it to nothing at all.
+const SIDE_PANEL_MIN := 280
+const SIDE_PANEL_MAX := 420
+const SIDE_PANEL_DEFAULT := 340
+## The strip left behind when it is collapsed: just enough for the button that
+## brings it back, because a panel with no way back is a panel you have lost.
+const SIDE_PANEL_COLLAPSED := 36
+
+var side_panel_width := SIDE_PANEL_DEFAULT
+var side_panel_open := true
 
 var split: HSplitContainer
+var side_panel: VBoxContainer
+var side_panel_body: VBoxContainer
+var side_panel_toggle: Button
 var arrange_popup: PopupMenu
 var view_popup: PopupMenu
 var keyboard_bar: Control
@@ -399,6 +414,7 @@ func _build_ui() -> void:
 	# its contents cut in half. Every automated check passed the whole time, because
 	# nothing that measures a widget notices the widget is outside the window.
 	split.resized.connect(_fit_side_panel)
+	split.dragged.connect(_on_split_dragged)
 
 	graph_edit = PatchGraph.new()
 	graph_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -499,7 +515,7 @@ func _build_ui() -> void:
 	split.add_child(views)
 
 	split.add_child(_build_side_panel())
-	_fit_side_panel()
+	_set_side_panel_open(true)
 
 	# Under the tabs rather than inside one: the graph and the rack are two views of the
 	# same running patch, and the thing that plays it belongs to neither.
@@ -612,14 +628,22 @@ func _build_toolbar() -> Control:
 	arrange_popup = arrange_menu.get_popup()
 	arrange_popup.add_item("Auto-place everything", 0)
 	arrange_popup.add_item("Arrange selection", 1)
+	arrange_popup.add_separator()
+	arrange_popup.add_item("Fit graph in view", 2)
+	arrange_popup.set_item_tooltip(2, "Zoom and scroll so the whole patch is visible, "
+		+ "clear of the minimap and the zoom controls.")
 	arrange_popup.set_item_tooltip(0, "Lay the whole graph out left to right. The same "
 		+ "patch always lands the same way, wherever things were before.")
 	arrange_popup.set_item_disabled(1, true)
+	# if/elif rather than match: a lambda closes with a bracket on the last line, and a
+	# match arm followed by ")" is not something the parser will accept.
 	arrange_popup.id_pressed.connect(func(id: int) -> void:
 		if id == 0:
 			_auto_place()
+		elif id == 1:
+			_arrange_selection()
 		else:
-			_arrange_selection())
+			graph_edit.fit_graph())
 	graph_group.add_child(_defocus(arrange_menu))
 
 	# ---- edit --------------------------------------------------------------------
@@ -792,8 +816,39 @@ func _all_notes_off() -> void:
 func _fit_side_panel() -> void:
 	if split == null or views == null:
 		return
+	var wanted := side_panel_width if side_panel_open else SIDE_PANEL_COLLAPSED
+	# The minimum size is what actually holds the width open; the split offset alone
+	# lets the container squeeze the panel narrower than asked, which clipped the scope
+	# and cut the ends off every readout in it.
+	if side_panel != null:
+		side_panel.custom_minimum_size.x = wanted
 	var graph_minimum := views.get_combined_minimum_size().x
-	split.split_offset = int(split.size.x - SIDE_PANEL_WIDTH - graph_minimum)
+	split.split_offset = int(split.size.x - wanted - graph_minimum)
+
+
+## Reads the width back off the divider after a drag, so dragging *is* the setting.
+##
+## A separate width control next to a draggable divider is two ways to say the same
+## thing, and they disagree the moment either is used.
+func _on_split_dragged(_offset: int) -> void:
+	if split == null or side_panel == null or not side_panel_open:
+		return
+	side_panel_width = clampi(int(split.size.x - split.split_offset
+		- views.get_combined_minimum_size().x), SIDE_PANEL_MIN, SIDE_PANEL_MAX)
+	_fit_side_panel()
+
+
+func _set_side_panel_open(open: bool) -> void:
+	side_panel_open = open
+	if side_panel_body != null:
+		# Hidden rather than squeezed. A panel narrowed to 36px is a column of clipped
+		# words that still takes clicks and still has to be laid out.
+		side_panel_body.visible = open
+	if side_panel_toggle != null:
+		side_panel_toggle.text = "›" if open else "‹"
+		side_panel_toggle.tooltip_text = ("Hide the inspector  (Ctrl+I)" if open
+			else "Show the inspector  (Ctrl+I)")
+	_fit_side_panel()
 
 
 ## The inspector, which changes with what is selected.
@@ -807,9 +862,36 @@ func _fit_side_panel() -> void:
 ## Now the space earns its width. Nothing selected: what the graph is and the order it
 ## runs in. A node selected: that node. Problems appear only when there are some.
 func _build_side_panel() -> Control:
-	var panel := VBoxContainer.new()
-	panel.custom_minimum_size.x = SIDE_PANEL_WIDTH
-	panel.add_theme_constant_override("separation", Design.SPACE_M)
+	side_panel = VBoxContainer.new()
+	side_panel.custom_minimum_size.x = SIDE_PANEL_COLLAPSED
+	side_panel.add_theme_constant_override("separation", Design.SPACE_S)
+
+	# The collapse control sits above everything and never moves, so the way back is
+	# in the same place whether the panel is open or shut.
+	var strip := HBoxContainer.new()
+	side_panel_toggle = Button.new()
+	side_panel_toggle.flat = true
+	side_panel_toggle.custom_minimum_size.x = Design.scale(28)
+	side_panel_toggle.pressed.connect(func() -> void:
+		_set_side_panel_open(not side_panel_open))
+	strip.add_child(_defocus(side_panel_toggle))
+	side_panel.add_child(strip)
+
+	# Padded, because the panel now sits against the window edge rather than inside a
+	# fixed-width column — the scope was running right off the side of the screen and
+	# every readout in it ended a pixel from the frame.
+	var inset := MarginContainer.new()
+	inset.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for edge in ["left", "right", "bottom"]:
+		inset.add_theme_constant_override("margin_" + edge, Design.scale(Design.SPACE_M))
+	side_panel.add_child(inset)
+
+	side_panel_body = VBoxContainer.new()
+	side_panel_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side_panel_body.add_theme_constant_override("separation", Design.SPACE_M)
+	inset.add_child(side_panel_body)
+
+	var panel := side_panel_body
 
 	# One quiet line, always in the same place. Valid is the normal state and should look
 	# like it — a green "No problems." carried as much visual authority as an actual error,
@@ -848,7 +930,7 @@ func _build_side_panel() -> Control:
 	# labelled, is the kind of thing a UI accumulates while it is still explaining
 	# itself — and the point of getting the keyboard right was to stop needing it.
 
-	return panel
+	return side_panel
 
 
 ## Fills the contextual region: the graph when nothing is selected, otherwise the node.
@@ -964,8 +1046,9 @@ func _focus_node(node_id: String) -> void:
 	for other in widgets.values():
 		(other as GraphNode).selected = false
 	widget.selected = true
-	graph_edit.scroll_offset = widget.position_offset * graph_edit.zoom \
-		- graph_edit.size * 0.5 + widget.size * graph_edit.zoom * 0.5
+	# Against the usable rectangle, not the control. Centring on `size` aims at a point
+	# that may be under the minimap, the zoom cluster or a scrollbar.
+	graph_edit.centre_on(Rect2(widget.position_offset, widget.size))
 	_on_node_selected(widget)
 
 
@@ -3002,6 +3085,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if key.pressed and key.keycode == KEY_SPACE and key.ctrl_pressed:
 		_open_search()
+		accept_event()
+		return
+
+	if key.pressed and key.ctrl_pressed and key.keycode == KEY_I:
+		_set_side_panel_open(not side_panel_open)
 		accept_event()
 		return
 

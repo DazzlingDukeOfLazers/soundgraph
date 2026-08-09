@@ -534,6 +534,94 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the inspector gets out of the way -----------------------------------------
+	# It held 380px of the window whether it was showing a node's parameters or the words
+	# "Graph valid", and graph work wants horizontal room more than almost anything else.
+	var graph_width_open: float = main.views.size.x
+	main._set_side_panel_open(false)
+	await process_frame
+	await process_frame
+	check(main.views.size.x > graph_width_open + 200,
+		"collapsing the inspector gives the room to the graph (%.0f from %.0f)"
+			% [main.views.size.x, graph_width_open])
+	check(not main.side_panel_body.visible,
+		"and its contents are hidden rather than squeezed into a column of clipped words")
+	check(main.side_panel_toggle.visible,
+		"but the way back is still on screen")
+
+	main._set_side_panel_open(true)
+	await process_frame
+	await process_frame
+	check(main.side_panel_body.visible, "and it comes back")
+
+	# Dragging the divider is the width setting. A separate control next to a draggable
+	# divider is two ways to say one thing, and they disagree the moment either is used.
+	main.split.split_offset -= 400
+	main._on_split_dragged(main.split.split_offset)
+	await process_frame
+	check(main.side_panel_width <= main.SIDE_PANEL_MAX,
+		"dragging it wider stops at the maximum (%d)" % main.side_panel_width)
+	main.split.split_offset += 900
+	main._on_split_dragged(main.split.split_offset)
+	await process_frame
+	check(main.side_panel_width >= main.SIDE_PANEL_MIN,
+		"and dragging it narrower stops at the minimum (%d)" % main.side_panel_width)
+
+	# Whatever the width, the graph viewport still has to be honest about it — this is the
+	# same rule as the minimap, one panel further out.
+	main._focus_node("amp")
+	await process_frame
+	var amp_after_resize: GraphNode = main.widgets["amp"]
+	var amp_rect := Rect2(
+		amp_after_resize.position_offset * main.graph_edit.zoom - main.graph_edit.scroll_offset,
+		amp_after_resize.size * main.graph_edit.zoom)
+	check(main.graph_edit.usable_rect().encloses(amp_rect),
+		"and centring still lands inside the viewport after the sidebar moves")
+
+	# ---- nothing comes to rest under permanent furniture ---------------------------
+	# `size` is the whole control, and three permanent things overlap it: the scrollbars
+	# GraphEdit draws inside its own bounds, the zoom cluster over the top left, and the
+	# minimap over the bottom right. Centring against `size` aims at a point that may be
+	# beneath any of them.
+	main.graph_edit.zoom = 1.0
+	await process_frame
+	var view: Rect2 = main.graph_edit.usable_rect()
+	check(view.size.x < main.graph_edit.size.x or view.size.y < main.graph_edit.size.y,
+		"the usable area is smaller than the control (%s of %s)"
+			% [str(view.size.round()), str(main.graph_edit.size.round())])
+	check(view.size.y <= main.graph_edit.size.y - main.graph_edit.minimap_size.y,
+		"and the minimap's corner is not counted as usable")
+
+	# Centring a node must put the whole node inside that area, not merely somewhere on
+	# the canvas. This is the check for the reported symptom: a node coming to rest under
+	# a permanent panel with its output disappearing beneath it.
+	for target in ["amp", "out", "note"]:
+		main._focus_node(target)
+		await process_frame
+		var widget: GraphNode = main.widgets[target]
+		var on_screen := Rect2(
+			widget.position_offset * main.graph_edit.zoom - main.graph_edit.scroll_offset,
+			widget.size * main.graph_edit.zoom)
+		check(main.graph_edit.usable_rect().encloses(on_screen),
+			"centring %s puts all of it in the usable area (node %s, area %s)"
+				% [target, str(on_screen), str(main.graph_edit.usable_rect())])
+
+	# Fit frames everything, and against the same rectangle — fitting to the full control
+	# puts the right-hand edge of the graph under the scrollbar and the minimap.
+	main.graph_edit.fit_graph()
+	await process_frame
+	var framed: Rect2 = main.graph_edit.usable_rect()
+	var outside := 0
+	for id in main.widgets:
+		var node: GraphNode = main.widgets[id]
+		var spot := Rect2(
+			node.position_offset * main.graph_edit.zoom - main.graph_edit.scroll_offset,
+			node.size * main.graph_edit.zoom)
+		if not framed.encloses(spot):
+			outside += 1
+	check(outside == 0,
+		"fit brings every node into view without hiding any (%d outside)" % outside)
+
 	# ---- three node states, told apart at a glance ---------------------------------
 	# GraphNode ships with normal and selected and nothing between them, so a node under
 	# the pointer looked exactly like one three columns away — and in a patch dense enough

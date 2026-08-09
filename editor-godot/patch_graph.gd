@@ -949,3 +949,82 @@ func _update_hover(local_point: Vector2) -> void:
 		port_hovered.emit("", "", -1)
 	else:
 		port_hovered.emit(best["widget"], best["side"], best["index"])
+
+
+## The part of the canvas nothing is sitting on top of.
+##
+## `size` is the whole control, and several permanent things overlap it: GraphEdit draws
+## its own scrollbars inside its bounds, the zoom cluster floats over the top left, and the
+## minimap floats over the bottom right. Centring a node against `size` therefore aims at a
+## point that may be underneath any of them — which is how a node ends up parked behind the
+## minimap, or half under the inspector once the divider moves.
+##
+## Everything that positions the view should use this: centring, fit, and anything that
+## works out whether something is visible. Nothing important should ever come to rest
+## beneath permanent furniture.
+func usable_rect() -> Rect2:
+	var rect := Rect2(Vector2.ZERO, size)
+
+	# Scrollbars are inside the control, not outside it. GraphEdit 4.7 has no accessor
+	# for them, so they are found among the internal children — and found rather than
+	# assumed, because a fixed gutter width would be a guess that goes wrong the first
+	# time somebody changes the theme.
+	for child in get_children(true):
+		var bar := child as ScrollBar
+		if bar == null or not bar.visible:
+			continue
+		if bar is VScrollBar:
+			rect.size.x -= bar.size.x
+		else:
+			rect.size.y -= bar.size.y
+
+	# The zoom cluster, top left.
+	var menu := get_menu_hbox()
+	if menu != null and menu.visible:
+		var taken: float = menu.size.y + Design.SPACE_S
+		rect.position.y += taken
+		rect.size.y -= taken
+
+	# The minimap, bottom right. Only the height is taken back: a graph is usually wider
+	# than it is tall, so losing a strip off the bottom costs less than losing a column off
+	# the side, and the minimap is in the corner of both.
+	if minimap_enabled:
+		rect.size.y -= minimap_size.y + Design.SPACE_S
+
+	rect.size.x = maxf(rect.size.x, 1.0)
+	rect.size.y = maxf(rect.size.y, 1.0)
+	return rect
+
+
+## Scrolls so that a rectangle in graph space sits in the middle of the usable area.
+func centre_on(graph_rect: Rect2) -> void:
+	var view := usable_rect()
+	var middle := view.position + view.size * 0.5
+	scroll_offset = (graph_rect.position + graph_rect.size * 0.5) * zoom - middle
+
+
+## Frames the whole graph, at a zoom that fits it into the usable area.
+##
+## Fit has to solve for zoom *and* offset together, and against the usable rectangle
+## rather than the control: fitting to the full width puts the right-hand edge of the
+## graph under the scrollbar and the minimap, which is the thing this is supposed to stop.
+func fit_graph() -> void:
+	var bounds := Rect2()
+	var found := false
+	for child in get_children():
+		var node := child as GraphNode
+		if node == null:
+			continue
+		var node_rect := Rect2(node.position_offset, node.size)
+		bounds = node_rect if not found else bounds.merge(node_rect)
+		found = true
+	if not found:
+		return
+
+	var view := usable_rect()
+	var margin := float(Design.SPACE_XL)
+	var room := view.size - Vector2(margin, margin) * 2.0
+	var wanted: float = minf(room.x / maxf(bounds.size.x, 1.0),
+		room.y / maxf(bounds.size.y, 1.0))
+	zoom = clampf(wanted, zoom_min, zoom_max)
+	centre_on(bounds)
