@@ -36,47 +36,215 @@ var _status: Label
 var _loaded := false
 
 
+## How the stage is fitted into whatever room the tab has.
+##
+## The game has a fixed logical size, and it used to be stretched across the whole panel
+## — so the play area ran to the edges with nothing framing it and the empty half of the
+## screen read as rendering having stopped rather than as a game 960 wide. A stage says
+## where the game is: the aspect is kept, the rest is backdrop, and the size is written
+## down so nobody has to guess whether what they are seeing is the whole of it.
+enum Fit { ACTUAL, FIT, FILL }
+
+const FIT_NAMES := ["Actual size", "Fit", "Fill"]
+
+var _fit: int = Fit.FIT
+var _stage: AspectRatioContainer
+var _holder: SubViewportContainer
+var _shortcuts: Label
+var _controls_popup: PopupPanel
+
+
 func _ready() -> void:
+	# Inset, because the tab reaches the window edge and the first word of the shortcut
+	# strip was being cut in half by it.
+	var inset := MarginContainer.new()
+	inset.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for edge in ["left", "right", "top", "bottom"]:
+		inset.add_theme_constant_override("margin_" + edge, Design.scale(Design.SPACE_M))
+	add_child(inset)
+
 	var column := VBoxContainer.new()
-	column.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(column)
+	column.add_theme_constant_override("separation", Design.SPACE_S)
+	inset.add_child(column)
+
+	# ---- one strip, not three paragraphs ------------------------------------------
+	# What was here: a line listing eight loaded sounds, a line of key bindings, and a
+	# line mapping every patch to every event. All of it true, all of it useful once,
+	# and together it made a game demo look like a debug page — three rows of prose
+	# above the thing somebody came to play with.
+	var strip := HBoxContainer.new()
+	strip.add_theme_constant_override("separation", Design.SPACE_M)
+	column.add_child(strip)
+
+	_shortcuts = Label.new()
+	_shortcuts.text = "A D  move      Space  jump ×2      X  shoot      R  restart"
+	_shortcuts.add_theme_font_override("font", Design.numeric_font())
+	_shortcuts.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_SECONDARY))
+	_shortcuts.add_theme_color_override("font_color", Design.INK_SECOND)
+	strip.add_child(_shortcuts)
+
+	# The rest of it, one click away rather than always on screen.
+	var controls := Button.new()
+	controls.text = "Which sound plays when?"
+	controls.flat = true
+	controls.focus_mode = Control.FOCUS_NONE
+	controls.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_SECONDARY))
+	controls.add_theme_color_override("font_color", Design.ACCENT)
+	controls.pressed.connect(_show_controls)
+	strip.add_child(controls)
+
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	strip.add_child(gap)
+
+	var fit_menu := MenuButton.new()
+	fit_menu.text = "Fit"
+	fit_menu.flat = false
+	var fit_popup := fit_menu.get_popup()
+	for index in FIT_NAMES.size():
+		fit_popup.add_radio_check_item(FIT_NAMES[index], index)
+	fit_popup.set_item_checked(_fit, true)
+	fit_popup.id_pressed.connect(func(id: int) -> void:
+		_fit = id
+		for entry in FIT_NAMES.size():
+			fit_popup.set_item_checked(entry, entry == id)
+		_apply_fit())
+	fit_menu.focus_mode = Control.FOCUS_NONE
+	strip.add_child(fit_menu)
 
 	_status = Label.new()
 	_status.text = "open this tab to load the sounds"
-	column.add_child(_status)
-
-	var help := Label.new()
-	help.text = "Arrow keys or A/D to run    Space to jump, again in mid-air for a " 		+ "double jump    X to shoot    R to restart"
-	help.add_theme_color_override("font_color", INK_DIM)
-	column.add_child(help)
-
-	var wiring := Label.new()
-	wiring.text = "jump.json on jump    coin.json on pickup    hurt.json on spikes    " \
-		+ "shoot.json on X    powerup.json at the flag    explode.json off the bottom"
-	wiring.add_theme_color_override("font_color", INK_DIM)
-	column.add_child(wiring)
+	_status.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_SECONDARY))
+	_status.add_theme_color_override("font_color", Design.INK_SECOND)
+	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_status.custom_minimum_size.x = Design.scale(220)
+	_status.clip_text = true
+	strip.add_child(_status)
 
 	sounds = GameSounds.new()
 	sounds.load_failed.connect(func(name: String, diagnostics: String) -> void:
-		_status.text = "could not load %s: %s" % [name, diagnostics])
+		_status.text = "could not load %s" % name
+		_status.tooltip_text = diagnostics)
 	add_child(sounds)
 
-	var viewport_holder := SubViewportContainer.new()
-	viewport_holder.stretch = true
-	viewport_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	viewport_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.add_child(viewport_holder)
+	# ---- the stage --------------------------------------------------------------
+	# A backdrop darker than the game, so the play area is obviously a thing sitting on
+	# something rather than the panel having failed to draw to its edges.
+	var backdrop := PanelContainer.new()
+	backdrop.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	backdrop.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	backdrop.add_theme_stylebox_override("panel",
+		Design.panel(Design.Surface.CANVAS, 0, 0))
+	column.add_child(backdrop)
+
+	# Straight into the backdrop, with no CenterContainer.
+	#
+	# The first attempt wrapped it in one, and a CenterContainer sizes its child to the
+	# child's *minimum* — so an AspectRatioContainer asking to expand got nothing and
+	# the game vanished entirely. AspectRatioContainer already centres what it holds;
+	# that is most of what it is for.
+	_stage = AspectRatioContainer.new()
+	_stage.ratio = WORLD_SIZE.x / WORLD_SIZE.y
+	_stage.stretch_mode = AspectRatioContainer.STRETCH_FIT
+	_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	backdrop.add_child(_stage)
+
+	_holder = SubViewportContainer.new()
+	_holder.stretch = true
+	_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_stage.add_child(_holder)
 
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(WORLD_SIZE)
 	viewport.transparent_bg = false
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	viewport_holder.add_child(viewport)
+	# The logical size the game is drawn in, whatever size it is displayed at.
+	#
+	# This is the actual cause of the empty region. SubViewportContainer.stretch
+	# *resizes* the viewport to match the container rather than scaling it — so the
+	# viewport became as wide as the panel while the world went on drawing its fixed
+	# 960 units, and everything past that was blank. The grey area was never a layout
+	# problem; it was the right-hand third of a viewport nothing had drawn into, and
+	# the goal flag was sitting just outside the part that did.
+	#
+	# With an override the world always has 960x540 to draw in and the result is
+	# scaled, which is what "fixed logical resolution" is supposed to mean.
+	viewport.size_2d_override = Vector2i(WORLD_SIZE)
+	viewport.size_2d_override_stretch = true
+	_holder.add_child(viewport)
 
 	world = SandboxWorld.new()
 	world.sounds = sounds
 	world.status = _status
 	viewport.add_child(world)
+	_apply_fit()
+
+
+## Applies the current fit. Actual size pins the stage to the game's own resolution, so
+## what you see is what a game would draw; Fit scales it to the room available while
+## keeping the shape; Fill gives up the shape to use the whole panel.
+func _apply_fit() -> void:
+	if _stage == null:
+		return
+	match _fit:
+		Fit.ACTUAL:
+			# Pinned to the game's own resolution and centred, so what is on screen is
+			# pixel for pixel what a game would draw.
+			_stage.custom_minimum_size = WORLD_SIZE
+			_stage.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			_stage.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			_stage.stretch_mode = AspectRatioContainer.STRETCH_FIT
+		Fit.FIT:
+			_stage.custom_minimum_size = Vector2.ZERO
+			_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			_stage.stretch_mode = AspectRatioContainer.STRETCH_FIT
+		Fit.FILL:
+			_stage.custom_minimum_size = Vector2.ZERO
+			_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			_stage.stretch_mode = AspectRatioContainer.STRETCH_COVER
+
+
+## The full event-to-patch mapping, on request.
+##
+## Every line of it was permanently on screen. It is the most interesting thing about the
+## sandbox and it is read once, which is exactly what a disclosure is for.
+func _show_controls() -> void:
+	if _controls_popup == null:
+		_controls_popup = PopupPanel.new()
+		add_child(_controls_popup)
+		var body := VBoxContainer.new()
+		body.add_theme_constant_override("separation", Design.SPACE_S)
+		_controls_popup.add_child(body)
+		for line in [
+				"jump.json      when the player jumps",
+				"jump2.json     on the second jump, in mid-air",
+				"coin.json      picking a coin up",
+				"hurt.json      touching the spikes",
+				"shoot.json     firing, on X",
+				"powerup.json   reaching the flag",
+				"explode.json   falling off the bottom",
+		]:
+			var label := Label.new()
+			label.text = line
+			label.add_theme_font_override("font", Design.numeric_font())
+			label.add_theme_font_size_override("font_size",
+				Design.scale(Design.SIZE_SECONDARY))
+			body.add_child(label)
+		var note := Label.new()
+		note.text = "Every one is an ordinary patch. Open it in the Graph tab, "
+		note.text += "change it, and the game plays the new version."
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		note.custom_minimum_size.x = Design.scale(340)
+		note.add_theme_color_override("font_color", Design.INK_SECOND)
+		body.add_child(note)
+	_controls_popup.popup_centered()
 
 
 ## Loads the sounds, once, the first time anyone opens this tab.
@@ -102,7 +270,10 @@ func ensure_sounds_loaded() -> void:
 		folder = ProjectSettings.globalize_path("res://").path_join("../examples/patches/game")
 		loaded = sounds.load_folder(folder)
 	if loaded > 0:
-		_status.text = "%d sounds loaded: %s" % [loaded, ", ".join(sounds.sound_names())]
+		# Short enough for the strip; the list itself is in the tooltip and in the
+		# controls popup, both of which are one gesture away.
+		_status.text = "%d sounds ready" % loaded
+		_status.tooltip_text = ", ".join(sounds.sound_names())
 	else:
 		_status.text = "no sounds found in %s — the sandbox will be silent" % folder
 	# Printed as well as shown, because this is the one thing that has to be checkable from

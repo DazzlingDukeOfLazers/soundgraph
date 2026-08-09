@@ -538,6 +538,46 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the sandbox draws its whole world ------------------------------------------
+	# SubViewportContainer.stretch resizes the viewport to match the container rather
+	# than scaling it, so the viewport grew to the width of the panel while the game went
+	# on drawing its fixed 960 units — and everything past that was blank. The grey region
+	# was never a layout problem: it was the part of a viewport nothing had drawn into,
+	# with the goal flag sitting just outside the part that had.
+	main.views.current_tab = 2
+	for i in 6:
+		await process_frame
+	var sandbox_viewport: SubViewport = null
+	var sandbox_queue: Array = [main.sandbox]
+	while not sandbox_queue.is_empty():
+		var node: Node = sandbox_queue.pop_back()
+		for child in node.get_children():
+			sandbox_queue.append(child)
+		if node is SubViewport:
+			sandbox_viewport = node
+	check(sandbox_viewport != null, "the sandbox has a viewport")
+	if sandbox_viewport != null:
+		check(sandbox_viewport.size_2d_override == Vector2i(Sandbox.WORLD_SIZE),
+			"and it draws in the world's own resolution (%s, world %s)"
+				% [str(sandbox_viewport.size_2d_override), str(Vector2i(Sandbox.WORLD_SIZE))])
+		check(sandbox_viewport.size_2d_override_stretch,
+			"scaled to the stage rather than cropped by it")
+
+	# One strip, not three paragraphs. Counted rather than eyeballed, because the thing
+	# that made it look like a debug page was the number of lines.
+	var sandbox_labels := 0
+	sandbox_queue = [main.sandbox]
+	while not sandbox_queue.is_empty():
+		var node: Node = sandbox_queue.pop_back()
+		for child in node.get_children():
+			sandbox_queue.append(child)
+		if node is Label and (node as Label).text.length() > 30:
+			sandbox_labels += 1
+	check(sandbox_labels <= 1,
+		"and the tab shows at most one long line of prose (%d)" % sandbox_labels)
+	main.views.current_tab = 0
+	await process_frame
+
 	# ---- rack modules show what they are doing --------------------------------------
 	# The argument for a hardware metaphor is that hardware tells you something by being
 	# looked at. A panel that only holds knobs is a picture of hardware.
