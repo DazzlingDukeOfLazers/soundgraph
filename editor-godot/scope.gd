@@ -39,12 +39,9 @@ func _draw() -> void:
 	var font: Font = Design.numeric_font()
 	var font_size := Design.scale(Design.SIZE_SECONDARY)
 	var ascent := font.get_ascent(font_size)
-	draw_string(font, Vector2(PAD, PAD + ascent), label, HORIZONTAL_ALIGNMENT_LEFT, -1,
-		font_size, Design.INK_SECOND)
 
 	if samples.size() < 2:
-		draw_string(font, Vector2(PAD, size.y - PAD), "no signal",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Design.INK_DISABLED)
+		_caption(font, font_size, ascent, label, "no signal", Design.INK_DISABLED)
 		return
 
 	var points := PackedVector2Array()
@@ -59,9 +56,21 @@ func _draw() -> void:
 	var peak := 0.0
 	for value in samples:
 		peak = maxf(peak, absf(value))
-	# Right-aligned by measuring the string rather than by assuming it is 74px wide,
-	# which is what put "peak 0.033" half outside the box.
-	var readout := "peak %.3f" % peak
-	var width := font.get_string_size(readout, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-	draw_string(font, Vector2(size.x - width - PAD, PAD + ascent), readout,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Design.INK_SECOND)
+	_caption(font, font_size, ascent, label, "peak %.3f" % peak, Design.INK_SECOND)
+
+
+## Both captions, on a band across the top, drawn after the trace.
+##
+## They used to be drawn before it, so a signal that happened to pass through the top
+## of the box ran straight through the lettering and left "filter.out" looking crossed
+## out. Text over a moving waveform needs something behind it or it is only readable
+## when the sound is quiet.
+func _caption(font: Font, font_size: int, ascent: float, left: String, right: String,
+		colour: Color) -> void:
+	var band := Rect2(0.0, 0.0, size.x, ascent + PAD * 1.5)
+	draw_rect(band, Color(BACKGROUND.r, BACKGROUND.g, BACKGROUND.b, 0.82))
+	draw_string(font, Vector2(PAD, PAD + ascent), left, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		font_size, colour)
+	var width := font.get_string_size(right, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	draw_string(font, Vector2(size.x - width - PAD, PAD + ascent), right,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, colour)

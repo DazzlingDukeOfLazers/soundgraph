@@ -396,6 +396,7 @@ func _build_ui() -> void:
 	graph_edit.popup_request.connect(_on_graph_popup_request)
 	# Node drags and cable drags bracket their own undo entries, so a drag is one step
 	# rather than one per pixel of mouse movement.
+	graph_edit.detail_changed.connect(_apply_detail)
 	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
 	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
@@ -1075,6 +1076,11 @@ func _create_widget(node: Dictionary) -> void:
 			right.text = _port_caption(outputs[row])
 			right.tooltip_text = str(outputs[row].get("doc", ""))
 		line.add_child(right)
+		# Tagged so the zoom level-of-detail can find the parts of a node worth hiding
+		# without having to guess from child order.
+		line.set_meta("row", "port")
+		left.set_meta("port_label", true)
+		right.set_meta("port_label", true)
 		widget.add_child(line)
 
 		var has_input := row < inputs.size()
@@ -1197,9 +1203,15 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 
 	for index in parameters.size():
 		var row := _build_parameter_row(node, parameters[index])
+		row.set_meta("row", "parameter")
 		widget.add_child(row)
 		if index >= always_visible:
 			row.visible = false
+			# Recorded, not just hidden. The zoom level-of-detail hides parameter rows too,
+			# and when it puts them back it must not also un-collapse the ones the reader
+			# chose to fold away — two features writing the same `visible` flag with no
+			# memory between them is how a node quietly grows every time you zoom.
+			row.set_meta("collapsed", true)
 			extra.append(row)
 
 	if extra.is_empty():
@@ -1222,8 +1234,10 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 	toggle.add_theme_color_override("font_pressed_color", Design.INK_SECOND)
 	toggle.toggled.connect(func(pressed: bool) -> void:
 		for row in extra:
-			row.visible = pressed
+			row.set_meta("collapsed", not pressed)
+			row.visible = pressed and graph_edit.detail == PatchGraph.Detail.FULL
 		toggle.text = "▾  fewer" if pressed else "▸  %d more" % extra.size())
+	toggle.set_meta("row", "parameter")
 	widget.add_child(_defocus(toggle))
 
 
@@ -1280,20 +1294,33 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 			slider.tick_count = 3
 			slider.ticks_on_borders = false
 
-	var readout := Label.new()
-	readout.text = _format_with_unit(parameter, current)
+	# The number is a control, not a caption. A slider 112px wide cannot resolve 20 Hz
+	# to 20 kHz — at the bottom of an exponential range one pixel is several hertz —
+	# so the only way to ask for exactly 440 was to drag until it happened to say 440.
+	# Drag the figure, double click to type it, Alt-click for the default.
+	var readout := ValueField.new()
 	readout.custom_minimum_size.x = Design.scale(84)
-	readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# Tabular figures, so a value counting through 111.0 to 888.0 does not shuffle
-	# sideways under the cursor that is dragging it.
-	readout.add_theme_font_override("font", Design.numeric_font())
-	readout.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NUMERIC))
-	readout.add_theme_color_override("font_color", Design.INK_BRIGHT)
+	readout.text = _format_with_unit(parameter, current)
+	readout.default_value = float(parameter["default"])
+	readout.position_now = _to_position(parameter, current)
+	readout.to_value = func(position: float) -> float:
+		return _to_value(parameter, position)
+	readout.to_position = func(value: float) -> float:
+		return _to_position(parameter, value)
+	readout.value_submitted.connect(func(value: float) -> void:
+		var clamped: float = clampf(value, float(parameter["min"]), float(parameter["max"]))
+		slider.set_value_no_signal(_to_position(parameter, clamped))
+		readout.position_now = _to_position(parameter, clamped)
+		readout.text = _format_with_unit(parameter, clamped)
+		_set_parameter(node_id, name, clamped))
+	# One gesture is one undo step, whether it moved one pixel or three hundred.
+	readout.drag_started.connect(func() -> void: _begin_edit())
+	readout.drag_finished.connect(func() -> void: _commit_edit("set %s" % name))
 
 	slider.value_changed.connect(func(position: float) -> void:
 		var value := _to_value(parameter, position)
 		readout.text = _format_with_unit(parameter, value)
+		readout.position_now = position
 		_set_parameter(node_id, name, value))
 
 	# A whole drag is one undo step. Bracketing on the drag rather than on each value
@@ -1312,7 +1339,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 
 
 func _remember_parameter_widget(node_id: String, parameter_name: String, control: Control,
-		readout: Label, descriptor: Dictionary) -> void:
+		readout: Control, descriptor: Dictionary) -> void:
 	if not parameter_widgets.has(node_id):
 		parameter_widgets[node_id] = {}
 	parameter_widgets[node_id][parameter_name] = {
@@ -1528,9 +1555,13 @@ func _on_rack_parameter_changed(node_id: String, parameter: String, value: float
 		control.set_value_no_signal(_to_position(entry["descriptor"], value))
 	elif control is OptionButton:
 		control.selected = int(round(value))
-	var readout: Label = entry["readout"]
+	var readout = entry["readout"]
 	if readout != null:
 		readout.text = _format_with_unit(entry["descriptor"], value)
+		if readout is ValueField:
+			readout.position_now = _to_position(entry["descriptor"], value)
+		if readout is ValueField:
+			readout.position_now = _to_position(entry["descriptor"], value)
 
 
 func _on_rack_node_selected(node_id: String) -> void:
@@ -2092,7 +2123,7 @@ func _show_parameter(node_id: String, parameter_name: String, value: float) -> v
 	if entry.is_empty():
 		return
 	var slider = entry.get("slider")
-	var readout: Label = entry.get("readout")
+	var readout = entry.get("readout")
 	if slider is OptionButton:
 		slider.selected = clampi(int(round(value)), 0, slider.item_count - 1)
 		return
@@ -2314,6 +2345,31 @@ func _reachable_from(node_id: String, downstream: bool) -> Array:
 				seen[step] = true
 				queue.append(step)
 	return seen.keys()
+
+
+## Applies the graph's current detail level to every node.
+##
+## Port *rows* are never hidden, only the labels inside them. A GraphNode slot is bound to
+## the index of a visible child, so hiding a row would renumber the slots underneath it and
+## every cable below that point would attach to the wrong port. Hiding the labels keeps the
+## row — and the port — exactly where it was.
+func _apply_detail(level: int) -> void:
+	var show_parameters := level == PatchGraph.Detail.FULL
+	var show_port_names := level != PatchGraph.Detail.TOPOLOGY
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		for child in widget.get_children():
+			var control := child as Control
+			if control == null:
+				continue
+			match str(control.get_meta("row", "")):
+				"parameter":
+					control.visible = show_parameters and not control.get_meta("collapsed", false)
+				"port":
+					for part in control.get_children():
+						var label := part as Label
+						if label != null and label.has_meta("port_label"):
+							label.visible = show_port_names
 
 
 func _highlight(node_ids: Array) -> void:

@@ -85,6 +85,24 @@ var grid_minor_colour := Color(1, 1, 1, GRID_RESTING[0])
 var grid_half_major_colour := Color(1, 1, 1, GRID_RESTING[1])
 var grid_major_colour := Color(1, 1, 1, GRID_RESTING[2])
 
+## How much of a node is worth drawing at the current zoom.
+##
+## Zooming out of a patcher normally just makes everything smaller, so at the point where
+## you can finally see the whole graph none of it is readable and the view is useless for
+## the one thing it is good for — seeing the shape of the thing. Detail is dropped in
+## stages instead: parameters go first, then port names, leaving titles and topology.
+##
+## The thresholds have hysteresis. Without it a zoom sitting exactly on a boundary makes
+## every node in the graph flicker between two layouts as the mouse wheel jitters.
+enum Detail { FULL, REDUCED, TOPOLOGY }
+
+const DETAIL_DOWN := [0.68, 0.38]   ## zoom below this drops to the next level down
+const DETAIL_UP := [0.76, 0.46]     ## and it has to come back above this to return
+
+signal detail_changed(level: int)
+
+var detail: int = Detail.FULL
+
 var _grid_emphasis := 0.0
 var _grid_target := 0.0
 
@@ -586,6 +604,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_update_detail()
 	if is_equal_approx(_grid_emphasis, _grid_target):
 		return
 	var step := delta / GRID_FADE
@@ -744,3 +763,22 @@ func refresh_cables() -> void:
 
 func clear_waypoints() -> void:
 	waypoints.clear()
+
+
+## Polled rather than driven by a signal, because GraphEdit does not emit one for
+## zoom — and the wheel changes it without going through any code of ours.
+func _update_detail() -> void:
+	var level := detail
+	if detail == Detail.FULL and zoom < DETAIL_DOWN[0]:
+		level = Detail.REDUCED
+	elif detail == Detail.REDUCED:
+		if zoom < DETAIL_DOWN[1]:
+			level = Detail.TOPOLOGY
+		elif zoom > DETAIL_UP[0]:
+			level = Detail.FULL
+	elif detail == Detail.TOPOLOGY and zoom > DETAIL_UP[1]:
+		level = Detail.REDUCED
+	if level == detail:
+		return
+	detail = level
+	detail_changed.emit(level)

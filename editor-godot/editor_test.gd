@@ -534,6 +534,141 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the number is a control ---------------------------------------------------
+	# A slider 112px wide cannot resolve 20 Hz to 20 kHz. At the bottom of an exponential
+	# range one pixel is several hertz, so asking for exactly 440 meant dragging until it
+	# happened to say 440. The readout is now draggable and typeable.
+	var cutoff_field = main.parameter_widgets["filter"]["cutoff"]["readout"]
+	check(cutoff_field is ValueField, "the readout is a field rather than a label")
+
+	# Typing. The field shows "900.0 Hz", so the obvious thing is to edit that string and
+	# press return — rejecting it over the unit the field itself printed would be a small
+	# cruelty, and this is the check that it is accepted.
+	cutoff_field._on_typed("440 Hz")
+	await process_frame
+	var typed := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			typed = float(node["parameters"]["cutoff"])
+	check(is_equal_approx(typed, 440.0),
+		"typing '440 Hz' sets it to exactly 440 (%.3f)" % typed)
+	check(cutoff_field.text.contains("440"),
+		"and the field says so (%s)" % cutoff_field.text)
+
+	# Out of range is clamped rather than accepted, or a typo would put the graph into a
+	# state the slider cannot represent and the value would jump the next time it moved.
+	cutoff_field._on_typed("999999")
+	await process_frame
+	var clamped := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			clamped = float(node["parameters"]["cutoff"])
+	check(clamped <= 20000.0 and clamped > 0.0,
+		"an out-of-range number is clamped to what the parameter allows (%.0f)" % clamped)
+
+	# Nonsense leaves it alone rather than resetting it to zero.
+	var before_nonsense := clamped
+	cutoff_field._on_typed("banana")
+	await process_frame
+	var after_nonsense := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			after_nonsense = float(node["parameters"]["cutoff"])
+	check(is_equal_approx(after_nonsense, before_nonsense),
+		"and something that is not a number changes nothing (%.0f)" % after_nonsense)
+
+	# The slider and the field are two views of one value, so moving either has to move
+	# the other. A field that drifted out of step with its slider would be worse than the
+	# label it replaced.
+	var cutoff_slider: HSlider = main.parameter_widgets["filter"]["cutoff"]["slider"]
+	cutoff_field._on_typed("1000")
+	await process_frame
+	var slider_spot: float = main._to_position(main.parameter_widgets["filter"]["cutoff"]["descriptor"],
+		1000.0)
+	# To within the slider's own step, because the slider quantises its position and the
+	# field does not. That is the right way round: the stored value stays exactly what
+	# was typed, and only the handle is snapped.
+	check(absf(cutoff_slider.value - slider_spot) <= cutoff_slider.step,
+		"typing a value moves the slider with it (%.6f vs %.6f, step %.4f)"
+			% [cutoff_slider.value, slider_spot, cutoff_slider.step])
+
+	# ---- zoom drops detail rather than just shrinking it ---------------------------
+	# Zooming out of a patcher normally makes everything smaller, so at the point where the
+	# whole graph fits none of it is readable. Detail goes in stages instead.
+	var node_widget: GraphNode = main.widgets["filter"]
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	await process_frame
+	var full_height: float = node_widget.get_combined_minimum_size().y
+	# Captured at full detail, so the comparison below is against something rather than
+	# against itself.
+	var ports_at_full := node_widget.get_input_port_count()
+	var port_spots_at_full := []
+	for port in ports_at_full:
+		port_spots_at_full.append(node_widget.get_input_port_position(port))
+
+	main.graph_edit.zoom = 0.5
+	main.graph_edit._update_detail()
+	await process_frame
+	check(main.graph_edit.detail == main.PatchGraph.Detail.REDUCED,
+		"zooming out drops the parameters (level %d)" % main.graph_edit.detail)
+	var medium: float = node_widget.get_combined_minimum_size().y
+	check(medium < full_height,
+		"and the node gets shorter for it (%.0f from %.0f)" % [medium, full_height])
+
+	main.graph_edit.zoom = 0.3
+	main.graph_edit._update_detail()
+	await process_frame
+	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
+		"further out drops the port names too (level %d)" % main.graph_edit.detail)
+
+	# The hazard this design exists to avoid. A GraphNode slot is bound to the index of a
+	# visible child, so hiding a port *row* renumbers every slot below it and the cables
+	# reattach to the wrong ports. Only the labels inside the row are hidden, and the
+	# check is that the ports have not moved.
+	var ports_now := node_widget.get_input_port_count()
+	check(ports_now == ports_at_full,
+		"and the port count is unchanged (%d, was %d)" % [ports_now, ports_at_full])
+	var shifted := 0
+	for port in mini(ports_now, ports_at_full):
+		if not node_widget.get_input_port_position(port).is_equal_approx(
+				port_spots_at_full[port]):
+			shifted += 1
+	check(shifted == 0,
+		"and not one of them has moved (%d of %d shifted)" % [shifted, ports_now])
+
+	# Hysteresis: a zoom sitting on a threshold must not flip level on every jitter.
+	main.graph_edit.zoom = 0.40
+	main.graph_edit._update_detail()
+	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
+		"a nudge back over the boundary does not flip the level straight away")
+	main.graph_edit.zoom = 0.50
+	main.graph_edit._update_detail()
+	check(main.graph_edit.detail == main.PatchGraph.Detail.REDUCED,
+		"but a real move does")
+
+	# Zoom hides parameter rows and so does the "n more" disclosure. Coming back to full
+	# detail must not un-fold the rows the reader chose to hide — two features writing the
+	# same visible flag with no memory between them is how a node grows every time you zoom.
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	await process_frame
+	var folded := 0
+	var unfolded_by_zoom := 0
+	for child in node_widget.get_children():
+		var control := child as Control
+		if control != null and control.get_meta("collapsed", false):
+			folded += 1
+			if control.visible:
+				unfolded_by_zoom += 1
+	check(folded > 0, "the filter has folded-away parameters to check (%d)" % folded)
+	check(unfolded_by_zoom == 0,
+		"and zooming back in leaves them folded (%d reappeared)" % unfolded_by_zoom)
+	check(node_widget.get_combined_minimum_size().y == full_height,
+		"so the node is the height it started at")
+
 	# ---- the signal path -----------------------------------------------------------
 	# Selecting a node lights the whole chain it sits on, because "where does this sound
 	# go" is the question the cables exist to answer and the one they are worst at when
@@ -721,7 +856,7 @@ func _initialize() -> void:
 
 	# The readout the editor actually built, rather than the formatter in isolation.
 	var cutoff_entry: Dictionary = main.parameter_widgets["filter"]["cutoff"]
-	var cutoff_readout: Label = cutoff_entry["readout"]
+	var cutoff_readout = cutoff_entry["readout"]
 	check(cutoff_readout != null and cutoff_readout.text.contains("Hz"),
 		"and a live node shows its unit (%s)"
 			% (cutoff_readout.text if cutoff_readout else "no readout"))
