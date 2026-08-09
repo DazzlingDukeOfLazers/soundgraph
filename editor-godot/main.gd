@@ -1714,12 +1714,36 @@ func _load_text(text: String) -> void:
 
 	# Opening a document starts a new history. Undoing across a load would restore a
 	# different patch's nodes into this one, which is never what anyone means.
+	# A patch can arrive with no positions at all — anything generated, anything typed by
+	# hand — and every node then lands on the origin in one unreadable stack. That is what
+	# the game sounds do: the sfxr mapper writes a graph, not a drawing, and it has no
+	# business inventing coordinates when the editor already has a layout engine that
+	# produces better ones than a straight line would.
+	#
+	# "No positions" also covers the case where they are all the same, which is what a file
+	# with position fields full of zeroes looks like.
+	var positioned := {}
+	for node in patch["nodes"]:
+		if node.has("position"):
+			positioned["%s,%s" % [node["position"].get("x", 0.0),
+				node["position"].get("y", 0.0)]] = true
+	var needs_layout: bool = patch["nodes"].size() > 1 and positioned.size() <= 1
+
 	undo_redo.clear_history(true)
 	_pending_snapshot = {}
 	await _rebuild_view()
+
+	if needs_layout:
+		await _auto_place()
+		# Laid out on arrival, so it is not an edit anyone should have to undo.
+		undo_redo.clear_history(true)
+		_pending_snapshot = {}
+
 	_apply()
 	_refresh_undo_buttons()
-	if moved > 0:
+	if needs_layout:
+		status_label.text = "arranged %d nodes — the file had no layout" % patch["nodes"].size()
+	elif moved > 0:
 		status_label.text = "snapped %d node%s to the grid" % [moved, "" if moved == 1 else "s"]
 
 

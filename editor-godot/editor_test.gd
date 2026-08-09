@@ -641,6 +641,21 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	check(main.engine.is_loaded(), "a game sound opens as an ordinary patch")
+
+	# The generated patches carry no positions, so without a layout on load every node
+	# lands on the origin and the graph is one unreadable stack.
+	var seen_positions := {}
+	var on_origin := 0
+	for node in main.patch["nodes"]:
+		var at := Vector2(node.get("position", {}).get("x", 0.0),
+			node.get("position", {}).get("y", 0.0))
+		seen_positions["%s,%s" % [at.x, at.y]] = true
+		if at.is_zero_approx():
+			on_origin += 1
+	check(seen_positions.size() == main.patch["nodes"].size(),
+		"and a patch with no layout is arranged on load, not stacked (%d distinct of %d)"
+			% [seen_positions.size(), main.patch["nodes"].size()])
+	check(on_origin <= 1, "with at most one node left on the origin")
 	main.engine.reset()
 	var fired := 0
 	# The loudest moment, not the last one. get_peak() reports a recent window, and a coin
