@@ -85,10 +85,15 @@ Two things that build depends on, both easy to get wrong and both documented in
 same Emscripten as the export template (4.0.20 for Godot 4.7.1). Either one wrong aborts
 the engine with `function signature mismatch`, which names neither cause.
 
-Still unverified: **audio through the exported editor.** It boots and the extension loads,
-but Godot warns that `AudioStreamGenerator` cannot be sampled on the web backend, and the
-autoplay gesture requirement has not been exercised. Until that is tested with sound, the
-browser demo is a visual demo.
+**Audio out of the exported editor is confirmed by ear**: playing the computer keyboard in
+Chrome sounds the synth. That closes the last question about this surface — it is a demo,
+not a visual demo.
+
+Two things had to be true for it. Godot's `default_playback_type.web` is *Sample*, which
+pre-bakes a stream into a buffer and cannot work for a generator, so every player now asks
+for `PLAYBACK_TYPE_STREAM` explicitly. And Godot starts no audio driver at all — no
+`AudioContext`, not even a request for its worklets — until the page has had a real user
+gesture. Synthetic events do not lift that; only a person clicking does.
 
 ## Open
 
@@ -97,8 +102,10 @@ browser demo is a visual demo.
 - **The web editor has never been looked at.** The Godot editor now has, repeatedly; the
   browser page has only ever been checked element by element from a script. It matters less
   than it did, now that the Godot editor is itself reachable from a URL.
-- **No audio has come out of the exported web editor.** It boots with the extension loaded
-  and the UI live; the audio path is untested. See the warning noted above.
+- The **sandbox's** sounds have not been heard in a browser. They use the same generator and
+  the same `playback_type` as the editor's synth, which is confirmed audible, so this is a
+  reasonable inference rather than a verified fact — pressing Space in the Sandbox tab would
+  settle it in ten seconds.
 - The exported editor is ~46 MB uncompressed, ~10 MB gzipped. It is a PWA, so that cost is
   paid once and later visits are offline — but the *first* load is still the one an audience
   watches, so whatever hosts it must serve compressed, over HTTPS (service workers need a
