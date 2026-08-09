@@ -136,7 +136,10 @@ var keyboard_expanded := true
 var document_label: Label
 var document_name := "untitled"
 var diagnostics_list: VBoxContainer
-var info_label: RichTextLabel
+var health_label: Label
+var diagnostics_heading: Label
+var context_heading: Label
+var context_panel: VBoxContainer
 var scope: Control
 var status_label: Label
 var search_popup: PopupPanel
@@ -700,53 +703,223 @@ func _fit_side_panel() -> void:
 	split.split_offset = int(split.size.x - SIDE_PANEL_WIDTH - graph_minimum)
 
 
+## The inspector, which changes with what is selected.
+##
+## It used to be three fixed regions, and two of them were nearly always empty: a SIGNAL
+## box with nothing in it and a PROBLEMS list saying "No problems." in green, between them
+## taking most of the height to say nothing at all — while the execution order, which is
+## the one genuinely interesting thing this editor knows that a patch cable does not tell
+## you, was squeezed into a line of grey text at the bottom.
+##
+## Now the space earns its width. Nothing selected: what the graph is and the order it
+## runs in. A node selected: that node. Problems appear only when there are some.
 func _build_side_panel() -> Control:
 	var panel := VBoxContainer.new()
 	panel.custom_minimum_size.x = SIDE_PANEL_WIDTH
-	panel.add_theme_constant_override("separation", 6)
+	panel.add_theme_constant_override("separation", Design.SPACE_M)
+
+	# One quiet line, always in the same place. Valid is the normal state and should look
+	# like it — a green "No problems." carried as much visual authority as an actual error,
+	# so the panel read as urgent when nothing was wrong.
+	health_label = Label.new()
+	health_label.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_SECONDARY))
+	panel.add_child(health_label)
+
+	diagnostics_heading = _section_heading("Problems")
+	panel.add_child(diagnostics_heading)
+	diagnostics_list = VBoxContainer.new()
+	diagnostics_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	diagnostics_list.add_theme_constant_override("separation", Design.SPACE_S)
+	panel.add_child(diagnostics_list)
 
 	panel.add_child(_section_heading("Signal"))
 	scope = Scope.new()
-	scope.custom_minimum_size.y = 130
+	scope.custom_minimum_size.y = Design.scale(120)
 	panel.add_child(scope)
 
-	var hint := Label.new()
-	hint.text = "Select a node to see what it is putting out."
-	hint.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
-	hint.modulate = INK_DIM
-	panel.add_child(hint)
-
-	panel.add_child(_section_heading("Problems"))
-	var diagnostics_scroll := ScrollContainer.new()
-	diagnostics_scroll.custom_minimum_size.y = 180
-	diagnostics_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	diagnostics_list = VBoxContainer.new()
-	diagnostics_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	diagnostics_scroll.add_child(diagnostics_list)
-	panel.add_child(diagnostics_scroll)
-
-	panel.add_child(_section_heading("What the graph is doing"))
-	info_label = RichTextLabel.new()
-	info_label.bbcode_enabled = true
-	info_label.fit_content = true
-	info_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_child(info_label)
+	context_heading = _section_heading("The graph")
+	panel.add_child(context_heading)
+	context_panel = VBoxContainer.new()
+	context_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	context_panel.add_theme_constant_override("separation", Design.SPACE_S)
+	panel.add_child(context_panel)
 
 	var keys := Label.new()
 	keys.text = "Play with A W S E D F T G Y H U J K. Z and X shift octave."
-	keys.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
-	keys.modulate = INK_DIM
+	keys.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	keys.add_theme_color_override("font_color", Design.INK_SECOND)
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel.add_child(keys)
 
 	return panel
 
 
+## Fills the contextual region: the graph when nothing is selected, otherwise the node.
+func _refresh_context() -> void:
+	if context_panel == null:
+		return
+	for child in context_panel.get_children():
+		context_panel.remove_child(child)
+		child.queue_free()
+
+	var node_id: String = str(inspecting.get("node", ""))
+	if node_id == "":
+		context_heading.text = "THE GRAPH"
+		_fill_graph_context()
+	else:
+		context_heading.text = "SELECTED NODE"
+		_fill_node_context(node_id)
+
+
+func _node_type(node_id: String) -> String:
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			return str(node["type"])
+	return ""
+
+
+## What the graph is doing, as something you can point at.
+##
+## The execution order was a line of grey text. It is the one thing this editor knows that
+## a patch cable does not tell you, so it is now a row of chips: hovering one lights the
+## node it names, clicking one selects and centres it. The same information, turned from a
+## caption into a way of getting around the graph.
+func _fill_graph_context() -> void:
+	if engine == null or not engine.is_loaded():
+		return
+	var info: Variant = JSON.parse_string(engine.get_info_json())
+	if typeof(info) != TYPE_DICTIONARY:
+		return
+
+	context_panel.add_child(_field("Runs in this order"))
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", Design.SPACE_XS)
+	flow.add_theme_constant_override("v_separation", Design.SPACE_XS)
+	for node in info["nodes"]:
+		flow.add_child(_stage_chip(str(node["id"])))
+	context_panel.add_child(flow)
+
+	if not info["feedback"].is_empty():
+		context_panel.add_child(_field("Feedback"))
+		for edge in info["feedback"]:
+			context_panel.add_child(_value("%s → %s (previous block)"
+				% [edge["from"], edge["to"]], Design.WARNING))
+
+	var cost: Dictionary = info["cost"]
+	context_panel.add_child(_field("Cost"))
+	context_panel.add_child(_numeric("%d nodes · %d Hz"
+		% [int(info["node_count"]), int(info["sample_rate"])]))
+	context_panel.add_child(_numeric("cpu %.1f units · state %d B · buffers %.1f KB"
+		% [cost["cpu"], int(cost["state_bytes"]), float(cost["heap_bytes"]) / 1024.0]))
+
+
+func _fill_node_context(node_id: String) -> void:
+	var type_name := _node_type(node_id)
+	var descriptor: Dictionary = registry.get(type_name, {})
+
+	var title := Label.new()
+	title.text = node_id
+	title.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+	title.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NODE_TITLE))
+	title.add_theme_color_override("font_color", Design.INK_BRIGHT)
+	context_panel.add_child(title)
+	context_panel.add_child(_value("%s · %s"
+		% [type_name, str(descriptor.get("category", ""))], Design.INK_SECOND))
+
+	var summary := Label.new()
+	summary.text = str(descriptor.get("summary", ""))
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	summary.add_theme_color_override("font_color", Design.INK_NORMAL)
+	context_panel.add_child(summary)
+
+	# Every output, with a click to point the scope at it — "what is this node putting out"
+	# answered in one click rather than by hunting for the right port on the node itself.
+	var outputs := _port_list(node_id, "outputs")
+	if not outputs.is_empty():
+		context_panel.add_child(_field("Outputs"))
+		for port in outputs:
+			context_panel.add_child(_port_row(node_id, port))
+
+
+## A clickable stage in the execution order.
+func _stage_chip(node_id: String) -> Button:
+	var chip := Button.new()
+	chip.text = node_id
+	chip.tooltip_text = "Select and centre %s" % node_id
+	chip.add_theme_font_override("font", Design.numeric_font())
+	chip.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	chip.add_theme_stylebox_override("normal", Design.padded_panel(
+		Design.Surface.RAISED, Design.SPACE_S, Design.SPACE_XS, Design.RADIUS_BUTTON))
+	chip.add_theme_stylebox_override("hover", Design.padded_panel(
+		Design.Surface.ACTIVE, Design.SPACE_S, Design.SPACE_XS, Design.RADIUS_BUTTON))
+	chip.mouse_entered.connect(func() -> void: _highlight([node_id]))
+	chip.mouse_exited.connect(func() -> void: _highlight([]))
+	chip.pressed.connect(func() -> void: _focus_node(node_id))
+	return _defocus(chip) as Button
+
+
+## Selects a node and brings it into view.
+func _focus_node(node_id: String) -> void:
+	var widget: GraphNode = widgets.get(node_id)
+	if widget == null:
+		return
+	for other in widgets.values():
+		(other as GraphNode).selected = false
+	widget.selected = true
+	graph_edit.scroll_offset = widget.position_offset * graph_edit.zoom \
+		- graph_edit.size * 0.5 + widget.size * graph_edit.zoom * 0.5
+	_on_node_selected(widget)
+
+
+func _port_row(node_id: String, port: Dictionary) -> Control:
+	var row := Button.new()
+	var unit := str(port.get("unit", ""))
+	row.text = str(port["name"]) + ("  (%s)" % unit if unit != "" else "")
+	row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	row.tooltip_text = str(port.get("doc", ""))
+	row.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	row.pressed.connect(func() -> void:
+		inspecting = {"node": node_id, "port": str(port["name"])})
+	return _defocus(row)
+
+
+func _field(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	label.add_theme_color_override("font_color", Design.INK_SECOND)
+	return label
+
+
+func _value(text: String, colour: Color = Design.INK_NORMAL) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_BODY))
+	label.add_theme_color_override("font_color", colour)
+	return label
+
+
+## Figures in the tabular face, so a column of costs lines up.
+func _numeric(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_override("font", Design.numeric_font())
+	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NUMERIC))
+	label.add_theme_color_override("font_color", Design.INK_NORMAL)
+	return label
+
+
 func _section_heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text.to_upper()
-	label.add_theme_font_size_override("font_size", FONT_SIZE_HEADING)
-	label.modulate = INK_DIM
+	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	label.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_HEADING))
+	label.add_theme_color_override("font_color", Design.INK_SECOND)
 	return label
 
 
@@ -1022,13 +1195,25 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 	if extra.is_empty():
 		return
 
-	var toggle := CheckButton.new()
-	toggle.text = "%d more" % extra.size()
-	toggle.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	# A quiet line of text, not a switch.
+	#
+	# A CheckButton draws a full-width filled bar with a sliding pill on it, which made
+	# the control for hiding two parameters heavier than either of the parameters it
+	# was hiding — the loudest thing in the node was the thing that mattered least.
+	# Flat, secondary ink, and a caret that says which way it goes.
+	var toggle := Button.new()
+	toggle.toggle_mode = true
+	toggle.flat = true
+	toggle.text = "▸  %d more" % extra.size()
+	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	toggle.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	toggle.add_theme_color_override("font_color", Design.INK_SECOND)
+	toggle.add_theme_color_override("font_hover_color", Design.INK_NORMAL)
+	toggle.add_theme_color_override("font_pressed_color", Design.INK_SECOND)
 	toggle.toggled.connect(func(pressed: bool) -> void:
 		for row in extra:
 			row.visible = pressed
-		toggle.text = "fewer" if pressed else "%d more" % extra.size())
+		toggle.text = "▾  fewer" if pressed else "▸  %d more" % extra.size())
 	widget.add_child(_defocus(toggle))
 
 
@@ -1314,6 +1499,7 @@ func _on_node_selected(node: Node) -> void:
 		inspecting = {}
 		return
 	inspecting = {"node": node_id, "port": outputs[0]["name"]}
+	_refresh_context()
 
 
 ## A knob in the rack and a slider in the graph are two handles on one value. The edit goes
@@ -1340,6 +1526,7 @@ func _on_rack_node_selected(node_id: String) -> void:
 	var outputs := _port_list(node_id, "outputs")
 	inspecting = {"node": node_id, "port": outputs[0]["name"]} if not outputs.is_empty() \
 		else {}
+	_refresh_context()
 
 
 func _on_keyboard_pressed(note: int) -> void:
@@ -2010,13 +2197,26 @@ func _show_diagnostics(diagnostics: Array) -> void:
 	for child in diagnostics_list.get_children():
 		child.queue_free()
 
+	# Valid is the normal state, so it gets one quiet line and no section at all. The
+	# old green "No problems." sat under a PROBLEMS heading taking a fifth of the panel
+	# to announce that nothing had happened, which is how a reader learns to ignore the
+	# place where problems appear.
 	if diagnostics.is_empty():
-		var ok := Label.new()
-		ok.text = "No problems."
-		ok.modulate = ACCENT
-		diagnostics_list.add_child(ok)
+		health_label.text = "✓  Graph valid"
+		health_label.add_theme_color_override("font_color", Design.INK_SECOND)
+		diagnostics_heading.visible = false
 		_highlight([])
 		return
+
+	var errors := 0
+	for entry in diagnostics:
+		if str(entry.get("severity", "error")) == "error":
+			errors += 1
+	health_label.text = "%d problem%s" % [diagnostics.size(),
+		"" if diagnostics.size() == 1 else "s"]
+	health_label.add_theme_color_override("font_color",
+		Design.ERROR if errors > 0 else Design.WARNING)
+	diagnostics_heading.visible = true
 
 	var to_highlight := []
 	for diagnostic in diagnostics:
@@ -2060,25 +2260,9 @@ func _highlight(node_ids: Array) -> void:
 		widget.modulate = Color(1.0, 0.65, 0.6) if node_ids.has(id) else Color.WHITE
 
 
+## Kept under its old name because half a dozen places call it after the graph changes.
 func _show_info() -> void:
-	var info: Variant = JSON.parse_string(engine.get_info_json())
-	if typeof(info) != TYPE_DICTIONARY:
-		return
-
-	var order := []
-	for node in info["nodes"]:
-		order.append(node["id"])
-
-	var text := "[b]Runs in this order[/b]\n%s\n" % "  →  ".join(order)
-	if not info["feedback"].is_empty():
-		text += "\n[b]Feedback[/b]\n"
-		for edge in info["feedback"]:
-			text += "%s → %s [i](previous block)[/i]\n" % [edge["from"], edge["to"]]
-	var cost: Dictionary = info["cost"]
-	text += "\n[b]Estimated cost[/b]\ncpu %.1f units · state %d B · buffers %.1f KB\n%d nodes at %d Hz" % [
-		cost["cpu"], int(cost["state_bytes"]), float(cost["heap_bytes"]) / 1024.0,
-		int(info["node_count"]), int(info["sample_rate"])]
-	info_label.text = text
+	_refresh_context()
 
 
 ## Where an example actually lives.

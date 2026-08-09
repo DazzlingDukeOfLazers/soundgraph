@@ -534,6 +534,63 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the inspector earns its width -------------------------------------------
+	# It used to be two mostly-empty regions and a line of grey text. The test is not
+	# that it has content but that the content *changes with what is selected* — a panel
+	# showing the same thing either way is the fixed layout it replaced.
+	main.inspecting = {}
+	main._refresh_context()
+	await process_frame
+	check(main.context_heading.text == "THE GRAPH",
+		"with nothing selected the inspector describes the graph (%s)"
+			% main.context_heading.text)
+
+	# The execution order is chips you can click, not a caption. Counted, because a
+	# single label containing arrows would satisfy any looser check.
+	var chips := 0
+	for child in main.context_panel.get_children():
+		if child is HFlowContainer:
+			for chip in (child as HFlowContainer).get_children():
+				if chip is Button:
+					chips += 1
+	check(chips == main.widgets.size(),
+		"and every stage of the run order is a control you can press (%d of %d)"
+			% [chips, main.widgets.size()])
+
+	# Pressing one selects and centres that node, which is what turns the order from
+	# something to read into a way of getting around a graph too big to see at once.
+	main._focus_node("filter")
+	await process_frame
+	check(main.widgets["filter"].selected, "pressing a stage selects its node")
+	check(main.context_heading.text == "SELECTED NODE",
+		"and the inspector becomes that node (%s)" % main.context_heading.text)
+	var shows_node := false
+	for child in main.context_panel.get_children():
+		if child is Label and (child as Label).text.contains("StateVariableFilter"):
+			shows_node = true
+	check(shows_node, "naming its type and category")
+	check(str(main.inspecting.get("node", "")) == "filter",
+		"and pointing the scope at it")
+
+	# ---- valid is quiet ----------------------------------------------------------
+	# A green "No problems." under a PROBLEMS heading had as much visual authority as a
+	# real error, which is how a reader learns to ignore the place errors appear.
+	check(main.health_label.text.contains("valid"),
+		"a healthy graph says so in one line (%s)" % main.health_label.text)
+	check(not main.diagnostics_heading.visible,
+		"and the problems section is not there at all")
+	check(main.health_label.get_theme_color("font_color") == Design.INK_SECOND,
+		"in secondary ink rather than a colour that asks for attention")
+
+	# And it does raise its voice when there is something to say.
+	main._show_diagnostics([{"code": "zero_delay_cycle", "severity": "error",
+		"message": "a loop", "nodes": []}])
+	await process_frame
+	check(main.diagnostics_heading.visible, "a real problem brings the section back")
+	check(main.health_label.get_theme_color("font_color") == Design.ERROR,
+		"and the line turns (%s)" % main.health_label.text)
+	main._show_diagnostics([])
+
 	# ---- the editor fits on a screen ---------------------------------------------
 	# The one defect in this redesign that no measurement caught, because measuring a
 	# widget cannot tell you the widget is off the edge of the window. The toolbar had

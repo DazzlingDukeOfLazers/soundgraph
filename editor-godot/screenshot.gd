@@ -25,11 +25,23 @@ func _initialize() -> void:
 	var main = load("res://main.tscn").instantiate()
 	root.add_child(main)
 
+	# A fourth argument selects a node first, so the contextual half of the inspector
+	# can be looked at as well as the resting state. Without this the only view anybody
+	# ever renders is the one with nothing selected, which is the view least likely to
+	# be wrong.
+	var select: String = arguments[3] if arguments.size() > 3 else ""
+
 	# Several frames, not one. The first frame has no layout: containers size themselves
 	# during it, the graph nodes have not been placed, and a shot taken then shows a pile
 	# of controls at the origin — which looks exactly like a broken redesign.
 	for i in SETTLE_FRAMES:
 		await process_frame
+
+	if select != "":
+		await process_frame
+		main._focus_node(select)
+		for i in 6:
+			await process_frame
 
 	var image := root.get_texture().get_image()
 	var status := image.save_png(output)
