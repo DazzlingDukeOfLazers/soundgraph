@@ -294,23 +294,28 @@ func move_module_to(node_id: String, at: Vector2) -> void:
 	# The target slot is whichever module currently covers that point, by centre distance.
 	# Comparing centres rather than edges is what makes a drag land where it looks like it
 	# should when modules are different widths.
-	var target := from
-	var best := INF
+	# Taken out of the running first. Comparing the drop point against every module
+	# *including the one being dropped* only ever finds that module — it is sitting under
+	# the cursor at distance zero — so the answer was always "where it already was" and
+	# every drag snapped back.
+	order.remove_at(from)
+
+	# Where it lands is the first slot that reads as *after* the drop point: a row below,
+	# or further right on the same row. Reading order rather than nearest centre, because
+	# a rack is a sequence and dropping between two modules should mean between them.
+	var insert_at := order.size()
 	for index in order.size():
 		var module: RackModule = _modules.get(order[index])
 		if module == null:
 			continue
 		var centre := module.position + module.size * 0.5
-		var distance := at.distance_to(centre)
-		if distance < best:
-			best = distance
-			target = index
+		var a_row_below := centre.y > at.y + MODULE_HEIGHT * 0.5
+		var further_right := absf(centre.y - at.y) <= MODULE_HEIGHT * 0.5 and centre.x > at.x
+		if a_row_below or further_right:
+			insert_at = index
+			break
 
-	if target == from:
-		_relayout()
-		return
-	order.remove_at(from)
-	order.insert(target, node_id)
+	order.insert(insert_at, node_id)
 	_order_override = order
 	_store_order()
 	_relayout()

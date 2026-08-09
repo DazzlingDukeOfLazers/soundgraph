@@ -61,9 +61,26 @@ const AUDIO_PULL := 8.0
 static func snap_up(value: float, step: float) -> float:
 	return ceilf(value / step) * step
 
+## Everything openable from the Examples menu.
+##
+## The game sounds are here as well as in the sandbox, and that is the point: they are not
+## a private asset format the sandbox reads, they are ordinary patches. Open the coin,
+## change the arpeggio interval, hear a different coin — and the same file is what the
+## sandbox plays and what deploys to the board.
+##
+## They are also the sfxr port's output, so each one is a sound demonstrably equal to what
+## sfxr makes rather than an approximation somebody eyeballed.
 const EXAMPLES := {
 	"First Synth": "first-synth.json",
 	"Delay Echo": "delay-echo.json",
+	"Game: coin": "game/coin.json",
+	"Game: jump": "game/jump.json",
+	"Game: jump (double)": "game/jump2.json",
+	"Game: hurt": "game/hurt.json",
+	"Game: shoot": "game/shoot.json",
+	"Game: explode": "game/explode.json",
+	"Game: powerup": "game/powerup.json",
+	"Game: select": "game/select.json",
 }
 
 # Signal types, mapped to GraphEdit slot types so the engine's own compatibility rule is
@@ -427,6 +444,19 @@ func _build_toolbar() -> Control:
 	case_width.item_selected.connect(func(index: int) -> void:
 		rack.case_hp = CASE_WIDTHS[index])
 	bar.add_child(_defocus(case_width))
+
+	# One-shot patches — the game sounds, anything gated by a constant — fire on the first
+	# sample and are then silent forever. The keyboard cannot retrigger them because they
+	# have no NoteInput to send a note to, so without this an opened coin sound plays once
+	# on load and can never be heard again while you edit it.
+	var retrigger := Button.new()
+	retrigger.text = "Fire"
+	retrigger.tooltip_text = "Play a one-shot patch again from the start. Does nothing " 		+ "audible to a patch that waits for notes."
+	retrigger.pressed.connect(func() -> void:
+		if engine != null and engine.is_loaded():
+			engine.reset()
+			status_label.text = "fired")
+	bar.add_child(_defocus(retrigger))
 
 	var panic := Button.new()
 	panic.text = "All notes off"

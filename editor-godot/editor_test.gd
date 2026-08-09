@@ -613,6 +613,52 @@ func _initialize() -> void:
 
 	main.rack.case_hp = 0
 
+	# ---- every example in the menu actually opens ---------------------------------------
+	# A menu entry pointing at a missing or broken file is a failure the user finds by
+	# clicking it in front of somebody. There are ten of these now and eight arrived from a
+	# generator, so checking them one by one is worth the seconds it takes.
+	var examples_ok := 0
+	var examples_bad: Array = []
+	for example_name in main.EXAMPLES:
+		var example_path: String = main._example_path(main.EXAMPLES[example_name])
+		var example_text := FileAccess.get_file_as_string(example_path)
+		if example_text.is_empty():
+			examples_bad.append("%s (missing)" % example_name)
+			continue
+		var example_report: Variant = JSON.parse_string(
+			main.engine.validate_patch(example_text))
+		if typeof(example_report) == TYPE_DICTIONARY and example_report["ok"]:
+			examples_ok += 1
+		else:
+			examples_bad.append(example_name)
+	check(examples_bad.is_empty(),
+		"every example in the menu loads and validates (%d of %d)%s"
+			% [examples_ok, main.EXAMPLES.size(),
+			   "" if examples_bad.is_empty() else " — bad: " + ", ".join(examples_bad)])
+
+	# The game sounds are one-shots, so the Fire button is the only way to hear one twice.
+	await main._load_example("Game: coin")
+	await process_frame
+	await process_frame
+	check(main.engine.is_loaded(), "a game sound opens as an ordinary patch")
+	main.engine.reset()
+	var fired := 0
+	# The loudest moment, not the last one. get_peak() reports a recent window, and a coin
+	# is about forty milliseconds — read it after eight blocks and the sound is long over,
+	# which is how this first "failed" while working perfectly.
+	var loudest := 0.0
+	if playback != null:
+		for i in 8:
+			fired += main.engine.fill_playback(playback, 1024)
+			loudest = maxf(loudest, main.engine.get_peak())
+			await process_frame
+	check(fired > 0 and loudest > 0.001,
+		"and firing it again produces sound (peak %.4f)" % loudest)
+
+	await main._load_example("First Synth")
+	await process_frame
+	await process_frame
+
 	# ---- rack order survives a save and a load -----------------------------------------
 	# The whole reason it lives in the document rather than in the view. Written and read
 	# back through the core's own serialiser, because a round trip that only goes through
@@ -623,11 +669,26 @@ func _initialize() -> void:
 	check(natural.size() >= 3, "the demo patch has enough modules to reorder")
 
 	if natural.size() >= 3:
+		# Dropped onto the far left, ahead of the first module. The earlier version of this
+		# passed a point the dragged module was already sitting on, which is exactly the
+		# case the bug hid behind: the nearest module to a dropped module is itself.
 		var moved: String = natural[natural.size() - 1]
-		var target: Rack.RackModule = main.rack._modules[natural[0]]
-		main.rack.move_module_to(moved, target.position + target.size * 0.5)
+		var first: Rack.RackModule = main.rack._modules[natural[0]]
+		main.rack.move_module_to(moved, first.position + Vector2(-40.0, first.size.y * 0.5))
 		var reordered: Array = main.rack._module_order()
 		check(reordered[0] == moved, "dragging a module to the front puts it there")
+
+		# And a drop in the middle lands in the middle, not at either end — the check that
+		# tells "it moved" apart from "it went to the edge whatever I did".
+		var middle_target: Rack.RackModule = main.rack._modules[reordered[2]]
+		var mover: String = reordered[reordered.size() - 1]
+		main.rack.move_module_to(mover,
+			middle_target.position + Vector2(-20.0, middle_target.size.y * 0.5))
+		var again: Array = main.rack._module_order()
+		var landed := again.find(mover)
+		check(landed > 0 and landed < again.size() - 1,
+			"and dropping one between two others lands it between them (slot %d of %d)"
+				% [landed, again.size()])
 
 		var saved: String = main.engine.format_patch(JSON.stringify(main.patch, "  "))
 		check(saved.contains("rack_order"),
