@@ -52,7 +52,9 @@ and a repo-local `.venv` with pyserial and esptool.
 ## Done in this phase
 
 - Device reliability: malformed-patch abuse suite, thirty-cycle power soak with **0 bytes**
-  of heap drift, and a truncated upload no longer wedges the console.
+  of heap drift, and a truncated upload no longer wedges the console. Both re-run against
+  the firmware carrying all eighteen embedded golden patches — the earlier numbers were a
+  different binary, so they were not evidence about this one.
 - One-click deploy from the web editor over Web Serial (written, never clicked — see below).
 - Godot editor: undo/redo, layered layout with crossing reduction and straightening,
   PCB-style cable routing with draggable waypoints, grid tiers that mean something,
