@@ -524,6 +524,9 @@ func _gui_input(event: InputEvent) -> void:
 				return
 
 	var motion := event as InputEventMouseMotion
+	if motion != null and _dragging_key == "":
+		_update_hover(motion.position)
+
 	if motion != null and _dragging_key != "":
 		var snapped_point := _to_graph(motion.position)
 		if snapping_enabled and snapping_distance > 0:
@@ -596,6 +599,16 @@ func _view_fingerprint() -> String:
 ## is a port with sound coming out of it. That is the entire point — an editor that
 ## animated on a guess would be decoration, and worse than none.
 var port_levels: Dictionary = {}
+
+## The port the pointer is over, as {"widget", "side", "index"}, or empty.
+##
+## GraphEdit has no hover signal for ports, and it has a large invisible hot zone
+## around each one — deliberately, so they are easy to hit. The two together mean the
+## thing you are about to connect to gives no sign of being the thing you are about
+## to connect to, and you find out by letting go. This is what tells you first.
+var hovered_port: Dictionary = {}
+
+signal port_hovered(widget_name: String, side: String, index: int)
 
 var _overlay: CrossingOverlay
 var _glow: GlowOverlay
@@ -836,11 +849,42 @@ class GlowOverlay extends Control:
 		# A comparison every frame and a move almost never.
 		if get_index() != graph.get_child_count() - 1:
 			graph.move_child(self, graph.get_child_count() - 1)
-		if not graph.port_levels.is_empty():
+		if not graph.port_levels.is_empty() or not graph.hovered_port.is_empty():
 			queue_redraw()
 
+	## A ring around whatever the pointer is over.
+	##
+	## Not suppressed by reduced motion: it is a static response to where the pointer
+	## already is rather than something that moves on its own, and removing it would
+	## take away the only sign that a port is under the cursor at all.
+	func _draw_hover() -> void:
+		if graph.hovered_port.is_empty():
+			return
+		var node := graph.get_node_or_null(
+			NodePath(graph.hovered_port["widget"])) as GraphNode
+		if node == null:
+			return
+		var left: bool = graph.hovered_port["side"] == "left"
+		var index: int = graph.hovered_port["index"]
+		if index >= (node.get_input_port_count() if left else node.get_output_port_count()):
+			return
+		var spot: Vector2 = node.get_input_port_position(index) if left \
+			else node.get_output_port_position(index)
+		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		var screen := (node.position_offset + spot) * scale - graph.scroll_offset
+		var colour: Color = node.get_input_port_color(index) if left \
+			else node.get_output_port_color(index)
+		# An outline rather than a fill, so it reads as "this one" without covering the
+		# jack it is pointing at.
+		draw_arc(screen, 13.0 * scale, 0.0, TAU, 32,
+			Color(colour.r, colour.g, colour.b, 0.9), 2.0 * scale, true)
+
+
 	func _draw() -> void:
-		if graph == null or Design.reduced_motion:
+		if graph == null:
+			return
+		_draw_hover()
+		if Design.reduced_motion:
 			return
 		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
 		for node_name in graph.port_levels:
@@ -865,3 +909,37 @@ class GlowOverlay extends Control:
 				for ring in [[1.0, 0.22], [0.62, 0.38], [0.3, 1.0]]:
 					draw_circle(screen, radius * ring[0],
 						Color(colour.r, colour.g, colour.b, MAX_ALPHA * level * ring[1]))
+
+
+## Finds the port nearest the pointer, within the same reach as the connection hot
+## zone so that hovering and dropping agree about which port you mean.
+func _update_hover(local_point: Vector2) -> void:
+	var reach: float = float(get_theme_constant("port_hotzone_outer_extent"))
+	var scale: float = zoom if zoom > 0.0 else 1.0
+	var best := {}
+	var best_distance := reach
+
+	for child in get_children():
+		var node := child as GraphNode
+		if node == null or not node.visible:
+			continue
+		for side in ["left", "right"]:
+			var count: int = node.get_input_port_count() if side == "left" \
+				else node.get_output_port_count()
+			for index in count:
+				var spot: Vector2 = node.get_input_port_position(index) if side == "left" \
+					else node.get_output_port_position(index)
+				var screen := (node.position_offset + spot) * scale - scroll_offset
+				var distance := screen.distance_to(local_point)
+				if distance < best_distance:
+					best_distance = distance
+					best = {"widget": String(node.name), "side": side, "index": index}
+
+	if best == hovered_port:
+		return
+	hovered_port = best
+	queue_redraw()
+	if best.is_empty():
+		port_hovered.emit("", "", -1)
+	else:
+		port_hovered.emit(best["widget"], best["side"], best["index"])

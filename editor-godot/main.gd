@@ -312,6 +312,20 @@ func _apply_theme() -> void:
 	Design.set_colour(editor_theme, "grid_minor", "GraphEdit", Color("1a1d22"))
 	Design.set_colour(editor_theme, "grid_major", "GraphEdit", Color("222630"))
 	Design.set_colour(editor_theme, "activity", "GraphEdit", Design.ACCENT)
+	# While a cable is being dragged, GraphEdit tints the ports it could legally land
+	# on — but only if the theme says what that looks like, and at the default it is
+	# close enough to nothing that the answer to "can this go here" was still to let go
+	# and find out. Accent for a legal target, error for the cable's own end.
+	Design.set_colour(editor_theme, "connection_valid_target_tint_color", "GraphEdit",
+		Design.ACCENT)
+	Design.set_colour(editor_theme, "connection_hover_tint_color", "GraphEdit",
+		Design.INK_BRIGHT)
+	Design.set_colour(editor_theme, "connection_rim_color", "GraphEdit",
+		Design.SURFACES[Design.Surface.CANVAS])
+	Design.set_colour(editor_theme, "selection_fill", "GraphEdit",
+		Color(Design.ACCENT.r, Design.ACCENT.g, Design.ACCENT.b, 0.10))
+	Design.set_colour(editor_theme, "selection_stroke", "GraphEdit", Design.ACCENT)
+	Design.set_constant(editor_theme, "connection_hover_thickness", "GraphEdit", 5)
 	Design.set_box(editor_theme, "panel", "GraphEdit",
 		Design.panel(Design.Surface.CANVAS, 0, 0))
 
@@ -383,6 +397,16 @@ func _build_ui() -> void:
 	# line is a column, a medium one is a row, a faint one is the snap step. GraphEdit's
 	# built-in grid would otherwise draw a second, unrelated set of major lines over it.
 	graph_edit.show_grid_buttons = false
+	# The zoom percentage, spelled out. It was a row of icons whose middle one meant
+	# "reset to 100%" without saying what the current value was — and now that zoom
+	# decides how much of a node is drawn, the number is genuinely worth reading: it
+	# is the difference between "the parameters have gone" and "the parameters have
+	# gone because I am at 40%".
+	graph_edit.show_zoom_label = true
+	# And one button fewer. Arrange is in the toolbar menu now, so the icon beside the
+	# zoom controls was a second way to do a thing that already had a labelled one —
+	# the kind of duplication that makes a toolbar feel busy without adding anything.
+	graph_edit.show_arrange_button = false
 	graph_edit.grid_minor = GRID
 	graph_edit.grid_half_major = ROW_STEP
 	graph_edit.grid_major = COLUMN_PITCH
@@ -401,6 +425,7 @@ func _build_ui() -> void:
 	# Node drags and cable drags bracket their own undo entries, so a drag is one step
 	# rather than one per pixel of mouse movement.
 	graph_edit.detail_changed.connect(_apply_detail)
+	graph_edit.port_hovered.connect(_on_port_hovered)
 	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
 	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
@@ -2463,6 +2488,42 @@ func _apply_detail(level: int) -> void:
 						var label := part as Label
 						if label != null and label.has_meta("port_label"):
 							label.visible = show_port_names
+
+
+## Says what a port is, in words, while the pointer is on it.
+##
+## A jack on a piece of hardware is labelled. Here the node body has the name and the
+## colour and shape carry the type, which is fine once you know the vocabulary and no help
+## at all on the first day — "cutoff_mod" tells you nothing about what may be plugged into
+## it. The tooltip spells out direction, signal type and unit, and then the sentence the
+## core already carries for that port. Nothing new is invented here: it is the registry's
+## own documentation, shown at the moment it is wanted.
+func _on_port_hovered(widget_name: String, side: String, index: int) -> void:
+	if graph_edit == null:
+		return
+	if widget_name == "":
+		graph_edit.tooltip_text = ""
+		return
+
+	var node_id: String = ids.get(widget_name, "")
+	var ports := _port_list(node_id, "inputs" if side == "left" else "outputs")
+	if index < 0 or index >= ports.size():
+		graph_edit.tooltip_text = ""
+		return
+
+	var port: Dictionary = ports[index]
+	var unit := str(port.get("unit", ""))
+	var parts := [
+		"%s.%s" % [node_id, str(port["name"])],
+		"%s %s" % [str(port["type"]), "input" if side == "left" else "output"],
+	]
+	if unit != "":
+		parts.append(unit)
+	if side == "left" and bool(port.get("required", false)):
+		parts.append("required")
+
+	var summary := str(port.get("doc", ""))
+	graph_edit.tooltip_text = "  ·  ".join(parts) + ("\n" + summary if summary != "" else "")
 
 
 func _highlight(node_ids: Array) -> void:

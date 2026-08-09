@@ -534,6 +534,58 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- ports behave like jacks ---------------------------------------------------
+	# GraphEdit has no hover signal for ports and a large invisible hot zone around each
+	# one, so the thing you are about to connect to gave no sign of being the thing you
+	# were about to connect to — you found out by letting go.
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	await process_frame
+	var filter_node: GraphNode = main.widgets["filter"]
+	var port_spot: Vector2 = (filter_node.position_offset
+		+ filter_node.get_input_port_position(0)) - main.graph_edit.scroll_offset
+
+	main.graph_edit._update_hover(port_spot)
+	check(not main.graph_edit.hovered_port.is_empty(),
+		"the pointer over a port registers as hovering it")
+	check(main.graph_edit.hovered_port.get("side", "") == "left"
+			and int(main.graph_edit.hovered_port.get("index", -1)) == 0,
+		"and identifies which port (%s)" % str(main.graph_edit.hovered_port))
+
+	# The whole point of the enlarged hot zone: the visible jack is about 10px across, and
+	# WCAG 2.2 asks for a 24px target. A patching interface where missing the port is the
+	# usual way to fail at the main thing the app does should be well past the minimum.
+	main.graph_edit._update_hover(port_spot + Vector2(0, 11))
+	check(not main.graph_edit.hovered_port.is_empty(),
+		"a pointer 11px off centre still finds it, so the target is at least 22px across")
+	main.graph_edit._update_hover(port_spot + Vector2(0, 200))
+	check(main.graph_edit.hovered_port.is_empty(),
+		"and a pointer nowhere near it finds nothing")
+
+	# What the tooltip says. A jack on hardware is labelled; here the node body carries the
+	# name and the colour and shape carry the type, which is no help at all on day one —
+	# "cutoff_mod" tells you nothing about what may be plugged into it.
+	main.graph_edit._update_hover(port_spot)
+	var tip: String = main.graph_edit.tooltip_text
+	check(tip.contains("filter.in"), "the tooltip names the port (%s)" % tip.split("\n")[0])
+	check(tip.contains("audio") and tip.contains("input"),
+		"and says which direction and which kind of signal")
+	check(tip.contains("required"), "and that this one has to be connected")
+
+	# A port with a unit says so, because the unit is the thing you need in order to know
+	# what number belongs there.
+	var cutoff_spot: Vector2 = (filter_node.position_offset
+		+ filter_node.get_input_port_position(1)) - main.graph_edit.scroll_offset
+	main.graph_edit._update_hover(cutoff_spot)
+	check(main.graph_edit.tooltip_text.contains("Hz"),
+		"a port with a unit names it (%s)" % main.graph_edit.tooltip_text.split("\n")[0])
+
+	# Moving off clears it, or the last port hovered would keep describing itself over
+	# empty canvas.
+	main.graph_edit._update_hover(Vector2(-500, -500))
+	check(main.graph_edit.tooltip_text == "",
+		"and moving away from every port says nothing at all")
+
 	# ---- the signal glow reflects signal ------------------------------------------
 	# The one piece of movement in the editor, and the whole of its value is that it is
 	# measured rather than imagined. An editor that animated on a guess would be
