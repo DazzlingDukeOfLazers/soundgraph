@@ -74,6 +74,15 @@ const ACCENT := Color("6ee7b7")
 const WARNING := Color("ffcb73")
 const ERROR := Color("ff8f87")
 
+## Panic is not an error, and should not borrow the colour of one.
+##
+## Red on a control usually promises deletion or reports a fault. Silence is neither:
+## it is the loud thing in the room stopping, which is urgent without being wrong or
+## destructive. Amber is the honest signal — "this interrupts" rather than "this
+## breaks" — and it leaves red to mean a validation error, which is the one place in
+## this editor where red should make somebody look.
+const PANIC := Color("ffb454")
+
 # ---------------------------------------------------------------------------------
 # Spacing
 #
@@ -258,15 +267,15 @@ static func make_primary(button: Button) -> Button:
 ## should be unmistakable when looked for, not shouting the whole time.
 static func make_panic(button: Button) -> Button:
 	var normal := padded_panel(Surface.RAISED, SPACE_M, SPACE_S, RADIUS_BUTTON)
-	normal.border_color = ERROR
+	normal.border_color = PANIC
 	button.add_theme_stylebox_override("normal", normal)
 	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = ERROR.darkened(0.6)
+	hover.bg_color = PANIC.darkened(0.6)
 	button.add_theme_stylebox_override("hover", hover)
 	var pressed := hover.duplicate() as StyleBoxFlat
-	pressed.bg_color = ERROR.darkened(0.45)
+	pressed.bg_color = PANIC.darkened(0.45)
 	button.add_theme_stylebox_override("pressed", pressed)
-	button.add_theme_color_override("font_color", ERROR)
+	button.add_theme_color_override("font_color", PANIC)
 	button.add_theme_color_override("font_hover_color", INK_BRIGHT)
 	button.add_theme_font_override("font", font(WEIGHT_MEDIUM))
 	return button

@@ -534,6 +534,75 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- no text the font cannot draw ----------------------------------------------
+	# The editor was using Unicode symbols as icons and seven of the twelve were absent
+	# from Atkinson Hyperlegible Next, so they had been rendering as tofu boxes. Nothing
+	# reported it, because a missing glyph is not an error in Godot — it is a rectangle.
+	#
+	# So this walks every piece of text the running editor is actually showing and asks the
+	# font whether it can draw each character. It is the structural fix: the symbols could
+	# be reintroduced tomorrow and this would fail the same afternoon.
+	var ui_font: Font = Design.font(Design.WEIGHT_REGULAR)
+	var undrawable := {}
+	var scanned := 0
+	var to_visit: Array = [main]
+	while not to_visit.is_empty():
+		var node: Node = to_visit.pop_back()
+		for child in node.get_children(true):
+			to_visit.append(child)
+		var text := ""
+		if node is Label:
+			text = (node as Label).text
+		elif node is Button:
+			text = (node as Button).text
+		elif node is LineEdit:
+			text = (node as LineEdit).text + (node as LineEdit).placeholder_text
+		if text == "":
+			continue
+		scanned += 1
+		for index in text.length():
+			var code := text.unicode_at(index)
+			# Space and above; control characters are not the question here.
+			if code > 32 and not ui_font.has_char(code):
+				undrawable[text.substr(index, 1)] = true
+
+	check(scanned > 20, "there is UI text to check (%d controls)" % scanned)
+	check(undrawable.is_empty(),
+		"every character the editor shows is one the font can draw%s"
+			% ("" if undrawable.is_empty() else ": " + " ".join(undrawable.keys())))
+
+	# And the icons that replaced those symbols actually mark pixels. An icon that draws
+	# nothing is the same failure wearing a new hat — invisible, and reported by nothing.
+	var blank := []
+	for kind in [Icons.Kind.CARET_RIGHT, Icons.Kind.CARET_DOWN, Icons.Kind.DOT,
+			Icons.Kind.TICK, Icons.Kind.STOP, Icons.Kind.PLAY, Icons.Kind.CHEVRON_LEFT,
+			Icons.Kind.CHEVRON_RIGHT, Icons.Kind.ARROW_RIGHT]:
+		var drawn: Image = Icons.get_icon(kind, 16, Design.INK_NORMAL).get_image()
+		var marked := 0
+		for y in drawn.get_height():
+			for x in drawn.get_width():
+				if drawn.get_pixel(x, y).a > 0.5:
+					marked += 1
+		if marked < 6:
+			blank.append(str(kind))
+	check(blank.is_empty(),
+		"every icon draws something (%s)"
+			% ("all nine" if blank.is_empty() else "blank: " + ", ".join(blank)))
+
+	# And they are told apart. Nine icons that all drew the same blob would pass the check
+	# above and be worthless.
+	var shapes := {}
+	for kind in [Icons.Kind.CARET_RIGHT, Icons.Kind.DOT, Icons.Kind.TICK, Icons.Kind.STOP,
+			Icons.Kind.PLAY, Icons.Kind.ARROW_RIGHT]:
+		var drawn: Image = Icons.get_icon(kind, 16, Design.INK_NORMAL).get_image()
+		var signature := ""
+		for y in drawn.get_height():
+			for x in drawn.get_width():
+				signature += "1" if drawn.get_pixel(x, y).a > 0.5 else "0"
+		shapes[signature] = true
+	check(shapes.size() == 6,
+		"and no two of them are the same shape (%d distinct of 6)" % shapes.size())
+
 	# ---- the inspector gets out of the way -----------------------------------------
 	# It held 380px of the window whether it was showing a node's parameters or the words
 	# "Graph valid", and graph work wants horizontal room more than almost anything else.
@@ -661,7 +730,7 @@ func _initialize() -> void:
 	await main._load_example("First Synth")
 	await process_frame
 	check(not main.unsaved, "a freshly opened patch has nothing unsaved")
-	check(not main.document_label.text.contains("●"),
+	check(not main.document_label.text.contains("unsaved"),
 		"and its name is plain (%s)" % main.document_label.text)
 
 	main._begin_edit()
@@ -669,7 +738,7 @@ func _initialize() -> void:
 	main._commit_edit("set cutoff")
 	await process_frame
 	check(main.unsaved, "changing something marks it unsaved")
-	check(main.document_label.text.contains("●"),
+	check(main.document_label.text.contains("unsaved"),
 		"and the document name says so (%s)" % main.document_label.text)
 
 	# Opening another document clears it, or the mark would follow you around for the

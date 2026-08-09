@@ -141,6 +141,10 @@ var split: HSplitContainer
 var side_panel: VBoxContainer
 var side_panel_body: VBoxContainer
 var side_panel_toggle: Button
+var transport_dot: TextureRect
+var message_label: Label
+var _message_clears_at := 0
+var _problem_count := 0
 var arrange_popup: PopupMenu
 var view_popup: PopupMenu
 var keyboard_bar: Control
@@ -707,13 +711,34 @@ func _build_toolbar() -> Control:
 	view_group.add_child(_defocus(view_menu))
 
 	# ---- performance, pinned to the right ----------------------------------------
-	var pin := Control.new()
-	pin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(pin)
+	# The gap that pins the performance group right is also where passing remarks go.
+	#
+	# There are two kinds of thing to say and ten places were writing one label: three
+	# states ("playing", "patch has errors") and seven remarks ("undid move", "saved",
+	# "placed 7 nodes"). Whichever happened last owned the line, so the strip could sit
+	# reading "saved" while the graph was broken.
+	#
+	# The remark lives in the flexible middle rather than a slot of its own, because a
+	# fixed slot holds the toolbar open: "arranged 7 nodes — the file had no layout"
+	# took the layout's minimum width from 1267 to 1515 and pushed the inspector off
+	# the screen, which is a bug this file already has a test for.
+	message_label = Label.new()
+	message_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	message_label.clip_text = true
+	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	message_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	message_label.add_theme_font_size_override("font_size",
+		Design.scale(Design.SIZE_SECONDARY))
+	message_label.add_theme_color_override("font_color", Design.INK_SECOND)
+	bar.add_child(message_label)
 	var performance := _toolbar_group(bar)
 
 	var retrigger := Button.new()
-	retrigger.text = "▶  Fire"
+	# "Fire" was a personality word that only reads as one if you already know what it
+	# does. "Audition" is what this is: play the patch once so you can hear it, without
+	# committing to holding a key down.
+	retrigger.text = "Audition"
+	retrigger.icon = _icon(Icons.Kind.PLAY, Design.INK_NORMAL)
 	retrigger.tooltip_text = "Play a one-shot patch again from the start. Does nothing " 		+ "audible to a patch that waits for notes."
 	retrigger.pressed.connect(func() -> void:
 		if engine == null or not engine.is_loaded():
@@ -724,7 +749,7 @@ func _build_toolbar() -> Control:
 		engine.reset()
 		_let_go_note(60)
 		_hold_note(60)
-		status_label.text = "fired")
+		_say("fired"))
 	performance.add_child(_defocus(retrigger))
 
 	# The panic control. Everything else in this bar can be hunted for; this one
@@ -733,7 +758,8 @@ func _build_toolbar() -> Control:
 	# glyph, and it is pinned to the right edge — a fixed place, not a position that
 	# depends on how many other buttons happen to be showing.
 	var panic := Button.new()
-	panic.text = "■  Silence"
+	panic.text = "Silence"
+	panic.icon = _icon(Icons.Kind.STOP, Design.PANIC)
 	panic.tooltip_text = "Stop every sounding note immediately (Escape)"
 	panic.pressed.connect(_all_notes_off)
 	performance.add_child(Design.make_panic(_defocus(panic) as Button))
@@ -741,9 +767,23 @@ func _build_toolbar() -> Control:
 	# ---- status ------------------------------------------------------------------
 	# One short line rather than prose: what state the engine is in, and whether the
 	# graph is valid. Set from _refresh_status().
+	# One strip, three facts, always in the same order.
+	#
+	# The engine state, whether the graph is valid, and the sample rate were in three
+	# different places in three different voices — "playing" alone in the far corner,
+	# "Graph valid" at the top of the inspector, and the rate buried in the cost
+	# readout. Read together they answer "is this thing working" at a glance; scattered,
+	# each one on its own looked like an afterthought.
 	var status_group := _toolbar_group(bar)
+	status_group.add_theme_constant_override("separation", Design.SPACE_S)
+
+	transport_dot = TextureRect.new()
+	transport_dot.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	status_group.add_child(transport_dot)
+
 	status_label = Label.new()
 	status_label.text = "starting…"
+	status_label.add_theme_font_override("font", Design.numeric_font())
 	status_label.add_theme_font_size_override("font_size",
 		Design.scale(Design.SIZE_SECONDARY))
 	status_label.add_theme_color_override("font_color", Design.INK_SECOND)
@@ -845,7 +885,10 @@ func _set_side_panel_open(open: bool) -> void:
 		# words that still takes clicks and still has to be laid out.
 		side_panel_body.visible = open
 	if side_panel_toggle != null:
-		side_panel_toggle.text = "›" if open else "‹"
+		side_panel_toggle.text = ""
+		side_panel_toggle.icon = _icon(
+			Icons.Kind.CHEVRON_RIGHT if open else Icons.Kind.CHEVRON_LEFT,
+			Design.INK_SECOND)
 		side_panel_toggle.tooltip_text = ("Hide the inspector  (Ctrl+I)" if open
 			else "Show the inspector  (Ctrl+I)")
 	_fit_side_panel()
@@ -981,7 +1024,7 @@ func _fill_graph_context() -> void:
 	if not info["feedback"].is_empty():
 		context_panel.add_child(_field("Feedback"))
 		for edge in info["feedback"]:
-			context_panel.add_child(_value("%s → %s (previous block)"
+			context_panel.add_child(_value("%s to %s (previous block)"
 				% [edge["from"], edge["to"]], Design.WARNING))
 
 	var cost: Dictionary = info["cost"]
@@ -1174,6 +1217,9 @@ func _process(_delta: float) -> void:
 		engine.fill_playback(playback, playback.get_frames_available())
 	_update_scope()
 	_update_port_levels(_delta)
+	if message_label != null and message_label.text != "" \
+			and Time.get_ticks_msec() > _message_clears_at:
+		message_label.text = ""
 
 
 ## Measures what every output port is actually carrying, for the signal glow.
@@ -1544,7 +1590,9 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 	var toggle := Button.new()
 	toggle.toggle_mode = true
 	toggle.flat = true
-	toggle.text = "▸  %d more" % extra.size()
+	toggle.text = "%d more" % extra.size()
+	toggle.icon = _icon(Icons.Kind.CARET_RIGHT, Design.INK_SECOND,
+		Design.SIZE_SECONDARY)
 	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	toggle.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
 	toggle.add_theme_color_override("font_color", Design.INK_SECOND)
@@ -1554,7 +1602,9 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 		for row in extra:
 			row.set_meta("collapsed", not pressed)
 			row.visible = pressed and graph_edit.detail == PatchGraph.Detail.FULL
-		toggle.text = "▾  fewer" if pressed else "▸  %d more" % extra.size())
+		toggle.text = "fewer" if pressed else "%d more" % extra.size()
+		toggle.icon = _icon(Icons.Kind.CARET_DOWN if pressed else Icons.Kind.CARET_RIGHT,
+			Design.INK_SECOND, Design.SIZE_SECONDARY))
 	toggle.set_meta("row", "parameter")
 	widget.add_child(_defocus(toggle))
 
@@ -1959,7 +2009,10 @@ func _set_keyboard_expanded(expanded: bool) -> void:
 		if not expanded:
 			_release_all_notes()
 	if keyboard_toggle != null:
-		keyboard_toggle.text = "▾  Keyboard" if expanded else "▸  Keyboard"
+		keyboard_toggle.text = "Keyboard"
+		keyboard_toggle.icon = _icon(
+			Icons.Kind.CARET_DOWN if expanded else Icons.Kind.CARET_RIGHT,
+			Design.INK_SECOND)
 		keyboard_toggle.tooltip_text = ("Collapse the keyboard" if expanded
 			else "Show the keyboard")
 
@@ -2292,7 +2345,7 @@ func _auto_place() -> void:
 func _arrange_selection() -> void:
 	var selected := _selected_ids()
 	if selected.size() < 2:
-		status_label.text = "select two or more nodes to arrange them together"
+		_say("select two or more nodes to arrange them together")
 		return
 	await _arrange(selected)
 
@@ -2367,8 +2420,8 @@ func _arrange(movable: Array) -> void:
 	await _rebuild_view()
 	_apply()
 	_commit_edit("auto-place")
-	status_label.text = "placed %d node%s" % [
-		placed.size(), "" if placed.size() == 1 else "s"]
+	_say("placed %d node%s" % [
+		placed.size(), "" if placed.size() == 1 else "s"])
 
 
 # ---------------------------------------------------------------------------------
@@ -2403,7 +2456,7 @@ func _refresh_document_label() -> void:
 	# A dot rather than an asterisk, and the name goes bright rather than gaining
 	# punctuation — the change should be noticeable without the label jumping about,
 	# and a leading "*" shifts every character along by one.
-	document_label.text = document_name + ("  ●" if unsaved else "")
+	document_label.text = document_name + ("  (unsaved)" if unsaved else "")
 	document_label.add_theme_color_override("font_color",
 		Design.INK_NORMAL if unsaved else Design.INK_SECOND)
 
@@ -2449,7 +2502,7 @@ func _restore(snapshot: Dictionary) -> void:
 				var value: float = node["parameters"][parameter_name]
 				engine.set_parameter(node["id"], parameter_name, value)
 				_show_parameter(node["id"], parameter_name, value)
-		status_label.text = "playing"
+		_refresh_status()
 	else:
 		_rebuild_and_apply()
 	_refresh_undo_buttons()
@@ -2485,7 +2538,7 @@ func _undo() -> void:
 		return
 	var label := undo_redo.get_current_action_name()
 	undo_redo.undo()
-	status_label.text = "undid %s" % label
+	_say("undid %s" % label)
 	_refresh_undo_buttons()
 
 
@@ -2493,7 +2546,7 @@ func _redo() -> void:
 	if not undo_redo.has_redo():
 		return
 	undo_redo.redo()
-	status_label.text = "redid %s" % undo_redo.get_current_action_name()
+	_say("redid %s" % undo_redo.get_current_action_name())
 	_refresh_undo_buttons()
 
 
@@ -2577,9 +2630,9 @@ func _apply() -> void:
 		# the graph is — otherwise the glow keeps lighting ports that no longer exist.
 		_rebuild_level_targets()
 		_show_info()
-		status_label.text = "playing"
+		_refresh_status()
 	else:
-		status_label.text = "patch has errors"
+		_refresh_status()
 
 
 func _show_diagnostics(diagnostics: Array) -> void:
@@ -2590,8 +2643,10 @@ func _show_diagnostics(diagnostics: Array) -> void:
 	# old green "No problems." sat under a PROBLEMS heading taking a fifth of the panel
 	# to announce that nothing had happened, which is how a reader learns to ignore the
 	# place where problems appear.
+	_problem_count = diagnostics.size()
+	_refresh_status()
 	if diagnostics.is_empty():
-		health_label.text = "✓  Graph valid"
+		health_label.text = "Graph valid"
 		health_label.add_theme_color_override("font_color", Design.INK_SECOND)
 		diagnostics_heading.visible = false
 		_highlight([])
@@ -2781,6 +2836,61 @@ func _set_node_hovered(widget: GraphNode, hovered: bool) -> void:
 	widget.add_theme_stylebox_override("titlebar", head)
 
 
+## Puts a drawn icon on a control, at the size the ink around it is using.
+##
+## Every one of these was a Unicode symbol until it turned out that seven of the twelve
+## are absent from Atkinson Hyperlegible Next and had been rendering as tofu boxes. A
+## missing glyph is not an error in Godot, it is a rectangle, so nothing said so.
+func _icon(kind: int, colour: Color = Design.INK_NORMAL, size: int = 0) -> Texture2D:
+	return Icons.get_icon(kind, Design.scale(size if size > 0 else Design.SIZE_CONTROL),
+		colour)
+
+
+## A passing remark, shown beside the state strip and taken away again.
+##
+## Separate from the strip because it answers a different question: the strip says what is
+## true now, this says what just happened. Conflating them is how a status line ends up
+## claiming the graph is fine because saving was the last thing anybody did.
+func _say(message: String) -> void:
+	if message_label == null:
+		return
+	message_label.text = message
+	message_label.tooltip_text = message
+	_message_clears_at = Time.get_ticks_msec() + 4000
+
+
+## The status strip: running, valid, and at what rate.
+##
+## Rebuilt from state rather than written at each event, so it cannot end up saying
+## "saved" while the graph is broken — which the old single label could, because whichever
+## thing happened last owned the whole line.
+func _refresh_status() -> void:
+	if status_label == null:
+		return
+	var running: bool = engine != null and bool(engine.is_loaded())
+	var valid := _problem_count == 0
+
+	if transport_dot != null:
+		transport_dot.texture = _icon(Icons.Kind.DOT,
+			Design.ACCENT if running else Design.INK_DISABLED, Design.SIZE_SECONDARY)
+		transport_dot.tooltip_text = "Audio running" if running else "Audio stopped"
+
+	var parts := ["Audio running" if running else "Audio stopped"]
+	parts.append("Graph valid" if valid else "%d problem%s"
+		% [_problem_count, "" if _problem_count == 1 else "s"])
+	if running:
+		# "48k" rather than "48 kHz". Six pixels over the 1280px budget is still over it,
+		# and the budget is there because the alternative is the inspector going off the
+		# side of a laptop screen again. The exact figure is in the tooltip, which is the
+		# right home for a number that has never once changed while somebody watched.
+		parts.append("48k")
+	status_label.text = "  ·  ".join(parts)
+	status_label.tooltip_text = ("Audio %s · graph %s · 48000 Hz"
+		% ["running" if running else "stopped", "valid" if valid else "has problems"])
+	status_label.add_theme_color_override("font_color",
+		Design.INK_SECOND if valid else Design.ERROR)
+
+
 func _highlight(node_ids: Array) -> void:
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
@@ -2860,14 +2970,14 @@ func _load_example(name: String) -> void:
 		_importing_module = false
 		var module_file := FileAccess.open(path, FileAccess.READ)
 		if module_file == null:
-			status_label.text = "could not read %s" % path
+			_say("could not read %s" % path)
 			return
 		_import_module(module_file.get_as_text(), ModuleImport.name_from_path(path))
 		return
 
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		status_label.text = "could not open %s" % path
+		_say("could not open %s" % path)
 		return
 	_set_document_name(path.get_file())
 	_load_text(file.get_as_text())
@@ -2878,18 +2988,18 @@ func _on_file_selected(path: String) -> void:
 		_capture_positions()
 		var out := FileAccess.open(path, FileAccess.WRITE)
 		if out == null:
-			status_label.text = "could not write %s" % path
+			_say("could not write %s" % path)
 			return
 		# Written through the core's serialiser, not Godot's: the patch format is the
 		# product, and it should read the same whichever editor saved it.
 		out.store_string(engine.format_patch(JSON.stringify(patch, "  ")))
 		_set_document_name(path.get_file())
-		status_label.text = "saved"
+		_say("saved")
 		return
 
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		status_label.text = "could not open %s" % path
+		_say("could not open %s" % path)
 		return
 	# Named, which opening through the dialog never did — the toolbar went on showing
 	# whatever had been open before, and the one place that says which file you are
@@ -2938,7 +3048,7 @@ func _web_open() -> void:
 	_web_callback = JavaScriptBridge.create_callback(_on_web_file_chosen)
 	var window = JavaScriptBridge.get_interface("window")
 	if window == null:
-		status_label.text = "this browser did not expose a file picker"
+		_say("this browser did not expose a file picker")
 		return
 	window.soundgraphPickFile(_web_callback)
 
@@ -2962,7 +3072,7 @@ func _on_web_file_chosen(arguments: Array) -> void:
 func _import_module(text: String, module_name: String) -> void:
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
-		status_label.text = "that file is not a patch"
+		_say("that file is not a patch")
 		return
 
 	_begin_edit()
@@ -2978,14 +3088,14 @@ func _import_module(text: String, module_name: String) -> void:
 	var result: ModuleImport.Result = ModuleImport.merge(patch, parsed, module_name, registry, at)
 	if not result.ok():
 		_pending_snapshot = {}
-		status_label.text = result.error
+		_say(result.error)
 		return
 
 	_rebuild_view()
 	_apply()
 	_commit_edit("add module %s" % module_name)
 	# _apply sets its own status; the import has more to say than "playing".
-	status_label.text = "%s: %s" % [module_name, result.summary()]
+	_say("%s: %s" % [module_name, result.summary()])
 
 
 func _web_save() -> void:
@@ -2995,13 +3105,13 @@ func _web_save() -> void:
 	var file_name := name.to_lower().replace(" ", "-") + ".json"
 	JavaScriptBridge.download_buffer(text.to_utf8_buffer(), file_name, "application/json")
 	_set_document_name(file_name)
-	status_label.text = "downloaded %s" % file_name
+	_say("downloaded %s" % file_name)
 
 
 func _load_text(text: String) -> void:
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
-		status_label.text = "that file is not a patch"
+		_say("that file is not a patch")
 		return
 	patch = parsed
 	# A freshly opened document has no unsaved changes in it by definition, and every
@@ -3064,9 +3174,9 @@ func _load_text(text: String) -> void:
 	_apply()
 	_refresh_undo_buttons()
 	if needs_layout:
-		status_label.text = "arranged %d nodes — the file had no layout" % patch["nodes"].size()
+		_say("arranged %d nodes — the file had no layout" % patch["nodes"].size())
 	elif moved > 0:
-		status_label.text = "snapped %d node%s to the grid" % [moved, "" if moved == 1 else "s"]
+		_say("snapped %d node%s to the grid" % [moved, "" if moved == 1 else "s"])
 
 
 # ---------------------------------------------------------------------------------
