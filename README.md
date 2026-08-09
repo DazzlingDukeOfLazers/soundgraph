@@ -90,8 +90,28 @@ To check that a patch survives a trip through the editor unchanged:
 node tools/verify-roundtrip.mjs
 ```
 
+## On hardware
+
+The same core again, as ESP-IDF firmware. A board plays its patch from power-on with no
+host attached, and a patch deployed over serial survives power cycles.
+
+```bash
+C:\Users\danie\esp-idf\export.bat
+cd embedded/esp32-s3 && idf.py -DSG_BOARD=esp32-s3-audio-board build flash monitor
+```
+
+See [embedded/README.md](embedded/README.md).
+
 ## Status
 
-Milestone C — *Two Editors* — complete. The same graph now runs natively, in a browser,
-and in Godot, and a patch survives a trip through either editor unchanged. See
-[docs/current-phase.md](docs/current-phase.md).
+Milestones A, B, C and F are complete. **One graph model behaves identically, within
+declared tolerances, under four compilers on four architectures** — MSVC/x64, Clang/WASM,
+GCC/Godot and Xtensa/ESP32-S3 — judged by one shared manifest against one set of recorded
+vectors.
+
+| target | worst difference from the native vectors |
+|---|---|
+| WebAssembly | 2.09e-7 (tolerance 1e-5) |
+| ESP32-S3 | 1.90e-5 (tolerance 1e-4) |
+
+Now in Knobcon hardening. See [docs/current-phase.md](docs/current-phase.md).

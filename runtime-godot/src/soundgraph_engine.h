@@ -47,6 +47,14 @@ public:
     // {"ok": bool, "diagnostics": [...]}. Cheap enough to call on every edit.
     godot::String validate_patch(const godot::String& patch_json) const;
 
+    // Re-writes a patch through the core's own serialiser, which is what every saved
+    // patch should go through. Godot's JSON.stringify sorts keys alphabetically and
+    // renders every number as a float — so a saved patch would arrive with
+    // "schema_version": 1.0 and its fields shuffled. The patch format is the product;
+    // it should not degrade just because of which editor wrote it.
+    // Returns the input unchanged if it cannot be parsed.
+    godot::String format_patch(const godot::String& patch_json) const;
+
     // ---- the live graph -------------------------------------------------------------
 
     // Builds the patch at the given sample rate. Returns false if it cannot be realised;

@@ -20,3 +20,14 @@ macos.template_release = "res://bin/libsoundgraph_godot.dylib"
 linux.editor.x86_64 = "res://bin/libsoundgraph_godot.so"
 linux.template_debug.x86_64 = "res://bin/libsoundgraph_godot.so"
 linux.template_release.x86_64 = "res://bin/libsoundgraph_godot.so"
+
+; Web. The extension is an Emscripten SIDE_MODULE, and the export must use one of the
+; "dlink" templates or the engine has no dynamic loader to give it. The nothreads variant
+; is deliberate: threaded web exports need SharedArrayBuffer, which needs cross-origin
+; isolation headers, which a plain static host does not send — and a zero-install URL that
+; only works behind special headers is not zero-install.
+; Only the release entries: the web library is built against godot-cpp's template_release,
+; so pointing a debug export at the same file would be a quiet mismatch. A debug export
+; will fail to find a library, which says what is wrong; a mismatched one would not.
+web.release.wasm32.nothreads = "res://bin/soundgraph_godot.web.wasm32.nothreads.wasm"
+web.release.wasm32 = "res://bin/soundgraph_godot.web.wasm32.nothreads.wasm"

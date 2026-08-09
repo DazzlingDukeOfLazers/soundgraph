@@ -17,6 +17,7 @@ window.soundgraph = engine;
 
 const ui = {
     start: document.getElementById('start'),
+    deploy: document.getElementById('deploy'),
     status: document.getElementById('status'),
     meterFill: document.getElementById('meter-fill'),
     patch: document.getElementById('patch'),
@@ -466,6 +467,139 @@ engine.addEventListener('meter', (event) => {
 engine.addEventListener('engineerror', (event) => {
     ui.status.textContent = `engine: ${event.detail}`;
 });
+
+// ---------------------------------------------------------------------------------
+// Deploy to hardware
+//
+// The demo's whole point, as one click: the patch in this page, over Web Serial, into
+// the board's NVS. Speaks the same console protocol as tools/esp32/sg-serial.py —
+// "load <n>" / SEND / bytes / OK — and shows the device's own diagnostics on failure,
+// which are the same diagnostics this page shows, because they come from the same core.
+// Chrome-only; the button simply does not exist elsewhere.
+// ---------------------------------------------------------------------------------
+
+async function deployToBoard() {
+    const validation = validateCurrentText();
+    if (!validation?.ok) {
+        ui.status.textContent = 'fix the patch before deploying';
+        return;
+    }
+    const payload = encoder.encode(ui.patch.value);
+
+    let port;
+    try {
+        port = await navigator.serial.requestPort();
+    } catch {
+        return;  // chooser dismissed
+    }
+
+    ui.deploy.disabled = true;
+    ui.status.textContent = 'deploying…';
+
+    const serialDecoder = new TextDecoder();
+    let received = '';
+    let scanFrom = 0;
+    let reader = null;
+    let writer = null;
+
+    const pumpDone = (async () => {
+        // Background read pump: everything the board says accumulates in `received`.
+        while (port.readable) {
+            reader = port.readable.getReader();
+            try {
+                for (;;) {
+                    const { value, done } = await reader.read();
+                    if (done) return;
+                    if (value) received += serialDecoder.decode(value, { stream: true });
+                }
+            } catch {
+                return;  // port closed or unplugged
+            } finally {
+                reader.releaseLock();
+            }
+        }
+    })();
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const waitQuiet = async (quietMs, limitMs) => {
+        const start = performance.now();
+        let lastLength = received.length;
+        let lastChange = start;
+        while (performance.now() - start < limitMs) {
+            await sleep(50);
+            if (received.length !== lastLength) {
+                lastLength = received.length;
+                lastChange = performance.now();
+            } else if (performance.now() - lastChange > quietMs) {
+                break;
+            }
+        }
+        scanFrom = received.length;
+    };
+
+    const waitForLine = async (prefixes, timeoutMs) => {
+        const start = performance.now();
+        while (performance.now() - start < timeoutMs) {
+            const lines = received.slice(scanFrom).split('\n');
+            for (const raw of lines) {
+                const line = raw.trim();
+                for (const prefix of prefixes) {
+                    if (line.startsWith(prefix)) {
+                        scanFrom = received.length;
+                        return line;
+                    }
+                }
+            }
+            await sleep(50);
+        }
+        return null;
+    };
+
+    try {
+        await port.open({ baudRate: 115200 });
+        writer = port.writable.getWriter();
+
+        // Opening the port reset the board; let the boot chatter finish first.
+        await waitQuiet(500, 6000);
+
+        await writer.write(encoder.encode(`load ${payload.length}\n`));
+        const sendLine = await waitForLine(['SEND', 'ERR'], 5000);
+        if (!sendLine?.startsWith('SEND')) {
+            throw new Error(sendLine ?? 'the board never answered — is something else using the port?');
+        }
+
+        await writer.write(payload);
+        const answer = await waitForLine(['OK', 'ERR'], 30000);
+
+        if (answer?.startsWith('OK')) {
+            const name = currentPatch?.metadata?.name ?? 'patch';
+            ui.status.textContent = `${name} is on the board`;
+        } else if (answer?.startsWith('ERR [')) {
+            // The board's build diagnostics, rendered exactly like local ones.
+            renderDiagnostics(JSON.parse(answer.slice(4)), { valid: false });
+            ui.status.textContent = 'the board rejected the patch';
+        } else {
+            throw new Error(answer ?? 'no reply to the upload');
+        }
+    } catch (error) {
+        ui.status.textContent = `deploy failed: ${error.message ?? error}`;
+    } finally {
+        try { writer?.releaseLock(); } catch { /* already closed */ }
+        try { await reader?.cancel(); } catch { /* already closed */ }
+        await pumpDone;
+        try { await port.close(); } catch { /* already closed */ }
+        ui.deploy.disabled = false;
+    }
+}
+
+if ('serial' in navigator) {
+    ui.deploy.hidden = false;
+    ui.deploy.addEventListener('click', () => {
+        deployToBoard();
+        ui.deploy.blur();
+    });
+}
 
 // ---------------------------------------------------------------------------------
 // Boot

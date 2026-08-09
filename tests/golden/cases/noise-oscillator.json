@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: noise oscillator",
+    "description": "Pitched noise with a downward slide, which is what a game explosion is. Distinct from the noise case, which is unpitched.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "pitch",
+      "type": "Constant",
+      "parameters": {
+        "value": 900
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "acceleration": 0,
+        "limit": 60,
+        "slide": -900
+      }
+    },
+    {
+      "id": "osc",
+      "type": "NoiseOscillator",
+      "parameters": {
+        "seed": 12345,
+        "steps": 32
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "slide",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "slide",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "explosion-3",
+    "description": "Generated from sfxr parameters by sfxr-ref patch. Do not edit by hand.",
+    "tags": ["sfxr"]
+  },
+  "nodes": [
+    {
+      "id": "pitch",
+      "type": "Constant",
+      "parameters": {
+        "value": 104.177
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "slide": -87.3311,
+        "acceleration": 0,
+        "limit": 3.528
+      }
+    },
+    {
+      "id": "arpeggio",
+      "type": "Arpeggio",
+      "parameters": {
+        "time": 0.00817924,
+        "interval": 0.264357
+      }
+    },
+    {
+      "id": "osc",
+      "type": "NoiseOscillator",
+      "parameters": {
+        "steps": 32,
+        "seed": 12345
+      }
+    },
+    {
+      "id": "vibrato",
+      "type": "LFO",
+      "parameters": {
+        "rate": 21.405,
+        "shape": 0,
+        "amount": 0.48318,
+        "offset": 0
+      }
+    },
+    {
+      "id": "phaser",
+      "type": "Phaser",
+      "parameters": {
+        "offset": 0.00289065,
+        "sweep": -3.01631,
+        "depth": 1
+      }
+    },
+    {
+      "id": "trigger",
+      "type": "Constant",
+      "parameters": {
+        "value": 1
+      }
+    },
+    {
+      "id": "envelope",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.0576587,
+        "decay": 0.0327893,
+        "punch": 0.33686
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.05
+      }
+    },
+    {
+      "id": "repeat",
+      "type": "Retrigger",
+      "parameters": {
+        "rate": 6.34603,
+        "width": 1
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {"node": "pitch", "port": "out"},
+      "to": {"node": "slide", "port": "frequency"}
+    },
+    {
+      "from": {"node": "slide", "port": "frequency"},
+      "to": {"node": "arpeggio", "port": "frequency"}
+    },
+    {
+      "from": {"node": "arpeggio", "port": "frequency"},
+      "to": {"node": "osc", "port": "frequency"}
+    },
+    {
+      "from": {"node": "vibrato", "port": "out"},
+      "to": {"node": "osc", "port": "fm"}
+    },
+    {
+      "from": {"node": "osc", "port": "out"},
+      "to": {"node": "phaser", "port": "in"}
+    },
+    {
+      "from": {"node": "trigger", "port": "out"},
+      "to": {"node": "envelope", "port": "gate"}
+    },
+    {
+      "from": {"node": "phaser", "port": "out"},
+      "to": {"node": "amp", "port": "in"}
+    },
+    {
+      "from": {"node": "envelope", "port": "out"},
+      "to": {"node": "amp", "port": "gain"}
+    },
+    {
+      "from": {"node": "repeat", "port": "gate"},
+      "to": {"node": "slide", "port": "gate"}
+    },
+    {
+      "from": {"node": "repeat", "port": "gate"},
+      "to": {"node": "arpeggio", "port": "gate"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "left"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "right"}
+    }
+  ]
+}

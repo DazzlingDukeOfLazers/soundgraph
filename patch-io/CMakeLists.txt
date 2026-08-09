@@ -1,8 +1,8 @@
 # patch-io is the only place that knows the canonical format is text.
-add_library(soundgraph-patch-io STATIC
-    src/json.cpp
-    src/patch_io.cpp
-)
+# The file list is shared with the ESP-IDF component; see dsp-core/sources.cmake.
+include(${CMAKE_CURRENT_LIST_DIR}/../dsp-core/sources.cmake)
+
+add_library(soundgraph-patch-io STATIC ${SOUNDGRAPH_PATCH_IO_SOURCES})
 
 target_include_directories(soundgraph-patch-io
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include

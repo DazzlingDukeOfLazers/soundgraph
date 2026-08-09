@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: Pulse width sweep",
+    "description": "A square whose duty is swept from the middle towards a narrow pulse.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "osc",
+      "type": "SquareOscillator",
+      "parameters": {
+        "frequency": 180,
+        "pulse_width": 0.5,
+        "pulse_width_sweep": -3.5
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

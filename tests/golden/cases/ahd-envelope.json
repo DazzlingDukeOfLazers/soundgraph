@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: AHD envelope",
+    "description": "Retrigger driving an AHD envelope with punch. Records the attack, the punch falling back across the hold, the decay, and the restart.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "clock",
+      "type": "Retrigger",
+      "parameters": {
+        "rate": 10,
+        "width": 1
+      }
+    },
+    {
+      "id": "env",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.01,
+        "decay": 0.05,
+        "hold": 0.02,
+        "punch": 0.6
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

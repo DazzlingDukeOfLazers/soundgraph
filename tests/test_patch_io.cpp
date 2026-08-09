@@ -1,4 +1,5 @@
 // The text boundary: parsing, serialising, and surviving the round trip.
+#include <cmath>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -169,11 +170,53 @@ TEST(editor_layout_is_carried_through_the_format) {
         if (node.id == "filter") {
             found = true;
             CHECK(node.has_position);
-            CHECK_NEAR(node.x, 500.0, 0.001);
-            CHECK_NEAR(node.y, 160.0, 0.001);
+            // The filter sits in the third column of the signal chain. Its column is
+            // structural and worth pinning; its exact row is the layout algorithm's
+            // business and would make this test fail every time that is tuned.
+            CHECK_NEAR(node.x, 800.0, 0.001);
         }
     }
     CHECK_MESSAGE(found, "the filter node should be in the example patch");
+
+    // Every shipped example is laid out on the editor's grid. A stray off-grid position
+    // means someone saved from a tool that does not respect it.
+    for (const soundgraph::NodeDescription& node : graph.nodes) {
+        if (!node.has_position) {
+            continue;
+        }
+        CHECK_MESSAGE(std::fmod(node.x, 40.0f) == 0.0f && std::fmod(node.y, 40.0f) == 0.0f,
+                      node.id + " sits off the 40 grid");
+    }
+}
+
+TEST(cable_waypoints_round_trip) {
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(
+        R"({"schema_version": 1,
+            "nodes": [{"id": "a", "type": "SineOscillator"}, {"id": "out", "type": "StereoOutput"}],
+            "connections": [{"from": {"node": "a", "port": "out"},
+                             "to": {"node": "out", "port": "left"},
+                             "waypoint": {"x": 320, "y": -80}}]})",
+        graph, diagnostics));
+
+    CHECK(graph.connections[0].has_waypoint);
+    CHECK_NEAR(graph.connections[0].waypoint_x, 320.0, 0.001);
+    CHECK_NEAR(graph.connections[0].waypoint_y, -80.0, 0.001);
+
+    // A dragged cable is layout, and layout has to survive a save like any other.
+    GraphDescription reloaded;
+    const std::string text = soundgraph::write_patch(graph, true);
+    CHECK(text.find("\"waypoint\"") != std::string::npos);
+    CHECK(soundgraph::parse_patch(text, reloaded, diagnostics));
+    CHECK(reloaded.connections[0].has_waypoint);
+    CHECK_NEAR(reloaded.connections[0].waypoint_x, 320.0, 0.001);
+
+    // And a patch without one must not grow the field.
+    GraphDescription plain;
+    CHECK(soundgraph::parse_patch(
+        R"({"schema_version": 1, "nodes": [], "connections": []})", plain, diagnostics));
+    CHECK(soundgraph::write_patch(plain, true).find("waypoint") == std::string::npos);
 }
 
 TEST(malformed_json_says_where_the_problem_is) {

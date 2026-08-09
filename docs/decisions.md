@@ -1,5 +1,66 @@
 # Decision Log
 
+## 2026-08-08 — Auto-place is a pure function of the graph
+
+Decision:
+Auto-place arranges the whole graph and depends only on nodes, edges and widget sizes —
+never on current positions and never on the selection. Arranging a selection is a separate
+action with its own button.
+
+Reason:
+It previously switched to selection-only mode whenever two or more nodes were selected,
+and a drag leaves what it dragged selected — so pressing the button after moving things
+arranged a subset anchored to the rest, giving a different answer each time for reasons
+invisible from outside. The layout algorithm itself was already deterministic; the button
+was not. A tidy command whose meaning depends on hidden state is worse than no tidy
+command.
+
+Alternatives:
+A modifier key for selection-only (still hidden state, just harder to trigger by accident);
+keeping the automatic switch but announcing it (announcing a surprise is not the same as
+removing it).
+
+Consequences:
+Two buttons instead of one. Three checks scatter the graph and re-arrange to prove the
+answer does not move, and a fourth proves a lingering selection cannot change it.
+
+## 2026-08-08 — The editor is set in Atkinson Hyperlegible
+
+Decision:
+The Godot editor uses Atkinson Hyperlegible Next at bold weight throughout, at sizes well
+above the usual editor default, with high-contrast colours. The font is vendored under
+`editor-godot/fonts/` with its OFL licence.
+
+Reason:
+`UX_PRINCIPLES.md` opens with "avoid tiny text, tiny hit targets, cryptic abbreviations,
+and maximum-density layouts as the default", and the first pass wrote that down without
+following it. Atkinson Hyperlegible exists specifically to keep `I l 1`, `O 0` and `b d`
+apart at small sizes and for low vision, which is the same problem a dense patch editor
+has for everyone.
+
+Consequences:
+Dimmed text is a lighter grey rather than white at reduced opacity — fading alpha costs
+contrast twice, against the background and against neighbouring elements. 300 KB of
+vendored font, which also has to be imported by Godot before the project will run.
+
+## 2026-08-08 — The canvas draws its own grid
+
+Decision:
+GraphEdit's built-in grid is switched off and the canvas draws a three-tier grid whose
+tiers are the layout's own pitches: faint at the snap step, medium at the row pitch, heavy
+at the column pitch.
+
+Reason:
+GraphEdit draws minor lines at the snap distance and major lines at some multiple of it
+that has nothing to do with the layout, which leaves you counting minor lines to find the
+one you meant to align to. Making the heavy line *be* the column means "line it up with a
+major line" and "put it where auto-place would" are the same instruction.
+
+Consequences:
+Two constants now have a visual meaning and cannot be changed casually. Loading a patch
+also snaps every node and cable waypoint onto the grid, so a file from any source lands
+where the grid says.
+
 ## 2026-08-28 — ESP-IDF v5.5, not v6.x
 
 Decision:
@@ -351,3 +412,286 @@ timing invisibly); solving cycles numerically (out of scope).
 Consequences:
 The second vertical slice (delay with feedback) must route feedback through the `Delay`
 node, which is the intended design anyway.
+
+## 2026-08-08 — The Godot editor ships as a web export, and the side module hides its symbols
+
+Decision:
+The Godot editor is exported to WebAssembly and served as a static page, so the demo
+surface and the authoring tool are the same program. Every translation unit that ends up
+in the extension is compiled `-fvisibility=hidden -fvisibility-inlines-hidden`.
+
+Reason:
+A Godot web export loads a GDExtension as an Emscripten `SIDE_MODULE`. Any symbol left at
+default visibility joins the dynamic symbol table, and Emscripten then emits code that is
+*statically linked into the module* as an import: the first build asked `env` for
+`_ZN10soundgraph16GraphDescriptionD2Ev` and `std::to_string`. Godot cannot supply those, so
+the loader substitutes a stub of another arity, and the first indirect call through it
+aborts the engine with `function signature mismatch` — a message that names neither the
+symbol nor the module. godot-cpp puts `-fvisibility=hidden` in `target_link_options`
+(`cmake/web.cmake`), where it has no effect; visibility is fixed when a translation unit is
+compiled. A stock GDExtension never trips this because it uses only Godot's own `String`.
+This one links the C++ standard library, so it does.
+
+Two further constraints, both load-bearing:
+the extension must be built against the *same* Emscripten as the export template
+(4.7.1 is 4.0.20 — `Build configuration:` in the browser console states it), and against
+godot-cpp's `template_release`, because a release export looks up the `template_release`
+feature tag. Mismatching either fails the same way.
+
+Alternatives:
+Serving the plain `editor-web` page as the demo (a different, lesser editor, and a second
+UI to maintain); a native build behind a download (not a URL, so not zero-install).
+
+Consequences:
+Imports dropped from 410 to 64 and the module went from a hard abort to a clean boot. First
+load is ~46 MB uncompressed, ~10 MB gzipped — whatever hosts it must serve compressed. The
+export is `nothreads`, so no SharedArrayBuffer and no cross-origin isolation headers, which
+is what keeps it servable from any static host. Browser audio still needs a user gesture,
+and `AudioStreamGenerator` warns that it cannot be sampled on the web path — the audio
+route through the exported editor is not yet verified.
+
+## 2026-08-08 — The rack is a second view, not a second editor
+
+Decision:
+`editor-godot/rack.gd` draws the current patch as a Eurorack case, in a tab beside the
+graph view. It reads the same document, the same registry descriptors and the same
+layering, and writes parameter changes back through the same path. Module order comes from
+`layout.gd` — the layering the graph view already computed — rather than a second
+algorithm, and a module's knobs and jacks are whatever the node's descriptor says it has.
+
+Reason:
+A signal-flow graph is the honest picture of what the core does, but a rack is the picture
+musicians can already read, and the hunch is that it is the one that stops people walking
+past a stand. Both can be true at once, so both are drawn. Making the rack an editor in its
+own right would have meant a second place where a patch can be built, and eventually two
+places that disagree about what a patch is.
+
+Cables can hang as a catenary or route orthogonally, on a toolbar toggle that both views
+honour, so the comparison is between two ways of drawing a cable rather than between two
+views that happen to differ. Which one wins is a question for people at Knobcon, not for
+argument now — hence the toggle rather than a choice.
+
+The catenary is solved properly (`a·cosh(x/a)`, with `a` found by bisection from the
+requested sag) rather than faked with a parabola. The shape is the entire reason the view
+exists; a cable that hangs correctly is what makes a rack read as an instrument rather than
+a diagram. Between jacks at different heights the curve is sheared to meet both ends, which
+is an approximation — the exact answer is a plain catenary with its low point off-centre,
+found by a second solve for arc length, for a difference invisible at these spans.
+
+Alternatives:
+A rack-only editor (throws away the graph, which is the thing that generalises to DAW and
+firmware); a toggle between views rather than tabs (makes it a mode, and modes are the
+thing you cannot A/B side by side).
+
+Consequences:
+Ten more editor checks, 78 in total. Dragging a cable waypoint is a PCB-mode gesture: a
+hanging cable has no corners to grab, which is part of what the A/B is trading. The rack
+does not yet repatch — connections are made in the graph view — which is the obvious next
+piece if the rack wins.
+
+## 2026-08-08 — Five shaping nodes, in seconds and hertz rather than sfxr's units
+
+Decision:
+`AhdEnvelope`, `Slide`, `Arpeggio`, `Phaser` and `Retrigger` join the vocabulary, and
+`SquareOscillator` and `StateVariableFilter` gain `pulse_width_sweep` and `cutoff_sweep`.
+Twenty-one node types, up from sixteen. Every one is expressed in the units the rest of the
+vocabulary already uses; none of them knows that sfxr exists.
+
+Reason:
+A graph could not previously say the things a game sound says — "drop the pitch fast",
+"jump up a fifth after 40 ms", "do that again every 100 ms". The vocabulary was built for
+held notes, where pitch comes from a keyboard and an envelope sustains until the key is
+released. A coin sound has no key and no sustain.
+
+Shaping them to sfxr would have been quicker and wrong. sfxr's envelope stage length is
+`p² × 100000` in samples at a fixed 44100 Hz; its frequency ramp is a per-sample multiplier
+on a period. Those numbers mean nothing to somebody dragging nodes around, and they would
+have made the nodes useless for anything but reproducing sfxr. The conversion belongs in
+the mapper from a preset to a patch, which is one place, rather than smeared through seven
+node implementations.
+
+`AhdEnvelope` sits beside `ADSR` rather than replacing it. ADSR is the wrong shape here,
+not a worse one: it is built around a note being let go.
+
+`Retrigger` is a separate node rather than a property of the envelope, because *what*
+restarts is a decision per patch — sfxr's repeat restarts the pitch but not the amplitude,
+and being able to say that by wiring one gate and not the other is what having a graph is
+for.
+
+Alternatives:
+An `Sfxr` node that took the twenty-four parameters directly (one node nobody could edit,
+and the one sound in the project that is not a graph); reproducing sfxr's units (fast to
+write, incomprehensible to use).
+
+Consequences:
+Both sweeps default to zero and take the old code path exactly when they are zero, so every
+patch already written renders the same samples — the golden vectors check it. Six new golden
+cases, sixteen in total, all matching between MSVC/x64 and Clang/WASM. Thirteen new node
+tests, 47 in total.
+
+`cutoff_sweep` advances once per block. That is deliberate — it keeps a transcendental out
+of the inner loop, which is what would cost on ESP32 — and it stays host-buffer independent
+because `graph.cpp` calls every node with exactly `kBlockSize` frames behind the output
+FIFO. The rate is correct at any block size; only the granularity follows the block.
+
+The ESP32 has not run the six new vectors yet. It needs the board flashed, and that is a
+person with a cable, not a build step.
+
+## 2026-08-08 — A threshold measured against what is possible, not chosen
+
+Decision:
+`NoiseOscillator` joins the vocabulary: noise with a pitch, a short random table read once
+per cycle. `Slide` widens from +/-240 to +/-9600 semitones per second. And the sfxr
+report's spectral threshold is `max(6 dB, floor + 1.5)` per case, where the floor is
+measured on every run by rendering sfxr twice with different noise seeds.
+
+Reason:
+sfxr's noise is not noise. It is a random *wavetable* played at the oscillator's pitch, and
+`Noise` is white and unpitched, so the seven noise cases were not merely inaccurate — they
+were a different kind of signal. Building the node took their median spectral distance from
+22.6 dB to 7.1 dB. It is also the retro sound-chip noise channel, which is worth having on
+its own account.
+
+The `Slide` range was the more embarrassing find. +/-240 semitones per second was chosen as
+"surely nobody needs twenty octaves a second". Twelve of the forty-one cases exceeded it and
+every hit-hurt case did, and because parameters clamp on load, the patch carried the right
+number and the sound came out ten times too slow. A percussive hit lasts a few milliseconds
+and its pitch has to collapse inside that; -2000 semitones per second is under an octave in
+5 ms, which is an ordinary drum, not an extreme.
+
+The threshold is the part worth defending. Two runs of sfxr itself, on the same sound with a
+different noise draw, sit 4.7 to 6.1 dB apart — so a flat 6 dB threshold was demanding that
+noise be reproduced better than sfxr reproduces itself. Raising it *because cases were
+failing* would be moving the goalposts. Raising it to a separately measured floor is not:
+the same measurement returns exactly 0.00 dB for every deterministic waveform, which is what
+makes it trustworthy, and the threshold is unchanged at 6 dB for all of them.
+
+Alternatives:
+A pitched mode on `Noise` (overloads a node whose whole character is being unpitched);
+storing the floor in the manifest (goes stale silently); leaving noise failing (hides real
+progress behind a number that could never be reached).
+
+Consequences:
+24 -> 32 of 41. Three new node tests, 50 in total; a seventeenth golden vector, matching
+between MSVC/x64 and Clang/WASM. The ratchet moves to 32.
+
+It also caught its own wiring: under ctest the working directory differs, the default
+relative path to sfxr-ref did not resolve, every floor came back zero, and four cases were
+held to a threshold nothing could meet. The report said "regression" when the port had not
+changed. That failure is now loud rather than a silent fallback.
+
+Still open: sfxr's highpass is one-pole and `StateVariableFilter` is two-pole, which is
+30 dB of difference at the frequency floor and the whole of the remaining error on the two
+worst hit-hurt cases.
+
+## 2026-08-08 — A one-pole filter beside the two-pole one
+
+Decision:
+`OnePoleFilter` joins the vocabulary: 6 dB per octave, lowpass or highpass, with the same
+cutoff sweep as `StateVariableFilter`. The sfxr mapping uses it for the highpass stage.
+Twenty-three node types.
+
+Reason:
+sfxr's highpass is `fltphp += fltp - pp; fltphp -= fltphp * flthp` — a DC blocker, one
+pole. `StateVariableFilter` is two. Near the cutoff the difference is invisible; far from
+it, it is everything. sfxr's hit-hurt sounds slide down to a 3.5 Hz floor two hundred times
+below their highpass corner, where one pole takes about 32 dB off and two take about 63, so
+our rendering was 30 dB quieter than sfxr's for most of the sound. `hit-hurt-5` went from
+an envelope distance of 67 dB to 3.1.
+
+A gentler slope is also not a worse filter. It thins or warms without carving a hole, and
+blocking DC is what most hardware puts in front of an output — the node earns its place
+whatever sfxr does.
+
+Alternatives:
+A slope parameter on `StateVariableFilter` (a two-pole topology asked to be one pole is a
+special case in the inner loop, and the two have genuinely different state).
+
+Consequences:
+Three new node tests, 53 in total, one of which pins the thing that matters: two octaves
+below a highpass corner, one pole must be at least three times louder than two. An
+eighteenth golden vector, matching between MSVC/x64 and Clang/WASM.
+
+The count stayed at 32 of 41, which is worth stating plainly: the fix moved one case from
+catastrophically wrong to 0.19 dB short of passing, and moved the generator's median from
+9.6 dB to 6.8, without crossing a threshold. A ratchet that only counts passes would have
+recorded nothing.
+
+`hit-hurt-4` is now explained rather than fixed. It differs from sfxr by a fraction of a
+cycle after 60 ms of continuous pitch sliding — integer phase accumulation against float —
+and below the highpass corner a single square edge landing one window later swings the
+envelope metric by more than 20 dB. The pitch trajectories match; the phase does not.
+
+## 2026-08-08 — Compute from a sample count, do not accumulate
+
+Decision:
+`Slide` and `Phaser` derive their swept quantity from a sample counter rather than adding a
+small step every sample. Both stay in float.
+
+Reason:
+The ESP32 disagreed with MSVC on exactly these two of the eighteen golden cases, at 1.03e-4
+and 1.42e-4 against a 1e-4 tolerance. Where they failed said why: the slide parted company
+at sample 32455 of 36000 while matching at the start, which is accumulated rounding error
+growing with the total; the phaser failed at sample 1177, which is not.
+
+Adding `rate * dt` every sample lets the error grow with the number of samples. The closed
+form of the same integral — `(slide + acceleration*t/2) * t` — is one multiply-add and its
+error is a fixed ulp rather than a growing one. For the phaser it matters more sharply than
+that: a swept delay reads its line at a fractional position, so a few ulps can land on the
+other side of a sample boundary and interpolate between a different pair, which is a step
+rather than a nudge.
+
+Deliberately still float. The ESP32-S3 emulates doubles in software, and buying agreement
+with a per-sample double add on the audio path is the wrong trade when a better formula
+costs nothing — it is both faster, having no loop-carried dependency, and more accurate.
+
+Alternatives:
+Raising the ESP32 tolerance (hides a real defect and makes every future comparison weaker);
+double accumulators (real cost on the target that needs the cycles most).
+
+Consequences:
+The slide's worst-case device difference fell from 1.03e-4 to 4.77e-6, and the phaser's from
+1.42e-4 to 9.16e-5. All eighteen golden cases now agree across MSVC/x64, Clang/WASM and
+Xtensa/ESP32-S3. Two vectors were re-recorded; both are unchanged in character.
+
+The phaser remains the worst case by an order of magnitude, and that is inherent: fractional
+delay has a discretisation cliff that no amount of precision removes, only makes rarer.
+
+## 2026-08-08 — Web playback must be asked for as a stream
+
+Decision:
+Every `AudioStreamPlayer` sets `playback_type = AudioServer.PLAYBACK_TYPE_STREAM`.
+
+Reason:
+Godot's project setting `audio/general/default_playback_type.web` is 1, and that enum is
+`Stream, Sample` — so the web default is **Sample**, which pre-bakes a stream into a buffer.
+An `AudioStreamGenerator` has no samples until something asks for them, so it cannot be
+baked. The result is a warning and silence, on the web only; every desktop build sounds
+fine, which is what let it survive from the first web export until now.
+
+Setting it on the player rather than flipping the project setting: it is the line that
+explains itself at the place that depends on it, and a project setting is invisible from
+the code it changes.
+
+Consequences:
+The warning is gone from the exported build. That is evidence the sample path is no longer
+being taken; it is not yet evidence of sound.
+
+## 2026-08-08 — What "verify the audio" turned out to require
+
+Measured, so the remaining gap is precise rather than vague: in the exported build Godot
+creates **no AudioContext at all** and never fetches its audio worklets until the page has
+had a real user gesture. Instrumenting `AudioContext` and `AudioNode.prototype.connect`
+before the engine loads shows zero contexts, zero connections and no worklet requests after
+thirty seconds.
+
+Synthetic events do not lift it. Dispatching pointerdown, mousedown, click, touchstart and
+keydown at the canvas, the document and the window changes nothing, and
+`navigator.userActivation.hasBeenActive` stays false — which is the actual gate. Notably a
+context created from the console *is* immediately `running`, so this is not the browser's
+autoplay policy: it is Godot waiting for interaction before starting its driver at all.
+
+So this last step cannot be automated from here. It needs a person to click the page once.
+The tap above is the way to read the answer when they do: it reports the peak amplitude
+actually reaching the speakers, rather than asking someone whether they think they heard
+something.

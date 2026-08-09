@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: Arpeggio",
+    "description": "A sine stepped up a fifth part-way through, which is what a coin sound is.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "pitch",
+      "type": "Constant",
+      "parameters": {
+        "value": 660
+      }
+    },
+    {
+      "id": "arp",
+      "type": "Arpeggio",
+      "parameters": {
+        "interval": 7,
+        "time": 0.04
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 440
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "arp",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "arp",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

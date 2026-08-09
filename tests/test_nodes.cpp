@@ -494,9 +494,382 @@ TEST(parameters_are_clamped_to_their_declared_range) {
     CHECK_NEAR(harness.output()[0], 0.0, 1e-6);
 }
 
+// ---- one-pole filter ------------------------------------------------------------------
+
+namespace {
+
+// Drives a filter with a steady sine and returns the settled amplitude, measured over the
+// second half so the filter's own start-up transient is not in the answer.
+float settled_amplitude(const std::string& type, float cutoff, float mode, float tone) {
+    const int frames = 24000;
+    NodeHarness harness(type, frames, kSampleRate);
+    harness.set("cutoff", cutoff);
+    harness.set("mode", mode);
+    std::vector<float>& in = harness.input("in");
+    for (std::size_t i = 0; i < in.size(); ++i) {
+        in[i] = std::sin(6.2831853f * tone * static_cast<float>(i) / 48000.0f);
+    }
+    harness.process();
+
+    float peak = 0.0f;
+    for (std::size_t i = in.size() / 2; i < in.size(); ++i) {
+        peak = std::max(peak, std::fabs(harness.output()[i]));
+    }
+    return peak;
+}
+
+}  // namespace
+
+TEST(one_pole_lowpass_passes_below_and_cuts_above) {
+    CHECK_NEAR(settled_amplitude("OnePoleFilter", 1000.0f, 0.0f, 50.0f), 1.0, 0.02);
+    // A one-pole is 3 dB down at its own cutoff.
+    CHECK_NEAR(settled_amplitude("OnePoleFilter", 1000.0f, 0.0f, 1000.0f), 0.707, 0.03);
+    CHECK(settled_amplitude("OnePoleFilter", 1000.0f, 0.0f, 8000.0f) < 0.2f);
+}
+
+TEST(one_pole_highpass_blocks_dc_and_passes_above) {
+    NodeHarness harness("OnePoleFilter", 8000, kSampleRate);
+    harness.set("cutoff", 100.0f);
+    harness.set("mode", 1.0f);
+    harness.connect("in", 1.0f);  // pure DC
+    harness.process();
+    CHECK(std::fabs(harness.output()[7999]) < 0.01f);
+
+    CHECK_NEAR(settled_amplitude("OnePoleFilter", 100.0f, 1.0f, 4000.0f), 1.0, 0.02);
+}
+
+TEST(one_pole_has_half_the_slope_of_the_state_variable_filter) {
+    // The reason both exist, and the whole of the remaining error on sfxr's hit-hurt
+    // sounds: they sit far below a highpass cutoff, where the slope is everything.
+    // Two octaves down, one pole should take about 12 dB off and two poles about 24.
+    const float one_pole = settled_amplitude("OnePoleFilter", 500.0f, 1.0f, 125.0f);
+    const float two_pole = settled_amplitude("StateVariableFilter", 500.0f, 1.0f, 125.0f);
+
+    CHECK(one_pole > two_pole * 3.0f);
+    // 12 dB down is a quarter of full scale; allow the usual slack near the corner.
+    CHECK(one_pole > 0.15f);
+    CHECK(one_pole < 0.40f);
+    CHECK(two_pole < 0.12f);
+}
+
+// ---- pitched noise --------------------------------------------------------------------
+
+TEST(noise_oscillator_repeats_at_its_frequency) {
+    // The whole point: this has a period where Noise does not. One second at 200 Hz is
+    // 200 cycles of the same table, so the waveform must repeat 200 times.
+    NodeHarness harness("NoiseOscillator", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("frequency", 200.0f);
+    harness.set("steps", 32.0f);
+    harness.process();
+
+    // A table refilled every cycle still crosses zero on a schedule set by the period, so
+    // the crossing count is bounded by steps per cycle rather than being arbitrary.
+    const std::vector<float>& out = harness.output();
+    const int crossings = testing::rising_zero_crossings(out);
+    CHECK(crossings > 200);
+    CHECK(crossings < 200 * 32);
+    CHECK(testing::peak(out) <= 1.0f);
+    CHECK_NEAR(testing::mean(out), 0.0, 0.02);
+}
+
+TEST(noise_oscillator_follows_its_frequency_input) {
+    // Doubling the pitch has to double the rate at which the texture repeats. This is the
+    // property plain Noise cannot have, and the reason this node exists.
+    NodeHarness low("NoiseOscillator", kOneSecond, kSampleRate);
+    low.connect("frequency", 100.0f);
+    low.process();
+
+    NodeHarness high("NoiseOscillator", kOneSecond, kSampleRate);
+    high.connect("frequency", 400.0f);
+    high.process();
+
+    CHECK(testing::rising_zero_crossings(high.output()) >
+          testing::rising_zero_crossings(low.output()) * 2);
+}
+
+TEST(noise_oscillator_is_reproducible_and_coarser_with_fewer_steps) {
+    NodeHarness first("NoiseOscillator", 4096, kSampleRate);
+    NodeHarness second("NoiseOscillator", 4096, kSampleRate);
+    first.set("seed", 777.0f);
+    second.set("seed", 777.0f);
+    first.process();
+    second.process();
+
+    bool identical = true;
+    for (std::size_t i = 0; i < first.output().size(); ++i) {
+        if (first.output()[i] != second.output()[i]) identical = false;
+    }
+    CHECK_MESSAGE(identical, "the same seed must give the same sequence, or goldens mean nothing");
+
+    // Two steps per cycle is very nearly a square wave: it should cross zero far less
+    // often than thirty-two steps of the same length.
+    NodeHarness coarse("NoiseOscillator", kOneSecond, kSampleRate);
+    coarse.set("frequency", 200.0f);
+    coarse.set("steps", 2.0f);
+    coarse.process();
+
+    NodeHarness fine("NoiseOscillator", kOneSecond, kSampleRate);
+    fine.set("frequency", 200.0f);
+    fine.set("steps", 32.0f);
+    fine.process();
+
+    CHECK(testing::rising_zero_crossings(coarse.output()) <
+          testing::rising_zero_crossings(fine.output()));
+}
+
+// ---- shaping: envelopes, pitch movement, retriggering ---------------------------------
+
+TEST(ahd_envelope_runs_attack_hold_decay_and_then_stops) {
+    NodeHarness harness("AhdEnvelope", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("attack", 0.1f);
+    harness.set("hold", 0.2f);
+    harness.set("decay", 0.2f);
+    harness.set("punch", 0.0f);
+    harness.connect("gate", 1.0f);
+    harness.process();
+
+    const std::vector<float>& out = harness.output();
+    CHECK_NEAR(out[0], 0.0, 0.01);
+    CHECK_NEAR(out[static_cast<std::size_t>(0.05 * kSampleRate)], 0.5, 0.01);
+    CHECK_NEAR(out[static_cast<std::size_t>(0.15 * kSampleRate)], 1.0, 0.01);
+    CHECK_NEAR(out[static_cast<std::size_t>(0.40 * kSampleRate)], 0.5, 0.01);
+    CHECK_NEAR(out[static_cast<std::size_t>(0.60 * kSampleRate)], 0.0, 0.01);
+}
+
+TEST(ahd_envelope_punch_boosts_the_start_of_the_hold_and_falls_back) {
+    NodeHarness harness("AhdEnvelope", kOneSecond, kSampleRate);
+    harness.set("attack", 0.0f);
+    harness.set("hold", 0.4f);
+    harness.set("decay", 0.1f);
+    harness.set("punch", 1.0f);
+    harness.connect("gate", 1.0f);
+    harness.process();
+
+    const std::vector<float>& out = harness.output();
+    // Punch of 1 starts the hold at three times full level and returns to 1 across it.
+    CHECK_NEAR(testing::peak(out), 3.0, 0.02);
+    CHECK_NEAR(out[static_cast<std::size_t>(0.20 * kSampleRate)], 2.0, 0.02);
+    // A fortieth of the hold still to run, so a fortieth of the punch is still on: the
+    // boost falls back linearly and reaches exactly 1 as the decay begins.
+    CHECK_NEAR(out[static_cast<std::size_t>(0.39 * kSampleRate)], 1.05, 0.01);
+}
+
+TEST(ahd_envelope_survives_zero_length_stages) {
+    // sfxr, which this shape comes from, emits a NaN here: it evaluates the stage ratio on
+    // the transition sample, so a zero-length stage is a division by zero. See
+    // tests/sfxr/README.md. Nothing in a graph should ever produce one.
+    NodeHarness harness("AhdEnvelope", 4800, kSampleRate);
+    harness.set("attack", 0.0f);
+    harness.set("hold", 0.0f);
+    harness.set("decay", 0.0f);
+    harness.set("punch", 0.5f);
+    harness.connect("gate", 1.0f);
+    harness.process();
+
+    for (float sample : harness.output()) {
+        CHECK(std::isfinite(sample));
+    }
+}
+
+TEST(slide_bends_the_pitch_by_the_stated_semitones_per_second) {
+    NodeHarness harness("Slide", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.connect("frequency", 440.0f);
+    harness.set("slide", 12.0f);  // one octave per second
+    harness.process();
+
+    const std::vector<float>& out = harness.output();
+    CHECK_NEAR(out[0], 440.0, 0.5);
+    CHECK_NEAR(out[static_cast<std::size_t>(0.5 * kSampleRate)], 440.0 * 1.41421, 1.0);
+    CHECK_NEAR(out[kOneSecond - 1], 880.0, 1.0);
+}
+
+TEST(slide_acceleration_makes_the_bend_speed_up) {
+    NodeHarness harness("Slide", kOneSecond, kSampleRate);
+    harness.connect("frequency", 100.0f);
+    harness.set("slide", 0.0f);
+    harness.set("acceleration", 24.0f);  // semitones per second squared
+    harness.process();
+
+    // From a standing start the pitch has moved 0.5 * a * t^2 = 12 semitones after 1 s,
+    // and a quarter of that at half the time, which a constant rate would not give.
+    CHECK_NEAR(harness.output()[kOneSecond - 1], 200.0, 1.0);
+    CHECK_NEAR(harness.output()[static_cast<std::size_t>(0.5 * kSampleRate)],
+               100.0 * 1.18921, 0.5);
+}
+
+TEST(slide_stops_at_its_limit_from_either_direction) {
+    NodeHarness falling("Slide", kOneSecond, kSampleRate);
+    falling.connect("frequency", 800.0f);
+    falling.set("slide", -48.0f);
+    falling.set("limit", 200.0f);
+    falling.process();
+    CHECK_NEAR(falling.output()[kOneSecond - 1], 200.0, 0.001);
+
+    NodeHarness rising("Slide", kOneSecond, kSampleRate);
+    rising.connect("frequency", 200.0f);
+    rising.set("slide", 48.0f);
+    rising.set("limit", 800.0f);
+    rising.process();
+    CHECK_NEAR(rising.output()[kOneSecond - 1], 800.0, 0.001);
+}
+
+TEST(arpeggio_steps_once_at_the_stated_time) {
+    NodeHarness harness("Arpeggio", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.connect("frequency", 440.0f);
+    harness.set("time", 0.25f);
+    harness.set("interval", 12.0f);  // an octave
+    harness.process();
+
+    const std::vector<float>& out = harness.output();
+    CHECK_NEAR(out[static_cast<std::size_t>(0.10 * kSampleRate)], 440.0, 0.01);
+    CHECK_NEAR(out[static_cast<std::size_t>(0.30 * kSampleRate)], 880.0, 0.01);
+    // Once, not repeatedly: still an octave up at the end, not two.
+    CHECK_NEAR(out[kOneSecond - 1], 880.0, 0.01);
+}
+
+TEST(retrigger_fires_at_the_stated_rate_starting_immediately) {
+    NodeHarness harness("Retrigger", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("rate", 10.0f);
+    harness.set("width", 1.0f);
+    harness.process();
+
+    int rising_edges = 0;
+    bool was_high = false;
+    for (float sample : harness.output()) {
+        const bool high = sample >= 0.5f;
+        if (high && !was_high) ++rising_edges;
+        was_high = high;
+    }
+    CHECK(rising_edges == 10);
+    // The first sample is already high, so anything it drives starts without a gap.
+    CHECK(harness.output()[0] >= 0.5f);
+}
+
+TEST(retrigger_restarts_an_envelope_it_is_wired_to) {
+    // The two nodes together are what "stutter" means; neither says it alone.
+    NodeHarness retrigger("Retrigger", kOneSecond, kSampleRate);
+    retrigger.set("rate", 5.0f);
+    retrigger.process();
+
+    NodeHarness envelope("AhdEnvelope", kOneSecond, kSampleRate);
+    envelope.set("attack", 0.0f);
+    envelope.set("hold", 0.0f);
+    envelope.set("decay", 0.1f);
+    envelope.input("gate") = retrigger.output();
+    envelope.process();
+
+    int restarts = 0;
+    bool low = true;
+    for (float sample : envelope.output()) {
+        if (sample > 0.95f && low) {
+            ++restarts;
+            low = false;
+        } else if (sample < 0.5f) {
+            low = true;
+        }
+    }
+    CHECK(restarts == 5);
+}
+
+TEST(phaser_doubles_a_signal_at_zero_delay_and_cancels_it_at_half_a_cycle) {
+    // At zero offset the delayed copy is the signal itself, so the output is exactly
+    // double. That is the check that the line is read where it is written.
+    NodeHarness flat("Phaser", 4800, kSampleRate);
+    CHECK(flat.valid());
+    flat.set("offset", 0.0f);
+    flat.set("sweep", 0.0f);
+    std::vector<float>& in = flat.input("in");
+    for (std::size_t i = 0; i < in.size(); ++i) {
+        in[i] = std::sin(6.2831853f * 1000.0f * static_cast<float>(i) / 48000.0f);
+    }
+    flat.process();
+    CHECK_NEAR(testing::peak(flat.output()), 2.0, 0.01);
+
+    // Half a cycle of delay at 1 kHz is 0.5 ms, where the delayed copy cancels the dry.
+    NodeHarness notched("Phaser", 4800, kSampleRate);
+    notched.set("offset", 0.5f);
+    notched.set("sweep", 0.0f);
+    std::vector<float>& in2 = notched.input("in");
+    for (std::size_t i = 0; i < in2.size(); ++i) {
+        in2[i] = std::sin(6.2831853f * 1000.0f * static_cast<float>(i) / 48000.0f);
+    }
+    notched.process();
+
+    const std::vector<float>& settled = notched.output();
+    float late_peak = 0.0f;
+    for (std::size_t i = 1000; i < settled.size(); ++i) {
+        late_peak = std::max(late_peak, std::fabs(settled[i]));
+    }
+    CHECK(late_peak < 0.02f);
+}
+
+TEST(square_pulse_width_sweep_moves_the_duty_and_zero_leaves_it_alone) {
+    // The default of zero has to render exactly as it did before the sweep existed, or
+    // every patch already written changes sound. The golden vectors check that; this says
+    // why it matters.
+    NodeHarness still("SquareOscillator", 4800, kSampleRate);
+    still.set("frequency", 100.0f);
+    still.set("pulse_width", 0.5f);
+    still.set("pulse_width_sweep", 0.0f);
+    still.process();
+    CHECK_NEAR(testing::mean(still.output()), 0.0, 0.02);
+
+    // Sweeping towards a narrow pulse pushes the mean negative: the wave spends most of
+    // each cycle low.
+    NodeHarness swept("SquareOscillator", kOneSecond, kSampleRate);
+    swept.set("frequency", 100.0f);
+    swept.set("pulse_width", 0.5f);
+    swept.set("pulse_width_sweep", -0.45f);
+    swept.process();
+    CHECK(testing::mean(swept.output()) < -0.2);
+}
+
+TEST(filter_cutoff_sweep_closes_the_filter_over_time) {
+    // Driven in kBlockSize chunks, which is how a graph drives it: graph.cpp calls every
+    // node with exactly kBlockSize frames, behind the output FIFO. The cutoff advances
+    // once per block, so a single enormous block would never sweep at all — the rate is
+    // right for any block size, but the granularity is the block.
+    const int block = soundgraph::kBlockSize;
+    NodeHarness harness("StateVariableFilter", block, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("cutoff", 8000.0f);
+    harness.set("mode", 0.0f);           // lowpass
+    harness.set("cutoff_sweep", -6.0f);  // six octaves down per second
+
+    std::vector<float> rendered;
+    rendered.reserve(static_cast<std::size_t>(kOneSecond));
+    std::vector<float>& in = harness.input("in");
+    for (int start = 0; start + block <= kOneSecond; start += block) {
+        for (int i = 0; i < block; ++i) {
+            in[static_cast<std::size_t>(i)] =
+                std::sin(6.2831853f * 4000.0f * static_cast<float>(start + i) / 48000.0f);
+        }
+        harness.process(block);
+        for (int i = 0; i < block; ++i) {
+            rendered.push_back(harness.output()[static_cast<std::size_t>(i)]);
+        }
+    }
+
+    // A 4 kHz tone passes while the cutoff is above it, and is gone once the sweep has
+    // taken the cutoff five octaves below it.
+    float early = 0.0f;
+    for (std::size_t i = 0; i < 2000; ++i) early = std::max(early, std::fabs(rendered[i]));
+    float late = 0.0f;
+    for (std::size_t i = rendered.size() - 2000; i < rendered.size(); ++i) {
+        late = std::max(late, std::fabs(rendered[i]));
+    }
+    CHECK(early > 0.3f);
+    CHECK(late < early * 0.1f);
+}
+
 TEST(every_registered_type_can_be_created_with_working_defaults) {
     const soundgraph::NodeRegistry& registry = soundgraph::NodeRegistry::builtin();
-    CHECK(registry.types().size() >= 16);
+    CHECK(registry.types().size() >= 23);
 
     for (const soundgraph::NodeTypeDescriptor* type : registry.types()) {
         NodeHarness harness(type->name, 128, kSampleRate);

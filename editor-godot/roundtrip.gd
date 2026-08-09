@@ -56,7 +56,7 @@ func _initialize() -> void:
 		push_error("could not write %s" % output_path)
 		quit(1)
 		return
-	output.store_string(JSON.stringify(main.patch, "  ") + "\n")
+	output.store_string(main.engine.format_patch(JSON.stringify(main.patch, "  ")))
 	output.close()
 
 	print("round tripped %s -> %s (%d nodes, %d connections)" % [

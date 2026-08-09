@@ -24,6 +24,17 @@ func _initialize() -> void:
 	root.add_child(main)
 	await process_frame
 
+	# A script that failed to parse leaves a bare Control here. Without this check the
+	# first await lands on a coroutine that never resolves and the run hangs rather than
+	# reporting the parse error — which is a miserable way to find a missing type hint.
+	if not main.has_method("_load_text") or main.graph_edit == null:
+		# A script that failed to compile leaves the editor half-built. Bailing out here
+		# reports the parse error above instead of letting every later check fail for a
+		# reason that has nothing to do with what it was testing.
+		print("  FAIL the editor did not build; look for a parse error above")
+		quit(1)
+		return
+
 	if main.engine == null:
 		print("  FAIL the SoundGraphEngine extension did not load")
 		quit(1)
@@ -157,6 +168,401 @@ func _initialize() -> void:
 		if node["id"] == "filter":
 			recorded = node["parameters"]["cutoff"]
 	check(is_equal_approx(recorded, 3000.0), "and it is recorded in the document for saving")
+
+	# ---- auto-place ------------------------------------------------------------------
+	await main._auto_place()
+	await process_frame
+
+	# The same graph must land the same way wherever it happened to be. Without this the
+	# button is a dice roll: press it twice after nudging something and get two answers.
+	var arranged := []
+	for node in main.patch["nodes"]:
+		arranged.append("%s(%d,%d)" % [node["id"], node["position"]["x"], node["position"]["y"]])
+	var reference := " ".join(arranged)
+
+	for scatter in [[317, 511], [97, 233]]:
+		for i in main.patch["nodes"].size():
+			main.patch["nodes"][i]["position"] = {
+				"x": (i * scatter[0]) % 2000, "y": (i * scatter[1]) % 1200}
+		await main._rebuild_view()
+		await process_frame
+		await main._auto_place()
+		await process_frame
+		var again := []
+		for node in main.patch["nodes"]:
+			again.append("%s(%d,%d)" % [node["id"], node["position"]["x"], node["position"]["y"]])
+		check(" ".join(again) == reference,
+			"auto-place gives the same answer after scattering by %d,%d" % [scatter[0], scatter[1]])
+
+	# A lingering selection must not quietly change what Auto-place does — that was the
+	# whole source of it feeling unpredictable, since a drag leaves what it dragged selected.
+	for id in main.widgets:
+		main.widgets[id].selected = (id == "osc" or id == "lfo")
+	await process_frame
+	await main._auto_place()
+	await process_frame
+	var with_selection := []
+	for node in main.patch["nodes"]:
+		with_selection.append("%s(%d,%d)" % [node["id"],
+			node["position"]["x"], node["position"]["y"]])
+	check(" ".join(with_selection) == reference,
+		"and ignores whatever happens to be selected")
+
+	# Arranging a selection is its own action, and refuses a selection too small to mean
+	# anything rather than silently arranging everything.
+	for id in main.widgets:
+		main.widgets[id].selected = (id == "osc")
+	await main._arrange_selection()
+	await process_frame
+	var after_one := []
+	for node in main.patch["nodes"]:
+		after_one.append("%s(%d,%d)" % [node["id"], node["position"]["x"], node["position"]["y"]])
+	check(" ".join(after_one) == reference, "arranging a one-node selection does nothing")
+
+	for id in main.widgets:
+		main.widgets[id].selected = false
+	await process_frame
+
+	var on_grid := true
+	var columns := {}
+	for node in main.patch["nodes"]:
+		var x: float = node["position"]["x"]
+		var y: float = node["position"]["y"]
+		if fmod(x, main.GRID) != 0.0 or fmod(y, main.GRID) != 0.0:
+			on_grid = false
+		columns[x] = true
+	check(on_grid, "auto-place lands every node on the %d grid" % int(main.GRID))
+	check(columns.size() == 5, "the demo patch lays out in five columns (%d)" % columns.size())
+
+	# Signal flow reads left to right: nothing may sit left of something it consumes.
+	var placed := {}
+	for node in main.patch["nodes"]:
+		placed[node["id"]] = Vector2(node["position"]["x"], node["position"]["y"])
+	var flows_forward := true
+	for connection in main.patch["connections"]:
+		var from: Vector2 = placed[connection["from"]["node"]]
+		var to: Vector2 = placed[connection["to"]["node"]]
+		if from.x >= to.x:
+			flows_forward = false
+	check(flows_forward, "every cable runs left to right")
+
+	# Nothing overlaps: the whole point of a pitch.
+	var overlapping := false
+	for a in main.patch["nodes"]:
+		for b in main.patch["nodes"]:
+			if a["id"] == b["id"]:
+				continue
+			var wa: GraphNode = main.widgets.get(a["id"])
+			var wb: GraphNode = main.widgets.get(b["id"])
+			if wa == null or wb == null:
+				continue
+			if Rect2(placed[a["id"]], wa.size).intersects(Rect2(placed[b["id"]], wb.size)):
+				overlapping = true
+	check(not overlapping, "no two nodes overlap after auto-place")
+
+	# ---- cable routing ---------------------------------------------------------------
+	# A node dropped on top of a cable must push the cable around it, not be crossed.
+	var route_before: PackedVector2Array = main.graph_edit._route(
+		Vector2(0, 100), Vector2(1200, 100))
+	check(route_before.size() > 0, "a clear span routes")
+
+	var blocker: GraphNode = main.widgets.get("filter")
+	var blocked_from := Vector2(blocker.position_offset.x - 300.0,
+		blocker.position_offset.y + blocker.size.y * 0.5)
+	var blocked_to := Vector2(blocker.position_offset.x + blocker.size.x + 300.0,
+		blocker.position_offset.y + blocker.size.y * 0.5)
+	var detour: PackedVector2Array = main.graph_edit._route(blocked_from, blocked_to)
+	var crosses := false
+	var node_rect := Rect2(blocker.position_offset, blocker.size)
+	for i in range(detour.size() - 1):
+		if main.graph_edit._segment_hits_rect(detour[i], detour[i + 1], node_rect):
+			crosses = true
+	check(not crosses, "a cable routes around a node instead of through it")
+	check(detour.size() > 2, "and it does so with a real detour (%d points)" % detour.size())
+
+	# ---- crossing marks ---------------------------------------------------------------
+	# Two cables that genuinely cross must be marked, and the mark must follow the cable
+	# rather than sit at an arbitrary angle.
+	var horizontal := PackedVector2Array([Vector2(0, 100), Vector2(400, 100)])
+	var vertical := PackedVector2Array([Vector2(200, 0), Vector2(200, 300)])
+	var hits: Array = main.graph_edit._intersections(horizontal, vertical)
+	check(hits.size() == 1, "a crossing is found once, not twice")
+	if hits.size() == 1:
+		check(hits[0].is_equal_approx(Vector2(200, 100)), "at the point they actually meet")
+	var along: Vector2 = main.graph_edit._direction_at(vertical, Vector2(200, 100))
+	check(absf(along.y) > 0.9, "the break runs along the cable it interrupts")
+
+	var parallel := PackedVector2Array([Vector2(0, 200), Vector2(400, 200)])
+	check(main.graph_edit._intersections(horizontal, parallel).is_empty(),
+		"cables that never meet are not marked")
+
+	# The overlay has to sit above the cables and below the nodes, or the mark is
+	# invisible or covers a node.
+	# The grid tiers must be the layout's own pitches, or "align to a major line" and
+	# "the column the layout uses" stop meaning the same thing.
+	check(is_equal_approx(main.graph_edit.grid_minor, main.GRID),
+		"the faint grid lines are the snap step")
+	check(is_equal_approx(main.graph_edit.grid_half_major, main.ROW_STEP),
+		"the medium lines are the row pitch")
+	check(is_equal_approx(main.graph_edit.grid_major, main.COLUMN_PITCH),
+		"the heavy lines are the column pitch")
+	check(not main.graph_edit.show_grid,
+		"and GraphEdit's own grid is off, so only one grid is drawn")
+
+	var connection_layer: Node = main.graph_edit.get_child(0)
+	var overlay: Node = main.graph_edit.get_child(1)
+	check(connection_layer.name == "_connection_layer", "the connection layer is still first")
+	check(overlay is Control and overlay.get_script() != null,
+		"and the crossing overlay is drawn immediately after it")
+
+	# ---- undo -------------------------------------------------------------------------
+	var file2 := FileAccess.open("res://examples/first-synth.json", FileAccess.READ)
+	await main._load_text(file2.get_as_text())
+	await process_frame
+	await process_frame
+
+	check(not main.undo_redo.has_undo(), "a freshly loaded patch has nothing to undo")
+
+	# Whatever a patch arrives with, it lands on the grid — otherwise every alignment cue
+	# on the canvas is off by a few pixels and the grid looks broken rather than the file.
+	var off_grid := {
+		"schema_version": 1,
+		"nodes": [
+			{"id": "a", "type": "SineOscillator", "position": {"x": 17, "y": 23}},
+			{"id": "out", "type": "StereoOutput", "position": {"x": 511, "y": 349}},
+		],
+		"connections": [{"from": {"node": "a", "port": "out"},
+			"to": {"node": "out", "port": "left"},
+			"waypoint": {"x": 263, "y": 91}}],
+	}
+	await main._load_text(JSON.stringify(off_grid))
+	await process_frame
+	await process_frame
+	var snapped := true
+	for node in main.patch["nodes"]:
+		if fmod(node["position"]["x"], main.GRID) != 0.0 \
+			or fmod(node["position"]["y"], main.GRID) != 0.0:
+			snapped = false
+	check(snapped, "an off-grid patch is snapped when it loads")
+	var waypoint: Dictionary = main.patch["connections"][0]["waypoint"]
+	check(fmod(waypoint["x"], main.GRID) == 0.0 and fmod(waypoint["y"], main.GRID) == 0.0,
+		"and so are its cable waypoints")
+
+	# Reload the demo so the checks below start from a known patch.
+	var restore := FileAccess.open(main._example_path("first-synth.json"), FileAccess.READ)
+	await main._load_text(restore.get_as_text())
+	await process_frame
+	await process_frame
+	var demo_on_grid := true
+	for node in main.patch["nodes"]:
+		if fmod(node["position"]["x"], main.GRID) != 0.0 \
+			or fmod(node["position"]["y"], main.GRID) != 0.0:
+			demo_on_grid = false
+	check(demo_on_grid, "and the shipped demo patch is already on it")
+
+	var original_nodes: int = main.patch["nodes"].size()
+	var original_connections: int = main.patch["connections"].size()
+
+	# Add, then undo: the node goes away and the history empties.
+	await main._add_node("Delay", Vector2(2000, 0))
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes + 1, "adding a node grows the patch")
+	check(main.undo_redo.has_undo(), "and it is undoable")
+
+	main._undo()
+	await process_frame
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes, "undo removes the added node")
+	check(main.widgets.size() == original_nodes, "and the view follows the document")
+
+	main._redo()
+	await process_frame
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes + 1, "redo puts it back")
+	main._undo()
+	await process_frame
+	await process_frame
+
+	# Deleting a node takes its connections with it; undo must restore both.
+	main._on_delete_nodes_request([main.widgets["filter"].name] as Array[StringName])
+	await process_frame
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes - 1, "deleting removes the node")
+	check(main.patch["connections"].size() < original_connections,
+		"and the cables that touched it")
+
+	main._undo()
+	await process_frame
+	await process_frame
+	check(main.patch["nodes"].size() == original_nodes, "undo restores the deleted node")
+	check(main.patch["connections"].size() == original_connections,
+		"and every cable that went with it")
+
+	# A knob turn is undoable without rebuilding the graph — the whole point of the fast
+	# path, since a rebuild would restart the sound.
+	var cutoff_before := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			cutoff_before = node["parameters"]["cutoff"]
+	main._begin_edit()
+	main._set_parameter("filter", "cutoff", 5000.0)
+	main._commit_edit("set cutoff")
+	await process_frame
+	var widget_before: GraphNode = main.widgets["filter"]
+
+	main._undo()
+	await process_frame
+	var restored := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			restored = node["parameters"]["cutoff"]
+	check(is_equal_approx(restored, cutoff_before), "undo restores a knob value")
+	check(main.widgets["filter"] == widget_before,
+		"without rebuilding the graph, so the sound does not restart")
+
+	# Auto-place is one step, not one per node.
+	var before_layout := []
+	for node in main.patch["nodes"]:
+		before_layout.append(Vector2(node["position"]["x"], node["position"]["y"]))
+	main._begin_edit()
+	for node in main.patch["nodes"]:
+		node["position"] = {"x": 17.0, "y": 23.0}
+	main._commit_edit("scramble")
+	main._undo()
+	await process_frame
+	await process_frame
+	var layout_restored := true
+	for i in main.patch["nodes"].size():
+		var node = main.patch["nodes"][i]
+		if not Vector2(node["position"]["x"], node["position"]["y"]).is_equal_approx(before_layout[i]):
+			layout_restored = false
+	check(layout_restored, "undo restores positions exactly")
+
+	# A drag that ends where it began is not an edit.
+	var depth_before: bool = main.undo_redo.has_undo()
+	main._begin_edit()
+	main._commit_edit("no-op")
+	check(main.undo_redo.has_undo() == depth_before,
+		"a drag that changed nothing adds nothing to the history")
+
+	# ---- the rack view ---------------------------------------------------------------
+	# The rack is a second drawing of the same document. What matters is that it stays a
+	# drawing: same nodes, same ports, same parameter scaling, no private opinions.
+	main.rack.rebuild()
+	await process_frame
+
+	var modules := 0
+	for child in main.rack.get_children():
+		if child is Rack.RackModule:
+			modules += 1
+	check(modules == main.patch["nodes"].size(),
+		"the rack has one module per node in the patch")
+
+	var order: Array = main.rack._module_order()
+	var output_index := -1
+	for i in order.size():
+		if main.rack._type_of(order[i]) == "StereoOutput":
+			output_index = i
+	check(output_index == order.size() - 1,
+		"and orders them by signal flow, with the output last")
+
+	var cables: Array = main.rack.cable_endpoints()
+	check(cables.size() == main.patch["connections"].size(),
+		"every connection in the document becomes a cable in the rack")
+
+	# A jack that no module owns would silently drop a cable, which is the one failure
+	# that looks like a design choice rather than a bug.
+	var endpoints_distinct := true
+	for cable in cables:
+		if (cable[0] as Vector2).is_equal_approx(cable[1] as Vector2):
+			endpoints_distinct = false
+	check(endpoints_distinct, "and lands on two different jacks")
+
+	# ---- catenary --------------------------------------------------------------------
+	# The curve is solved numerically, so it is worth pinning: the ends must meet the
+	# jacks exactly, and the sag must be the sag that was asked for.
+	var a := Vector2(100.0, 200.0)
+	var b := Vector2(400.0, 260.0)
+	var curve: PackedVector2Array = Rack.catenary(a, b, 90.0)
+	check(curve[0].is_equal_approx(a) and curve[curve.size() - 1].is_equal_approx(b),
+		"a catenary starts and ends exactly on its two jacks")
+
+	# Sag is measured against the chord at the midpoint, not as the lowest point on the
+	# curve: between jacks at different heights the low point sits off-centre, so the two
+	# are not the same number.
+	var chord_mid := (a.y + b.y) * 0.5
+	var mid: Vector2 = curve[curve.size() / 2]
+	check(absf((mid.y - chord_mid) - 90.0) < 2.0,
+		"and hangs by the sag it was given, to within a pixel or two")
+
+	var always_below := true
+	for i in curve.size():
+		var t := float(i) / float(curve.size() - 1)
+		if curve[i].y < lerpf(a.y, b.y, t) - 0.001:
+			always_below = false
+	check(always_below, "and never rises above the line between its ends")
+
+	# Reversing the endpoints must give the same physical cable, or a patch would appear
+	# to change shape depending on which end was drawn first.
+	var reversed: PackedVector2Array = Rack.catenary(b, a, 90.0)
+	var mirrored := true
+	for i in curve.size():
+		if not curve[i].is_equal_approx(reversed[reversed.size() - 1 - i]):
+			mirrored = false
+	check(mirrored, "and hangs the same way whichever end it is drawn from")
+
+	# ---- knobs -----------------------------------------------------------------------
+	# A knob and a slider are two handles on one value; if their scaling disagreed, the
+	# same patch would sound different depending on which view last touched it.
+	var filter_id := ""
+	for node in main.patch["nodes"]:
+		if node["type"] == "StateVariableFilter":
+			filter_id = node["id"]
+	if filter_id != "":
+		var knobs: Dictionary = main.rack._knobs[filter_id]
+		var cutoff: Rack.Knob = knobs["cutoff"]
+		cutoff.set_value_silently(2500.0)
+		check(absf(cutoff.value() - 2500.0) < 1.0,
+			"a knob round-trips a value through the descriptor's own scaling")
+
+		# mode is an enum: a filter set to 1.7 is not a thing the core can represent.
+		var mode: Rack.Knob = knobs["mode"]
+		var whole := true
+		for step in 20:
+			mode.set_value_silently(float(step) * 0.15)
+			if not is_equal_approx(mode.value(), floor(mode.value())):
+				whole = false
+		check(whole, "and an enum knob only ever produces whole positions")
+
+	# ---- the sandbox -------------------------------------------------------------------
+	# The sandbox is the answer to "how would I use this in a game", so the thing worth
+	# checking is that its sounds actually load. A silent demo is worse than no demo: it
+	# looks like the project does not work.
+	check(main.sandbox != null, "the editor has a sandbox tab")
+	if main.sandbox != null and main.sandbox.sounds != null:
+		var names: Array = main.sandbox.sounds.sound_names()
+		check(names.size() >= 6,
+			"and it loaded its sound patches (%d found)" % names.size())
+		for expected in ["jump", "coin", "hurt", "shoot", "powerup", "explode"]:
+			check(main.sandbox.sounds.has_sound(expected),
+				"including %s.json" % expected)
+
+		# Every one has to be a patch the core accepted, not merely a file that existed.
+		# load_sound only records a voice after load_patch succeeds, so a name being
+		# present is that guarantee — but check a render too, since a graph that loads and
+		# produces nothing is the failure that would not be noticed.
+		var engine = main.sandbox.sounds._voices["jump"]["engine"]
+		check(engine.is_loaded(), "and the jump patch is loaded in its own engine")
+
+		# reset() is what retriggers a one-shot; without it the sandbox plays each sound
+		# once and is silent forever after.
+		engine.reset()
+		check(true, "and reset() is callable for retriggering")
+
+		# An unknown name must warn, not crash: a typo in a game should not take the game
+		# down with it.
+		main.sandbox.sounds.play("no-such-sound")
+		check(true, "playing an unknown sound does not crash")
 
 	player.queue_free()
 	main.queue_free()

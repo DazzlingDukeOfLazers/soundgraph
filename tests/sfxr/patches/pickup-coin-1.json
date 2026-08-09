@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "pickup-coin-1",
+    "description": "Generated from sfxr parameters by sfxr-ref patch. Do not edit by hand.",
+    "tags": ["sfxr"]
+  },
+  "nodes": [
+    {
+      "id": "pitch",
+      "type": "Constant",
+      "parameters": {
+        "value": 2404.48
+      }
+    },
+    {
+      "id": "slide",
+      "type": "Slide",
+      "parameters": {
+        "slide": -0,
+        "acceleration": 0,
+        "limit": 3.528
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SquareOscillator",
+      "parameters": {
+        "pulse_width": 0.5,
+        "pulse_width_sweep": -0
+      }
+    },
+    {
+      "id": "phaser",
+      "type": "Phaser",
+      "parameters": {
+        "offset": 0,
+        "sweep": 0,
+        "depth": 1
+      }
+    },
+    {
+      "id": "trigger",
+      "type": "Constant",
+      "parameters": {
+        "value": 1
+      }
+    },
+    {
+      "id": "envelope",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.000603951,
+        "decay": 0.15277,
+        "punch": 0.34914
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.025
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {"node": "pitch", "port": "out"},
+      "to": {"node": "slide", "port": "frequency"}
+    },
+    {
+      "from": {"node": "slide", "port": "frequency"},
+      "to": {"node": "osc", "port": "frequency"}
+    },
+    {
+      "from": {"node": "osc", "port": "out"},
+      "to": {"node": "phaser", "port": "in"}
+    },
+    {
+      "from": {"node": "trigger", "port": "out"},
+      "to": {"node": "envelope", "port": "gate"}
+    },
+    {
+      "from": {"node": "phaser", "port": "out"},
+      "to": {"node": "amp", "port": "in"}
+    },
+    {
+      "from": {"node": "envelope", "port": "out"},
+      "to": {"node": "amp", "port": "gain"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "left"}
+    },
+    {
+      "from": {"node": "amp", "port": "out"},
+      "to": {"node": "out", "port": "right"}
+    }
+  ]
+}

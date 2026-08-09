@@ -38,6 +38,12 @@ struct ConnectionDescription {
     std::string from_port;
     std::string to_node;
     std::string to_port;
+
+    // Editor layout, carried like node positions so a patch looks the same in every
+    // editor. The runtime never reads it.
+    bool has_waypoint = false;
+    float waypoint_x = 0.0f;
+    float waypoint_y = 0.0f;
 };
 
 struct ControlTarget {

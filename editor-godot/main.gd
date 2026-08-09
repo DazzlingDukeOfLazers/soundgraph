@@ -12,10 +12,58 @@ extends Control
 ## from the registry anyway, so there is little left worth storing in a scene file.
 
 const Scope := preload("res://scope.gd")
+const PatchGraph := preload("res://patch_graph.gd")
+const Layout := preload("res://layout.gd")
+
+## Layout grid. Everything auto-place produces lands on this, so a hand-aligned patch and
+## a generated one look like they came from the same hand.
+const GRID := 40.0
+## Minimum distance between columns. Wider nodes push their own column out, but never in.
+const COLUMN_PITCH := 400.0
+## Space left beyond the widest node in a column before the next column starts.
+const COLUMN_GUTTER := 80.0
+## Rows land on multiples of this — the major grid lines. Aligning to every 40 scatters
+## rows onto arbitrary values; one coarse pitch is what makes a stack read as a stack.
+const ROW_STEP := 200.0
+# ---------------------------------------------------------------------------------
+# Typography
+#
+# Atkinson Hyperlegible, from the Braille Institute, drawn specifically so that letters
+# which usually blur together — I l 1, O 0, b d — stay distinguishable at small sizes and
+# low vision. Used at bold weight throughout, with sizes well above the usual editor
+# default, and high-contrast colours, following the same reasoning the Braille Institute
+# applies to its own material: legibility first, density second.
+#
+# This also matches the project's own rule from docs/UX_PRINCIPLES.md — "avoid tiny text,
+# tiny hit targets, cryptic abbreviations" — which the first pass paid lip service to.
+# ---------------------------------------------------------------------------------
+
+const FONT_PATH := "res://fonts/AtkinsonHyperlegibleNext.ttf"
+const FONT_WEIGHT := 700          # bold
+const FONT_SIZE := 18             # body
+const FONT_SIZE_SMALL := 15       # captions, port labels, parameter names
+const FONT_SIZE_HEADING := 15     # section headings, letterspaced and upper case
+const FONT_SIZE_TITLE := 24
+
+## High contrast, and warmer than a pure grey so long sessions are easier on the eye.
+const INK := Color(0.96, 0.96, 0.97)
+const INK_DIM := Color(0.72, 0.74, 0.78)
+const ACCENT := Color(0.43, 0.91, 0.72)
+const WARNING := Color(1.0, 0.80, 0.45)
+const ERROR := Color(1.0, 0.55, 0.50)
+
+## How much harder an audio cable pulls its ends into line than a control cable does.
+## This is what makes the signal chain come out as one straight spine with the modulation
+## sources arranged around it, rather than everything averaged into a gentle zig-zag.
+const AUDIO_PULL := 8.0
+
+
+static func snap_up(value: float, step: float) -> float:
+	return ceilf(value / step) * step
 
 const EXAMPLES := {
-	"First Synth": "res://examples/first-synth.json",
-	"Delay Echo": "res://examples/delay-echo.json",
+	"First Synth": "first-synth.json",
+	"Delay Echo": "delay-echo.json",
 }
 
 # Signal types, mapped to GraphEdit slot types so the engine's own compatibility rule is
@@ -49,13 +97,17 @@ var widgets: Dictionary = {}           # patch node id -> GraphNode
 var ids: Dictionary = {}               # GraphNode.name -> patch node id
 
 var graph_edit: GraphEdit
+var views: TabContainer
+var rack: Rack
+var sandbox: Sandbox
 var diagnostics_list: VBoxContainer
 var info_label: RichTextLabel
 var scope: Control
 var status_label: Label
 var search_popup: PopupPanel
 var search_field: LineEdit
-var search_results: ItemList
+var search_results: VBoxContainer
+var search_hint: Label
 var file_dialog: FileDialog
 
 var player: AudioStreamPlayer
@@ -65,6 +117,20 @@ var octave := 3
 var held_notes := {}
 var inspecting := {}                   # {"node": id, "port": name} or empty
 var suppress_reload := false
+
+## Undo works on whole-document snapshots rather than per-operation inverses. A patch is
+## a few kilobytes, and the code that turns one into a view is the same well-exercised
+## path used for loading — so "undo an edit" reduces to "load the previous document",
+## which cannot drift out of step with the operations the way hand-written inverses do.
+var undo_redo := UndoRedo.new()
+var _pending_snapshot: Dictionary = {}
+var undo_button: Button
+var redo_button: Button
+var arrange_selection_button: Button
+
+## node id -> parameter name -> {"slider": Control, "readout": Label, "descriptor": Dictionary}
+## Kept so an undone knob turn can move the knob back without rebuilding the graph.
+var parameter_widgets := {}
 
 
 func _ready() -> void:
@@ -84,9 +150,41 @@ func _ready() -> void:
 	for type in registry_json["types"]:
 		registry[type["name"]] = type
 
+	_apply_theme()
 	_build_ui()
 	_start_audio()
 	_load_example("First Synth")
+
+
+## One theme on the root, inherited by everything — including the GraphNodes generated for
+## each patch node, which would otherwise each need their own overrides.
+func _apply_theme() -> void:
+	var face := load(FONT_PATH)
+	if face == null:
+		push_warning("Atkinson Hyperlegible is missing; falling back to the default font")
+		return
+
+	var bold := FontVariation.new()
+	bold.base_font = face
+	bold.variation_opentype = {&"wght": FONT_WEIGHT}
+
+	var editor_theme := Theme.new()
+	editor_theme.default_font = bold
+	editor_theme.default_font_size = FONT_SIZE
+
+	# Text colour is set per type rather than globally: Godot has no single "text colour",
+	# and leaving these at the defaults would undo the contrast the font is here for.
+	for type_name in ["Label", "Button", "CheckButton", "OptionButton", "LineEdit",
+			"RichTextLabel", "ItemList", "PopupMenu", "TabBar"]:
+		editor_theme.set_color("font_color", type_name, INK)
+	editor_theme.set_color("default_color", "RichTextLabel", INK)
+	editor_theme.set_color("font_placeholder_color", "LineEdit", INK_DIM)
+	editor_theme.set_color("title_color", "GraphNode", INK)
+
+	# Roomier controls. A slider you can actually hit matters as much as type you can
+	# read, and both are the same principle.
+	editor_theme.set_constant("outline_size", "Label", 0)
+	theme = editor_theme
 
 
 func _fatal(message: String) -> void:
@@ -116,11 +214,22 @@ func _build_ui() -> void:
 	split.split_offset = 980
 	root.add_child(split)
 
-	graph_edit = GraphEdit.new()
+	graph_edit = PatchGraph.new()
 	graph_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	graph_edit.right_disconnects = true
-	graph_edit.show_grid = true
+	graph_edit.show_grid = false   # the canvas draws its own; see below
 	graph_edit.minimap_enabled = true
+	# Snap to the same grid auto-place uses, so dragging a node by hand keeps the pitch.
+	graph_edit.snapping_enabled = true
+	graph_edit.snapping_distance = int(GRID)
+	# The canvas draws its own grid, whose tiers are the layout's own pitches: a heavy
+	# line is a column, a medium one is a row, a faint one is the snap step. GraphEdit's
+	# built-in grid would otherwise draw a second, unrelated set of major lines over it.
+	graph_edit.show_grid_buttons = false
+	graph_edit.grid_minor = GRID
+	graph_edit.grid_half_major = ROW_STEP
+	graph_edit.grid_major = COLUMN_PITCH
+	graph_edit.waypoint_changed.connect(_on_waypoint_changed)
 	# audio and control are both sample streams and interconvert freely; event and note are
 	# discrete and require an exact match. This is the core's rule, not a UI preference.
 	graph_edit.add_valid_connection_type(SLOT_AUDIO, SLOT_CONTROL)
@@ -129,8 +238,52 @@ func _build_ui() -> void:
 	graph_edit.disconnection_request.connect(_on_disconnection_request)
 	graph_edit.delete_nodes_request.connect(_on_delete_nodes_request)
 	graph_edit.node_selected.connect(_on_node_selected)
+	graph_edit.node_selected.connect(func(_n): _refresh_selection_button())
+	graph_edit.node_deselected.connect(func(_n): _refresh_selection_button())
 	graph_edit.popup_request.connect(_on_graph_popup_request)
-	split.add_child(graph_edit)
+	# Node drags and cable drags bracket their own undo entries, so a drag is one step
+	# rather than one per pixel of mouse movement.
+	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
+	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
+	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
+
+	# Two views of one document, side by side in tabs rather than as a mode: the graph is
+	# the honest picture of signal flow, the rack is the picture a musician already knows
+	# how to read. Which one leads at Knobcon is a question to settle by watching people.
+	views = TabContainer.new()
+	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	graph_edit.name = "Graph"
+	views.add_child(graph_edit)
+
+	var rack_scroll := ScrollContainer.new()
+	rack_scroll.name = "Rack"
+	rack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	rack = Rack.new()
+	rack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rack.type_colours = TYPE_COLOURS
+	rack.ink = INK
+	rack.ink_dim = INK_DIM
+	rack.parameter_changed.connect(_on_rack_parameter_changed)
+	rack.edit_started.connect(func() -> void: _begin_edit())
+	rack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
+	rack.node_selected.connect(_on_rack_node_selected)
+	rack_scroll.add_child(rack)
+	views.add_child(rack_scroll)
+
+	# A third view, and a different kind of answer: not how a patch looks, but what it is
+	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
+	# rebuild, is the argument for shipping instructions rather than recordings.
+	sandbox = Sandbox.new()
+	sandbox.name = "Sandbox"
+	views.add_child(sandbox)
+	# Both views start on the style the toolbar says they are on. Worth knowing when
+	# comparing them: dragging a cable waypoint is a PCB-mode gesture — a hanging cable
+	# has no corners to grab, which is part of what is being traded.
+	graph_edit.cable_style = Rack.CableStyle.CATENARY
+	# The rack lays out against the width it is given, so it has to be told when the tab
+	# is first shown — before that it has no size to flow modules into.
+	views.tab_changed.connect(func(_index: int) -> void: rack.rebuild())
+	split.add_child(views)
 
 	split.add_child(_build_side_panel())
 	_build_search_popup()
@@ -140,6 +293,9 @@ func _build_ui() -> void:
 	file_dialog.add_filter("*.json", "SoundGraph patch")
 	file_dialog.file_selected.connect(_on_file_selected)
 	add_child(file_dialog)
+
+	if _on_web():
+		_install_web_file_bridge()
 
 
 # Mouse-operated controls must not hold keyboard focus. The computer keyboard is the
@@ -158,7 +314,7 @@ func _build_toolbar() -> Control:
 
 	var title := Label.new()
 	title.text = "  SoundGraph"
-	title.add_theme_font_size_override("font_size", 17)
+	title.add_theme_font_size_override("font_size", FONT_SIZE_TITLE)
 	bar.add_child(title)
 
 	var examples := OptionButton.new()
@@ -174,9 +330,41 @@ func _build_toolbar() -> Control:
 	add_button.pressed.connect(_open_search)
 	bar.add_child(_defocus(add_button))
 
+	var arrange := Button.new()
+	arrange.text = "Auto-place"
+	arrange.tooltip_text = "Lay the whole graph out left to right. The same patch always " \
+		+ "lands the same way, wherever things were before."
+	arrange.pressed.connect(_auto_place)
+	bar.add_child(_defocus(arrange))
+
+	arrange_selection_button = Button.new()
+	arrange_selection_button.text = "Arrange selection"
+	arrange_selection_button.tooltip_text = "Arrange only the selected nodes, leaving the " \
+		+ "rest where they are"
+	arrange_selection_button.disabled = true
+	arrange_selection_button.pressed.connect(_arrange_selection)
+	bar.add_child(_defocus(arrange_selection_button))
+
+	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
+	# time user does not know they have.
+	undo_button = Button.new()
+	undo_button.text = "Undo"
+	undo_button.disabled = true
+	undo_button.pressed.connect(_undo)
+	bar.add_child(_defocus(undo_button))
+
+	redo_button = Button.new()
+	redo_button.text = "Redo"
+	redo_button.disabled = true
+	redo_button.pressed.connect(_redo)
+	bar.add_child(_defocus(redo_button))
+
 	var open_button := Button.new()
 	open_button.text = "Open…"
 	open_button.pressed.connect(func() -> void:
+		if _on_web():
+			_web_open()
+			return
 		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 		file_dialog.title = "Open patch"
 		file_dialog.popup_centered_ratio(0.6))
@@ -185,11 +373,28 @@ func _build_toolbar() -> Control:
 	var save_button := Button.new()
 	save_button.text = "Save as…"
 	save_button.pressed.connect(func() -> void:
+		if _on_web():
+			_web_save()
+			return
 		file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
 		file_dialog.title = "Save patch"
 		file_dialog.current_file = "patch.json"
 		file_dialog.popup_centered_ratio(0.6))
 	bar.add_child(_defocus(save_button))
+
+	# The A/B. Both views honour it, so the comparison is between two ways of drawing a
+	# cable rather than between two views that happen to draw them differently.
+	var cables := OptionButton.new()
+	cables.add_item("Catenary")
+	cables.add_item("PCB")
+	cables.selected = 0
+	cables.tooltip_text = "How patch cables are drawn: hanging under their own weight, " \
+		+ "or routed at right angles around what is in the way"
+	cables.item_selected.connect(func(index: int) -> void:
+		rack.cable_style = index
+		graph_edit.cable_style = index
+		graph_edit.queue_redraw())
+	bar.add_child(_defocus(cables))
 
 	var panic := Button.new()
 	panic.text = "All notes off"
@@ -224,8 +429,8 @@ func _build_side_panel() -> Control:
 
 	var hint := Label.new()
 	hint.text = "Select a node to see what it is putting out."
-	hint.add_theme_font_size_override("font_size", 11)
-	hint.modulate = Color(1, 1, 1, 0.6)
+	hint.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	hint.modulate = INK_DIM
 	panel.add_child(hint)
 
 	panel.add_child(_section_heading("Problems"))
@@ -246,8 +451,8 @@ func _build_side_panel() -> Control:
 
 	var keys := Label.new()
 	keys.text = "Play with A W S E D F T G Y H U J K. Z and X shift octave."
-	keys.add_theme_font_size_override("font_size", 11)
-	keys.modulate = Color(1, 1, 1, 0.6)
+	keys.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	keys.modulate = INK_DIM
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel.add_child(keys)
 
@@ -257,8 +462,8 @@ func _build_side_panel() -> Control:
 func _section_heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text.to_upper()
-	label.add_theme_font_size_override("font_size", 11)
-	label.modulate = Color(1, 1, 1, 0.55)
+	label.add_theme_font_size_override("font_size", FONT_SIZE_HEADING)
+	label.modulate = INK_DIM
 	return label
 
 
@@ -273,6 +478,12 @@ func _start_audio() -> void:
 
 	player = AudioStreamPlayer.new()
 	player.stream = generator
+	# Godot defaults web playback to *sample* mode, which pre-bakes a stream into a buffer
+	# and cannot work for a generator whose samples do not exist until they are asked for.
+	# The symptom is a warning — "trying to play a sample from a stream that cannot be
+	# sampled" — and silence, on the web only. Every desktop build sounds fine, which is
+	# what made this survive so long.
+	player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 	add_child(player)
 	player.play()
 	playback = player.get_stream_playback()
@@ -320,6 +531,7 @@ func _rebuild_view() -> void:
 			child.queue_free()
 	widgets.clear()
 	ids.clear()
+	parameter_widgets.clear()
 
 	for node in patch.get("nodes", []):
 		_create_widget(node)
@@ -336,6 +548,15 @@ func _rebuild_view() -> void:
 		if from_port < 0 or to_port < 0:
 			continue
 		graph_edit.connect_node(widgets[from_id].name, from_port, widgets[to_id].name, to_port)
+
+	_restore_waypoints()
+
+	# The rack reads the same document, so it is rebuilt from the same place rather than
+	# kept in step by hand.
+	if rack != null:
+		rack.registry = registry
+		rack.patch = patch
+		rack.rebuild()
 
 
 func _create_widget(node: Dictionary) -> void:
@@ -426,7 +647,7 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 
 	var toggle := CheckButton.new()
 	toggle.text = "%d more" % extra.size()
-	toggle.add_theme_font_size_override("font_size", 11)
+	toggle.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
 	toggle.toggled.connect(func(pressed: bool) -> void:
 		for row in extra:
 			row.visible = pressed
@@ -444,7 +665,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	label.text = name
 	label.custom_minimum_size.x = 92
 	label.tooltip_text = str(parameter.get("doc", ""))
-	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
 	row.add_child(label)
 
 	if parameter.has("enum"):
@@ -454,8 +675,11 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		options.selected = clampi(int(round(current)), 0, parameter["enum"].size() - 1)
 		options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		options.item_selected.connect(func(index: int) -> void:
-			_set_parameter(node_id, name, float(index)))
+			_begin_edit()
+			_set_parameter(node_id, name, float(index))
+			_commit_edit("set %s" % name))
 		row.add_child(_defocus(options))
+		_remember_parameter_widget(node_id, name, options, null, parameter)
 		return row
 
 	var slider := HSlider.new()
@@ -470,16 +694,35 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	readout.text = _format_value(current)
 	readout.custom_minimum_size.x = 62
 	readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	readout.add_theme_font_size_override("font_size", 11)
+	readout.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
 
 	slider.value_changed.connect(func(position: float) -> void:
 		var value := _to_value(parameter, position)
 		readout.text = _format_value(value)
 		_set_parameter(node_id, name, value))
 
+	# A whole drag is one undo step. Bracketing on the drag rather than on each value
+	# change is what stops a single sweep of a knob from filling the history.
+	slider.drag_started.connect(func() -> void: _begin_edit())
+	slider.drag_ended.connect(func(changed: bool) -> void:
+		if changed:
+			_commit_edit("set %s" % name)
+		else:
+			_pending_snapshot = {})
+
 	row.add_child(_defocus(slider))
 	row.add_child(readout)
+	_remember_parameter_widget(node_id, name, slider, readout, parameter)
 	return row
+
+
+func _remember_parameter_widget(node_id: String, parameter_name: String, control: Control,
+		readout: Label, descriptor: Dictionary) -> void:
+	if not parameter_widgets.has(node_id):
+		parameter_widgets[node_id] = {}
+	parameter_widgets[node_id][parameter_name] = {
+		"slider": control, "readout": readout, "descriptor": descriptor,
+	}
 
 
 # Parameter scaling, taken from the descriptor the core publishes rather than guessed at.
@@ -572,12 +815,14 @@ func _on_connection_request(from_node: StringName, from_port: int, to_node: Stri
 	if from_port >= from_ports.size() or to_port >= to_ports.size():
 		return
 
+	_begin_edit()
 	patch["connections"].append({
 		"from": {"node": from_id, "port": from_ports[from_port]["name"]},
 		"to": {"node": to_id, "port": to_ports[to_port]["name"]},
 	})
 	graph_edit.connect_node(from_node, from_port, to_node, to_port)
 	_apply()
+	_commit_edit("connect")
 
 
 func _on_disconnection_request(from_node: StringName, from_port: int, to_node: StringName,
@@ -589,6 +834,7 @@ func _on_disconnection_request(from_node: StringName, from_port: int, to_node: S
 	if from_port >= from_ports.size() or to_port >= to_ports.size():
 		return
 
+	_begin_edit()
 	var from_name: String = from_ports[from_port]["name"]
 	var to_name: String = to_ports[to_port]["name"]
 	var remaining := []
@@ -603,9 +849,11 @@ func _on_disconnection_request(from_node: StringName, from_port: int, to_node: S
 
 	graph_edit.disconnect_node(from_node, from_port, to_node, to_port)
 	_apply()
+	_commit_edit("disconnect")
 
 
 func _on_delete_nodes_request(nodes: Array[StringName]) -> void:
+	_begin_edit()
 	for godot_name in nodes:
 		var node_id: String = ids.get(godot_name, "")
 		if node_id == "":
@@ -630,6 +878,7 @@ func _on_delete_nodes_request(nodes: Array[StringName]) -> void:
 	inspecting = {}
 	await _rebuild_view()
 	_apply()
+	_commit_edit("delete" if nodes.size() == 1 else "delete %d nodes" % nodes.size())
 
 
 func _without_target(entries: Array, node_id: String) -> Array:
@@ -649,6 +898,32 @@ func _on_node_selected(node: Node) -> void:
 	inspecting = {"node": node_id, "port": outputs[0]["name"]}
 
 
+## A knob in the rack and a slider in the graph are two handles on one value. The edit goes
+## through the same path either way; the other view is then told what to show, so the two
+## cannot drift apart while both are open.
+func _on_rack_parameter_changed(node_id: String, parameter: String, value: float) -> void:
+	_set_parameter(node_id, parameter, value)
+	var entry: Dictionary = parameter_widgets.get(node_id, {}).get(parameter, {})
+	if entry.is_empty():
+		return
+	var control: Control = entry["slider"]
+	if control is HSlider:
+		# set_value_no_signal, or the slider's own handler would write the value back and
+		# the two would fight over every drag.
+		control.set_value_no_signal(_to_position(entry["descriptor"], value))
+	elif control is OptionButton:
+		control.selected = int(round(value))
+	var readout: Label = entry["readout"]
+	if readout != null:
+		readout.text = _format_value(value)
+
+
+func _on_rack_node_selected(node_id: String) -> void:
+	var outputs := _port_list(node_id, "outputs")
+	inspecting = {"node": node_id, "port": outputs[0]["name"]} if not outputs.is_empty() \
+		else {}
+
+
 func _on_graph_popup_request(at_position: Vector2) -> void:
 	_open_search(at_position)
 
@@ -659,7 +934,7 @@ func _on_graph_popup_request(at_position: Vector2) -> void:
 
 func _build_search_popup() -> void:
 	search_popup = PopupPanel.new()
-	search_popup.size = Vector2i(460, 340)
+	search_popup.size = Vector2i(560, 420)
 
 	var box := VBoxContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -667,23 +942,73 @@ func _build_search_popup() -> void:
 	search_field = LineEdit.new()
 	search_field.placeholder_text = "What do you want to do?  e.g. \"remove high frequencies\""
 	search_field.text_changed.connect(_on_search_changed)
-	search_field.text_submitted.connect(func(_text: String) -> void: _accept_search())
+	search_field.text_submitted.connect(func(_text: String) -> void: _add_first_result())
 	box.add_child(search_field)
 
-	search_results = ItemList.new()
-	search_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	search_results.item_activated.connect(func(_index: int) -> void: _accept_search())
-	box.add_child(search_results)
+	# A list of rows rather than an ItemList: every result carries its own Add button.
+	# Relying on double-click alone hid the one action the dialog exists for.
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	search_results = VBoxContainer.new()
+	search_results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(search_results)
+	box.add_child(scroll)
+
+	search_hint = Label.new()
+	search_hint.text = "Enter adds the top result. The dialog stays open so you can add several."
+	search_hint.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	search_hint.modulate = INK_DIM
+	box.add_child(search_hint)
 
 	search_popup.add_child(box)
 	add_child(search_popup)
 
 
+func _build_result_row(type_name: String) -> Control:
+	var descriptor: Dictionary = registry.get(type_name, {})
+
+	var row := PanelContainer.new()
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 10)
+
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var title := Label.new()
+	title.text = descriptor.get("display_name", type_name)
+	text.add_child(title)
+
+	var summary := Label.new()
+	summary.text = descriptor.get("summary", "")
+	summary.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	summary.modulate = INK_DIM
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.custom_minimum_size.x = 380
+	text.add_child(summary)
+
+	line.add_child(text)
+
+	var add := Button.new()
+	add.text = "Add"
+	add.custom_minimum_size = Vector2(72, 40)
+	add.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	add.tooltip_text = "Add a %s to the patch" % descriptor.get("display_name", type_name)
+	add.pressed.connect(func() -> void: _add_from_search(type_name))
+	line.add_child(_defocus(add))
+
+	row.add_child(line)
+	return row
+
+
 var _search_spawn := Vector2.ZERO
+var _search_top_result := ""
+var _added_since_open := 0
 
 
 func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:
 	_search_spawn = at_position
+	_added_since_open = 0
 	search_field.text = ""
 	_on_search_changed("")
 	search_popup.popup_centered()
@@ -691,30 +1016,46 @@ func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:
 
 
 func _on_search_changed(query: String) -> void:
-	search_results.clear()
+	for child in search_results.get_children():
+		search_results.remove_child(child)
+		child.queue_free()
+
 	# The ranking is the core's, so "make quieter" finds the same node here, in the
 	# browser, and on the command line.
 	var names: PackedStringArray = engine.search_nodes(query) if query.strip_edges() != "" \
 		else PackedStringArray(registry.keys())
+
+	_search_top_result = names[0] if names.size() > 0 else ""
 	for type_name in names:
-		var descriptor: Dictionary = registry.get(type_name, {})
-		var index := search_results.add_item("%s — %s" % [
-			descriptor.get("display_name", type_name), descriptor.get("summary", "")])
-		search_results.set_item_metadata(index, type_name)
-	if search_results.item_count > 0:
-		search_results.select(0)
+		search_results.add_child(_build_result_row(type_name))
+
+	if names.is_empty():
+		var empty := Label.new()
+		empty.text = "Nothing matches that. Try what you want to do — \"echo\", \"make quieter\"."
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.modulate = INK_DIM
+		search_results.add_child(empty)
 
 
-func _accept_search() -> void:
-	var selected := search_results.get_selected_items()
-	if selected.is_empty():
-		return
-	var type_name: String = search_results.get_item_metadata(selected[0])
-	search_popup.hide()
-	_add_node(type_name, (_search_spawn + graph_edit.scroll_offset) / graph_edit.zoom)
+func _add_first_result() -> void:
+	if _search_top_result != "":
+		_add_from_search(_search_top_result)
 
 
-func _add_node(type_name: String, at_position: Vector2) -> void:
+## Adds a node and keeps the dialog open — building a patch usually means adding several,
+## and reopening the search for each one is the slow way to do it.
+func _add_from_search(type_name: String) -> void:
+	# Fan successive additions down the grid so they do not land on top of each other.
+	var spawn := (_search_spawn + graph_edit.scroll_offset) / graph_edit.zoom
+	spawn += Vector2(0.0, _added_since_open * GRID * 4.0)
+	_added_since_open += 1
+
+	var node_id := await _add_node(type_name, spawn)
+	search_hint.text = "Added %s. Keep going, or press Escape when you are done." % node_id
+
+
+func _add_node(type_name: String, at_position: Vector2) -> String:
+	_begin_edit()
 	var descriptor: Dictionary = registry.get(type_name, {})
 	var base: String = type_name.to_snake_case()
 	var suffix := 1
@@ -735,15 +1076,294 @@ func _add_node(type_name: String, at_position: Vector2) -> void:
 		"id": node_id,
 		"type": type_name,
 		"parameters": parameters,
-		"position": {"x": at_position.x, "y": at_position.y},
+		"position": {
+			"x": snappedf(at_position.x, GRID),
+			"y": snappedf(at_position.y, GRID),
+		},
 	})
 	await _rebuild_view()
 	_apply()
+	_commit_edit("add %s" % registry.get(type_name, {}).get("display_name", type_name))
+	return node_id
 
 
 # ---------------------------------------------------------------------------------
 # Document
 # ---------------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------------
+# Auto-place
+#
+# The layered layout lives in layout.gd; this gathers the graph, hands it over, and
+# writes the result back. With nodes selected it arranges only those, treating everything
+# else as a fixed anchor that still pulls on the result — so tidying part of a patch
+# does not fight the part you already arranged.
+# ---------------------------------------------------------------------------------
+
+func _refresh_selection_button() -> void:
+	if arrange_selection_button != null:
+		arrange_selection_button.disabled = _selected_ids().size() < 2
+
+
+func _selected_ids() -> Array:
+	var selected := []
+	for id in widgets:
+		if widgets[id].selected:
+			selected.append(id)
+	return selected
+
+
+## Arranges the whole graph. The result depends only on the graph — the same patch always
+## lands the same way, no matter where anything happened to be first.
+func _auto_place() -> void:
+	var everything := []
+	for node in patch.get("nodes", []):
+		everything.append(node["id"])
+	await _arrange(everything)
+
+
+## Arranges just the selected nodes, treating the rest as fixed anchors. Kept as its own
+## action rather than something Auto-place decides for you: an arrangement that silently
+## changed meaning depending on what happened to still be selected — which, after a drag,
+## is whatever was just dragged — is exactly what made this feel unpredictable.
+func _arrange_selection() -> void:
+	var selected := _selected_ids()
+	if selected.size() < 2:
+		status_label.text = "select two or more nodes to arrange them together"
+		return
+	await _arrange(selected)
+
+
+func _arrange(movable: Array) -> void:
+	if patch.get("nodes", []).is_empty() or movable.is_empty():
+		return
+
+	_begin_edit()
+
+	var sizes := {}
+	for node in patch["nodes"]:
+		var widget: GraphNode = widgets.get(node["id"])
+		sizes[node["id"]] = widget.size if widget != null else Vector2(240.0, 140.0)
+
+	var anchors := {}
+	var moving := {}
+	for id in movable:
+		moving[id] = true
+	for node in patch["nodes"]:
+		if not moving.has(node["id"]):
+			anchors[node["id"]] = Vector2(
+				node.get("position", {}).get("x", 0.0), node.get("position", {}).get("y", 0.0))
+
+	# Each cable carries the weight of what it actually transports. The port's declared
+	# signal type comes from the core's registry, so "the audio path" is the core's own
+	# notion of audio, not a guess made here.
+	var edges := []
+	for connection in patch.get("connections", []):
+		var from_id: String = connection["from"]["node"]
+		var port_index := _output_port_index(from_id, connection["from"]["port"])
+		var ports := _port_list(from_id, "outputs")
+		var is_audio: bool = port_index >= 0 and port_index < ports.size() \
+			and ports[port_index]["type"] == "audio"
+		edges.append([from_id, connection["to"]["node"], AUDIO_PULL if is_audio else 1.0])
+
+	var placed: Dictionary = Layout.arrange({
+		"nodes": movable, "edges": edges, "sizes": sizes, "anchors": anchors,
+		"grid": GRID, "column_pitch": COLUMN_PITCH,
+		"column_gutter": COLUMN_GUTTER, "row_step": ROW_STEP,
+	})
+
+	# Straightening pulls nodes toward their neighbours, which routinely lands the result
+	# above and left of the origin. A partial arrangement is translated back to where the
+	# selection already sat, so tidying one corner does not move it across the canvas; a
+	# whole-graph arrangement is normalised to the origin instead.
+	var old_origin := Vector2(INF, INF)
+	var new_origin := Vector2(INF, INF)
+	for node in patch["nodes"]:
+		if not moving.has(node["id"]) or not placed.has(node["id"]):
+			continue
+		old_origin.x = minf(old_origin.x, node.get("position", {}).get("x", 0.0))
+		old_origin.y = minf(old_origin.y, node.get("position", {}).get("y", 0.0))
+		new_origin.x = minf(new_origin.x, placed[node["id"]].x)
+		new_origin.y = minf(new_origin.y, placed[node["id"]].y)
+
+	var shift := Vector2.ZERO
+	if new_origin.x < INF:
+		var target: Vector2 = old_origin if not anchors.is_empty() else Vector2.ZERO
+		shift = ((target - new_origin) / GRID).round() * GRID
+
+	for node in patch["nodes"]:
+		if placed.has(node["id"]):
+			var point: Vector2 = placed[node["id"]] + shift
+			node["position"] = {"x": point.x, "y": point.y}
+
+	# Hand-placed cable waypoints describe a layout that no longer exists.
+	for connection in patch.get("connections", []):
+		if moving.has(connection["from"]["node"]) or moving.has(connection["to"]["node"]):
+			connection.erase("waypoint")
+
+	await _rebuild_view()
+	_apply()
+	_commit_edit("auto-place")
+	status_label.text = "placed %d node%s" % [
+		placed.size(), "" if placed.size() == 1 else "s"]
+
+
+# ---------------------------------------------------------------------------------
+# Undo
+# ---------------------------------------------------------------------------------
+
+func _snapshot() -> Dictionary:
+	_capture_positions()
+	return patch.duplicate(true)
+
+
+## Records the start of an edit. Paired with _commit_edit; safe to call again before
+## committing, which is what happens when a drag is interrupted.
+func _begin_edit() -> void:
+	_pending_snapshot = _snapshot()
+
+
+func _commit_edit(label: String) -> void:
+	if _pending_snapshot.is_empty():
+		return
+	var before := _pending_snapshot
+	_pending_snapshot = {}
+	var after := _snapshot()
+	if JSON.stringify(before) == JSON.stringify(after):
+		return  # a drag that went nowhere is not an edit
+
+	undo_redo.create_action(label)
+	undo_redo.add_do_method(_restore.bind(after))
+	undo_redo.add_undo_method(_restore.bind(before))
+	# The change is already applied; committing must not run it a second time.
+	undo_redo.commit_action(false)
+	_refresh_undo_buttons()
+
+
+## True when two documents differ only in parameter values — the common case for a knob
+## turn, and the one where rebuilding the graph would be audible.
+func _differs_only_in_parameters(a: Dictionary, b: Dictionary) -> bool:
+	var without_parameters := func(document: Dictionary) -> String:
+		var copy: Dictionary = document.duplicate(true)
+		for node in copy.get("nodes", []):
+			node.erase("parameters")
+		return JSON.stringify(copy)
+	return without_parameters.call(a) == without_parameters.call(b)
+
+
+func _restore(snapshot: Dictionary) -> void:
+	var live_parameters := _differs_only_in_parameters(patch, snapshot)
+	patch = snapshot.duplicate(true)
+
+	if live_parameters:
+		# Undoing a knob turn moves the knob, it does not restart the sound. Rebuilding
+		# here would empty every delay line and retrigger every oscillator.
+		for node in patch.get("nodes", []):
+			for parameter_name in node.get("parameters", {}):
+				var value: float = node["parameters"][parameter_name]
+				engine.set_parameter(node["id"], parameter_name, value)
+				_show_parameter(node["id"], parameter_name, value)
+		status_label.text = "playing"
+	else:
+		_rebuild_and_apply()
+	_refresh_undo_buttons()
+
+
+## Not a coroutine: UndoRedo calls its actions synchronously, so the rebuild is started
+## and allowed to finish on its own frames.
+func _rebuild_and_apply() -> void:
+	await _rebuild_view()
+	_apply()
+
+
+func _show_parameter(node_id: String, parameter_name: String, value: float) -> void:
+	var entry: Dictionary = parameter_widgets.get(node_id, {}).get(parameter_name, {})
+	if entry.is_empty():
+		return
+	var slider = entry.get("slider")
+	var readout: Label = entry.get("readout")
+	if slider is OptionButton:
+		slider.selected = clampi(int(round(value)), 0, slider.item_count - 1)
+		return
+	if slider is HSlider:
+		# set_value_no_signal, or restoring a value would look like the user turning it.
+		slider.set_value_no_signal(_to_position(entry["descriptor"], value))
+	if readout != null:
+		readout.text = _format_value(value)
+
+
+func _undo() -> void:
+	if not undo_redo.has_undo():
+		return
+	var label := undo_redo.get_current_action_name()
+	undo_redo.undo()
+	status_label.text = "undid %s" % label
+	_refresh_undo_buttons()
+
+
+func _redo() -> void:
+	if not undo_redo.has_redo():
+		return
+	undo_redo.redo()
+	status_label.text = "redid %s" % undo_redo.get_current_action_name()
+	_refresh_undo_buttons()
+
+
+func _refresh_undo_buttons() -> void:
+	if undo_button == null:
+		return
+	undo_button.disabled = not undo_redo.has_undo()
+	redo_button.disabled = not undo_redo.has_redo()
+	undo_button.tooltip_text = "Undo %s (Ctrl+Z)" % undo_redo.get_current_action_name() \
+		if undo_redo.has_undo() else "Nothing to undo"
+	redo_button.tooltip_text = "Redo (Ctrl+Shift+Z)"
+
+
+# ---------------------------------------------------------------------------------
+# Cable waypoints
+# ---------------------------------------------------------------------------------
+
+func _on_waypoint_changed(from_node: StringName, from_port: int, to_node: StringName,
+		to_port: int, point: Variant) -> void:
+	var from_id: String = ids.get(from_node, "")
+	var to_id: String = ids.get(to_node, "")
+	var from_ports := _port_list(from_id, "outputs")
+	var to_ports := _port_list(to_id, "inputs")
+	if from_port >= from_ports.size() or to_port >= to_ports.size():
+		return
+
+	for connection in patch.get("connections", []):
+		if connection["from"]["node"] == from_id \
+			and connection["from"]["port"] == from_ports[from_port]["name"] \
+			and connection["to"]["node"] == to_id \
+			and connection["to"]["port"] == to_ports[to_port]["name"]:
+			if point == null:
+				connection.erase("waypoint")
+			else:
+				connection["waypoint"] = {"x": point.x, "y": point.y}
+			_commit_edit("move cable" if point != null else "straighten cable")
+			return
+
+
+## Pushes stored waypoints into the canvas after a load or rebuild.
+func _restore_waypoints() -> void:
+	graph_edit.clear_waypoints()
+	for connection in patch.get("connections", []):
+		if not connection.has("waypoint"):
+			continue
+		var from_id: String = connection["from"]["node"]
+		var to_id: String = connection["to"]["node"]
+		if not widgets.has(from_id) or not widgets.has(to_id):
+			continue
+		var from_port := _output_port_index(from_id, connection["from"]["port"])
+		var to_port := _input_port_index(to_id, connection["to"]["port"])
+		if from_port < 0 or to_port < 0:
+			continue
+		var key: String = PatchGraph.connection_key(
+			widgets[from_id].name, from_port, widgets[to_id].name, to_port)
+		graph_edit.set_waypoint(key, Vector2(
+			connection["waypoint"].get("x", 0.0), connection["waypoint"].get("y", 0.0)))
+
 
 func _capture_positions() -> void:
 	for node in patch.get("nodes", []):
@@ -778,7 +1398,7 @@ func _show_diagnostics(diagnostics: Array) -> void:
 	if diagnostics.is_empty():
 		var ok := Label.new()
 		ok.text = "No problems."
-		ok.modulate = Color(0.6, 0.85, 0.7)
+		ok.modulate = ACCENT
 		diagnostics_list.add_child(ok)
 		_highlight([])
 		return
@@ -790,8 +1410,7 @@ func _show_diagnostics(diagnostics: Array) -> void:
 		var message := Label.new()
 		message.text = diagnostic["message"]
 		message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		message.modulate = Color(1.0, 0.55, 0.5) if diagnostic["severity"] == "error" \
-			else Color(1.0, 0.8, 0.5)
+		message.modulate = ERROR if diagnostic["severity"] == "error" else WARNING
 		card.add_child(message)
 
 		# Spatial, not just textual: the offending nodes are named and highlighted in the
@@ -801,16 +1420,16 @@ func _show_diagnostics(diagnostics: Array) -> void:
 				to_highlight.append(node_id)
 			var where := Label.new()
 			where.text = "  " + " → ".join(diagnostic["nodes"])
-			where.add_theme_font_size_override("font_size", 11)
-			where.modulate = Color(1, 1, 1, 0.65)
+			where.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+			where.modulate = INK_DIM
 			card.add_child(where)
 
 		if diagnostic.has("suggestion"):
 			var suggestion := Label.new()
 			suggestion.text = diagnostic["suggestion"]
 			suggestion.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			suggestion.add_theme_font_size_override("font_size", 11)
-			suggestion.modulate = Color(0.55, 0.85, 0.75)
+			suggestion.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+			suggestion.modulate = ACCENT
 			card.add_child(suggestion)
 
 		var rule := HSeparator.new()
@@ -847,12 +1466,29 @@ func _show_info() -> void:
 	info_label.text = text
 
 
+## Where an example actually lives.
+##
+## The copy under res://examples is mirrored in from examples/patches by the build, which
+## means it goes stale the moment a patch is edited without rebuilding the extension —
+## and the editor then quietly opens an old layout while the repository has a new one.
+## That is a genuinely confusing failure, so the repository copy wins whenever it is
+## reachable, and res:// is the fallback for an exported build that has no repository
+## around it.
+func _example_path(file_name: String) -> String:
+	var repository := ProjectSettings.globalize_path("res://") \
+		.path_join("../examples/patches").path_join(file_name)
+	if FileAccess.file_exists(repository):
+		return repository
+	return "res://examples/" + file_name
+
+
 func _load_example(name: String) -> void:
 	if not EXAMPLES.has(name):
 		return
-	var file := FileAccess.open(EXAMPLES[name], FileAccess.READ)
+	var path := _example_path(EXAMPLES[name])
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		status_label.text = "could not open %s" % EXAMPLES[name]
+		status_label.text = "could not open %s" % path
 		return
 	_load_text(file.get_as_text())
 
@@ -864,7 +1500,9 @@ func _on_file_selected(path: String) -> void:
 		if out == null:
 			status_label.text = "could not write %s" % path
 			return
-		out.store_string(JSON.stringify(patch, "  ") + "\n")
+		# Written through the core's serialiser, not Godot's: the patch format is the
+		# product, and it should read the same whichever editor saved it.
+		out.store_string(engine.format_patch(JSON.stringify(patch, "  ")))
 		status_label.text = "saved"
 		return
 
@@ -873,6 +1511,64 @@ func _on_file_selected(path: String) -> void:
 		status_label.text = "could not open %s" % path
 		return
 	_load_text(file.get_as_text())
+
+
+# ---------------------------------------------------------------------------------
+# Files in a browser
+#
+# A web export has no filesystem to show a dialog for. Opening goes through a real
+# <input type="file"> so the browser's own picker appears, and saving goes through a
+# download — which is what a browser considers "save as" and what a phone will do
+# something sensible with.
+# ---------------------------------------------------------------------------------
+
+var _web_callback   # must outlive the call; a collected callback crashes the bridge
+
+
+func _on_web() -> bool:
+	return OS.has_feature("web")
+
+
+func _install_web_file_bridge() -> void:
+	JavaScriptBridge.eval("""
+		window.soundgraphPickFile = function (callback) {
+			const input = document.createElement('input');
+			input.type = 'file';
+			input.accept = '.json,application/json';
+			input.onchange = function () {
+				const file = input.files && input.files[0];
+				if (!file) { return; }
+				const reader = new FileReader();
+				reader.onload = function () { callback(String(reader.result)); };
+				reader.readAsText(file);
+			};
+			input.click();
+		};
+	""", true)
+
+
+func _web_open() -> void:
+	_web_callback = JavaScriptBridge.create_callback(_on_web_file_chosen)
+	var window = JavaScriptBridge.get_interface("window")
+	if window == null:
+		status_label.text = "this browser did not expose a file picker"
+		return
+	window.soundgraphPickFile(_web_callback)
+
+
+func _on_web_file_chosen(arguments: Array) -> void:
+	if arguments.is_empty():
+		return
+	_load_text(str(arguments[0]))
+
+
+func _web_save() -> void:
+	_capture_positions()
+	var text: String = engine.format_patch(JSON.stringify(patch, "  "))
+	var name: String = patch.get("metadata", {}).get("name", "patch")
+	var file_name := name.to_lower().replace(" ", "-") + ".json"
+	JavaScriptBridge.download_buffer(text.to_utf8_buffer(), file_name, "application/json")
+	status_label.text = "downloaded %s" % file_name
 
 
 func _load_text(text: String) -> void:
@@ -886,8 +1582,36 @@ func _load_text(text: String) -> void:
 	if not patch.has("connections"):
 		patch["connections"] = []
 	inspecting = {}
+
+	# Snap whatever arrives onto the grid. A patch written by another editor, or by hand,
+	# lands on arbitrary pixels, and then every alignment cue in the canvas is off by a
+	# few — which reads as the grid being broken rather than the file. Only positions
+	# move; nothing about the graph changes.
+	var moved := 0
+	for node in patch["nodes"]:
+		if not node.has("position"):
+			continue
+		var before := Vector2(node["position"].get("x", 0.0), node["position"].get("y", 0.0))
+		var after := (before / GRID).round() * GRID
+		if not before.is_equal_approx(after):
+			node["position"] = {"x": after.x, "y": after.y}
+			moved += 1
+	for connection in patch.get("connections", []):
+		if connection.has("waypoint"):
+			var point := Vector2(connection["waypoint"].get("x", 0.0),
+				connection["waypoint"].get("y", 0.0))
+			point = (point / GRID).round() * GRID
+			connection["waypoint"] = {"x": point.x, "y": point.y}
+
+	# Opening a document starts a new history. Undoing across a load would restore a
+	# different patch's nodes into this one, which is never what anyone means.
+	undo_redo.clear_history(true)
+	_pending_snapshot = {}
 	await _rebuild_view()
 	_apply()
+	_refresh_undo_buttons()
+	if moved > 0:
+		status_label.text = "snapped %d node%s to the grid" % [moved, "" if moved == 1 else "s"]
 
 
 # ---------------------------------------------------------------------------------
@@ -900,15 +1624,36 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if search_popup.visible:
 		return
+	# The sandbox uses A and D to run, which are also two of the piano keys. While it is
+	# showing, the keyboard belongs to it — otherwise walking left plays a note.
+	if sandbox != null and sandbox.wants_keyboard():
+		return
+	if key.pressed and key.keycode == KEY_SPACE and key.ctrl_pressed:
+		_open_search()
+		accept_event()
+		return
+
+	# Undo before the octave shortcut: Z is both, and Ctrl+Z has to win.
+	if key.pressed and key.ctrl_pressed and key.keycode == KEY_Z:
+		if key.shift_pressed:
+			_redo()
+		else:
+			_undo()
+		accept_event()
+		return
+	if key.pressed and key.ctrl_pressed and key.keycode == KEY_Y:
+		_redo()
+		accept_event()
+		return
+
+	if key.ctrl_pressed:
+		return  # no note or octave shortcut fires with Ctrl held
 
 	if key.pressed and key.keycode == KEY_Z:
 		octave = maxi(0, octave - 1)
 		return
 	if key.pressed and key.keycode == KEY_X:
 		octave = mini(7, octave + 1)
-		return
-	if key.pressed and key.keycode == KEY_SPACE and key.ctrl_pressed:
-		_open_search()
 		return
 
 	if not KEY_NOTES.has(key.keycode):
