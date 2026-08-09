@@ -99,6 +99,15 @@ var case_hp: int = 0:
 
 var selected_id := ""
 
+## Explicit rack order, set by dragging. Empty means "use the layering", which is the
+## default and what a freshly loaded patch gets.
+##
+## Held here rather than written into the document: where a module sits on a rail is a
+## presentation choice, and the patch format has no place to say it. Persisting it would
+## mean a schema change and a field every other target has to carry and ignore, which is a
+## larger decision than "let me put the filter next to the oscillator".
+var _order_override: Array = []
+
 var _modules: Dictionary = {}          # node id -> RackModule
 var _knobs: Dictionary = {}            # node id -> {parameter name -> Knob}
 var _cables: CableLayer
@@ -127,6 +136,15 @@ func rebuild() -> void:
 			child.queue_free()
 	_modules.clear()
 	_knobs.clear()
+	# A different document is a different rack. Order set by hand does not carry over.
+	if _order_override.size() > 0:
+		var still_here: Array = []
+		for id in _order_override:
+			for node in patch.get("nodes", []):
+				if str(node["id"]) == id:
+					still_here.append(id)
+					break
+		_order_override = still_here
 
 	for node in patch.get("nodes", []):
 		var module := RackModule.new()
@@ -174,6 +192,18 @@ func _module_order() -> Array:
 			if str(port.get("name", "")) == str(connection["from"]["port"]):
 				weight = 8.0 if str(port.get("type", "")) == "audio" else 1.0
 		edges.append([from_id, to_id, weight])
+
+	# A hand-set order wins. Anything added since is appended, so a new node appears at the
+	# end rather than silently reshuffling everything that was placed deliberately.
+	if _order_override.size() > 0:
+		var ordered: Array = []
+		for id in _order_override:
+			if ids.has(id):
+				ordered.append(id)
+		for id in ids:
+			if not ordered.has(id):
+				ordered.append(id)
+		return ordered
 
 	var placed: Dictionary = Layout.arrange({
 		"nodes": ids, "edges": edges, "sizes": sizes,
@@ -230,6 +260,43 @@ func _relayout() -> void:
 	queue_redraw()
 	if _cables != null:
 		_cables.queue_redraw()
+
+
+## Moves a module to the slot nearest a point, in rack coordinates.
+func move_module_to(node_id: String, at: Vector2) -> void:
+	var order: Array = _module_order()
+	var from := order.find(node_id)
+	if from < 0:
+		return
+
+	# The target slot is whichever module currently covers that point, by centre distance.
+	# Comparing centres rather than edges is what makes a drag land where it looks like it
+	# should when modules are different widths.
+	var target := from
+	var best := INF
+	for index in order.size():
+		var module: RackModule = _modules.get(order[index])
+		if module == null:
+			continue
+		var centre := module.position + module.size * 0.5
+		var distance := at.distance_to(centre)
+		if distance < best:
+			best = distance
+			target = index
+
+	if target == from:
+		_relayout()
+		return
+	order.remove_at(from)
+	order.insert(target, node_id)
+	_order_override = order
+	_relayout()
+
+
+## Back to the order the layering gives, which is what a freshly loaded patch shows.
+func clear_order_override() -> void:
+	_order_override.clear()
+	_relayout()
 
 
 func select(node_id: String) -> void:
@@ -420,6 +487,8 @@ class RackModule extends Control:
 	var descriptor: Dictionary = {}
 
 	var _jacks: Array = []   # {"name", "input", "type", "centre"}
+	var _dragging := false
+	var _grab_offset := Vector2.ZERO
 
 	func build(node: Dictionary) -> Dictionary:
 		var inputs: Array = descriptor.get("inputs", [])
@@ -490,11 +559,26 @@ class RackModule extends Control:
 				return position + (jack["centre"] as Vector2)
 		return null
 
+	# Dragging slides a module along the rail — the one thing you can do to a real rack
+	# that the graph view has no equivalent for. Knobs sit on top and take their own input
+	# first, so a drag can only begin on bare panel, which is also true of the hardware.
 	func _gui_input(event: InputEvent) -> void:
-		if event is InputEventMouseButton and event.pressed \
-				and event.button_index == MOUSE_BUTTON_LEFT:
-			rack.select(node_id)
-			rack.node_selected.emit(node_id)
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				rack.select(node_id)
+				rack.node_selected.emit(node_id)
+				_dragging = true
+				_grab_offset = event.position
+				z_index = 1              # above its neighbours while it moves
+			elif _dragging:
+				_dragging = false
+				z_index = 0
+				rack.move_module_to(node_id, position + size * 0.5)
+			accept_event()
+		elif event is InputEventMouseMotion and _dragging:
+			position += event.position - _grab_offset
+			rack.queue_redraw()
+			accept_event()
 
 	func _draw() -> void:
 		var font: Font = get_theme_default_font()

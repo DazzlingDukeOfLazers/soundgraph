@@ -17,6 +17,8 @@ const GRAVITY := 1800.0
 const RUN_SPEED := 260.0
 const JUMP_SPEED := 620.0
 const PLAYER_SIZE := Vector2(26.0, 34.0)
+## One from the ground, one from the air. The upper platforms are out of reach on one.
+const MAX_JUMPS := 2
 const WORLD_SIZE := Vector2(960.0, 540.0)
 
 const INK := Color(0.96, 0.96, 0.97)
@@ -43,7 +45,7 @@ func _ready() -> void:
 	column.add_child(_status)
 
 	var help := Label.new()
-	help.text = "Arrow keys or A/D to run    Space to jump    X to shoot    R to restart"
+	help.text = "Arrow keys or A/D to run    Space to jump, again in mid-air for a " 		+ "double jump    X to shoot    R to restart"
 	help.add_theme_color_override("font_color", INK_DIM)
 	column.add_child(help)
 
@@ -108,6 +110,8 @@ class SandboxWorld extends Node2D:
 	var _player := Vector2(80.0, 300.0)
 	var _velocity := Vector2.ZERO
 	var _on_ground := false
+	var _jumps_used := 0
+	var _jump_was_held := false
 	var _facing := 1.0
 	var _score := 0
 	var _hurt_cooldown := 0.0
@@ -142,6 +146,7 @@ class SandboxWorld extends Node2D:
 	func _reset() -> void:
 		_player = Vector2(80.0, 300.0)
 		_velocity = Vector2.ZERO
+		_jumps_used = 0
 		_score = 0
 		_finished = false
 		_shots.clear()
@@ -168,11 +173,17 @@ class SandboxWorld extends Node2D:
 
 		_velocity.x = move * RUN_SPEED
 
+		# Two jumps: one from the ground and one from the air. Edge-triggered rather than
+		# held, or a leaning-on-space player would spend both instantly and never reach
+		# anything — which is what the single jump did to the upper platforms.
 		var jump_held := Input.is_key_pressed(KEY_SPACE) or Input.is_key_pressed(KEY_UP)
-		if jump_held and _on_ground:
-			_velocity.y = -JUMP_SPEED
+		if jump_held and not _jump_was_held and _jumps_used < MAX_JUMPS:
+			# The second is weaker, so the pair reads as a recovery rather than a launch.
+			_velocity.y = -JUMP_SPEED if _jumps_used == 0 else -JUMP_SPEED * 0.85
 			_on_ground = false
-			sounds.play("jump")            # <- the whole integration, once per event
+			_jumps_used += 1
+			sounds.play("jump" if _jumps_used == 1 else "jump2")
+		_jump_was_held = jump_held
 
 		if Input.is_key_pressed(KEY_X) and _shots.size() < 3:
 			_shots.append({"at": _player, "velocity": Vector2(_facing * 620.0, 0.0)})
@@ -203,6 +214,7 @@ class SandboxWorld extends Node2D:
 			if _velocity.y > 0.0:
 				_player.y = platform.position.y - PLAYER_SIZE.y * 0.5
 				_on_ground = true
+				_jumps_used = 0
 			else:
 				_player.y = platform.end.y + PLAYER_SIZE.y * 0.5
 			_velocity.y = 0.0

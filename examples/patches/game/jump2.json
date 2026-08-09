@@ -10,14 +10,14 @@
       "id": "pitch",
       "type": "Constant",
       "parameters": {
-        "value": 863.372
+        "value": 901.511
       }
     },
     {
       "id": "slide",
       "type": "Slide",
       "parameters": {
-        "slide": 15.713,
+        "slide": 11.1336,
         "acceleration": 0,
         "limit": 3.528
       }
@@ -26,8 +26,17 @@
       "id": "osc",
       "type": "SquareOscillator",
       "parameters": {
-        "pulse_width": 0.43736,
+        "pulse_width": 0.22973,
         "pulse_width_sweep": -0
+      }
+    },
+    {
+      "id": "highpass",
+      "type": "OnePoleFilter",
+      "parameters": {
+        "cutoff": 151.537,
+        "mode": 1,
+        "cutoff_sweep": 0
       }
     },
     {
@@ -51,8 +60,8 @@
       "type": "AhdEnvelope",
       "parameters": {
         "attack": 0,
-        "hold": 0.0608474,
-        "decay": 0.156179,
+        "hold": 0.219266,
+        "decay": 0.0234994,
         "punch": 0
       }
     },
@@ -83,6 +92,10 @@
     },
     {
       "from": {"node": "osc", "port": "out"},
+      "to": {"node": "highpass", "port": "in"}
+    },
+    {
+      "from": {"node": "highpass", "port": "out"},
       "to": {"node": "phaser", "port": "in"}
     },
     {

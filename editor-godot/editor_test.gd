@@ -534,6 +534,56 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- adding a patch as a module ----------------------------------------------------
+	var before_import: int = main.patch["nodes"].size()
+	var delay_text := FileAccess.get_file_as_string("res://examples/delay-echo.json")
+	if delay_text.is_empty():
+		delay_text = FileAccess.get_file_as_string(
+			ProjectSettings.globalize_path("res://").path_join("../examples/patches/delay-echo.json"))
+	check(not delay_text.is_empty(), "the delay example is readable for the module test")
+
+	main._import_module(delay_text, "echo")
+	await process_frame
+
+	check(main.patch["nodes"].size() > before_import,
+		"adding a patch as a module brings its nodes in")
+
+	var prefixed := 0
+	var terminals := 0
+	for node in main.patch["nodes"]:
+		if str(node["id"]).begins_with("echo/"):
+			prefixed += 1
+			if str(main.registry.get(node["type"], {}).get("category", "")) == "Terminals":
+				terminals += 1
+	check(prefixed > 0, "and prefixes every one of them with the module name")
+	check(prefixed > 0 and terminals == 0,
+		"and leaves the module's own terminals out, so there is still one output")
+
+	# The whole point of prefixing: importing twice must give two modules, not one merged
+	# heap with silently colliding ids.
+	main._import_module(delay_text, "echo")
+	await process_frame
+	var second := 0
+	for node in main.patch["nodes"]:
+		if str(node["id"]).begins_with("echo-2/"):
+			second += 1
+	check(second > 0 and second == prefixed,
+		"importing the same file twice gives a second, separate module")
+
+	# And every cable inside a module has to still point at nodes that exist.
+	var dangling := 0
+	var known := {}
+	for node in main.patch["nodes"]:
+		known[str(node["id"])] = true
+	for connection in main.patch["connections"]:
+		if not known.has(str(connection["from"]["node"])) \
+				or not known.has(str(connection["to"]["node"])):
+			dangling += 1
+	check(dangling == 0, "and no cable is left pointing at a node that was left out")
+
+	main._load_example("First Synth")
+	await process_frame
+
 	# ---- rack case width ---------------------------------------------------------------
 	# Filling the window is the default; a fixed case is the setting. Both have to actually
 	# change where modules wrap, or the option is decoration.

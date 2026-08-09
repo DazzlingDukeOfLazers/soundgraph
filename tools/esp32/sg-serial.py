@@ -292,7 +292,10 @@ def do_soak(connection: "serial.Serial", args) -> int:
         internal = heap.split()[0] if heap else "?"
         heaps.append(int(internal) if internal.isdigit() else 0)
 
-        if nodes == "?" or arp != "on":
+        # The board boots quiet now, so "arp off" is the healthy answer. What the soak is
+        # really asking is whether the console came up and the graph built — the
+        # arpeggiator is only read to confirm the field is being reported at all.
+        if nodes == "?" or nodes == "0" or arp == "?":
             print(f"  FAIL cycle {cycle}: console up but wrong state (nodes={nodes}, arp={arp})")
             return 1
         print(f"  ok   cycle {cycle:>2}: {nodes} nodes, arp {arp}, {internal} B internal free")

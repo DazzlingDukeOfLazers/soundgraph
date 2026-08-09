@@ -117,6 +117,8 @@ var octave := 3
 var held_notes := {}
 var inspecting := {}                   # {"node": id, "port": name} or empty
 var suppress_reload := false
+## The file dialog does open, save and import; this says which is in flight.
+var _importing_module := false
 
 ## Undo works on whole-document snapshots rather than per-operation inverses. A patch is
 ## a few kilobytes, and the code that turns one into a view is the same well-exercised
@@ -362,6 +364,7 @@ func _build_toolbar() -> Control:
 	var open_button := Button.new()
 	open_button.text = "Open…"
 	open_button.pressed.connect(func() -> void:
+		_importing_module = false
 		if _on_web():
 			_web_open()
 			return
@@ -370,9 +373,23 @@ func _build_toolbar() -> Control:
 		file_dialog.popup_centered_ratio(0.6))
 	bar.add_child(_defocus(open_button))
 
+	var import_button := Button.new()
+	import_button.text = "Add module…"
+	import_button.tooltip_text = "Add an existing patch into this one. Its nodes are " 		+ "copied in with their names prefixed; its own inputs and outputs are left out, " 		+ "because those belong to a finished patch rather than to a module."
+	import_button.pressed.connect(func() -> void:
+		_importing_module = true
+		if _on_web():
+			_web_open()
+			return
+		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		file_dialog.title = "Add a patch as a module"
+		file_dialog.popup_centered_ratio(0.6))
+	bar.add_child(_defocus(import_button))
+
 	var save_button := Button.new()
 	save_button.text = "Save as…"
 	save_button.pressed.connect(func() -> void:
+		_importing_module = false
 		if _on_web():
 			_web_save()
 			return
@@ -393,7 +410,7 @@ func _build_toolbar() -> Control:
 	cables.item_selected.connect(func(index: int) -> void:
 		rack.cable_style = index
 		graph_edit.cable_style = index
-		graph_edit.queue_redraw())
+		graph_edit.refresh_cables())
 	bar.add_child(_defocus(cables))
 
 	# How wide the rack's case is. Filling the window is the default — the window is the
@@ -1501,6 +1518,15 @@ func _load_example(name: String) -> void:
 	if not EXAMPLES.has(name):
 		return
 	var path := _example_path(EXAMPLES[name])
+	if _importing_module:
+		_importing_module = false
+		var module_file := FileAccess.open(path, FileAccess.READ)
+		if module_file == null:
+			status_label.text = "could not read %s" % path
+			return
+		_import_module(module_file.get_as_text(), ModuleImport.name_from_path(path))
+		return
+
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		status_label.text = "could not open %s" % path
@@ -1574,7 +1600,45 @@ func _web_open() -> void:
 func _on_web_file_chosen(arguments: Array) -> void:
 	if arguments.is_empty():
 		return
+	if _importing_module:
+		_importing_module = false
+		# The browser hands back contents, not a path, so the module gets a generic name.
+		_import_module(str(arguments[0]),
+			str(arguments[1]) if arguments.size() > 1 else "module")
+		return
 	_load_text(str(arguments[0]))
+
+
+## Inlines another patch into this one. Undoable like any other edit, and validated
+## afterwards — an import that produces an invalid graph should say so in the same place
+## every other mistake does, not in a dialog of its own.
+func _import_module(text: String, module_name: String) -> void:
+	var parsed: Variant = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		status_label.text = "that file is not a patch"
+		return
+
+	_begin_edit()
+	_capture_positions()
+
+	# Dropped in clear of what is already there, so an imported module never lands on top
+	# of the existing graph.
+	var lowest := 0.0
+	for node in patch.get("nodes", []):
+		lowest = maxf(lowest, float(node.get("position", {}).get("y", 0.0)))
+	var at := Vector2(0.0, snap_up(lowest + ROW_STEP * 1.5, ROW_STEP))
+
+	var result: ModuleImport.Result = ModuleImport.merge(patch, parsed, module_name, registry, at)
+	if not result.ok():
+		_pending_snapshot = {}
+		status_label.text = result.error
+		return
+
+	_rebuild_view()
+	_apply()
+	_commit_edit("add module %s" % module_name)
+	# _apply sets its own status; the import has more to say than "playing".
+	status_label.text = "%s: %s" % [module_name, result.summary()]
 
 
 func _web_save() -> void:

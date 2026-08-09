@@ -698,5 +698,17 @@ func set_waypoint(key: String, point: Variant) -> void:
 	queue_redraw()
 
 
+## Forces every cable to be routed again.
+##
+## GraphEdit caches the geometry it gets from _get_connection_line and only asks for it
+## again when the connections change, a node moves or the zoom changes. Changing the
+## routing style is none of those, so the toggle appeared to do nothing here while working
+## in the rack — the style had changed and the drawing had not. Re-setting the same
+## connections is the supported way to say "these need recomputing".
+func refresh_cables() -> void:
+	set_connections(get_connection_list())
+	queue_redraw()
+
+
 func clear_waypoints() -> void:
 	waypoints.clear()

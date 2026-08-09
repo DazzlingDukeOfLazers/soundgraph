@@ -11,7 +11,8 @@
 //   note <n> [vel]      play MIDI note n
 //   off <n>             release it
 //   panic               all notes off
-//   arp on|off          the built-in arpeggiator (on at boot, so power-up makes sound)
+//   arp on|off          the built-in arpeggiator (off at boot; the board is quiet
+//                       until asked, so it can sit on a stand all day)
 //   arp 45,52,57,60     set the arpeggio pattern (MIDI notes) and start it
 //   bpm <n>             arpeggio tempo
 //   vol <0-100>         codec output volume, on boards that have one
@@ -169,7 +170,12 @@ private:
     long long position_ = 0;
     int step_ = 0;
     int sounding_ = -1;
-    std::atomic<bool> running_{true};
+    // Silent at boot. The board previously started its arpeggiator the moment it had
+    // power, on the reasoning that a fresh board should prove itself immediately — which
+    // is right for a bench and wrong for a stand, where it means a device droning at
+    // everyone for eight hours. `arp on` starts it, and a deploy from the editor is the
+    // interesting way to make it speak anyway.
+    std::atomic<bool> running_{false};
 };
 
 // ---------------------------------------------------------------------------------
@@ -664,8 +670,9 @@ extern "C" void app_main(void) {
 
     g_sequencer.configure(SG_AUDIO_SAMPLE_RATE);
 
-    // A deployed patch survives power cycles; the embedded demo is the fallback, so a
-    // fresh board makes sound the moment it has power.
+    // A deployed patch survives power cycles; the embedded demo is the fallback. The
+    // graph is built and running either way — what is off is the arpeggiator driving it,
+    // so the board is loaded and ready rather than asleep.
     std::string deployed;
     std::string error;
     soundgraph::Graph* graph = nullptr;
