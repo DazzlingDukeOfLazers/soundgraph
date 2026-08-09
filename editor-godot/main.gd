@@ -478,6 +478,12 @@ func _start_audio() -> void:
 
 	player = AudioStreamPlayer.new()
 	player.stream = generator
+	# Godot defaults web playback to *sample* mode, which pre-bakes a stream into a buffer
+	# and cannot work for a generator whose samples do not exist until they are asked for.
+	# The symptom is a warning — "trying to play a sample from a stream that cannot be
+	# sampled" — and silence, on the web only. Every desktop build sounds fine, which is
+	# what made this survive so long.
+	player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 	add_child(player)
 	player.play()
 	playback = player.get_stream_playback()

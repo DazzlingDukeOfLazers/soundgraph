@@ -82,6 +82,8 @@ func load_sound(sound_name: String, patch_path: String) -> bool:
 
 	var player := AudioStreamPlayer.new()
 	player.stream = generator
+	# See main.gd: web defaults to sample playback, which a generator cannot do.
+	player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 	add_child(player)
 	player.play()
 

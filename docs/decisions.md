@@ -656,3 +656,42 @@ Xtensa/ESP32-S3. Two vectors were re-recorded; both are unchanged in character.
 
 The phaser remains the worst case by an order of magnitude, and that is inherent: fractional
 delay has a discretisation cliff that no amount of precision removes, only makes rarer.
+
+## 2026-08-08 — Web playback must be asked for as a stream
+
+Decision:
+Every `AudioStreamPlayer` sets `playback_type = AudioServer.PLAYBACK_TYPE_STREAM`.
+
+Reason:
+Godot's project setting `audio/general/default_playback_type.web` is 1, and that enum is
+`Stream, Sample` — so the web default is **Sample**, which pre-bakes a stream into a buffer.
+An `AudioStreamGenerator` has no samples until something asks for them, so it cannot be
+baked. The result is a warning and silence, on the web only; every desktop build sounds
+fine, which is what let it survive from the first web export until now.
+
+Setting it on the player rather than flipping the project setting: it is the line that
+explains itself at the place that depends on it, and a project setting is invisible from
+the code it changes.
+
+Consequences:
+The warning is gone from the exported build. That is evidence the sample path is no longer
+being taken; it is not yet evidence of sound.
+
+## 2026-08-08 — What "verify the audio" turned out to require
+
+Measured, so the remaining gap is precise rather than vague: in the exported build Godot
+creates **no AudioContext at all** and never fetches its audio worklets until the page has
+had a real user gesture. Instrumenting `AudioContext` and `AudioNode.prototype.connect`
+before the engine loads shows zero contexts, zero connections and no worklet requests after
+thirty seconds.
+
+Synthetic events do not lift it. Dispatching pointerdown, mousedown, click, touchstart and
+keydown at the canvas, the document and the window changes nothing, and
+`navigator.userActivation.hasBeenActive` stays false — which is the actual gate. Notably a
+context created from the console *is* immediately `running`, so this is not the browser's
+autoplay policy: it is Godot waiting for interaction before starting its driver at all.
+
+So this last step cannot be automated from here. It needs a person to click the page once.
+The tap above is the way to read the answer when they do: it reports the peak amplitude
+actually reaching the speakers, rather than asking someone whether they think they heard
+something.
