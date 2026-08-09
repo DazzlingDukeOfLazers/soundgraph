@@ -97,6 +97,19 @@ let failures = 0;
 console.log('Round tripping patches through the Godot editor and comparing rendered audio.\n');
 
 try {
+    // Import once, first. A Godot project whose files changed since the last run does an
+    // import pass on the next launch, and a --script run that collides with that can fail
+    // with nothing useful on stderr — which is what this reported, four times in a row,
+    // right after the example patches were regenerated. Doing it deliberately and once is
+    // cheaper than a confusing failure that clears itself up.
+    try {
+        execFileSync(godot, ['--headless', '--path', join(repoRoot, 'editor-godot'), '--import'],
+            { stdio: 'pipe', timeout: 180000 });
+    } catch {
+        // An import that fails is not itself the thing under test; the round trips below
+        // will say so far more clearly.
+    }
+
     for (const name of PATCHES) {
         const original = join(repoRoot, 'examples', 'patches', name);
         const tripped = join(work, `tripped-${name}`);
@@ -109,7 +122,11 @@ try {
                 '--', original, tripped,
             ], { stdio: 'pipe', timeout: 120000 });
         } catch (error) {
-            console.log(`  FAIL ${name}: the editor could not round trip it`);
+            // The status is worth printing: a crash during shutdown reports 3221225477
+            // (0xC0000005) with nothing on either stream, which is otherwise indis-
+            // tinguishable from the editor quietly refusing the patch.
+            console.log(`  FAIL ${name}: the editor could not round trip it` +
+                ` (exit status ${error.status})`);
             const detail = (error.stderr || error.stdout || '').toString().trim();
             if (detail) console.log(detail.split('\n').map((l) => `         ${l}`).join('\n'));
             failures += 1;

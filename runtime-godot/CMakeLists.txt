@@ -110,14 +110,23 @@ add_custom_command(TARGET soundgraph_godot POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${SOUNDGRAPH_GODOT_BIN}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:soundgraph_godot> ${SOUNDGRAPH_GODOT_BIN}
+    COMMENT "Copying the extension into editor-godot/bin"
+)
+
+# The example patches, mirrored on every build rather than after a link.
+#
+# These were copied by the POST_BUILD above, which only runs when the extension itself
+# relinks — so editing or regenerating a patch left editor-godot/examples holding the
+# previous one, and the editor went on showing a file that no longer existed anywhere else.
+# Nothing failed; it was just quietly out of date, which is the same shape of bug as the
+# firmware's stale source list and is worth spending a target on.
+add_custom_target(soundgraph_godot_examples ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${SOUNDGRAPH_GODOT_EXAMPLES}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${SOUNDGRAPH_ROOT}/examples/patches/first-synth.json ${SOUNDGRAPH_GODOT_EXAMPLES}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${SOUNDGRAPH_ROOT}/examples/patches/delay-echo.json ${SOUNDGRAPH_GODOT_EXAMPLES}
-    # The sandbox's sounds, as a directory: they are ordinary patches and the count will
-    # grow, so this copies the folder rather than naming each file.
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${SOUNDGRAPH_ROOT}/examples/patches/game ${SOUNDGRAPH_GODOT_EXAMPLES}/game
-    COMMENT "Copying the extension and example patches into editor-godot/"
+    COMMENT "Mirroring the example patches into editor-godot/examples"
 )

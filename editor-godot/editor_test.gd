@@ -598,6 +598,30 @@ func _initialize() -> void:
 	check(prefixed > 0 and terminals == 0,
 		"and leaves the module's own terminals out, so there is still one output")
 
+	# The seam a module needs. A game sound is gated by a NoteInput, which is a terminal —
+	# so importing one leaves its envelope gate free for the host graph to drive, instead
+	# of carrying a constant that fires on its own and argues with the parent.
+	var coin_text := FileAccess.get_file_as_string(main._example_path("game/coin.json"))
+	var before_coin: int = main.patch["nodes"].size()
+	main._import_module(coin_text, "coin")
+	await process_frame
+	var coin_nodes := 0
+	var coin_has_trigger := false
+	for node in main.patch["nodes"]:
+		if str(node["id"]).begins_with("coin" + ModuleImport.SEPARATOR):
+			coin_nodes += 1
+			if str(node["type"]) == "NoteInput":
+				coin_has_trigger = true
+	check(coin_nodes > 0 and not coin_has_trigger,
+		"a game sound imported as a module leaves its NoteInput behind")
+
+	var gate_driven := false
+	for connection in main.patch["connections"]:
+		if str(connection["to"]["node"]) == "coin" + ModuleImport.SEPARATOR + "envelope" 				and str(connection["to"]["port"]) == "gate":
+			gate_driven = true
+	check(not gate_driven,
+		"so its envelope gate is free for the host graph to drive")
+
 	# The whole point of prefixing: importing twice must give two modules, not one merged
 	# heap with silently colliding ids.
 	main._import_module(delay_text, "echo")
@@ -695,7 +719,10 @@ func _initialize() -> void:
 		"and a patch with no layout is arranged on load, not stacked (%d distinct of %d)"
 			% [seen_positions.size(), main.patch["nodes"].size()])
 	check(on_origin <= 1, "with at most one node left on the origin")
+	# Fired the way the Fire button does it: these are gated by a NoteInput now, so a
+	# reset alone leaves them silent.
 	main.engine.reset()
+	main.engine.note_on(60, 1.0)
 	var fired := 0
 	# The loudest moment, not the last one. get_peak() reports a recent window, and a coin
 	# is about forty milliseconds — read it after eight blocks and the sound is long over,
@@ -766,6 +793,8 @@ func _initialize() -> void:
 	# looks like the project does not work.
 	check(main.sandbox != null, "the editor has a sandbox tab")
 	if main.sandbox != null and main.sandbox.sounds != null:
+		# Loaded on demand now rather than at startup, so ask for them.
+		main.sandbox.ensure_sounds_loaded()
 		var names: Array = main.sandbox.sounds.sound_names()
 		check(names.size() >= 6,
 			"and it loaded its sound patches (%d found)" % names.size())

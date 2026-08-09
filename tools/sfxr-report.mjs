@@ -71,7 +71,11 @@ try {
           patch, candidate,
           '--seconds', String(seconds),
           '--sample-rate', String(manifest.sample_rate),
-          '--silent', '--float', '--quiet',
+          // One note, held for the whole render, so the first note_on lands at frame
+          // zero — the same single rising edge the old Constant gate gave. The patches
+          // are gated by a NoteInput now so that they can be played and imported, and
+          // rendering them silently would produce silence.
+          '--notes', '60', '--gate', '1', '--float', '--quiet',
         ], { stdio: ['ignore', 'ignore', 'pipe'] });
       }
     } catch (error) {

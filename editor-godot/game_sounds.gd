@@ -97,15 +97,21 @@ func load_sound(sound_name: String, patch_path: String) -> bool:
 
 ## Fires a sound from the beginning.
 ##
-## reset() is what makes this work: the patches are one-shot, gated by a constant, so the
-## envelope fires on the first sample and never again. Returning the graph to its freshly
-## prepared state makes that first sample happen again.
-func play(sound_name: String) -> void:
+## The patches are gated by a NoteInput, so firing one is playing a note — which is also
+## what makes them usable as modules and playable in the editor. The note is released
+## first: an AHD envelope triggers on the gate's rising edge, so a note that was already
+## held would not give it one.
+##
+## The pitch is ignored by these patches, which take only the gate; a coin has a pitch of
+## its own. Passing one anyway means a patch that *does* use the frequency will follow it,
+## which is how a game would want to play a footstep at different pitches.
+func play(sound_name: String, note: int = 60) -> void:
 	var voice: Dictionary = _voices.get(sound_name, {})
 	if voice.is_empty():
 		push_warning("GameSounds: no sound named '%s'" % sound_name)
 		return
-	voice["engine"].reset()
+	voice["engine"].all_notes_off()
+	voice["engine"].note_on(note, 1.0)
 
 
 ## Both, always. A signal is only useful to whoever connected it, and the one thing that
@@ -124,6 +130,23 @@ func sound_names() -> Array:
 	var names := _voices.keys()
 	names.sort()
 	return names
+
+
+## Let the engines go before the tree tears down.
+##
+## Each voice holds a SoundGraphEngine, which is a GDExtension object. Godot reported ten
+## leaked at exit — the editor's one and this file's eight — and an extension object still
+## alive when the extension unloads is an access violation waiting to happen. It was: the
+## round-trip check began failing about one run in three with status 0xC0000005, a crash
+## during shutdown, long after the work had succeeded.
+func _exit_tree() -> void:
+	for name in _voices:
+		var voice: Dictionary = _voices[name]
+		if voice["player"] != null:
+			voice["player"].stop()
+		voice["engine"] = null
+		voice["playback"] = null
+	_voices.clear()
 
 
 ## Every engine renders into its own player, every frame. Filling only what the buffer has

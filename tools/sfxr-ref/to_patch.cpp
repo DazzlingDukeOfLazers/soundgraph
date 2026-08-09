@@ -408,11 +408,25 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     }
 
     // --- envelope --------------------------------------------------------------------
-    // The gate is a Constant of 1, which is a rising edge at the first sample and never
-    // again. That is exactly sfxr's envelope: it fires once and runs to the end, and it is
-    // deliberately *not* wired to the retrigger below — sfxr's repeat restarts the pitch
-    // and leaves the amplitude alone.
-    nodes.push_back({"trigger", "Constant", {{"value", 1.0}}, column - 2, 1});
+    // The gate is a NoteInput, and that choice does three jobs at once.
+    //
+    // Standalone it makes the patch playable: press a key, hear the coin. A Constant of 1
+    // fires on the first sample and never again, so an opened sound played once on load
+    // and then sat there however hard anyone hit the keyboard.
+    //
+    // As a module it makes the patch *usable*. NoteInput is a terminal, so importing this
+    // patch into another drops it and leaves the envelope's gate unconnected for the host
+    // graph to drive — which is exactly the seam a module needs. A Constant is not a
+    // terminal, so it came along and kept firing on its own, arguing with whatever the
+    // parent wanted.
+    //
+    // And it is still one rising edge at the start when rendered offline, because
+    // sg-render puts the first note_on at frame zero. sfxr's envelope fires once and runs
+    // to the end; letting go early does nothing, which is what an AHD envelope does too.
+    //
+    // Deliberately only the gate is taken, not the frequency: a coin has a pitch of its
+    // own and playing it up the keyboard would be a different sound.
+    nodes.push_back({"trigger", "NoteInput", {}, column - 2, 1});
     nodes.push_back({"envelope",
                      "AhdEnvelope",
                      {{"attack", envelope_seconds(p.p_env_attack)},
@@ -420,7 +434,7 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                       {"decay", envelope_seconds(p.p_env_decay)},
                       {"punch", static_cast<double>(p.p_env_punch)}},
                      column - 1, 1});
-    connections.push_back({"trigger", "out", "envelope", "gate"});
+    connections.push_back({"trigger", "gate", "envelope", "gate"});
 
     nodes.push_back({"amp", "Gain", {{"gain", master_gain(p)}}, column++, 0});
     connections.push_back({signal, signal_port, "amp", "in"});

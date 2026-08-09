@@ -33,6 +33,7 @@ var sounds: GameSounds
 var world: SandboxWorld
 
 var _status: Label
+var _loaded := false
 
 
 func _ready() -> void:
@@ -41,7 +42,7 @@ func _ready() -> void:
 	add_child(column)
 
 	_status = Label.new()
-	_status.text = "loading sounds…"
+	_status.text = "open this tab to load the sounds"
 	column.add_child(_status)
 
 	var help := Label.new()
@@ -60,22 +61,6 @@ func _ready() -> void:
 		_status.text = "could not load %s: %s" % [name, diagnostics])
 	add_child(sounds)
 
-	# The patches live with the other examples rather than inside the editor project: they
-	# are ordinary SoundGraph documents, openable in the Graph tab like anything else.
-	var folder := "res://examples/game"
-	var loaded := sounds.load_folder(folder)
-	if loaded == 0:
-		folder = ProjectSettings.globalize_path("res://").path_join("../examples/patches/game")
-		loaded = sounds.load_folder(folder)
-	if loaded > 0:
-		_status.text = "%d sounds loaded: %s" % [loaded, ", ".join(sounds.sound_names())]
-	else:
-		_status.text = "no sounds found in %s — the sandbox will be silent" % folder
-	# Printed as well as shown, because this is the one thing that has to be checkable from
-	# outside: an exported build's res:// is a packed archive, and "did the patches come
-	# along" is not a question the UI can answer if the UI is a canvas you cannot read.
-	print("Sandbox: %s" % _status.text)
-
 	var viewport_holder := SubViewportContainer.new()
 	viewport_holder.stretch = true
 	viewport_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -92,6 +77,38 @@ func _ready() -> void:
 	world.sounds = sounds
 	world.status = _status
 	viewport.add_child(world)
+
+
+## Loads the sounds, once, the first time anyone opens this tab.
+##
+## Not at startup, which is what it used to do. Eight patches means eight engines and eight
+## audio players, built whether or not the tab is ever looked at — and in a headless run
+## they are never released, because Godot's quit() does not unwind the tree. Ten leaked
+## GDExtension objects at shutdown turned into an access violation about one run in three,
+## which showed up as the round-trip check failing long after its work had succeeded.
+##
+## Deferring it fixes that and is the better behaviour anyway: an editor should not build a
+## game's audio because the window opened.
+func ensure_sounds_loaded() -> void:
+	if _loaded:
+		return
+	_loaded = true
+
+	# The patches live with the other examples rather than inside the editor project: they
+	# are ordinary SoundGraph documents, openable in the Graph tab like anything else.
+	var folder := "res://examples/game"
+	var loaded := sounds.load_folder(folder)
+	if loaded == 0:
+		folder = ProjectSettings.globalize_path("res://").path_join("../examples/patches/game")
+		loaded = sounds.load_folder(folder)
+	if loaded > 0:
+		_status.text = "%d sounds loaded: %s" % [loaded, ", ".join(sounds.sound_names())]
+	else:
+		_status.text = "no sounds found in %s — the sandbox will be silent" % folder
+	# Printed as well as shown, because this is the one thing that has to be checkable from
+	# outside: an exported build's res:// is a packed archive, and "did the patches come
+	# along" is not a question the UI can answer if the UI is a canvas you cannot read.
+	print("Sandbox: %s" % _status.text)
 
 
 ## The editor's keyboard is a piano, and this tab's keyboard is a game. Whichever is

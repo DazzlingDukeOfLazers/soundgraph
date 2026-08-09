@@ -305,7 +305,10 @@ func _build_ui() -> void:
 	graph_edit.cable_style = Rack.CableStyle.CATENARY
 	# The rack lays out against the width it is given, so it has to be told when the tab
 	# is first shown — before that it has no size to flow modules into.
-	views.tab_changed.connect(func(_index: int) -> void: rack.rebuild())
+	views.tab_changed.connect(func(_index: int) -> void:
+		rack.rebuild()
+		if sandbox != null and sandbox.is_visible_in_tree():
+			sandbox.ensure_sounds_loaded())
 	split.add_child(views)
 
 	split.add_child(_build_side_panel())
@@ -465,9 +468,15 @@ func _build_toolbar() -> Control:
 	retrigger.text = "Fire"
 	retrigger.tooltip_text = "Play a one-shot patch again from the start. Does nothing " 		+ "audible to a patch that waits for notes."
 	retrigger.pressed.connect(func() -> void:
-		if engine != null and engine.is_loaded():
-			engine.reset()
-			status_label.text = "fired")
+		if engine == null or not engine.is_loaded():
+			return
+		# Both, because there are two kinds of one-shot. A patch gated by a NoteInput needs
+		# a note; a patch gated by a constant needs the graph put back to its start. Doing
+		# one and not the other made the button work for half the examples.
+		engine.reset()
+		_let_go_note(60)
+		_hold_note(60)
+		status_label.text = "fired")
 	bar.add_child(_defocus(retrigger))
 
 	var panic := Button.new()

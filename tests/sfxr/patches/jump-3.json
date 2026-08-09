@@ -66,11 +66,8 @@
     },
     {
       "id": "trigger",
-      "type": "Constant",
-      "position": {"x": 1600, "y": 200},
-      "parameters": {
-        "value": 1
-      }
+      "type": "NoteInput",
+      "position": {"x": 1600, "y": 200}
     },
     {
       "id": "envelope",
@@ -123,7 +120,7 @@
       "to": {"node": "phaser", "port": "in"}
     },
     {
-      "from": {"node": "trigger", "port": "out"},
+      "from": {"node": "trigger", "port": "gate"},
       "to": {"node": "envelope", "port": "gate"}
     },
     {
