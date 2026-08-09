@@ -59,6 +59,12 @@ and a repo-local `.venv` with pyserial and esptool.
 - `NoteInput.trigger`, and every generated patch rewired to it, so a one-shot fires on every
   note instead of only on the first of an overlapping run. Four notes that used to make one
   burst now make four.
+- Every generated sound is playable up the keyboard. `Slide` and `Arpeggio` gained the
+  frequency parameter the oscillator always had, so the head of a patch's pitch chain holds
+  its own pitch and the keyboard is connected to it as well: played standalone the note
+  wins and the sound transposes, imported as a module the NoteInput is dropped and the
+  parameter is what remains. The mapper offsets `transpose` so middle C is the pitch sfxr
+  chose — 0.0045 cents off, and the port report is unchanged at 32 of 41.
 - Two generated-file drift traps closed with scripts that both sync and `--check`, wired
   into the main suite: `tools/game-sounds.mjs` (the eight game sounds, whose recipe used to
   live only in a shell history) and `tools/mirror-examples.mjs` (`editor-godot/examples`).
@@ -152,6 +158,14 @@ somewhere other than the cause.
   drain at block boundaries — so it worked or didn't depending on where the block edge fell.
   `NoteInput.trigger` pulses on every note; percussion takes the trigger, anything that
   sustains takes the gate.
+- **A patch's pitch cannot live only in a connection.** The keyboard driving a generated
+  sound is a `NoteInput`, which is a terminal, which is dropped at the module seam — so a
+  patch whose pitch arrived by cable went silent the moment it became a module. The head of
+  the pitch chain now carries the pitch as a parameter *and* takes the keyboard, and each
+  covers what the other cannot. Related: **parameter ranges clamp on load**, silently. 19 of
+  the 41 sfxr cases need a transpose beyond two octaves, and at the old ±24 the file would
+  have kept the right number while the sound played at the wrong pitch — the same failure
+  that cost time once already on `Slide`'s range.
 - A **`WebAssembly.Module` cannot be cloned into an AudioWorklet** — separate agent
   cluster — and it fails silently, with no throw and no error event.
 - **RTS-pulse resets are stateful** on the USB-Serial-JTAG bridge; the second pulse parks

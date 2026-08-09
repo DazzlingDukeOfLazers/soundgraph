@@ -162,7 +162,8 @@ private:
 // ---------------------------------------------------------------------------------
 
 constexpr PortDescriptor kSlideInputs[] = {
-    {"frequency", SignalType::Control, "Hz", true, false, "Frequency to bend."},
+    {"frequency", SignalType::Control, "Hz", false, false,
+     "Frequency to bend. Replaces the frequency parameter while connected."},
     {"gate", SignalType::Control, "", false, false,
      "Rises above 0.5 to restart the slide from the frequency present at that moment. "
      "Leave it unconnected and the slide runs from the first sample."},
@@ -187,11 +188,19 @@ constexpr ParameterDescriptor kSlideParameters[] = {
      "How fast the slide itself speeds up or slows down.", nullptr, 0},
     {"limit", "Hz", 0.0f, 20000.0f, 0.0f, Scaling::Linear,
      "Frequency the slide stops at. Zero means no limit.", nullptr, 0},
+    // Same idea as the oscillator's frequency parameter, and it exists for the same
+    // reason the module seam does: a one-shot patch played from a keyboard takes its
+    // pitch from the NoteInput, and NoteInput is a terminal that gets dropped when the
+    // patch is imported into another. Without a fallback the slide then has nothing to
+    // bend and the sound goes silent — the pitch it was designed around has to survive
+    // somewhere that is not a connection.
+    {"frequency", "Hz", 0.01f, 20000.0f, 440.0f, Scaling::Exponential,
+     "Pitch to bend when nothing is connected to the frequency input.", nullptr, 0},
 };
 
 class SlideNode final : public DspNode {
 public:
-    enum Param { kSlide = 0, kAcceleration = 1, kLimit = 2 };
+    enum Param { kSlide = 0, kAcceleration = 1, kLimit = 2, kFrequency = 3 };
 
     void prepare(const PrepareContext& context) override {
         sample_rate_ = static_cast<float>(context.sample_rate);
@@ -210,23 +219,18 @@ public:
         const float* gate = context.inputs[1];
         float* out = context.outputs[0];
 
-        if (frequency == nullptr) {
-            for (int i = 0; i < context.frames; ++i) {
-                out[i] = 0.0f;
-            }
-            return;
-        }
-
         const float slide = parameter(kSlide);
         const float acceleration = parameter(kAcceleration);
         const float limit = parameter(kLimit);
+        const float base_frequency = parameter(kFrequency);
 
         for (int i = 0; i < context.frames; ++i) {
+            const float pitch = frequency != nullptr ? frequency[i] : base_frequency;
             const bool open = gate_open(gate, i);
             if ((open && !gate_was_open_) || !started_) {
                 sample_index_ = 0;
                 started_ = true;
-                start_frequency_ = frequency[i];
+                start_frequency_ = pitch;
             }
             gate_was_open_ = open;
 
@@ -243,7 +247,7 @@ public:
             // trade when a better formula costs nothing.
             const float t = static_cast<float>(sample_index_) / sample_rate_;
             const float semitones = (slide + 0.5f * acceleration * t) * t;
-            float bent = frequency[i] * std::pow(2.0f, semitones / 12.0f);
+            float bent = pitch * std::pow(2.0f, semitones / 12.0f);
 
             // The limit is a stop, not a fold: whichever side of it the slide started on
             // is the side it stays on. Written this way so the same parameter works for a
@@ -279,7 +283,8 @@ private:
 // ---------------------------------------------------------------------------------
 
 constexpr PortDescriptor kArpeggioInputs[] = {
-    {"frequency", SignalType::Control, "Hz", true, false, "Frequency to step."},
+    {"frequency", SignalType::Control, "Hz", false, false,
+     "Frequency to step. Replaces the frequency parameter while connected."},
     {"gate", SignalType::Control, "", false, false,
      "Rises above 0.5 to arm the step again. Leave it unconnected and it fires once, "
      "from the first sample."},
@@ -292,11 +297,15 @@ constexpr ParameterDescriptor kArpeggioParameters[] = {
      "How long to wait before stepping.", nullptr, 0},
     {"interval", "semitones", -48.0f, 48.0f, 7.0f, Scaling::Linear,
      "How far to step. 7 is a fifth up, 12 an octave, -12 an octave down.", nullptr, 0},
+    // As on Slide: whichever of the two heads the pitch chain has to hold the patch's own
+    // pitch, so that dropping the keyboard does not drop the sound.
+    {"frequency", "Hz", 0.01f, 20000.0f, 440.0f, Scaling::Exponential,
+     "Pitch to step when nothing is connected to the frequency input.", nullptr, 0},
 };
 
 class ArpeggioNode final : public DspNode {
 public:
-    enum Param { kTime = 0, kInterval = 1 };
+    enum Param { kTime = 0, kInterval = 1, kFrequency = 2 };
 
     void prepare(const PrepareContext& context) override {
         sample_rate_ = static_cast<float>(context.sample_rate);
@@ -314,18 +323,13 @@ public:
         const float* gate = context.inputs[1];
         float* out = context.outputs[0];
 
-        if (frequency == nullptr) {
-            for (int i = 0; i < context.frames; ++i) {
-                out[i] = 0.0f;
-            }
-            return;
-        }
-
         const float time = parameter(kTime);
         const float ratio = std::pow(2.0f, parameter(kInterval) / 12.0f);
+        const float base_frequency = parameter(kFrequency);
         const float dt = 1.0f / sample_rate_;
 
         for (int i = 0; i < context.frames; ++i) {
+            const float pitch = frequency != nullptr ? frequency[i] : base_frequency;
             const bool open = gate_open(gate, i);
             if (open && !gate_was_open_) {
                 elapsed_ = 0.0f;
@@ -337,7 +341,7 @@ public:
                 stepped_ = true;
             }
 
-            out[i] = stepped_ ? frequency[i] * ratio : frequency[i];
+            out[i] = stepped_ ? pitch * ratio : pitch;
             elapsed_ += dt;
         }
     }

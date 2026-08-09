@@ -7,36 +7,30 @@
   },
   "nodes": [
     {
-      "id": "pitch",
-      "type": "Constant",
-      "position": {"x": 0, "y": 0},
-      "parameters": {
-        "value": 104.177
-      }
-    },
-    {
       "id": "slide",
       "type": "Slide",
-      "position": {"x": 400, "y": 0},
+      "position": {"x": 0, "y": 0},
       "parameters": {
         "slide": -87.3311,
         "acceleration": 0,
-        "limit": 3.528
+        "limit": 3.528,
+        "frequency": 104.177
       }
     },
     {
       "id": "arpeggio",
       "type": "Arpeggio",
-      "position": {"x": 800, "y": 0},
+      "position": {"x": 400, "y": 0},
       "parameters": {
         "time": 0.00817924,
-        "interval": 0.264357
+        "interval": 0.264357,
+        "frequency": 104.177
       }
     },
     {
       "id": "osc",
       "type": "NoiseOscillator",
-      "position": {"x": 1200, "y": 0},
+      "position": {"x": 800, "y": 0},
       "parameters": {
         "steps": 32,
         "seed": 12345
@@ -45,7 +39,7 @@
     {
       "id": "vibrato",
       "type": "LFO",
-      "position": {"x": 800, "y": -200},
+      "position": {"x": 400, "y": -200},
       "parameters": {
         "rate": 21.405,
         "shape": 0,
@@ -56,7 +50,7 @@
     {
       "id": "phaser",
       "type": "Phaser",
-      "position": {"x": 1600, "y": 0},
+      "position": {"x": 1200, "y": 0},
       "parameters": {
         "offset": 0.00289065,
         "sweep": -3.01631,
@@ -66,12 +60,15 @@
     {
       "id": "trigger",
       "type": "NoteInput",
-      "position": {"x": 1200, "y": 200}
+      "position": {"x": 800, "y": 200},
+      "parameters": {
+        "transpose": -15.9415
+      }
     },
     {
       "id": "envelope",
       "type": "AhdEnvelope",
-      "position": {"x": 1600, "y": 200},
+      "position": {"x": 1200, "y": 200},
       "parameters": {
         "attack": 0,
         "hold": 0.0576587,
@@ -82,7 +79,7 @@
     {
       "id": "amp",
       "type": "Gain",
-      "position": {"x": 2000, "y": 0},
+      "position": {"x": 1600, "y": 0},
       "parameters": {
         "gain": 0.05
       }
@@ -99,7 +96,7 @@
     {
       "id": "out",
       "type": "StereoOutput",
-      "position": {"x": 2400, "y": 0},
+      "position": {"x": 2000, "y": 0},
       "parameters": {
         "level": 1,
         "safety_limit": 0
@@ -107,10 +104,6 @@
     }
   ],
   "connections": [
-    {
-      "from": {"node": "pitch", "port": "out"},
-      "to": {"node": "slide", "port": "frequency"}
-    },
     {
       "from": {"node": "slide", "port": "frequency"},
       "to": {"node": "arpeggio", "port": "frequency"}
@@ -126,6 +119,10 @@
     {
       "from": {"node": "osc", "port": "out"},
       "to": {"node": "phaser", "port": "in"}
+    },
+    {
+      "from": {"node": "trigger", "port": "frequency"},
+      "to": {"node": "slide", "port": "frequency"}
     },
     {
       "from": {"node": "trigger", "port": "trigger"},

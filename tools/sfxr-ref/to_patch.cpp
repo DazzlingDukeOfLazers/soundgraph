@@ -65,11 +65,26 @@ struct Connection {
 // The conversions
 // ---------------------------------------------------------------------------------
 
+// How far to shift the keyboard so that middle C plays the patch at the pitch sfxr chose.
+//
+// Without this the sound would be an instrument in name only: NoteInput hands out concert
+// pitch, so C4 is 261.6 Hz and every generated effect would play a couple of octaves from
+// where it was designed. With it the patch is a transposing instrument — press C4 and hear
+// exactly the file as rendered offline, press an octave down and hear the same sound an
+// octave down. That equality is also what keeps the offline comparison against sfxr
+// meaningful, since sg-render plays note 60.
+double transpose_semitones(const sfxr_reference::Params& p);
+
 double base_frequency_hz(const sfxr_reference::Params& p) {
     // sfxr: fperiod = 100 / (p_base_freq^2 + 0.001), in supersamples per cycle. One cycle
     // every fperiod supersamples is kSuperRate/fperiod hertz, so the 100 cancels into
     // kSuperRate/100 = 3528.
     return kSuperRate / (100.0 / (p.p_base_freq * p.p_base_freq + 0.001));
+}
+
+double transpose_semitones(const sfxr_reference::Params& p) {
+    // The note whose frequency is the patch's own pitch, minus middle C.
+    return 12.0 * std::log2(base_frequency_hz(p) / 440.0) + 69.0 - 60.0;
 }
 
 double limit_frequency_hz(const sfxr_reference::Params& p) {
@@ -298,11 +313,28 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     // pitch chain below is built for every waveform — earlier this was skipped for noise
     // and the whole slide, limit and arpeggio was thrown away with it.
     // --- pitch chain -----------------------------------------------------------------
+    // The head of the chain holds the patch's own pitch as a parameter, and the keyboard
+    // is connected to it as well. Both, on purpose, and each covers a case the other
+    // cannot:
+    //
+    //   Played standalone, the note wins, so the whole sound transposes up and down the
+    //   keys. A jump at the pitch it was designed at is one sound; a jump an octave down
+    //   is a bigger creature jumping, which is a thing a game actually wants.
+    //
+    //   Imported as a module, NoteInput is a terminal and gets dropped — that is the seam.
+    //   The connection goes with it and the parameter is what is left, so the sound still
+    //   comes out at the pitch sfxr chose rather than going silent.
+    //
+    // This used to be a Constant feeding the chain, which did the second job and made the
+    // first impossible: a constant is not a terminal, so it survived module import and
+    // went on insisting on its pitch no matter what the host graph wanted.
+    //
+    // pitch_source is the tail of the chain, which feeds the oscillator. pitch_head is the
+    // front of it, which is where the pitch comes in — the same node when the chain is one
+    // long, and not when it is two.
     std::string pitch_source;
+    std::string pitch_head;
     {
-        nodes.push_back({"pitch", "Constant", {{"value", base_frequency_hz(p)}}, column++, 0});
-        pitch_source = "pitch";
-
         const double slide = slide_semitones_per_second(p);
         const double acceleration = slide_acceleration(p);
         const double limit = limit_frequency_hz(p);
@@ -311,20 +343,25 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
                              "Slide",
                              {{"slide", slide},
                               {"acceleration", acceleration},
-                              {"limit", limit}},
+                              {"limit", limit},
+                              {"frequency", base_frequency_hz(p)}},
                              column++, 0});
-            connections.push_back({pitch_source, "out", "slide", "frequency"});
             pitch_source = "slide";
+            pitch_head = "slide";
         }
 
         if (arpeggio_active(p)) {
             nodes.push_back({"arpeggio",
                              "Arpeggio",
                              {{"time", arpeggio_time_seconds(p)},
-                              {"interval", arpeggio_interval_semitones(p)}},
+                              {"interval", arpeggio_interval_semitones(p)},
+                              {"frequency", base_frequency_hz(p)}},
                              column++, 0});
-            connections.push_back({pitch_source, pitch_source == "pitch" ? "out" : "frequency",
-                                   "arpeggio", "frequency"});
+            if (!pitch_source.empty()) {
+                connections.push_back({pitch_source, "frequency", "arpeggio", "frequency"});
+            } else {
+                pitch_head = "arpeggio";
+            }
             pitch_source = "arpeggio";
         }
     }
@@ -340,10 +377,15 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
         oscillator.parameters.push_back({"steps", 32.0});
         oscillator.parameters.push_back({"seed", 12345.0});
     }
+    // With no slide and no arpeggio the oscillator is itself the head of the chain, and it
+    // has had this same parameter all along.
+    if (pitch_source.empty()) {
+        oscillator.parameters.push_back({"frequency", base_frequency_hz(p)});
+        pitch_head = "osc";
+    }
     nodes.push_back(oscillator);
     if (!pitch_source.empty()) {
-        connections.push_back({pitch_source, pitch_source == "pitch" ? "out" : "frequency",
-                               "osc", "frequency"});
+        connections.push_back({pitch_source, "frequency", "osc", "frequency"});
     }
 
     if (vibrato_active(p)) {
@@ -429,9 +471,14 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     // which is what jabbing at a jump button looks like — produced no new edge and no
     // second sound. The trigger pulses on every note whether or not one is already down.
     //
-    // Deliberately only the gate is taken, not the frequency: a coin has a pitch of its
-    // own and playing it up the keyboard would be a different sound.
-    nodes.push_back({"trigger", "NoteInput", {}, column - 2, 1});
+    // The frequency is taken as well as the trigger, transposed so that middle C is the
+    // patch's own pitch. This was previously left alone on the grounds that a coin has a
+    // pitch of its own — true, and the transpose is what keeps it: playing the patch at C4
+    // is the file exactly as rendered, and every other key is that same sound moved. A
+    // coin an octave down is a bigger coin, which is worth having and costs nothing.
+    nodes.push_back({"trigger", "NoteInput",
+                     {{"transpose", transpose_semitones(p)}}, column - 2, 1});
+    connections.push_back({"trigger", "frequency", pitch_head, "frequency"});
     nodes.push_back({"envelope",
                      "AhdEnvelope",
                      {{"attack", envelope_seconds(p.p_env_attack)},

@@ -447,6 +447,24 @@ TEST(note_input_falls_back_to_the_note_still_held) {
 // went quiet. Two notes overlapping keep the gate high the whole way through, so an AHD
 // envelope watching the gate never sees a second rising edge. The trigger output exists to
 // carry "a note started" through a signal that otherwise only says "a note is held".
+// A generated sound effect is a transposing instrument — the mapper offsets the keyboard so
+// that middle C plays the patch at the pitch it was designed around — and 19 of the 41 sfxr
+// cases need more than the two octaves a musical transpose control would offer. Parameters
+// clamp on load, so getting this wrong is silent: the file keeps the right number and the
+// sound comes out at the wrong pitch.
+TEST(note_input_transposes_further_than_two_octaves) {
+    NodeHarness harness("NoteInput", 64, kSampleRate);
+    harness.set("transpose", -69.534f);  // the largest the corpus asks for
+    soundgraph::NoteEvent event;
+    event.kind = soundgraph::NoteEvent::Kind::NoteOn;
+    event.note = 60;
+    harness.node().handle_note_event(event);
+    harness.process();
+    // 261.63 Hz shifted down 69.534 semitones. Clamped to -24 it would be 65.5 Hz, so the
+    // check is nowhere near the failure it is guarding against.
+    CHECK_NEAR(harness.output("frequency")[0], 4.7137, 0.001);
+}
+
 TEST(note_input_triggers_on_a_note_played_over_a_held_one) {
     // Long enough that a whole pulse fits inside one block with room to spare, so "the
     // pulse ended" and "the pulse never came" are distinguishable.
@@ -752,6 +770,53 @@ TEST(slide_bends_the_pitch_by_the_stated_semitones_per_second) {
     CHECK_NEAR(out[0], 440.0, 0.5);
     CHECK_NEAR(out[static_cast<std::size_t>(0.5 * kSampleRate)], 440.0 * 1.41421, 1.0);
     CHECK_NEAR(out[kOneSecond - 1], 880.0, 1.0);
+}
+
+// Both of these used to emit silence with nothing connected, which is how a generated
+// patch lost its sound the moment it was imported as a module: the keyboard driving it is
+// a NoteInput, NoteInput is a terminal, and terminals are dropped at the module seam. The
+// pitch a patch was designed around has to survive somewhere that is not a connection.
+TEST(slide_falls_back_to_its_frequency_parameter) {
+    NodeHarness harness("Slide", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("frequency", 440.0f);
+    harness.set("slide", 12.0f);
+    harness.process();
+
+    const std::vector<float>& out = harness.output();
+    CHECK_NEAR(out[0], 440.0, 0.5);
+    // And it is the whole node that runs on the fallback, not just the first sample: the
+    // bend still happens.
+    CHECK_NEAR(out[kOneSecond - 1], 880.0, 1.0);
+}
+
+TEST(slide_frequency_input_wins_over_the_parameter) {
+    NodeHarness harness("Slide", 64, kSampleRate);
+    harness.set("frequency", 440.0f);
+    harness.connect("frequency", 100.0f);
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 100.0, 0.01);
+}
+
+TEST(arpeggio_falls_back_to_its_frequency_parameter) {
+    NodeHarness harness("Arpeggio", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("frequency", 440.0f);
+    harness.set("time", 0.25f);
+    harness.set("interval", 12.0f);
+    harness.process();
+
+    const std::vector<float>& out = harness.output();
+    CHECK_NEAR(out[static_cast<std::size_t>(0.10 * kSampleRate)], 440.0, 0.01);
+    CHECK_NEAR(out[static_cast<std::size_t>(0.30 * kSampleRate)], 880.0, 0.01);
+}
+
+TEST(arpeggio_frequency_input_wins_over_the_parameter) {
+    NodeHarness harness("Arpeggio", 64, kSampleRate);
+    harness.set("frequency", 440.0f);
+    harness.connect("frequency", 100.0f);
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 100.0, 0.01);
 }
 
 TEST(slide_acceleration_makes_the_bend_speed_up) {

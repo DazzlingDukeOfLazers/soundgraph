@@ -7,32 +7,25 @@
   },
   "nodes": [
     {
-      "id": "pitch",
-      "type": "Constant",
-      "position": {"x": 0, "y": 0},
-      "parameters": {
-        "value": 238.511
-      }
-    },
-    {
       "id": "slide",
       "type": "Slide",
-      "position": {"x": 400, "y": 0},
+      "position": {"x": 0, "y": 0},
       "parameters": {
         "slide": 75.7114,
         "acceleration": 0,
-        "limit": 3.528
+        "limit": 3.528,
+        "frequency": 238.511
       }
     },
     {
       "id": "osc",
       "type": "SawOscillator",
-      "position": {"x": 800, "y": 0}
+      "position": {"x": 400, "y": 0}
     },
     {
       "id": "phaser",
       "type": "Phaser",
-      "position": {"x": 1200, "y": 0},
+      "position": {"x": 800, "y": 0},
       "parameters": {
         "offset": 0,
         "sweep": 0,
@@ -42,12 +35,15 @@
     {
       "id": "trigger",
       "type": "NoteInput",
-      "position": {"x": 800, "y": 200}
+      "position": {"x": 400, "y": 200},
+      "parameters": {
+        "transpose": -1.60134
+      }
     },
     {
       "id": "envelope",
       "type": "AhdEnvelope",
-      "position": {"x": 1200, "y": 200},
+      "position": {"x": 800, "y": 200},
       "parameters": {
         "attack": 0,
         "hold": 0.155323,
@@ -58,7 +54,7 @@
     {
       "id": "amp",
       "type": "Gain",
-      "position": {"x": 1600, "y": 0},
+      "position": {"x": 1200, "y": 0},
       "parameters": {
         "gain": 0.05
       }
@@ -75,7 +71,7 @@
     {
       "id": "out",
       "type": "StereoOutput",
-      "position": {"x": 2000, "y": 0},
+      "position": {"x": 1600, "y": 0},
       "parameters": {
         "level": 1,
         "safety_limit": 0
@@ -84,16 +80,16 @@
   ],
   "connections": [
     {
-      "from": {"node": "pitch", "port": "out"},
-      "to": {"node": "slide", "port": "frequency"}
-    },
-    {
       "from": {"node": "slide", "port": "frequency"},
       "to": {"node": "osc", "port": "frequency"}
     },
     {
       "from": {"node": "osc", "port": "out"},
       "to": {"node": "phaser", "port": "in"}
+    },
+    {
+      "from": {"node": "trigger", "port": "frequency"},
+      "to": {"node": "slide", "port": "frequency"}
     },
     {
       "from": {"node": "trigger", "port": "trigger"},

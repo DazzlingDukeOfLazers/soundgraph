@@ -35,7 +35,13 @@ constexpr PortDescriptor kNoteOutputs[] = {
 constexpr ParameterDescriptor kNoteParameters[] = {
     {"glide", "s", 0.0f, 2.0f, 0.0f, Scaling::Exponential,
      "Time to slide from the previous pitch to the new one. 0 jumps.", nullptr, 0},
-    {"transpose", "semitones", -24.0f, 24.0f, 0.0f, Scaling::Linear,
+    // Eight octaves each way, not the two a keyboard would need. A generated sound effect
+    // is a transposing instrument: the mapper offsets the whole patch so that middle C
+    // plays it at the pitch it was designed around, and across the sfxr corpus that offset
+    // runs from -69.5 to +43.2 semitones. Clamped to two octaves, most of those patches
+    // would have quietly played at the wrong pitch — parameters clamp on load, so the file
+    // would still have said the right number.
+    {"transpose", "semitones", -96.0f, 96.0f, 0.0f, Scaling::Linear,
      "Shifts every incoming note. 12 is one octave up.", nullptr, 0},
 };
 
