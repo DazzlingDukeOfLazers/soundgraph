@@ -9,6 +9,11 @@ extends SceneTree
 ##
 ## Run by ctest as `editor_design`.
 
+## Above the WCAG minimums on purpose; see the palette section below.
+const TEXT_FLOOR := 7.0
+const SEMANTIC_FLOOR := 4.5
+const BOUNDARY_FLOOR := 3.25
+
 var failures := 0
 
 
@@ -21,77 +26,133 @@ func check(condition: bool, message: String) -> void:
 
 
 func _initialize() -> void:
+	Design.use_palette(Design.Palette.LAB)
 	print("design system")
 
-	# ---- surfaces are a ladder, not a puddle -----------------------------------------
-	# The original complaint was that every surface was the same medium grey. The fix is
-	# only real if the steps are measurable, so measure them.
-	var previous := -1.0
-	var names := ["canvas", "node", "raised", "active"]
-	for level in Design.SURFACES.size():
-		var luminance := Design.relative_luminance(Design.SURFACES[level])
-		check(luminance > previous,
-			"%s is lighter than the surface below it (%.4f)" % [names[level], luminance])
-		previous = luminance
+	# ---- every palette, against thresholds above the WCAG minimums -------------------
+	# AA asks 4.5:1 for normal text, 3:1 for the boundaries of controls, and calls 7:1
+	# enhanced. Designing exactly at a cutoff leaves nothing for a bad screen, a bright
+	# room or a projector to take away, so the floors here are 7:1 for operating text,
+	# 4.5:1 for semantic coloured text and 3.25:1 for boundaries.
+	#
+	# Run for all five palettes, which is the whole point of having them checked: a theme
+	# nobody measures is a theme that ships one unreadable pairing.
+	var surface_names := ["canvas", "panel", "raised", "active"]
 
-	# A step you cannot see is not a step. Adjacent surfaces have to differ enough to read
-	# as a boundary on a cheap projector at a trade show, not only on a good monitor.
-	for level in Design.SURFACES.size() - 1:
-		var ratio := Design.contrast(Design.SURFACES[level + 1], Design.SURFACES[level])
-		check(ratio >= 1.2,
-			"%s reads as raised above %s (%.2f:1)" % [names[level + 1], names[level], ratio])
+	for choice in Design.PALETTES.size():
+		Design.use_palette(choice)
+		var theme_name: String = Design.PALETTE_NAMES[choice]
 
-	# And not so far apart that the app turns into stripes.
-	for level in Design.SURFACES.size() - 1:
-		var ratio := Design.contrast(Design.SURFACES[level + 1], Design.SURFACES[level])
-		check(ratio <= 2.2,
-			"and does not shout about it (%.2f:1)" % ratio)
+		# Operating text, on every surface it can land on.
+		var worst_text := 99.0
+		var worst_where := ""
+		# Primary ink anywhere; secondary everywhere except ACTIVE, which is the surface
+		# of a pressed or selected control and carries a primary label by definition.
+		# Holding secondary to 7:1 there would force it bright enough to collapse the
+		# difference from primary, which is passing a test by destroying what it guards.
+		for entry in [["primary", Design.INK_NORMAL], ["secondary", Design.INK_SECOND]]:
+			var reach: int = Design.SURFACES.size() if entry[0] == "primary" \
+				else Design.Surface.ACTIVE
+			for level in reach:
+				var ratio := Design.contrast(entry[1], Design.SURFACES[level])
+				if ratio < worst_text:
+					worst_text = ratio
+					worst_where = "%s on %s" % [entry[0], surface_names[level]]
+		check(worst_text >= TEXT_FLOOR,
+			"%-16s operating text clears 7:1 (worst %.2f, %s)"
+				% [theme_name, worst_text, worst_where])
 
-	# ---- text clears WCAG on every surface it can land on ----------------------------
-	# 4.5:1 is the AA minimum for normal text. Primary text is held to the enhanced 7:1
-	# instead, because this is a dense tool people stare at for hours and designing right
-	# against the minimum leaves nothing for a bad screen or bright room to take away.
-	var readable := {
-		"bright": Design.INK_BRIGHT,
-		"normal": Design.INK_NORMAL,
-		"secondary": Design.INK_SECOND,
-	}
-	for ink_name in readable:
+		# Semantic colour, against what it is drawn on.
+		var worst_signal := 99.0
+		var signal_where := ""
+		for entry in [["audio", Design.AUDIO], ["control", Design.CONTROL],
+				["trigger", Design.TRIGGER], ["danger", Design.ERROR]]:
+			for level in [Design.Surface.CANVAS, Design.Surface.NODE, Design.Surface.RAISED]:
+				var ratio := Design.contrast(entry[1], Design.SURFACES[level])
+				if ratio < worst_signal:
+					worst_signal = ratio
+					signal_where = "%s on %s" % [entry[0], surface_names[level]]
+		check(worst_signal >= SEMANTIC_FLOOR,
+			"%-16s semantic colour clears 4.5:1 (worst %.2f, %s)"
+				% [theme_name, worst_signal, signal_where])
+
+		# The boundaries of controls. A border you cannot see is a control with no edge,
+		# which is what AA 1.4.11 is actually about.
+		var worst_edge := 99.0
+		for level in [Design.Surface.NODE, Design.Surface.RAISED, Design.Surface.ACTIVE]:
+			worst_edge = minf(worst_edge,
+				Design.contrast(Design.BOUNDARY, Design.SURFACES[level]))
+		check(worst_edge >= BOUNDARY_FLOOR,
+			"%-16s control boundaries clear 3.25:1 (worst %.2f)" % [theme_name, worst_edge])
+
+		# Text on a filled accent button. Not white by default — white on mint is a poor
+		# pairing, and this token exists to stop somebody reaching for it.
+		var on_accent := Design.contrast(Design.ON_ACCENT, Design.ACCENT)
+		check(on_accent >= TEXT_FLOOR,
+			"%-16s accent buttons are readable (%.2f)" % [theme_name, on_accent])
+
+		# Focus must be visible on everything it can be drawn over, and must not be the
+		# accent — selection and keyboard focus are two states, not one effect twice.
+		var worst_focus := 99.0
 		for level in Design.SURFACES.size():
-			var ratio := Design.contrast(readable[ink_name], Design.SURFACES[level])
-			var floor_ratio := 7.0 if ink_name != "secondary" else 4.5
-			check(ratio >= floor_ratio,
-				"%s text on %s is %.1f:1 (needs %.1f)"
-					% [ink_name, names[level], ratio, floor_ratio])
+			worst_focus = minf(worst_focus,
+				Design.contrast(Design.FOCUS, Design.SURFACES[level]))
+		check(worst_focus >= TEXT_FLOOR,
+			"%-16s the focus ring is unmistakable (%.2f)" % [theme_name, worst_focus])
+		check(Design.FOCUS != Design.ACCENT,
+			"%-16s and focus is not the selection colour" % theme_name)
 
-	# Secondary is allowed to be calmer, but it carries units and counts, so it gets
-	# headroom over the minimum on the surfaces it actually lands on. ACTIVE is excluded
-	# deliberately rather than by oversight: a pressed or selected control shows a primary
-	# label, and holding secondary ink to a headroom rule *there* would have forced it
-	# bright enough to collapse the difference from normal — which would have been
-	# satisfying the test at the cost of the hierarchy the test exists to protect.
-	for level in [Design.Surface.CANVAS, Design.Surface.NODE, Design.Surface.RAISED]:
-		var ratio := Design.contrast(Design.INK_SECOND, Design.SURFACES[level])
-		check(ratio >= 5.5, "and secondary has headroom on %s (%.1f:1)" % [names[level], ratio])
+		# The surfaces are a ladder rather than four names for one grey.
+		var flattest := 99.0
+		for level in Design.SURFACES.size() - 1:
+			flattest = minf(flattest,
+				Design.contrast(Design.SURFACES[level + 1], Design.SURFACES[level]))
+		# 1.07 rather than the 1.23 an earlier version of this file demanded. These
+		# palettes do the separating with a visible boundary and use fill for nuance,
+		# which is a better division of labour than making the fill do both jobs and
+		# shout to manage it.
+		check(flattest >= 1.07,
+			"%-16s each surface steps above the last (weakest %.2f)"
+				% [theme_name, flattest])
 
-	# ---- the meaning colours have to be readable too ---------------------------------
-	# An error message below the contrast floor is a special kind of failure.
-	for entry in [["accent", Design.ACCENT], ["warning", Design.WARNING],
-			["error", Design.ERROR]]:
-		for level in [Design.Surface.NODE, Design.Surface.RAISED]:
-			var ratio := Design.contrast(entry[1], Design.SURFACES[level])
-			check(ratio >= 4.5,
-				"%s on %s is %.1f:1" % [entry[0], names[level], ratio])
+		# The three signal colours are told apart from each other, measured by hue.
+		#
+		# The first version used Design.contrast() and all five palettes failed at about
+		# 1.05 — correct arithmetic, wrong question. A contrast ratio is a luminance
+		# ratio, and mint against blue is a hue difference at nearly identical luminance.
+		# Believing that number would have had me flatten a good palette to satisfy a
+		# measure that was never about hue.
+		#
+		# And it is half the story anyway: the port shapes carry the same distinction for
+		# a reader who cannot use colour at all, which editor_test.gd checks in pixels.
+		var nearest_hue := 360.0
+		for pair in [[Design.AUDIO, Design.CONTROL], [Design.AUDIO, Design.TRIGGER],
+				[Design.CONTROL, Design.TRIGGER]]:
+			var apart: float = absf(pair[0].h - pair[1].h) * 360.0
+			nearest_hue = minf(nearest_hue, minf(apart, 360.0 - apart))
+		check(nearest_hue >= 40.0,
+			"%-16s audio, control and trigger are far apart in hue (%.0f degrees)"
+				% [theme_name, nearest_hue])
+
+	Design.use_palette(Design.Palette.LAB)
 
 	# ---- the ink levels are actually distinguishable from one another ----------------
 	# Four names for the same grey would be a system on paper only.
-	var ladder := [Design.INK_BRIGHT, Design.INK_NORMAL, Design.INK_SECOND,
-		Design.INK_DISABLED]
-	var ladder_names := ["bright", "normal", "secondary", "disabled"]
+	# Bright and normal are deliberately one value now, differing by weight instead:
+	# two greys a few percent apart are a distinction nobody can use, a Regular and a
+	# SemiBold at one colour is one anybody can. The remaining three still have to
+	# recede in order — and "recede" means towards the background, which is downwards
+	# on a dark palette and upwards on Paper.
+	var ladder := [Design.INK_NORMAL, Design.INK_SECOND, Design.INK_DISABLED]
+	var ladder_names := ["normal", "secondary", "disabled"]
+	var dark_theme := Design.relative_luminance(
+		Design.SURFACES[Design.Surface.CANVAS]) < 0.3
 	for i in ladder.size() - 1:
 		var a := Design.relative_luminance(ladder[i])
 		var b := Design.relative_luminance(ladder[i + 1])
-		check(a > b, "%s is brighter than %s" % [ladder_names[i], ladder_names[i + 1]])
+		check(a > b if dark_theme else a < b,
+			"%s stands further from the background than %s"
+				% [ladder_names[i], ladder_names[i + 1]])
 
 	# ---- the font carries the weights the system asks for ----------------------------
 	# One variable file supplies Regular, Medium and SemiBold. If it were ever swapped for

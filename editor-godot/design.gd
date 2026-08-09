@@ -27,61 +27,166 @@ extends RefCounted
 ## with a 200–800 weight axis, so Regular, Medium and SemiBold all come from one file.
 
 # ---------------------------------------------------------------------------------
-# Surfaces
+# Palettes
 #
-# A ladder in lightness, on a dark base — this is an instrument, and the answer to "make
-# it accessible" is not "make it white".
+# Components do not know colours. They ask for a token — canvas, panel, text, audio,
+# trigger — and a palette decides what that means. The point is not skinning: it is that
+# "audio signal" stays one idea with one name however the editor looks, so a theme can
+# change everything about the appearance without changing what anything *means*.
 #
-# The four values are solved rather than picked. Each step is an even 1.23:1 against the
-# one below — enough to read as a boundary on a cheap projector, not so much that the app
-# turns into stripes — while every text level still clears its contrast floor on all four,
-# with margin. Eyeballing this produced steps of 1.11 and 1.13, which is roughly the
-# "everything is the same grey" the redesign started from.
+# What deliberately does not move between palettes is the semantic mapping. Mint is audio,
+# blue is control, amber is gate and trigger, in every one of them. A palette adjusts
+# luminance and saturation to keep its contrast, but somebody switching themes should not
+# have to relearn the patch language — and Paper does exactly that, using dark signal
+# colours instead of the bright ones, because the dark-theme mint would vanish on white.
+#
+# Every pairing below is checked by design_test.gd against thresholds deliberately above
+# the WCAG minimums: 7:1 for operating text where AA asks 4.5, 4.5:1 for semantic coloured
+# text, and 3.25:1 for the boundaries of controls where AA asks 3. Designing exactly at a
+# cutoff leaves nothing for a bad screen or a bright room to take away.
 # ---------------------------------------------------------------------------------
 
 enum Surface { CANVAS, NODE, RAISED, ACTIVE }
 
-const SURFACES := [
-	Color("14161a"),   # CANVAS — the graph background, the floor of the room
-	Color("242830"),   # NODE   — anything that holds content: nodes, panels, the dock
-	Color("33373f"),   # RAISED — anything you can press: buttons, fields, sliders
-	Color("41454d"),   # ACTIVE — pressed, selected, or currently receiving input
+enum Palette { LAB, NIGHT_FLIGHT, TAPE, PAPER, MAXIMUM }
+
+const PALETTE_NAMES := ["Lab", "Night Flight", "Tape", "Paper", "Maximum contrast"]
+
+## Each entry is the whole token set. Written out rather than derived, because a derived
+## palette is one where a single tweak silently moves eleven other things.
+const PALETTES := [
+	{   # Lab — instrument black, graphite panels. The default, and the grown-up version
+		# of what this editor already looked like.
+		"canvas": "0f1318", "panel": "1b212a", "raised": "252d38", "active": "333c4a",
+		"border_node": "3a4351", "border_raised": "4a5666", "border_active": "627384", "boundary": "7a90a5",
+		"text": "f4f7fa", "text_muted": "b7c0cc", "text_disabled": "6e7887",
+		"accent": "57e3b4", "on_accent": "0f1318", "focus": "ffffff",
+		"audio": "57e3b4", "control": "8fb8ff", "trigger": "f6c85f",
+		"warning": "f6c85f", "danger": "ff7a7a",
+	},
+	{   # Night Flight — colder blue-black, for OLEDs and for sitting beside a DAW without
+		# looking like one.
+		"canvas": "0b1020", "panel": "151d31", "raised": "202a42", "active": "2c3856",
+		"border_node": "35415f", "border_raised": "455373", "border_active": "60718c", "boundary": "768bac",
+		"text": "f7f9ff", "text_muted": "b9c3d6", "text_disabled": "6d778c",
+		"accent": "63e6be", "on_accent": "0b1020", "focus": "ffffff",
+		"audio": "63e6be", "control": "8cb4ff", "trigger": "ffd166",
+		"warning": "ffd166", "danger": "ff808e",
+	},
+	{   # Tape — brown-black rather than blue-black, creamy text, amber triggers. An old
+		# laboratory instrument without the skeuomorphism.
+		"canvas": "171311", "panel": "241d1a", "raised": "332923", "active": "43362e",
+		"border_node": "473a32", "border_raised": "5d4c41", "border_active": "806b5c", "boundary": "9f8572",
+		"text": "fff8f1", "text_muted": "cdbeb0", "text_disabled": "8a7768",
+		"accent": "70e0c1", "on_accent": "171311", "focus": "fff8f1",
+		"audio": "70e0c1", "control": "93b8ff", "trigger": "ffca66",
+		"warning": "ffca66", "danger": "ff8585",
+	},
+	{   # Paper — not "light mode" but a legibility mode for daylight, classrooms,
+		# screenshots and projectors. The signal colours are dark here on purpose: the
+		# dark-theme mint would disappear against white.
+		"canvas": "f4f2ec", "panel": "ffffff", "raised": "e8e5de", "active": "d8d4cb",
+		"border_node": "c9c5bb", "border_raised": "9ba0a8", "border_active": "777e87", "boundary": "6a7078",
+		"text": "15171a", "text_muted": "3a3e44", "text_disabled": "767c85",
+		"accent": "00543f", "on_accent": "ffffff", "focus": "15171a",
+		"audio": "00543f", "control": "0053b3", "trigger": "7a4a00",
+		"warning": "8a5400", "danger": "a61b29",
+	},
+	{   # Maximum contrast — an accessibility mode rather than a look. Minimal gradients,
+		# no reliance on subtle borders, very strong focus.
+		"canvas": "000000", "panel": "101010", "raised": "202020", "active": "303030",
+		"border_node": "6a6a6a", "border_raised": "8a8a8a", "border_active": "b0b0b0", "boundary": "8a8a8a",
+		"text": "ffffff", "text_muted": "d1d1d1", "text_disabled": "8f8f8f",
+		"accent": "63ffd1", "on_accent": "000000", "focus": "ffffff",
+		"audio": "63ffd1", "control": "93c5fd", "trigger": "ffd75f",
+		"warning": "ffd75f", "danger": "ff8a8a",
+	},
 ]
 
-## Borders step with the surface, which is what keeps a node readable against the canvas
-## when its fill alone is only two levels away.
-const BORDERS := [
-	Color("14161a"),
-	Color("3a3e46"),
-	Color("494d55"),
-	Color("575b63"),
-]
+static var palette: int = Palette.LAB
 
-# ---------------------------------------------------------------------------------
-# Ink
-#
-# Four levels, and the discipline is that operationally important labels never drop below
-# NORMAL. Dimming is for metadata — units already shown elsewhere, hints, counts.
-# ---------------------------------------------------------------------------------
+# The live token set. Static vars rather than constants, because a palette that cannot
+# change is not a palette — and every existing call site keeps the name it already used.
+static var SURFACES: Array = []
+static var BORDERS: Array = []
 
-const INK_BRIGHT := Color("f7f8fa")     ## Node titles, the value you are dragging
-const INK_NORMAL := Color("dfe3ea")     ## Ordinary labels. The default.
-const INK_SECOND := Color("b0b8c6")     ## Metadata. Still comfortably above AA.
-const INK_DISABLED := Color("6b7382")   ## Genuinely unavailable, and it should look it.
+static var INK_BRIGHT := Color("f4f7fa")
+static var INK_NORMAL := Color("f4f7fa")
+static var INK_SECOND := Color("b7c0cc")
+static var INK_DISABLED := Color("6e7887")
 
-## Meaning, not hierarchy.
-const ACCENT := Color("6ee7b7")
-const WARNING := Color("ffcb73")
-const ERROR := Color("ff8f87")
+static var ACCENT := Color("57e3b4")
+## Text and icons *on* a filled accent button. Not white by default: white on mint is a
+## poor pairing, while the canvas colour on mint is 11.6:1 in Lab.
+static var ON_ACCENT := Color("0f1318")
+## Keyboard focus, kept distinct from selection so the two are different states rather
+## than the same effect twice.
+static var FOCUS := Color("ffffff")
 
-## Panic is not an error, and should not borrow the colour of one.
+## The boundary that identifies a control, held to 3.25:1 against every surface it can be
+## drawn over — including ACTIVE, which is the lightest, because a pressed button has an
+## ACTIVE fill and this border around it. Solved rather than picked: the values from the
+## brief clear 3.3 against the *panel* and only 2.3 against a pressed control, which is
+## precisely the state where seeing the edge matters most. Each was walked along its own
+## hue until it just cleared, so the palettes keep their character.
 ##
-## Red on a control usually promises deletion or reports a fault. Silence is neither:
-## it is the loud thing in the room stopping, which is urgent without being wrong or
-## destructive. Amber is the honest signal — "this interrupts" rather than "this
-## breaks" — and it leaves red to mean a validation error, which is the one place in
-## this editor where red should make somebody look.
-const PANIC := Color("ffb454")
+## The rest of the sentence, kept because it is the distinction that matters: the boundary
+## sits on. Distinct from BORDERS, which are the quiet separations between
+## panels — WCAG 1.4.11 is about the edge that tells you a thing is a control,
+## not about every hairline in a layout, and holding decorative separations to
+## the same bar would produce an interface drawn entirely in outlines.
+static var BOUNDARY := Color("627384")
+
+## Signal semantics. These are the highest-saturation colours in the system and nothing
+## else may use them — a category strip or a decorative header competing at the same
+## saturation creates a second colour language for the reader to keep separate.
+static var AUDIO := Color("57e3b4")
+static var CONTROL := Color("8fb8ff")
+static var TRIGGER := Color("f6c85f")
+
+static var WARNING := Color("f6c85f")
+static var ERROR := Color("ff7a7a")
+## Panic is not an error and does not borrow the colour of one: red on a control promises
+## deletion or reports a fault, and silence is the loud thing stopping.
+static var PANIC := Color("f6c85f")
+
+
+## Switches palette and rebuilds every token from it.
+static func use_palette(index: int) -> void:
+	palette = clampi(index, 0, PALETTES.size() - 1)
+	var set: Dictionary = PALETTES[palette]
+	SURFACES = [Color(set["canvas"]), Color(set["panel"]), Color(set["raised"]),
+		Color(set["active"])]
+	# The canvas has no border of its own; it is the floor.
+	BORDERS = [Color(set["canvas"]), Color(set["border_node"]), Color(set["border_raised"]),
+		Color(set["border_active"])]
+	INK_BRIGHT = Color(set["text"])
+	# Normal and bright are the same value in these palettes and differ by weight instead.
+	# Two greys a few percent apart are a distinction nobody can use; a Regular and a
+	# SemiBold at the same colour is one anybody can.
+	INK_NORMAL = Color(set["text"])
+	INK_SECOND = Color(set["text_muted"])
+	INK_DISABLED = Color(set["text_disabled"])
+	ACCENT = Color(set["accent"])
+	ON_ACCENT = Color(set["on_accent"])
+	FOCUS = Color(set["focus"])
+	BOUNDARY = Color(set["boundary"])
+	AUDIO = Color(set["audio"])
+	CONTROL = Color(set["control"])
+	TRIGGER = Color(set["trigger"])
+	WARNING = Color(set["warning"])
+	ERROR = Color(set["danger"])
+	PANIC = Color(set["warning"])
+	_faces.erase(&"numeric")
+
+
+## The colour a signal type is drawn in, so no component keeps its own copy of the map.
+static func signal_colour(type_name: String) -> Color:
+	match type_name:
+		"audio": return AUDIO
+		"control": return CONTROL
+		"event", "note": return TRIGGER
+		_: return INK_NORMAL
 
 # ---------------------------------------------------------------------------------
 # Spacing
@@ -218,6 +323,7 @@ static func has_mono() -> bool:
 # Style boxes
 # ---------------------------------------------------------------------------------
 
+## A surface with a quiet separation around it — panels, docks, anything you read.
 static func panel(level: int, radius: int = RADIUS_PANEL, border: int = 1) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = SURFACES[level]
@@ -227,9 +333,26 @@ static func panel(level: int, radius: int = RADIUS_PANEL, border: int = 1) -> St
 	return box
 
 
+## A surface with an *identifying* edge — anything you operate.
+##
+## The difference is the whole reason BOUNDARY exists as its own token. A panel needs
+## separating from what is behind it, which a hairline does. A button needs to be
+## recognisable as a button, which is what WCAG 1.4.11 asks 3:1 for, and which is the
+## entire substance of the Maximum Contrast palette — without this the high-contrast
+## theme was a slightly darker Lab, because every edge in it still came from the
+## decorative border and the loud token went unused.
+static func control(level: int, radius: int = RADIUS_BUTTON) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = SURFACES[level]
+	box.set_corner_radius_all(radius)
+	box.set_border_width_all(1)
+	box.border_color = BOUNDARY
+	return box
+
+
 static func padded_panel(level: int, horizontal: int, vertical: int,
-		radius: int = RADIUS_PANEL) -> StyleBoxFlat:
-	var box := panel(level, radius)
+		radius: int = RADIUS_PANEL, identifying: bool = false) -> StyleBoxFlat:
+	var box := control(level, radius) if identifying else panel(level, radius)
 	box.content_margin_left = scale(horizontal)
 	box.content_margin_right = scale(horizontal)
 	box.content_margin_top = scale(vertical)
@@ -244,18 +367,33 @@ static func padded_panel(level: int, horizontal: int, vertical: int,
 ## filled accent treatment means it is found without reading. Used sparingly — one per
 ## region, or it stops meaning anything.
 static func make_primary(button: Button) -> Button:
+	# Filled with the accent itself, not a darkened version of it.
+	#
+	# It used to be ACCENT.darkened(0.55), which is a different colour from the one
+	# ON_ACCENT was measured against — so the label was being paired with a fill nobody
+	# had checked it against, and came out at 3.71:1 in every palette. A filled accent
+	# button should be filled with the accent; that is the pairing the token is for,
+	# and it is 11.6:1 in Lab.
 	var normal := padded_panel(Surface.RAISED, SPACE_M, SPACE_S, RADIUS_BUTTON)
-	normal.bg_color = ACCENT.darkened(0.55)
+	normal.bg_color = ACCENT
 	normal.border_color = ACCENT
 	button.add_theme_stylebox_override("normal", normal)
 	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = ACCENT.darkened(0.42)
+	hover.bg_color = ACCENT.lightened(0.12)
+	hover.border_color = hover.bg_color
 	button.add_theme_stylebox_override("hover", hover)
 	var pressed := normal.duplicate() as StyleBoxFlat
-	pressed.bg_color = ACCENT.darkened(0.3)
+	pressed.bg_color = ACCENT.darkened(0.12)
+	pressed.border_color = pressed.bg_color
 	button.add_theme_stylebox_override("pressed", pressed)
-	button.add_theme_color_override("font_color", INK_BRIGHT)
-	button.add_theme_color_override("font_hover_color", INK_BRIGHT)
+	# ON_ACCENT, not INK_BRIGHT. This is the whole reason that token exists and I used
+	# the wrong one anyway: on Paper the bright ink is near-black, so the one filled
+	# button in the chrome rendered its label in near-black on dark green and Add node
+	# was an unreadable slab. The contrast test passed the entire time, because it was
+	# checking the token rather than what the button did with it.
+	button.add_theme_color_override("font_color", ON_ACCENT)
+	button.add_theme_color_override("font_hover_color", ON_ACCENT)
+	button.add_theme_color_override("font_pressed_color", ON_ACCENT)
 	button.add_theme_font_override("font", font(WEIGHT_SEMIBOLD))
 	return button
 

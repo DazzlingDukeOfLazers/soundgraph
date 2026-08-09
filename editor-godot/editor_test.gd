@@ -534,6 +534,87 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the accent button is readable in every theme -------------------------------
+	# Checked on the button rather than on the token, which is the difference between a
+	# passing test and a working button: the contrast figures were fine the whole time
+	# while the one filled control in the chrome painted its label in INK_BRIGHT, and on
+	# Paper that is near-black on dark green. "Add node" was an unreadable slab and every
+	# number said it was fine.
+	var add_button: Button = null
+	var buttons_to_visit: Array = [main]
+	while not buttons_to_visit.is_empty():
+		var node: Node = buttons_to_visit.pop_back()
+		for child in node.get_children(true):
+			buttons_to_visit.append(child)
+		if node is Button and (node as Button).text.contains("Add node"):
+			add_button = node
+	check(add_button != null, "the primary button is findable")
+
+	if add_button != null:
+		for choice in Design.PALETTES.size():
+			main._use_palette(choice)
+			await process_frame
+			var fill := (add_button.get_theme_stylebox("normal") as StyleBoxFlat).bg_color
+			var ink := add_button.get_theme_color("font_color")
+			var ratio := Design.contrast(ink, fill)
+			check(ratio >= 4.5,
+				"%-16s Add node reads against its own fill (%.2f)"
+					% [Design.PALETTE_NAMES[choice], ratio])
+		main._use_palette(Design.Palette.LAB)
+		await process_frame
+
+	# ---- themes reach the widgets, and stay out of the patch ------------------------
+	# A palette that only changes the token values is a palette that changes nothing: the
+	# theme is built once from those tokens and most of the editor is styled through it.
+	var before_bg := (main.theme.get_stylebox("panel", "GraphNode") as StyleBoxFlat).bg_color
+	main._use_palette(Design.Palette.PAPER)
+	await process_frame
+	await process_frame
+	var after_bg := (main.theme.get_stylebox("panel", "GraphNode") as StyleBoxFlat).bg_color
+	check(before_bg != after_bg,
+		"switching theme restyles the nodes (%s to %s)"
+			% [before_bg.to_html(false), after_bg.to_html(false)])
+	check(after_bg == Design.SURFACES[Design.Surface.NODE],
+		"and they use the palette rather than a colour of their own")
+
+	# Things styled per widget rather than through the theme have to be rebuilt, which is
+	# the half a naive implementation misses — the graph would keep its old port icons and
+	# title colours and look half-changed.
+	var paper_icon: Image = main._port_icon("audio").get_image()
+	main._use_palette(Design.Palette.LAB)
+	await process_frame
+	await process_frame
+	var lab_icon: Image = main._port_icon("audio").get_image()
+	var icon_moved := false
+	for y in lab_icon.get_height():
+		for x in lab_icon.get_width():
+			if lab_icon.get_pixel(x, y) != paper_icon.get_pixel(x, y):
+				icon_moved = true
+	check(icon_moved, "and the port icons are redrawn in the new palette")
+
+	# The semantic mapping does not move between themes. Somebody switching to Paper for a
+	# projector should not have to relearn which cable is audio.
+	for choice in Design.PALETTES.size():
+		Design.use_palette(choice)
+		check(Design.signal_colour("audio") == Design.AUDIO
+				and Design.signal_colour("control") == Design.CONTROL
+				and Design.signal_colour("event") == Design.TRIGGER,
+			"%s keeps audio/control/trigger meaning the same thing"
+				% Design.PALETTE_NAMES[choice])
+	Design.use_palette(Design.Palette.LAB)
+
+	# And none of it is a property of the document. Opening a file somebody sent you must
+	# not change your contrast mode, so nothing about the theme is ever written to a patch.
+	main._capture_positions()
+	var serialised := JSON.stringify(main.patch)
+	var leaked := []
+	for word in ["palette", "theme", "ui_scale", "reduced_motion", "contrast"]:
+		if serialised.contains(word):
+			leaked.append(word)
+	check(leaked.is_empty(),
+		"a saved patch carries no display preferences%s"
+			% ("" if leaked.is_empty() else ": " + ", ".join(leaked)))
+
 	# ---- no text the font cannot draw ----------------------------------------------
 	# The editor was using Unicode symbols as icons and seven of the twelve were absent
 	# from Atkinson Hyperlegible Next, so they had been rendering as tofu boxes. Nothing

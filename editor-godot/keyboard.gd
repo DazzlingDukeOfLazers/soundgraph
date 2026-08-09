@@ -31,9 +31,13 @@ const BLACK_POSITIONS := {1: 0.7, 3: 1.7, 6: 3.7, 8: 4.7, 10: 5.7}
 # graph is the hero. Not dimmed into uselessness either: the held colours are the
 # application accent, so what you are playing still reads instantly.
 const WHITE := Color("c3c8d2")
-static var WHITE_HELD := Design.ACCENT
+## Live, for the same reason the scope's are: a static evaluated at class load keeps
+## whatever palette was active then and ignores every switch afterwards.
+var WHITE_HELD: Color:
+	get: return Design.ACCENT
 const BLACK := Color("1b1e24")
-static var BLACK_HELD := Design.ACCENT.darkened(0.35)
+var BLACK_HELD: Color:
+	get: return Design.ACCENT.darkened(0.35)
 const EDGE := Color("101216")
 const LABEL := Color("5c6371")
 

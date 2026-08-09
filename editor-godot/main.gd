@@ -93,12 +93,15 @@ const SLOT_CONTROL := 1
 const SLOT_EVENT := 2
 const SLOT_NOTE := 3
 
-const TYPE_COLOURS := {
-	"audio": Color(0.43, 0.91, 0.72),
-	"control": Color(0.55, 0.72, 1.0),
-	"event": Color(1.0, 0.80, 0.50),
-	"note": Color(0.94, 0.62, 0.90),
-}
+## Signal colours live in the palette now, so a theme can adjust their luminance
+## without any component learning a new meaning. Kept as a property rather than a
+## constant because the palette can change while the editor is running.
+var TYPE_COLOURS: Dictionary:
+	get:
+		return {
+			"audio": Design.AUDIO, "control": Design.CONTROL,
+			"event": Design.TRIGGER, "note": Design.TRIGGER,
+		}
 
 # Computer-keyboard note mapping, matching the web editor so muscle memory carries over.
 const KEY_NOTES := {
@@ -141,6 +144,10 @@ var split: HSplitContainer
 var side_panel: VBoxContainer
 var side_panel_body: VBoxContainer
 var side_panel_toggle: Button
+## Buttons carrying per-instance styles, which a theme rebuild cannot reach.
+var _primary_buttons: Array[Button] = []
+var _panic_buttons: Array[Button] = []
+
 var transport_dot: TextureRect
 var message_label: Label
 var _message_clears_at := 0
@@ -224,6 +231,19 @@ func _ready() -> void:
 ## One theme on the root, inherited by everything — including the GraphNodes generated for
 ## each patch node, which would otherwise each need their own overrides.
 func _apply_theme() -> void:
+	# Before any token is read. Static vars start empty and every colour below would
+	# otherwise be whatever GDScript initialised them to.
+	Settings.apply()
+
+	# The window itself, which nothing had ever themed.
+	#
+	# The toolbar and the dock have no background of their own, so what shows behind
+	# them is the renderer's clear colour — Godot's default mid-grey. On four dark
+	# palettes that is close enough to the chrome to pass unnoticed; on Paper it is a
+	# grey band across the top of a white application, which is how it was finally
+	# spotted. Every palette had it.
+	RenderingServer.set_default_clear_color(Design.SURFACES[Design.Surface.NODE])
+
 	if Design.font() == null:
 		push_warning("Atkinson Hyperlegible is missing; falling back to the default font")
 		return
@@ -252,6 +272,25 @@ func _apply_theme() -> void:
 		Design.INK_NORMAL)
 	Design.set_type(editor_theme, "TabBar", Design.WEIGHT_MEDIUM, Design.SIZE_CONTROL,
 		Design.INK_SECOND, "font_unselected_color")
+	# Tabs, which had never been styled and were showing Godot's defaults. Invisible
+	# against four dark palettes and a grey slab across a white one.
+	var tab_selected := Design.padded_panel(Design.Surface.NODE, Design.SPACE_M,
+		Design.SPACE_S, Design.RADIUS_BUTTON)
+	tab_selected.corner_radius_bottom_left = 0
+	tab_selected.corner_radius_bottom_right = 0
+	Design.set_box(editor_theme, "tab_selected", "TabBar", tab_selected)
+	Design.set_box(editor_theme, "tab_focus", "TabBar", Design.focus_ring(Design.FOCUS))
+	var tab_quiet := tab_selected.duplicate() as StyleBoxFlat
+	tab_quiet.bg_color = Design.SURFACES[Design.Surface.CANVAS]
+	tab_quiet.border_color = Design.SURFACES[Design.Surface.CANVAS]
+	Design.set_box(editor_theme, "tab_unselected", "TabBar", tab_quiet)
+	var tab_hover := tab_quiet.duplicate() as StyleBoxFlat
+	tab_hover.bg_color = Design.SURFACES[Design.Surface.RAISED]
+	Design.set_box(editor_theme, "tab_hovered", "TabBar", tab_hover)
+	Design.set_box(editor_theme, "panel", "TabContainer",
+		Design.panel(Design.Surface.CANVAS, 0, 0))
+	Design.set_box(editor_theme, "tabbar_background", "TabContainer",
+		Design.panel(Design.Surface.CANVAS, 0, 0))
 	Design.set_colour(editor_theme, "font_selected_color", "TabBar", Design.INK_BRIGHT)
 	Design.set_colour(editor_theme, "font_hovered_color", "TabBar", Design.INK_NORMAL)
 	Design.set_colour(editor_theme, "font_placeholder_color", "LineEdit", Design.INK_SECOND)
@@ -269,12 +308,12 @@ func _apply_theme() -> void:
 	# keyboard focus has to be visible on its own terms.
 	Design.set_box(editor_theme, "normal", "Button",
 		Design.padded_panel(Design.Surface.RAISED, Design.SPACE_M, Design.SPACE_S,
-			Design.RADIUS_BUTTON))
+			Design.RADIUS_BUTTON, true))
 	var hovered := Design.padded_panel(Design.Surface.ACTIVE, Design.SPACE_M,
-		Design.SPACE_S, Design.RADIUS_BUTTON)
+		Design.SPACE_S, Design.RADIUS_BUTTON, true)
 	Design.set_box(editor_theme, "hover", "Button", hovered)
 	var pressed := Design.padded_panel(Design.Surface.ACTIVE, Design.SPACE_M,
-		Design.SPACE_S, Design.RADIUS_BUTTON)
+		Design.SPACE_S, Design.RADIUS_BUTTON, true)
 	pressed.border_color = Design.ACCENT
 	Design.set_box(editor_theme, "pressed", "Button", pressed)
 	var disabled := Design.padded_panel(Design.Surface.NODE, Design.SPACE_M,
@@ -284,7 +323,7 @@ func _apply_theme() -> void:
 	Design.set_box(editor_theme, "focus", "LineEdit", Design.focus_ring())
 	Design.set_box(editor_theme, "normal", "LineEdit",
 		Design.padded_panel(Design.Surface.CANVAS, Design.SPACE_M, Design.SPACE_S,
-			Design.RADIUS_BUTTON))
+			Design.RADIUS_BUTTON, true))
 	Design.set_box(editor_theme, "panel", "PopupMenu",
 		Design.padded_panel(Design.Surface.RAISED, Design.SPACE_S, Design.SPACE_S))
 
@@ -621,6 +660,7 @@ func _build_toolbar() -> Control:
 	add_button.text = "+  Add node"
 	add_button.tooltip_text = "Search by what you want, not only by name (Ctrl+Space)"
 	add_button.pressed.connect(_open_search)
+	_primary_buttons.append(add_button)
 	graph_group.add_child(Design.make_primary(_defocus(add_button) as Button))
 
 	# Auto-place and Arrange selection behind one menu, for the same reason. Both are
@@ -705,6 +745,10 @@ func _build_toolbar() -> Control:
 	# An accessibility switch that only exists as a hope is not one. Everything that
 	# moves on its own in this editor is off behind this: the signal glow and the grid
 	# fade, both of which say something the interface also says without moving.
+	view_popup.add_separator()
+	for index in Design.PALETTE_NAMES.size():
+		view_popup.add_radio_check_item(Design.PALETTE_NAMES[index], 30 + index)
+	view_popup.add_separator()
 	view_popup.add_check_item("Reduce motion", 20)
 	view_popup.set_item_checked(view_popup.get_item_index(20), Design.reduced_motion)
 	view_popup.id_pressed.connect(_on_view_menu)
@@ -762,6 +806,7 @@ func _build_toolbar() -> Control:
 	panic.icon = _icon(Icons.Kind.STOP, Design.PANIC)
 	panic.tooltip_text = "Stop every sounding note immediately (Escape)"
 	panic.pressed.connect(_all_notes_off)
+	_panic_buttons.append(panic)
 	performance.add_child(Design.make_panic(_defocus(panic) as Button))
 
 	# ---- status ------------------------------------------------------------------
@@ -819,8 +864,12 @@ func _on_file_menu(id: int) -> void:
 
 
 func _on_view_menu(id: int) -> void:
+	if id >= 30:
+		_use_palette(id - 30)
+		return
 	if id == 20:
 		Design.reduced_motion = not Design.reduced_motion
+		Settings.store("reduced_motion", Design.reduced_motion)
 		view_popup.set_item_checked(view_popup.get_item_index(20), Design.reduced_motion)
 		if Design.reduced_motion and graph_edit != null:
 			# Cleared rather than frozen, or the last frame of glow would sit there
@@ -839,6 +888,43 @@ func _on_view_menu(id: int) -> void:
 	for index in CASE_LABELS.size():
 		view_popup.set_item_checked(index + 3, index == choice)
 	rack.case_hp = CASE_WIDTHS[choice]
+
+
+## Switches theme and rebuilds everything that holds a colour.
+##
+## The theme is a property of the person, not of the patch — opening somebody else's
+## file must not change your contrast mode — so it is saved to user settings and nothing
+## about it is ever written into a .json.
+func _use_palette(index: int) -> void:
+	Design.use_palette(index)
+	Settings.store("palette", index)
+	for entry in Design.PALETTE_NAMES.size():
+		view_popup.set_item_checked(view_popup.get_item_index(30 + entry), entry == index)
+
+	# The theme carries most of it. What it cannot reach is anything styled per widget —
+	# node titles, the port icons, the scope — so the graph is rebuilt, which is cheap and
+	# is the same path a reload takes.
+	_apply_theme()
+	# Per-instance overrides are invisible to a theme rebuild, so anything styled
+	# directly has to be restyled by hand. Without this the accent and panic buttons
+	# kept whatever palette was active when they were built and every other palette
+	# measured identically — which is exactly what the readability check reported.
+	for button in _primary_buttons:
+		Design.make_primary(button)
+	for button in _panic_buttons:
+		Design.make_panic(button)
+	_port_icons.clear()
+	_rebuild_view()
+	_refresh_context()
+	_refresh_status()
+	if keyboard != null:
+		keyboard.queue_redraw()
+	if scope != null:
+		scope.queue_redraw()
+	if rack != null:
+		rack.type_colours = TYPE_COLOURS
+		rack.rebuild()
+	_say("theme: %s" % Design.PALETTE_NAMES[index])
 
 
 ## Stops every sounding note. Wired to both the panic button and Escape, because a

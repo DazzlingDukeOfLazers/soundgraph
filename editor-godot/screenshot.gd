@@ -31,6 +31,13 @@ func _initialize() -> void:
 	# be wrong.
 	var select: String = arguments[3] if arguments.size() > 3 else ""
 
+	# A sixth argument picks a palette, so the themes can be looked at rather than
+	# taken on the word of a contrast table.
+	if arguments.size() > 5:
+		main._use_palette(int(arguments[5]))
+		for i in 4:
+			await process_frame
+
 	# Several frames, not one. The first frame has no layout: containers size themselves
 	# during it, the graph nodes have not been placed, and a shot taken then shows a pile
 	# of controls at the origin — which looks exactly like a broken redesign.

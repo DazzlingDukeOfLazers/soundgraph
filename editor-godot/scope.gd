@@ -7,13 +7,19 @@ extends Control
 
 var samples: PackedFloat32Array = PackedFloat32Array()
 var label: String = "output"
-static var accent := Design.ACCENT
+## Read at draw time, not at class load. A static initialised once holds whatever the
+## palette happened to be when the script was first touched, so switching theme left
+## the scope drawn in the old one — the same trap as any cached token.
+var accent: Color:
+	get: return Design.AUDIO
 
 ## The scope is a window onto the signal, so it sits *below* the canvas rather than
 ## on the panel it lives in — a display recessed into the surface, which is what a
 ## meter on a piece of hardware looks like.
-static var BACKGROUND := Design.SURFACES[Design.Surface.CANVAS]
-static var GRID := Design.BORDERS[Design.Surface.RAISED]
+var BACKGROUND: Color:
+	get: return Design.SURFACES[Design.Surface.CANVAS]
+var GRID: Color:
+	get: return Design.BORDERS[Design.Surface.RAISED]
 ## Inset from the edges. The peak readout used to be positioned by guessing a width
 ## in pixels, so it hung off the right-hand side the moment the font or the panel
 ## changed size; it is measured now.
