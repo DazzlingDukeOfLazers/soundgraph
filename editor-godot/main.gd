@@ -70,18 +70,21 @@ static func snap_up(value: float, step: float) -> float:
 ##
 ## They are also the sfxr port's output, so each one is a sound demonstrably equal to what
 ## sfxr makes rather than an approximation somebody eyeballed.
-const EXAMPLES := {
-	"First Synth": "first-synth.json",
-	"Delay Echo": "delay-echo.json",
-	"Game: coin": "game/coin.json",
-	"Game: jump": "game/jump.json",
-	"Game: jump (double)": "game/jump2.json",
-	"Game: hurt": "game/hurt.json",
-	"Game: shoot": "game/shoot.json",
-	"Game: explode": "game/explode.json",
-	"Game: powerup": "game/powerup.json",
-	"Game: select": "game/select.json",
+## Which subfolders of examples/patches to offer, and what to call them in the menu.
+##
+## The list of *files* used to live here, and it was one more pair of things that had to
+## agree: adding a patch meant remembering to add a line, and the twenty-three node demos
+## would have meant twenty-three lines nobody would ever check. So the menu is built by
+## scanning instead. This dictionary is the ordering and the labels, which is a decision;
+## the contents are not.
+const EXAMPLE_GROUPS := {
+	"": "",
+	"game": "Game",
+	"nodes": "Node",
 }
+
+## Filled by _scan_examples() at startup: menu label -> path relative to examples/patches.
+var _examples: Dictionary = {}
 
 # Signal types, mapped to GraphEdit slot types so the engine's own compatibility rule is
 # what the mouse enforces while dragging a wire.
@@ -352,7 +355,8 @@ func _build_toolbar() -> Control:
 	bar.add_child(title)
 
 	var examples := OptionButton.new()
-	for name in EXAMPLES:
+	_scan_examples()
+	for name in _examples:
 		examples.add_item(name)
 	examples.item_selected.connect(func(index: int) -> void:
 		_load_example(examples.get_item_text(index)))
@@ -1619,6 +1623,50 @@ func _show_info() -> void:
 ## That is a genuinely confusing failure, so the repository copy wins whenever it is
 ## reachable, and res:// is the fallback for an exported build that has no repository
 ## around it.
+## Builds the examples menu by looking at what is actually there.
+##
+## Scans the same two places _example_path() does and in the same order, so the menu can
+## never offer something that cannot be opened. Sorted within each group, and the groups
+## in the order EXAMPLE_GROUPS declares them, so the menu does not reshuffle itself when a
+## filesystem hands back a different order.
+func _scan_examples() -> void:
+	_examples.clear()
+	for folder: String in EXAMPLE_GROUPS:
+		var prefix: String = EXAMPLE_GROUPS[folder]
+		var names := _example_file_names(folder)
+		names.sort()
+		# Typed, because an untyped loop variable here is a parse error at load and a
+		# *hang* in the headless test rather than a message — see docs/current-phase.md.
+		for file_name: String in names:
+			var label := file_name.get_basename().capitalize()
+			if prefix != "":
+				label = "%s: %s" % [prefix, file_name.get_basename()]
+			_examples[label] = folder.path_join(file_name) if folder != "" else file_name
+
+
+func _example_file_names(folder: String) -> Array:
+	var names: Array = []
+	for base: String in [_repository_examples(), "res://examples"]:
+		if base == "":
+			continue
+		var directory := DirAccess.open(base.path_join(folder))
+		if directory == null:
+			continue
+		for file_name: String in directory.get_files():
+			if file_name.ends_with(".json") and not names.has(file_name):
+				names.append(file_name)
+		# The repository copy wins outright when it exists, for the same reason
+		# _example_path() prefers it: a half-and-half menu would be worse than either.
+		if not names.is_empty():
+			break
+	return names
+
+
+func _repository_examples() -> String:
+	var path := ProjectSettings.globalize_path("res://").path_join("../examples/patches")
+	return path if DirAccess.dir_exists_absolute(path) else ""
+
+
 func _example_path(file_name: String) -> String:
 	var repository := ProjectSettings.globalize_path("res://") \
 		.path_join("../examples/patches").path_join(file_name)
@@ -1628,9 +1676,9 @@ func _example_path(file_name: String) -> String:
 
 
 func _load_example(name: String) -> void:
-	if not EXAMPLES.has(name):
+	if not _examples.has(name):
 		return
-	var path := _example_path(EXAMPLES[name])
+	var path := _example_path(_examples[name])
 	if _importing_module:
 		_importing_module = false
 		var module_file := FileAccess.open(path, FileAccess.READ)

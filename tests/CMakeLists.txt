@@ -59,6 +59,26 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/mirror-examples.mjs --check)
 endif()
 
+# One demo patch per node type, and two different questions about them.
+#
+# The first is the usual generated-file question — do the committed files still match the
+# table that builds them, and is there an entry for every type the registry knows about.
+#
+# The second is the one worth the render time. Every demo makes a sound, and that proves
+# almost nothing: a saw through a bypassed filter measures the same as a saw, so a demo
+# whose node did nothing would pass a "is it audible" check. So each demo also names the
+# change its own description tells the reader to make, and this renders the patch with and
+# without it. A demo that says "drag this" and means it is a demo; one that doesn't is
+# decoration that will be found out on stage.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME node_demos_match_the_registry
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/node-demos.mjs --check
+                --nodes $<TARGET_FILE:sg-validate>)
+    add_test(NAME node_demos_do_what_they_say
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/node-demos.mjs
+                --verify $<TARGET_FILE:sg-render>)
+endif()
+
 # The port itself, measured against sfxr. A ratchet, not a target: the honest number today
 # is not 41, and what this catches is that number going *down* while something else is
 # being changed. Raise --min-pass whenever the port improves.

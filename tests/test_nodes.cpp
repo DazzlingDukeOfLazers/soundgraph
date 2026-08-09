@@ -403,6 +403,45 @@ TEST(delay_mix_blends_dry_and_wet) {
 
 // ---- terminals ----------------------------------------------------------------------
 
+// AudioInput was the one registered type with no jig at all, which is easy to explain and
+// was still worth fixing: it is the only node whose input arrives through its *outputs*,
+// so there was no obvious way to drive it and it quietly stayed untested. Everything it
+// does — scale what the host already wrote — happens on a path nothing else takes.
+TEST(audio_input_scales_what_the_host_wrote_into_its_outputs) {
+    NodeHarness harness("AudioInput", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.fill_output("left", 0.5f);
+    harness.fill_output("right", -0.25f);
+    harness.set("gain", 2.0f);
+    harness.process();
+
+    CHECK_NEAR(harness.output("left")[0], 1.0, 1e-6);
+    CHECK_NEAR(harness.output("right")[0], -0.5, 1e-6);
+    CHECK_NEAR(harness.output("left")[63], 1.0, 1e-6);
+}
+
+TEST(audio_input_at_unity_leaves_the_host_samples_alone) {
+    NodeHarness harness("AudioInput", 64, kSampleRate);
+    harness.fill_output("left", 0.5f);
+    harness.fill_output("right", 0.5f);
+    harness.process();  // gain defaults to 1
+
+    // Unity takes an early return rather than multiplying by 1.0, so this covers a branch
+    // the test above does not: a mistake there would silence the input entirely.
+    CHECK_NEAR(harness.output("left")[0], 0.5, 1e-6);
+    CHECK_NEAR(harness.output("right")[0], 0.5, 1e-6);
+}
+
+TEST(audio_input_silences_at_zero_gain) {
+    NodeHarness harness("AudioInput", 64, kSampleRate);
+    harness.fill_output("left", 1.0f);
+    harness.fill_output("right", 1.0f);
+    harness.set("gain", 0.0f);
+    harness.process();
+    CHECK_NEAR(testing::peak(harness.output("left")), 0.0, 1e-6);
+    CHECK_NEAR(testing::peak(harness.output("right")), 0.0, 1e-6);
+}
+
 TEST(note_input_converts_midi_notes_to_frequencies) {
     NodeHarness harness("NoteInput", 256, kSampleRate);
     soundgraph::NoteEvent event;
@@ -1005,7 +1044,7 @@ TEST(every_registered_type_can_be_created_with_working_defaults) {
     CHECK(registry.types().size() >= 23);
 
     for (const soundgraph::NodeTypeDescriptor* type : registry.types()) {
-        NodeHarness harness(type->name, 128, kSampleRate);
+        NodeHarness harness(type->name, 128, kSampleRate, testing::Coverage::SmokeTest);
         CHECK_MESSAGE(harness.valid(), std::string("could not create ") + type->name);
         harness.process();
 
@@ -1019,4 +1058,35 @@ TEST(every_registered_type_can_be_created_with_working_defaults) {
     }
 }
 
-TEST_MAIN("node tests")
+// Not a TEST, because it can only be asked once every test has run and TEST order is
+// declaration order — a check that depends on being last is a check that breaks when
+// somebody appends a case below it.
+static int report_jig_coverage() {
+    std::vector<std::string> exercised = testing::exercised_types();
+    std::sort(exercised.begin(), exercised.end());
+    exercised.erase(std::unique(exercised.begin(), exercised.end()), exercised.end());
+
+    std::vector<std::string> missing;
+    for (const soundgraph::NodeTypeDescriptor* type : soundgraph::NodeRegistry::builtin().types()) {
+        if (!std::binary_search(exercised.begin(), exercised.end(), type->name)) {
+            missing.push_back(type->name);
+        }
+    }
+
+    if (missing.empty()) {
+        std::printf("node jigs: all %zu registered types are exercised\n", exercised.size());
+        return 0;
+    }
+    std::printf("node jigs: %zu registered type(s) have no jig:\n", missing.size());
+    for (const std::string& name : missing) {
+        std::printf("  %s\n", name.c_str());
+    }
+    std::printf("  Add one to test_nodes.cpp. A node nobody drives is a node nobody knows\n"
+                "  the behaviour of, and the smoke test only proves it starts.\n");
+    return 1;
+}
+
+int main() {
+    const int failures = testing::run_all("node tests");
+    return report_jig_coverage() != 0 ? 1 : failures;
+}

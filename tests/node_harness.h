@@ -11,10 +11,35 @@
 
 namespace testing {
 
+// Every type any jig has actually built, recorded as it happens.
+//
+// The alternative was a hand-written list of "types that have a jig", which is the shape
+// of bug this project keeps paying for: two things that must agree, and nothing that
+// notices when they stop. Here there is nothing to keep in step — building a node is what
+// counts as covering it, so a node type nobody exercises cannot be mistaken for one that
+// somebody does. `every_node_type_has_a_jig` compares this against the registry once the
+// suite has run.
+inline std::vector<std::string>& exercised_types() {
+    static std::vector<std::string> types;
+    return types;
+}
+
+// Whether building a node counts as covering it.
+//
+// The smoke test builds every registered type to check it starts up and produces finite
+// samples at its defaults, which is worth having and is not a jig — if it counted, the
+// coverage check would be satisfied by its own existence and would be measuring nothing.
+// Everything else counts.
+enum class Coverage { Jig, SmokeTest };
+
 class NodeHarness {
 public:
-    NodeHarness(const std::string& type_name, int frames, double sample_rate = 48000.0)
+    NodeHarness(const std::string& type_name, int frames, double sample_rate = 48000.0,
+                Coverage coverage = Coverage::Jig)
         : frames_(frames), sample_rate_(sample_rate) {
+        if (coverage == Coverage::Jig) {
+            exercised_types().push_back(type_name);
+        }
         type_ = soundgraph::NodeRegistry::builtin().find(type_name);
         node_ = soundgraph::NodeRegistry::builtin().create(type_name);
         if (type_ == nullptr || !node_) {
@@ -53,6 +78,20 @@ public:
         const int index = port_index(port);
         connected_[static_cast<std::size_t>(index)] = true;
         return inputs_[static_cast<std::size_t>(index)];
+    }
+
+    // Writes an output buffer before process() runs.
+    //
+    // Only AudioInput needs this, and it needs it because it is the one node whose input
+    // arrives through its outputs: the runtime writes the host's samples straight into
+    // them and the node only scales what is already there. Without a way to say "the host
+    // put this here", the node cannot be exercised at all.
+    void fill_output(const std::string& port, float value) {
+        const int index = type_->find_output(port.c_str());
+        if (index < 0) return;
+        for (float& sample : outputs_[static_cast<std::size_t>(index)]) {
+            sample = value;
+        }
     }
 
     void set(const std::string& parameter, float value) {

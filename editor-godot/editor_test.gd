@@ -678,12 +678,18 @@ func _initialize() -> void:
 
 	# ---- every example in the menu actually opens ---------------------------------------
 	# A menu entry pointing at a missing or broken file is a failure the user finds by
-	# clicking it in front of somebody. There are ten of these now and eight arrived from a
-	# generator, so checking them one by one is worth the seconds it takes.
+	# clicking it in front of somebody. There are thirty-three of these now and thirty-one
+	# arrived from a generator, so checking them one by one is worth the seconds it takes.
+	#
+	# The menu is built by scanning, so this walks whatever the scan found rather than a
+	# list — which means it also checks the scan itself, and would notice it finding
+	# nothing.
 	var examples_ok := 0
 	var examples_bad: Array = []
-	for example_name in main.EXAMPLES:
-		var example_path: String = main._example_path(main.EXAMPLES[example_name])
+	check(main._examples.size() >= 20,
+		"the examples scan found %d patches" % main._examples.size())
+	for example_name in main._examples:
+		var example_path: String = main._example_path(main._examples[example_name])
 		var example_text := FileAccess.get_file_as_string(example_path)
 		if example_text.is_empty():
 			examples_bad.append("%s (missing)" % example_name)
@@ -696,7 +702,7 @@ func _initialize() -> void:
 			examples_bad.append(example_name)
 	check(examples_bad.is_empty(),
 		"every example in the menu loads and validates (%d of %d)%s"
-			% [examples_ok, main.EXAMPLES.size(),
+			% [examples_ok, main._examples.size(),
 			   "" if examples_bad.is_empty() else " — bad: " + ", ".join(examples_bad)])
 
 	# The game sounds are one-shots, so the Fire button is the only way to hear one twice.

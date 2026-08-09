@@ -65,6 +65,17 @@ and a repo-local `.venv` with pyserial and esptool.
   wins and the sound transposes, imported as a module the NoteInput is dropped and the
   parameter is what remains. The mapper offsets `transpose` so middle C is the pitch sfxr
   chose — 0.0045 cents off, and the port report is unchanged at 32 of 41.
+- A jig for every node type, and a check that says so. `NodeHarness` records what it builds,
+  and `test_nodes` compares that against the registry after the suite runs — so a new node
+  cannot ship without one. It found `AudioInput`, which had never been driven because it is
+  the only node whose input arrives through its *outputs*.
+- A demo patch for every node type, in `examples/patches/nodes/`: the smallest playable
+  patch where you can hear that node and hear what changes when you drag it. Each one also
+  declares the change its own description tells you to try, and the suite renders the patch
+  with and without it — because "does it make a sound" passes even when the node is
+  bypassed, and a demo that doesn't demonstrate anything is decoration.
+- The editor's examples menu is built by scanning rather than from a list, which is what
+  made 33 entries practical.
 - Two generated-file drift traps closed with scripts that both sync and `--check`, wired
   into the main suite: `tools/game-sounds.mjs` (the eight game sounds, whose recipe used to
   live only in a shell history) and `tools/mirror-examples.mjs` (`editor-godot/examples`).
