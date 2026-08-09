@@ -140,27 +140,34 @@ gesture. Synthetic events do not lift that; only a person clicking does.
   first time anybody rendered it, the inspector turned out to be off the right-hand edge of
   the window with its text cut in half. Every automated check had passed, because measuring
   a widget cannot tell you the widget is outside the window.
-- **The editor crashes at shutdown in roughly one run in five, and it is new.** Exit status
-  0xC0000005, *after* the work has succeeded — the round trip's audio comparison never
-  disagrees when the run completes, so this costs confidence rather than correctness.
+- **Resolved: the shutdown crash was a race with the audio thread.** It is worth keeping
+  the whole story, because the debugging was worse than the bug.
 
-  Measured rather than assumed, because the first assumption was wrong. Commit `20d8280`,
-  immediately before the design work, passes 20 of 20 and 12 of 12. Every design commit
-  through `fdffc9c` passes 10 of 10. The current tree passes 15 to 17 of 20. The regression
-  is mine and it arrived in the last two commits.
+  The round trip began failing about one run in five with 0xC0000005, *after* the work had
+  succeeded. I assumed it was the flake documented earlier in this file, spent three fixes
+  on the teardown path, and only then measured the commit before the design pass: 20 of 20
+  clean. The regression was mine and I had spent an hour proving things about the wrong
+  code.
 
-  What has been ruled out, each with 15–20 runs: the glow overlay existing at all (16/20
-  without it), the per-frame port sampling (15/20 without it), the GraphEdit menu-button
-  toggles (9/15 without them), and the teardown path — three fixes there moved nothing.
-  One real bug was found and fixed on the way: the glow overlay reordered GraphEdit's
-  children every frame, because GraphEdit keeps its own internal children and puts them
-  back on top, so the two fought sixty times a second. `z_index` does the same job without
-  touching the tree, and that took the failure rate from 9/12 to 17/20 — better, not fixed.
+  Two measurements found it. Under `--verbose` it never reproduced in 30 runs — a race
+  announcing itself, since the only thing verbose changes is timing. And a clean run leaks
+  an `AudioStreamGeneratorPlayback` with a reference count of exactly 1, which is
+  AudioServer still holding it.
 
-  The honest position is that 15-run samples cannot separate a 15% effect from a 25% one,
-  and further bisection needs either a much larger sample or a debugger on the crash dump.
-  Next step is the latter: run the failing case under `--verbose` with a crash handler and
-  read the stack rather than guessing at it from pass rates.
+  AudioServer mixes on its own thread and keeps a reference to the generator playback the
+  editor fills every frame. `_exit_tree` runs *inside* `free()`, so there were no frames
+  between stopping the player and destroying the GDExtension engine — and if that thread
+  was mid-mix, the process died. `shutdown_audio()` is now separate and public: stop the
+  player, free it, drop the engine, then let two frames pass before anything is freed.
+  36 consecutive clean runs, against a rate that was failing one in five.
+
+  The design work did not cause it so much as expose it: more per-frame work across the
+  extension boundary widened a window that had always been there.
+
+  One real bug did come out of the wrong-headed search. The glow overlay reordered
+  GraphEdit's children every frame, because GraphEdit keeps internal children of its own
+  and puts them back on top, so the two fought sixty times a second. `z_index` does the
+  same job without touching the tree.
 
 - **The sandbox leaks a variable number of `AudioStreamGeneratorPlayback` objects at exit** —
   11, 2 and 0 across three runs of identical code. Not new and not growing, but it is the

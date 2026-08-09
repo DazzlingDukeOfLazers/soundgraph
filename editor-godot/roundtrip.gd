@@ -71,6 +71,15 @@ func _initialize() -> void:
 	# objects. That is the 0xC0000005 this check has been failing with about one run in
 	# five: a crash *after* the work succeeded, which reads exactly like a refusal to
 	# round trip the patch and is nothing of the sort.
+	# Audio first, then frames, then the node.
+	#
+	# AudioServer mixes on its own thread and holds the generator playback the editor
+	# fills every frame. Freeing the editor in one go destroys the GDExtension engine
+	# with no gap at all, and if that thread is mid-mix the process dies after the work
+	# has already succeeded. The frames are the gap.
+	main.shutdown_audio()
+	await process_frame
+	await process_frame
 	root.remove_child(main)
 	main.free()
 	await process_frame

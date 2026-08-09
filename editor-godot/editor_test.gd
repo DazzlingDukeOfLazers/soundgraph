@@ -1419,6 +1419,15 @@ func _initialize() -> void:
 	main.queue_free()
 	await process_frame
 
+	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
+	# thread and holds the generator playback, so the engine has to be let go with
+	# frames to spare rather than destroyed underneath it. This harness was crashing
+	# at exit too, just without anything watching the exit status.
+	if main.has_method("shutdown_audio"):
+		main.shutdown_audio()
+		await process_frame
+		await process_frame
+
 	print("")
 	if failures == 0:
 		print("all editor checks passed")

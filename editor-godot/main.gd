@@ -1038,18 +1038,36 @@ func _start_audio() -> void:
 ## at shutdown *after* the work succeeded — in roughly one run in five. That predates
 ## this pass and is documented in current-phase.md, but adding more per-frame calls
 ## across that boundary can only have made it likelier, so the frames stop first.
-func _exit_tree() -> void:
+## Stops the audio side and lets go of the engine.
+##
+## Separate from _exit_tree, and public, because _exit_tree runs *inside* free() —
+## no frames pass between stopping the player and the engine being destroyed, and
+## that gap is exactly what the crash needs. A caller that can await should call this
+## first and give it a couple of frames.
+##
+## What is being avoided: AudioServer mixes on its own thread and holds a reference
+## to the generator playback this fills every frame — a clean run leaks it with a
+## reference count of 1, which is the audio server still having it. Destroy the
+## GDExtension engine while that thread is mid-mix and the process dies with
+## 0xC0000005 after all the work has finished. Under --verbose it never reproduces in
+## 30 runs, which is how a race announces itself.
+func shutdown_audio() -> void:
 	set_process(false)
 	if engine != null:
 		engine.all_notes_off()
-	# The player goes first and its stream with it. It is the one object here running
-	# on somebody else's schedule, and a playback still held by a stopped player is
-	# what GameSounds had to be taught the same lesson about.
 	if player != null:
 		player.stop()
 		player.stream = null
+		if player.get_parent() != null:
+			player.get_parent().remove_child(player)
+		player.free()
+		player = null
 	playback = null
 	engine = null
+
+
+func _exit_tree() -> void:
+	shutdown_audio()
 
 
 func _process(_delta: float) -> void:
