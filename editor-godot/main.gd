@@ -573,12 +573,23 @@ func _build_toolbar() -> Control:
 	bar.add_child(identity)
 
 	var project := _toolbar_group(bar, true)
-	var examples := OptionButton.new()
+	# A menu, not a dropdown showing its last selection.
+	#
+	# As an OptionButton it sat in the toolbar reading "Delay Echo" while the document
+	# name two inches to the left read "first-synth.json" — because an OptionButton
+	# shows what was last picked from it, which stops being true the moment anything
+	# else opens a file. Two labels disagreeing about what is open is worse than one
+	# label; now the identity block is the only thing that answers that question.
+	var examples := MenuButton.new()
+	examples.text = "Examples"
+	examples.flat = false
 	_scan_examples()
-	for name in _examples:
-		examples.add_item(name)
-	examples.item_selected.connect(func(index: int) -> void:
-		_load_example(examples.get_item_text(index)))
+	var examples_popup := examples.get_popup()
+	var example_names: Array = _examples.keys()
+	for index in example_names.size():
+		examples_popup.add_item(str(example_names[index]), index)
+	examples_popup.id_pressed.connect(func(id: int) -> void:
+		_load_example(str(example_names[id])))
 	project.add_child(_defocus(examples))
 
 	# ---- graph: the core verb, and the two that tidy up after it -----------------
@@ -815,7 +826,9 @@ func _build_side_panel() -> Control:
 	diagnostics_list.add_theme_constant_override("separation", Design.SPACE_S)
 	panel.add_child(diagnostics_list)
 
-	panel.add_child(_section_heading("Signal"))
+	# No SIGNAL heading. The scope writes what it is showing across its own top left —
+	# "filter.out", or "master output" — so a heading above it said the same thing
+	# twice, in a smaller voice, one line further from the thing it described.
 	scope = Scope.new()
 	scope.custom_minimum_size.y = Design.scale(120)
 	panel.add_child(scope)
@@ -827,12 +840,13 @@ func _build_side_panel() -> Control:
 	context_panel.add_theme_constant_override("separation", Design.SPACE_S)
 	panel.add_child(context_panel)
 
-	var keys := Label.new()
-	keys.text = "Play with A W S E D F T G Y H U J K. Z and X shift octave."
-	keys.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
-	keys.add_theme_color_override("font_color", Design.INK_SECOND)
-	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	panel.add_child(keys)
+	# What used to be here: "Play with A W S E D F T G Y H U J K. Z and X shift octave."
+	#
+	# Every word of that is now somewhere better. The letters are printed on the keys
+	# they play, and the octave buttons carry (Z) and (X) in their tooltips. A sentence
+	# in the corner of a panel describing controls that are visible eight inches away,
+	# labelled, is the kind of thing a UI accumulates while it is still explaining
+	# itself — and the point of getting the keyboard right was to stop needing it.
 
 	return panel
 
@@ -1251,24 +1265,17 @@ func _create_widget(node: Dictionary) -> void:
 		line.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
 		line.alignment = BoxContainer.ALIGNMENT_CENTER
 
-		var left := Label.new()
-		left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		left.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		if row < inputs.size():
-			left.text = _port_caption(inputs[row])
-			if inputs[row].get("required", false):
-				left.tooltip_text = "Required. " + str(inputs[row].get("doc", ""))
-			else:
-				left.tooltip_text = str(inputs[row].get("doc", ""))
+		# Name and unit as two labels, not one string.
+		#
+		# "cutoff_mod  (octaves)" gave the unit the same weight and colour as the name,
+		# so a column of ports read as a wall of similar-length phrases and the thing you
+		# were scanning for — the name — had to be picked out of each one. Same
+		# information, ranked: the unit is metadata and now looks like it. Parentheses
+		# gone too; they were doing the separating that a colour change does better.
+		var left := _port_label(inputs[row] if row < inputs.size() else {}, false)
 		line.add_child(left)
 
-		var right := Label.new()
-		right.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		right.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if row < outputs.size():
-			right.text = _port_caption(outputs[row])
-			right.tooltip_text = str(outputs[row].get("doc", ""))
+		var right := _port_label(outputs[row] if row < outputs.size() else {}, true)
 		line.add_child(right)
 		# Tagged so the zoom level-of-detail can find the parts of a node worth hiding
 		# without having to guess from child order.
@@ -1378,11 +1385,45 @@ func _port_icon(type_name: String) -> Texture2D:
 	return texture
 
 
-func _port_caption(port: Dictionary) -> String:
-	var unit: String = port.get("unit", "")
+## One side of a port row: the name in ordinary ink, the unit behind it in secondary.
+func _port_label(port: Dictionary, align_right: bool) -> Control:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.alignment = BoxContainer.ALIGNMENT_END if align_right \
+		else BoxContainer.ALIGNMENT_BEGIN
+	row.add_theme_constant_override("separation", Design.SPACE_XS)
+	if port.is_empty():
+		return row
+
+	var doc := str(port.get("doc", ""))
+	if bool(port.get("required", false)):
+		doc = "Required. " + doc
+	row.tooltip_text = doc
+
+	var name_label := Label.new()
+	name_label.text = str(port["name"])
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.set_meta("port_label", true)
+	row.add_child(name_label)
+
+	# Name then unit, always — including on the right-hand side, where the first
+	# version put the unit first so that the name would sit nearest its port. It was
+	# a reasonable argument about proximity and it produced "Hz frequency", which
+	# reads as a typo. Reading order beats proximity when the result is words.
+	var unit := str(port.get("unit", ""))
 	if unit != "":
-		return "%s  (%s)" % [port["name"], unit]
-	return str(port["name"])
+		row.add_child(_unit_label(unit))
+	return row
+
+
+func _unit_label(unit: String) -> Label:
+	var label := Label.new()
+	label.text = unit
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	label.add_theme_color_override("font_color", Design.INK_SECOND)
+	label.set_meta("port_label", true)
+	return label
 
 
 func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictionary) -> void:
@@ -2589,10 +2630,13 @@ func _apply_detail(level: int) -> void:
 				"parameter":
 					control.visible = show_parameters and not control.get_meta("collapsed", false)
 				"port":
-					for part in control.get_children():
-						var label := part as Label
-						if label != null and label.has_meta("port_label"):
-							label.visible = show_port_names
+					# One level deeper than it used to be: a port caption is now a name and a
+					# unit in their own box, so the labels are grandchildren of the row.
+					for side in control.get_children():
+						for part in (side as Control).get_children():
+							var label := part as Label
+							if label != null and label.has_meta("port_label"):
+								label.visible = show_port_names
 
 
 ## Says what a port is, in words, while the pointer is on it.

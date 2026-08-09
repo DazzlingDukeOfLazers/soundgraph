@@ -792,6 +792,22 @@ func _initialize() -> void:
 	# visible child, so hiding a port *row* renumbers every slot below it and the cables
 	# reattach to the wrong ports. Only the labels inside the row are hidden, and the
 	# check is that the ports have not moved.
+	# The labels really are hidden, not merely intended to be. This is a check I did
+	# not have when the port caption was one Label, and the moment it became a name
+	# and a unit in their own box the labels went a level deeper — so the code that
+	# hides them was walking the wrong children and nothing would have said so.
+	var visible_port_labels := 0
+	for child in node_widget.get_children():
+		var control := child as Control
+		if control == null or str(control.get_meta("row", "")) != "port":
+			continue
+		for side in control.get_children():
+			for part in (side as Control).get_children():
+				if part is Label and (part as Label).visible:
+					visible_port_labels += 1
+	check(visible_port_labels == 0,
+		"and the port names are actually hidden (%d still showing)" % visible_port_labels)
+
 	var ports_now := node_widget.get_input_port_count()
 	check(ports_now == ports_at_full,
 		"and the port count is unchanged (%d, was %d)" % [ports_now, ports_at_full])
