@@ -644,7 +644,11 @@ func _build_toolbar() -> Control:
 	# anything asks "what do you want to do".
 	var identity := VBoxContainer.new()
 	identity.add_theme_constant_override("separation", 0)
-	identity.custom_minimum_size.x = Design.scale(150)
+	# 150 was 37px more than the widest thing in it, on a toolbar that had eight pixels
+	# of room. The floor is still here — it keeps the block from collapsing and stops the
+	# rest of the bar shuffling sideways every time a document is opened — but it is now
+	# set just above what the title actually measures rather than to a round number.
+	identity.custom_minimum_size.x = Design.scale(120)
 
 	var title := Label.new()
 	title.text = "SoundGraph"
@@ -655,9 +659,18 @@ func _build_toolbar() -> Control:
 
 	document_label = Label.new()
 	document_label.text = document_name
+	document_label.tooltip_text = document_name
 	document_label.add_theme_font_size_override("font_size",
 		Design.scale(Design.SIZE_SECONDARY))
 	document_label.add_theme_color_override("font_color", Design.INK_SECOND)
+	# Trimmed rather than allowed to set the width of the toolbar.
+	#
+	# A latent version of the bug this budget exists to catch: the file name was free to
+	# grow the identity block, so opening something with a long name pushed every control
+	# to its right and could walk the inspector off the screen — from a file name. The
+	# full name is in the tooltip and in the title bar.
+	document_label.clip_text = true
+	document_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	identity.add_child(document_label)
 	bar.add_child(identity)
 
@@ -702,10 +715,6 @@ func _build_toolbar() -> Control:
 	arrange_popup = arrange_menu.get_popup()
 	arrange_popup.add_item("Auto-place everything", 0)
 	arrange_popup.add_item("Arrange selection", 1)
-	arrange_popup.add_separator()
-	arrange_popup.add_item("Fit graph in view", 2)
-	arrange_popup.set_item_tooltip(2, "Zoom and scroll so the whole patch is visible, "
-		+ "clear of the minimap and the zoom controls.")
 	arrange_popup.set_item_tooltip(0, "Lay the whole graph out left to right. The same "
 		+ "patch always lands the same way, wherever things were before.")
 	arrange_popup.set_item_disabled(1, true)
@@ -715,10 +724,26 @@ func _build_toolbar() -> Control:
 		if id == 0:
 			_auto_place()
 		elif id == 1:
-			_arrange_selection()
-		else:
-			graph_edit.fit_graph())
+			_arrange_selection())
 	graph_group.add_child(_defocus(arrange_menu))
+
+	# Fit comes out of that menu and sits beside it, spelled out.
+	#
+	# It was filed under Arrange, which is where it looks like it belongs and is not where
+	# anybody goes for it: arranging moves nodes and is a change to the document, framing
+	# moves the camera and changes nothing. One is undoable and the other has nothing to
+	# undo. Grouping them meant the recovery move — "I have lost the graph, show me it" —
+	# was two clicks inside a menu of edits.
+	#
+	# A word rather than a glyph. There is no icon for "fit" that anybody reads correctly
+	# without a tooltip, and this editor has already paid once for symbols that turned out
+	# to be missing from the font.
+	var fit_button := Button.new()
+	fit_button.text = "Fit"
+	fit_button.tooltip_text = "Zoom and scroll so the whole patch is visible, clear of " \
+		+ "the minimap and the zoom controls."
+	fit_button.pressed.connect(func() -> void: graph_edit.fit_graph())
+	graph_group.add_child(_defocus(fit_button))
 
 	# ---- edit --------------------------------------------------------------------
 	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
@@ -2641,6 +2666,8 @@ func _refresh_document_label() -> void:
 	# punctuation — the change should be noticeable without the label jumping about,
 	# and a leading "*" shifts every character along by one.
 	document_label.text = document_name + ("  (unsaved)" if unsaved else "")
+	# Because the label is clipped, this is the only place a long name can be read whole.
+	document_label.tooltip_text = document_label.text
 	document_label.add_theme_color_override("font_color",
 		Design.INK_NORMAL if unsaved else Design.INK_SECOND)
 
@@ -3062,12 +3089,11 @@ func _refresh_status() -> void:
 	var parts := ["Audio running" if running else "Audio stopped"]
 	parts.append("Graph valid" if valid else "%d problem%s"
 		% [_problem_count, "" if _problem_count == 1 else "s"])
-	if running:
-		# "48k" rather than "48 kHz". Six pixels over the 1280px budget is still over it,
-		# and the budget is there because the alternative is the inspector going off the
-		# side of a laptop screen again. The exact figure is in the tooltip, which is the
-		# right home for a number that has never once changed while somebody watched.
-		parts.append("48k")
+	# The sample rate is not here at all now, having been "48 kHz" and then "48k" on the
+	# way out. Its own comment had already made the argument — a number that has never
+	# once changed while somebody watched belongs in the tooltip — and the sidebar's Cost
+	# line says "48000 Hz" in full a few inches away. Two copies of a constant were paying
+	# for themselves in toolbar width, on a bar with eight pixels of room left.
 	status_label.text = "  ·  ".join(parts)
 	status_label.tooltip_text = ("Audio %s · graph %s · 48000 Hz"
 		% ["running" if running else "stopped", "valid" if valid else "has problems"])
@@ -3361,6 +3387,20 @@ func _load_text(text: String) -> void:
 
 	_apply()
 	_refresh_undo_buttons()
+
+	# Frame what was just opened.
+	#
+	# This was missing, and the default view was the consequence: the first thing anybody
+	# saw was first-synth at 100% with the Keyboard cut off the left edge and the Lowpass
+	# disappearing under the inspector. Fit existed and worked; it was simply never called
+	# unless somebody went looking for it in a menu.
+	#
+	# A frame is waited for first because the fit is solved against usable_rect(), and the
+	# scrollbars and minimap that rectangle subtracts do not exist until the nodes it is
+	# being asked to frame have been laid out.
+	await get_tree().process_frame
+	graph_edit.fit_graph()
+
 	if needs_layout:
 		_say("arranged %d nodes — the file had no layout" % patch["nodes"].size())
 	elif moved > 0:

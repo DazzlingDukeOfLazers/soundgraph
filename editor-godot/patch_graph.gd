@@ -1049,6 +1049,17 @@ func centre_on(graph_rect: Rect2) -> void:
 	scroll_offset = (graph_rect.position + graph_rect.size * 0.5) * zoom - middle
 
 
+## How much of the viewport a fit leaves empty around the graph, per side.
+##
+## Proportional rather than a fixed 24px, because a margin is a judgement about the
+## picture and not about the pixels: 24 around a graph filling a 2560-wide window is a
+## hairline, and the patch ends up pressed against the frame on exactly the screens with
+## the most room to spare.
+##
+## Floored at SPACE_XL so a small window still gets the spacing scale's answer.
+const FIT_BREATHING := 0.07
+
+
 ## Frames the whole graph, at a zoom that fits it into the usable area.
 ##
 ## Fit has to solve for zoom *and* offset together, and against the usable rectangle
@@ -1059,7 +1070,7 @@ func fit_graph() -> void:
 	var found := false
 	for child in get_children():
 		var node := child as GraphNode
-		if node == null:
+		if node == null or not node.visible:
 			continue
 		var node_rect := Rect2(node.position_offset, node.size)
 		bounds = node_rect if not found else bounds.merge(node_rect)
@@ -1068,11 +1079,15 @@ func fit_graph() -> void:
 		return
 
 	var view := usable_rect()
-	var margin := float(Design.SPACE_XL)
+	var margin: float = maxf(float(Design.SPACE_XL),
+		minf(view.size.x, view.size.y) * FIT_BREATHING)
 	var room := view.size - Vector2(margin, margin) * 2.0
 	var wanted: float = minf(room.x / maxf(bounds.size.x, 1.0),
 		room.y / maxf(bounds.size.y, 1.0))
-	zoom = clampf(wanted, zoom_min, zoom_max)
+	# Never magnifies. Fitting a two-node patch to the window would blow it up to 200% and
+	# call that framing; the request is to see the whole graph, and once you can, there is
+	# nothing further to satisfy.
+	zoom = clampf(wanted, zoom_min, minf(zoom_max, 1.0))
 	centre_on(bounds)
 
 

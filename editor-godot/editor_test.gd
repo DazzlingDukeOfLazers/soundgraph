@@ -1050,6 +1050,37 @@ func _initialize() -> void:
 	check(outside == 0,
 		"fit brings every node into view without hiding any (%d outside)" % outside)
 
+	# And it leaves room around what it framed, rather than fitting to the millimetre.
+	var hugged := Rect2()
+	var started := false
+	for id in main.widgets:
+		var node: GraphNode = main.widgets[id]
+		var spot := Rect2(
+			node.position_offset * main.graph_edit.zoom - main.graph_edit.scroll_offset,
+			node.size * main.graph_edit.zoom)
+		hugged = spot if not started else hugged.merge(spot)
+		started = true
+	var slack: float = minf(
+		minf(hugged.position.x - framed.position.x, hugged.position.y - framed.position.y),
+		minf(framed.end.x - hugged.end.x, framed.end.y - hugged.end.y))
+	check(slack >= float(Design.SPACE_XL),
+		"and leaves the graph room to breathe (%.0f px on the tightest side)" % slack)
+
+	# Fit is a request to see the whole graph. Once you can, there is nothing further to
+	# satisfy, so it does not go on magnifying a small patch to fill the window.
+	var lonely: GraphNode = main.widgets["out"]
+	for id in main.widgets:
+		if id != "out":
+			(main.widgets[id] as GraphNode).visible = false
+	main.graph_edit.fit_graph()
+	await process_frame
+	check(main.graph_edit.zoom <= 1.0,
+		"fitting one small node does not magnify it (%.2f)" % main.graph_edit.zoom)
+	for id in main.widgets:
+		(main.widgets[id] as GraphNode).visible = true
+	main.graph_edit.fit_graph()
+	await process_frame
+
 	# ---- three node states, told apart at a glance ---------------------------------
 	# GraphNode ships with normal and selected and nothing between them, so a node under
 	# the pointer looked exactly like one three columns away — and in a patch dense enough
