@@ -138,8 +138,30 @@ const DETAIL_HYSTERESIS := 0.02
 ## empty where its parameters should have been, while the same view reached by zooming
 ## down from 100% was correct. A boundary that depends on which way you came is a
 ## boundary nobody can state.
-const COMPACT_FLOOR := 0.60 - DETAIL_HYSTERESIS
-const SUMMARY_FLOOR := 0.40 - DETAIL_HYSTERESIS
+const COMPACT_BASE := 0.60 - DETAIL_HYSTERESIS
+const SUMMARY_BASE := 0.40 - DETAIL_HYSTERESIS
+
+## …and they move with the UI-scale preference, because what ends these bands is room.
+##
+## A node keeps its size in graph space, so the room a row has on screen is its width
+## times the zoom — while the text that has to fit in it is pinned to a screen size that
+## *rises* with the reader's preference. At XL the floor is 20px in a node 217px wide at
+## 63%, and the matrix showed exactly what that produces: "out" and "in" from neighbouring
+## nodes collided into "oiuln", a value ran into the next node's label, and the compact
+## band was drawing a control panel in a space that could not hold one.
+##
+## The brief's own answer, and the right one: when compensation would overcrowd, change
+## the level of detail rather than allow the overlap. So a reader on XL reaches summary
+## and topology sooner — the same information, one representation earlier, which is what
+## asking for larger text on a smaller canvas actually costs.
+static func _scaled(floor_value: float) -> float:
+	return floor_value * maxf(1.0, Design.SCALE_FACTORS[Design.ui_scale])
+
+static func compact_floor() -> float:
+	return _scaled(COMPACT_BASE)
+
+static func summary_floor() -> float:
+	return _scaled(SUMMARY_BASE)
 
 ## Port hit targets, in real pixels, for the same reason the type has them.
 ##
@@ -870,9 +892,9 @@ func clear_waypoints() -> void:
 static func level_for(z: float) -> int:
 	if z >= _full_floor():
 		return Detail.FULL
-	if z >= COMPACT_FLOOR:
+	if z >= compact_floor():
 		return Detail.COMPACT
-	if z >= SUMMARY_FLOOR:
+	if z >= summary_floor():
 		return Detail.SUMMARY
 	return Detail.TOPOLOGY
 
@@ -1339,7 +1361,22 @@ class ScreenText extends Control:
 				left = maxf(left, edge.end.x)
 			elif edge.position.x >= rect.end.x - 0.5:
 				right = minf(right, edge.position.x)
-		return Vector2(minf(left, rect.position.x), maxf(right, rect.end.x))
+		left = minf(left, rect.position.x)
+		right = maxf(right, rect.end.x)
+
+		# Nothing may be drawn outside the node it belongs to. The slot is otherwise
+		# derived from containers, and a container can be as wide as it likes — so at XL
+		# and 63% an "out" ran past its own right edge and printed over the "in" of the
+		# node beside it, which the matrix caught as "oiuln". Clamped here rather than at
+		# the drawing, so the fit test refuses the same text the renderer would.
+		var owner := label.get_parent()
+		while owner != null and not (owner is GraphNode):
+			owner = owner.get_parent()
+		if owner is GraphNode:
+			var body := (owner as GraphNode).get_global_rect()
+			left = maxf(left, body.position.x + 2.0)
+			right = minf(right, body.end.x - 2.0)
+		return Vector2(left, maxf(right, left))
 
 	static func room_for(label: Label) -> float:
 		var slot := slot_for(label)

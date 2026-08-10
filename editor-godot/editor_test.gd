@@ -1604,7 +1604,7 @@ func _initialize() -> void:
 	# is how a reader who asked for larger text gets it taken away by zooming out. The
 	# band must depend on the zoom alone, and the larger scale must genuinely arrive.
 	var scale_before: int = Design.ui_scale
-	var band_at_comfortable: int = main.PatchGraph.level_for(0.65)
+	var band_compact_floor: float = main.PatchGraph.compact_floor()
 	Design.ui_scale = Design.Scale.XL
 	await main._rebuild_view()
 	main.graph_edit.zoom = 0.65
@@ -1612,18 +1612,42 @@ func _initialize() -> void:
 	main._apply_detail(main.graph_edit.detail)
 	for i in 3:
 		await process_frame
-	check(main.PatchGraph.level_for(0.65) == band_at_comfortable,
-		"the level of detail answers to the zoom alone, not to the UI scale")
+	# The bands move with the scale rather than staying put, and that is the point
+	# rather than a violation of it: what ends a band is *room*, and a reader asking for
+	# 35% larger text has 35% less of it per node. Holding the boundary fixed is what
+	# produced the collision the matrix caught at XL and 63% — "out" and "in" from
+	# neighbouring nodes printed over each other. The independence that matters is that
+	# the type genuinely gets bigger, which is checked next.
+	check(main.PatchGraph.compact_floor() > band_compact_floor,
+		"a larger UI scale reaches the simpler representations sooner (%.2f from %.2f)"
+			% [main.PatchGraph.compact_floor(), band_compact_floor])
+	# Asked inside XL's own compact band, because outside it there is no parameter text
+	# to measure — that is the level of detail doing its job, not the scale failing.
+	var xl_zoom: float = main.PatchGraph.compact_floor() + 0.05
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	main.graph_edit.zoom = xl_zoom
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	for i in 3:
+		await process_frame
 	var xl_biggest := 0.0
 	for id in main.widgets:
 		for label in main.PatchGraph.ScreenText._marked(main.widgets[id]):
 			if str(label.get_meta("screen_kind", "")) == "parameter":
 				xl_biggest = maxf(xl_biggest,
-					main.PatchGraph.ScreenText.screen_size(label, 0.65))
+					main.PatchGraph.ScreenText.screen_size(label, xl_zoom))
 	check(xl_biggest > float(Design.MIN_SCREEN_LABEL),
-		"and a reader who asked for XL text gets more than the minimum at 65%% (%.1fpx)"
-			% xl_biggest)
+		"and XL text really is larger than the ordinary minimum (%.1fpx at %.0f%%)"
+			% [xl_biggest, xl_zoom * 100.0])
 	Design.ui_scale = scale_before
+	# And the zoom with it. This block moves the zoom to reach XL's own compact band,
+	# and leaving it there handed every later check a graph at 83% in a compact level of
+	# detail — which is how the 800px height budget below started failing at 925px for
+	# reasons that had nothing to do with the budget.
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
 	await main._rebuild_view()
 	await process_frame
 	# A rebuild frees every widget, so anything held from before it is a dangling
@@ -1704,7 +1728,7 @@ func _initialize() -> void:
 	# Hysteresis: a zoom sitting on a threshold must not flip level on every jitter.
 	# Asymmetric on purpose — detail drops the moment it must, because staying is how
 	# text ends up under its minimum, and only climbs back once clear of the boundary.
-	main.graph_edit.zoom = main.PatchGraph.SUMMARY_FLOOR
+	main.graph_edit.zoom = main.PatchGraph.summary_floor()
 	main.graph_edit._update_detail()
 	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
 		"a nudge back onto the boundary does not flip the level straight away")
@@ -1712,7 +1736,7 @@ func _initialize() -> void:
 	main.graph_edit._update_detail()
 	check(main.graph_edit.detail == main.PatchGraph.Detail.SUMMARY,
 		"but a real move does")
-	main.graph_edit.zoom = main.PatchGraph.SUMMARY_FLOOR - 0.01
+	main.graph_edit.zoom = main.PatchGraph.summary_floor() - 0.01
 	main.graph_edit._update_detail()
 	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
 		"and dropping detail needs no margin at all")

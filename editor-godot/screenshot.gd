@@ -2,6 +2,7 @@ extends SceneTree
 ## Renders the editor to a PNG so somebody — or something — can look at it.
 ##
 ##   godot --path editor-godot --script res://screenshot.gd -- <out.png> [width] [height]
+##   godot --path editor-godot --script res://screenshot.gd -- --matrix <spec.json>
 ##
 ## Not --headless: headless has no rendering server, so there is nothing to capture. This
 ## opens a real window, draws a few frames, grabs the viewport and quits. It is the whole
@@ -9,12 +10,110 @@ extends SceneTree
 ## the design work in this project had been running on the first kind of evidence only.
 ##
 ## A window does appear briefly. That is the point of it.
+##
+## Matrix mode exists because the review question is never "does it look right at 100%".
+## It is "does it look right across the zooms, the UI scales, the themes and the views" —
+## and answered one process at a time that is twenty-five Godot launches and four minutes
+## of somebody's attention, which means in practice it is answered at 100% only. One
+## process, one pass, a directory of labelled shots: see tools/screenshot-matrix.mjs.
 
 const SETTLE_FRAMES := 12
 
 
+## Applies one shot's worth of state and returns when the frame is worth grabbing.
+##
+## Every field is applied every time rather than only when it differs from the last shot.
+## A matrix that carried state between entries would make each picture depend on the one
+## before it, which is exactly the property that makes a regression set untrustworthy —
+## the shot you are looking at has to be the shot the spec asked for.
+func _stage(main, shot: Dictionary) -> void:
+	main._use_palette(int(shot.get("palette", 0)))
+	main._use_ui_scale(int(shot.get("ui_scale", 1)))
+	for i in 4:
+		await process_frame
+
+	# The example reload also clears the selection and the held notes, so each shot
+	# starts from the same place whatever the one before it did.
+	await main._load_example(str(shot.get("example", "First Synth")))
+	for i in 8:
+		await process_frame
+
+	var view := str(shot.get("view", ""))
+	if view != "":
+		for index in main.views.get_tab_count():
+			if main.views.get_tab_title(index).to_lower() == view.to_lower():
+				main.views.current_tab = index
+		for i in 8:
+			await process_frame
+
+	if shot.get("zoom", 0.0) > 0.0:
+		# Set from full detail so the level of detail is reached the same way every time,
+		# rather than depending on where the fit-on-load happened to leave the zoom.
+		main.graph_edit.zoom = 1.0
+		main.graph_edit._update_detail()
+		main.graph_edit.zoom = float(shot["zoom"])
+		main.graph_edit._update_detail()
+		main._apply_detail(main.graph_edit.detail)
+		for i in 6:
+			await process_frame
+
+	if str(shot.get("select", "")) != "":
+		main._focus_node(str(shot["select"]))
+		for i in 6:
+			await process_frame
+
+	if bool(shot.get("play", false)):
+		main._hold_note(57)
+		for i in 40:
+			main._update_port_levels(0.05)
+			await process_frame
+
+
+func _capture(path: String) -> bool:
+	var image := root.get_texture().get_image()
+	var status := image.save_png(path)
+	if status != OK:
+		printerr("could not write %s (error %d)" % [path, status])
+	return status == OK
+
+
+func _run_matrix(spec_path: String) -> void:
+	var file := FileAccess.open(spec_path, FileAccess.READ)
+	if file == null:
+		printerr("could not read %s" % spec_path)
+		quit(1)
+		return
+	var spec: Variant = JSON.parse_string(file.get_as_text())
+	if not (spec is Dictionary):
+		printerr("%s is not a matrix spec" % spec_path)
+		quit(1)
+		return
+
+	var size: Vector2i = Vector2i(int(spec.get("width", 1600)), int(spec.get("height", 1000)))
+	DisplayServer.window_set_size(size)
+	root.content_scale_size = size
+
+	var main = load("res://main.tscn").instantiate()
+	root.add_child(main)
+	for i in SETTLE_FRAMES:
+		await process_frame
+
+	var written := 0
+	for entry in spec.get("shots", []):
+		var shot: Dictionary = entry
+		await _stage(main, shot)
+		if _capture(str(shot["path"])):
+			written += 1
+			print("  %s" % str(shot["name"]))
+	print("%d of %d shots written" % [written, spec.get("shots", []).size()])
+	quit(0 if written == spec.get("shots", []).size() else 1)
+
+
 func _initialize() -> void:
 	var arguments := OS.get_cmdline_user_args()
+	if arguments.size() > 1 and arguments[0] == "--matrix":
+		await _run_matrix(arguments[1])
+		return
 	var output: String = arguments[0] if arguments.size() > 0 else "screenshot.png"
 	var width: int = int(arguments[1]) if arguments.size() > 1 else 1600
 	var height: int = int(arguments[2]) if arguments.size() > 2 else 1000
