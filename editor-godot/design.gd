@@ -207,6 +207,12 @@ const NODE_PADDING_H := 14
 const NODE_PADDING_V := 10
 const NODE_ROW_HEIGHT := 28
 
+## What a free-standing control offers a finger or a shaky pointer, whatever the visible
+## part measures. 44 is the number every platform guideline converges on, and it is a
+## statement about the target, not the paint: the button can look 38px tall while the
+## pressable rectangle underneath reaches this.
+const HIT_TARGET := 44
+
 # ---------------------------------------------------------------------------------
 # Radii
 #
@@ -228,18 +234,33 @@ const FONT_PATH := "res://fonts/AtkinsonHyperlegibleNext.ttf"
 ## lines up either way, and this is an upgrade rather than a dependency.
 const MONO_PATH := "res://fonts/AtkinsonHyperlegibleMono.ttf"
 
+## The three weights, and only these three. No 300 — light text is the one that goes
+## first on a projector or a cheap panel, which is the audience this editor is for.
+## 700 and up is reserved for exceptional emphasis and is currently used by nothing;
+## if everything is bold, the one thing that needs to be has nowhere left to go.
 const WEIGHT_REGULAR := 400
 const WEIGHT_MEDIUM := 500
 const WEIGHT_SEMIBOLD := 600
 
-## Sizes at Comfortable. Everything scales from here; see scale().
-const SIZE_APP_TITLE := 20
-const SIZE_NODE_TITLE := 17
-const SIZE_BODY := 15
-const SIZE_CONTROL := 15
-const SIZE_NUMERIC := 14
-const SIZE_SECONDARY := 13
-const SIZE_HEADING := 12          ## Section headings: upper case, letterspaced, dim.
+## Sizes at Comfortable. Everything scales from here; see type() and scale().
+const SIZE_APP_TITLE := 21        ## semibold
+const SIZE_NODE_TITLE := 17       ## semibold
+const SIZE_BODY := 16             ## regular — sidebar prose, lists, menus
+const SIZE_CONTROL := 16          ## medium — toolbar buttons and fields
+const SIZE_TABS := 15             ## medium — the view tabs, one step under the toolbar
+const SIZE_NUMERIC := 16          ## medium, numeric face — parameter values
+const SIZE_UNIT := 14             ## regular, numeric face — Hz, ms, octaves
+const SIZE_SECONDARY := 14        ## regular — status lines, captions, document name
+const SIZE_HEADING := 15          ## semibold — section headings
+
+## No operating text below this, at any UI scale.
+##
+## The floor is what turns "prefer spacing and weight over shrinking text" from advice
+## into a property: Compact tightens the interface by 12.5%, and without a floor that
+## quietly took the 14px sizes to 12 — so the scale preset for fitting more on screen
+## was also, silently, the preset for worse legibility. Sizes above the floor still
+## compress; the ones already at it hold, and Compact saves its space on spacing.
+const TYPE_FLOOR := 14
 
 enum Scale { COMPACT, COMFORTABLE, LARGE, XL }
 
@@ -262,6 +283,14 @@ static var reduced_motion := false
 ## because they were having trouble reading it.
 static func scale(value: float) -> int:
 	return int(roundf(value * SCALE_FACTORS[ui_scale]))
+
+
+## scale() with the TYPE_FLOOR under it — the function every font size goes through.
+##
+## Two functions rather than a floor inside scale(), because scale() also sizes spacing,
+## icons and hit targets, and a 12px gap is not a legibility problem the way 12px text is.
+static func type(value: float) -> int:
+	return maxi(scale(value), TYPE_FLOOR)
 
 
 static var _faces: Dictionary = {}
@@ -312,6 +341,25 @@ static func numeric_font() -> Font:
 		variation.variation_opentype = {_weight_tag(): WEIGHT_MEDIUM}
 		variation.opentype_features = {&"tnum": 1}
 	_faces[&"numeric"] = variation
+	return variation
+
+
+## The face for units — Hz, ms, octaves — one size down and one weight down from the
+## value they annotate.
+##
+## The same family as the numbers so "440.0 Hz" reads as one phrase, but regular where
+## the value is medium: the unit is metadata, and the ranking should survive somebody
+## who cannot see the colour difference.
+static func unit_font() -> Font:
+	if _faces.has(&"unit"):
+		return _faces[&"unit"]
+	var variation := FontVariation.new()
+	if ResourceLoader.exists(MONO_PATH):
+		variation.base_font = load(MONO_PATH) as Font
+	else:
+		variation.base_font = load(FONT_PATH) as Font
+		variation.opentype_features = {&"tnum": 1}
+	_faces[&"unit"] = variation
 	return variation
 
 
@@ -488,7 +536,7 @@ static func set_type(theme: Theme, type_name: String, weight: int, size: int,
 	if _known("font", "font", type_name):
 		theme.set_font("font", type_name, font(weight))
 	if _known("font_size", "font_size", type_name):
-		theme.set_font_size("font_size", type_name, scale(size))
+		theme.set_font_size("font_size", type_name, type(size))
 	if _known("color", colour_item, type_name):
 		theme.set_color(colour_item, type_name, colour)
 

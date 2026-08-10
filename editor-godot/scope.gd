@@ -43,7 +43,7 @@ func _draw() -> void:
 	draw_line(Vector2(0, size.y - 2), Vector2(size.x, size.y - 2), GRID, 1.0)
 
 	var font: Font = Design.numeric_font()
-	var font_size := Design.scale(Design.SIZE_SECONDARY)
+	var font_size := Design.type(Design.SIZE_SECONDARY)
 	var ascent := font.get_ascent(font_size)
 
 	if samples.size() < 2:

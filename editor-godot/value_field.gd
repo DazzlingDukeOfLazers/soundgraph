@@ -82,7 +82,7 @@ func _ready() -> void:
 	_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_label.add_theme_font_override("font", Design.numeric_font())
-	_label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NUMERIC))
+	_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NUMERIC))
 	_label.add_theme_color_override("font_color", Design.INK_BRIGHT)
 	add_child(_label)
 
@@ -102,7 +102,7 @@ func _ready() -> void:
 	_entry.alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_entry.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_entry.add_theme_font_override("font", Design.numeric_font())
-	_entry.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NUMERIC))
+	_entry.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NUMERIC))
 	_entry.text_submitted.connect(_on_typed)
 	_entry.focus_exited.connect(_cancel_typing)
 	add_child(_entry)

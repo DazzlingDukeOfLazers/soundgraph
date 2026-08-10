@@ -96,8 +96,18 @@ var grid_major_colour := Color(1, 1, 1, GRID_RESTING[2])
 ## every node in the graph flicker between two layouts as the mouse wheel jitters.
 enum Detail { FULL, REDUCED, TOPOLOGY }
 
-const DETAIL_DOWN := [0.68, 0.38]   ## zoom below this drops to the next level down
-const DETAIL_UP := [0.76, 0.46]     ## and it has to come back above this to return
+## The full-detail boundary is derived, not chosen: parameters hide at the zoom where
+## their text would render below Design.TYPE_FLOOR. The old hand-picked 0.68 let a 16px
+## value shrink to 10.9 rendered pixels while the design system elsewhere promised
+## nothing operational below 14 — the floor stopped at the canvas edge, and the canvas
+## is where the most-read text in the application lives. Geometric zoom does not get to
+## produce sizes the type scale is not allowed to ask for; below the boundary the text
+## is hidden rather than shrunk, which is the LOD's whole job.
+static func _full_floor() -> float:
+	return float(Design.TYPE_FLOOR) / float(Design.SIZE_NUMERIC)
+
+const DETAIL_DOWN_DEEP := 0.38      ## below this even port names go
+const DETAIL_UP := [0.95, 0.46]     ## hysteresis: come back above this to return
 
 signal detail_changed(level: int)
 
@@ -621,6 +631,7 @@ signal port_hovered(widget_name: String, side: String, index: int)
 
 var _overlay: CrossingOverlay
 var _glow: GlowOverlay
+var _titles: TitleOverlay
 
 
 func _ready() -> void:
@@ -634,6 +645,9 @@ func _ready() -> void:
 	_glow = GlowOverlay.new()
 	_glow.graph = self
 	add_child(_glow)
+	_titles = TitleOverlay.new()
+	_titles.graph = self
+	add_child(_titles)
 	begin_node_move.connect(func() -> void: _grid_target = 1.0)
 	end_node_move.connect(func() -> void: _grid_target = 0.0)
 	set_process(true)
@@ -805,10 +819,10 @@ func clear_waypoints() -> void:
 ## zoom — and the wheel changes it without going through any code of ours.
 func _update_detail() -> void:
 	var level := detail
-	if detail == Detail.FULL and zoom < DETAIL_DOWN[0]:
+	if detail == Detail.FULL and zoom < _full_floor():
 		level = Detail.REDUCED
 	elif detail == Detail.REDUCED:
-		if zoom < DETAIL_DOWN[1]:
+		if zoom < DETAIL_DOWN_DEEP:
 			level = Detail.TOPOLOGY
 		elif zoom > DETAIL_UP[0]:
 			level = Detail.FULL
@@ -1099,3 +1113,67 @@ func _update_cable_hover(local_point: Vector2) -> void:
 		return
 	hovered_cable = found
 	queue_redraw()
+
+
+## Node titles at a readable size while the canvas is zoomed out.
+##
+## GraphEdit scales everything geometrically, so at 55% a 17px title rendered at 9.4px —
+## under the type floor, on the only text left once the level-of-detail has hidden the
+## parameters. The first fix grew the labels' logical size to compensate, and the port
+## test refused it, correctly: a bigger title makes a taller titlebar, which pushes every
+## port row down, and a node's geometry must not depend on how far out somebody is
+## standing. So the titles move up here instead — the same screen-space trick as the
+## glow, drawn over the graph without being part of it. While this layer is on, the real
+## labels are made transparent (not hidden: collapsing them would change the titlebar
+## height, which is the exact thing being avoided) and every title is drawn at the floor,
+## which is the size the type system says legible starts at.
+class TitleOverlay extends Control:
+	var graph: GraphEdit
+	var _fingerprint := ""
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		# Above the nodes, under the glow.
+		z_index = 99
+
+	## On when the geometric title would render below the floor.
+	func _active() -> bool:
+		return graph.zoom * float(Design.type(Design.SIZE_NODE_TITLE)) \
+			< float(Design.TYPE_FLOOR) - 0.5
+
+	func _process(_delta: float) -> void:
+		if graph == null:
+			return
+		var current: String = graph._view_fingerprint()
+		if current != _fingerprint:
+			_fingerprint = current
+			queue_redraw()
+
+	func _draw() -> void:
+		if graph == null:
+			return
+		var active := _active()
+		for child in graph.get_children():
+			var node := child as GraphNode
+			if node == null or not node.visible:
+				continue
+			var label := node.get_meta("title_label", null) as Label
+			if label != null:
+				label.self_modulate.a = 0.0 if active else 1.0
+			if not active:
+				continue
+
+			var scale_now: float = graph.zoom
+			var top_left: Vector2 = node.position_offset * scale_now - graph.scroll_offset
+			var bar := node.get_titlebar_hbox()
+			var bar_height: float = (bar.size.y if bar != null else 30.0) * scale_now
+			var size := Design.TYPE_FLOOR
+			var room: float = node.size.x * scale_now - 12.0
+			if room < 20.0:
+				continue
+			var font := Design.font(Design.WEIGHT_SEMIBOLD)
+			var baseline := top_left + Vector2(6.0,
+				(bar_height + font.get_ascent(size) - font.get_descent(size)) * 0.5)
+			draw_string(font, baseline, node.title,
+				HORIZONTAL_ALIGNMENT_LEFT, room, size, Design.INK_BRIGHT)

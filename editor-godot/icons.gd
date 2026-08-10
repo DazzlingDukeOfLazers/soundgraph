@@ -34,6 +34,8 @@ enum Kind {
 	CHEVRON_LEFT,   ## collapse a panel
 	CHEVRON_RIGHT,  ## expand a panel
 	ARROW_RIGHT,    ## signal flow
+	UNDO,           ## curved arrow, left
+	REDO,           ## curved arrow, right
 }
 
 
@@ -81,6 +83,22 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				Vector2(middle + reach * 0.3, middle - reach * 0.6), colour)
 			_stroke(image, Vector2(middle + reach, middle),
 				Vector2(middle + reach * 0.3, middle + reach * 0.6), colour)
+		Kind.UNDO, Kind.REDO:
+			# The one curved pair. Undo and redo are the two commands whose glyph really
+			# is universal — a word was doing nothing a tooltip does not do better, on
+			# the two widest buttons of the toolbar's narrowest group. Drawn, like every
+			# other icon here, because the tofu incident is not getting a sequel.
+			var mirror: float = -1.0 if kind == Kind.REDO else 1.0
+			var centre := Vector2(middle, middle + reach * 0.15)
+			# Most of a circle, open toward the top left (top right for redo).
+			var start := -0.42 * TAU if kind == Kind.UNDO else -0.08 * TAU
+			var sweep := 0.72 * TAU * mirror
+			_arc(image, centre, reach, start + sweep, start, colour)
+			# The head sits at the open end, pointing along the way the arc was going.
+			var tip := centre + Vector2(cos(start), sin(start)) * reach
+			var tangent := Vector2(sin(start), -cos(start)) * mirror
+			_triangle(image, tip - tangent * reach * 0.1, reach * 0.62,
+				tangent.angle(), colour)
 
 	var texture := ImageTexture.create_from_image(image)
 	_cache[key] = texture
@@ -100,6 +118,19 @@ static func _stroke(image: Image, from: Vector2, to: Vector2, colour: Color) -> 
 				else clampf((point - from).dot(along) / length_squared, 0.0, 1.0)
 			var distance := point.distance_to(from + along * t)
 			_blend(image, x, y, colour, clampf(half + 0.5 - distance, 0.0, 1.0))
+
+
+## An arc, as chained strokes — twelve segments is smooth at these sizes and keeps the
+## soft distance-field edge the strokes already have.
+static func _arc(image: Image, centre: Vector2, radius: float, from_angle: float,
+		to_angle: float, colour: Color) -> void:
+	const SEGMENTS := 12
+	var previous := centre + Vector2(cos(from_angle), sin(from_angle)) * radius
+	for i in SEGMENTS:
+		var angle: float = lerpf(from_angle, to_angle, float(i + 1) / SEGMENTS)
+		var point := centre + Vector2(cos(angle), sin(angle)) * radius
+		_stroke(image, previous, point, colour)
+		previous = point
 
 
 static func _triangle(image: Image, tip_anchor: Vector2, reach: float, rotation: float,

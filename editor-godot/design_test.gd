@@ -172,6 +172,63 @@ func _initialize() -> void:
 	check(Rack.CableLayer.DIM_SHADOW > 0.0,
 		"but keeps a shadow, so it does not lose its thickness twice over")
 
+	# ---- the type scale holds its own rules ------------------------------------------
+	# No operating text below 14px, at any UI scale. The floor is what turns "prefer
+	# spacing and weight over shrinking text" from advice into a property — Compact used
+	# to take the small sizes to 12 and nothing said so.
+	var tokens := {
+		"app title": Design.SIZE_APP_TITLE, "node title": Design.SIZE_NODE_TITLE,
+		"body": Design.SIZE_BODY, "control": Design.SIZE_CONTROL,
+		"tabs": Design.SIZE_TABS, "numeric": Design.SIZE_NUMERIC,
+		"unit": Design.SIZE_UNIT, "secondary": Design.SIZE_SECONDARY,
+		"heading": Design.SIZE_HEADING,
+	}
+	var smallest := 99
+	var smallest_name := ""
+	for size_name in tokens:
+		if tokens[size_name] < smallest:
+			smallest = tokens[size_name]
+			smallest_name = size_name
+	check(smallest >= Design.TYPE_FLOOR,
+		"no size token sits under the 14px floor (smallest: %s at %d)"
+			% [smallest_name, smallest])
+
+	Design.ui_scale = Design.Scale.COMPACT
+	var compact_unit := Design.type(Design.SIZE_UNIT)
+	var compact_title := Design.type(Design.SIZE_APP_TITLE)
+	Design.ui_scale = Design.Scale.COMFORTABLE
+	check(compact_unit >= Design.TYPE_FLOOR,
+		"Compact respects the floor: units hold at %dpx" % compact_unit)
+	check(compact_title < Design.SIZE_APP_TITLE,
+		"while sizes above it still compress (title %d from %d)"
+			% [compact_title, Design.SIZE_APP_TITLE])
+
+	# The ranking, so a future edit cannot quietly flatten it: places are one step under
+	# actions, units one under values, headings one under the titles they sit beside.
+	check(Design.SIZE_TABS < Design.SIZE_CONTROL,
+		"tabs sit one step under toolbar controls")
+	check(Design.SIZE_UNIT < Design.SIZE_NUMERIC,
+		"units sit one step under the values they annotate")
+	check(Design.SIZE_HEADING < Design.SIZE_NODE_TITLE,
+		"section headings stay under node titles")
+
+	# Three weights and only these three: no 300 — light is the first thing a projector
+	# eats — and nothing reaches for 700, so real emphasis still has somewhere to go.
+	check(Design.WEIGHT_REGULAR == 400 and Design.WEIGHT_MEDIUM == 500
+		and Design.WEIGHT_SEMIBOLD == 600,
+		"the weight tokens are 400, 500 and 600")
+
+	# The unit face is genuinely one weight down from the value face, measured the same
+	# way the StringName-tag bug was caught: by width, because a weight that does not
+	# change the metrics is a weight that is not being applied.
+	var value_width: float = Design.numeric_font().get_string_size(
+		"0123456789 Hz", HORIZONTAL_ALIGNMENT_LEFT, -1, 32).x
+	var unit_width: float = Design.unit_font().get_string_size(
+		"0123456789 Hz", HORIZONTAL_ALIGNMENT_LEFT, -1, 32).x
+	check(unit_width < value_width,
+		"the unit face is lighter than the value face (%.0f against %.0f)"
+			% [unit_width, value_width])
+
 	# ---- the ink levels are actually distinguishable from one another ----------------
 	# Four names for the same grey would be a system on paper only.
 	# Bright and normal are deliberately one value now, differing by weight instead:
@@ -225,7 +282,7 @@ func _initialize() -> void:
 	var sizes := []
 	for preset in Design.SCALE_FACTORS.size():
 		Design.ui_scale = preset
-		sizes.append(Design.scale(Design.SIZE_BODY))
+		sizes.append(Design.type(Design.SIZE_BODY))
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	check(sizes[0] < sizes[1] and sizes[1] < sizes[2] and sizes[2] < sizes[3],
 		"the UI scale presets step up (%s)" % str(sizes))

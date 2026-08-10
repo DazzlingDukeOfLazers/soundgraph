@@ -40,7 +40,7 @@ func _ready() -> void:
 	inset.add_child(column)
 
 	_summary = Label.new()
-	_summary.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	_summary.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 	_summary.add_theme_color_override("font_color", Design.INK_SECOND)
 	column.add_child(_summary)
 
@@ -52,7 +52,7 @@ func _ready() -> void:
 	# is that somebody can reach it with Tab and drive it with the arrow keys.
 	_tree.focus_mode = Control.FOCUS_ALL
 	_tree.add_theme_font_override("font", Design.font(Design.WEIGHT_REGULAR))
-	_tree.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_BODY))
+	_tree.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
 	_tree.add_theme_color_override("font_color", Design.INK_NORMAL)
 	_tree.item_selected.connect(_on_item_selected)
 	column.add_child(_tree)

@@ -38,12 +38,10 @@ const ROW_STEP := 200.0
 # tiny hit targets, cryptic abbreviations" — which the first pass paid lip service to.
 # ---------------------------------------------------------------------------------
 
-const FONT_PATH := "res://fonts/AtkinsonHyperlegibleNext.ttf"
-const FONT_WEIGHT := 700          # bold
-const FONT_SIZE := 18             # body
-const FONT_SIZE_SMALL := 15       # captions, port labels, parameter names
-const FONT_SIZE_HEADING := 15     # section headings, letterspaced and upper case
-const FONT_SIZE_TITLE := 24
+# Type lives in Design (design.gd) — sizes, weights and the 14px floor. The constants
+# that used to sit here were a second copy from before that file existed, and one of
+# them was still quietly styling the search hint: exactly the drift a single source of
+# truth is supposed to make impossible, hiding in the file that preached it.
 
 ## High contrast, and warmer than a pure grey so long sessions are easier on the eye.
 const INK := Color(0.96, 0.96, 0.97)
@@ -198,6 +196,7 @@ var _importing_module := false
 ## which cannot drift out of step with the operations the way hand-written inverses do.
 var undo_redo := UndoRedo.new()
 var _pending_snapshot: Dictionary = {}
+var toolbar: Control
 var undo_button: Button
 var redo_button: Button
 
@@ -252,7 +251,7 @@ func _apply_theme() -> void:
 	Design.unknown_items.clear()
 	var editor_theme := Theme.new()
 	editor_theme.default_font = Design.font(Design.WEIGHT_REGULAR)
-	editor_theme.default_font_size = Design.scale(Design.SIZE_BODY)
+	editor_theme.default_font_size = Design.type(Design.SIZE_BODY)
 
 	# ---- type by role ---------------------------------------------------------------
 	# Regular for labels, Medium for anything you operate. That single distinction does
@@ -271,7 +270,9 @@ func _apply_theme() -> void:
 		Design.INK_NORMAL)
 	Design.set_type(editor_theme, "ItemList", Design.WEIGHT_REGULAR, Design.SIZE_BODY,
 		Design.INK_NORMAL)
-	Design.set_type(editor_theme, "TabBar", Design.WEIGHT_MEDIUM, Design.SIZE_CONTROL,
+	# One step under the toolbar. Tabs name places and buttons do things, and the type
+	# scale keeps that ranking even for somebody reading only sizes.
+	Design.set_type(editor_theme, "TabBar", Design.WEIGHT_MEDIUM, Design.SIZE_TABS,
 		Design.INK_SECOND, "font_unselected_color")
 	# Tabs, which had never been styled and were showing Godot's defaults. Invisible
 	# against four dark palettes and a grey slab across a white one.
@@ -446,7 +447,8 @@ func _build_ui() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(root)
 
-	root.add_child(_build_toolbar())
+	toolbar = _build_toolbar()
+	root.add_child(toolbar)
 
 	split = HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -613,6 +615,14 @@ func _build_ui() -> void:
 # focus because typing into them is the point.
 func _defocus(control: Control) -> Control:
 	control.focus_mode = Control.FOCUS_NONE
+	# Every control that comes through here is a free-standing target in the chrome, so
+	# this is also where the hit-area floor lives. The visible button can be whatever the
+	# type and padding make it; the thing under the finger aims for ~44px regardless,
+	# which is the difference between a toolbar and a test of aim. Node-row controls are
+	# deliberately not covered — they trade target size for density, and get their own
+	# treatment (the enlarged port targets) where it matters most.
+	control.custom_minimum_size.y = maxf(control.custom_minimum_size.y,
+		Design.scale(Design.HIT_TARGET))
 	return control
 
 
@@ -653,7 +663,7 @@ func _build_toolbar() -> Control:
 	var title := Label.new()
 	title.text = "SoundGraph"
 	title.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
-	title.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_APP_TITLE))
+	title.add_theme_font_size_override("font_size", Design.type(Design.SIZE_APP_TITLE))
 	title.add_theme_color_override("font_color", Design.INK_BRIGHT)
 	identity.add_child(title)
 
@@ -661,7 +671,7 @@ func _build_toolbar() -> Control:
 	document_label.text = document_name
 	document_label.tooltip_text = document_name
 	document_label.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_SECONDARY))
+		Design.type(Design.SIZE_SECONDARY))
 	document_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	# Trimmed rather than allowed to set the width of the toolbar.
 	#
@@ -748,15 +758,20 @@ func _build_toolbar() -> Control:
 	# ---- edit --------------------------------------------------------------------
 	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
 	# time user does not know they have.
+	# Icons, exceptionally. The rule since the tofu incident has been words over glyphs,
+	# because almost no glyph reads correctly without its tooltip — but undo and redo are
+	# the two commands whose curved arrows genuinely are universal, the icons are drawn
+	# rather than hoped for in a font, and these were the two widest buttons in the bar's
+	# narrowest group. The tooltips still say the word and the shortcut.
 	var edit_group := _toolbar_group(bar)
 	undo_button = Button.new()
-	undo_button.text = "Undo"
+	undo_button.icon = _icon(Icons.Kind.UNDO, Design.INK_NORMAL)
 	undo_button.disabled = true
 	undo_button.pressed.connect(_undo)
 	edit_group.add_child(_defocus(undo_button))
 
 	redo_button = Button.new()
-	redo_button.text = "Redo"
+	redo_button.icon = _icon(Icons.Kind.REDO, Design.INK_NORMAL)
 	redo_button.disabled = true
 	redo_button.pressed.connect(_redo)
 	edit_group.add_child(_defocus(redo_button))
@@ -837,7 +852,7 @@ func _build_toolbar() -> Control:
 	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	message_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	message_label.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_SECONDARY))
+		Design.type(Design.SIZE_SECONDARY))
 	message_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	bar.add_child(message_label)
 	var performance := _toolbar_group(bar)
@@ -895,7 +910,7 @@ func _build_toolbar() -> Control:
 	status_label.text = "starting…"
 	status_label.add_theme_font_override("font", Design.numeric_font())
 	status_label.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_SECONDARY))
+		Design.type(Design.SIZE_SECONDARY))
 	status_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	status_group.add_child(status_label)
@@ -1148,7 +1163,7 @@ func _build_side_panel() -> Control:
 	# so the panel read as urgent when nothing was wrong.
 	health_label = Label.new()
 	health_label.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_SECONDARY))
+		Design.type(Design.SIZE_SECONDARY))
 	panel.add_child(health_label)
 
 	diagnostics_heading = _section_heading("Problems")
@@ -1249,7 +1264,7 @@ func _fill_node_context(node_id: String) -> void:
 	var title := Label.new()
 	title.text = node_id
 	title.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
-	title.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NODE_TITLE))
+	title.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NODE_TITLE))
 	title.add_theme_color_override("font_color", Design.INK_BRIGHT)
 	context_panel.add_child(title)
 	context_panel.add_child(_value("%s · %s"
@@ -1258,7 +1273,7 @@ func _fill_node_context(node_id: String) -> void:
 	var summary := Label.new()
 	summary.text = str(descriptor.get("summary", ""))
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	summary.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	summary.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 	summary.add_theme_color_override("font_color", Design.INK_NORMAL)
 	context_panel.add_child(summary)
 
@@ -1277,7 +1292,7 @@ func _stage_chip(node_id: String) -> Button:
 	chip.text = node_id
 	chip.tooltip_text = "Select and centre %s" % node_id
 	chip.add_theme_font_override("font", Design.numeric_font())
-	chip.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	chip.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 	chip.add_theme_stylebox_override("normal", Design.padded_panel(
 		Design.Surface.RAISED, Design.SPACE_S, Design.SPACE_XS, Design.RADIUS_BUTTON))
 	chip.add_theme_stylebox_override("hover", Design.padded_panel(
@@ -1308,7 +1323,7 @@ func _port_row(node_id: String, port: Dictionary) -> Control:
 	row.text = str(port["name"]) + ("  (%s)" % unit if unit != "" else "")
 	row.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	row.tooltip_text = str(port.get("doc", ""))
-	row.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	row.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 	row.pressed.connect(func() -> void:
 		inspecting = {"node": node_id, "port": str(port["name"])})
 	return _defocus(row)
@@ -1318,7 +1333,7 @@ func _field(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
-	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 	label.add_theme_color_override("font_color", Design.INK_SECOND)
 	return label
 
@@ -1327,7 +1342,7 @@ func _value(text: String, colour: Color = Design.INK_NORMAL) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_BODY))
+	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
 	label.add_theme_color_override("font_color", colour)
 	return label
 
@@ -1337,7 +1352,7 @@ func _numeric(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_override("font", Design.numeric_font())
-	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NUMERIC))
+	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NUMERIC))
 	label.add_theme_color_override("font_color", Design.INK_NORMAL)
 	return label
 
@@ -1345,9 +1360,9 @@ func _numeric(text: String) -> Label:
 func _section_heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text.to_upper()
-	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	label.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
 	label.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_HEADING))
+		Design.type(Design.SIZE_HEADING))
 	label.add_theme_color_override("font_color", Design.INK_SECOND)
 	return label
 
@@ -1659,8 +1674,11 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 		if label == null:
 			continue
 		label.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
-		label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NODE_TITLE))
+		label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NODE_TITLE))
 		label.add_theme_color_override("font_color", Design.INK_BRIGHT)
+		# Findable later: the counter-scaling that keeps titles legible when zoomed out
+		# needs this label back without walking the titlebar again on every wheel click.
+		widget.set_meta("title_label", label)
 		break
 
 	var category := str(descriptor.get("category", ""))
@@ -1669,7 +1687,10 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 	var tag := Label.new()
 	tag.text = category.to_upper()
 	tag.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
-	tag.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_HEADING))
+	# Secondary, not heading. The tag shares a line with the node title and is the
+	# quieter of the two on purpose; when SIZE_HEADING grew to proper heading size the
+	# tag could not follow without arguing with the title six pixels to its left.
+	tag.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 	tag.add_theme_color_override("font_color", Design.INK_SECOND)
 	tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	# Right-aligned and last, which reserves that end of the header for node actions
@@ -1758,7 +1779,12 @@ func _unit_label(unit: String) -> Label:
 	var label := Label.new()
 	label.text = unit
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	# The numeric family, because a unit belongs to the number it annotates — "440.0 Hz"
+	# is one phrase and should not change face halfway through. One size and one weight
+	# down from the value, which is the whole of its styling: rank carried by type, not
+	# by dimming the ink further.
+	label.add_theme_font_override("font", Design.unit_font())
+	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_UNIT))
 	label.add_theme_color_override("font_color", Design.INK_SECOND)
 	label.set_meta("port_label", true)
 	return label
@@ -1803,7 +1829,7 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 	toggle.icon = _icon(Icons.Kind.CARET_RIGHT, Design.INK_SECOND,
 		Design.SIZE_SECONDARY)
 	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	toggle.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
+	toggle.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 	toggle.add_theme_color_override("font_color", Design.INK_SECOND)
 	toggle.add_theme_color_override("font_hover_color", Design.INK_NORMAL)
 	toggle.add_theme_color_override("font_pressed_color", Design.INK_SECOND)
@@ -1829,13 +1855,18 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	var node_id: String = node["id"]
 	var current: float = float(node.get("parameters", {}).get(name, parameter["default"]))
 
+	# Full body size and medium weight, the same rank as the value it names. These were a
+	# size down, secondary ink and regular — three separate ways of saying "small print"
+	# stacked on the words somebody reads *every time* they reach for a knob. Parameter
+	# names are operating text; the unit is the metadata here, and it is already smaller.
 	var label := Label.new()
 	label.text = name
 	label.custom_minimum_size.x = Design.scale(96)
 	label.tooltip_text = str(parameter.get("doc", ""))
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_SECONDARY))
-	label.add_theme_color_override("font_color", Design.INK_SECOND)
+	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+	label.add_theme_color_override("font_color", Design.INK_NORMAL)
 	row.add_child(label)
 
 	if parameter.has("enum"):
@@ -2246,7 +2277,7 @@ func _build_keyboard_bar() -> Control:
 	range_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	range_label.add_theme_font_override("font", Design.numeric_font())
 	range_label.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_NUMERIC))
+		Design.type(Design.SIZE_NUMERIC))
 	range_label.add_theme_color_override("font_color", Design.INK_SECOND)
 
 	var make := func(text: String, tooltip: String, action: Callable) -> Button:
@@ -2382,8 +2413,8 @@ func _build_search_popup() -> void:
 
 	search_hint = Label.new()
 	search_hint.text = "Enter adds the top result. The dialog stays open so you can add several."
-	search_hint.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
-	search_hint.modulate = INK_DIM
+	search_hint.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+	search_hint.add_theme_color_override("font_color", Design.INK_SECOND)
 	box.add_child(search_hint)
 
 	search_popup.add_child(box)
@@ -2406,7 +2437,7 @@ func _build_result_row(type_name: String) -> Control:
 
 	var summary := Label.new()
 	summary.text = descriptor.get("summary", "")
-	summary.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+	summary.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 	summary.modulate = INK_DIM
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	summary.custom_minimum_size.x = 380
@@ -2766,6 +2797,12 @@ func _refresh_undo_buttons() -> void:
 		return
 	undo_button.disabled = not undo_redo.has_undo()
 	redo_button.disabled = not undo_redo.has_redo()
+	# A disabled text button dims itself; a disabled icon does not, so an icon-only
+	# button stays looking pressable unless the icon is repainted to match.
+	undo_button.icon = _icon(Icons.Kind.UNDO,
+		Design.INK_DISABLED if undo_button.disabled else Design.INK_NORMAL)
+	redo_button.icon = _icon(Icons.Kind.REDO,
+		Design.INK_DISABLED if redo_button.disabled else Design.INK_NORMAL)
 	undo_button.tooltip_text = "Undo %s (Ctrl+Z)" % undo_redo.get_current_action_name() \
 		if undo_redo.has_undo() else "Nothing to undo"
 	redo_button.tooltip_text = "Redo (Ctrl+Shift+Z)"
@@ -2890,7 +2927,7 @@ func _show_diagnostics(diagnostics: Array) -> void:
 				to_highlight.append(node_id)
 			var where := Label.new()
 			where.text = "  " + " → ".join(diagnostic["nodes"])
-			where.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+			where.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 			where.modulate = INK_DIM
 			card.add_child(where)
 
@@ -2898,7 +2935,7 @@ func _show_diagnostics(diagnostics: Array) -> void:
 			var suggestion := Label.new()
 			suggestion.text = diagnostic["suggestion"]
 			suggestion.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			suggestion.add_theme_font_size_override("font_size", FONT_SIZE_SMALL)
+			suggestion.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 			suggestion.modulate = ACCENT
 			card.add_child(suggestion)
 
@@ -2968,7 +3005,13 @@ func _reachable_from(node_id: String, downstream: bool) -> Array:
 ## row — and the port — exactly where it was.
 func _apply_detail(level: int) -> void:
 	var show_parameters := level == PatchGraph.Detail.FULL
-	var show_port_names := level != PatchGraph.Detail.TOPOLOGY
+	# Port names hide with the parameters now, not two bands later. They are the same
+	# 16px as the parameter text, so at any zoom where one has fallen under the type
+	# floor the other has too — showing them into REDUCED meant nine-pixel smudges
+	# beside every jack, which is decoration pretending to be information. Below FULL
+	# a node says what it is (the title overlay holds that at a readable size) and
+	# shows where its jacks are; what each jack is called comes back with the zoom.
+	var show_port_names := level == PatchGraph.Detail.FULL
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
 		for child in widget.get_children():

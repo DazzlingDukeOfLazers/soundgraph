@@ -1037,7 +1037,7 @@ class RackModule extends Control:
 			var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
 			if label_font == null:
 				label_font = font
-			var label_size := Design.scale(Design.SIZE_SECONDARY)
+			var label_size := Design.type(Design.SIZE_SECONDARY)
 			var column := Rack.JACK_ROW_HEIGHT - 4.0
 			var width: float = minf(label_font.get_string_size(text,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, label_size).x, column)
@@ -1159,7 +1159,7 @@ class Knob extends Control:
 		# to read and what changes while you watch. At 11px it was the weakest text in
 		# the application.
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
-		var label_size := Design.scale(Design.SIZE_SECONDARY)
+		var label_size := Design.type(Design.SIZE_SECONDARY)
 		var name_text := str(descriptor["name"])
 		var name_width := label_font.get_string_size(name_text,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, label_size).x
@@ -1170,7 +1170,7 @@ class Knob extends Control:
 			var options: Array = descriptor["enum"]
 			value_text = str(options[clampi(int(value()), 0, options.size() - 1)])
 		var value_font: Font = Design.numeric_font()
-		var value_size := Design.scale(Design.SIZE_NUMERIC)
+		var value_size := Design.type(Design.SIZE_NUMERIC)
 		var value_width := value_font.get_string_size(value_text,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, value_size).x
 		draw_string(value_font, Vector2((size.x - value_width) * 0.5, size.y - 2.0),

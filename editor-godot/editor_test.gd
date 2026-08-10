@@ -25,6 +25,27 @@ func _tree_text(row: TreeItem) -> String:
 	return collected
 
 
+## Every text-bearing control under `node` whose effective font size is below the floor.
+## Drawn text (the rack, the scope) is not a Control and is covered by its own checks.
+func _collect_small_text(node: Node, found: Array) -> void:
+	var control := node as Control
+	if control != null and (control is Label or control is BaseButton or control is LineEdit
+			or control is TextEdit or control is TabBar or control is Tree
+			or control is ItemList or control is RichTextLabel):
+		var size := control.get_theme_font_size("font_size")
+		if size < Design.TYPE_FLOOR:
+			found.append("%s %s=%d" % [control.get_class(), control.name, size])
+	for child in node.get_children():
+		_collect_small_text(child, found)
+
+
+func _collect_buttons(node: Node, found: Array) -> void:
+	if node is BaseButton:
+		found.append(node)
+	for child in node.get_children():
+		_collect_buttons(child, found)
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -1321,13 +1342,13 @@ func _initialize() -> void:
 	# ---- the interface can be resized ------------------------------------------------
 	# Not the graph zoom. Zooming the canvas to compensate for small labels makes the
 	# patch smaller while making the text bigger, which is the opposite of the ask.
-	var body_at_comfortable := Design.scale(Design.SIZE_BODY)
+	var body_at_comfortable := Design.type(Design.SIZE_BODY)
 	main._use_ui_scale(Design.Scale.XL)
 	await process_frame
 	await process_frame
-	check(Design.scale(Design.SIZE_BODY) > body_at_comfortable,
+	check(Design.type(Design.SIZE_BODY) > body_at_comfortable,
 		"XL makes the text bigger (%d from %d)"
-			% [Design.scale(Design.SIZE_BODY), body_at_comfortable])
+			% [Design.type(Design.SIZE_BODY), body_at_comfortable])
 
 	# The whole interface, not only the type — padding, ports and hit areas move with it,
 	# which is the difference between a scale setting and a font-size setting.
@@ -1615,6 +1636,34 @@ func _initialize() -> void:
 	check(needed <= 1280.0,
 		"the editor fits a 1280px window (needs %.0f)" % needed)
 
+	# ---- no operating text below the floor, measured on the built editor -------------
+	# The token check in design_test proves the scale is sound; this proves the editor
+	# uses it. An override typed as a literal, or a legacy constant surviving in a
+	# corner, passes the token check and ships 12px text anyway — the search hint did
+	# exactly that, styled by a constant from before the design system existed, in the
+	# file that preached single sources of truth.
+	var undersized := []
+	_collect_small_text(main, undersized)
+	check(undersized.size() == 0,
+		"every text control is at or above the 14px floor (%s)"
+			% (", ".join(undersized) if undersized.size() > 0 else "all clear"))
+
+	# ---- free-standing controls offer a real target -----------------------------------
+	# ~44px under the finger whatever the visible control measures. Only the chrome:
+	# node rows trade target size for density on purpose and have the enlarged ports.
+	var small_targets := []
+	var bar_controls: Array = []
+	_collect_buttons(main.toolbar if "toolbar" in main else main, bar_controls)
+	for entry in bar_controls:
+		var control := entry as Control
+		if control.get_combined_minimum_size().y < Design.scale(Design.HIT_TARGET) - 0.5:
+			small_targets.append("%s(%.0f)" % [str(control.get("text")),
+				control.get_combined_minimum_size().y])
+	check(bar_controls.size() >= 8 and small_targets.size() == 0,
+		"the %d toolbar controls all reach the 44px hit target (%s)"
+			% [bar_controls.size(),
+				", ".join(small_targets) if small_targets.size() > 0 else "all of them"])
+
 	# And the inspector is actually inside it, which is the thing that went wrong
 	# rather than the cause of it.
 	var inspector: Control = main.scope.get_parent()
@@ -1657,9 +1706,9 @@ func _initialize() -> void:
 		"node titles are styled directly, since GraphNode has no title font in its theme")
 	if title_label != null:
 		var title_size: int = title_label.get_theme_font_size("font_size")
-		check(title_size > Design.scale(Design.SIZE_BODY),
+		check(title_size > Design.type(Design.SIZE_BODY),
 			"and are larger than body text (%d vs %d)"
-				% [title_size, Design.scale(Design.SIZE_BODY)])
+				% [title_size, Design.type(Design.SIZE_BODY)])
 
 	# ---- values carry their units -------------------------------------------------
 	# A patch stores seconds and hertz; a person should not have to convert in their

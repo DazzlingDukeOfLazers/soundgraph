@@ -80,7 +80,7 @@ func _ready() -> void:
 	_shortcuts.text = "A D  move      Space  jump ×2      X  shoot      R  restart"
 	_shortcuts.add_theme_font_override("font", Design.numeric_font())
 	_shortcuts.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_SECONDARY))
+		Design.type(Design.SIZE_SECONDARY))
 	_shortcuts.add_theme_color_override("font_color", Design.INK_SECOND)
 	strip.add_child(_shortcuts)
 
@@ -90,7 +90,7 @@ func _ready() -> void:
 	controls.flat = true
 	controls.focus_mode = Control.FOCUS_NONE
 	controls.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_SECONDARY))
+		Design.type(Design.SIZE_SECONDARY))
 	controls.add_theme_color_override("font_color", Design.ACCENT)
 	controls.pressed.connect(_show_controls)
 	strip.add_child(controls)
@@ -117,7 +117,7 @@ func _ready() -> void:
 	_status = Label.new()
 	_status.text = "open this tab to load the sounds"
 	_status.add_theme_font_size_override("font_size",
-		Design.scale(Design.SIZE_SECONDARY))
+		Design.type(Design.SIZE_SECONDARY))
 	_status.add_theme_color_override("font_color", Design.INK_SECOND)
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_status.custom_minimum_size.x = Design.scale(220)
@@ -235,7 +235,7 @@ func _show_controls() -> void:
 			label.text = line
 			label.add_theme_font_override("font", Design.numeric_font())
 			label.add_theme_font_size_override("font_size",
-				Design.scale(Design.SIZE_SECONDARY))
+				Design.type(Design.SIZE_SECONDARY))
 			body.add_child(label)
 		var note := Label.new()
 		note.text = "Every one is an ordinary patch. Open it in the Graph tab, "

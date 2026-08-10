@@ -158,7 +158,7 @@ func _draw() -> void:
 		if note % 12 == 0:
 			draw_string(font, rect.position + Vector2(4.0, size.y - 6.0),
 				"C%d" % (note / 12 - 1), HORIZONTAL_ALIGNMENT_LEFT, -1,
-					Design.scale(Design.SIZE_SECONDARY), LABEL)
+					Design.type(Design.SIZE_SECONDARY), LABEL)
 		if key_labels.has(note):
 			var letter: String = key_labels[note]
 			var width := font.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
