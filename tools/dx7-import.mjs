@@ -31,14 +31,13 @@
 //                output, exact at the reference so nothing baked moved; the
 //                algorithm 4/6 multi-op feedback loops run open, exactly as the
 //                oracle runs them (its own todo — the real chip's per-sample
-//                cross-operator path is representable in neither engine); tremolo
-//                and velocity reach the feedback loop through the sine's feedback
-//                input, which multiplies the parameter
+//                cross-operator path is representable in neither engine); the
+//                feedback loop's bite follows the envelope, tremolo and velocity
+//                through the sine's feedback input (the operator module's fbscale
+//                multiplies them into one signal)
 //   pending    — feedback 7 on a near-full-level op period-doubles in msfa's
 //                fixed-point loop where our float loop stays period-1 (see
-//                dx7-index-check.mjs); the feedback parameter holds the
-//                envelope's *peak* — on the chip the loop's bite decays with the
-//                envelope, an approximation as old as the OPL import
+//                dx7-index-check.mjs)
 //   measured   — the rate->seconds curves, against the vendored msfa oracle
 //   by ear     — the modulation index scale (INDEX_FULL)
 // Every voice records what was dropped in its own metadata.
@@ -474,6 +473,12 @@ function buildPatch(voice, bankName, voiceIndex) {
     nodes.push({ id: `${id}_vca`, type: 'Multiply', parameters: {} });
     wire(`${id}_osc`, 'out', `${id}_vca`, 'a');
     wire(`${id}_env`, 'out', `${id}_vca`, 'b');
+    // The envelope scales the feedback bite (see OPERATOR_MODULE's fbscale);
+    // emitted for every op so flat and modular stay structurally identical —
+    // inert wherever the feedback parameter is 0.
+    nodes.push({ id: `${id}_fbscale`, type: 'Multiply', parameters: {} });
+    wire(`${id}_env`, 'out', `${id}_fbscale`, 'a');
+    wire(`${id}_fbscale`, 'out', `${id}_osc`, 'feedback');
   }
 
   const liveOps = voice.ops.filter((o) => live.has(o.op));
@@ -635,11 +640,9 @@ function buildPatch(voice, bankName, voiceIndex) {
   const opOut = (n) => postVca.get(n) ?? `op${n}_vca`;
 
   // On the chip the feedback displacement is the op's *gain-scaled* output, so
-  // whatever moves the feedback op's level moves the bite of its loop. The sine's
-  // feedback input multiplies the parameter, so the same tremolo factor and
-  // velocity curve that scale the op's output scale its self-modulation too. The
-  // envelope still does not reach the loop — the parameter holds the envelope's
-  // peak, an approximation as old as the OPL import — which the header records.
+  // whatever moves the feedback op's level moves the bite of its loop. The
+  // envelope already rides fbscale's a input; tremolo and velocity multiply in
+  // through its b input, which the operator module declares as fb_mod.
   if (topology.feedback > 0 && voice.feedbackLevel > 0) {
     const factors = [];
     if (tremolo.has(topology.feedback)) {
@@ -648,15 +651,15 @@ function buildPatch(voice, bankName, voiceIndex) {
     if (velCurveOf.has(topology.feedback)) {
       factors.push(velCurveOf.get(topology.feedback));
     }
-    const oscId = `op${topology.feedback}_osc`;
+    const scaleId = `op${topology.feedback}_fbscale`;
     if (factors.length === 2) {
       nodes.push({ id: `op${topology.feedback}_fb_mod`, type: 'Multiply',
         parameters: {} });
       wire(factors[0], 'out', `op${topology.feedback}_fb_mod`, 'a');
       wire(factors[1], 'out', `op${topology.feedback}_fb_mod`, 'b');
-      wire(`op${topology.feedback}_fb_mod`, 'out', oscId, 'feedback');
+      wire(`op${topology.feedback}_fb_mod`, 'out', scaleId, 'b');
     } else if (factors.length === 1) {
-      wire(factors[0], 'out', oscId, 'feedback');
+      wire(factors[0], 'out', scaleId, 'b');
     }
   }
 
@@ -774,11 +777,18 @@ const OPERATOR_MODULE = {
     { id: 'osc', type: 'SineOscillator', parameters: {} },
     { id: 'env', type: 'ADSR', parameters: {} },
     { id: 'vca', type: 'Multiply', parameters: {} },
+    // The chip's feedback bite is the op's *gain-scaled* output, so the envelope
+    // scales the oscillator's feedback here — env times fb_mod (which falls back
+    // to factor 1 while unconnected). On the five ops per voice with feedback
+    // parameter 0 this whole path is inert by the oscillator's own gate.
+    { id: 'fbscale', type: 'Multiply', parameters: {} },
   ],
   connections: [
     { from: { node: 'pitch', port: 'out' }, to: { node: 'osc', port: 'frequency' } },
     { from: { node: 'osc', port: 'out' }, to: { node: 'vca', port: 'a' } },
     { from: { node: 'env', port: 'out' }, to: { node: 'vca', port: 'b' } },
+    { from: { node: 'env', port: 'out' }, to: { node: 'fbscale', port: 'a' } },
+    { from: { node: 'fbscale', port: 'out' }, to: { node: 'osc', port: 'feedback' } },
   ],
   inputs: [
     { name: 'note', node: 'pitch', port: 'a' },
@@ -787,8 +797,9 @@ const OPERATOR_MODULE = {
     { name: 'fm', node: 'osc', port: 'fm' },
     // Named fb_mod, not feedback: the module already exports a *parameter* called
     // feedback, and one word meaning two things on one surface is how patches get
-    // miswired.
-    { name: 'fb_mod', node: 'osc', port: 'feedback' },
+    // miswired. It lands on fbscale's b input so external factors (tremolo,
+    // velocity) multiply with the envelope rather than displacing it.
+    { name: 'fb_mod', node: 'fbscale', port: 'b' },
   ],
   outputs: [{ name: 'out', node: 'vca', port: 'out' }],
   parameters: [
@@ -808,7 +819,8 @@ function modularize(flat) {
     const m = /^op(\d)_pitch$/.exec(node.id);
     if (!m) continue;
     const op = m[1];
-    if (byId.has(`op${op}_osc`) && byId.has(`op${op}_env`) && byId.has(`op${op}_vca`)) {
+    if (byId.has(`op${op}_osc`) && byId.has(`op${op}_env`) && byId.has(`op${op}_vca`)
+        && byId.has(`op${op}_fbscale`)) {
       clusters.push(op);
     }
   }
@@ -816,7 +828,9 @@ function modularize(flat) {
 
   const inner = new Set();
   for (const op of clusters) {
-    for (const part of ['pitch', 'osc', 'env', 'vca']) inner.add(`op${op}_${part}`);
+    for (const part of ['pitch', 'osc', 'env', 'vca', 'fbscale']) {
+      inner.add(`op${op}_${part}`);
+    }
   }
 
   const nodes = [];
@@ -844,7 +858,7 @@ function modularize(flat) {
   }
 
   const port = (id, fallbackPort) => {
-    const m = /^op(\d)_(pitch|osc|env|vca)$/.exec(id);
+    const m = /^op(\d)_(pitch|osc|env|vca|fbscale)$/.exec(id);
     if (!m || !clusters.includes(m[1])) return null;
     return { instance: `op${m[1]}`, part: m[2] };
   };
@@ -862,13 +876,13 @@ function modularize(flat) {
       rewritten.from = { node: from.instance, port: 'out' };
     }
     if (toInside) {
-      // The oscillator has three modulation inputs and all cross the boundary now:
-      // pm carries operator FM, fm the voice's pitch modulation in octaves, and
-      // feedback the loop's amplitude scaling — declared as fb_mod because the
-      // module's parameter list already owns the word "feedback".
+      // Boundary ports: pm carries operator FM, fm the voice's pitch modulation
+      // in octaves, and fbscale's b input the loop's external amplitude factors —
+      // declared as fb_mod because the module's parameter list already owns the
+      // word "feedback".
       const name = to.part === 'pitch' ? 'note'
         : to.part === 'env' ? 'gate'
-        : connection.to.port === 'feedback' ? 'fb_mod' : connection.to.port;
+        : to.part === 'fbscale' ? 'fb_mod' : connection.to.port;
       rewritten.to = { node: to.instance, port: name };
     }
     connections.push(rewritten);

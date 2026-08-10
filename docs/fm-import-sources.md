@@ -93,9 +93,15 @@ made audible.
   feedback input that multiplies its feedback parameter (bit-identical when
   unconnected — goldens hold on native, WASM and the ESP32), the operator module
   declares it as fb_mod, and the FBVEL case holds the velocity half to the oracle
-  at 0.32 dB (tremolo rides the identical wire but has no oracle). Pending:
-  deep-feedback (fb 7 near full level) chaos parity, and the loop's bite decaying
-  with the envelope (the parameter still holds the envelope's peak).
+  at 0.32 dB (tremolo rides the identical wire but has no oracle). The envelope
+  reaches the loop too: the operator module's fbscale multiplies env with fb_mod
+  into the feedback input, so the bite decays as the note does — FBENV holds it to
+  the oracle at 0.05 dB, with its sustain level chosen where msfa's odd-bit
+  envelope rounding cancels (the receipt is in the case comment). The grown
+  patches also outgrew the ESP32's 24KB NVS (a blob replacement holds both copies
+  briefly); the custom partition table gives NVS 64KB. Pending: deep-feedback
+  (fb 7 near full level) chaos parity — the last DX7 gap, an engine-arithmetic
+  divergence rather than missing behaviour.
 
 ### 3. OPN2 / YM2612 — Sega Genesis instruments (4-operator)
 

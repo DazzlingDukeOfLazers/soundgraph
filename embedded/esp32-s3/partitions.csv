@@ -1,0 +1,10 @@
+# The stock "single app, large" table gives NVS 0x6000 (24KB), and NVS replaces a
+# blob by writing the new one before erasing the old — so the stored patch can
+# never grow past roughly a third of the partition. The DX7 voices crossed that
+# line when their feedback scaling added six nodes each (13.5KB of JSON failed to
+# re-store over its 13.1KB predecessor). 64KB holds both copies of any patch the
+# 2048-node expansion cap can produce, with room for the phy data unchanged.
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     ,        0x10000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        1500K,

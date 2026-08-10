@@ -47,9 +47,9 @@ const TOLERANCE_DB = 2.0;
 
 const FLAT = { rates: [99, 99, 99, 99], levels: [99, 99, 99, 0] };
 
-function packOperator(bytes, at, coarse, level, vel) {
+function packOperator(bytes, at, coarse, level, vel, envLevels) {
   bytes.set(FLAT.rates, at);
-  bytes.set(FLAT.levels, at + 4);
+  bytes.set(envLevels ?? FLAT.levels, at + 4);
   bytes[at + 8] = 39;              // break point C3, depths 0 — no key scaling
   bytes[at + 12] = 7 << 3;         // detune centred, rate scaling 0
   bytes[at + 13] = vel << 2;       // velocity sensitivity, amp-mod 0
@@ -61,8 +61,8 @@ function packVoice(bank, index, { algorithm, feedback, ops, name, lfo }) {
   const voice = bank.subarray(index * 128, (index + 1) * 128);
   for (let slot = 0; slot < 6; ++slot) {
     const op = 6 - slot;
-    const { coarse = 1, level = 0, vel = 0 } = ops[op] ?? {};
-    packOperator(voice, slot * 17, coarse, level, vel);
+    const { coarse = 1, level = 0, vel = 0, envLevels } = ops[op] ?? {};
+    packOperator(voice, slot * 17, coarse, level, vel, envLevels);
   }
   voice.fill(50, 102, 110);        // pitch EG neutral
   voice[110] = algorithm;
@@ -158,6 +158,21 @@ cases.push({ algorithm: 5, feedback: 7, name: 'LOOP6',
 // error the VEL case already bounds.
 cases.push({ algorithm: 31, feedback: 7, name: 'FBVEL', velocity: 50,
   ops: { 6: { coarse: 1, level: FEEDBACK_CARRIER_LEVEL, vel: 7 } } });
+
+// The envelope reaching the feedback loop, held spectrally: a feedback-7 carrier
+// whose envelope *sustains below its peak* (L3 77 against L1 99). On the chip the
+// loop displaces by the gain-scaled output, so the bite thins as the envelope
+// falls; the import's fbscale multiplies the envelope into the sine's feedback
+// input to match, and the sustain window here measures exactly that thinned bite.
+// Without the wire the ladder renders at peak bite (0.5 cycles instead of 0.074)
+// and misses by tens of dB. Sustain level 77 on purpose: msfa's envelope target
+// is (scaleoutlevel>>1)<<6, which drops the odd bit — the peak's 127 loses it,
+// and a sustain level whose scaleoutlevel is odd too (28+77 = 105) loses the same
+// half-unit, so the sustain/peak ratio the wire carries matches the oracle's
+// exactly instead of inheriting a 0.75 dB offset.
+cases.push({ algorithm: 31, feedback: 7, name: 'FBENV',
+  ops: { 6: { coarse: 1, level: FEEDBACK_CARRIER_LEVEL,
+    envLevels: [99, 88, 77, 0] } } });
 
 // Live velocity, held as a response curve: a lone full-sensitivity carrier struck
 // at four velocities, each engine's loudness taken relative to its own strike at

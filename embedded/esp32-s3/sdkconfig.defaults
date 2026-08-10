@@ -6,7 +6,10 @@
 
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
-CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# Custom table: the stock large-app table's 24KB NVS cannot re-store a patch past
+# ~8KB (NVS keeps old and new blobs during replacement) — see partitions.csv.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 # Delay lines are the big allocations (a 2 s stereo-rate line is ~384 KB), far beyond
 # internal SRAM. With SPIRAM_USE_MALLOC they land in PSRAM automatically; small hot

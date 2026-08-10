@@ -37,6 +37,11 @@
           "id": "vca",
           "type": "Multiply",
           "parameters": {}
+        },
+        {
+          "id": "fbscale",
+          "type": "Multiply",
+          "parameters": {}
         }
       ],
       "connections": [
@@ -69,6 +74,26 @@
             "node": "vca",
             "port": "b"
           }
+        },
+        {
+          "from": {
+            "node": "env",
+            "port": "out"
+          },
+          "to": {
+            "node": "fbscale",
+            "port": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "fbscale",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "feedback"
+          }
         }
       ],
       "inputs": [
@@ -94,8 +119,8 @@
         },
         {
           "name": "fb_mod",
-          "node": "osc",
-          "port": "feedback"
+          "node": "fbscale",
+          "port": "b"
         }
       ],
       "outputs": [
