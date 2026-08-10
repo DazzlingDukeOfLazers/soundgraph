@@ -123,6 +123,7 @@ var graph_edit: GraphEdit
 var views: TabContainer
 var rack: Rack
 var sandbox: Sandbox
+var outline: Outline
 var keyboard: Keyboard
 ## The inspector's width, and the range a person may drag it through.
 ##
@@ -550,6 +551,30 @@ func _build_ui() -> void:
 	sandbox = Sandbox.new()
 	sandbox.name = "Sandbox"
 	views.add_child(sandbox)
+
+	# The graph as text, and not only for the reason it is usually built.
+	#
+	# It is keyboard-navigable by construction, it reads aloud sensibly, it holds a
+	# patch too large to see at once, and it answers "what is connected to this"
+	# faster than tracing a line across a canvas by hand. That last one is a question
+	# everybody has, which is why this is a second way to read the program rather than
+	# an accommodation bolted to the side of the first.
+	outline = Outline.new()
+	outline.name = "Outline"
+	outline.registry = registry
+	outline.read_order = func() -> Array:
+		if engine == null or not engine.is_loaded():
+			return []
+		var info: Variant = JSON.parse_string(engine.get_info_json())
+		if typeof(info) != TYPE_DICTIONARY:
+			return []
+		var ids: Array = []
+		for entry in info["nodes"]:
+			ids.append(str(entry["id"]))
+		return ids
+	outline.node_chosen.connect(func(node_id: String) -> void:
+		_focus_node(node_id))
+	views.add_child(outline)
 	# Both views start on the style the toolbar says they are on. Worth knowing when
 	# comparing them: dragging a cable waypoint is a PCB-mode gesture — a hanging cable
 	# has no corners to grab, which is part of what is being traded.
@@ -3015,6 +3040,10 @@ func _highlight(node_ids: Array) -> void:
 ## Kept under its old name because half a dozen places call it after the graph changes.
 func _show_info() -> void:
 	_refresh_context()
+	if outline != null:
+		outline.patch = patch
+		outline.registry = registry
+		outline.refresh()
 
 
 ## Where an example actually lives.

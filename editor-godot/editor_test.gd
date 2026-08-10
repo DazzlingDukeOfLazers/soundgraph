@@ -15,6 +15,16 @@ func rack_ready(main) -> void:
 	main.rack.rebuild()
 
 
+## Every scrap of text in a tree, however deep.
+func _tree_text(row: TreeItem) -> String:
+	var collected := ""
+	while row != null:
+		collected += row.get_text(0)
+		collected += _tree_text(row.get_first_child())
+		row = row.get_next()
+	return collected
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -538,6 +548,60 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+	# ---- the graph, as text -----------------------------------------------------------
+	# A second way to read the same program: keyboard-navigable, readable aloud, and the
+	# fastest answer to "what is connected to this" — which on a canvas means tracing a
+	# line by hand.
+	main.outline.refresh()
+	await process_frame
+	var outline_text: String = _tree_text(main.outline._tree.get_root())
+	check(outline_text != "", "the outline has content")
+
+	# Every node appears, so nothing is invisible in the accessible view that is visible
+	# on the canvas. A view that showed most of the graph would be worse than none.
+	var absent: Array = []
+	for node in main.patch["nodes"]:
+		if not outline_text.contains(str(node["id"])):
+			absent.append(str(node["id"]))
+	check(absent.is_empty(),
+		"every node in the patch is in it%s"
+			% ("" if absent.is_empty() else ": missing " + ", ".join(absent)))
+
+	# And every connection, in both directions — once under the node it leaves and once
+	# under the node it arrives at, because "what feeds this" and "what does this feed"
+	# are different questions and the answer should be under whichever you are looking at.
+	var unlisted := 0
+	for connection in main.patch["connections"]:
+		var from_side := "%s.%s" % [connection["from"]["node"], connection["from"]["port"]]
+		if not outline_text.contains(from_side):
+			unlisted += 1
+	check(unlisted == 0, "and every connection is named (%d missing)" % unlisted)
+
+	# It follows the engine's schedule, not the document order, because when a node runs
+	# is the one thing the canvas cannot show you.
+	check(outline_text.find("note") < outline_text.find("out"),
+		"in the order the graph actually runs")
+
+	# Choosing a row selects that node, so the two views are one selection rather than two.
+	# A one-element array rather than a String, because a GDScript lambda captures by
+	# value: assigning to a captured local inside one changes the copy and nothing
+	# else, so the first version of this check reported an empty name for ever.
+	var chosen := [""]
+	main.outline.node_chosen.connect(func(id: String) -> void: chosen[0] = id)
+	var first_row: TreeItem = main.outline._tree.get_root().get_first_child()
+	first_row.select(0)
+	await process_frame
+	await process_frame
+	check(chosen[0] != "", "selecting a row chooses that node (%s)" % chosen[0])
+	if chosen[0] != "" and main.widgets.has(chosen[0]):
+		check(main.widgets[chosen[0]].selected,
+			"and the graph selects it too, so the views share one selection")
+
+	# Reachable by keyboard, which is the entire point — a list you can only click is a
+	# list that helps nobody who needed it.
+	check(main.outline._tree.focus_mode == Control.FOCUS_ALL,
+		"and the list can be reached with the keyboard")
+
 	# ---- the sandbox draws its whole world ------------------------------------------
 	# SubViewportContainer.stretch resizes the viewport to match the container rather
 	# than scaling it, so the viewport grew to the width of the panel while the game went
@@ -762,6 +826,17 @@ func _initialize() -> void:
 			text = (node as Button).text
 		elif node is LineEdit:
 			text = (node as LineEdit).text + (node as LineEdit).placeholder_text
+		elif node is Tree:
+			# Trees were not covered when this check was written, and the outline view
+			# promptly reintroduced an arrow glyph the font has not got — it rendered only
+			# because Godot fell back to a system font, which is precisely the dependency
+			# being avoided.
+			#
+			# Walked to the bottom, not two levels down. The first version of this walk
+			# visited the root and its children and stopped, and every arrow in the outline
+			# is on the *third* level — so reintroducing one deliberately still passed, and
+			# the check was decorative until that was tried.
+			text += _tree_text((node as Tree).get_root())
 		if text == "":
 			continue
 		scanned += 1
