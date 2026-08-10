@@ -22,7 +22,7 @@ Open problems, ordered by how much they threaten the Knobcon demo.
 - **Linux has never been compiled.** CMake and miniaudio cover it; nothing has exercised
   it. macOS arm64 now has: the tree builds warning-free, `sg-play` opens CoreAudio through
   miniaudio, the CLI tools work, and the Godot editor loads the extension and passes all
-  250 of its checks. Four defects found doing it are fixed; see docs/decisions.md for
+  280 of its checks. Four defects found doing it are fixed; see docs/decisions.md for
   the one that needed a decision.
 - **No `getUserMedia` in the browser.** `AudioInput` nodes schedule correctly but receive
   silence, so `delay-echo.json` validates and runs in the browser without doing anything
