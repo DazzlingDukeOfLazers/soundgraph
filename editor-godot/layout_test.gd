@@ -178,6 +178,61 @@ func _initialize() -> void:
 	check(placed.size() == 2, "only the selected nodes are placed")
 	check(not placed.has("a") and not placed.has("d"), "anchors are left untouched")
 
+	# ---- big graphs: subcircuits become tiles, tiles wrap into rows ------------------
+	# A synthetic DX7: six identical operator chains feeding a mixer chain into out.
+	# 32 nodes, which crosses CLUSTER_THRESHOLD and takes the modular path.
+	var big_ids: Array = ["note", "out"]
+	var big_edges: Array = []
+	for op in 6:
+		var chain := ["p%d" % op, "o%d" % op, "e%d" % op, "v%d" % op]
+		big_ids.append_array(chain)
+		big_edges.append(["note", chain[0], 1.0])
+		big_edges.append([chain[0], chain[1], 4.0])
+		big_edges.append([chain[2], chain[3], 1.0])
+		big_edges.append([chain[1], chain[3], 4.0])
+		big_edges.append(["note", chain[2], 1.0])
+	for op in 5:
+		big_ids.append("m%d" % op)
+		big_edges.append(["v%d" % op, "m%d" % op, 4.0])
+		big_edges.append(["v%d" % (op + 1) if op == 4 else "m%d" % (op + 1), "m%d" % op, 2.0])
+	big_edges.append(["m0", "out", 4.0])
+	var big := arrange(big_ids, big_edges)
+	check(big.size() == big_ids.size(),
+		"the modular path places every node (%d of %d)" % [big.size(), big_ids.size()])
+
+	var low := Vector2(INF, INF)
+	var high := Vector2(-INF, -INF)
+	for id in big_ids:
+		low = low.min(big[id])
+		high = high.max(big[id] + Vector2(300, 120))
+	var bounds := high - low
+	check(bounds.x <= bounds.y * (Layout.ROW_ASPECT + 1.0),
+		"and the result is a block, not a ribbon (%.0f x %.0f)" % [bounds.x, bounds.y])
+
+	# Repetition emerges: each operator chain contracts by the same wiring, so the
+	# relative geometry inside every operator tile is the same shape.
+	var reference := {}
+	var matching := true
+	for op in 6:
+		var origin: Vector2 = big["p%d" % op]
+		for part in ["o", "e", "v"]:
+			var offset: Vector2 = big["%s%d" % [part, op]] - origin
+			if op == 0:
+				reference[part] = offset
+			elif not offset.is_equal_approx(reference[part]):
+				matching = false
+	check(matching, "six identical subcircuits come out as six identical tiles")
+
+	# And no two nodes land on top of each other, across the whole wrap.
+	var big_overlap := false
+	for i in big_ids.size():
+		for j in range(i + 1, big_ids.size()):
+			var a := Rect2(big[big_ids[i]], Vector2(300, 120))
+			var b := Rect2(big[big_ids[j]], Vector2(300, 120))
+			if a.intersects(b):
+				big_overlap = true
+	check(not big_overlap, "and no tiles collide after wrapping")
+
 	print("")
 	if failures == 0:
 		print("all layout checks passed")

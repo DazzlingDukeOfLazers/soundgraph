@@ -44,10 +44,31 @@ const SWEEPS := 8
 ##   grid, column_pitch, column_gutter, row_step
 ##
 ## Returns id -> Vector2 for every id in `nodes`.
+## Above this many nodes, the flat layered layout stops being readable and the modular
+## path below takes over. Every existing example short of the DX7 bank sits under it,
+## so nothing already laid out moves.
+const CLUSTER_THRESHOLD := 18
+
+## The largest subcircuit that contracts into one tile. Six covers a DX7 operator
+## (pitch, oscillator, envelope, VCA, index) with room to spare, and stays small enough
+## that a tile is a glance, not a study.
+const MODULE_MAX := 6
+
+## A row of tiles aims to be about this many times wider than tall before wrapping.
+const ROW_ASPECT := 2.6
+const ROW_GAP := 100.0
+
+
 static func arrange(request: Dictionary) -> Dictionary:
 	var ids: Array = request["nodes"]
 	if ids.is_empty():
 		return {}
+	# Big graphs go through the modular path: repeated subcircuits contract into tiles,
+	# the tile graph is laid out flat, and its columns wrap into rows like text. The
+	# inner and outer calls come back here with "_plain" set, so the recursion is one
+	# level deep by construction.
+	if ids.size() >= CLUSTER_THRESHOLD and not request.get("_plain", false):
+		return _arrange_modular(request)
 
 	var sizes: Dictionary = request["sizes"]
 	var anchors: Dictionary = request.get("anchors", {})
@@ -642,3 +663,178 @@ static func _pin_strong_chains(layers: Array, edges: Array, y: Dictionary,
 			if not dummies.has(node):
 				pinned[node] = row
 	return pinned
+
+
+# ---------------------------------------------------------------------------------
+# The modular path: big graphs as tiles of subcircuits, wrapped into rows.
+#
+# Two observations drive it. First, big patches are big because something repeats — a
+# DX7 voice is six copies of pitch→oscillator→envelope→VCA — and laying out 33 nodes
+# individually spends the algorithm's care on separating things that belong together.
+# Second, one long left-to-right band is the *correct* reading order and a hopeless
+# aspect ratio: the fitted view of a DX7 voice landed at 23% zoom.
+#
+# So: contract every exclusive-feeder subcircuit (a node whose output goes one place
+# belongs to that place, up to MODULE_MAX) into a tile, lay each tile out internally,
+# lay out the much smaller tile graph, and wrap its columns into rows. Repetition is
+# not detected — it *emerges*: six identical operator clusters contract into six
+# identical tiles, because contraction follows the same wiring in each.
+# ---------------------------------------------------------------------------------
+
+static func _arrange_modular(request: Dictionary) -> Dictionary:
+	var ids: Array = request["nodes"]
+	var sizes: Dictionary = request["sizes"]
+	var grid: float = request.get("grid", 40.0)
+	var column_gutter: float = request.get("column_gutter", 80.0)
+
+	var movable := {}
+	for id in ids:
+		movable[id] = true
+
+	# ---- contraction: a node with exactly one movable consumer joins it --------------
+	var parent := {}
+	for id in ids:
+		parent[id] = id
+	var find := func(start) -> Variant:
+		var at = start
+		while parent[at] != at:
+			at = parent[at]
+		return at
+
+	var targets := {}
+	for edge in request["edges"]:
+		if movable.has(edge[0]) and movable.has(edge[1]):
+			if not targets.has(edge[0]):
+				targets[edge[0]] = {}
+			targets[edge[0]][edge[1]] = true
+
+	var cluster_size := {}
+	var cluster_depth := {}
+	for id in ids:
+		cluster_size[id] = 1
+		cluster_depth[id] = 1
+	# A few passes reach the fixpoint: chains contract toward their consumers quickly.
+	for pass_index in 8:
+		var merged := false
+		for id in ids:
+			if not targets.has(id) or targets[id].size() != 1:
+				continue
+			var consumer = targets[id].keys()[0]
+			var from_root = find.call(id)
+			var to_root = find.call(consumer)
+			if from_root == to_root:
+				continue
+			if cluster_size[from_root] + cluster_size[to_root] > MODULE_MAX:
+				continue
+			# Depth-capped as well as size-capped. Without this, a mixer chain contracts
+			# into one six-layer noodle two thousand pixels wide, and the row packer has
+			# to make every row that wide to hold it — tiles only pack well when they
+			# are roughly the same shape, which an operator cluster and a chain segment
+			# both are at depth three or less.
+			if cluster_depth[from_root] + cluster_depth[to_root] > 4:
+				continue
+			parent[from_root] = to_root
+			cluster_size[to_root] += cluster_size[from_root]
+			cluster_depth[to_root] = maxi(cluster_depth[to_root],
+				cluster_depth[from_root] + 1)
+			merged = true
+		if not merged:
+			break
+
+	var members := {}
+	for id in ids:
+		var root = find.call(id)
+		if not members.has(root):
+			members[root] = []
+		members[root].append(id)
+
+	# ---- each tile laid out on its own, tighter than the top level --------------------
+	var inner_offsets := {}
+	var tile_sizes := {}
+	for root in members:
+		var group: Array = members[root]
+		if group.size() == 1:
+			inner_offsets[root] = {root: Vector2.ZERO}
+			tile_sizes[root] = sizes.get(root, Vector2(240, 140))
+			continue
+		var inner_edges := []
+		for edge in request["edges"]:
+			if group.has(edge[0]) and group.has(edge[1]):
+				inner_edges.append(edge)
+		var inner := arrange({
+			"nodes": group,
+			"edges": inner_edges,
+			"sizes": sizes,
+			"grid": grid,
+			"column_pitch": request.get("column_pitch", 400.0) * 0.6,
+			"column_gutter": column_gutter * 0.5,
+			"row_step": request.get("row_step", 200.0),
+			"_plain": true,
+		})
+		var low := Vector2(INF, INF)
+		var high := Vector2(-INF, -INF)
+		for id in group:
+			var at: Vector2 = inner[id]
+			var size: Vector2 = sizes.get(id, Vector2(240, 140))
+			low = low.min(at)
+			high = high.max(at + size)
+		var offsets := {}
+		for id in group:
+			offsets[id] = inner[id] - low
+		inner_offsets[root] = offsets
+		tile_sizes[root] = high - low
+
+	# ---- the tile graph flows into rows, the way the rack flows modules --------------
+	# The first version ran Sugiyama over the tiles and then wrapped its columns, and
+	# got a 3584x3427 portrait block: the layered pass stacks tiles vertically inside
+	# layers before any wrap can help, and with tiles a thousand pixels wide there are
+	# only two or three rows of granularity to correct it with. A flow does not fight
+	# itself: order the tiles by signal depth, fill rows to a width chosen for the
+	# aspect, read left to right, top to bottom. It is the rack's idea, because a rack
+	# is what a big patch wants to be.
+	var outer_edges := []
+	for edge in request["edges"]:
+		if not (movable.has(edge[0]) and movable.has(edge[1])):
+			continue
+		var a = find.call(edge[0])
+		var b = find.call(edge[1])
+		if a != b:
+			outer_edges.append([a, b])
+	var roots: Array = members.keys()
+	var depths := _assign_layers(roots, _remove_cycles(roots, outer_edges))
+	var ordered: Array = roots.duplicate()
+	ordered.sort_custom(func(a, b) -> bool:
+		if depths[a] != depths[b]:
+			return depths[a] < depths[b]
+		return roots.find(a) < roots.find(b))
+
+	var total_width := 0.0
+	var tallest := 0.0
+	var widest := 0.0
+	for root in ordered:
+		total_width += tile_sizes[root].x + column_gutter
+		tallest = maxf(tallest, tile_sizes[root].y)
+		widest = maxf(widest, tile_sizes[root].x)
+	# Aspect A = W / (rows * H) and rows = total / W give W = sqrt(A * H * total) —
+	# where H is what a row actually costs, gap included. Using the bare tile height
+	# here made the packer aim far too narrow: with short tiles the gap is half the row.
+	var target: float = maxf(sqrt(ROW_ASPECT * (tallest + ROW_GAP) * total_width), widest)
+
+	var positions := {}
+	var cursor := 0.0
+	var row_top := 0.0
+	var row_tallest := 0.0
+	for root in ordered:
+		if cursor > 0.0 and cursor + tile_sizes[root].x > target:
+			row_top += row_tallest + ROW_GAP
+			cursor = 0.0
+			row_tallest = 0.0
+		for id in inner_offsets[root]:
+			positions[id] = Vector2(cursor, row_top) + inner_offsets[root][id]
+		row_tallest = maxf(row_tallest, tile_sizes[root].y)
+		cursor += tile_sizes[root].x + column_gutter
+	# Snapped like every other arranged position, so hand-editing continues on-grid.
+	for id in positions:
+		positions[id] = Vector2(roundf(positions[id].x / grid) * grid,
+			roundf(positions[id].y / grid) * grid)
+	return positions
