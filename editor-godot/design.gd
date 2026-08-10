@@ -305,8 +305,8 @@ const MIN_SCREEN_META := 12       ## category tags — the first thing declutter
 ## been drawn at a hardcoded 12 and 13 pixels, under this system's own 14px floor, in a
 ## file that took no part in the type scale at all and so did not scale with the UI
 ## setting either.
-const SIZE_KEYCAP := 17
-const SIZE_OCTAVE := 15
+const SIZE_KEYCAP := 19
+const SIZE_OCTAVE := 16
 const MIN_SCREEN_KEYCAP := 16
 const MIN_SCREEN_OCTAVE := 14
 

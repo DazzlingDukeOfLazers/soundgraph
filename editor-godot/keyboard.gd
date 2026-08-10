@@ -20,8 +20,42 @@ signal note_released(note: int)
 
 const WHITE_OFFSETS := [0, 2, 4, 5, 7, 9, 11]
 const BLACK_OFFSETS := [1, 3, 6, 8, 10]
-## Where each black key sits, as a fraction of a white key's width from the octave's left.
-const BLACK_POSITIONS := {1: 0.7, 3: 1.7, 6: 3.7, 8: 4.7, 10: 5.7}
+
+## How wide a black key is against a white one. A real piano is 13.7mm on 23.5mm, which
+## is 0.583; a little wider here because these carry a letter.
+const BLACK_WIDTH := 0.62
+
+## The white keys each black key sits between — which is the whole point of where it
+## sits. One key is the sharp of the note below it and the flat of the note above, and it
+## can only say so by straddling the join between them.
+const BLACK_BETWEEN := {1: ["C", "D"], 3: ["D", "E"], 6: ["F", "G"], 8: ["G", "A"],
+	10: ["A", "B"]}
+
+## Where each black key's centre sits, in white-key widths from the octave's left edge.
+##
+## Derived, because the five numbers this replaces (0.7, 1.7, 3.7, 4.7, 5.7) were picked
+## by hand and put every black key almost entirely *over* the white key to its left: at
+## 0.62 wide, the C# at 0.7 spanned 0.39 to 1.01 and so merely touched the C|D join
+## rather than crossing it. A piano's black keys cross it. That is what makes the 2-and-3
+## grouping legible at a glance, and it is why a player can find F# without counting.
+##
+## The rule is the instrument's own: within a group of white keys — C-D-E, then F-G-A-B —
+## the black keys and the narrowed white tops divide the group evenly, which leaves the
+## group symmetric about its middle. Two black keys over three whites, three over four.
+static func black_centres() -> Dictionary:
+	var centres := {}
+	for group in [{"start": 0, "whites": 3, "blacks": [1, 3]},
+			{"start": 3, "whites": 4, "blacks": [6, 8, 10]}]:
+		var whites: float = float(group["whites"])
+		var top: float = (whites - (whites - 1.0) * BLACK_WIDTH) / whites
+		var index := 0.0
+		for semitone in group["blacks"]:
+			centres[semitone] = float(group["start"]) + top * (index + 1.0) \
+				+ BLACK_WIDTH * (index + 0.5)
+			index += 1.0
+	return centres
+
+static var BLACK_POSITIONS: Dictionary = black_centres()
 
 # The keys are genuinely light and genuinely dark now, and their ink is genuinely dark
 # and genuinely light. They used to be off-white with grey letters, on the argument that
@@ -38,14 +72,10 @@ const BLACK_POSITIONS := {1: 0.7, 3: 1.7, 6: 3.7, 8: 4.7, 10: 5.7}
 # switch afterwards.
 var WHITE: Color:
 	get: return Design.WHITE_KEY
-var WHITE_INK: Color:
-	get: return Design.WHITE_KEY_INK
 var WHITE_HELD: Color:
 	get: return Design.ACCENT
 var BLACK: Color:
 	get: return Design.BLACK_KEY
-var BLACK_INK: Color:
-	get: return Design.BLACK_KEY_INK
 var BLACK_HELD: Color:
 	get: return Design.ACCENT.darkened(0.35)
 const EDGE := Color("101216")
@@ -64,7 +94,7 @@ var _mouse_note := -1
 
 
 func _ready() -> void:
-	custom_minimum_size.y = Design.scale(96)
+	custom_minimum_size.y = Design.scale(112)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	# Never takes focus. Taking it is the exact failure this exists to diagnose.
 	focus_mode = Control.FOCUS_NONE
@@ -92,8 +122,8 @@ func _white_width() -> float:
 ## The note under a point, black keys first because they sit on top of the white ones.
 func _note_at(point: Vector2) -> int:
 	var white_width := _white_width()
-	var black_width := white_width * 0.62
-	var black_height := size.y * 0.62
+	var black_width := white_width * BLACK_WIDTH
+	var black_height := size.y * BLACK_HEIGHT
 
 	if point.y <= black_height:
 		for octave in octaves:
@@ -116,13 +146,31 @@ func _gui_input(event: InputEvent) -> void:
 		else:
 			_release()
 		accept_event()
-	elif event is InputEventMouseMotion and _mouse_note >= 0:
-		# Dragging across the keys glides, which is what a piano does and what makes it
-		# obvious the thing is live.
+	elif event is InputEventMouseMotion:
 		var note := _note_at(event.position)
-		if note != _mouse_note:
-			_press(note)
-		accept_event()
+		# The name under the pointer, said both ways on the black keys. A key that
+		# straddles the join between two white ones *is* two names for one pitch, and
+		# until now the layout implied that and nothing ever said it.
+		tooltip_text = note_name(note) if note >= 0 else ""
+		if _mouse_note >= 0:
+			# Dragging across the keys glides, which is what a piano does and what makes
+			# it obvious the thing is live.
+			if note != _mouse_note:
+				_press(note)
+			accept_event()
+
+
+## What a key is called. Black keys carry both names, because they have both: the sharp
+## of the white key below and the flat of the one above, which is exactly the pair the
+## key is drawn across.
+static func note_name(note: int) -> String:
+	var octave: int = note / 12 - 1
+	var semitone: int = note % 12
+	if not BLACK_BETWEEN.has(semitone):
+		const WHITE_NAMES := {0: "C", 2: "D", 4: "E", 5: "F", 7: "G", 9: "A", 11: "B"}
+		return "%s%d" % [WHITE_NAMES[semitone], octave]
+	var pair: Array = BLACK_BETWEEN[semitone]
+	return "%s♯%d  ·  %s♭%d" % [pair[0], octave, pair[1], octave]
 
 
 func _press(note: int) -> void:
@@ -165,6 +213,16 @@ static func octave_size() -> int:
 ## outline changes with it, so the state survives in greyscale.
 const HELD_INSET := 3.0
 
+## How far down the black keys reach, and what is left under them.
+##
+## The strip below the black keys is the only full-width part of a white key, so it is
+## the only place a letter can be centred without disappearing under an overhang — which
+## is where they were: a 17px keycap on a 96px-tall piano had its box top at 53px against
+## black keys reaching 59px, so every white key's letter was tucked behind the black key
+## above it. The dock is a little taller now and the black keys a little shorter, which
+## is what pays for the bigger type rather than the type simply being asked to fit.
+const BLACK_HEIGHT := 0.60
+
 func _draw() -> void:
 	var font: Font = Design.font(Design.WEIGHT_SEMIBOLD)
 	if font == null:
@@ -191,21 +249,28 @@ func _draw() -> void:
 		if font == null:
 			continue
 		var ink: Color = Design.WHITE_KEY_INK
+		# The octave name sits on the floor of the key; the letter sits in the strip
+		# between the black keys and that name. Both are measured from the black keys
+		# rather than from the bottom, so neither can end up behind an overhang when the
+		# dock is resized or the UI scale changes the type.
+		var floor_y: float = size.y - 6.0
 		if note % 12 == 0:
-			draw_string(font, rect.position + Vector2(4.0, size.y - 6.0),
+			draw_string(font, Vector2(rect.position.x + 5.0, floor_y),
 				"C%d" % (note / 12 - 1), HORIZONTAL_ALIGNMENT_LEFT, -1,
 					octave_text, ink)
 		if key_labels.has(note):
+			var strip_top: float = size.y * BLACK_HEIGHT
+			var strip_bottom: float = floor_y - octave_text
 			# The cap takes the colour of the key *as it is now*, held or not. Drawing it
 			# in the resting colour left a white box sitting on a lit green key, which
 			# reads as a rendering fault rather than as a keycap.
 			_draw_keycap(font, key_labels[note], keycap,
 				Vector2(rect.position.x + rect.size.x * 0.5,
-					size.y - 12.0 - octave_text), ink,
-				WHITE_HELD if down else WHITE)
+					(strip_top + strip_bottom) * 0.5 + font.get_ascent(keycap) * 0.5),
+				ink, WHITE_HELD if down else WHITE)
 
-	var black_width := white_width * 0.62
-	var black_height := size.y * 0.62
+	var black_width := white_width * BLACK_WIDTH
+	var black_height := size.y * BLACK_HEIGHT
 	for octave in octaves:
 		for semitone in BLACK_OFFSETS:
 			var note: int = first_note + octave * 12 + semitone
@@ -221,7 +286,7 @@ func _draw() -> void:
 			if font != null and key_labels.has(note):
 				_draw_keycap(font, key_labels[note], keycap,
 					Vector2(rect.position.x + rect.size.x * 0.5,
-						black_height - 10.0),
+						black_height - keycap * 0.62),
 					Design.BLACK_KEY_INK if not down else Design.WHITE_KEY_INK,
 					BLACK_HELD if down else BLACK)
 

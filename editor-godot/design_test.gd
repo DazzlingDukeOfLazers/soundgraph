@@ -57,6 +57,45 @@ func _initialize() -> void:
 	check(smallest_keycap >= Design.MIN_SCREEN_KEYCAP,
 		"and Compact cannot take them under it (%d)" % smallest_keycap)
 
+	# The black keys straddle the joins between white keys, which is not decoration: it
+	# is what makes one key the sharp of the note below and the flat of the note above,
+	# and what makes the 2-and-3 grouping findable without counting. The five positions
+	# this replaced were hand-picked and left every black key 98% over the white key to
+	# its left — touching the join rather than crossing it.
+	var centres: Dictionary = Keyboard.black_centres()
+	var joins := {1: 1.0, 3: 2.0, 6: 4.0, 8: 5.0, 10: 6.0}
+	var crossing := 0
+	var thinnest := 1.0
+	for semitone in centres:
+		var half: float = Keyboard.BLACK_WIDTH * 0.5
+		var left: float = centres[semitone] - half
+		var right: float = centres[semitone] + half
+		var join: float = joins[semitone]
+		if left < join and right > join:
+			crossing += 1
+			# How much of the key lies on its thinner side, as a fraction of the key.
+			thinnest = minf(thinnest,
+				minf(join - left, right - join) / Keyboard.BLACK_WIDTH)
+	check(crossing == centres.size(),
+		"every black key crosses the join it is named for (%d of %d)"
+			% [crossing, centres.size()])
+	check(thinnest > 0.2,
+		"and sits across it rather than beside it (thinnest side %.0f%% of the key)"
+			% (thinnest * 100.0))
+
+	# Each group is symmetric about its middle, which is the property that makes a piano
+	# scannable — and the reason the white key tops come out equal.
+	var cde: float = float(centres[1]) + float(centres[3])
+	var fgab: float = float(centres[6]) + float(centres[10])
+	check(absf(cde - 3.0) < 0.001 and absf(fgab - 10.0) < 0.001
+			and absf(float(centres[8]) - 5.0) < 0.001,
+		"and each group is symmetric about its centre (C-D-E %.3f, F-G-A-B %.3f)"
+			% [cde * 0.5, fgab * 0.5])
+
+	check(Keyboard.note_name(49).contains("♯") and Keyboard.note_name(49).contains("♭")
+			and Keyboard.note_name(48) == "C3",
+		"and a black key answers to both of its names (%s)" % Keyboard.note_name(49))
+
 	for choice in Design.PALETTES.size():
 		Design.use_palette(choice)
 		var theme_name: String = Design.PALETTE_NAMES[choice]
