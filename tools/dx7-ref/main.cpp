@@ -120,8 +120,16 @@ int main(int argc, char** argv) {
         const int32_t lfo_delay = lfo.getdelay();
         dx7_note.compute(buf, lfo_value, lfo_delay, &controllers);
         for (int i = 0; i < N && rendered < total; ++i, ++rendered) {
-            // The engine works in Q24; one operator at full level swings about +-2^24.
-            samples.push_back(static_cast<float>(buf[i]) / static_cast<float>(1 << 24));
+            // The engine works in Q24, but a full-level operator swings +-2^25 (its
+            // gain is 2^(10 + level/2^24), which tops out at 2^25 — see the index
+            // derivation in tools/dx7-import.mjs), and a voice sums up to six
+            // carriers. The original /2^24 clipped every full-level voice at the
+            // 16-bit writer, which tools/dx7-index-check.mjs caught as phantom odd
+            // harmonics. /2^27 keeps even a phase-aligned six-carrier peak inside
+            // +-1 while the quietest voices stay far above the comparators' floors.
+            // Fixed scale on purpose: an oracle's level should not depend on the
+            // voice's own peak.
+            samples.push_back(static_cast<float>(buf[i]) / static_cast<float>(1 << 27));
         }
     }
 

@@ -27,7 +27,9 @@
 //                envelope as an ADSR in octaves
 //   pending    — tremolo (LFO amplitude modulation), LFO delay, live velocity;
 //                multi-op feedback loops (algorithms 4 and 6) fall back to
-//                self-feedback on the loop's driving op
+//                self-feedback on the loop's driving op; feedback 7 on a
+//                near-full-level op period-doubles in msfa's fixed-point loop
+//                where our float loop stays period-1 (see dx7-index-check.mjs)
 //   measured   — the rate->seconds curves, against the vendored msfa oracle
 //   by ear     — the modulation index scale (INDEX_FULL)
 // Every voice records what was dropped in its own metadata.

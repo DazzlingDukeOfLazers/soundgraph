@@ -76,14 +76,26 @@ function packVoice(bank, index, { algorithm, feedback, ops, name }) {
 const MOD_LEVELS = [60, 77, 85, 92, 99];
 const FEEDBACKS = [3, 5, 7];
 
-// Carriers sit at level 80, not 99: dx7-ref writes buf/2^24 with no headroom, and
-// a full-level carrier is gain 2^25 — the oracle's own WAV hard-clips at +-1.0,
-// which showed up here as strong odd harmonics that looked like an index
-// disagreement (fb-3's H3 at -14 dB was the giveaway: near-zero feedback cannot
-// make that; a clipper can). The index under test rides the *modulator*, which
-// never reaches the WAV, so the sweep loses nothing. Feedback scales with the op's
-// own amplitude on both sides, so those cases still exercise the 2^(fb-7) claim.
-const CARRIER_LEVEL = 80;
+// The index carriers run at full level, which is the top of the very ladder under
+// test. That was not always possible: dx7-ref originally wrote buf/2^24 with no
+// headroom, and a full-level carrier is gain 2^25 — the oracle's own WAV
+// hard-clipped at +-1.0, which showed up here as strong odd harmonics that looked
+// like an index disagreement (fb-3's H3 at -14 dB was the giveaway: near-zero
+// feedback cannot make that; a clipper can). dx7-ref now renders at /2^27, and
+// this constant is the regression trap: if the headroom ever regresses, the
+// clipping harmonics come straight back into these spectra.
+const CARRIER_LEVEL = 99;
+
+// The feedback carriers sit lower, and that limit is real, not caution: at fb 7 a
+// full-level op displaces its own phase by a full cycle, and there msfa's
+// fixed-point loop falls into a period-doubled attractor (H2 dominant, H1 at
+// -38 dB) that our float loop does not share. The boundary is not even monotonic —
+// probing the oracle found L95 subharmonic but L99 borderline-locked, L91 and
+// below clean. Level 91 is amplitude 0.5, so fb 7 still swings half a cycle:
+// strong enough that the old 2x feedback constant fails by tens of dB, safely
+// inside the region where both engines agree on what feedback *is*. Deep-feedback
+// chaos parity is a fidelity note, not something a scale check can hold.
+const FEEDBACK_CARRIER_LEVEL = 91;
 
 const cases = [];
 for (const level of MOD_LEVELS) {
@@ -96,7 +108,7 @@ for (const feedback of FEEDBACKS) {
   // Algorithm 32: six parallel carriers, feedback on op6 — so the only audible
   // operator is the one feeding itself back.
   cases.push({ algorithm: 31, feedback, name: `FB ${feedback}`,
-    ops: { 6: { coarse: 1, level: CARRIER_LEVEL } } });
+    ops: { 6: { coarse: 1, level: FEEDBACK_CARRIER_LEVEL } } });
 }
 
 const scratch = mkdtempSync(join(tmpdir(), 'dx7-index-'));
