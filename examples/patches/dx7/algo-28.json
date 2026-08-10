@@ -2,7 +2,7 @@
   "schema_version": 2,
   "metadata": {
     "name": "ALGO 28",
-    "description": "ALGO 28 — DX7 voice, algorithm 28, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: LFO, key scaling, pitch envelope and velocity not applied.",
+    "description": "ALGO 28 — DX7 voice, algorithm 28, imported by tools/dx7-import.mjs from algorithm-demos.syx.",
     "author": "SoundGraph dx7-import (mapping)",
     "tags": [
       "fm",
@@ -86,6 +86,11 @@
           "name": "pm",
           "node": "osc",
           "port": "pm"
+        },
+        {
+          "name": "fm",
+          "node": "osc",
+          "port": "fm"
         }
       ],
       "outputs": [
@@ -143,7 +148,7 @@
         "ratio": 2,
         "attack": 0.0017,
         "decay": 2.132,
-        "sustain": 0.1259,
+        "sustain": 0.125,
         "release": 0.1677
       }
     },
@@ -155,9 +160,9 @@
         "ratio": 1,
         "attack": 0.0017,
         "decay": 2.132,
-        "sustain": 0.1259,
+        "sustain": 0.125,
         "release": 0.1677,
-        "feedback": 0.09693
+        "feedback": 0.09639
       }
     },
     {
@@ -168,7 +173,7 @@
         "ratio": 1,
         "attack": 0.0017,
         "decay": 2.132,
-        "sustain": 0.1259,
+        "sustain": 0.125,
         "release": 0.1677
       }
     },
@@ -180,7 +185,7 @@
         "ratio": 4,
         "attack": 0.0017,
         "decay": 2.132,
-        "sustain": 0.1259,
+        "sustain": 0.125,
         "release": 0.1677
       }
     },
@@ -192,7 +197,7 @@
         "ratio": 1,
         "attack": 0.001,
         "decay": 1.5889,
-        "sustain": 0.4597,
+        "sustain": 0.4585,
         "release": 0.1036
       }
     },
@@ -204,22 +209,31 @@
         "ratio": 11,
         "attack": 0.001,
         "decay": 1.5889,
-        "sustain": 0.4597,
+        "sustain": 0.4585,
         "release": 0.1036
+      }
+    },
+    {
+      "id": "vibrato",
+      "type": "LFO",
+      "parameters": {
+        "rate": 5.8065,
+        "shape": 0,
+        "amount": 0.0116
       }
     },
     {
       "id": "op5_index_4",
       "type": "Gain",
       "parameters": {
-        "gain": 0.3877
+        "gain": 0.3856
       }
     },
     {
       "id": "op4_index_3",
       "type": "Gain",
       "parameters": {
-        "gain": 0.3262
+        "gain": 0.3242
       }
     },
     {
@@ -233,14 +247,14 @@
       "id": "op6_level",
       "type": "Gain",
       "parameters": {
-        "gain": 0.2304
+        "gain": 0.2293
       }
     },
     {
       "id": "op3_level",
       "type": "Gain",
       "parameters": {
-        "gain": 0.1372
+        "gain": 0.1363
       }
     },
     {
@@ -264,7 +278,7 @@
       "id": "out",
       "type": "StereoOutput",
       "parameters": {
-        "level": 0.5849
+        "level": 0.5858
       }
     }
   ],
@@ -387,6 +401,66 @@
       "to": {
         "node": "op1",
         "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1",
+        "port": "fm"
       }
     },
     {

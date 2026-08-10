@@ -2,7 +2,7 @@
   "schema_version": 2,
   "metadata": {
     "name": "ALGO 02",
-    "description": "ALGO 02 — DX7 voice, algorithm 2, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: LFO, key scaling, pitch envelope and velocity not applied.",
+    "description": "ALGO 02 — DX7 voice, algorithm 2, imported by tools/dx7-import.mjs from algorithm-demos.syx.",
     "author": "SoundGraph dx7-import (mapping)",
     "tags": [
       "fm",
@@ -86,6 +86,11 @@
           "name": "pm",
           "node": "osc",
           "port": "pm"
+        },
+        {
+          "name": "fm",
+          "node": "osc",
+          "port": "fm"
         }
       ],
       "outputs": [
@@ -143,7 +148,7 @@
         "ratio": 1,
         "attack": 0.0017,
         "decay": 2.132,
-        "sustain": 0.1259,
+        "sustain": 0.125,
         "release": 0.1677
       }
     },
@@ -155,7 +160,7 @@
         "ratio": 1,
         "attack": 0.0017,
         "decay": 2.132,
-        "sustain": 0.1259,
+        "sustain": 0.125,
         "release": 0.1677
       }
     },
@@ -167,7 +172,7 @@
         "ratio": 2,
         "attack": 0.0017,
         "decay": 2.132,
-        "sustain": 0.1259,
+        "sustain": 0.125,
         "release": 0.1677
       }
     },
@@ -179,7 +184,7 @@
         "ratio": 5,
         "attack": 0.0017,
         "decay": 2.132,
-        "sustain": 0.1259,
+        "sustain": 0.125,
         "release": 0.1677
       }
     },
@@ -191,7 +196,7 @@
         "ratio": 1,
         "attack": 0.001,
         "decay": 1.5889,
-        "sustain": 0.4597,
+        "sustain": 0.4585,
         "release": 0.1036,
         "feedback": 0.5
       }
@@ -204,7 +209,7 @@
         "ratio": 7,
         "attack": 0.001,
         "decay": 1.5889,
-        "sustain": 0.4597,
+        "sustain": 0.4585,
         "release": 0.1036
       }
     },
@@ -212,21 +217,21 @@
       "id": "op6_index_5",
       "type": "Gain",
       "parameters": {
-        "gain": 0.4608
+        "gain": 0.4585
       }
     },
     {
       "id": "op5_index_4",
       "type": "Gain",
       "parameters": {
-        "gain": 0.3877
+        "gain": 0.3856
       }
     },
     {
       "id": "op4_index_3",
       "type": "Gain",
       "parameters": {
-        "gain": 0.3262
+        "gain": 0.3242
       }
     },
     {
@@ -240,7 +245,7 @@
       "id": "op3_level",
       "type": "Gain",
       "parameters": {
-        "gain": 0.1372
+        "gain": 0.1363
       }
     },
     {
@@ -259,7 +264,7 @@
       "id": "out",
       "type": "StereoOutput",
       "parameters": {
-        "level": 0.7035
+        "level": 0.704
       }
     }
   ],

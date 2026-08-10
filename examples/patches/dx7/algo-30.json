@@ -2,7 +2,7 @@
   "schema_version": 2,
   "metadata": {
     "name": "ALGO 30",
-    "description": "ALGO 30 — DX7 voice, algorithm 30, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: LFO, key scaling, pitch envelope and velocity not applied.",
+    "description": "ALGO 30 — DX7 voice, algorithm 30, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: key scaling evaluated at MIDI 57 only.",
     "author": "SoundGraph dx7-import (mapping)",
     "tags": [
       "fm",
@@ -86,6 +86,11 @@
           "name": "pm",
           "node": "osc",
           "port": "pm"
+        },
+        {
+          "name": "fm",
+          "node": "osc",
+          "port": "fm"
         }
       ],
       "outputs": [
@@ -141,10 +146,10 @@
       "module": "operator",
       "parameters": {
         "ratio": 1,
-        "attack": 0.0017,
-        "decay": 2.132,
-        "sustain": 0.1259,
-        "release": 0.1677
+        "attack": 0.0007,
+        "decay": 0.8654,
+        "sustain": 0.125,
+        "release": 0.0681
       }
     },
     {
@@ -153,11 +158,11 @@
       "module": "operator",
       "parameters": {
         "ratio": 1,
-        "attack": 0.0017,
-        "decay": 2.132,
-        "sustain": 0.1259,
-        "release": 0.1677,
-        "feedback": 0.09693
+        "attack": 0.0007,
+        "decay": 0.8654,
+        "sustain": 0.125,
+        "release": 0.0681,
+        "feedback": 0.01858
       }
     },
     {
@@ -166,10 +171,10 @@
       "module": "operator",
       "parameters": {
         "ratio": 2,
-        "attack": 0.0017,
-        "decay": 2.132,
-        "sustain": 0.1259,
-        "release": 0.1677
+        "attack": 0.0007,
+        "decay": 0.8654,
+        "sustain": 0.125,
+        "release": 0.0681
       }
     },
     {
@@ -178,10 +183,10 @@
       "module": "operator",
       "parameters": {
         "ratio": 5,
-        "attack": 0.0017,
-        "decay": 2.132,
-        "sustain": 0.1259,
-        "release": 0.1677
+        "attack": 0.0007,
+        "decay": 0.8654,
+        "sustain": 0.125,
+        "release": 0.0681
       }
     },
     {
@@ -190,10 +195,10 @@
       "module": "operator",
       "parameters": {
         "ratio": 1,
-        "attack": 0.001,
-        "decay": 1.5889,
-        "sustain": 0.4597,
-        "release": 0.1036
+        "attack": 0.0007,
+        "decay": 0.6449,
+        "sustain": 0.4585,
+        "release": 0.0421
       }
     },
     {
@@ -202,38 +207,38 @@
       "module": "operator",
       "parameters": {
         "ratio": 7,
-        "attack": 0.001,
-        "decay": 1.5889,
-        "sustain": 0.4597,
-        "release": 0.1036
+        "attack": 0.0007,
+        "decay": 0.6449,
+        "sustain": 0.4585,
+        "release": 0.0421
       }
     },
     {
       "id": "op5_index_4",
       "type": "Gain",
       "parameters": {
-        "gain": 0.3877
+        "gain": 0.0743
       }
     },
     {
       "id": "op4_index_3",
       "type": "Gain",
       "parameters": {
-        "gain": 0.3262
+        "gain": 0.0625
       }
     },
     {
       "id": "op6_level",
       "type": "Gain",
       "parameters": {
-        "gain": 0.2304
+        "gain": 0.0442
       }
     },
     {
       "id": "op3_level",
       "type": "Gain",
       "parameters": {
-        "gain": 0.1372
+        "gain": 0.0263
       }
     },
     {
@@ -245,7 +250,7 @@
       "id": "op2_level",
       "type": "Gain",
       "parameters": {
-        "gain": 1
+        "gain": 0.1928
       }
     },
     {
@@ -257,7 +262,7 @@
       "id": "op1_level",
       "type": "Gain",
       "parameters": {
-        "gain": 1
+        "gain": 0.1928
       }
     },
     {
@@ -269,7 +274,7 @@
       "id": "out",
       "type": "StereoOutput",
       "parameters": {
-        "level": 0.3379
+        "level": 0.8
       }
     }
   ],

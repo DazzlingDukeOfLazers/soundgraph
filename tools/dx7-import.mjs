@@ -18,15 +18,18 @@
 // so the 32 topologies come from executing the canonical data, not from my reading of
 // 32 diagrams.
 //
-// Stage 1 fidelity (the doc's plan: algorithms and envelopes first):
+// Fidelity (stages 1 and 2 of the doc's plan):
 //   applied    — topology, ratio and fixed frequency modes, detune, output levels,
 //                feedback (on the op the algorithm marks), rate/level envelopes onto
-//                the ADSR, transpose
-//   pending    — LFO, key scaling (rate and level), pitch envelope, velocity curves;
+//                the ADSR, transpose; key scaling (rate and level) and the velocity
+//                curve, both evaluated exactly at the reference note and velocity;
+//                vibrato as an LFO into the oscillators' fm inputs; the pitch
+//                envelope as an ADSR in octaves
+//   pending    — tremolo (LFO amplitude modulation), LFO delay, live velocity;
 //                multi-op feedback loops (algorithms 4 and 6) fall back to
 //                self-feedback on the loop's driving op
-//   by ear     — the rate->seconds curve and the modulation index scale, pending a
-//                vendored msfa oracle in the sfxr/Nuked pattern
+//   measured   — the rate->seconds curves, against the vendored msfa oracle
+//   by ear     — the modulation index scale (INDEX_FULL)
 // Every voice records what was dropped in its own metadata.
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
@@ -101,7 +104,15 @@ function decodeVoice(bytes) {
       op: 6 - slot,  // stored OP6 first, like everything else in this format
       rates: [bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]],
       levels: [bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]],
+      breakPoint: bytes[at + 8],
+      leftDepth: bytes[at + 9],
+      rightDepth: bytes[at + 10],
+      leftCurve: bytes[at + 11] & 0x03,
+      rightCurve: (bytes[at + 11] >> 2) & 0x03,
+      rateScaling: bytes[at + 12] & 0x07,
       detune: ((bytes[at + 12] >> 3) & 0x0f) - 7,
+      velocitySens: (bytes[at + 13] >> 2) & 0x07,
+      ampModSens: bytes[at + 13] & 0x03,
       outputLevel: bytes[at + 14],
       fixed: (bytes[at + 15] & 0x01) !== 0,
       coarse: (bytes[at + 15] >> 1) & 0x1f,
@@ -110,8 +121,17 @@ function decodeVoice(bytes) {
   }
   return {
     ops,
+    pitchRates: [bytes[102], bytes[103], bytes[104], bytes[105]],
+    pitchLevels: [bytes[106], bytes[107], bytes[108], bytes[109]],
     algorithm: bytes[110] & 0x1f,
     feedbackLevel: bytes[111] & 0x07,
+    lfoSpeed: bytes[112],
+    lfoDelay: bytes[113],
+    lfoPmd: bytes[114],
+    lfoAmd: bytes[115],
+    lfoSync: bytes[116] & 0x01,
+    lfoWave: (bytes[116] >> 1) & 0x07,
+    pitchModSens: (bytes[116] >> 4) & 0x07,
     transpose: bytes[117] - 24,
     name: String.fromCharCode(...bytes.subarray(118, 128))
       .replace(/[^\x20-\x7e]/g, ' ').trim(),
@@ -122,8 +142,102 @@ function decodeVoice(bytes) {
 // Parameter mappings — the stage-1 approximations, each named and bounded.
 // ---------------------------------------------------------------------------------
 
-// DX7 levels run 0-99 on a roughly-constant-dB ladder; 99 is full scale.
-const levelAmp = (level) => Math.pow(10, (-0.75 * (99 - level)) / 20);
+// ---------------------------------------------------------------------------------
+// msfa's own arithmetic, translated exactly — not fitted, not calibrated, copied.
+// The vendored oracle carries these tables and formulas (dx7note.cc, env.cc,
+// pitchenv.cc, lfo.cc); evaluating them here at the reference note and velocity
+// makes the import match the oracle by construction, not by tuning. One env level
+// unit is 2^21/2^24 octaves = 6.0206/8 dB, which also retires the approximate 0.75.
+// ---------------------------------------------------------------------------------
+
+const LEVEL_LUT = [0, 5, 9, 13, 17, 20, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41,
+  42, 43, 45, 46];
+const scaleOutLevel = (level) => (level >= 20 ? 28 + level : LEVEL_LUT[level]);
+
+const EXP_SCALE_DATA = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19, 23, 27, 33,
+  39, 47, 56, 66, 80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250];
+
+function scaleCurve(group, depth, curve) {
+  let scale;
+  if (curve === 0 || curve === 3) {
+    scale = (group * depth * 329) >> 12;
+  } else {
+    const raw = EXP_SCALE_DATA[Math.min(group, EXP_SCALE_DATA.length - 1)];
+    scale = (raw * depth * 329) >> 15;
+  }
+  return curve < 2 ? -scale : scale;
+}
+
+function scaleLevel(midinote, breakPoint, leftDepth, rightDepth, leftCurve, rightCurve) {
+  const offset = midinote - breakPoint - 17;
+  if (offset >= 0) return scaleCurve(Math.floor(offset / 3), rightDepth, rightCurve);
+  return scaleCurve(Math.floor(-offset / 3), leftDepth, leftCurve);
+}
+
+const scaleRate = (midinote, sensitivity) =>
+  (sensitivity * Math.min(31, Math.max(0, Math.floor(midinote / 3) - 7))) >> 3;
+
+const VELOCITY_DATA = [0, 70, 86, 97, 106, 114, 121, 126, 132, 138, 142, 148, 152,
+  156, 160, 163, 166, 170, 173, 174, 178, 181, 184, 186, 189, 190, 194, 196, 198,
+  200, 202, 205, 206, 209, 211, 214, 216, 218, 220, 222, 224, 225, 227, 229, 230,
+  232, 233, 235, 237, 238, 240, 241, 242, 243, 244, 246, 246, 248, 249, 250, 251,
+  252, 253, 254];
+
+// Velocity delta in env Q units; /32 puts it on the outlevel-127 ladder.
+function scaleVelocity(velocity, sensitivity) {
+  const clamped = Math.max(0, Math.min(127, velocity));
+  const value = VELOCITY_DATA[clamped >> 1] - 239;
+  return ((sensitivity * value + 7) >> 3) << 4;
+}
+
+const PITCH_MOD_SENS = [0, 10, 20, 33, 55, 92, 153, 255];
+
+// Pitch envelope levels in octaves: pitchtab << 19 against 2^24 per octave.
+const PITCH_TAB = [-128, -116, -104, -95, -85, -76, -68, -61, -56, -52, -49, -46,
+  -43, -41, -39, -37, -35, -33, -32, -31, -30, -29, -28, -27, -26, -25, -24, -23,
+  -22, -21, -20, -19, -18, -17, -16, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6,
+  -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+  18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 38, 40,
+  43, 46, 49, 53, 58, 65, 73, 82, 92, 103, 115, 127];
+const pitchOctaves = (level) => PITCH_TAB[Math.max(0, Math.min(99, level))] / 32;
+
+// The pitch envelope's clock, from pitchenv.cc: the level slides *linearly* at
+// ratetab[rate]/21.3 octaves per second (inc = ratetab*unit per sample, unit =
+// 2^24/(21.3*sr), 2^24 per octave). Traversal time falls out in closed form. The
+// ADSR's decay and release are exponential, not linear — a shape approximation the
+// per-voice notes record; the attack segment is linear on both sides.
+const PITCH_RATE_TAB = [1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11,
+  11, 12, 12, 13, 13, 14, 14, 15, 16, 16, 17, 18, 18, 19, 20, 21, 22, 23, 24, 25,
+  26, 27, 28, 30, 31, 33, 34, 36, 37, 38, 39, 41, 42, 44, 46, 47, 49, 51, 53, 54,
+  56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 79, 82, 85, 88, 91, 94, 98, 102, 106,
+  110, 115, 120, 125, 130, 135, 141, 147, 153, 159, 165, 171, 178, 185, 193, 202,
+  211, 232, 243, 254, 255];
+const pitchSlewSeconds = (octaves, rate) => Math.min(10,
+  (Math.abs(octaves) * 21.3) / PITCH_RATE_TAB[Math.max(0, Math.min(99, rate))]);
+
+// The DX7 LFO's frequency, closed form from lfo.cc: unit = 25190424/2^32 Hz.
+function lfoHz(rate) {
+  let sr = rate === 0 ? 1 : (165 * rate) >> 6;
+  sr *= sr < 160 ? 11 : 11 + ((sr - 160) >> 4);
+  return (25190424 / Math.pow(2, 32)) * sr;
+}
+
+// DX7 LFO waveform -> the engine LFO's shape enum. Saw-down has no exact match and
+// arrives as saw (rising) — the pitch contour inverts, which a fidelity note records.
+const LFO_SHAPE = [1, 2, 2, 3, 0, 4];
+
+// The note and velocity every render in this repository plays: MIDI 57 through
+// sg-render, velocity 100 through the oracle. The scaling functions above are exact
+// at this point and approximations elsewhere on the keyboard, which the metadata
+// says per voice.
+const REFERENCE_NOTE = 57;
+const REFERENCE_VELOCITY = 100;
+
+// One outlevel-127 unit in amplitude. 2^(x/8) per unit: msfa's ladder, exactly.
+const levelAmp127 = (units) => Math.pow(2, (units - 127) / 8);
+
+// DX7 levels 0-99 through the same ladder the oracle uses.
+const levelAmp = (level) => levelAmp127(scaleOutLevel(level));
 
 // Rate 0-99 to seconds — MEASURED against the msfa oracle by tools/dx7-calibrate.mjs
 // (attack read at 90% of peak, falls at -20 dB, fit residuals under a tenth of an
@@ -143,7 +257,12 @@ const INDEX_FULL = 2.0;
 const feedbackCycles = (fb) => (fb <= 0 ? 0 : Math.pow(2, fb - 1) / 32);
 
 function envelopeParameters(op) {
-  const [r1, r2, r3, r4] = op.rates;
+  // Rate scaling, msfa's own arithmetic: the qrate delta at the reference note,
+  // converted back to the 0-99 rate domain (qrate = rate*41/64). Exact at A3,
+  // an approximation elsewhere on the keyboard — the engine's ADSR has no key
+  // tracking yet, and pretending otherwise would be worse than saying so.
+  const rateDelta = (scaleRate(REFERENCE_NOTE, op.rateScaling) * 64) / 41;
+  const [r1, r2, r3, r4] = op.rates.map((r) => Math.min(99, r + rateDelta));
   const [l1, l2, l3] = op.levels;
   // Attack to L1 at R1; the fall through L2 to the held L3 is two segments folded
   // into one decay knob; release at R4. L4 is assumed to be silence, which nearly
@@ -154,6 +273,17 @@ function envelopeParameters(op) {
     sustain: Number((levelAmp(l3) * Math.min(1, l1 / 99)).toFixed(4)),
     release: Number(fallSeconds(r4).toFixed(4)),
   };
+}
+
+// The operator's effective output amplitude: its level through the oracle's ladder,
+// key-level scaling and the velocity curve applied exactly at the reference point.
+function operatorAmp(op) {
+  let units = scaleOutLevel(op.outputLevel);
+  units += scaleLevel(REFERENCE_NOTE, op.breakPoint, op.leftDepth, op.rightDepth,
+    op.leftCurve, op.rightCurve);
+  units = Math.max(0, Math.min(127, units));
+  units += scaleVelocity(REFERENCE_VELOCITY, op.velocitySens) / 32;
+  return levelAmp127(Math.min(127, units));
 }
 
 function operatorRatio(op) {
@@ -177,7 +307,18 @@ function buildPatch(voice, bankName, voiceIndex) {
   if (voice.algorithm + 1 === 4 || voice.algorithm + 1 === 6) {
     notes.push('multi-op feedback loop approximated as self-feedback');
   }
-  notes.push('LFO, key scaling, pitch envelope and velocity not applied');
+
+  // The voice's global pitch story: vibrato depth from PMD through the sensitivity
+  // table, and the pitch envelope's four levels in octaves. L4 is where the envelope
+  // starts, sustains relative to, and returns — a constant everything else rides on,
+  // so it folds into the operator frequencies and only the excursion needs nodes.
+  const pitchEg = voice.pitchLevels.map(pitchOctaves);
+  const egBase = pitchEg[3];
+  const egSpread = Math.max(...pitchEg.map((o) => Math.abs(o - egBase)));
+  const hasPitchEnvelope = egSpread > 0.001;
+  const vibratoDepth = (((voice.lfoPmd * 165) >> 6)
+    * PITCH_MOD_SENS[voice.pitchModSens]) / 65536;
+  const hasVibrato = vibratoDepth > 0.0005;
 
   const nodes = [{ id: 'note', type: 'NoteInput',
     parameters: voice.transpose !== 0 ? { transpose: voice.transpose } : {} }];
@@ -210,14 +351,16 @@ function buildPatch(voice, bankName, voiceIndex) {
     if (topology.feedback === op.op && voice.feedbackLevel > 0) {
       // Like OPL, the chip feeds back the *attenuated* output; scale by level.
       oscParameters.feedback = Number((feedbackCycles(voice.feedbackLevel)
-        * levelAmp(op.outputLevel)).toFixed(5));
+        * operatorAmp(op)).toFixed(5));
     }
     if (op.fixed) {
-      oscParameters.frequency = Number(operatorRatio(op).toFixed(3));
+      oscParameters.frequency = Number((operatorRatio(op)
+        * Math.pow(2, egBase)).toFixed(3));
       nodes.push({ id: `${id}_osc`, type: 'SineOscillator', parameters: oscParameters });
     } else {
       nodes.push({ id: `${id}_pitch`, type: 'Multiply',
-        parameters: { factor: Number(operatorRatio(op).toFixed(5)) } });
+        parameters: { factor: Number((operatorRatio(op)
+          * Math.pow(2, egBase)).toFixed(5)) } });
       wire('note', 'frequency', `${id}_pitch`, 'a');
       nodes.push({ id: `${id}_osc`, type: 'SineOscillator', parameters: oscParameters });
       wire(`${id}_pitch`, 'out', `${id}_osc`, 'frequency');
@@ -227,6 +370,72 @@ function buildPatch(voice, bankName, voiceIndex) {
     nodes.push({ id: `${id}_vca`, type: 'Multiply', parameters: {} });
     wire(`${id}_osc`, 'out', `${id}_vca`, 'a');
     wire(`${id}_env`, 'out', `${id}_vca`, 'b');
+  }
+
+  // Global pitch modulation: vibrato and the pitch envelope, both in octaves, summed
+  // if both exist and fed to every sounding oscillator's fm input — on the chip the
+  // pitch is one number the whole voice shares, fixed-frequency operators included.
+  let pitchModSource = '';
+  if (hasVibrato) {
+    nodes.push({ id: 'vibrato', type: 'LFO', parameters: {
+      rate: Number(lfoHz(voice.lfoSpeed).toFixed(4)),
+      shape: LFO_SHAPE[voice.lfoWave],
+      amount: Number(vibratoDepth.toFixed(5)),
+    } });
+    pitchModSource = 'vibrato';
+    if (voice.lfoDelay > 0) notes.push('LFO delay ignored');
+    if (voice.lfoWave === 1) notes.push('saw-down LFO rendered as rising saw');
+  }
+  if (hasPitchEnvelope) {
+    // The ADSR runs 0..1; a Multiply stretches it to the excursion above L4. Sustain
+    // sits at (L3-L4)/(L1-L4) of the peak; a voice whose peak equals its floor but
+    // still moves (L1 == L4, L3 elsewhere) scales to the sustain excursion instead.
+    let egScale = pitchEg[0] - egBase;
+    let egSustain = 1;
+    if (Math.abs(egScale) < 0.001) {
+      egScale = pitchEg[2] - egBase;
+      notes.push('pitch envelope attack peak flattened to its sustain level');
+    } else {
+      egSustain = Math.max(0, Math.min(1, (pitchEg[2] - egBase) / egScale));
+    }
+    const [pr1, pr2, pr3, pr4] = voice.pitchRates;
+    nodes.push({ id: 'pitch_env', type: 'ADSR', parameters: {
+      attack: Number(pitchSlewSeconds(pitchEg[0] - egBase, pr1).toFixed(4)),
+      decay: Number(Math.min(10, pitchSlewSeconds(pitchEg[1] - pitchEg[0], pr2)
+        + pitchSlewSeconds(pitchEg[2] - pitchEg[1], pr3)).toFixed(4)),
+      sustain: Number(egSustain.toFixed(4)),
+      release: Number(pitchSlewSeconds(egBase - pitchEg[2], pr4).toFixed(4)),
+    } });
+    wire('note', 'gate', 'pitch_env', 'gate');
+    nodes.push({ id: 'pitch_scale', type: 'Multiply',
+      parameters: { factor: Number(egScale.toFixed(5)) } });
+    wire('pitch_env', 'out', 'pitch_scale', 'a');
+    notes.push('pitch envelope L2 folded into the decay, exponential not linear');
+    if (pitchModSource === '') {
+      pitchModSource = 'pitch_scale';
+    } else {
+      nodes.push({ id: 'pitch_mod', type: 'Add', parameters: {} });
+      wire(pitchModSource, 'out', 'pitch_mod', 'a');
+      wire('pitch_scale', 'out', 'pitch_mod', 'b');
+      pitchModSource = 'pitch_mod';
+    }
+  }
+  if (pitchModSource !== '') {
+    for (const op of voice.ops) {
+      if (live.has(op.op)) wire(pitchModSource, 'out', `op${op.op}_osc`, 'fm');
+    }
+  }
+
+  // What the scaling arithmetic above silently fixed at the reference point.
+  const liveOps = voice.ops.filter((o) => live.has(o.op));
+  if (liveOps.some((o) => o.rateScaling > 0 || o.leftDepth > 0 || o.rightDepth > 0)) {
+    notes.push('key scaling evaluated at MIDI 57 only');
+  }
+  if (liveOps.some((o) => o.velocitySens > 0)) {
+    notes.push('velocity response baked at velocity 100');
+  }
+  if (voice.lfoAmd > 0 && liveOps.some((o) => o.ampModSens > 0)) {
+    notes.push('LFO tremolo not applied');
   }
 
   // Modulation inputs: each modulated op sums its sources through Add nodes into pm.
@@ -241,7 +450,7 @@ function buildPatch(voice, bankName, voiceIndex) {
       const fromOp = voice.ops.find((o) => o.op === from);
       const gainId = `op${from}_index_${op.op}`;
       nodes.push({ id: gainId, type: 'Gain', parameters: {
-        gain: Number((INDEX_FULL * levelAmp(fromOp.outputLevel)).toFixed(4)) } });
+        gain: Number((INDEX_FULL * operatorAmp(fromOp)).toFixed(4)) } });
       wire(`op${from}_vca`, 'out', gainId, 'in');
       if (i === 0) {
         feed = gainId;
@@ -259,14 +468,14 @@ function buildPatch(voice, bankName, voiceIndex) {
   // Carriers sum into the output, normalised so a six-carrier organ cannot clip.
   let carrierAmpSum = 0;
   for (const c of topology.carriers) {
-    carrierAmpSum += levelAmp(voice.ops.find((o) => o.op === c).outputLevel);
+    carrierAmpSum += operatorAmp(voice.ops.find((o) => o.op === c));
   }
   let mix = '';
   topology.carriers.forEach((c, i) => {
     const levelId = `op${c}_level`;
     const carrierOp = voice.ops.find((o) => o.op === c);
     nodes.push({ id: levelId, type: 'Gain', parameters: {
-      gain: Number(levelAmp(carrierOp.outputLevel).toFixed(4)) } });
+      gain: Number(operatorAmp(carrierOp).toFixed(4)) } });
     wire(`op${c}_vca`, 'out', levelId, 'in');
     if (i === 0) {
       mix = levelId;
@@ -288,8 +497,8 @@ function buildPatch(voice, bankName, voiceIndex) {
     metadata: {
       name: voice.name || `Voice ${voiceIndex + 1}`,
       description: `${voice.name} — DX7 voice, algorithm ${voice.algorithm + 1}, `
-        + `imported by tools/dx7-import.mjs from ${bankName}. `
-        + `Approximated: ${notes.join('; ')}.`,
+        + `imported by tools/dx7-import.mjs from ${bankName}.`
+        + (notes.length > 0 ? ` Approximated: ${notes.join('; ')}.` : ''),
       author: 'SoundGraph dx7-import (mapping)',
       tags: ['fm', 'dx7', 'imported', `algorithm-${voice.algorithm + 1}`],
       source: `tools/dx7/banks/${bankName}`,
@@ -348,6 +557,7 @@ const OPERATOR_MODULE = {
     { name: 'note', node: 'pitch', port: 'a' },
     { name: 'gate', node: 'env', port: 'gate' },
     { name: 'pm', node: 'osc', port: 'pm' },
+    { name: 'fm', node: 'osc', port: 'fm' },
   ],
   outputs: [{ name: 'out', node: 'vca', port: 'out' }],
   parameters: [
@@ -421,8 +631,11 @@ function modularize(flat) {
       rewritten.from = { node: from.instance, port: 'out' };
     }
     if (toInside) {
+      // The oscillator has two modulation inputs and both cross the boundary now:
+      // pm carries operator FM, fm carries the voice's pitch modulation in octaves.
+      // The declared port keeps the inner port's name, so the original tells us.
       const name = to.part === 'pitch' ? 'note'
-        : to.part === 'env' ? 'gate' : 'pm';
+        : to.part === 'env' ? 'gate' : connection.to.port;
       rewritten.to = { node: to.instance, port: name };
     }
     connections.push(rewritten);

@@ -67,7 +67,12 @@ made audible.
   tools/dx7-compare.mjs holds every imported voice to it in ctest, and
   tools/dx7-calibrate.mjs measured the envelope clock (attack 26.8·2^(-r/6.47),
   falls 20.7·2^(-r/7.20), residuals under 0.1 octave — the fitted guess had been 4×
-  slow). Pending: LFO, key scaling, pitch EG, velocity, the algorithm 4/6 multi-op
+  slow). Stage 2 **landed**: msfa's own tables translated verbatim (level ladder
+  2^(1/8)/unit, ScaleLevel/ScaleRate/ScaleVelocity, pitchtab, the LFO's closed-form
+  Hz), key scaling and velocity evaluated exactly at the reference note and velocity,
+  vibrato as an LFO into the oscillators' fm inputs, and the pitch envelope as an
+  ADSR in octaves — four demo-bank voices exercise each feature under the oracle
+  comparator. Pending: tremolo, LFO delay, live velocity, the algorithm 4/6 multi-op
   loops, and a measured modulation-index scale.
 
 ### 3. OPN2 / YM2612 — Sega Genesis instruments (4-operator)

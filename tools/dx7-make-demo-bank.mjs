@@ -64,7 +64,7 @@ for (let algorithm = 0; algorithm < 32; ++algorithm) {
   voice.fill(50, 106, 110);        // pitch EG levels: neutral
   voice[110] = algorithm;
   voice[111] = 5;                  // feedback 5, oscillator sync off
-  voice[112] = 35;                 // LFO speed — recorded, not yet imported
+  voice[112] = 35;                 // LFO speed — inert while PMD stays 0
   voice[113] = 0;
   voice[114] = 0;
   voice[115] = 0;
@@ -72,6 +72,44 @@ for (let algorithm = 0; algorithm < 32; ++algorithm) {
   voice[117] = 24;                 // transpose: C3, i.e. none
   const name = `ALGO ${String(algorithm + 1).padStart(2, '0')}   `.slice(0, 10);
   for (let i = 0; i < 10; ++i) voice[118 + i] = name.charCodeAt(i);
+}
+
+// Four of the portraits also exercise the stage-2 fidelity features, so the oracle
+// comparator and the modular check hold the importer to more than topology. Gentle
+// settings on purpose: the comparator's pitch check reads a 0.3 s window, and a
+// two-semitone vibrato would wobble the measurement more than it proves.
+//   ALGO 28 — vibrato: PMD 15 through sensitivity 2 (about ±14 cents), sine. Depth
+//             30/3 (±half a semitone) failed the comparator: both renders wobble,
+//             but the loudest-window measurement catches different LFO phases and
+//             read 224 vs 216 Hz — the vibrato has to stay inside the pitch check's
+//             3% for the check to stay meaningful.
+//   ALGO 29 — pitch envelope: a fast +1/4-octave blip settling +1/16 octave sharp
+//   ALGO 30 — key scaling: rate scaling 4, -LIN right depth 60 from a low break point
+//             (A3 must sit inside the scaled zone or the depth does nothing at the
+//             reference note)
+//   ALGO 31 — velocity sensitivity 7 on the modulators
+const voiceAt = (index) => bank.subarray(index * 128, (index + 1) * 128);
+
+const vibrato = voiceAt(27);
+vibrato[114] = 15;                     // PMD
+vibrato[116] = (2 << 4) | (4 << 1);    // pitch-mod sensitivity 2, sine wave, sync off
+
+const pitchEnv = voiceAt(28);
+pitchEnv.set([90, 70, 60, 70], 102);   // rates: transient over in a tenth of a second
+pitchEnv.set([58, 54, 52, 50], 106);   // levels, 50 = neutral
+
+const keyScaled = voiceAt(29);
+for (let slot = 0; slot < 6; ++slot) {
+  const at = slot * 17;
+  keyScaled[at + 8] = 27;              // break point A1, well below the played A3
+  keyScaled[at + 10] = 60;             // right depth
+  keyScaled[at + 11] = 0;              // -LIN both curves: quieter above the break
+  keyScaled[at + 12] = (7 << 3) | 4;   // detune centred, rate scaling 4
+}
+
+const velocity = voiceAt(30);
+for (let slot = 0; slot < 4; ++slot) { // slots 0-3 are OP6..OP3, the modulators
+  velocity[slot * 17 + 13] = 7 << 2;   // velocity sensitivity 7, amp-mod 0
 }
 
 let sum = 0;
