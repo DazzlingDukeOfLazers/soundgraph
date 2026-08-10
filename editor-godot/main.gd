@@ -1570,6 +1570,14 @@ func _rebuild_view() -> void:
 
 	_restore_waypoints()
 
+	# Fresh widgets are built showing everything, but the zoom has an opinion already.
+	# _apply_detail only ran on detail_changed, and a rebuild does not change the
+	# detail — so rebuilding while zoomed out (a UI-scale toggle, a palette switch)
+	# produced full-detail nodes at 55%, sub-floor text and all, which then snapped
+	# back to the honest view on the next zoom step. The level in force gets
+	# re-applied to the widgets that were not there when it was announced.
+	_apply_detail(graph_edit.detail)
+
 	# The rack reads the same document, so it is rebuilt from the same place rather than
 	# kept in step by hand.
 	if rack != null:
@@ -3012,6 +3020,14 @@ func _apply_detail(level: int) -> void:
 	# a node says what it is (the title overlay holds that at a readable size) and
 	# shows where its jacks are; what each jack is called comes back with the zoom.
 	var show_port_names := level == PatchGraph.Detail.FULL
+	# The controls out-survive the words by one level. The type floor is a rule about
+	# text — a slider is geometry, and geometry scales. Hiding whole parameter rows at
+	# REDUCED made the fitted default view a wall of empty aluminium, which read as
+	# broken rather than as zoomed out ("the controls aren't visible" — the first
+	# reload of the web build after fit-on-load landed). Now REDUCED keeps every
+	# slider and hides every word beside it: the node still looks like an instrument,
+	# the knobs still answer the mouse, and nothing renders under the floor.
+	var show_rows := level != PatchGraph.Detail.TOPOLOGY
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
 		for child in widget.get_children():
@@ -3020,7 +3036,19 @@ func _apply_detail(level: int) -> void:
 				continue
 			match str(control.get_meta("row", "")):
 				"parameter":
-					control.visible = show_parameters and not control.get_meta("collapsed", false)
+					# The "N more" disclosure is only words, so it goes with the words.
+					if control is Button:
+						control.visible = show_parameters
+						continue
+					# A row with no slider — an enum selector — is only words too.
+					var has_slider := false
+					for part in control.get_children():
+						if part is HSlider:
+							has_slider = true
+					control.visible = (show_parameters or (show_rows and has_slider)) \
+						and not control.get_meta("collapsed", false)
+					for part in control.get_children():
+						(part as Control).visible = show_parameters or part is HSlider
 				"port":
 					# One level deeper than it used to be: a port caption is now a name and a
 					# unit in their own box, so the labels are grandchildren of the row.

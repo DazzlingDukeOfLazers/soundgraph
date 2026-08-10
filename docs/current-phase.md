@@ -191,6 +191,13 @@ These all cost real time once and are written up in `decisions.md` or the compon
 READMEs. Collected here because the pattern is the same each time — the symptom pointed
 somewhere other than the cause.
 
+- **The 0xC0000005 exit crash is rarer, not gone.** shutdown_audio() plus two frames took
+  it from ~1 in 5 to the point where 36 consecutive clean runs looked like zero — and on
+  2026-08-09 it fired twice in 11 runs, then 0 in the next 32. A residual few-percent
+  flake passes any streak you are patient enough to collect. It still crashes *after* the
+  work succeeds; verify-roundtrip labels it CRASHED rather than a refusal. If it climbs
+  back toward 1-in-5, suspect the teardown path first and measure against an older
+  commit before theorising.
 - **Counting redraws does not test a redraw.** The rack's cable dimming needed
   `Rack.select()` to redraw the cable layer, which is a sibling of the modules rather than
   one of them. The test counted `_draw()` calls before and after — and passed with the fix
