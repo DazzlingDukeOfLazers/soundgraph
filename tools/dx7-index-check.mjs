@@ -56,7 +56,7 @@ function packOperator(bytes, at, coarse, level) {
   bytes[at + 15] = coarse << 1;    // ratio mode
 }
 
-function packVoice(bank, index, { algorithm, feedback, ops, name }) {
+function packVoice(bank, index, { algorithm, feedback, ops, name, lfo }) {
   const voice = bank.subarray(index * 128, (index + 1) * 128);
   for (let slot = 0; slot < 6; ++slot) {
     const op = 6 - slot;
@@ -66,6 +66,12 @@ function packVoice(bank, index, { algorithm, feedback, ops, name }) {
   voice.fill(50, 102, 110);        // pitch EG neutral
   voice[110] = algorithm;
   voice[111] = feedback;
+  if (lfo) {
+    voice[112] = lfo.speed;
+    voice[113] = lfo.delay;
+    voice[114] = lfo.pmd;
+    voice[116] = (lfo.pms << 4) | (4 << 1);  // sine wave, sync off
+  }
   voice[117] = 24;                 // transpose: none
   const padded = `${name}          `.slice(0, 10);
   for (let i = 0; i < 10; ++i) voice[118 + i] = padded.charCodeAt(i);
@@ -110,6 +116,19 @@ for (const feedback of FEEDBACKS) {
   cases.push({ algorithm: 31, feedback, name: `FB ${feedback}`,
     ops: { 6: { coarse: 1, level: FEEDBACK_CARRIER_LEVEL } } });
 }
+
+// The LFO delay, held in the time domain instead of the spectrum: a lone sine
+// carrier with a huge vibrato (PMD 99 through sensitivity 7, about +-1 octave, at
+// 1.6 Hz — slow enough that pitch is quasi-stable inside a 0.1 s window) behind
+// delay 55, which lfo.cc decodes to a 0.38 s hold and a 0.67 s ramp. Both engines'
+// pitch trajectories are measured window by window; they share the LFO's exact
+// rate and phase (sine starts at zero, rising, on both), so the only allowed
+// disagreement is the documented fade-shape approximation — the squared ramp
+// reaches 13% where the chip still holds zero, which is why the tolerance is
+// 0.2 octaves pointwise and not less.
+cases.push({ algorithm: 0, feedback: 0, name: 'DLY', kind: 'fade',
+  ops: { 1: { coarse: 1, level: CARRIER_LEVEL } },
+  lfo: { speed: 10, delay: 55, pmd: 99, pms: 7 } });
 
 const scratch = mkdtempSync(join(tmpdir(), 'dx7-index-'));
 const bankDir = join(scratch, 'banks');
@@ -160,6 +179,34 @@ function harmonicsDb(wav, f0) {
   return magnitudes.map((m) => 20 * Math.log10(Math.max(m, 1e-12) / peak));
 }
 
+// Pitch per 0.1 s window by plain autocorrelation — fundamental() from the shared
+// lib wants its own 0.3 s loudest window, too long for a trajectory. Lag
+// quantisation at these frequencies is ~0.003 octaves, far under the tolerance.
+function windowF0(wav, startSeconds) {
+  const { samples, rate } = wav;
+  const start = Math.floor(startSeconds * rate);
+  const seg = samples.slice(start, start + Math.floor(0.1 * rate));
+  const minLag = Math.floor(rate / 500);
+  const maxLag = Math.floor(rate / 100);
+  let best = 0;
+  let bestLag = 0;
+  for (let lag = minLag; lag <= maxLag; ++lag) {
+    let c = 0;
+    for (let i = 0; i + lag < seg.length; ++i) c += seg[i] * seg[i + lag];
+    if (c > best) { best = c; bestLag = lag; }
+  }
+  return bestLag > 0 ? rate / bestLag : 0;
+}
+
+// The vibrato trajectory: |octaves from the carrier| in each window.
+const deviations = (wav) => {
+  const out = [];
+  for (let t = 0.1; t <= 1.25; t += 0.1) {
+    out.push(Math.abs(Math.log2(Math.max(1, windowF0(wav, t)) / 220)));
+  }
+  return out;
+};
+
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   .replace(/^-|-$/g, '');
 
@@ -175,6 +222,39 @@ for (const c of cases) {
 
   const oracle = readWav(oracleWav);
   const ours = readWav(oursWav);
+
+  if (c.kind === 'fade') {
+    // Region-wise, not pointwise: at full depth the pitch sweeps up to an octave
+    // *inside* a measurement window, so both trajectories sample the wobble
+    // noisily and pointwise gaps there measure the jitter, not the fade. The fade
+    // lives where the assertions look — near-zero through the hold, matching
+    // average depth through the ramp, and full depth once the fade is done. A
+    // missing fade fails the ramp average (it would read ~0.6, the mean of a
+    // full-depth |sin|); a missing LFO fails the late depth on one side.
+    const oracleDev = deviations(oracle);
+    const oursDev = deviations(ours);
+    const at = (t) => Math.round((t - 0.1) / 0.1);
+    const early = (dev) => Math.max(...dev.slice(0, at(0.35)));
+    const rampMean = (dev) => {
+      const region = dev.slice(at(0.4), at(1.0));
+      return region.reduce((s, d) => s + d, 0) / region.length;
+    };
+    const late = (dev) => Math.max(...dev.slice(at(1.0)));
+    const rampGap = Math.abs(rampMean(oracleDev) - rampMean(oursDev));
+    const ok = early(oracleDev) <= 0.1 && early(oursDev) <= 0.1
+      && rampGap <= 0.1 && late(oracleDev) > 0.5 && late(oursDev) > 0.5;
+    if (!ok) failures += 1;
+    console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${id.padEnd(10)} fade: hold `
+      + `${early(oracleDev).toFixed(2)}/${early(oursDev).toFixed(2)} oct, ramp mean `
+      + `gap ${rampGap.toFixed(3)} oct, late depth `
+      + `${late(oracleDev).toFixed(2)}/${late(oursDev).toFixed(2)} oct`);
+    if (verbose || !ok) {
+      console.log(`       oracle ${oracleDev.map((d) => d.toFixed(2)).join(' ')}`);
+      console.log(`       ours   ${oursDev.map((d) => d.toFixed(2)).join(' ')}`);
+    }
+    continue;
+  }
+
   const oracleDb = harmonicsDb(oracle, fundamental(oracle, 100));
   const oursDb = harmonicsDb(ours, fundamental(ours, 100));
 
@@ -199,5 +279,4 @@ if (failures > 0) {
   console.error(`\n${failures} case(s) disagree with the oracle's index scale.`);
   process.exit(1);
 }
-console.log(`All ${cases.length} index/feedback cases agree with the oracle within `
-  + `${TOLERANCE_DB} dB per harmonic.`);
+console.log(`All ${cases.length} index, feedback and fade cases agree with the oracle.`);

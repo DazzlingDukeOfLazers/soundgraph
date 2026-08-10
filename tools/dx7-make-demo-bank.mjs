@@ -90,7 +90,19 @@ for (let algorithm = 0; algorithm < 32; ++algorithm) {
 //   ALGO 31 — velocity sensitivity 7 on the modulators
 const voiceAt = (index) => bank.subarray(index * 128, (index + 1) * 128);
 
+//   ALGO 27 — tremolo: AMD 60 through sensitivity 2 on both carriers (about a
+//             3.4 dB wobble), sine wave. Not oracle-held — the vendored msfa has
+//             no amplitude modulation — but it keeps the code path exercised by
+//             --check, --modular-check and the comparator's presence floor.
+const tremolo = voiceAt(26);
+tremolo[115] = 60;                     // AMD
+tremolo[116] = 4 << 1;                 // sine wave, no pitch-mod, sync off
+for (const slot of [4, 5]) {           // slots 4-5 are OP2 and OP1, the carriers
+  tremolo[slot * 17 + 13] = 2;         // amp-mod sensitivity 2, velocity 0
+}
+
 const vibrato = voiceAt(27);
+vibrato[113] = 55;                     // LFO delay: 0.38 s hold + 0.67 s ramp
 vibrato[114] = 15;                     // PMD
 vibrato[116] = (2 << 4) | (4 << 1);    // pitch-mod sensitivity 2, sine wave, sync off
 

@@ -76,8 +76,13 @@ made audible.
   2^(units/8 - 14.875) cycles (INDEX_FULL = 2.0 exactly), feedback 2^(fb-7) of the
   op's amplitude — the old feedback constant was exactly twice msfa's, caught by
   tools/dx7-index-check.mjs, which holds both engines' sideband spectra to 2 dB per
-  harmonic in ctest (observed agreement: 0.16 dB worst case). Pending: tremolo, LFO
-  delay, live velocity, and the algorithm 4/6 multi-op loops.
+  harmonic in ctest (observed agreement: 0.16 dB worst case). LFO delay is applied
+  as lfo.cc's hold-then-ramp (approximated as a squared ramp; the same check holds
+  the oracle's pitch trajectory to it, ramp average within 0.01 octave), and
+  tremolo follows Dexed's fork formula — the vendored msfa has no amplitude
+  modulation, so tremolo alone is stated, not oracle-held. Pending: live velocity,
+  the algorithm 4/6 multi-op loops, tremolo reaching the feedback loop, and
+  deep-feedback (fb 7 near full level) chaos parity.
 
 ### 3. OPN2 / YM2612 — Sega Genesis instruments (4-operator)
 

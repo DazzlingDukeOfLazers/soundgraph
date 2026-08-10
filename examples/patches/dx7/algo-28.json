@@ -2,7 +2,7 @@
   "schema_version": 2,
   "metadata": {
     "name": "ALGO 28",
-    "description": "ALGO 28 — DX7 voice, algorithm 28, imported by tools/dx7-import.mjs from algorithm-demos.syx.",
+    "description": "ALGO 28 — DX7 voice, algorithm 28, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: LFO delay hold-then-ramp approximated as a squared ramp that sags slowly after note-off instead of holding.",
     "author": "SoundGraph dx7-import (mapping)",
     "tags": [
       "fm",
@@ -214,6 +214,21 @@
       }
     },
     {
+      "id": "lfo_fade",
+      "type": "ADSR",
+      "parameters": {
+        "attack": 1.0466,
+        "decay": 0,
+        "sustain": 1,
+        "release": 10
+      }
+    },
+    {
+      "id": "lfo_fade_sq",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
       "id": "vibrato",
       "type": "LFO",
       "parameters": {
@@ -221,6 +236,11 @@
         "shape": 0,
         "amount": 0.0116
       }
+    },
+    {
+      "id": "vibrato_faded",
+      "type": "Multiply",
+      "parameters": {}
     },
     {
       "id": "op5_index_4",
@@ -405,7 +425,57 @@
     },
     {
       "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "lfo_fade",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "lfo_fade",
+        "port": "out"
+      },
+      "to": {
+        "node": "lfo_fade_sq",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "lfo_fade",
+        "port": "out"
+      },
+      "to": {
+        "node": "lfo_fade_sq",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
         "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "vibrato_faded",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "lfo_fade_sq",
+        "port": "out"
+      },
+      "to": {
+        "node": "vibrato_faded",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato_faded",
         "port": "out"
       },
       "to": {
@@ -415,7 +485,7 @@
     },
     {
       "from": {
-        "node": "vibrato",
+        "node": "vibrato_faded",
         "port": "out"
       },
       "to": {
@@ -425,7 +495,7 @@
     },
     {
       "from": {
-        "node": "vibrato",
+        "node": "vibrato_faded",
         "port": "out"
       },
       "to": {
@@ -435,7 +505,7 @@
     },
     {
       "from": {
-        "node": "vibrato",
+        "node": "vibrato_faded",
         "port": "out"
       },
       "to": {
@@ -445,7 +515,7 @@
     },
     {
       "from": {
-        "node": "vibrato",
+        "node": "vibrato_faded",
         "port": "out"
       },
       "to": {
@@ -455,7 +525,7 @@
     },
     {
       "from": {
-        "node": "vibrato",
+        "node": "vibrato_faded",
         "port": "out"
       },
       "to": {

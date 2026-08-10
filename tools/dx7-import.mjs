@@ -24,12 +24,14 @@
 //                the ADSR, transpose; key scaling (rate and level) and the velocity
 //                curve, both evaluated exactly at the reference note and velocity;
 //                vibrato as an LFO into the oscillators' fm inputs; the pitch
-//                envelope as an ADSR in octaves
-//   pending    — tremolo (LFO amplitude modulation), LFO delay, live velocity;
-//                multi-op feedback loops (algorithms 4 and 6) fall back to
-//                self-feedback on the loop's driving op; feedback 7 on a
+//                envelope as an ADSR in octaves; the LFO delay as a fade on both
+//                LFO destinations; tremolo per Dexed's fork (the vendored oracle
+//                has no amplitude modulation, so tremolo alone is not oracle-held)
+//   pending    — live velocity; multi-op feedback loops (algorithms 4 and 6) fall
+//                back to self-feedback on the loop's driving op; feedback 7 on a
 //                near-full-level op period-doubles in msfa's fixed-point loop
-//                where our float loop stays period-1 (see dx7-index-check.mjs)
+//                where our float loop stays period-1 (see dx7-index-check.mjs);
+//                tremolo does not reach the feedback loop
 //   measured   — the rate->seconds curves, against the vendored msfa oracle
 //   by ear     — the modulation index scale (INDEX_FULL)
 // Every voice records what was dropped in its own metadata.
@@ -230,6 +232,40 @@ function lfoHz(rate) {
 // arrives as saw (rising) — the pitch contour inverts, which a fidelity note records.
 const LFO_SHAPE = [1, 2, 2, 3, 0, 4];
 
+// The LFO delay, from lfo.cc: not one ramp but a *hold* (getdelay returns 0 while
+// the accumulator climbs to 2^31 at unit*a per sample) and then a linear ramp to
+// full (at unit*a2). unit*sr = 25190424/s, so both durations come in closed form.
+function lfoDelayTimes(delay) {
+  const raw = 99 - Math.max(0, Math.min(99, delay));
+  if (raw === 99) return null;  // delay 0: instantly full
+  const a = (16 + (raw & 15)) << (1 + (raw >> 4));
+  const a2 = Math.max(0x80, a & 0xff80);
+  return { hold: 2 ** 31 / (25190424 * a), ramp: 2 ** 31 / (25190424 * a2) };
+}
+
+// Tremolo. The vendored msfa has no amplitude modulation at all — Dexed's fork
+// added it — so unlike everything else in this block there is no oracle to hold it
+// to; the arithmetic below is Dexed's (dx7note.cc in asb2m10/dexed), translated:
+//   amod  = ((AMD*165)>>6 * lfo_delay) >> 8, modulated by the *inverted* LFO
+//   sens  = ampmodsenstab[0..3] = {0, 4342338, 7171437, 2^24}
+//   pt    = exp(0.07 * sensamp/2^18 + 12.2)   (their fitted float hack, verbatim)
+//   ldiff = level * pt / 2^24, subtracted in the log domain
+// One env-level unit is 2^-24 octaves *256, so the trough dip in octaves is the
+// op's log2 level times pt/2^24. The dip is evaluated at the envelope's peak and
+// swung linearly in amplitude — the chip swings it exponentially — and Dexed's
+// small constant bias at zero modulation (pt(0) = e^12.2) is deliberately not
+// reproduced.
+const AMP_MOD_SENS_TAB = [0, 4342338, 7171437, 16777216];
+
+function tremoloDip(op, amd) {
+  const depth = (amd * 165) >> 6;
+  const sensamp = (depth * 65536 * AMP_MOD_SENS_TAB[op.ampModSens & 3]) / 2 ** 24;
+  const pt = Math.exp((sensamp / 262144) * 0.07 + 12.2);
+  const peak = ((scaleOutLevel(op.levels[0]) >> 1) << 6)
+    + operatorUnits(op) * 32 - 4256;
+  return (Math.max(16, peak) / 256) * (pt / 2 ** 24);
+}
+
 // The note and velocity every render in this repository plays: MIDI 57 through
 // sg-render, velocity 100 through the oracle. The scaling functions above are exact
 // at this point and approximations elsewhere on the keyboard, which the metadata
@@ -294,7 +330,7 @@ function envelopeParameters(op) {
 
 // The operator's effective output amplitude: its level through the oracle's ladder,
 // key-level scaling and the velocity curve applied exactly at the reference point.
-function operatorAmp(op) {
+function operatorUnits(op) {
   // Clamp order is msfa's (dx7note.cc): level plus key scaling caps at 127 *before*
   // velocity is added, and velocity is only floored at 0 after — a hot velocity on a
   // full-level op genuinely pushes past the ladder's top on the real engine.
@@ -302,9 +338,10 @@ function operatorAmp(op) {
   units += scaleLevel(REFERENCE_NOTE, op.breakPoint, op.leftDepth, op.rightDepth,
     op.leftCurve, op.rightCurve);
   units = Math.min(127, units);
-  units = Math.max(0, units + scaleVelocity(REFERENCE_VELOCITY, op.velocitySens) / 32);
-  return levelAmp127(units);
+  return Math.max(0, units + scaleVelocity(REFERENCE_VELOCITY, op.velocitySens) / 32);
 }
+
+const operatorAmp = (op) => levelAmp127(operatorUnits(op));
 
 function operatorRatio(op) {
   const base = op.fixed
@@ -392,6 +429,31 @@ function buildPatch(voice, bankName, voiceIndex) {
     wire(`${id}_env`, 'out', `${id}_vca`, 'b');
   }
 
+  const liveOps = voice.ops.filter((o) => live.has(o.op));
+  const tremoloOps = voice.lfoAmd > 0
+    ? liveOps.filter((o) => o.ampModSens > 0) : [];
+
+  // The LFO fade (lfo.cc): the chip holds the LFO silent, then ramps it in
+  // linearly. The ADSR's single linear attack cannot hold, so the ramp runs over
+  // the combined time and is squared — a shape that starts slow and lands the
+  // endpoints exactly. The chip's delay also survives note-off (only key-on resets
+  // it); the closest the ADSR gets is the slowest release it has.
+  const fade = (hasVibrato || tremoloOps.length > 0)
+    ? lfoDelayTimes(voice.lfoDelay) : null;
+  let fadeSource = '';
+  if (fade !== null) {
+    nodes.push({ id: 'lfo_fade', type: 'ADSR', parameters: {
+      attack: Number((fade.hold + fade.ramp).toFixed(4)),
+      decay: 0, sustain: 1, release: 10 } });
+    wire('note', 'gate', 'lfo_fade', 'gate');
+    nodes.push({ id: 'lfo_fade_sq', type: 'Multiply', parameters: {} });
+    wire('lfo_fade', 'out', 'lfo_fade_sq', 'a');
+    wire('lfo_fade', 'out', 'lfo_fade_sq', 'b');
+    fadeSource = 'lfo_fade_sq';
+    notes.push('LFO delay hold-then-ramp approximated as a squared ramp '
+      + 'that sags slowly after note-off instead of holding');
+  }
+
   // Global pitch modulation: vibrato and the pitch envelope, both in octaves, summed
   // if both exist and fed to every sounding oscillator's fm input — on the chip the
   // pitch is one number the whole voice shares, fixed-frequency operators included.
@@ -403,7 +465,12 @@ function buildPatch(voice, bankName, voiceIndex) {
       amount: Number(vibratoDepth.toFixed(5)),
     } });
     pitchModSource = 'vibrato';
-    if (voice.lfoDelay > 0) notes.push('LFO delay ignored');
+    if (fadeSource !== '') {
+      nodes.push({ id: 'vibrato_faded', type: 'Multiply', parameters: {} });
+      wire('vibrato', 'out', 'vibrato_faded', 'a');
+      wire(fadeSource, 'out', 'vibrato_faded', 'b');
+      pitchModSource = 'vibrato_faded';
+    }
     if (voice.lfoWave === 1) notes.push('saw-down LFO rendered as rising saw');
   }
   if (hasPitchEnvelope) {
@@ -446,16 +513,52 @@ function buildPatch(voice, bankName, voiceIndex) {
     }
   }
 
+  // Tremolo: a second LFO at the same rate and phase emits the unipolar dip drive
+  // (1 - shape)/2 — zero at the LFO's peak, one at its trough, matching the chip's
+  // inverted-LFO convention — faded by the delay, then each sensitive operator gets
+  // its own affine map to an amplitude factor 1 - swing*x and a multiply after its
+  // VCA, so modulators wobble their index and carriers wobble the mix, exactly
+  // where msfa applies the level subtraction.
+  const tremolo = new Map();
+  if (tremoloOps.length > 0) {
+    nodes.push({ id: 'tremolo', type: 'LFO', parameters: {
+      rate: Number(lfoHz(voice.lfoSpeed).toFixed(4)),
+      shape: LFO_SHAPE[voice.lfoWave],
+      amount: -0.5, offset: 0.5 } });
+    let dipDrive = 'tremolo';
+    if (fadeSource !== '') {
+      nodes.push({ id: 'tremolo_faded', type: 'Multiply', parameters: {} });
+      wire('tremolo', 'out', 'tremolo_faded', 'a');
+      wire(fadeSource, 'out', 'tremolo_faded', 'b');
+      dipDrive = 'tremolo_faded';
+    }
+    for (const op of tremoloOps) {
+      const swing = 1 - Math.pow(2, -tremoloDip(op, voice.lfoAmd));
+      const id = `op${op.op}`;
+      nodes.push({ id: `${id}_trem_depth`, type: 'Multiply',
+        parameters: { factor: Number((-swing).toFixed(5)) } });
+      wire(dipDrive, 'out', `${id}_trem_depth`, 'a');
+      nodes.push({ id: `${id}_trem_bias`, type: 'Add', parameters: { offset: 1 } });
+      wire(`${id}_trem_depth`, 'out', `${id}_trem_bias`, 'a');
+      nodes.push({ id: `${id}_trem`, type: 'Multiply', parameters: {} });
+      wire(`${id}_vca`, 'out', `${id}_trem`, 'a');
+      wire(`${id}_trem_bias`, 'out', `${id}_trem`, 'b');
+      tremolo.set(op.op, `${id}_trem`);
+    }
+    notes.push("tremolo per Dexed's formula (the vendored oracle has none), "
+      + 'swung linearly in amplitude between the log-domain extremes');
+    if (tremolo.has(topology.feedback) && voice.feedbackLevel > 0) {
+      notes.push('tremolo does not reach the feedback loop');
+    }
+  }
+  const opOut = (n) => tremolo.get(n) ?? `op${n}_vca`;
+
   // What the scaling arithmetic above silently fixed at the reference point.
-  const liveOps = voice.ops.filter((o) => live.has(o.op));
   if (liveOps.some((o) => o.rateScaling > 0 || o.leftDepth > 0 || o.rightDepth > 0)) {
     notes.push('key scaling evaluated at MIDI 57 only');
   }
   if (liveOps.some((o) => o.velocitySens > 0)) {
     notes.push('velocity response baked at velocity 100');
-  }
-  if (voice.lfoAmd > 0 && liveOps.some((o) => o.ampModSens > 0)) {
-    notes.push('LFO tremolo not applied');
   }
 
   // Modulation inputs: each modulated op sums its sources through Add nodes into pm.
@@ -471,7 +574,7 @@ function buildPatch(voice, bankName, voiceIndex) {
       const gainId = `op${from}_index_${op.op}`;
       nodes.push({ id: gainId, type: 'Gain', parameters: {
         gain: Number((INDEX_FULL * operatorAmp(fromOp)).toFixed(4)) } });
-      wire(`op${from}_vca`, 'out', gainId, 'in');
+      wire(opOut(from), 'out', gainId, 'in');
       if (i === 0) {
         feed = gainId;
       } else {
@@ -496,7 +599,7 @@ function buildPatch(voice, bankName, voiceIndex) {
     const carrierOp = voice.ops.find((o) => o.op === c);
     nodes.push({ id: levelId, type: 'Gain', parameters: {
       gain: Number(operatorAmp(carrierOp).toFixed(4)) } });
-    wire(`op${c}_vca`, 'out', levelId, 'in');
+    wire(opOut(c), 'out', levelId, 'in');
     if (i === 0) {
       mix = levelId;
     } else {

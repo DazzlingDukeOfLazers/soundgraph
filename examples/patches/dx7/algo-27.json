@@ -2,7 +2,7 @@
   "schema_version": 2,
   "metadata": {
     "name": "ALGO 27",
-    "description": "ALGO 27 — DX7 voice, algorithm 27, imported by tools/dx7-import.mjs from algorithm-demos.syx.",
+    "description": "ALGO 27 — DX7 voice, algorithm 27, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: tremolo per Dexed's formula (the vendored oracle has none), swung linearly in amplitude between the log-domain extremes.",
     "author": "SoundGraph dx7-import (mapping)",
     "tags": [
       "fm",
@@ -214,6 +214,54 @@
       }
     },
     {
+      "id": "tremolo",
+      "type": "LFO",
+      "parameters": {
+        "rate": 5.8065,
+        "shape": 0,
+        "amount": -0.5,
+        "offset": 0.5
+      }
+    },
+    {
+      "id": "op2_trem_depth",
+      "type": "Multiply",
+      "parameters": {
+        "factor": -0.32284
+      }
+    },
+    {
+      "id": "op2_trem_bias",
+      "type": "Add",
+      "parameters": {
+        "offset": 1
+      }
+    },
+    {
+      "id": "op2_trem",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op1_trem_depth",
+      "type": "Multiply",
+      "parameters": {
+        "factor": -0.32284
+      }
+    },
+    {
+      "id": "op1_trem_bias",
+      "type": "Add",
+      "parameters": {
+        "offset": 1
+      }
+    },
+    {
+      "id": "op1_trem",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
       "id": "op6_index_4",
       "type": "Gain",
       "parameters": {
@@ -401,6 +449,86 @@
     },
     {
       "from": {
+        "node": "tremolo",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_trem_depth",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_trem_depth",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_trem_bias",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op2",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_trem",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_trem_bias",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_trem",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "tremolo",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_trem_depth",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_trem_depth",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_trem_bias",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op1",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_trem",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_trem_bias",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_trem",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
         "node": "op6",
         "port": "out"
       },
@@ -481,7 +609,7 @@
     },
     {
       "from": {
-        "node": "op2",
+        "node": "op2_trem",
         "port": "out"
       },
       "to": {
@@ -511,7 +639,7 @@
     },
     {
       "from": {
-        "node": "op1",
+        "node": "op1_trem",
         "port": "out"
       },
       "to": {
