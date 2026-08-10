@@ -198,7 +198,7 @@
         "decay": 1.5889,
         "sustain": 0.4585,
         "release": 0.1036,
-        "feedback": 0.5
+        "feedback": 0.25
       }
     },
     {

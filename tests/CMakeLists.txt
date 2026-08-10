@@ -82,6 +82,16 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/dx7-import.mjs --check)
 endif()
 
+# The modulation-index scale, held spectrally: synthetic 2-op voices sweep the
+# index ladder and a lone carrier sweeps feedback, and every audible harmonic must
+# match the oracle within 2 dB. The margins are two orders looser than the observed
+# agreement (worst case 0.16 dB); what this guards is the *scale* — the feedback
+# constant it was written to verify turned out to be exactly twice msfa's.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME dx7_index_scale_matches_the_oracle
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/dx7-index-check.mjs)
+endif()
+
 # Every imported instrument, played through Nuked-OPL3 and through its SoundGraph
 # mapping, must agree on pitch and actually sound. Not a byte comparison — the mapping
 # is a translation with documented approximations — but the coarse truths that catch

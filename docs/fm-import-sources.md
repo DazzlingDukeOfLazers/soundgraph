@@ -72,8 +72,12 @@ made audible.
   Hz), key scaling and velocity evaluated exactly at the reference note and velocity,
   vibrato as an LFO into the oscillators' fm inputs, and the pitch envelope as an
   ADSR in octaves — four demo-bank voices exercise each feature under the oracle
-  comparator. Pending: tremolo, LFO delay, live velocity, the algorithm 4/6 multi-op
-  loops, and a measured modulation-index scale.
+  comparator. The modulation-index scale is now *derived*, not by ear: peak index =
+  2^(units/8 - 14.875) cycles (INDEX_FULL = 2.0 exactly), feedback 2^(fb-7) of the
+  op's amplitude — the old feedback constant was exactly twice msfa's, caught by
+  tools/dx7-index-check.mjs, which holds both engines' sideband spectra to 2 dB per
+  harmonic in ctest (observed agreement: 0.16 dB worst case). Pending: tremolo, LFO
+  delay, live velocity, and the algorithm 4/6 multi-op loops.
 
 ### 3. OPN2 / YM2612 — Sega Genesis instruments (4-operator)
 

@@ -37,8 +37,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const source = join(root, 'tools', 'dx7', 'banks');
-const target = join(root, 'examples', 'patches', 'dx7');
+// Overridable so verification tools (dx7-index-check.mjs) can run the same import
+// path on synthetic banks in a scratch directory without touching the library.
+const source = process.env.DX7_SOURCE ?? join(root, 'tools', 'dx7', 'banks');
+const target = process.env.DX7_TARGET ?? join(root, 'examples', 'patches', 'dx7');
 
 // msfa's FmCore::algorithms, verbatim. Byte layout: in-bus = (b>>4)&3, out-bus = b&3,
 // 0x04 = add to the bus (out-bus 0 with add = a carrier), 0xc0 = the feedback op.
@@ -250,11 +252,24 @@ const attackSeconds = (rate) =>
 const fallSeconds = (rate) =>
   Math.min(10, 20.65 * Math.pow(2, -rate / 7.2));
 
-// A full-scale DX7 modulator drives about 2 cycles of phase; scaled by output level.
+// The modulation index scale, derived from the oracle rather than fitted: msfa's
+// sine table peaks at 2^24 (sin.cc), an operator's output is (sin*gain)>>24 with
+// gain = 2^(10 + level/2^24) (dx7note.cc), and that output is added *directly* to
+// the carrier's Q24 phase where 2^24 is one cycle (fm_op_kernel.cc). The envelope
+// peak for outlevel units u is level = (32u - 224) << 16 (env.cc), so the peak
+// index is 2^(u/8 - 14.875) cycles — exactly 2.0 at u = 127, and exactly
+// INDEX_FULL * levelAmp127(u) for every other level. The old by-ear 2.0 happened
+// to be the true value; what changed is that it now has a derivation, and
+// tools/dx7-index-check.mjs holds both renders to it spectrally.
 const INDEX_FULL = 2.0;
 
-// Feedback 1-7 on the chip's doubling ladder, the same shape OPL used.
-const feedbackCycles = (fb) => (fb <= 0 ? 0 : Math.pow(2, fb - 1) / 32);
+// Feedback through the same derivation: compute_fb displaces phase by the two-sample
+// average of the op's *gain-scaled* output, shifted by fb_shift = 8 - fb. In engine
+// terms (feedback param times the raw +-1 sine average) that is
+// operatorAmp * 2^(fb-8) * INDEX_FULL = operatorAmp * 2^(fb-7). The previous
+// 2^(fb-1)/32 was exactly twice msfa's — the one constant in this file the oracle
+// caught being wrong in the *loud* direction.
+const feedbackCycles = (fb) => (fb <= 0 ? 0 : Math.pow(2, fb - 1) / 64);
 
 function envelopeParameters(op) {
   // Rate scaling, msfa's own arithmetic: the qrate delta at the reference note,
@@ -278,12 +293,15 @@ function envelopeParameters(op) {
 // The operator's effective output amplitude: its level through the oracle's ladder,
 // key-level scaling and the velocity curve applied exactly at the reference point.
 function operatorAmp(op) {
+  // Clamp order is msfa's (dx7note.cc): level plus key scaling caps at 127 *before*
+  // velocity is added, and velocity is only floored at 0 after — a hot velocity on a
+  // full-level op genuinely pushes past the ladder's top on the real engine.
   let units = scaleOutLevel(op.outputLevel);
   units += scaleLevel(REFERENCE_NOTE, op.breakPoint, op.leftDepth, op.rightDepth,
     op.leftCurve, op.rightCurve);
-  units = Math.max(0, Math.min(127, units));
-  units += scaleVelocity(REFERENCE_VELOCITY, op.velocitySens) / 32;
-  return levelAmp127(Math.min(127, units));
+  units = Math.min(127, units);
+  units = Math.max(0, units + scaleVelocity(REFERENCE_VELOCITY, op.velocitySens) / 32);
+  return levelAmp127(units);
 }
 
 function operatorRatio(op) {
