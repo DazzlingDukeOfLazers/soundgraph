@@ -8,7 +8,7 @@
 | WASM (Chrome) | yes    | via core  | yes            | yes        | Milestone B done |
 | Godot 4.7 win | yes    | 30 checks | via round trip | yes        | Milestone C done |
 | ESP32-S3      | yes    | via core  | yes            | yes (Waveshare audio board) | Milestone F done |
-| macOS arm64   | —      | —         | —              | —          | not yet exercised |
+| macOS arm64   | yes    | yes       | 5/6 ctest      | yes (miniaudio, CoreAudio) | first exercised; see known-issues |
 | Linux x64     | —      | —         | —              | —          | not yet exercised |
 | Safari        | —      | —         | —              | —          | not yet exercised |
 | Firefox       | —      | —         | —              | —          | not yet exercised |

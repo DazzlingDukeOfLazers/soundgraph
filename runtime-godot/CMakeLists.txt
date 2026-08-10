@@ -86,6 +86,17 @@ endif()
 # Godot loads the library by the exact name in soundgraph.gdextension. The web build gets
 # a distinct name because it sits alongside the desktop one in the same bin directory and
 # a .wasm is not interchangeable with a .dll.
+#
+# Everywhere else the platform's own convention is what the manifest already asks for:
+# libsoundgraph_godot.dylib, libsoundgraph_godot.so, soundgraph_godot.dll. CMake produces
+# exactly those on its own — MSVC has no prefix, macOS and Linux have "lib" — so the
+# desktop branch sets only the stem and leaves the decoration alone.
+#
+# It used to force PREFIX "" here as well, which is right for the web module and wrong for
+# everything else: the built file was soundgraph_godot.dylib while the manifest asked for
+# libsoundgraph_godot.dylib, and the extension could not load at all. Linux had the same
+# mismatch. Windows and web were unaffected, which is why it went unnoticed — those are
+# the two the project is built on.
 if(EMSCRIPTEN)
     set_target_properties(soundgraph_godot PROPERTIES
         PREFIX ""
@@ -93,10 +104,7 @@ if(EMSCRIPTEN)
         SUFFIX ".wasm"
     )
 else()
-    set_target_properties(soundgraph_godot PROPERTIES
-        PREFIX ""
-        OUTPUT_NAME "soundgraph_godot"
-    )
+    set_target_properties(soundgraph_godot PROPERTIES OUTPUT_NAME "soundgraph_godot")
 endif()
 
 # Drop the built library where the Godot project expects it, and mirror the example
@@ -125,14 +133,33 @@ add_custom_command(TARGET soundgraph_godot POST_BUILD
 # main test suite checks it. This target is the convenience, not the guarantee — and it
 # walks the tree rather than naming three paths, so a new example is not a fourth way to
 # be out of date.
-find_program(SOUNDGRAPH_MIRROR_NODE node)
-if(SOUNDGRAPH_MIRROR_NODE)
-    add_custom_target(soundgraph_godot_examples ALL
-        COMMAND ${SOUNDGRAPH_MIRROR_NODE} ${SOUNDGRAPH_ROOT}/tools/mirror-examples.mjs
-        COMMENT "Mirroring the example patches into editor-godot/examples"
+# Done with CMake's own file commands rather than by shelling out to the Node script.
+#
+# It used to call tools/mirror-examples.mjs and, when node was absent, print a warning and
+# mirror nothing — which leaves the editor project with no examples at all. That is not a
+# missing convenience: editor_test.gd loads res://examples/first-synth.json, and a Mac
+# without node is a Mac where the Godot editor has nothing to open. Node is not a
+# prerequisite for building this, so it must not be one for the build's own output.
+#
+# tools/mirror-examples.mjs remains the authority — its --check runs in the test suite,
+# and it is the thing that also catches orphans. This is the copy; that is the guarantee.
+# The directory is emptied first so a deleted example cannot survive here.
+file(GLOB_RECURSE SOUNDGRAPH_EXAMPLE_PATCHES
+    RELATIVE ${SOUNDGRAPH_ROOT}/examples/patches
+    ${SOUNDGRAPH_ROOT}/examples/patches/*.json
+)
+set(SOUNDGRAPH_MIRROR_COMMANDS
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${SOUNDGRAPH_GODOT_EXAMPLES}
+)
+foreach(patch IN LISTS SOUNDGRAPH_EXAMPLE_PATCHES)
+    list(APPEND SOUNDGRAPH_MIRROR_COMMANDS
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${SOUNDGRAPH_ROOT}/examples/patches/${patch}
+                ${SOUNDGRAPH_GODOT_EXAMPLES}/${patch}
     )
-else()
-    message(WARNING
-        "node was not found, so editor-godot/examples will not be mirrored. "
-        "Run tools/mirror-examples.mjs by hand after changing an example patch.")
-endif()
+endforeach()
+
+add_custom_target(soundgraph_godot_examples ALL
+    ${SOUNDGRAPH_MIRROR_COMMANDS}
+    COMMENT "Mirroring the example patches into editor-godot/examples"
+)
