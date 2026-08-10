@@ -126,12 +126,20 @@ static func _full_floor() -> float:
 ## ends each band is *room*, not legibility: at 0.60 a compensated label has stopped
 ## fitting beside a compensated value, and at 0.40 the node is too small to hold a row
 ## of text at all without the words spilling over their own node.
-const COMPACT_FLOOR := 0.60
-const SUMMARY_FLOOR := 0.40
-
 ## Zoom must clear a boundary by this much before detail comes *back*, so a wheel click
 ## resting on a threshold does not flicker every node in the graph between two layouts.
-const DETAIL_HYSTERESIS := 0.04
+const DETAIL_HYSTERESIS := 0.02
+
+## The bands are one hysteresis *below* the numbers they are meant to honour — 0.60 for
+## compact and 0.40 for summary — so those numbers hold whichever direction you arrive
+## from. They did not before, and the bug only ever showed up in a picture: the editor
+## opens fitted, which is often under 0.60, so zooming *up* to 63% asked the hysteresis
+## to climb and it refused until 64%. A screenshot at 63% was therefore a summary node,
+## empty where its parameters should have been, while the same view reached by zooming
+## down from 100% was correct. A boundary that depends on which way you came is a
+## boundary nobody can state.
+const COMPACT_FLOOR := 0.60 - DETAIL_HYSTERESIS
+const SUMMARY_FLOOR := 0.40 - DETAIL_HYSTERESIS
 
 ## Port hit targets, in real pixels, for the same reason the type has them.
 ##
@@ -1240,8 +1248,8 @@ class ScreenText extends Control:
 	func _draw_title(node: GraphNode) -> void:
 		var size := Design.type(Design.SIZE_NODE_TITLE)
 		var active := Design.below_screen_minimum(size, graph.zoom,
-			Design.MIN_SCREEN_NODE_TITLE)
-		var label := node.get_meta("title_label", null) as Label
+			Design.screen_minimum(Design.MIN_SCREEN_NODE_TITLE))
+		var label: Label = node.get_meta("title_label") if node.has_meta("title_label") else null
 		if label != null:
 			label.self_modulate.a = 0.0 if active else 1.0
 		if not active:
@@ -1254,7 +1262,7 @@ class ScreenText extends Control:
 		if room < 20.0:
 			return
 		var font := Design.font(Design.WEIGHT_SEMIBOLD)
-		var drawn := Design.MIN_SCREEN_NODE_TITLE
+		var drawn := Design.screen_minimum(Design.MIN_SCREEN_NODE_TITLE)
 		var baseline := top_left + Vector2(6.0,
 			(bar_height + font.get_ascent(drawn) - font.get_descent(drawn)) * 0.5)
 		draw_string(font, baseline, _elided(font, node.title, drawn, room),
@@ -1292,7 +1300,7 @@ class ScreenText extends Control:
 	## while the screen disagrees with both. Asking the same function the renderer asks
 	## is the only version of the check that means anything.
 	static func fit_for(label: Label, zoom: float) -> Fit:
-		var minimum: int = int(label.get_meta("screen_min", Design.TYPE_FLOOR))
+		var minimum: int = Design.screen_minimum(int(label.get_meta("screen_min", Design.TYPE_FLOOR)))
 		if not Design.below_screen_minimum(label.get_theme_font_size("font_size"),
 				zoom, minimum):
 			return Fit.IN_PLACE
@@ -1314,25 +1322,41 @@ class ScreenText extends Control:
 	##
 	## What must not be overrun is the neighbour, so the bound is the nearest visible
 	## sibling in the direction the text grows, and the parent's edge when there is none.
-	static func room_for(label: Label) -> float:
+	static func slot_for(label: Label) -> Vector2:
 		var rect := label.get_global_rect()
 		var parent := label.get_parent() as Control
 		if parent == null:
-			return rect.size.x
+			return Vector2(rect.position.x, rect.end.x)
 		var bounds := parent.get_global_rect()
-		var rightward := label.horizontal_alignment != HORIZONTAL_ALIGNMENT_RIGHT
-		var limit: float = bounds.end.x if rightward else bounds.position.x
+		var left: float = bounds.position.x
+		var right: float = bounds.end.x
 		for sibling in parent.get_children():
 			var other := sibling as Control
 			if other == null or other == label or not other.is_visible_in_tree():
 				continue
 			var edge := other.get_global_rect()
-			if rightward and edge.position.x >= rect.end.x - 0.5:
-				limit = minf(limit, edge.position.x)
-			elif not rightward and edge.end.x <= rect.position.x + 0.5:
-				limit = maxf(limit, edge.end.x)
-		var room: float = limit - rect.position.x if rightward else rect.end.x - limit
-		return maxf(rect.size.x, room)
+			if edge.end.x <= rect.position.x + 0.5:
+				left = maxf(left, edge.end.x)
+			elif edge.position.x >= rect.end.x - 0.5:
+				right = minf(right, edge.position.x)
+		return Vector2(minf(left, rect.position.x), maxf(right, rect.end.x))
+
+	static func room_for(label: Label) -> float:
+		var slot := slot_for(label)
+		return slot.y - slot.x
+
+	## Which end of its slot the text should hold on to.
+	##
+	## Read from where the label *sits*, not from its horizontal_alignment. That property
+	## describes text inside the label's own box, and a port label's box is shrink-wrapped
+	## to the text — so an output label pushed to the right end of its container still
+	## reports LEFT, and the first version of this grew it rightward into the container
+	## edge it was already touching. Eleven port labels came out with no room at all and
+	## were silently dropped: every "out", and every port on the keyboard node.
+	static func anchored_right(label: Label) -> bool:
+		var slot := slot_for(label)
+		var rect := label.get_global_rect()
+		return (rect.position.x - slot.x) > (slot.y - rect.end.x)
 
 	## What the reader receives, in real pixels — 0 when the label is not reaching them
 	## at all. The tests' unit of measurement.
@@ -1343,7 +1367,7 @@ class ScreenText extends Control:
 			Fit.IN_PLACE:
 				return float(label.get_theme_font_size("font_size")) * zoom
 			Fit.COMPENSATED:
-				return float(label.get_meta("screen_min", Design.TYPE_FLOOR))
+				return float(Design.screen_minimum(int(label.get_meta("screen_min", Design.TYPE_FLOOR))))
 			_:
 				return 0.0
 
@@ -1354,28 +1378,108 @@ class ScreenText extends Control:
 	## too narrow to hold its text at the minimum says nothing rather than saying it over
 	## the top of its neighbour: overlapping words are worse than a band that has run out
 	## of room, and running out is what the next band down is for.
+	## A parameter row is one thing, so it is allocated as one thing.
+	##
+	## Drawn independently, the name and the value competed for the same row: the value's
+	## box expands to fill what the hidden slider left, so the name was pushed back to its
+	## own 96px and "resonance" at its minimum no longer fitted — the label vanished and
+	## its number stayed, which is the orphan this whole exercise is against. Here the row
+	## is split once: name against the left edge, value against the right, both at their
+	## own minimum. If the two genuinely cannot both fit, the *value* goes, because a name
+	## with no number still says what the node has and a number with no name says nothing.
+	func _draw_pairs(node: GraphNode, handled: Dictionary) -> void:
+		for child in node.get_children():
+			var row := child as Control
+			if row == null or str(row.get_meta("row", "")) != "parameter" \
+					or not row.is_visible_in_tree():
+				continue
+			var name_label: Label = row.get_meta("name_label") \
+				if row.has_meta("name_label") else null
+			if name_label == null or not name_label.is_visible_in_tree():
+				continue
+			var value: Label = null
+			for label in _marked(row):
+				if str(label.get_meta("screen_kind", "")) == "value" \
+						and label.is_visible_in_tree():
+					value = label
+			# Only when the row is being compensated at all; at full detail the real
+			# controls are on screen and must not be drawn over.
+			if fit_for(name_label, graph.zoom) == Fit.IN_PLACE \
+					and (value == null or fit_for(value, graph.zoom) == Fit.IN_PLACE):
+				continue
+
+			var rect := row.get_global_rect()
+			var pad: float = 6.0 * graph.zoom
+			var span := rect.size.x - pad * 2.0
+			var left := rect.position.x + pad - global_position.x
+			var top := rect.position.y - global_position.y
+
+			var name_size: int = Design.screen_minimum(int(name_label.get_meta("screen_min", Design.TYPE_FLOOR)))
+			var name_font := name_label.get_theme_font("font")
+			var name_width := name_font.get_string_size(name_label.text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, name_size).x
+			if name_width > span:
+				continue    # nothing fits; the generic pass will hide it honestly
+			handled[name_label] = true
+			name_label.self_modulate.a = 0.0
+			draw_string(name_font, Vector2(left,
+				top + (rect.size.y + name_font.get_ascent(name_size)
+					- name_font.get_descent(name_size)) * 0.5),
+				name_label.text, HORIZONTAL_ALIGNMENT_LEFT, span, name_size,
+				name_label.get_theme_color("font_color"))
+
+			if value == null:
+				continue
+			handled[value] = true
+			value.self_modulate.a = 0.0
+			var value_size: int = Design.screen_minimum(int(value.get_meta("screen_min", Design.TYPE_FLOOR)))
+			var value_font := value.get_theme_font("font")
+			var value_width := value_font.get_string_size(value.text,
+				HORIZONTAL_ALIGNMENT_RIGHT, -1.0, value_size).x
+			# A gap the eye can see, so the pair reads as label-then-value rather than
+			# as one run-together word: "frequency110.0 Hz" was the first attempt.
+			var shown := value.text
+			if name_width + value_width + 12.0 > span:
+				# The unit goes before the number does. That is the decluttering order —
+				# a redundant unit outranks nothing, a value outranks it — and it is the
+				# difference between "transpose 0.000" and a label sitting on its own
+				# with its number thrown away, which is the orphan this is against.
+				var cut := shown.rfind(" ")
+				if cut <= 0:
+					continue
+				shown = shown.substr(0, cut)
+				value_width = value_font.get_string_size(shown,
+					HORIZONTAL_ALIGNMENT_RIGHT, -1.0, value_size).x
+				if name_width + value_width + 12.0 > span:
+					continue
+			draw_string(value_font, Vector2(left,
+				top + (rect.size.y + value_font.get_ascent(value_size)
+					- value_font.get_descent(value_size)) * 0.5),
+				shown, HORIZONTAL_ALIGNMENT_RIGHT, span, value_size,
+				value.get_theme_color("font_color"))
+
 	func _draw_labels(node: GraphNode) -> void:
+		var handled := {}
+		_draw_pairs(node, handled)
 		for label in _marked(node):
-			if not label.is_visible_in_tree():
+			if not label.is_visible_in_tree() or handled.has(label):
 				continue
 			var how := fit_for(label, graph.zoom)
 			label.self_modulate.a = 1.0 if how == Fit.IN_PLACE else 0.0
 			if how != Fit.COMPENSATED:
 				continue
 
-			var minimum: int = int(label.get_meta("screen_min", Design.TYPE_FLOOR))
+			var minimum: int = Design.screen_minimum(int(label.get_meta("screen_min", Design.TYPE_FLOOR)))
 			var font := label.get_theme_font("font")
 			var rect := label.get_global_rect()
-			var room := room_for(label)
-			# Right-aligned text is drawn from where its box *ends*, so the extra room
-			# it was granted opens to the left where its neighbour is not.
-			var left: float = rect.position.x if label.horizontal_alignment \
-				!= HORIZONTAL_ALIGNMENT_RIGHT else rect.end.x - room
-			var local := Vector2(left, rect.position.y) - global_position
+			var slot := slot_for(label)
+			var align := HORIZONTAL_ALIGNMENT_RIGHT if anchored_right(label) \
+				else HORIZONTAL_ALIGNMENT_LEFT
+			var local := Vector2(slot.x, rect.position.y) - global_position
 			var baseline := local + Vector2(0.0,
 				(rect.size.y + font.get_ascent(minimum) - font.get_descent(minimum)) * 0.5)
-			draw_string(font, baseline, label.text, label.horizontal_alignment,
-				room, minimum, label.get_theme_color("font_color"))
+			draw_string(font, baseline, label.text, align, slot.y - slot.x,
+				minimum, label.get_theme_color("font_color"))
 
 	static func _marked(from: Node, into: Array[Label] = []) -> Array[Label]:
 		for child in from.get_children():

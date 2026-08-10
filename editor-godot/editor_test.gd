@@ -1519,7 +1519,7 @@ func _initialize() -> void:
 						control_showing = true
 				if not control_showing:
 					continue
-				var name_label := row.get_meta("name_label", null) as Label
+				var name_label: Label = row.get_meta("name_label") if row.has_meta("name_label") else null
 				var words: float = 0.0 if name_label == null else \
 					main.PatchGraph.ScreenText.screen_size(name_label, zoom_now)
 				if words <= 0.0:
@@ -1575,7 +1575,7 @@ func _initialize() -> void:
 						showing = true
 				if not showing:
 					continue
-				var words := row.get_meta("name_label", null) as Label
+				var words: Label = row.get_meta("name_label") if row.has_meta("name_label") else null
 				if words == null or main.PatchGraph.ScreenText.screen_size(
 						words, main.graph_edit.zoom) <= 0.0:
 					worst_unlabelled += 1
@@ -1704,7 +1704,7 @@ func _initialize() -> void:
 	# Hysteresis: a zoom sitting on a threshold must not flip level on every jitter.
 	# Asymmetric on purpose — detail drops the moment it must, because staying is how
 	# text ends up under its minimum, and only climbs back once clear of the boundary.
-	main.graph_edit.zoom = 0.40
+	main.graph_edit.zoom = main.PatchGraph.SUMMARY_FLOOR
 	main.graph_edit._update_detail()
 	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
 		"a nudge back onto the boundary does not flip the level straight away")
@@ -1712,10 +1712,22 @@ func _initialize() -> void:
 	main.graph_edit._update_detail()
 	check(main.graph_edit.detail == main.PatchGraph.Detail.SUMMARY,
 		"but a real move does")
-	main.graph_edit.zoom = 0.39
+	main.graph_edit.zoom = main.PatchGraph.SUMMARY_FLOOR - 0.01
 	main.graph_edit._update_detail()
 	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
 		"and dropping detail needs no margin at all")
+
+	# The bands hold their stated numbers from *either* direction, which is the property
+	# the hysteresis broke: the editor opens fitted, so arriving at 63% is a climb, and
+	# the old margin kept it in summary until 64%. A 63% screenshot was therefore an
+	# empty-looking node while the same zoom reached downward from 100% was correct.
+	for approach in [0.30, 1.00]:
+		main.graph_edit.zoom = approach
+		main.graph_edit._update_detail()
+		main.graph_edit.zoom = 0.63
+		main.graph_edit._update_detail()
+		check(main.graph_edit.detail == main.PatchGraph.Detail.COMPACT,
+			"63%% is the compact band whether reached from %.2f or not" % approach)
 
 	# Zoom hides parameter rows and so does the "n more" disclosure. Coming back to full
 	# detail must not un-fold the rows the reader chose to hide — two features writing the
@@ -1798,7 +1810,7 @@ func _initialize() -> void:
 	main.inspecting = {}
 	main._refresh_context()
 	await process_frame
-	check(main.context_heading.text == "THE GRAPH",
+	check(main.context_heading.text == "The graph",
 		"with nothing selected the inspector describes the graph (%s)"
 			% main.context_heading.text)
 
@@ -1819,7 +1831,7 @@ func _initialize() -> void:
 	main._focus_node("filter")
 	await process_frame
 	check(main.widgets["filter"].selected, "pressing a stage selects its node")
-	check(main.context_heading.text == "SELECTED NODE",
+	check(main.context_heading.text == "Selected node",
 		"and the inspector becomes that node (%s)" % main.context_heading.text)
 	var shows_node := false
 	for child in main.context_panel.get_children():

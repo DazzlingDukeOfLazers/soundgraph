@@ -1286,10 +1286,10 @@ func _refresh_context() -> void:
 
 	var node_id: String = str(inspecting.get("node", ""))
 	if node_id == "":
-		context_heading.text = "THE GRAPH"
+		context_heading.text = "The graph"
 		_fill_graph_context()
 	else:
-		context_heading.text = "SELECTED NODE"
+		context_heading.text = "Selected node"
 		_fill_node_context(node_id)
 
 
@@ -1387,7 +1387,7 @@ func _stage_chip(node_id: String) -> Button:
 	chip.text = node_id
 	chip.tooltip_text = "Select and centre %s" % node_id
 	chip.add_theme_font_override("font", Design.numeric_font())
-	chip.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+	chip.add_theme_font_size_override("font_size", Design.type(Design.SIZE_TABS))
 	chip.add_theme_stylebox_override("normal", Design.padded_panel(
 		Design.Surface.RAISED, Design.SPACE_S, Design.SPACE_XS, Design.RADIUS_BUTTON))
 	chip.add_theme_stylebox_override("hover", Design.padded_panel(
@@ -1428,8 +1428,11 @@ func _field(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
-	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-	label.add_theme_color_override("font_color", Design.INK_SECOND)
+	# Body size and normal ink. These name everything in the inspector — "Runs in this
+	# order", "Cost" — and they had been a size below and a shade quieter than the graph
+	# they describe, which put the panel explaining the instrument behind the instrument.
+	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+	label.add_theme_color_override("font_color", Design.INK_NORMAL)
 	return label
 
 
@@ -2070,6 +2073,9 @@ func _port_label(port: Dictionary, align_right: bool) -> Control:
 	var name_label := Label.new()
 	name_label.text = str(port["name"])
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	name_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+	name_label.add_theme_color_override("font_color", Design.INK_NORMAL)
 	name_label.set_meta("port_label", true)
 	# Operational: what is plugged in here is not guessable from the colour alone, so
 	# the name is pinned to a readable size in screen space rather than shrinking with
@@ -2195,11 +2201,33 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 			options.add_item(str(entry))
 		options.selected = clampi(int(round(current)), 0, parameter["enum"].size() - 1)
 		options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# The chosen option, in words, for the bands where the dropdown is put away.
+		#
+		# Without it a compact node showed the word "shape" with nothing beside it and an
+		# Output node showed "safety_limit" floating on its own — a label whose value had
+		# been hidden with the control that carried it, which is the same failure as an
+		# unlabelled slider seen from the other end. A dropdown is a control; the option
+		# it is showing is information, and information survives the control.
+		var chosen := Label.new()
+		chosen.text = str(parameter["enum"][clampi(int(round(current)), 0,
+			parameter["enum"].size() - 1)])
+		chosen.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		chosen.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		chosen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		chosen.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+		chosen.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NUMERIC))
+		chosen.add_theme_color_override("font_color", Design.INK_BRIGHT)
+		chosen.set_meta("screen_min", Design.MIN_SCREEN_LABEL)
+		chosen.set_meta("screen_kind", "value")
+		chosen.visible = false
 		options.item_selected.connect(func(index: int) -> void:
+			chosen.text = str(parameter["enum"][index])
 			_begin_edit()
 			_set_parameter(node_id, name, float(index))
 			_commit_edit("set %s" % name))
 		row.add_child(_defocus(options))
+		row.add_child(chosen)
+		row.set_meta("enum_value", chosen)
 		_remember_parameter_widget(node_id, name, options, null, parameter)
 		return row
 
@@ -3387,9 +3415,22 @@ func _apply_detail(level: int) -> void:
 		var widget: GraphNode = widgets[id]
 		# Metadata goes first, and goes entirely: a category drawn at nine pixels is
 		# decoration, and there is no size at which it outranks a parameter name.
-		var tag := widget.get_meta("category_tag", null) as Label
+		var tag: Label = widget.get_meta("category_tag") if widget.has_meta("category_tag") else null
 		if tag != null:
 			tag.visible = full
+		# The node gives back the height its controls were using.
+		#
+		# GraphNode keeps whatever size it was last given, so a compact node used to be a
+		# full-height rectangle with its lower half empty — the "loosely positioned text
+		# in a large empty box" that made these look like full nodes with pieces missing
+		# rather than a drawing of their own. The authored size is remembered so full
+		# detail restores exactly what the document asked for, and only the *height* is
+		# released: the width is what the value column aligns to, and the ports sit above
+		# the parameters, so nothing here moves a cable.
+		if not widget.has_meta("authored_size"):
+			widget.set_meta("authored_size", widget.size)
+		var authored: Vector2 = widget.get_meta("authored_size")
+		widget.size.y = authored.y if full else 0.0
 		for child in widget.get_children():
 			var control := child as Control
 			if control == null:
@@ -3412,20 +3453,27 @@ func _apply_detail(level: int) -> void:
 					# value's box pushes it back to the right edge, which is where it
 					# sits at full detail anyway, and opens the gap that gives the name
 					# its room too.
-					var value_field := control.get_meta("value_field", null) as Control
+					var value_field: Control = control.get_meta("value_field") if control.has_meta("value_field") else null
 					if value_field != null:
 						value_field.size_flags_horizontal = Control.SIZE_FILL if full \
 							else Control.SIZE_EXPAND_FILL
+					# Sliders and dropdowns are the controls; everything else in a row is
+					# words, and words stay. An enum row hands its chosen option to a label
+					# as the dropdown goes, so it never shows a name with nothing beside it
+					# — "shape" and "safety_limit" floating alone was the same failure as
+					# an unlabelled slider, seen from the other end.
+					var enum_value: Label = control.get_meta("enum_value") \
+						if control.has_meta("enum_value") else null
 					for part in control.get_children():
 						var piece := part as Control
 						if piece == null:
 							continue
-						# Sliders and dropdowns are the controls; everything else in a
-						# row is words, and words stay. An enum row loses its current
-						# value with the dropdown, which is the one place this band
-						# costs information rather than only aim.
-						piece.visible = full if (piece is HSlider or piece is OptionButton) \
-							else true
+						if piece is HSlider or piece is OptionButton:
+							piece.visible = full
+						elif enum_value != null and piece == enum_value:
+							piece.visible = not full
+						else:
+							piece.visible = true
 				"port":
 					# One level deeper than it used to be: a port caption is now a name and a
 					# unit in their own box, so the labels are grandchildren of the row.

@@ -268,7 +268,7 @@ const SIZE_TABS := 15             ## medium — the view tabs, one step under th
 const SIZE_NUMERIC := 16          ## medium, numeric face — parameter values
 const SIZE_UNIT := 14             ## regular, numeric face — Hz, ms, octaves
 const SIZE_SECONDARY := 14        ## regular — status lines, captions, document name
-const SIZE_HEADING := 15          ## semibold — section headings
+const SIZE_HEADING := 16          ## semibold — section headings
 
 ## No operating text below this, at any UI scale.
 ##
@@ -292,9 +292,9 @@ const TYPE_FLOOR := 14
 ## without limit; words may not. Per role, because a unit really can go a size under a
 ## value without becoming decoration, and a node title really does need to survive the
 ## zoom at which everything else has gone.
-const MIN_SCREEN_NODE_TITLE := 15
-const MIN_SCREEN_LABEL := 14      ## port names, parameter names, parameter values
-const MIN_SCREEN_UNIT := 13
+const MIN_SCREEN_NODE_TITLE := 16
+const MIN_SCREEN_LABEL := 15      ## port names, parameter names, parameter values
+const MIN_SCREEN_UNIT := 14
 const MIN_SCREEN_META := 12       ## category tags — the first thing decluttering drops
 
 ## The letters on the piano keys, and the octave landmarks beside them.
@@ -339,6 +339,18 @@ static func scale(value: float) -> int:
 ## icons and hit targets, and a 12px gap is not a legibility problem the way 12px text is.
 static func type(value: float) -> int:
 	return maxi(scale(value), TYPE_FLOOR)
+
+
+## A screen minimum, after the reader's UI-scale preference.
+##
+## The floors are absolute — they never go below what the spec sets, so Compact cannot
+## buy density with legibility. But they do rise: somebody who asked for XL text and then
+## zoomed the graph out was getting exactly the same 15px as everybody else, because the
+## compensation floor is what they landed on. That is the two settings being multiplied
+## into one after all, just at the bottom of the range instead of the top — UI scale
+## erased by graph zoom, which is the thing it is supposed to be independent of.
+static func screen_minimum(base: int) -> int:
+	return int(roundf(float(base) * maxf(1.0, SCALE_FACTORS[ui_scale])))
 
 
 ## True when `logical` px of type, once `zoom` has scaled it, lands under `minimum` real
