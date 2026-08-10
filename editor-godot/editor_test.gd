@@ -1451,10 +1451,51 @@ func _initialize() -> void:
 	main.graph_edit._update_detail()
 	await process_frame
 	check(main.graph_edit.detail == main.PatchGraph.Detail.REDUCED,
-		"zooming out drops the parameters (level %d)" % main.graph_edit.detail)
-	var medium: float = node_widget.get_combined_minimum_size().y
-	check(medium < full_height,
-		"and the node gets shorter for it (%.0f from %.0f)" % [medium, full_height])
+		"zooming out drops to reduced detail (level %d)" % main.graph_edit.detail)
+
+	# The controls out-survive the words. The floor is a rule about text — a slider is
+	# geometry — so REDUCED keeps every slider and hides every word beside it. The
+	# first version hid whole rows, and the fitted default view was a wall of empty
+	# aluminium that read as broken rather than as zoomed out.
+	var sliders_shown := 0
+	var words_shown := 0
+	for child in node_widget.get_children():
+		var row := child as Control
+		if row == null or str(row.get_meta("row", "")) != "parameter" or not row.visible:
+			continue
+		for part in row.get_children():
+			if part is HSlider and (part as Control).is_visible_in_tree():
+				sliders_shown += 1
+			elif (part is Label or part is ValueField) \
+					and (part as Control).is_visible_in_tree():
+				words_shown += 1
+	check(sliders_shown > 0 and words_shown == 0,
+		"reduced detail keeps the sliders and hides the words (%d sliders, %d words)"
+			% [sliders_shown, words_shown])
+	check(node_widget.get_combined_minimum_size().y <= full_height,
+		"and the node does not grow for it (%.0f, was %.0f)"
+			% [node_widget.get_combined_minimum_size().y, full_height])
+
+	# A rebuild while zoomed out has to land in the level already in force. Fresh
+	# widgets are built showing everything, and _apply_detail only ran on
+	# detail_changed — so a UI-scale toggle at 55% zoom produced full-detail nodes,
+	# sub-floor text and all, until the next zoom step snapped them back. Found on the
+	# first reload of the exported web build, which opens fitted and zoomed out.
+	await main._rebuild_view()
+	await process_frame
+	var fresh: GraphNode = main.widgets["filter"]
+	var fresh_words := 0
+	for child in fresh.get_children():
+		var row := child as Control
+		if row == null or str(row.get_meta("row", "")) != "parameter":
+			continue
+		for part in row.get_children():
+			if (part is Label or part is ValueField) and (part as Control).is_visible_in_tree():
+				fresh_words += 1
+	check(fresh_words == 0,
+		"rebuilding while zoomed out respects the level in force (%d words showing)"
+			% fresh_words)
+	node_widget = fresh
 
 	main.graph_edit.zoom = 0.3
 	main.graph_edit._update_detail()
