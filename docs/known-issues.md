@@ -17,21 +17,8 @@ Open problems, ordered by how much they threaten the Knobcon demo.
 - **Linux has never been compiled.** CMake and miniaudio cover it; nothing has exercised
   it. macOS arm64 now has: the tree builds warning-free, `sg-play` opens CoreAudio through
   miniaudio, the CLI tools work, and the Godot editor loads the extension and passes all
-  250 of its checks. Two macOS defects found doing it are fixed; one remains, below.
-- **The sfxr corpus is not bit-reproducible where `sin` differs.** `sfxr_corpus_is_repro-
-  ducible` regenerates the corpus and compares it byte for byte, which is the right test
-  and the reason the reference substitutes its own PRNG. Two of the 41 vectors —
-  `laser-shoot-4` and `laser-shoot-5`, the only two with `wave_type == 2` — still differ
-  on macOS, because the sine wave type calls the platform's `sin` and Apple's differs from
-  the one that generated the committed corpus by about one ULP. The low-pass filter's
-  feedback then grows that to roughly eight float ULPs (3e-8 absolute) by the end of a
-  render, which is inaudible and still not byte-identical.
-
-  Fixing it properly means substituting a deterministic sine the same way the PRNG was
-  substituted, which regenerates those two vectors. That changes the oracle, so it is a
-  decision rather than a bug fix and is left open deliberately. A candidate implementation
-  (Cody-Waite reduction, Taylor kernels) measures within 2.2e-16 of libm across the range
-  sfxr uses.
+  250 of its checks. Four defects found doing it are fixed; see docs/decisions.md for
+  the one that needed a decision.
 - **No `getUserMedia` in the browser.** `AudioInput` nodes schedule correctly but receive
   silence, so `delay-echo.json` validates and runs in the browser without doing anything
   audible.

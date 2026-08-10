@@ -1,5 +1,35 @@
 # Decision Log
 
+## 2026-08-09 — The sfxr oracle carries its own sine
+
+Decision:
+`sfxr_reference.cpp` calls `portable_sin()` instead of the C library's `sin()`. Cody-Waite
+reduction onto [-pi/4, pi/4] with a three-part pi/2, then Taylor kernels to x^17 and x^16.
+`laser-shoot-4` and `laser-shoot-5` were regenerated; the manifest did not change.
+
+Reason:
+`sfxr_corpus_is_reproducible` regenerates the corpus and compares it byte for byte, which
+is what makes it a fixed target rather than a moving one. That promise was already kept
+against the C library's PRNG and not against its libm. On Apple silicon the two vectors
+with `wave_type == 2` came out different: Apple's `sin` and Microsoft's disagree by about
+one ULP, and the low-pass filter's feedback grows that to roughly eight float ULPs over a
+render. It is the same defect as `rand()`, one function along, and it has the same fix.
+
+Alternatives:
+Allow a tolerance on the vectors — rejected: the test would stop proving byte identity,
+and a real one-ULP synthesis bug could then hide behind the allowance. Skip the test on
+macOS — rejected: that converts a finding into a silence. Leave it failing — rejected once
+the fix was measured, because a permanently red test teaches people to ignore the suite.
+
+Consequences:
+The oracle is now bit-identical on every platform, which is what the rig assumed all
+along. It is no longer bit-identical to a libm-based sfxr: `portable_sin` is within
+2.2e-16 of Apple's libm across the range sfxr uses, and the two regenerated vectors moved
+by at most 5.2e-8 — 0.00003% of peak, some twenty-four bits down. Every golden comparison
+in the rig is measured in tolerances far larger than that. The cost is roughly forty lines
+of numerics in a file whose whole value is being checkable, which is why the series is
+Taylor rather than fitted: anyone can re-derive it.
+
 ## 2026-08-08 — Auto-place is a pure function of the graph
 
 Decision:

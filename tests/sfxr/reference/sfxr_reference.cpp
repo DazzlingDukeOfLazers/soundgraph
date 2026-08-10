@@ -5,17 +5,23 @@
 //
 // The synthesis arithmetic below is copied from that file unchanged, down to the order of
 // operations and the choice of float versus double, because an oracle that has been
-// "cleaned up" is no longer an oracle. Three mechanical changes were needed to make it
-// usable as one, and nothing else was touched:
+// "cleaned up" is no longer an oracle. Four mechanical changes were needed to make it
+// usable as one, and nothing else was touched. The first two are the same change twice:
+// the C library is not the same library everywhere, and an oracle has to be.
 //
 //   1. rand() is replaced by an xorshift32 embedded here. sfxr calls rnd() inside the
 //      audio loop to refill its noise buffer, so the waveform depends on the C library's
 //      generator — and MSVC, glibc and musl do not agree. A corpus generated on one
 //      machine would not reproduce on another, which would make the whole rig worthless.
-//      This is the only change that alters output, and it only alters the noise waveform.
-//   2. The globals became members of a state struct so a render cannot leak into the next
+//      This alters output, and only the noise waveform.
+//   2. sin() is replaced by portable_sin() below, for exactly that reason. Apple's libm
+//      and Microsoft's disagree by about one ULP; the low-pass filter's feedback grows
+//      that into a byte-level difference by the end of a render, and the two vectors with
+//      wave_type == 2 stopped reproducing on a Mac. This alters output too, by 2.2e-16 at
+//      worst — see portable_sin for the measurement.
+//   3. The globals became members of a state struct so a render cannot leak into the next
 //      one. The arithmetic is untouched; only the names are qualified.
-//   3. The SDL interface, the GUI, the undo buffer and the .sfs and .wav writers are gone.
+//   4. The SDL interface, the GUI, the undo buffer and the .sfs and .wav writers are gone.
 //      The seven generator bodies were lifted out of DrawScreen() verbatim.
 //
 // Deliberately not fixed: the sustain stage computes
@@ -34,6 +40,66 @@ namespace sfxr_reference {
 namespace {
 
 constexpr float kPi = 3.14159265f;
+
+// The substitute sine, for the same reason as the substitute generator below: the C
+// library's is not the same on every platform. Apple's differs from Microsoft's by about
+// one unit in the last place, the low-pass filter's feedback grows that to roughly eight
+// float ULPs over a render, and the two vectors with wave_type == 2 stopped being
+// byte-reproducible on a Mac. A corpus that only reproduces where it was made is not a
+// fixed target.
+//
+// Cody-Waite reduction onto [-pi/4, pi/4] with a three-part pi/2, then Taylor kernels
+// carried to x^17 and x^16 — far past what double precision can hold over that interval,
+// so the truncation is not what limits it. Measured against Apple's libm across the whole
+// range sfxr uses, the worst disagreement is 2.2e-16: one ULP of a double, and orders of
+// magnitude below the float the sample is stored as.
+//
+// Taylor rather than minimax coefficients on purpose. The series is derivable from first
+// principles by anyone reading this, which matters more here than the handful of bits a
+// fitted polynomial would buy — this is an oracle, and it has to be checkable.
+constexpr double kTwoOverPi = 0.63661977236758134308;
+constexpr double kPio2Hi = 1.57079632673412561417e+00;
+constexpr double kPio2Mid = 6.07710050650619224932e-11;
+constexpr double kPio2Lo = 2.02226624879595063154e-21;
+
+double kernel_sin(double r) {
+    const double r2 = r * r;
+    double p = 1.0 / 355687428096000.0;   // 17!
+    p = p * r2 - 1.0 / 1307674368000.0;   // 15!
+    p = p * r2 + 1.0 / 6227020800.0;      // 13!
+    p = p * r2 - 1.0 / 39916800.0;        // 11!
+    p = p * r2 + 1.0 / 362880.0;          // 9!
+    p = p * r2 - 1.0 / 5040.0;            // 7!
+    p = p * r2 + 1.0 / 120.0;             // 5!
+    p = p * r2 - 1.0 / 6.0;               // 3!
+    return r + r * r2 * p;
+}
+
+double kernel_cos(double r) {
+    const double r2 = r * r;
+    double p = 1.0 / 20922789888000.0;    // 16!
+    p = p * r2 - 1.0 / 87178291200.0;     // 14!
+    p = p * r2 + 1.0 / 479001600.0;       // 12!
+    p = p * r2 - 1.0 / 3628800.0;         // 10!
+    p = p * r2 + 1.0 / 40320.0;           // 8!
+    p = p * r2 - 1.0 / 720.0;             // 6!
+    p = p * r2 + 1.0 / 24.0;              // 4!
+    return 1.0 + r2 * (-0.5 + r2 * p);
+}
+
+// floor(x + 0.5) rather than rint or nearbyint: those consult the current rounding mode,
+// and a reference that depends on ambient floating-point state is the problem this whole
+// file is trying not to have.
+double portable_sin(double x) {
+    const double k = std::floor(x * kTwoOverPi + 0.5);
+    const double r = ((x - k * kPio2Hi) - k * kPio2Mid) - k * kPio2Lo;
+    switch (static_cast<long long>(k) & 3) {
+        case 0: return kernel_sin(r);
+        case 1: return kernel_cos(r);
+        case 2: return -kernel_sin(r);
+        default: return -kernel_cos(r);
+    }
+}
 
 // The substitute generator. Deterministic across platforms, which the C library's is not.
 struct Rng {
@@ -188,7 +254,7 @@ std::size_t synth_sample(State& s, float* buffer, std::size_t length) {
         float rfperiod = static_cast<float>(s.fperiod);
         if (s.vib_amp > 0.0f) {
             s.vib_phase += s.vib_speed;
-            rfperiod = static_cast<float>(s.fperiod * (1.0 + sin(s.vib_phase) * s.vib_amp));
+            rfperiod = static_cast<float>(s.fperiod * (1.0 + portable_sin(s.vib_phase) * s.vib_amp));
         }
         s.period = static_cast<int>(rfperiod);
         if (s.period < 8) s.period = 8;
@@ -240,7 +306,7 @@ std::size_t synth_sample(State& s, float* buffer, std::size_t length) {
                     sample = 1.0f - fp * 2;
                     break;
                 case 2:  // sine
-                    sample = static_cast<float>(sin(fp * 2 * kPi));
+                    sample = static_cast<float>(portable_sin(fp * 2 * kPi));
                     break;
                 case 3:  // noise
                     sample = s.noise_buffer[s.phase * 32 / s.period];
