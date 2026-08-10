@@ -1731,13 +1731,33 @@ func _synthesize_module_descriptors() -> void:
 					break
 		registry["module:%s" % module_name] = {
 			"name": "module:%s" % module_name,
-			"display_name": str(module_name).capitalize(),
+			"display_name": _module_display_name(str(module_name)),
 			"category": "Modules",
 			"summary": str(definition.get("description", "")),
 			"inputs": inputs,
 			"outputs": outputs,
 			"parameters": parameters,
 		}
+
+
+## A module's name as a person would write it: "dx7_operator" is a DX7 Operator.
+##
+## capitalize() alone gave "Dx7 Operator", because it has no way to know that dx7 is a
+## model number rather than a word. A token carrying a digit is one — dx7, opl2, ym2612 —
+## so it goes up in full, and everything else is capitalised normally. The rule is about
+## the shape of the token rather than a list of chips, so the next importer's module
+## reads correctly without anyone remembering to come back here.
+func _module_display_name(module_name: String) -> String:
+	var words: Array[String] = []
+	for token in module_name.split("_", false):
+		var word := str(token)
+		var has_digit := false
+		for index in word.length():
+			if word[index] >= "0" and word[index] <= "9":
+				has_digit = true
+				break
+		words.append(word.to_upper() if has_digit else word.capitalize())
+	return " ".join(words)
 
 
 ## Where the engine actually hears about an instance's exported parameter.

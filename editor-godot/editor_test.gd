@@ -1891,6 +1891,38 @@ func _initialize() -> void:
 	check(main.widgets.has("op1") and not main.widgets.has("op1.osc"),
 		"instances are nodes; their internals are not")
 
+	# Every node says which one it is. Six instances all titled "Operator" is what this
+	# looked like before: the ids knew op1 from op6 and the canvas did not, so the
+	# algorithm — the entire subject of a DX7 patch — could only be read by tracing
+	# cables. A title is not decoration on a graph whose nodes are otherwise identical.
+	var titles := {}
+	var untitled := 0
+	for id in main.widgets:
+		var title: String = (main.widgets[id] as GraphNode).title
+		if title.is_empty():
+			untitled += 1
+		titles[title] = int(titles.get(title, 0)) + 1
+	var repeated := 0
+	for title in titles:
+		if int(titles[title]) > 1:
+			repeated += 1
+	check(untitled == 0 and repeated == 0,
+		"every node in a DX7 voice is named, and no two the same (%d blank, %d repeated)"
+			% [untitled, repeated])
+	check(str((main.widgets["op1"] as GraphNode).title).contains("carrier")
+			and str((main.widgets["op6"] as GraphNode).title).contains("modulator"),
+		"and the name says what the operator does in this algorithm (%s / %s)"
+			% [(main.widgets["op1"] as GraphNode).title,
+				(main.widgets["op6"] as GraphNode).title])
+	# The module is named for its chip, so a document could hold a DX7 operator and an
+	# OPL2 one without them being the same word, and the model number reads as one.
+	check(main.patch.get("modules", {}).has("dx7_operator"),
+		"the module is named for the chip it came off")
+	check(main._module_display_name("dx7_operator") == "DX7 Operator"
+			and main._module_display_name("opl2_operator") == "OPL2 Operator",
+		"and a model number survives being made into a display name (%s)"
+			% main._module_display_name("dx7_operator"))
+
 	var instance_widget: GraphNode = main.widgets["op1"]
 	var declared_inputs: Array = main._port_list("op1", "inputs")
 	var declared_outputs: Array = main._port_list("op1", "outputs")

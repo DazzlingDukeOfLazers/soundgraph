@@ -13,7 +13,7 @@
     "source": "tools/dx7/banks/algorithm-demos.syx"
   },
   "modules": {
-    "operator": {
+    "dx7_operator": {
       "description": "One DX7 operator: pitch ratio, sine, envelope, VCA.",
       "nodes": [
         {
@@ -168,12 +168,14 @@
     {
       "id": "note",
       "type": "NoteInput",
+      "name": "Keyboard",
       "parameters": {}
     },
     {
       "id": "op6",
       "type": "module",
-      "module": "operator",
+      "module": "dx7_operator",
+      "name": "OP6 modulator · feedback",
       "parameters": {
         "ratio": 1,
         "attack": 0.0017,
@@ -186,7 +188,8 @@
     {
       "id": "op5",
       "type": "module",
-      "module": "operator",
+      "module": "dx7_operator",
+      "name": "OP5 carrier",
       "parameters": {
         "ratio": 2,
         "attack": 0.0017,
@@ -198,7 +201,8 @@
     {
       "id": "op4",
       "type": "module",
-      "module": "operator",
+      "module": "dx7_operator",
+      "name": "OP4 modulator",
       "parameters": {
         "ratio": 1,
         "attack": 0.0017,
@@ -210,7 +214,8 @@
     {
       "id": "op3",
       "type": "module",
-      "module": "operator",
+      "module": "dx7_operator",
+      "name": "OP3 carrier",
       "parameters": {
         "ratio": 3,
         "attack": 0.0017,
@@ -222,7 +227,8 @@
     {
       "id": "op2",
       "type": "module",
-      "module": "operator",
+      "module": "dx7_operator",
+      "name": "OP2 modulator",
       "parameters": {
         "ratio": 1,
         "attack": 0.001,
@@ -234,7 +240,8 @@
     {
       "id": "op1",
       "type": "module",
-      "module": "operator",
+      "module": "dx7_operator",
+      "name": "OP1 carrier",
       "parameters": {
         "ratio": 14,
         "attack": 0.001,
@@ -246,6 +253,7 @@
     {
       "id": "op6_index_5",
       "type": "Gain",
+      "name": "OP6 → OP5",
       "parameters": {
         "gain": 0.4585
       }
@@ -253,6 +261,7 @@
     {
       "id": "op4_index_3",
       "type": "Gain",
+      "name": "OP4 → OP3",
       "parameters": {
         "gain": 0.3242
       }
@@ -260,6 +269,7 @@
     {
       "id": "op2_index_1",
       "type": "Gain",
+      "name": "OP2 → OP1",
       "parameters": {
         "gain": 2
       }
@@ -267,6 +277,7 @@
     {
       "id": "op5_level",
       "type": "Gain",
+      "name": "OP5 level",
       "parameters": {
         "gain": 0.1928
       }
@@ -274,6 +285,7 @@
     {
       "id": "op3_level",
       "type": "Gain",
+      "name": "OP3 level",
       "parameters": {
         "gain": 0.1363
       }
@@ -281,11 +293,13 @@
     {
       "id": "carrier_sum_1",
       "type": "Add",
+      "name": "Carrier mix",
       "parameters": {}
     },
     {
       "id": "op1_level",
       "type": "Gain",
+      "name": "OP1 level",
       "parameters": {
         "gain": 1
       }
@@ -293,6 +307,7 @@
     {
       "id": "carrier_sum_2",
       "type": "Add",
+      "name": "Carrier mix",
       "parameters": {}
     },
     {

@@ -423,7 +423,18 @@ function buildPatch(voice, bankName, voiceIndex) {
     * PITCH_MOD_SENS[voice.pitchModSens]) / 65536;
   const hasVibrato = vibratoDepth > 0.0005;
 
-  const nodes = [{ id: 'note', type: 'NoteInput',
+  // What each operator is *for*, in the words a DX7 manual uses. Six nodes all called
+  // "Operator" is what the editor showed before this: the ids knew which was which and
+  // the canvas did not, so an algorithm — the entire subject of the patch — could only
+  // be read by tracing cables. A carrier is heard; a modulator is only felt.
+  const roleOf = (op) => {
+    const parts = [`OP${op}`];
+    parts.push(topology.carriers.includes(op) ? 'carrier' : 'modulator');
+    if (topology.feedback === op && voice.feedbackLevel > 0) parts.push('· feedback');
+    return parts.join(' ');
+  };
+
+  const nodes = [{ id: 'note', type: 'NoteInput', name: 'Keyboard',
     parameters: voice.transpose !== 0 ? { transpose: voice.transpose } : {} }];
   const connections = [];
   const wire = (fromNode, fromPort, toNode, toPort) => connections.push({
@@ -459,9 +470,10 @@ function buildPatch(voice, bankName, voiceIndex) {
     if (op.fixed) {
       oscParameters.frequency = Number((operatorRatio(op)
         * Math.pow(2, egBase)).toFixed(3));
-      nodes.push({ id: `${id}_osc`, type: 'SineOscillator', parameters: oscParameters });
+      nodes.push({ id: `${id}_osc`, type: 'SineOscillator', name: roleOf(op.op),
+        parameters: oscParameters });
     } else {
-      nodes.push({ id: `${id}_pitch`, type: 'Multiply',
+      nodes.push({ id: `${id}_pitch`, type: 'Multiply', name: roleOf(op.op),
         parameters: { factor: Number((operatorRatio(op)
           * Math.pow(2, egBase)).toFixed(5)) } });
       wire('note', 'frequency', `${id}_pitch`, 'a');
@@ -679,14 +691,16 @@ function buildPatch(voice, bankName, voiceIndex) {
       const from = sources[i];
       const fromOp = voice.ops.find((o) => o.op === from);
       const gainId = `op${from}_index_${op.op}`;
-      nodes.push({ id: gainId, type: 'Gain', parameters: {
-        gain: Number((INDEX_FULL * operatorAmp(fromOp)).toFixed(4)) } });
+      nodes.push({ id: gainId, type: 'Gain',
+        name: `OP${from} → OP${op.op}`, parameters: {
+          gain: Number((INDEX_FULL * operatorAmp(fromOp)).toFixed(4)) } });
       wire(opOut(from), 'out', gainId, 'in');
       if (i === 0) {
         feed = gainId;
       } else {
         const addId = `op${op.op}_pm_sum_${i}`;
-        nodes.push({ id: addId, type: 'Add', parameters: {} });
+        nodes.push({ id: addId, type: 'Add',
+          name: `OP${op.op} modulation sum`, parameters: {} });
         wire(feed, 'out', addId, 'a');
         wire(gainId, 'out', addId, 'b');
         feed = addId;
@@ -704,14 +718,14 @@ function buildPatch(voice, bankName, voiceIndex) {
   topology.carriers.forEach((c, i) => {
     const levelId = `op${c}_level`;
     const carrierOp = voice.ops.find((o) => o.op === c);
-    nodes.push({ id: levelId, type: 'Gain', parameters: {
+    nodes.push({ id: levelId, type: 'Gain', name: `OP${c} level`, parameters: {
       gain: Number(operatorAmp(carrierOp).toFixed(4)) } });
     wire(opOut(c), 'out', levelId, 'in');
     if (i === 0) {
       mix = levelId;
     } else {
       const addId = `carrier_sum_${i}`;
-      nodes.push({ id: addId, type: 'Add', parameters: {} });
+      nodes.push({ id: addId, type: 'Add', name: 'Carrier mix', parameters: {} });
       wire(mix, 'out', addId, 'a');
       wire(levelId, 'out', addId, 'b');
       mix = addId;
@@ -769,6 +783,13 @@ const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 // which is what --modular-check proves with rendered bytes: same voice, two
 // notations, one sound. Fixed-frequency ops stay flat — a mixed document is legal.
 // ---------------------------------------------------------------------------------
+
+// Named for the chip, not for the concept. Both importers used to call this "operator",
+// so a DX7 voice and an OPL2 instrument claimed the same module name for two genuinely
+// different things — six-operator phase modulation and a two-operator pair — and a
+// document holding both would have had them collide. The editor turns the model number
+// back into capitals for display.
+const OPERATOR_MODULE_NAME = 'dx7_operator';
 
 const OPERATOR_MODULE = {
   description: 'One DX7 operator: pitch ratio, sine, envelope, VCA.',
@@ -850,7 +871,8 @@ function modularize(flat) {
       if (osc.parameters.feedback !== undefined) {
         parameters.feedback = osc.parameters.feedback;
       }
-      nodes.push({ id: `op${op}`, type: 'module', module: 'operator', parameters });
+      nodes.push({ id: `op${op}`, type: 'module', module: OPERATOR_MODULE_NAME,
+        name: node.name ?? `OP${op}`, parameters });
       continue;
     }
     if (inner.has(node.id)) continue;
@@ -891,7 +913,7 @@ function modularize(flat) {
   return {
     schema_version: 2,
     metadata: flat.metadata,
-    modules: { operator: OPERATOR_MODULE },
+    modules: { [OPERATOR_MODULE_NAME]: OPERATOR_MODULE },
     nodes,
     connections,
   };

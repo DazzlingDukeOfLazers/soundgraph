@@ -12,7 +12,7 @@
     "source": "freedoom/lumps/genmidi/instruments/instr099.sbi"
   },
   "modules": {
-    "operator": {
+    "opl2_operator": {
       "description": "One OPL2 operator: pitch ratio, shaped sine, envelope, VCA.",
       "nodes": [
         {
@@ -137,12 +137,14 @@
     {
       "id": "note",
       "type": "NoteInput",
+      "name": "Keyboard",
       "parameters": {}
     },
     {
       "id": "mod",
       "type": "module",
-      "module": "operator",
+      "module": "opl2_operator",
+      "name": "Modulator",
       "parameters": {
         "ratio": 4,
         "attack": 0,
@@ -154,7 +156,8 @@
     {
       "id": "car",
       "type": "module",
-      "module": "operator",
+      "module": "opl2_operator",
+      "name": "Carrier",
       "parameters": {
         "ratio": 3,
         "attack": 0.0087,
@@ -173,6 +176,7 @@
     {
       "id": "index",
       "type": "Gain",
+      "name": "Modulator → Carrier",
       "parameters": {
         "gain": 0.85
       }
@@ -180,6 +184,7 @@
     {
       "id": "car_level",
       "type": "Gain",
+      "name": "Carrier level",
       "parameters": {
         "gain": 0.3255
       }

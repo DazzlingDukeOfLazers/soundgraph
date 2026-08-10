@@ -187,10 +187,15 @@ function buildPatch(voice, sourceFile) {
     feedbackCycles(voice.feedback) * attenuation(voice.modulator.totalLevel);
 
   const nodes = [
-    { id: 'note', type: 'NoteInput', parameters: {} },
+    { id: 'note', type: 'NoteInput', name: 'Keyboard', parameters: {} },
+    // An additive voice has two operators that are both heard; an FM one has a
+    // modulator that is only felt. Naming them for the job they do in *this* voice
+    // beats naming them for their slot on the chip.
     { id: 'mod_pitch', type: 'Multiply',
+      name: voice.additive ? 'Operator 1' : 'Modulator',
       parameters: { factor: voice.modulator.multiple } },
     { id: 'car_pitch', type: 'Multiply',
+      name: voice.additive ? 'Operator 2' : 'Carrier',
       parameters: { factor: voice.carrier.multiple } },
     { id: 'mod', type: 'SineOscillator', parameters: operatorParameters(
       voice.modulator, effectiveFeedback) },
@@ -225,11 +230,11 @@ function buildPatch(voice, sourceFile) {
 
   if (voice.additive) {
     // Both operators are voices in their own right; they meet in an Add.
-    nodes.push({ id: 'mod_level', type: 'Gain',
+    nodes.push({ id: 'mod_level', type: 'Gain', name: 'Operator 1 level',
       parameters: { gain: Number(attenuation(voice.modulator.totalLevel).toFixed(4)) } });
-    nodes.push({ id: 'car_level', type: 'Gain',
+    nodes.push({ id: 'car_level', type: 'Gain', name: 'Operator 2 level',
       parameters: { gain: Number(attenuation(voice.carrier.totalLevel).toFixed(4)) } });
-    nodes.push({ id: 'sum', type: 'Add', parameters: {} });
+    nodes.push({ id: 'sum', type: 'Add', name: 'Mix', parameters: {} });
     connections.push(wire('mod_vca', 'out', 'mod_level', 'in'));
     connections.push(wire('car_vca', 'out', 'car_level', 'in'));
     connections.push(wire('mod_level', 'out', 'sum', 'a'));
@@ -238,10 +243,10 @@ function buildPatch(voice, sourceFile) {
     connections.push(wire('sum', 'out', 'out', 'right'));
   } else {
     // The FM proper: the modulator's level is a modulation index into the carrier's pm.
-    nodes.push({ id: 'index', type: 'Gain',
+    nodes.push({ id: 'index', type: 'Gain', name: 'Modulator → Carrier',
       parameters: { gain: Number(
         (INDEX_FULL * attenuation(voice.modulator.totalLevel)).toFixed(4)) } });
-    nodes.push({ id: 'car_level', type: 'Gain',
+    nodes.push({ id: 'car_level', type: 'Gain', name: 'Carrier level',
       parameters: { gain: Number(attenuation(voice.carrier.totalLevel).toFixed(4)) } });
     connections.push(wire('mod_vca', 'out', 'index', 'in'));
     connections.push(wire('index', 'out', 'car', 'pm'));
@@ -275,6 +280,11 @@ const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^
 // ratio, waveform shape, feedback, the four envelope times — and --modular-check
 // proves the factoring with rendered bytes across all 128 instruments.
 // ---------------------------------------------------------------------------------
+
+// Named for the chip: see the matching note in dx7-import.mjs. Two operators here
+// mean something different from six there, and one name for both would have been a
+// collision waiting for the first document that held one of each.
+const OPERATOR_MODULE_NAME = 'opl2_operator';
 
 const OPERATOR_MODULE = {
   description: 'One OPL2 operator: pitch ratio, shaped sine, envelope, VCA.',
@@ -334,7 +344,8 @@ function modularize(flat) {
       if (osc.parameters.feedback !== undefined) {
         parameters.feedback = osc.parameters.feedback;
       }
-      nodes.push({ id: cluster, type: 'module', module: 'operator', parameters });
+      nodes.push({ id: cluster, type: 'module', module: OPERATOR_MODULE_NAME,
+        name: node.name, parameters });
       continue;
     }
     if (inner.has(node.id)) continue;
@@ -366,7 +377,7 @@ function modularize(flat) {
   return {
     schema_version: 2,
     metadata: flat.metadata,
-    modules: { operator: OPERATOR_MODULE },
+    modules: { [OPERATOR_MODULE_NAME]: OPERATOR_MODULE },
     nodes,
     connections,
   };
