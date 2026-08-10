@@ -57,6 +57,14 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/opl2-import.mjs --check)
 endif()
 
+# The modules stage-1 exit test: every DX7 voice built flat and factored modular must
+# render byte-identical audio. Notation changes, sound does not — this is the design
+# document's whole thesis as one assertion.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME modules_flatten_to_identical_audio
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/dx7-import.mjs --modular-check)
+endif()
+
 # Every DX7 voice, played through msfa and through its imported patch, agreeing on
 # pitch and presence — the same bargain as the OPL comparator, against the engine
 # Dexed builds on.

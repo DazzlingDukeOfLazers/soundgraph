@@ -4,13 +4,27 @@
   "title": "SoundGraph Patch",
   "description": "The canonical, portable representation of a SoundGraph patch. This document is the product; editors, runtimes and hardware targets are consumers of it. Anything a frontend needs in order to reproduce a patch must round-trip through this format.",
   "type": "object",
-  "required": ["schema_version", "nodes", "connections"],
+  "required": [
+    "schema_version",
+    "nodes",
+    "connections"
+  ],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "description": "Incremented only for breaking changes. A runtime must refuse a patch whose schema_version it does not implement.",
+      "description": "Incremented only for breaking changes. A runtime must refuse a patch whose schema_version it does not implement. Version 2 adds modules; a document without modules stays version 1.",
       "type": "integer",
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "modules": {
+      "description": "Module definitions, by name. Present only in version 2 documents.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/module"
+      }
     },
     "arrangement": {
       "description": "Optional presentation hints. Never affects what a patch sounds like, and a runtime that only wants to make sound should ignore this whole object. Node positions and cable waypoints stay on the elements they describe; this is for hints about a whole view, which have nothing to hang off. Every field is optional and dropping any of them costs a nicer picture and nothing else.",
@@ -20,7 +34,9 @@
         "rack_order": {
           "description": "Left-to-right order of modules in the rack view. Ids not in the patch are ignored, and nodes missing from the list are appended, so an out-of-date list degrades rather than breaks.",
           "type": "array",
-          "items": { "$ref": "#/$defs/node_id" }
+          "items": {
+            "$ref": "#/$defs/node_id"
+          }
         }
       }
     },
@@ -28,31 +44,54 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "name": { "type": "string" },
-        "author": { "type": "string" },
-        "description": { "type": "string" },
-        "created": { "type": "string" },
-        "modified": { "type": "string" },
-        "tags": { "type": "array", "items": { "type": "string" } }
+        "name": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string"
+        },
+        "modified": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "nodes": {
       "type": "array",
-      "items": { "$ref": "#/$defs/node" }
+      "items": {
+        "$ref": "#/$defs/node"
+      }
     },
     "connections": {
       "type": "array",
-      "items": { "$ref": "#/$defs/connection" }
+      "items": {
+        "$ref": "#/$defs/connection"
+      }
     },
     "controls": {
       "description": "Performance surface. Deliberately separate from the DSP graph: the same parameter may be driven by a Godot knob, a browser slider, a DAW automation lane, a MIDI CC or a physical encoder without changing the graph.",
       "type": "array",
-      "items": { "$ref": "#/$defs/control" }
+      "items": {
+        "$ref": "#/$defs/control"
+      }
     },
     "automation": {
       "description": "Recorded or authored parameter movement. Graph data, never hidden frontend state.",
       "type": "array",
-      "items": { "$ref": "#/$defs/automation_lane" }
+      "items": {
+        "$ref": "#/$defs/automation_lane"
+      }
     }
   },
   "$defs": {
@@ -72,14 +111,24 @@
     "signal_type": {
       "description": "audio and control are sample streams and interconvert freely. event and note are discrete messages and require an exact match.",
       "type": "string",
-      "enum": ["audio", "control", "event", "note"]
+      "enum": [
+        "audio",
+        "control",
+        "event",
+        "note"
+      ]
     },
     "node": {
       "type": "object",
-      "required": ["id", "type"],
+      "required": [
+        "id",
+        "type"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "$ref": "#/$defs/node_id" },
+        "id": {
+          "$ref": "#/$defs/node_id"
+        },
         "type": {
           "description": "Registry node type name, e.g. SawOscillator. Unknown types are a validation error, never a silent no-op.",
           "type": "string",
@@ -92,35 +141,56 @@
         "parameters": {
           "description": "Parameter values by name. Omitted parameters take the registry default, so a minimal patch stays readable.",
           "type": "object",
-          "additionalProperties": { "type": "number" }
+          "additionalProperties": {
+            "type": "number"
+          }
         },
         "position": {
           "description": "Editor layout hint. Runtimes ignore it; it lives here so a patch opens the same way in every editor.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "x": { "type": "number" },
-            "y": { "type": "number" }
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
           }
         },
         "collapsed": {
           "description": "Progressive disclosure state for editors.",
           "type": "boolean"
+        },
+        "module": {
+          "description": "When type is \"module\": the name of the definition this node instantiates. The instance exposes only the module's declared inputs, outputs and parameters.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },
     "endpoint": {
       "type": "object",
-      "required": ["node", "port"],
+      "required": [
+        "node",
+        "port"
+      ],
       "additionalProperties": false,
       "properties": {
-        "node": { "$ref": "#/$defs/node_id" },
-        "port": { "$ref": "#/$defs/port_name" }
+        "node": {
+          "$ref": "#/$defs/node_id"
+        },
+        "port": {
+          "$ref": "#/$defs/port_name"
+        }
       }
     },
     "connection": {
       "type": "object",
-      "required": ["from", "to"],
+      "required": [
+        "from",
+        "to"
+      ],
       "additionalProperties": false,
       "properties": {
         "from": {
@@ -136,83 +206,245 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "x": { "type": "number" },
-            "y": { "type": "number" }
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
           }
         }
       }
     },
     "control": {
       "type": "object",
-      "required": ["id", "target"],
+      "required": [
+        "id",
+        "target"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "$ref": "#/$defs/node_id" },
-        "label": { "type": "string" },
+        "id": {
+          "$ref": "#/$defs/node_id"
+        },
+        "label": {
+          "type": "string"
+        },
         "kind": {
           "type": "string",
-          "enum": ["knob", "slider", "toggle", "button", "xy", "keyboard"]
+          "enum": [
+            "knob",
+            "slider",
+            "toggle",
+            "button",
+            "xy",
+            "keyboard"
+          ]
         },
         "target": {
           "description": "The graph parameter this surface drives.",
           "type": "object",
-          "required": ["node", "parameter"],
+          "required": [
+            "node",
+            "parameter"
+          ],
           "additionalProperties": false,
           "properties": {
-            "node": { "$ref": "#/$defs/node_id" },
-            "parameter": { "$ref": "#/$defs/port_name" }
+            "node": {
+              "$ref": "#/$defs/node_id"
+            },
+            "parameter": {
+              "$ref": "#/$defs/port_name"
+            }
           }
         },
-        "min": { "type": "number" },
-        "max": { "type": "number" },
-        "default": { "type": "number" },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "default": {
+          "type": "number"
+        },
         "scaling": {
           "type": "string",
-          "enum": ["linear", "exponential", "logarithmic"]
+          "enum": [
+            "linear",
+            "exponential",
+            "logarithmic"
+          ]
         },
         "binding": {
           "description": "Optional physical or protocol binding. Absent means the surface is on-screen only.",
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "midi_cc": { "type": "integer", "minimum": 0, "maximum": 127 },
-            "midi_channel": { "type": "integer", "minimum": 1, "maximum": 16 },
-            "encoder": { "type": "integer", "minimum": 0 }
+            "midi_cc": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            },
+            "midi_channel": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "encoder": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         }
       }
     },
     "automation_lane": {
       "type": "object",
-      "required": ["target", "points"],
+      "required": [
+        "target",
+        "points"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "$ref": "#/$defs/node_id" },
+        "id": {
+          "$ref": "#/$defs/node_id"
+        },
         "target": {
           "type": "object",
-          "required": ["node", "parameter"],
+          "required": [
+            "node",
+            "parameter"
+          ],
           "additionalProperties": false,
           "properties": {
-            "node": { "$ref": "#/$defs/node_id" },
-            "parameter": { "$ref": "#/$defs/port_name" }
+            "node": {
+              "$ref": "#/$defs/node_id"
+            },
+            "parameter": {
+              "$ref": "#/$defs/port_name"
+            }
           }
         },
-        "loop": { "type": "boolean" },
-        "length_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "loop": {
+          "type": "boolean"
+        },
+        "length_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "interpolation": {
           "type": "string",
-          "enum": ["step", "linear", "smooth"]
+          "enum": [
+            "step",
+            "linear",
+            "smooth"
+          ]
         },
         "points": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["time", "value"],
+            "required": [
+              "time",
+              "value"
+            ],
             "additionalProperties": false,
             "properties": {
-              "time": { "type": "number", "minimum": 0 },
-              "value": { "type": "number" }
+              "time": {
+                "type": "number",
+                "minimum": 0
+              },
+              "value": {
+                "type": "number"
+              }
             }
+          }
+        }
+      }
+    },
+    "module_port": {
+      "type": "object",
+      "required": [
+        "name",
+        "node",
+        "port"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "node": {
+          "$ref": "#/$defs/node_id"
+        },
+        "port": {
+          "$ref": "#/$defs/port_name"
+        }
+      }
+    },
+    "module_parameter": {
+      "type": "object",
+      "required": [
+        "name",
+        "node",
+        "parameter"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "node": {
+          "$ref": "#/$defs/node_id"
+        },
+        "parameter": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "module": {
+      "description": "A named subgraph with a declared surface. Instances are expanded into plain nodes at load; a module is notation, not a runtime object. Definitions may not instantiate modules (no nesting). See docs/modules-design.md.",
+      "type": "object",
+      "required": [
+        "nodes",
+        "connections"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/connection"
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/module_port"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/module_port"
+          }
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/module_parameter"
           }
         }
       }

@@ -81,6 +81,427 @@ json::Value write_control_target(const ControlTarget& target) {
     return value;
 }
 
+// One node entry, shared between the top-level nodes array and module definitions —
+// a definition's nodes are ordinary nodes, and two readers would drift.
+bool read_node(const json::Value& entry,
+               std::size_t index,
+               NodeDescription& node,
+               std::vector<Diagnostic>& diagnostics) {
+    if (!entry.is_object()) {
+        diagnostics.push_back(error("node_not_an_object",
+                                    "Node " + std::to_string(index) + " is not an object."));
+        return false;
+    }
+    const json::Value* id = entry.find("id");
+    const json::Value* type = entry.find("type");
+    if (id == nullptr || !id->is_string() || id->as_string().empty()) {
+        diagnostics.push_back(error(
+            "node_missing_id",
+            "Node " + std::to_string(index) + " has no id.",
+            "Ids are how connections find nodes, so every node needs one."));
+        return false;
+    }
+    if (type == nullptr || !type->is_string()) {
+        diagnostics.push_back(error("node_missing_type",
+                                    "Node '" + id->as_string() + "' has no type."));
+        return false;
+    }
+    node.id = id->as_string();
+    node.type = type->as_string();
+
+    if (node.type == "module") {
+        const json::Value* module = entry.find("module");
+        if (module == nullptr || !module->is_string() || module->as_string().empty()) {
+            diagnostics.push_back(error(
+                "instance_missing_module",
+                "Node '" + node.id + "' has type \"module\" but names no module.",
+                "An instance needs \"module\": \"<definition name>\"."));
+            return false;
+        }
+        node.module = module->as_string();
+    }
+
+    if (const json::Value* name = entry.find("name")) {
+        if (name->is_string()) {
+            node.name = name->as_string();
+        }
+    }
+    if (const json::Value* parameters = entry.find("parameters")) {
+        if (parameters->is_object()) {
+            for (const auto& parameter : parameters->object()) {
+                if (!parameter.second.is_number()) {
+                    diagnostics.push_back(warning(
+                        "parameter_not_a_number",
+                        "Parameter '" + parameter.first + "' on node '" + node.id +
+                            "' is not a number and will be ignored."));
+                    continue;
+                }
+                node.parameters.push_back(
+                    ParameterValue{parameter.first, parameter.second.as_number()});
+            }
+        }
+    }
+    if (const json::Value* position = entry.find("position")) {
+        if (position->is_object()) {
+            const json::Value* x = position->find("x");
+            const json::Value* y = position->find("y");
+            if (x != nullptr && x->is_number() && y != nullptr && y->is_number()) {
+                node.has_position = true;
+                node.x = static_cast<float>(x->as_number());
+                node.y = static_cast<float>(y->as_number());
+            }
+        }
+    }
+    if (const json::Value* collapsed = entry.find("collapsed")) {
+        node.collapsed = collapsed->as_bool(false);
+    }
+    return true;
+}
+
+bool read_connection(const json::Value& entry,
+                     std::size_t index,
+                     ConnectionDescription& connection,
+                     std::vector<Diagnostic>& diagnostics) {
+    if (!entry.is_object()) {
+        diagnostics.push_back(error("connection_not_an_object",
+                                    "Connection " + std::to_string(index) + " is not an object."));
+        return false;
+    }
+    if (!read_endpoint(entry, "from", index, connection.from_node, connection.from_port,
+                       diagnostics) ||
+        !read_endpoint(entry, "to", index, connection.to_node, connection.to_port,
+                       diagnostics)) {
+        return false;
+    }
+    if (const json::Value* waypoint = entry.find("waypoint")) {
+        const json::Value* x = waypoint->find("x");
+        const json::Value* y = waypoint->find("y");
+        if (x != nullptr && x->is_number() && y != nullptr && y->is_number()) {
+            connection.has_waypoint = true;
+            connection.waypoint_x = static_cast<float>(x->as_number());
+            connection.waypoint_y = static_cast<float>(y->as_number());
+        }
+    }
+    return true;
+}
+
+// The declared surface of a module: {"name": ..., "node": ..., "port"/"parameter": ...}.
+bool read_module_binding(const json::Value& entry,
+                         const std::string& module_name,
+                         const char* kind,
+                         const char* inner_key,
+                         std::string& name,
+                         std::string& node,
+                         std::string& inner,
+                         std::vector<Diagnostic>& diagnostics) {
+    const json::Value* name_value = entry.find("name");
+    const json::Value* node_value = entry.find("node");
+    const json::Value* inner_value = entry.find(inner_key);
+    if (name_value == nullptr || !name_value->is_string() || name_value->as_string().empty() ||
+        node_value == nullptr || !node_value->is_string() ||
+        inner_value == nullptr || !inner_value->is_string()) {
+        diagnostics.push_back(error(
+            "module_malformed_binding",
+            "Module '" + module_name + "' has a malformed " + kind + " declaration.",
+            std::string("Each needs \"name\", \"node\" and \"") + inner_key + "\"."));
+        return false;
+    }
+    name = name_value->as_string();
+    node = node_value->as_string();
+    inner = inner_value->as_string();
+    return true;
+}
+
+// The expanded document may not outgrow what the smallest target can hold. This is a
+// load-time refusal, not a steady-state concern: expansion allocates during load,
+// which is where allocation already lives.
+constexpr std::size_t kMaxExpandedNodes = 2048;
+
+// instance id + "." + inner id, the separator the editor's module import established.
+std::string expanded_id(const std::string& instance, const std::string& inner) {
+    return instance + "." + inner;
+}
+
+// Turns instances into plain nodes, in place: description.nodes/connections/controls/
+// automation become the flattened view the engine builds from, and the document as
+// authored moves into the authored_* vectors for write_patch. Returns false (with
+// diagnostics) on any structural violation; the rules are docs/modules-design.md's,
+// one check each.
+bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diagnostics) {
+    bool any_instance = false;
+    for (const NodeDescription& node : description.nodes) {
+        if (node.type == "module") {
+            any_instance = true;
+        }
+    }
+    if (description.modules.empty() && !any_instance) {
+        return true;  // a version-1 document, untouched
+    }
+
+    if (description.schema_version < kSchemaVersionModules) {
+        diagnostics.push_back(error(
+            "modules_require_v2",
+            "This patch uses modules but declares schema_version " +
+                std::to_string(description.schema_version) + ".",
+            "Documents that use modules must declare \"schema_version\": 2 so that "
+            "runtimes which predate modules refuse them loudly instead of misreading."));
+        return false;
+    }
+
+    // Definitions are sound on their own terms before any instance is considered.
+    for (const ModuleDescription& definition : description.modules) {
+        for (const NodeDescription& inner : definition.nodes) {
+            if (inner.type == "module") {
+                diagnostics.push_back(error(
+                    "module_nesting",
+                    "Module '" + definition.name + "' instantiates module '" +
+                        inner.module + "'; modules may not contain modules.",
+                    "Nesting is deliberately out of scope — see docs/modules-design.md."));
+                return false;
+            }
+        }
+        for (std::size_t i = 0; i < definition.nodes.size(); ++i) {
+            for (std::size_t j = i + 1; j < definition.nodes.size(); ++j) {
+                if (definition.nodes[i].id == definition.nodes[j].id) {
+                    diagnostics.push_back(error(
+                        "module_duplicate_node",
+                        "Module '" + definition.name + "' declares node '" +
+                            definition.nodes[i].id + "' twice."));
+                    return false;
+                }
+            }
+        }
+        auto inner_exists = [&definition](const std::string& id) {
+            for (const NodeDescription& inner : definition.nodes) {
+                if (inner.id == id) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        for (const ModulePortDescription& port : definition.inputs) {
+            if (!inner_exists(port.node)) {
+                diagnostics.push_back(error(
+                    "module_binding_unknown_node",
+                    "Module '" + definition.name + "' input '" + port.name +
+                        "' lands on node '" + port.node + "', which the module does not contain."));
+                return false;
+            }
+        }
+        for (const ModulePortDescription& port : definition.outputs) {
+            if (!inner_exists(port.node)) {
+                diagnostics.push_back(error(
+                    "module_binding_unknown_node",
+                    "Module '" + definition.name + "' output '" + port.name +
+                        "' lands on node '" + port.node + "', which the module does not contain."));
+                return false;
+            }
+        }
+        for (const ModuleParameterDescription& parameter : definition.parameters) {
+            if (!inner_exists(parameter.node)) {
+                diagnostics.push_back(error(
+                    "module_binding_unknown_node",
+                    "Module '" + definition.name + "' parameter '" + parameter.name +
+                        "' reaches node '" + parameter.node + "', which the module does not contain."));
+                return false;
+            }
+        }
+        auto unique_names = [&diagnostics, &definition](const auto& list, const char* kind) {
+            for (std::size_t i = 0; i < list.size(); ++i) {
+                for (std::size_t j = i + 1; j < list.size(); ++j) {
+                    if (list[i].name == list[j].name) {
+                        diagnostics.push_back(error(
+                            "module_duplicate_name",
+                            "Module '" + definition.name + "' declares " + kind + " '" +
+                                list[i].name + "' twice."));
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
+        if (!unique_names(definition.inputs, "input") ||
+            !unique_names(definition.outputs, "output") ||
+            !unique_names(definition.parameters, "parameter")) {
+            return false;
+        }
+    }
+
+    // The authored document is what write_patch will reproduce.
+    description.authored_nodes = description.nodes;
+    description.authored_connections = description.connections;
+    description.authored_controls = description.controls;
+    description.authored_automation = description.automation;
+    description.authored_schema_version = description.schema_version;
+
+    // ---- nodes -----------------------------------------------------------------------
+    std::vector<NodeDescription> flat_nodes;
+    for (const NodeDescription& node : description.nodes) {
+        if (node.type != "module") {
+            flat_nodes.push_back(node);
+            continue;
+        }
+        const ModuleDescription* definition = description.find_module(node.module);
+        if (definition == nullptr) {
+            diagnostics.push_back(error(
+                "unknown_module",
+                "Node '" + node.id + "' instantiates module '" + node.module +
+                    "', which this patch does not define.",
+                "Definitions are inline: add it to the \"modules\" section."));
+            return false;
+        }
+        for (const ParameterValue& value : node.parameters) {
+            if (definition->find_parameter(value.name) == nullptr) {
+                diagnostics.push_back(error(
+                    "parameter_not_exported",
+                    "Instance '" + node.id + "' sets parameter '" + value.name +
+                        "', which module '" + definition->name + "' does not export.",
+                    "The declared surface is the only surface."));
+                return false;
+            }
+        }
+        for (const NodeDescription& inner : definition->nodes) {
+            NodeDescription expanded = inner;
+            expanded.id = expanded_id(node.id, inner.id);
+            expanded.has_position = false;
+            for (const ParameterValue& value : node.parameters) {
+                const ModuleParameterDescription* exported =
+                    definition->find_parameter(value.name);
+                if (exported->node == inner.id) {
+                    bool replaced = false;
+                    for (ParameterValue& existing : expanded.parameters) {
+                        if (existing.name == exported->parameter) {
+                            existing.value = value.value;
+                            replaced = true;
+                        }
+                    }
+                    if (!replaced) {
+                        expanded.parameters.push_back(
+                            ParameterValue{exported->parameter, value.value});
+                    }
+                }
+            }
+            flat_nodes.push_back(std::move(expanded));
+        }
+    }
+    if (flat_nodes.size() > kMaxExpandedNodes) {
+        diagnostics.push_back(error(
+            "expansion_too_large",
+            "Expanding this patch's modules produces " + std::to_string(flat_nodes.size()) +
+                " nodes; the limit is " + std::to_string(kMaxExpandedNodes) + ".",
+            "The limit exists so a small file cannot exhaust a small machine."));
+        return false;
+    }
+    for (std::size_t i = 0; i < flat_nodes.size(); ++i) {
+        for (std::size_t j = i + 1; j < flat_nodes.size(); ++j) {
+            if (flat_nodes[i].id == flat_nodes[j].id) {
+                diagnostics.push_back(error(
+                    "module_id_collision",
+                    "Expansion produces two nodes named '" + flat_nodes[i].id + "'.",
+                    "An instance's inner nodes take the name <instance>.<node>; a "
+                    "top-level node with that literal name collides with them."));
+                return false;
+            }
+        }
+    }
+
+    // ---- connections ------------------------------------------------------------------
+    auto resolve = [&description, &diagnostics](
+                       const std::string& node_id, const std::string& port,
+                       bool is_from, std::string& out_node, std::string& out_port) {
+        const NodeDescription* node = description.find_node(node_id);
+        if (node == nullptr || node->type != "module") {
+            out_node = node_id;
+            out_port = port;
+            return true;
+        }
+        const ModuleDescription* definition = description.find_module(node->module);
+        const ModulePortDescription* declared =
+            is_from ? definition->find_output(port) : definition->find_input(port);
+        if (declared == nullptr) {
+            diagnostics.push_back(error(
+                "undeclared_module_port",
+                "Connection uses port '" + port + "' on instance '" + node_id +
+                    "', which module '" + definition->name + "' does not declare as " +
+                    (is_from ? "an output" : "an input") + ".",
+                "The declared surface is the only surface."));
+            return false;
+        }
+        out_node = expanded_id(node_id, declared->node);
+        out_port = declared->port;
+        return true;
+    };
+
+    std::vector<ConnectionDescription> flat_connections;
+    for (const NodeDescription& node : description.nodes) {
+        if (node.type != "module") {
+            continue;
+        }
+        const ModuleDescription* definition = description.find_module(node.module);
+        for (const ConnectionDescription& inner : definition->connections) {
+            ConnectionDescription expanded = inner;
+            expanded.from_node = expanded_id(node.id, inner.from_node);
+            expanded.to_node = expanded_id(node.id, inner.to_node);
+            expanded.has_waypoint = false;
+            flat_connections.push_back(std::move(expanded));
+        }
+    }
+    for (const ConnectionDescription& connection : description.connections) {
+        ConnectionDescription expanded = connection;
+        if (!resolve(connection.from_node, connection.from_port, true,
+                     expanded.from_node, expanded.from_port) ||
+            !resolve(connection.to_node, connection.to_port, false,
+                     expanded.to_node, expanded.to_port)) {
+            return false;
+        }
+        flat_connections.push_back(std::move(expanded));
+    }
+
+    // ---- controls and automation reach through the facade ------------------------------
+    auto remap_target = [&description, &diagnostics](ControlTarget& target) {
+        const NodeDescription* node = description.find_node(target.node);
+        if (node == nullptr || node->type != "module") {
+            return true;
+        }
+        const ModuleDescription* definition = description.find_module(node->module);
+        const ModuleParameterDescription* exported =
+            definition->find_parameter(target.parameter);
+        if (exported == nullptr) {
+            diagnostics.push_back(error(
+                "parameter_not_exported",
+                "A control or automation lane targets '" + target.parameter +
+                    "' on instance '" + target.node + "', which module '" +
+                    definition->name + "' does not export."));
+            return false;
+        }
+        target.node = expanded_id(target.node, exported->node);
+        target.parameter = exported->parameter;
+        return true;
+    };
+    std::vector<ControlDescription> flat_controls = description.controls;
+    for (ControlDescription& control : flat_controls) {
+        if (!remap_target(control.target)) {
+            return false;
+        }
+    }
+    std::vector<AutomationLane> flat_automation = description.automation;
+    for (AutomationLane& lane : flat_automation) {
+        if (!remap_target(lane.target)) {
+            return false;
+        }
+    }
+
+    description.nodes = std::move(flat_nodes);
+    description.connections = std::move(flat_connections);
+    description.controls = std::move(flat_controls);
+    description.automation = std::move(flat_automation);
+    // The flattened view is a version-1 graph, which is the whole trick: the engine,
+    // the golden manifest and every target build from exactly the document model they
+    // always did.
+    description.schema_version = kSchemaVersion;
+    return true;
+}
+
 }  // namespace
 
 bool parse_patch(const std::string& text,
@@ -152,68 +573,11 @@ bool parse_patch(const std::string& text,
 
     bool ok = true;
     for (std::size_t i = 0; i < nodes->array().size(); ++i) {
-        const json::Value& entry = nodes->array()[i];
-        if (!entry.is_object()) {
-            diagnostics.push_back(error("node_not_an_object",
-                                        "Node " + std::to_string(i) + " is not an object."));
-            ok = false;
-            continue;
-        }
-
         NodeDescription node;
-        const json::Value* id = entry.find("id");
-        const json::Value* type = entry.find("type");
-        if (id == nullptr || !id->is_string() || id->as_string().empty()) {
-            diagnostics.push_back(error(
-                "node_missing_id",
-                "Node " + std::to_string(i) + " has no id.",
-                "Ids are how connections find nodes, so every node needs one."));
+        if (!read_node(nodes->array()[i], i, node, diagnostics)) {
             ok = false;
             continue;
         }
-        if (type == nullptr || !type->is_string()) {
-            diagnostics.push_back(error("node_missing_type",
-                                        "Node '" + id->as_string() + "' has no type."));
-            ok = false;
-            continue;
-        }
-        node.id = id->as_string();
-        node.type = type->as_string();
-
-        if (const json::Value* name = entry.find("name")) {
-            if (name->is_string()) {
-                node.name = name->as_string();
-            }
-        }
-        if (const json::Value* parameters = entry.find("parameters")) {
-            if (parameters->is_object()) {
-                for (const auto& parameter : parameters->object()) {
-                    if (!parameter.second.is_number()) {
-                        diagnostics.push_back(warning(
-                            "parameter_not_a_number",
-                            "Parameter '" + parameter.first + "' on node '" + node.id +
-                                "' is not a number and will be ignored."));
-                        continue;
-                    }
-                    node.parameters.push_back(ParameterValue{parameter.first, parameter.second.as_number()});
-                }
-            }
-        }
-        if (const json::Value* position = entry.find("position")) {
-            if (position->is_object()) {
-                const json::Value* x = position->find("x");
-                const json::Value* y = position->find("y");
-                if (x != nullptr && x->is_number() && y != nullptr && y->is_number()) {
-                    node.has_position = true;
-                    node.x = static_cast<float>(x->as_number());
-                    node.y = static_cast<float>(y->as_number());
-                }
-            }
-        }
-        if (const json::Value* collapsed = entry.find("collapsed")) {
-            node.collapsed = collapsed->as_bool(false);
-        }
-
         out.nodes.push_back(std::move(node));
     }
 
@@ -224,32 +588,102 @@ bool parse_patch(const std::string& text,
             ok = false;
         } else {
             for (std::size_t i = 0; i < connections->array().size(); ++i) {
-                const json::Value& entry = connections->array()[i];
-                if (!entry.is_object()) {
-                    diagnostics.push_back(error("connection_not_an_object",
-                                                "Connection " + std::to_string(i) + " is not an object."));
-                    ok = false;
-                    continue;
-                }
                 ConnectionDescription connection;
-                if (!read_endpoint(entry, "from", i, connection.from_node, connection.from_port, diagnostics) ||
-                    !read_endpoint(entry, "to", i, connection.to_node, connection.to_port, diagnostics)) {
+                if (!read_connection(connections->array()[i], i, connection, diagnostics)) {
                     ok = false;
                     continue;
-                }
-                if (const json::Value* waypoint = entry.find("waypoint")) {
-                    const json::Value* x = waypoint->find("x");
-                    const json::Value* y = waypoint->find("y");
-                    if (x != nullptr && x->is_number() && y != nullptr && y->is_number()) {
-                        connection.has_waypoint = true;
-                        connection.waypoint_x = static_cast<float>(x->as_number());
-                        connection.waypoint_y = static_cast<float>(y->as_number());
-                    }
                 }
                 out.connections.push_back(std::move(connection));
             }
         }
     }
+
+    // Module definitions: the same node and connection readers as the document itself,
+    // because a definition's contents are ordinary nodes and two readers would drift.
+    if (const json::Value* modules = root.find("modules")) {
+        if (!modules->is_object()) {
+            diagnostics.push_back(error("modules_not_an_object",
+                                        "\"modules\" must be an object of definitions."));
+            ok = false;
+        } else {
+            for (const auto& entry : modules->object()) {
+                ModuleDescription definition;
+                definition.name = entry.first;
+                const json::Value& body = entry.second;
+                if (!body.is_object()) {
+                    diagnostics.push_back(error(
+                        "module_not_an_object",
+                        "Module '" + definition.name + "' is not an object."));
+                    ok = false;
+                    continue;
+                }
+                if (const json::Value* text_value = body.find("description")) {
+                    if (text_value->is_string()) {
+                        definition.description = text_value->as_string();
+                    }
+                }
+                if (const json::Value* inner_nodes = body.find("nodes")) {
+                    if (inner_nodes->is_array()) {
+                        for (std::size_t i = 0; i < inner_nodes->array().size(); ++i) {
+                            NodeDescription node;
+                            if (!read_node(inner_nodes->array()[i], i, node, diagnostics)) {
+                                ok = false;
+                                continue;
+                            }
+                            definition.nodes.push_back(std::move(node));
+                        }
+                    }
+                }
+                if (const json::Value* inner = body.find("connections")) {
+                    if (inner->is_array()) {
+                        for (std::size_t i = 0; i < inner->array().size(); ++i) {
+                            ConnectionDescription connection;
+                            if (!read_connection(inner->array()[i], i, connection, diagnostics)) {
+                                ok = false;
+                                continue;
+                            }
+                            definition.connections.push_back(std::move(connection));
+                        }
+                    }
+                }
+                auto read_ports = [&](const char* key, std::vector<ModulePortDescription>& list,
+                                      const char* kind) {
+                    const json::Value* declared = body.find(key);
+                    if (declared == nullptr || !declared->is_array()) {
+                        return;
+                    }
+                    for (const json::Value& port_entry : declared->array()) {
+                        ModulePortDescription port;
+                        if (!read_module_binding(port_entry, definition.name, kind, "port",
+                                                 port.name, port.node, port.port, diagnostics)) {
+                            ok = false;
+                            continue;
+                        }
+                        list.push_back(std::move(port));
+                    }
+                };
+                read_ports("inputs", definition.inputs, "input");
+                read_ports("outputs", definition.outputs, "output");
+                if (const json::Value* declared = body.find("parameters")) {
+                    if (declared->is_array()) {
+                        for (const json::Value& parameter_entry : declared->array()) {
+                            ModuleParameterDescription parameter;
+                            if (!read_module_binding(parameter_entry, definition.name,
+                                                     "parameter", "parameter", parameter.name,
+                                                     parameter.node, parameter.parameter,
+                                                     diagnostics)) {
+                                ok = false;
+                                continue;
+                            }
+                            definition.parameters.push_back(std::move(parameter));
+                        }
+                    }
+                }
+                out.modules.push_back(std::move(definition));
+            }
+        }
+    }
+
 
     if (const json::Value* controls = root.find("controls")) {
         if (controls->is_array()) {
@@ -341,6 +775,13 @@ bool parse_patch(const std::string& text,
         }
     }
 
+    // Last, once controls and automation exist to remap: instances become plain
+    // nodes, the authored document moves aside for write_patch, and the engine gets
+    // the version-1 view it always got.
+    if (ok && !expand_modules(out, diagnostics)) {
+        ok = false;
+    }
+
     return ok;
 }
 
@@ -361,9 +802,86 @@ bool load_patch(const std::string& path,
 
 #endif  // SOUNDGRAPH_NO_FILE_IO
 
+namespace {
+
+json::Value write_node_entry(const NodeDescription& node) {
+    json::Value entry = json::Value::make_object();
+    entry.set("id", json::Value(node.id));
+    entry.set("type", json::Value(node.type));
+    if (!node.module.empty()) {
+        entry.set("module", json::Value(node.module));
+    }
+    if (!node.name.empty()) {
+        entry.set("name", json::Value(node.name));
+    }
+    if (!node.parameters.empty()) {
+        json::Value parameters = json::Value::make_object();
+        for (const ParameterValue& parameter : node.parameters) {
+            parameters.set(parameter.name, json::Value(parameter.value));
+        }
+        entry.set("parameters", std::move(parameters));
+    }
+    if (node.has_position) {
+        json::Value position = json::Value::make_object();
+        position.set("x", json::Value(static_cast<double>(node.x)));
+        position.set("y", json::Value(static_cast<double>(node.y)));
+        entry.set("position", std::move(position));
+    }
+    if (node.collapsed) {
+        entry.set("collapsed", json::Value(true));
+    }
+    return entry;
+}
+
+json::Value write_connection_entry(const ConnectionDescription& connection) {
+    json::Value from = json::Value::make_object();
+    from.set("node", json::Value(connection.from_node));
+    from.set("port", json::Value(connection.from_port));
+    json::Value to = json::Value::make_object();
+    to.set("node", json::Value(connection.to_node));
+    to.set("port", json::Value(connection.to_port));
+    json::Value entry = json::Value::make_object();
+    entry.set("from", std::move(from));
+    entry.set("to", std::move(to));
+    if (connection.has_waypoint) {
+        json::Value waypoint = json::Value::make_object();
+        waypoint.set("x", json::Value(static_cast<double>(connection.waypoint_x)));
+        waypoint.set("y", json::Value(static_cast<double>(connection.waypoint_y)));
+        entry.set("waypoint", std::move(waypoint));
+    }
+    return entry;
+}
+
+json::Value write_module_binding(const std::string& name, const std::string& node,
+                                 const char* inner_key, const std::string& inner) {
+    json::Value entry = json::Value::make_object();
+    entry.set("name", json::Value(name));
+    entry.set("node", json::Value(node));
+    entry.set(inner_key, json::Value(inner));
+    return entry;
+}
+
+}  // namespace
+
 std::string write_patch(const GraphDescription& description, bool pretty) {
+    // Flattening is for the engine, never for the file: a modular document writes its
+    // authored form back, definitions and instances intact.
+    const bool modular = description.has_modules();
+    const std::vector<NodeDescription>& nodes_out =
+        modular ? description.authored_nodes : description.nodes;
+    const std::vector<ConnectionDescription>& connections_out =
+        modular ? description.authored_connections : description.connections;
+    const std::vector<ControlDescription>& controls_out =
+        modular ? description.authored_controls : description.controls;
+    const std::vector<AutomationLane>& automation_out =
+        modular ? description.authored_automation : description.automation;
+
     json::Value root = json::Value::make_object();
-    root.set("schema_version", json::Value(description.schema_version));
+    root.set("schema_version", json::Value(modular
+        ? (description.authored_schema_version > kSchemaVersionModules
+               ? description.authored_schema_version
+               : kSchemaVersionModules)
+        : description.schema_version));
 
     if (!description.arrangement.empty()) {
         json::Value arrangement = json::Value::make_object();
@@ -390,59 +908,65 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
         root.set("metadata", std::move(metadata));
     }
 
-    json::Value nodes = json::Value::make_array();
-    for (const NodeDescription& node : description.nodes) {
-        json::Value entry = json::Value::make_object();
-        entry.set("id", json::Value(node.id));
-        entry.set("type", json::Value(node.type));
-        if (!node.name.empty()) {
-            entry.set("name", json::Value(node.name));
-        }
-        if (!node.parameters.empty()) {
-            json::Value parameters = json::Value::make_object();
-            for (const ParameterValue& parameter : node.parameters) {
-                parameters.set(parameter.name, json::Value(parameter.value));
+    if (modular) {
+        json::Value modules = json::Value::make_object();
+        for (const ModuleDescription& definition : description.modules) {
+            json::Value body = json::Value::make_object();
+            if (!definition.description.empty()) {
+                body.set("description", json::Value(definition.description));
             }
-            entry.set("parameters", std::move(parameters));
+            json::Value inner_nodes = json::Value::make_array();
+            for (const NodeDescription& node : definition.nodes) {
+                inner_nodes.push_back(write_node_entry(node));
+            }
+            body.set("nodes", std::move(inner_nodes));
+            json::Value inner_connections = json::Value::make_array();
+            for (const ConnectionDescription& connection : definition.connections) {
+                inner_connections.push_back(write_connection_entry(connection));
+            }
+            body.set("connections", std::move(inner_connections));
+            if (!definition.inputs.empty()) {
+                json::Value inputs = json::Value::make_array();
+                for (const ModulePortDescription& port : definition.inputs) {
+                    inputs.push_back(write_module_binding(port.name, port.node, "port", port.port));
+                }
+                body.set("inputs", std::move(inputs));
+            }
+            if (!definition.outputs.empty()) {
+                json::Value outputs = json::Value::make_array();
+                for (const ModulePortDescription& port : definition.outputs) {
+                    outputs.push_back(write_module_binding(port.name, port.node, "port", port.port));
+                }
+                body.set("outputs", std::move(outputs));
+            }
+            if (!definition.parameters.empty()) {
+                json::Value parameters = json::Value::make_array();
+                for (const ModuleParameterDescription& parameter : definition.parameters) {
+                    parameters.push_back(write_module_binding(
+                        parameter.name, parameter.node, "parameter", parameter.parameter));
+                }
+                body.set("parameters", std::move(parameters));
+            }
+            modules.set(definition.name, std::move(body));
         }
-        if (node.has_position) {
-            json::Value position = json::Value::make_object();
-            position.set("x", json::Value(static_cast<double>(node.x)));
-            position.set("y", json::Value(static_cast<double>(node.y)));
-            entry.set("position", std::move(position));
-        }
-        if (node.collapsed) {
-            entry.set("collapsed", json::Value(true));
-        }
-        nodes.push_back(std::move(entry));
+        root.set("modules", std::move(modules));
+    }
+
+    json::Value nodes = json::Value::make_array();
+    for (const NodeDescription& node : nodes_out) {
+        nodes.push_back(write_node_entry(node));
     }
     root.set("nodes", std::move(nodes));
 
     json::Value connections = json::Value::make_array();
-    for (const ConnectionDescription& connection : description.connections) {
-        json::Value from = json::Value::make_object();
-        from.set("node", json::Value(connection.from_node));
-        from.set("port", json::Value(connection.from_port));
-        json::Value to = json::Value::make_object();
-        to.set("node", json::Value(connection.to_node));
-        to.set("port", json::Value(connection.to_port));
-
-        json::Value entry = json::Value::make_object();
-        entry.set("from", std::move(from));
-        entry.set("to", std::move(to));
-        if (connection.has_waypoint) {
-            json::Value waypoint = json::Value::make_object();
-            waypoint.set("x", json::Value(static_cast<double>(connection.waypoint_x)));
-            waypoint.set("y", json::Value(static_cast<double>(connection.waypoint_y)));
-            entry.set("waypoint", std::move(waypoint));
-        }
-        connections.push_back(std::move(entry));
+    for (const ConnectionDescription& connection : connections_out) {
+        connections.push_back(write_connection_entry(connection));
     }
     root.set("connections", std::move(connections));
 
-    if (!description.controls.empty()) {
+    if (!controls_out.empty()) {
         json::Value controls = json::Value::make_array();
-        for (const ControlDescription& control : description.controls) {
+        for (const ControlDescription& control : controls_out) {
             json::Value entry = json::Value::make_object();
             entry.set("id", json::Value(control.id));
             if (!control.label.empty()) {
@@ -474,9 +998,9 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
         root.set("controls", std::move(controls));
     }
 
-    if (!description.automation.empty()) {
+    if (!automation_out.empty()) {
         json::Value lanes = json::Value::make_array();
-        for (const AutomationLane& lane : description.automation) {
+        for (const AutomationLane& lane : automation_out) {
             json::Value entry = json::Value::make_object();
             if (!lane.id.empty()) {
                 entry.set("id", json::Value(lane.id));

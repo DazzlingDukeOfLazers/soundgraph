@@ -13,6 +13,10 @@ namespace soundgraph {
 
 inline constexpr int kSchemaVersion = 1;
 
+// Documents that use modules declare this version, so a runtime that predates them
+// refuses loudly instead of misreading. Module-free documents stay version 1 forever.
+inline constexpr int kSchemaVersionModules = 2;
+
 struct ParameterValue {
     std::string name;
     double value = 0.0;
@@ -20,7 +24,8 @@ struct ParameterValue {
 
 struct NodeDescription {
     std::string id;      // stable identity; connections refer to this
-    std::string type;    // registry type name
+    std::string type;    // registry type name, or "module" for an instance
+    std::string module;  // when type == "module": which definition this instantiates
     std::string name;    // cosmetic label
     std::vector<ParameterValue> parameters;
 
@@ -97,6 +102,36 @@ struct Arrangement {
     bool empty() const { return rack_order.empty(); }
 };
 
+// A module: a named subgraph with a declared surface. Pure data, like everything in
+// this header — dsp-core never acts on it. patch-io expands instances into plain nodes
+// before the engine looks, so a module is notation, the way a loop is notation for its
+// unrolled body. See docs/modules-design.md.
+struct ModulePortDescription {
+    std::string name;   // the port the instance shows the world
+    std::string node;   // which inner node it lands on
+    std::string port;   // and which of that node's ports
+};
+
+struct ModuleParameterDescription {
+    std::string name;       // the knob the instance shows the world
+    std::string node;       // which inner node it reaches
+    std::string parameter;  // and which parameter there
+};
+
+struct ModuleDescription {
+    std::string name;
+    std::string description;
+    std::vector<NodeDescription> nodes;
+    std::vector<ConnectionDescription> connections;
+    std::vector<ModulePortDescription> inputs;
+    std::vector<ModulePortDescription> outputs;
+    std::vector<ModuleParameterDescription> parameters;
+
+    const ModulePortDescription* find_input(const std::string& port_name) const;
+    const ModulePortDescription* find_output(const std::string& port_name) const;
+    const ModuleParameterDescription* find_parameter(const std::string& parameter_name) const;
+};
+
 struct GraphDescription {
     int schema_version = kSchemaVersion;
     Arrangement arrangement;
@@ -107,6 +142,20 @@ struct GraphDescription {
     std::vector<ControlDescription> controls;
     std::vector<AutomationLane> automation;
 
+    // Modules, and the document as authored. When `modules` is non-empty, the vectors
+    // above hold the *flattened* view — instances expanded into plain nodes, which is
+    // all the engine ever builds from — and the authored_* vectors hold what the file
+    // actually said, which is all write_patch ever writes. Flattening is for the
+    // engine, never for the file.
+    std::vector<ModuleDescription> modules;
+    std::vector<NodeDescription> authored_nodes;
+    std::vector<ConnectionDescription> authored_connections;
+    std::vector<ControlDescription> authored_controls;
+    std::vector<AutomationLane> authored_automation;
+    int authored_schema_version = kSchemaVersion;
+
+    bool has_modules() const { return !modules.empty(); }
+    const ModuleDescription* find_module(const std::string& module_name) const;
     const NodeDescription* find_node(const std::string& node_id) const;
     std::string metadata_value(const std::string& key) const;
     void set_metadata(const std::string& key, const std::string& value);

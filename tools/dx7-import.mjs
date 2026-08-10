@@ -320,6 +320,166 @@ function readBank(path) {
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   .replace(/^-|-$/g, '') || 'unnamed';
 
+// ---------------------------------------------------------------------------------
+// Modular form — docs/modules-design.md stage 1.
+//
+// Not a second builder: modularize() *factors* the flat patch, replacing each
+// standard ratio-mode operator cluster (opN_pitch/osc/env/vca with the canonical
+// internal wiring) with one instance of an "operator" module whose exported
+// parameters carry that op's values. Expansion in patch-io inverts this exactly,
+// which is what --modular-check proves with rendered bytes: same voice, two
+// notations, one sound. Fixed-frequency ops stay flat — a mixed document is legal.
+// ---------------------------------------------------------------------------------
+
+const OPERATOR_MODULE = {
+  description: 'One DX7 operator: pitch ratio, sine, envelope, VCA.',
+  nodes: [
+    { id: 'pitch', type: 'Multiply', parameters: { factor: 1 } },
+    { id: 'osc', type: 'SineOscillator', parameters: {} },
+    { id: 'env', type: 'ADSR', parameters: {} },
+    { id: 'vca', type: 'Multiply', parameters: {} },
+  ],
+  connections: [
+    { from: { node: 'pitch', port: 'out' }, to: { node: 'osc', port: 'frequency' } },
+    { from: { node: 'osc', port: 'out' }, to: { node: 'vca', port: 'a' } },
+    { from: { node: 'env', port: 'out' }, to: { node: 'vca', port: 'b' } },
+  ],
+  inputs: [
+    { name: 'note', node: 'pitch', port: 'a' },
+    { name: 'gate', node: 'env', port: 'gate' },
+    { name: 'pm', node: 'osc', port: 'pm' },
+  ],
+  outputs: [{ name: 'out', node: 'vca', port: 'out' }],
+  parameters: [
+    { name: 'ratio', node: 'pitch', parameter: 'factor' },
+    { name: 'feedback', node: 'osc', parameter: 'feedback' },
+    { name: 'attack', node: 'env', parameter: 'attack' },
+    { name: 'decay', node: 'env', parameter: 'decay' },
+    { name: 'sustain', node: 'env', parameter: 'sustain' },
+    { name: 'release', node: 'env', parameter: 'release' },
+  ],
+};
+
+function modularize(flat) {
+  const byId = new Map(flat.nodes.map((n) => [n.id, n]));
+  const clusters = [];
+  for (const node of flat.nodes) {
+    const m = /^op(\d)_pitch$/.exec(node.id);
+    if (!m) continue;
+    const op = m[1];
+    if (byId.has(`op${op}_osc`) && byId.has(`op${op}_env`) && byId.has(`op${op}_vca`)) {
+      clusters.push(op);
+    }
+  }
+  if (clusters.length === 0) return null;
+
+  const inner = new Set();
+  for (const op of clusters) {
+    for (const part of ['pitch', 'osc', 'env', 'vca']) inner.add(`op${op}_${part}`);
+  }
+
+  const nodes = [];
+  for (const node of flat.nodes) {
+    const m = /^op(\d)_pitch$/.exec(node.id);
+    if (m && clusters.includes(m[1])) {
+      const op = m[1];
+      const osc = byId.get(`op${op}_osc`);
+      const env = byId.get(`op${op}_env`);
+      const parameters = {
+        ratio: node.parameters.factor,
+        attack: env.parameters.attack,
+        decay: env.parameters.decay,
+        sustain: env.parameters.sustain,
+        release: env.parameters.release,
+      };
+      if (osc.parameters.feedback !== undefined) {
+        parameters.feedback = osc.parameters.feedback;
+      }
+      nodes.push({ id: `op${op}`, type: 'module', module: 'operator', parameters });
+      continue;
+    }
+    if (inner.has(node.id)) continue;
+    nodes.push(node);
+  }
+
+  const port = (id, fallbackPort) => {
+    const m = /^op(\d)_(pitch|osc|env|vca)$/.exec(id);
+    if (!m || !clusters.includes(m[1])) return null;
+    return { instance: `op${m[1]}`, part: m[2] };
+  };
+  const connections = [];
+  for (const connection of flat.connections) {
+    const from = port(connection.from.node);
+    const to = port(connection.to.node);
+    const fromInside = from !== null;
+    const toInside = to !== null;
+    if (fromInside && toInside && from.instance === to.instance) {
+      continue;  // internal wiring lives in the definition now
+    }
+    const rewritten = { from: { ...connection.from }, to: { ...connection.to } };
+    if (fromInside) {
+      rewritten.from = { node: from.instance, port: 'out' };
+    }
+    if (toInside) {
+      const name = to.part === 'pitch' ? 'note'
+        : to.part === 'env' ? 'gate' : 'pm';
+      rewritten.to = { node: to.instance, port: name };
+    }
+    connections.push(rewritten);
+  }
+
+  return {
+    schema_version: 2,
+    metadata: flat.metadata,
+    modules: { operator: OPERATOR_MODULE },
+    nodes,
+    connections,
+  };
+}
+
+// --modular-check: the stage-1 exit test from docs/modules-design.md. Every voice is
+// built flat and factored modular, both rendered, and the WAVs must match byte for
+// byte: notation changes, sound does not. Runs before anything else and exits.
+if (process.argv.includes('--modular-check')) {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const scratch = mkdtempSync(join(tmpdir(), 'dx7-modular-'));
+  const bin = join(root, 'build', 'bin');
+  let differing = 0;
+  let factored = 0;
+  for (const bank of readdirSync(source).filter((f) => f.endsWith('.syx')).sort()) {
+    const voices = readBank(join(source, bank));
+    voices.forEach((voice, index) => {
+      const flat = buildPatch(voice, bank, index);
+      const modular = modularize(flat);
+      if (modular === null) return;  // all-fixed voices have nothing to factor
+      factored += 1;
+      const flatPath = join(scratch, `v${index}-flat.json`);
+      const modularPath = join(scratch, `v${index}-modular.json`);
+      writeFileSync(flatPath, JSON.stringify(flat));
+      writeFileSync(modularPath, JSON.stringify(modular));
+      const flatWav = join(scratch, `v${index}-flat.wav`);
+      const modularWav = join(scratch, `v${index}-modular.wav`);
+      execFileSync(join(bin, 'sg-render'), [flatPath, flatWav,
+        '--seconds', '1', '--notes', '57', '--gate', '0.7', '--quiet']);
+      execFileSync(join(bin, 'sg-render'), [modularPath, modularWav,
+        '--seconds', '1', '--notes', '57', '--gate', '0.7', '--quiet']);
+      if (!readFileSync(flatWav).equals(readFileSync(modularWav))) {
+        console.error(`  differs: voice ${index} (${voice.name})`);
+        differing += 1;
+      }
+    });
+  }
+  if (differing > 0 || factored === 0) {
+    console.error(`${differing} voice(s) render differently modular vs flat `
+      + `(${factored} factored).`);
+    process.exit(1);
+  }
+  console.log(`All ${factored} voices render byte-identical audio, modular and flat.`);
+  process.exit(0);
+}
+
 const check = process.argv.includes('--check');
 let differences = 0;
 mkdirSync(target, { recursive: true });

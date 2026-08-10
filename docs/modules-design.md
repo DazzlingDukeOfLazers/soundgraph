@@ -3,7 +3,7 @@
 A module is a named subgraph with declared ports, defined once inside a patch and
 instantiated as an ordinary node. This document is the design: what changes in the
 schema, where expansion happens, what every target sees, and the staged plan with an
-exit test per stage. Nothing here is implemented yet.
+exit test per stage. Stage 1 is implemented; see the staged plan below.
 
 ## Why now, and why not before
 
@@ -149,6 +149,12 @@ export names, module-typed node inside a definition, and an expansion-size bomb
   the inspector on the instance plus expand-in-place read-only.
 
 ## Staged plan, with exit tests
+
+> **Stage 1 landed.** parse/validate/expand/write in patch-io; schema updated; the
+> documented abuses refuse with named diagnostics; all 32 demo voices render
+> byte-identical flat vs modular (in ctest as modules_flatten_to_identical_audio);
+> and a schema-v2 modular document deployed to the ESP32-S3 over serial expanded
+> on-device — every target speaks modules because every target links the loader.
 
 1. **patch-io + schema:** parse, validate, expand, write. *Exit:* the DX7 importer
    emits `algo-01` as one `operator` definition + six instances, and its flattened

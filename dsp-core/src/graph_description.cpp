@@ -11,6 +11,43 @@ const ParameterValue* NodeDescription::find_parameter(const std::string& paramet
     return nullptr;
 }
 
+const ModulePortDescription* ModuleDescription::find_input(const std::string& port_name) const {
+    for (const ModulePortDescription& port : inputs) {
+        if (port.name == port_name) {
+            return &port;
+        }
+    }
+    return nullptr;
+}
+
+const ModulePortDescription* ModuleDescription::find_output(const std::string& port_name) const {
+    for (const ModulePortDescription& port : outputs) {
+        if (port.name == port_name) {
+            return &port;
+        }
+    }
+    return nullptr;
+}
+
+const ModuleParameterDescription* ModuleDescription::find_parameter(
+        const std::string& parameter_name) const {
+    for (const ModuleParameterDescription& parameter : parameters) {
+        if (parameter.name == parameter_name) {
+            return &parameter;
+        }
+    }
+    return nullptr;
+}
+
+const ModuleDescription* GraphDescription::find_module(const std::string& module_name) const {
+    for (const ModuleDescription& definition : modules) {
+        if (definition.name == module_name) {
+            return &definition;
+        }
+    }
+    return nullptr;
+}
+
 const NodeDescription* GraphDescription::find_node(const std::string& node_id) const {
     for (const NodeDescription& node : nodes) {
         if (node.id == node_id) {

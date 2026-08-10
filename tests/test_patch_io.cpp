@@ -410,4 +410,165 @@ TEST(a_malformed_arrangement_is_ignored_rather_than_fatal) {
     CHECK(description.arrangement.empty());
 }
 
+
+// ---------------------------------------------------------------------------------
+// Modules — docs/modules-design.md, stage 1. The happy path is the design document's
+// own example, which keeps the two from drifting apart.
+// ---------------------------------------------------------------------------------
+
+namespace {
+
+std::string modular_patch() {
+    return R"({
+        "schema_version": 2,
+        "modules": {
+            "voice": {
+                "description": "A gated sine.",
+                "nodes": [
+                    { "id": "osc", "type": "SineOscillator", "parameters": { "frequency": 220 } },
+                    { "id": "env", "type": "ADSR", "parameters": { "attack": 0.01 } },
+                    { "id": "vca", "type": "Multiply" }
+                ],
+                "connections": [
+                    { "from": { "node": "osc", "port": "out" }, "to": { "node": "vca", "port": "a" } },
+                    { "from": { "node": "env", "port": "out" }, "to": { "node": "vca", "port": "b" } }
+                ],
+                "inputs": [
+                    { "name": "pitch", "node": "osc", "port": "frequency" },
+                    { "name": "gate", "node": "env", "port": "gate" }
+                ],
+                "outputs": [
+                    { "name": "out", "node": "vca", "port": "out" }
+                ],
+                "parameters": [
+                    { "name": "frequency", "node": "osc", "parameter": "frequency" }
+                ]
+            }
+        },
+        "nodes": [
+            { "id": "note", "type": "NoteInput" },
+            { "id": "a", "type": "module", "module": "voice",
+              "parameters": { "frequency": 330 } },
+            { "id": "b", "type": "module", "module": "voice" },
+            { "id": "out", "type": "StereoOutput" }
+        ],
+        "connections": [
+            { "from": { "node": "note", "port": "frequency" }, "to": { "node": "a", "port": "pitch" } },
+            { "from": { "node": "note", "port": "gate" }, "to": { "node": "a", "port": "gate" } },
+            { "from": { "node": "note", "port": "frequency" }, "to": { "node": "b", "port": "pitch" } },
+            { "from": { "node": "note", "port": "gate" }, "to": { "node": "b", "port": "gate" } },
+            { "from": { "node": "a", "port": "out" }, "to": { "node": "out", "port": "left" } },
+            { "from": { "node": "b", "port": "out" }, "to": { "node": "out", "port": "right" } }
+        ],
+        "controls": [
+            { "id": "tune", "target": { "node": "b", "parameter": "frequency" } }
+        ]
+    })";
+}
+
+}  // namespace
+
+TEST(modules_expand_into_plain_nodes) {
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(modular_patch(), description, diagnostics));
+
+    // The engine's view is flat and version 1 — the whole trick in two assertions.
+    CHECK(description.schema_version == 1);
+    CHECK(description.find_node("a.osc") != nullptr);
+    CHECK(description.find_node("a") == nullptr);
+
+    // 2 plain nodes + 2 instances x 3 inner nodes.
+    CHECK(description.nodes.size() == 8);
+
+    // The instance's exported parameter override reached the inner node; the other
+    // instance kept the definition's default.
+    const soundgraph::NodeDescription* a_osc = description.find_node("a.osc");
+    const soundgraph::ParameterValue* a_freq = a_osc->find_parameter("frequency");
+    CHECK(a_freq != nullptr && std::fabs(a_freq->value - 330.0) < 1e-9);
+    const soundgraph::NodeDescription* b_osc = description.find_node("b.osc");
+    const soundgraph::ParameterValue* b_freq = b_osc->find_parameter("frequency");
+    CHECK(b_freq != nullptr && std::fabs(b_freq->value - 220.0) < 1e-9);
+
+    // Boundary connections resolved through the declared surface.
+    bool note_to_a_osc = false;
+    for (const soundgraph::ConnectionDescription& connection : description.connections) {
+        if (connection.from_node == "note" && connection.to_node == "a.osc" &&
+            connection.to_port == "frequency") {
+            note_to_a_osc = true;
+        }
+    }
+    CHECK(note_to_a_osc);
+
+    // The control reached through the facade too.
+    CHECK(description.controls.size() == 1);
+    CHECK(description.controls[0].target.node == "b.osc");
+    CHECK(description.controls[0].target.parameter == "frequency");
+
+    // And the expanded graph actually builds and validates.
+    soundgraph::Graph graph;
+    std::vector<Diagnostic> build_diagnostics;
+    CHECK(graph.build(description, soundgraph::NodeRegistry::builtin(),
+                      soundgraph::PrepareContext(), build_diagnostics));
+}
+
+TEST(modules_round_trip_preserves_the_hierarchy) {
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(modular_patch(), description, diagnostics));
+
+    const std::string written = soundgraph::write_patch(description);
+    CHECK(written.find("\"modules\"") != std::string::npos);
+    CHECK(written.find("\"schema_version\": 2") != std::string::npos);
+    CHECK(written.find("a.osc") == std::string::npos);  // never the flattened form
+
+    // And the written form parses back to the same flattened graph.
+    GraphDescription again;
+    std::vector<Diagnostic> again_diagnostics;
+    CHECK(soundgraph::parse_patch(written, again, again_diagnostics));
+    CHECK(again.nodes.size() == description.nodes.size());
+    CHECK(again.connections.size() == description.connections.size());
+    CHECK(soundgraph::write_patch(again) == written);  // stable from then on
+}
+
+TEST(modules_refuse_the_documented_abuses) {
+    auto refuses = [](std::string text, const std::string& code) {
+        GraphDescription description;
+        std::vector<Diagnostic> diagnostics;
+        const bool ok = soundgraph::parse_patch(text, description, diagnostics);
+        return !ok && has_code(diagnostics, code);
+    };
+
+    // Modules under version 1: refused, loudly.
+    std::string v1 = modular_patch();
+    v1.replace(v1.find("\"schema_version\": 2"), 19, "\"schema_version\": 1");
+    CHECK(refuses(v1, "modules_require_v2"));
+
+    // An instance of a module the patch does not define.
+    std::string unknown = modular_patch();
+    unknown.replace(unknown.find("\"module\": \"voice\""), 17, "\"module\": \"ghost\"");
+    CHECK(refuses(unknown, "unknown_module"));
+
+    // A connection to a port the module does not declare.
+    std::string undeclared = modular_patch();
+    undeclared.replace(undeclared.find("\"port\": \"pitch\""), 15, "\"port\": \"secret\"");
+    CHECK(refuses(undeclared, "undeclared_module_port"));
+
+    // Setting a parameter the module does not export.
+    std::string unexported = modular_patch();
+    unexported.replace(unexported.find("{ \"frequency\": 330 }"), 20, "{ \"gain\": 1 }");
+    CHECK(refuses(unexported, "parameter_not_exported"));
+
+    // A module inside a module.
+    std::string nested = modular_patch();
+    nested.replace(nested.find("\"id\": \"env\", \"type\": \"ADSR\""), 27,
+                   "\"id\": \"env\", \"type\": \"module\", \"module\": \"voice\"");
+    CHECK(refuses(nested, "module_nesting"));
+
+    // A top-level node whose literal name collides with an expansion.
+    std::string collision = modular_patch();
+    collision.replace(collision.find("\"id\": \"note\""), 12, "\"id\": \"a.osc\"");
+    CHECK(refuses(collision, "module_id_collision"));
+}
+
 TEST_MAIN("patch io tests")
