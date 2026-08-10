@@ -157,3 +157,21 @@ add_custom_target(soundgraph_godot_examples ALL
             ${SOUNDGRAPH_GODOT_EXAMPLES}
     COMMENT "Mirroring the example patches into editor-godot/examples"
 )
+
+# The build stamp: what the editor shows when asked what it is running.
+#
+# Always-run, like the mirror above and for the same reason — a stamp that is only
+# refreshed when somebody remembers is a stamp that eventually describes a different
+# build, which is the failure it exists to prevent. Node is not a prerequisite for
+# building this extension, so a machine without it simply gets no stamp and the editor
+# says "development build"; that degrades to the truth rather than to a wrong answer.
+# The web export does its own stamping in tools/export-web.mjs, because the bundle a
+# browser caches is the one where this question is hardest to answer by other means.
+find_program(SOUNDGRAPH_STAMP_NODE node)
+if(SOUNDGRAPH_STAMP_NODE)
+    add_custom_target(soundgraph_build_stamp ALL
+        COMMAND ${SOUNDGRAPH_STAMP_NODE} ${SOUNDGRAPH_ROOT}/tools/stamp-build.mjs
+                --target desktop
+        COMMENT "Stamping the build"
+    )
+endif()

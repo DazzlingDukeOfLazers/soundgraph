@@ -682,6 +682,10 @@ func _build_toolbar() -> Control:
 	title.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
 	title.add_theme_font_size_override("font_size", Design.type(Design.SIZE_APP_TITLE))
 	title.add_theme_color_override("font_color", Design.INK_BRIGHT)
+	# Hovering the product name is the other place somebody would look for what they are
+	# running, and it costs no room at all.
+	title.tooltip_text = _build_description()
+	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	identity.add_child(title)
 
 	document_label = Label.new()
@@ -844,13 +848,20 @@ func _build_toolbar() -> Control:
 	file_popup.add_item("Open…", 0)
 	file_popup.add_item("Add module…", 1)
 	file_popup.add_item("Add module as definition…", 3)
-	file_popup.set_item_tooltip(3, "Add an existing patch as a reusable module: one "
-		+ "definition, one instance, its terminals becoming the ports. The patch stays "
-		+ "one thing instead of dissolving into copied nodes.")
 	file_popup.add_item("Save as…", 2)
-	file_popup.set_item_tooltip(1, "Add an existing patch into this one. Its nodes are "
-		+ "copied in with their names prefixed; its own inputs and outputs are left out, "
-		+ "because those belong to a finished patch rather than to a module.")
+	# By index, via the id. set_item_tooltip takes a position and these were being handed
+	# an id: item 3 does not exist in a four-item menu, so Godot logged an out-of-bounds
+	# error and the tooltip explaining what "as definition" even means was never attached
+	# to anything. The neighbouring call passed 1 and worked, which is how it went
+	# unnoticed — id and index happened to agree there and nowhere else.
+	file_popup.set_item_tooltip(file_popup.get_item_index(3),
+		"Add an existing patch as a reusable module: one definition, one instance, its "
+		+ "terminals becoming the ports. The patch stays one thing instead of dissolving "
+		+ "into copied nodes.")
+	file_popup.set_item_tooltip(file_popup.get_item_index(1),
+		"Add an existing patch into this one. Its nodes are copied in with their names "
+		+ "prefixed; its own inputs and outputs are left out, because those belong to a "
+		+ "finished patch rather than to a module.")
 	file_popup.id_pressed.connect(_on_file_menu)
 	project.add_child(_defocus(file_menu))
 
@@ -889,6 +900,13 @@ func _build_toolbar() -> Control:
 	view_popup.add_separator()
 	view_popup.add_check_item("Reduce motion", 20)
 	view_popup.set_item_checked(view_popup.get_item_index(20), Design.reduced_motion)
+	# The build, last and unselectable. It goes in a menu rather than on the toolbar
+	# because the toolbar has eight pixels of room and this is not something anybody
+	# reads while playing — but it is the first thing anybody wants after a reload that
+	# behaved oddly, and hunting for it in a log is not an answer.
+	view_popup.add_separator()
+	view_popup.add_item(_build_description(), 60)
+	view_popup.set_item_disabled(view_popup.get_item_index(60), true)
 	view_popup.id_pressed.connect(_on_view_menu)
 	view_group.add_child(_defocus(view_menu))
 
@@ -1758,6 +1776,76 @@ func _module_display_name(module_name: String) -> String:
 				break
 		words.append(word.to_upper() if has_digit else word.capitalize())
 	return " ".join(words)
+
+
+## What this build is, and when it was made.
+##
+## Written by tools/stamp-build.mjs at build and export time and read here, never
+## committed — see the note in .gitignore for why a checked-in stamp is worse than none.
+## When there is no stamp the answer is "development build", which is exactly right for
+## a run straight from source: nothing built, nothing to be stale.
+const BUILD_STAMP_PATH := "res://build_stamp.json"
+
+var _stamp_cache: Dictionary = {}
+var _stamp_read := false
+
+func _build_stamp() -> Dictionary:
+	if _stamp_read:
+		return _stamp_cache
+	_stamp_read = true
+	if not FileAccess.file_exists(BUILD_STAMP_PATH):
+		return _stamp_cache
+	var file := FileAccess.open(BUILD_STAMP_PATH, FileAccess.READ)
+	if file == null:
+		return _stamp_cache
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	if parsed is Dictionary:
+		_stamp_cache = parsed
+	return _stamp_cache
+
+
+## The tab or window title carries the version, which is where "am I looking at a bundle
+## my browser cached last week" actually gets answered: by glancing at the tab after a
+## reload, rather than by opening a menu to check. The document name stays first because
+## that is what somebody with six tabs open is picking between.
+func _refresh_window_title() -> void:
+	var version := str(_build_stamp().get("short", "dev"))
+	DisplayServer.window_set_title("%s — SoundGraph %s" % [document_name, version])
+
+
+## The one-line answer to "am I running a stale build".
+##
+## Age rather than only a timestamp, because staleness is a question about *elapsed
+## time* and making the reader subtract two dates is making them do the work the line
+## exists to save. The absolute time comes too, for when the answer is "no, look at it
+## yourself".
+func _build_description() -> String:
+	var stamp := _build_stamp()
+	if stamp.is_empty():
+		return "development build — running from source, unstamped"
+	var parts: Array[String] = [str(stamp.get("short", "unknown"))]
+	var built := int(stamp.get("built_unix", 0))
+	if built > 0:
+		parts.append("built %s ago" % _elapsed(int(Time.get_unix_time_from_system()) - built))
+		parts.append(str(stamp.get("built_utc", "")))
+	if str(stamp.get("target", "")) != "":
+		parts.append(str(stamp["target"]))
+	if bool(stamp.get("dirty", false)):
+		parts.append("uncommitted changes")
+	return "  ·  ".join(parts)
+
+
+## Coarse on purpose: nobody deciding whether to reload wants "2 days, 4 hours".
+func _elapsed(seconds: int) -> String:
+	if seconds < 0:
+		return "no time at all"
+	if seconds < 90:
+		return "%d seconds" % seconds
+	if seconds < 5400:
+		return "%d minutes" % int(round(seconds / 60.0))
+	if seconds < 172800:
+		return "%d hours" % int(round(seconds / 3600.0))
+	return "%d days" % int(round(seconds / 86400.0))
 
 
 ## Where the engine actually hears about an instance's exported parameter.
@@ -2948,6 +3036,9 @@ var unsaved := false:
 
 
 func _refresh_document_label() -> void:
+	# Every route that renames the document comes through here, so the title follows the
+	# name without each of them having to remember to say so.
+	_refresh_window_title()
 	if document_label == null:
 		return
 	# A dot rather than an asterisk, and the name goes bright rather than gaining

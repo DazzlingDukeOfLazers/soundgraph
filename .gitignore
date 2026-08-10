@@ -51,3 +51,9 @@ editor-godot/cris-cross-arrange.json
 build-godot-web/
 runtime-godot/build-web/
 editor-godot/.godot/
+
+# Written at build time by tools/stamp-build.mjs. Deliberately not committed: a
+# checked-in build stamp is wrong the moment anybody commits anything else, and a
+# stamp that lies is worse than none — it turns "I am unsure what I am running" into
+# "I am sure, and mistaken". Absent, the editor says "development build".
+editor-godot/build_stamp.json

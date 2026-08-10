@@ -112,9 +112,16 @@ lesser one.
 
 ```bash
 godot --headless --path editor-godot --import
-godot --headless --path editor-godot --export-release Web ../build-godot-web/index.html
+node tools/export-web.mjs            # stamps the build, then exports
 python -m http.server 8178 --directory build-godot-web
 ```
+
+`export-web.mjs` wraps the export rather than replacing a one-line command for its own
+sake: it stamps first, and an export that skipped the stamp would ship a bundle carrying
+whatever stamp happened to be on disk — a build claiming to be a different build, which
+is worse than no stamp at all. It finds Godot from `SOUNDGRAPH_GODOT`, `--godot` or the
+PATH. The stamp is what View's last menu item and the browser tab title read back, so a
+reload that served a cached bundle says so instead of looking identical to a fresh one.
 
 Two things that build depends on, both easy to get wrong and both documented in
 `docs/decisions.md`: the extension must be compiled with hidden visibility, and against the

@@ -2536,6 +2536,36 @@ func _initialize() -> void:
 		main.sandbox.sounds.play("no-such-sound")
 		check(true, "playing an unknown sound does not crash")
 
+	# ---- the build stamp -------------------------------------------------------------
+	# "Am I running a stale build" has to be answerable, and — more importantly — the
+	# answer must never be confidently wrong. A missing stamp says "development build";
+	# it must not invent a version, because a build stamp that lies converts uncertainty
+	# into false certainty, which is worse than the uncertainty it replaced.
+	var description: String = main._build_description()
+	check(not description.is_empty(), "the editor can say what build it is (%s)"
+		% description)
+	var stamped: Dictionary = main._build_stamp()
+	if stamped.is_empty():
+		check(description.begins_with("development build"),
+			"an unstamped run says so rather than guessing (%s)" % description)
+	else:
+		check(description.contains(str(stamped["short"]))
+				and description.contains("ago"),
+			"a stamped run gives its version and how old it is (%s)" % description)
+
+	check(main._elapsed(30) == "30 seconds" and main._elapsed(3600) == "60 minutes"
+			and main._elapsed(86400 * 3) == "3 days" and main._elapsed(-5).length() > 0,
+		"and the age reads in units a person would use (%s, %s, %s)"
+			% [main._elapsed(30), main._elapsed(3600), main._elapsed(86400 * 3)])
+
+	# The way this feature breaks silently: the stamp is a non-resource file, so it
+	# reaches the web bundle only because the export preset names it. Drop that line and
+	# every exported build quietly claims to be a development build — the one place the
+	# question is hardest to answer by other means, answered wrongly.
+	var preset := FileAccess.open("res://export_presets.cfg", FileAccess.READ)
+	check(preset != null and preset.get_as_text().contains("build_stamp.json"),
+		"and the web export is still set up to carry the stamp")
+
 	player.queue_free()
 	main.queue_free()
 	await process_frame
