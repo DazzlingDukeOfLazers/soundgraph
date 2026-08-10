@@ -119,8 +119,10 @@ python -m http.server 8178 --directory build-godot-web
 `export-web.mjs` wraps the export rather than replacing a one-line command for its own
 sake: it stamps first, and an export that skipped the stamp would ship a bundle carrying
 whatever stamp happened to be on disk — a build claiming to be a different build, which
-is worse than no stamp at all. It finds Godot from `SOUNDGRAPH_GODOT`, `--godot` or the
-PATH. The stamp is what View's last menu item and the browser tab title read back, so a
+is worse than no stamp at all. It finds Godot from `SOUNDGRAPH_GODOT`, `--godot`, then the PATH under
+each of the names it actually ships as — `godot` is not one of them on the Windows
+box, where it is on the PATH as `Godot_v4.7.1-stable_win64_console.exe` — and
+finally the folder `tests/CMakeLists.txt` already knows about. The stamp is what View's last menu item and the browser tab title read back, so a
 reload that served a cached bundle says so instead of looking identical to a fresh one.
 
 Two things that build depends on, both easy to get wrong and both documented in
