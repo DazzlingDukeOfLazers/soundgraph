@@ -57,6 +57,14 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/opl2-import.mjs --check)
 endif()
 
+# Every DX7 voice, played through msfa and through its imported patch, agreeing on
+# pitch and presence — the same bargain as the OPL comparator, against the engine
+# Dexed builds on.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME dx7_imports_agree_with_the_oracle
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/dx7-compare.mjs)
+endif()
+
 # The DX7 library is generated the same way: the demo bank from its generator, the
 # patches from the importer, and this notices when any of the three drift apart.
 if(SOUNDGRAPH_NODE)

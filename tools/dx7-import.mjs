@@ -125,11 +125,16 @@ function decodeVoice(bytes) {
 // DX7 levels run 0-99 on a roughly-constant-dB ladder; 99 is full scale.
 const levelAmp = (level) => Math.pow(10, (-0.75 * (99 - level)) / 20);
 
-// Rate 0-99 to seconds. An exponential fitted to the commonly published extremes
-// (99 is effectively instant, the low tens take seconds) — a curve, not the chip's
-// envelope generator, until an msfa oracle can measure it the way Nuked measured OPL.
-const rateSeconds = (rate) =>
-  Math.min(10, Math.pow(2, (44 - rate) / 6));
+// Rate 0-99 to seconds — MEASURED against the msfa oracle by tools/dx7-calibrate.mjs
+// (attack read at 90% of peak, falls at -20 dB, fit residuals under a tenth of an
+// octave, so the doubling law genuinely holds). The guessed curve these replaced was
+// about four times too slow at the mid rates — a better guess than OPL's, which had
+// been fourteen — and the pattern stands: every fitted constant this project has ever
+// put in front of an oracle has been wrong in the same direction.
+const attackSeconds = (rate) =>
+  Math.min(10, 26.81 * Math.pow(2, -rate / 6.47));
+const fallSeconds = (rate) =>
+  Math.min(10, 20.65 * Math.pow(2, -rate / 7.2));
 
 // A full-scale DX7 modulator drives about 2 cycles of phase; scaled by output level.
 const INDEX_FULL = 2.0;
@@ -144,10 +149,10 @@ function envelopeParameters(op) {
   // into one decay knob; release at R4. L4 is assumed to be silence, which nearly
   // every voice honours — one that does not will sound, just not identically.
   return {
-    attack: Number(rateSeconds(r1).toFixed(4)),
-    decay: Number(Math.min(10, rateSeconds(r2) + rateSeconds(r3)).toFixed(4)),
+    attack: Number(attackSeconds(r1).toFixed(4)),
+    decay: Number(Math.min(10, fallSeconds(r2) + fallSeconds(r3)).toFixed(4)),
     sustain: Number((levelAmp(l3) * Math.min(1, l1 / 99)).toFixed(4)),
-    release: Number(rateSeconds(r4).toFixed(4)),
+    release: Number(fallSeconds(r4).toFixed(4)),
   };
 }
 

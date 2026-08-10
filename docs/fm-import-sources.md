@@ -62,9 +62,13 @@ made audible.
   table by executing its bus machine (not by reading charts), imports any 32-voice
   .syx dropped into tools/dx7/banks/, and ships an original public-domain 32-voice
   demonstration bank — one voice per algorithm — because no community bank has a
-  licence worth vendoring. Pending: LFO, key scaling, pitch EG, velocity, the
-  algorithm 4/6 multi-op feedback loops, and the msfa oracle that will turn the
-  rate curve and index scale from by-ear into measured.
+  licence worth vendoring. The **msfa oracle is live**: the engine is vendored under
+  tests/dx7/reference/ (Apache 2.0), tools/dx7-ref renders any bank voice through it,
+  tools/dx7-compare.mjs holds every imported voice to it in ctest, and
+  tools/dx7-calibrate.mjs measured the envelope clock (attack 26.8·2^(-r/6.47),
+  falls 20.7·2^(-r/7.20), residuals under 0.1 octave — the fitted guess had been 4×
+  slow). Pending: LFO, key scaling, pitch EG, velocity, the algorithm 4/6 multi-op
+  loops, and a measured modulation-index scale.
 
 ### 3. OPN2 / YM2612 — Sega Genesis instruments (4-operator)
 

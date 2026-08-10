@@ -47,3 +47,24 @@ add_executable(opl2-ref
 )
 target_include_directories(opl2-ref PRIVATE ${CMAKE_SOURCE_DIR}/tests/opl2/reference)
 target_link_libraries(opl2-ref PRIVATE soundgraph::wav)
+
+# The DX7 oracle: the msfa engine (music-synthesizer-for-android, Apache 2.0, the
+# core Dexed builds on), vendored under tests/dx7/reference/. Same isolation rule as
+# the other two oracles: nothing links it.
+add_executable(dx7-ref
+    dx7-ref/main.cpp
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/dx7note.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/env.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/exp2.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/fm_core.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/fm_op_kernel.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/freqlut.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/lfo.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/patch.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/pitchenv.cc
+    ${CMAKE_SOURCE_DIR}/tests/dx7/reference/sin.cc
+)
+target_include_directories(dx7-ref PRIVATE ${CMAKE_SOURCE_DIR}/tests/dx7/reference)
+# msfa uses M_PI, which MSVC's <cmath> hides behind a feature macro.
+target_compile_definitions(dx7-ref PRIVATE _USE_MATH_DEFINES)
+target_link_libraries(dx7-ref PRIVATE soundgraph::wav)

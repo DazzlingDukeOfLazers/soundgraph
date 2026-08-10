@@ -34,10 +34,10 @@
       "id": "op6_env",
       "type": "ADSR",
       "parameters": {
-        "attack": 0.0049,
-        "decay": 9.8706,
+        "attack": 0.0017,
+        "decay": 2.132,
         "sustain": 0.1259,
-        "release": 0.5
+        "release": 0.1677
       }
     },
     {
@@ -61,10 +61,10 @@
       "id": "op5_env",
       "type": "ADSR",
       "parameters": {
-        "attack": 0.0049,
-        "decay": 9.8706,
+        "attack": 0.0017,
+        "decay": 2.132,
         "sustain": 0.1259,
-        "release": 0.5
+        "release": 0.1677
       }
     },
     {
@@ -88,10 +88,10 @@
       "id": "op4_env",
       "type": "ADSR",
       "parameters": {
-        "attack": 0.0049,
-        "decay": 9.8706,
+        "attack": 0.0017,
+        "decay": 2.132,
         "sustain": 0.1259,
-        "release": 0.5
+        "release": 0.1677
       }
     },
     {
@@ -115,10 +115,10 @@
       "id": "op3_env",
       "type": "ADSR",
       "parameters": {
-        "attack": 0.0049,
-        "decay": 9.8706,
+        "attack": 0.0017,
+        "decay": 2.132,
         "sustain": 0.1259,
-        "release": 0.5
+        "release": 0.1677
       }
     },
     {
@@ -144,10 +144,10 @@
       "id": "op2_env",
       "type": "ADSR",
       "parameters": {
-        "attack": 0.0028,
-        "decay": 6.6271,
+        "attack": 0.001,
+        "decay": 1.5889,
         "sustain": 0.4597,
-        "release": 0.2806
+        "release": 0.1036
       }
     },
     {
@@ -171,10 +171,10 @@
       "id": "op1_env",
       "type": "ADSR",
       "parameters": {
-        "attack": 0.0028,
-        "decay": 6.6271,
+        "attack": 0.001,
+        "decay": 1.5889,
         "sustain": 0.4597,
-        "release": 0.2806
+        "release": 0.1036
       }
     },
     {
