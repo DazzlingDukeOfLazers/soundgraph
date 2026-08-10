@@ -1,0 +1,712 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "ALGO 26",
+    "description": "ALGO 26 — DX7 voice, algorithm 26, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: LFO, key scaling, pitch envelope and velocity not applied.",
+    "author": "SoundGraph dx7-import (mapping)",
+    "tags": [
+      "fm",
+      "dx7",
+      "imported",
+      "algorithm-26"
+    ],
+    "source": "tools/dx7/banks/algorithm-demos.syx"
+  },
+  "nodes": [
+    {
+      "id": "note",
+      "type": "NoteInput",
+      "parameters": {}
+    },
+    {
+      "id": "op6_pitch",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 1
+      }
+    },
+    {
+      "id": "op6_osc",
+      "type": "SineOscillator",
+      "parameters": {
+        "feedback": 0.1152
+      }
+    },
+    {
+      "id": "op6_env",
+      "type": "ADSR",
+      "parameters": {
+        "attack": 0.0049,
+        "decay": 9.8706,
+        "sustain": 0.1259,
+        "release": 0.5
+      }
+    },
+    {
+      "id": "op6_vca",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op5_pitch",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 1
+      }
+    },
+    {
+      "id": "op5_osc",
+      "type": "SineOscillator",
+      "parameters": {}
+    },
+    {
+      "id": "op5_env",
+      "type": "ADSR",
+      "parameters": {
+        "attack": 0.0049,
+        "decay": 9.8706,
+        "sustain": 0.1259,
+        "release": 0.5
+      }
+    },
+    {
+      "id": "op5_vca",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op4_pitch",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 2
+      }
+    },
+    {
+      "id": "op4_osc",
+      "type": "SineOscillator",
+      "parameters": {}
+    },
+    {
+      "id": "op4_env",
+      "type": "ADSR",
+      "parameters": {
+        "attack": 0.0049,
+        "decay": 9.8706,
+        "sustain": 0.1259,
+        "release": 0.5
+      }
+    },
+    {
+      "id": "op4_vca",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op3_pitch",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 5
+      }
+    },
+    {
+      "id": "op3_osc",
+      "type": "SineOscillator",
+      "parameters": {}
+    },
+    {
+      "id": "op3_env",
+      "type": "ADSR",
+      "parameters": {
+        "attack": 0.0049,
+        "decay": 9.8706,
+        "sustain": 0.1259,
+        "release": 0.5
+      }
+    },
+    {
+      "id": "op3_vca",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op2_pitch",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 1
+      }
+    },
+    {
+      "id": "op2_osc",
+      "type": "SineOscillator",
+      "parameters": {}
+    },
+    {
+      "id": "op2_env",
+      "type": "ADSR",
+      "parameters": {
+        "attack": 0.0028,
+        "decay": 6.6271,
+        "sustain": 0.4597,
+        "release": 0.2806
+      }
+    },
+    {
+      "id": "op2_vca",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op1_pitch",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 7
+      }
+    },
+    {
+      "id": "op1_osc",
+      "type": "SineOscillator",
+      "parameters": {}
+    },
+    {
+      "id": "op1_env",
+      "type": "ADSR",
+      "parameters": {
+        "attack": 0.0028,
+        "decay": 6.6271,
+        "sustain": 0.4597,
+        "release": 0.2806
+      }
+    },
+    {
+      "id": "op1_vca",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op6_index_4",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.4608
+      }
+    },
+    {
+      "id": "op5_index_4",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.3877
+      }
+    },
+    {
+      "id": "op4_pm_sum_1",
+      "type": "Add",
+      "parameters": {}
+    },
+    {
+      "id": "op3_index_2",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.2745
+      }
+    },
+    {
+      "id": "op4_level",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.1631
+      }
+    },
+    {
+      "id": "op2_level",
+      "type": "Gain",
+      "parameters": {
+        "gain": 1
+      }
+    },
+    {
+      "id": "carrier_sum_1",
+      "type": "Add",
+      "parameters": {}
+    },
+    {
+      "id": "op1_level",
+      "type": "Gain",
+      "parameters": {
+        "gain": 1
+      }
+    },
+    {
+      "id": "carrier_sum_2",
+      "type": "Add",
+      "parameters": {}
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 0.3698
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op6_pitch",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op6_pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op6_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "op6_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6_vca",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op6_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6_vca",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op5_pitch",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op5_pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op5_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "op5_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5_vca",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op5_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5_vca",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op4_pitch",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op4_pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op4_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "op4_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_vca",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op4_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_vca",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op3_pitch",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op3_pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op3_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "op3_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3_vca",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op3_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3_vca",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op2_pitch",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op2_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_vca",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_vca",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op1_pitch",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_pitch",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op1_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_vca",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_vca",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "op6_vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6_index_4",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op5_vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5_index_4",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op6_index_4",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_pm_sum_1",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op5_index_4",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_pm_sum_1",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "op4_pm_sum_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_osc",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op3_vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3_index_2",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op3_index_2",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_osc",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op4_vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_level",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_level",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op4_level",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier_sum_1",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_level",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier_sum_1",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_level",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "carrier_sum_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier_sum_2",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_level",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier_sum_2",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "carrier_sum_2",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "carrier_sum_2",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ]
+}

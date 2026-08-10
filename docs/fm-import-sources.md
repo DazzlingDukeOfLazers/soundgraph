@@ -58,6 +58,13 @@ made audible.
   keyboard rate+level scaling, LFO with per-op sensitivity, fixed-frequency mode.
 - **Why second**: 10× the surface of OPL2. Worth doing in stages — algorithms and
   envelopes first (that already sounds like a DX7), scaling and LFO after.
+- **Status**: stage 1 **landed**. tools/dx7-import.mjs decodes the msfa algorithm
+  table by executing its bus machine (not by reading charts), imports any 32-voice
+  .syx dropped into tools/dx7/banks/, and ships an original public-domain 32-voice
+  demonstration bank — one voice per algorithm — because no community bank has a
+  licence worth vendoring. Pending: LFO, key scaling, pitch EG, velocity, the
+  algorithm 4/6 multi-op feedback loops, and the msfa oracle that will turn the
+  rate curve and index scale from by-ear into measured.
 
 ### 3. OPN2 / YM2612 — Sega Genesis instruments (4-operator)
 

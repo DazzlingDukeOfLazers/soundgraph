@@ -57,6 +57,13 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/opl2-import.mjs --check)
 endif()
 
+# The DX7 library is generated the same way: the demo bank from its generator, the
+# patches from the importer, and this notices when any of the three drift apart.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME dx7_imports_match_the_importer
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/dx7-import.mjs --check)
+endif()
+
 # Every imported instrument, played through Nuked-OPL3 and through its SoundGraph
 # mapping, must agree on pitch and actually sound. Not a byte comparison — the mapping
 # is a translation with documented approximations — but the coarse truths that catch
