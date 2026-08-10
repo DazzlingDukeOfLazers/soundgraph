@@ -16,9 +16,23 @@ namespace {
 //
 //   frequency input connected -> it replaces the frequency parameter
 //   fm input connected        -> multiplies by 2^fm, i.e. it is additive in octaves
+//   pm input connected        -> added to the phase being read, in cycles
 //
 // Modulation that is additive in octaves rather than in hertz is what makes a fixed
 // vibrato depth sound the same at every pitch.
+//
+// `pm` is the other kind of modulation, and the distinction is the whole reason it
+// exists as its own port: Yamaha-style FM — DX7, OPL, OPN, every "FM synth" anybody
+// names — is *linear phase* modulation, and the sidebands that make it sound like FM
+// come from that linearity. Routing a modulator into the exponential `fm` port gives
+// vibrato at audio rate, which is a different (and much worse-behaved) spectrum. In
+// cycles rather than radians because phase runs 0..1 throughout this codebase; a
+// classic modulation index I in radians is I / 2pi cycles.
+//
+// The modulator does not advance the carrier's phase — it displaces where the wave is
+// *read* this sample, and the free-running phase underneath is untouched. That is how
+// the hardware behaves, and it is what keeps a silent modulator identical to no
+// modulator at all.
 // ---------------------------------------------------------------------------------
 
 constexpr int kOscFrequency = 0;
@@ -28,6 +42,9 @@ constexpr PortDescriptor kOscInputs[] = {
      "Pitch in hertz. Replaces the frequency parameter while connected."},
     {"fm", SignalType::Control, "octaves", false, false,
      "Frequency modulation in octaves. 1.0 is an octave up, -1.0 an octave down."},
+    {"pm", SignalType::Audio, "cycles", false, false,
+     "Phase modulation in cycles, added linearly. This is the FM of FM synthesis: "
+     "feed another oscillator in here to make sidebands, not vibrato."},
 };
 
 constexpr PortDescriptor kAudioOut[] = {
@@ -51,6 +68,7 @@ public:
     void process(const ProcessContext& context) override {
         const float* frequency_in = context.inputs[0];
         const float* fm_in = context.inputs[1];
+        const float* pm_in = context.inputs[2];
         float* out = context.outputs[0];
         const float base_frequency = parameter(kOscFrequency);
         const float nyquist = sample_rate_ * 0.5f;
@@ -63,7 +81,16 @@ public:
             frequency = dsp::clampf(frequency, 0.0f, nyquist);
 
             const float increment = frequency / sample_rate_;
-            out[i] = render(phase_, increment);
+            float read_phase = phase_;
+            if (pm_in != nullptr) {
+                // Clamped to a few cycles either way before wrapping: wrap01 walks the
+                // excess off one cycle at a time (fmod is slow on the ESP32), and a
+                // patch that feeds an unscaled audio signal in here should get a rough
+                // sound, not a slow engine. Real modulation indices live well inside
+                // this range — a DX7 at full depth is about 2 cycles.
+                read_phase = dsp::wrap01(phase_ + dsp::clampf(pm_in[i], -8.0f, 8.0f));
+            }
+            out[i] = render(read_phase, increment);
             phase_ = dsp::wrap01(phase_ + increment);
         }
     }

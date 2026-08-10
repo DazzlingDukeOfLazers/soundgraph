@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: phase modulation",
+    "description": "Two-operator FM: a 3.5:1 modulator into the carrier's pm input. The inharmonic ratio makes a bell — a spectrum no combination of these nodes could produce before the pm port existed, which is what this vector pins.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "modulator",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 770
+      }
+    },
+    {
+      "id": "index",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.9
+      }
+    },
+    {
+      "id": "carrier",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "modulator",
+        "port": "out"
+      },
+      "to": {
+        "node": "index",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "index",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "carrier",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

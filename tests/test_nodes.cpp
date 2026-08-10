@@ -46,6 +46,59 @@ TEST(oscillator_fm_input_is_additive_in_octaves) {
     CHECK_NEAR(testing::rising_zero_crossings(harness.output()), 440, 1);
 }
 
+TEST(oscillator_pm_input_displaces_the_read_phase_linearly) {
+    // A near-stopped carrier turns pm into a direct probe of the phase arithmetic: the
+    // free-running phase stays at ~0, so the output is sin(2*pi*pm) and nothing else.
+    NodeHarness harness("SineOscillator", 64, kSampleRate);
+    harness.set("frequency", 0.01f);
+    harness.connect("pm", 0.25f);
+    harness.process();
+
+    CHECK_NEAR(harness.output().front(), 1.0, 1e-3);
+    CHECK_NEAR(harness.output().back(), 1.0, 1e-3);
+}
+
+TEST(oscillator_pm_shifts_phase_and_leaves_pitch_alone) {
+    // The linearity signature, and the reason pm is its own port: a constant into pm
+    // is a phase offset and nothing else, so the pitch does not move. The same
+    // constant into the exponential fm port would play 220 * 2^0.3 = 271 Hz. This is
+    // exactly the distinction that makes a DX7 patch importable through one port and
+    // wrong through the other.
+    //
+    // (The first version of this test drove pm with a full-depth 1:1 sine and counted
+    // zero crossings, expecting the carrier frequency back. Average rate is indeed
+    // preserved — but at that index the instantaneous frequency swings negative, the
+    // phase runs backwards part of each cycle, and the extra crossings arrive in
+    // pairs. The test was wrong about waves, not the port about FM.)
+    NodeHarness harness("SineOscillator", kOneSecond, kSampleRate);
+    harness.set("frequency", 220.0f);
+    harness.connect("pm", 0.3f);
+    harness.process();
+
+    CHECK_NEAR(testing::rising_zero_crossings(harness.output()), 220, 1);
+}
+
+TEST(oscillator_pm_at_zero_is_no_modulator_at_all) {
+    NodeHarness modulated("SineOscillator", kOneSecond, kSampleRate);
+    modulated.set("frequency", 440.0f);
+    modulated.connect("pm", 0.0f);
+    modulated.process();
+
+    NodeHarness bare("SineOscillator", kOneSecond, kSampleRate,
+        testing::Coverage::SmokeTest);
+    bare.set("frequency", 440.0f);
+    bare.process();
+
+    bool identical = true;
+    for (std::size_t i = 0; i < bare.output().size(); ++i) {
+        if (modulated.output()[i] != bare.output()[i]) {
+            identical = false;
+            break;
+        }
+    }
+    CHECK(identical);
+}
+
 TEST(saw_oscillator_sweeps_the_full_range_and_is_band_limited) {
     NodeHarness harness("SawOscillator", kOneSecond, kSampleRate);
     harness.set("frequency", 440.0f);

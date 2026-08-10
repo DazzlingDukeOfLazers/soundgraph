@@ -104,6 +104,11 @@
       "name": "one-pole-sweep",
       "patch": "cases/one-pole-sweep.json",
       "frames": 24000
+    },
+    {
+      "name": "phase-mod",
+      "patch": "cases/phase-mod.json",
+      "frames": 4800
     }
   ]
 }
