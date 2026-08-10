@@ -776,6 +776,11 @@ func _build_toolbar() -> Control:
 	# moves on its own in this editor is off behind this: the signal glow and the grid
 	# fade, both of which say something the interface also says without moving.
 	view_popup.add_separator()
+	for index in Design.SCALE_NAMES.size():
+		view_popup.add_radio_check_item("Size: %s" % Design.SCALE_NAMES[index],
+			50 + index)
+	view_popup.set_item_checked(view_popup.get_item_index(50 + Design.ui_scale), true)
+	view_popup.add_separator()
 	for index in Rack.DENSITY_NAMES.size():
 		view_popup.add_radio_check_item("Rack: %s" % Rack.DENSITY_NAMES[index],
 			40 + index)
@@ -899,6 +904,9 @@ func _on_file_menu(id: int) -> void:
 
 
 func _on_view_menu(id: int) -> void:
+	if id >= 50:
+		_use_ui_scale(id - 50)
+		return
 	if id >= 40:
 		Rack.density = id - 40
 		Settings.store("rack_density", Rack.density)
@@ -932,6 +940,42 @@ func _on_view_menu(id: int) -> void:
 	for index in CASE_LABELS.size():
 		view_popup.set_item_checked(index + 3, index == choice)
 	rack.case_hp = CASE_WIDTHS[choice]
+
+
+## Changes the size of the whole interface — text, padding, ports, knobs and hit areas.
+##
+## Not the graph zoom. Zooming the canvas to compensate for small labels is the workaround
+## somebody reaches for when this does not exist, and it makes the patch smaller while
+## making the text bigger, which is the opposite of what was wanted. This scales the
+## chrome and leaves the graph where it is.
+##
+## Everything is measured through Design.scale() at construction, so the only honest way to
+## apply a new one is to build it again — which is what a reload does anyway, and is fast
+## enough that nobody notices.
+func _use_ui_scale(index: int) -> void:
+	Design.ui_scale = clampi(index, 0, Design.SCALE_FACTORS.size() - 1)
+	Settings.store("ui_scale", Design.ui_scale)
+	if view_popup != null:
+		for entry in Design.SCALE_NAMES.size():
+			view_popup.set_item_checked(view_popup.get_item_index(50 + entry),
+				entry == Design.ui_scale)
+
+	_apply_theme()
+	if graph_edit == null:
+		return
+	_port_icons.clear()
+	for button in _primary_buttons:
+		Design.make_primary(button)
+	for button in _panic_buttons:
+		Design.make_panic(button)
+	_rebuild_view()
+	_refresh_context()
+	_refresh_keyboard_range()
+	if rack != null:
+		rack.rebuild()
+	if outline != null:
+		outline.refresh()
+	_say("size: %s" % Design.SCALE_NAMES[Design.ui_scale])
 
 
 ## Switches theme and rebuilds everything that holds a colour.

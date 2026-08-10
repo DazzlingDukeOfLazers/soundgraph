@@ -1029,6 +1029,31 @@ func _initialize() -> void:
 	await main._load_example("First Synth")
 	await process_frame
 
+	# ---- cables answer where they go -------------------------------------------------
+	# A hovered cable is already brightened by GraphEdit. What that does not tell you is
+	# where it lands, and on a dense patch following a curve by eye is the whole of the
+	# difficulty — so both ends are marked.
+	main.graph_edit.zoom = 1.0
+	await process_frame
+	var first_cable: Dictionary = main.graph_edit.connections[0]
+	var cable_from: GraphNode = main.graph_edit.get_node(
+		NodePath(str(first_cable["from_node"])))
+	var cable_to: GraphNode = main.graph_edit.get_node(NodePath(str(first_cable["to_node"])))
+	var from_spot: Vector2 = cable_from.get_output_port_position(
+		int(first_cable["from_port"]))
+	var to_spot: Vector2 = cable_to.get_input_port_position(int(first_cable["to_port"]))
+	var cable_start: Vector2 = cable_from.position_offset + from_spot
+	var cable_end: Vector2 = cable_to.position_offset + to_spot
+	var centre: Vector2 = (cable_start + cable_end) * 0.5
+	var midpoint: Vector2 = centre * main.graph_edit.zoom - main.graph_edit.scroll_offset
+
+	main.graph_edit._update_cable_hover(midpoint)
+	check(not main.graph_edit.hovered_cable.is_empty(),
+		"the pointer on a cable registers as hovering it")
+	main.graph_edit._update_cable_hover(Vector2(-800, -800))
+	check(main.graph_edit.hovered_cable.is_empty(),
+		"and moving off it lets go")
+
 	# ---- ports behave like jacks ---------------------------------------------------
 	# GraphEdit has no hover signal for ports and a large invisible hot zone around each
 	# one, so the thing you are about to connect to gave no sign of being the thing you
@@ -1135,6 +1160,77 @@ func _initialize() -> void:
 		"reduced motion stops the glow being computed at all")
 	Design.reduced_motion = false
 	main.engine.all_notes_off()
+
+	# ---- reachable without a mouse ---------------------------------------------------
+	# Every control in this editor was deliberately unfocusable, because the computer
+	# keyboard is the piano and a slider that keeps focus eats the next note played. The
+	# cost of that was an interface no keyboard could reach.
+	var keyed_field = main.parameter_widgets["filter"]["cutoff"]["readout"]
+	check(keyed_field.focus_mode == Control.FOCUS_ALL,
+		"a parameter can be reached with Tab")
+
+	keyed_field._on_typed("1000")
+	await process_frame
+	var before_nudge := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			before_nudge = float(node["parameters"]["cutoff"])
+	keyed_field.nudge(0.01)
+	await process_frame
+	var after_nudge := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "filter":
+			after_nudge = float(node["parameters"]["cutoff"])
+	check(after_nudge > before_nudge,
+		"and an arrow key moves it (%.1f to %.1f)" % [before_nudge, after_nudge])
+
+	# A hundred presses crosses any parameter, whatever its range — a fixed step that
+	# suits 0..1 is useless on 20..20000 and the other way round.
+	var crossed := 0
+	keyed_field.position_now = 0.0
+	for i in 100:
+		keyed_field.nudge(keyed_field.KEY_STEP)
+		crossed += 1
+	check(keyed_field.position_now >= 0.999,
+		"a hundred presses crosses the whole range (%.3f after %d)"
+			% [keyed_field.position_now, crossed])
+
+	# And the piano still works. Focus is handed back when a drag ends, so a mouse user
+	# never ends up typing into a parameter by accident.
+	keyed_field.grab_focus()
+	await process_frame
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	keyed_field._dragging = true
+	keyed_field._gui_input(release)
+	await process_frame
+	check(not keyed_field.has_focus(),
+		"and a finished drag hands focus straight back, so the keyboard stays a piano")
+
+	# ---- the interface can be resized ------------------------------------------------
+	# Not the graph zoom. Zooming the canvas to compensate for small labels makes the
+	# patch smaller while making the text bigger, which is the opposite of the ask.
+	var body_at_comfortable := Design.scale(Design.SIZE_BODY)
+	main._use_ui_scale(Design.Scale.XL)
+	await process_frame
+	await process_frame
+	check(Design.scale(Design.SIZE_BODY) > body_at_comfortable,
+		"XL makes the text bigger (%d from %d)"
+			% [Design.scale(Design.SIZE_BODY), body_at_comfortable])
+
+	# The whole interface, not only the type — padding, ports and hit areas move with it,
+	# which is the difference between a scale setting and a font-size setting.
+	var hotzone_xl: int = main.theme.get_constant("port_hotzone_outer_extent", "GraphEdit")
+	main._use_ui_scale(Design.Scale.COMPACT)
+	await process_frame
+	var hotzone_compact: int = main.theme.get_constant("port_hotzone_outer_extent",
+		"GraphEdit")
+	check(hotzone_xl > hotzone_compact,
+		"and the port targets scale with it (%d vs %d)" % [hotzone_xl, hotzone_compact])
+	main._use_ui_scale(Design.Scale.COMFORTABLE)
+	await process_frame
+	await process_frame
 
 	# ---- the number is a control ---------------------------------------------------
 	# A slider 112px wide cannot resolve 20 Hz to 20 kHz. At the bottom of an exponential

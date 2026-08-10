@@ -47,6 +47,12 @@ func _initialize() -> void:
 	# A seventh argument switches to a tab by name. After the settle loop, because
 	# before it there is no tab container to switch — the first attempt ran here on
 	# frame zero and found `views` still null.
+	# A ninth argument sets the UI scale, so the presets can be compared side by side.
+	if arguments.size() > 8 and arguments[8] != "":
+		main._use_ui_scale(int(arguments[8]))
+		for i in 6:
+			await process_frame
+
 	# An eighth argument sets the rack density.
 	if arguments.size() > 7 and arguments[7] != "":
 		Rack.density = int(arguments[7])

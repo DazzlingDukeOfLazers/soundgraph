@@ -9,9 +9,20 @@ extends Control
 ##
 ## Three gestures, all of them conventional:
 ##
-##   drag         — coarse by default, ten times finer with Shift held
-##   double click — type it, and units are ignored so "440 Hz" and "440" both work
+##   drag          — coarse by default, ten times finer with Shift held
+##   arrow keys    — one step, or ten with Shift; Home and End for the extremes
+##   double click  — type it, and units are ignored so "440 Hz" and "440" both work
 ##   middle click or Alt-click — back to the parameter's default
+##
+## The keyboard route was the one missing, and it was missing for a reason worth
+## writing down: every control in this editor is deliberately unfocusable, because
+## the computer keyboard is the piano and a slider that keeps focus after a drag
+## silently eats the next note somebody plays. That is a real problem, and the answer
+## to it had been to make the whole interface unreachable without a mouse.
+##
+## The resolution is that focus is taken by Tab and handed straight back after a
+## drag. Somebody who tabbed to a parameter is editing it and expects the arrows to
+## move it; somebody who dragged it is still playing.
 ##
 ## The label still reads the same; it just also does something.
 
@@ -39,16 +50,30 @@ var to_position: Callable
 var position_now := 0.0
 
 var _label: Label
+var _ring: Panel
 var _entry: LineEdit
 var _dragging := false
 var _drag_origin := 0.0
 var _position_at_grab := 0.0
 
 
+## What one arrow press moves, as a fraction of the parameter's whole range.
+##
+## A fraction rather than a fixed amount, because these ranges run from 0..1 to
+## 20..20000 and a step that suits one is useless on the other. A hundred presses
+## crosses any parameter; ten with Shift held.
+const KEY_STEP := 0.01
+const KEY_COARSE := 0.1
+
+
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_HSIZE
-	tooltip_text = "Drag to change · double click to type · Alt-click for the default"
+	# Reachable by Tab. See the note at the top of this file for why that is a
+	# deliberate exception rather than an oversight corrected.
+	focus_mode = Control.FOCUS_ALL
+	tooltip_text = "Drag or arrow keys to change · double click to type" \
+		+ " · Alt-click for the default"
 
 	_label = Label.new()
 	_label.text = text
@@ -60,6 +85,17 @@ func _ready() -> void:
 	_label.add_theme_font_size_override("font_size", Design.scale(Design.SIZE_NUMERIC))
 	_label.add_theme_color_override("font_color", Design.INK_BRIGHT)
 	add_child(_label)
+
+	# A ring, because it can hold focus now and a focus you cannot see is a focus that
+	# has been lost. Its own state, distinct from hover and from selection.
+	_ring = Panel.new()
+	_ring.visible = false
+	_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_ring.add_theme_stylebox_override("panel", Design.focus_ring(Design.FOCUS))
+	add_child(_ring)
+	focus_entered.connect(func() -> void: _ring.visible = true)
+	focus_exited.connect(func() -> void: _ring.visible = false)
 
 	_entry = LineEdit.new()
 	_entry.visible = false
@@ -73,6 +109,31 @@ func _ready() -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key != null and key.pressed and has_focus():
+		var step := 0.0
+		match key.keycode:
+			KEY_RIGHT, KEY_UP:
+				step = KEY_COARSE if key.shift_pressed else KEY_STEP
+			KEY_LEFT, KEY_DOWN:
+				step = -(KEY_COARSE if key.shift_pressed else KEY_STEP)
+			KEY_PAGEUP:
+				step = KEY_COARSE
+			KEY_PAGEDOWN:
+				step = -KEY_COARSE
+			KEY_HOME:
+				step = -1.0
+			KEY_END:
+				step = 1.0
+			KEY_ENTER, KEY_KP_ENTER:
+				_begin_typing()
+				accept_event()
+				return
+		if step != 0.0:
+			nudge(step)
+			accept_event()
+			return
+
 	var button := event as InputEventMouseButton
 	if button != null and button.pressed:
 		if button.button_index == MOUSE_BUTTON_LEFT and button.double_click:
@@ -100,6 +161,10 @@ func _gui_input(event: InputEvent) -> void:
 			and _dragging:
 		_dragging = false
 		drag_finished.emit()
+		# Handed straight back. A field that kept focus after a mouse drag would eat the
+		# next note played, which is the exact failure that made every control in this
+		# editor unfocusable in the first place.
+		release_focus()
 		accept_event()
 		return
 
@@ -112,6 +177,17 @@ func _gui_input(event: InputEvent) -> void:
 		if to_value.is_valid():
 			value_submitted.emit(to_value.call(position_now))
 		accept_event()
+
+
+## Moves the value by a fraction of its range. One press is one undo step, the same as
+## one drag — a held arrow key should not fill the history with three hundred entries.
+func nudge(fraction: float) -> void:
+	if not to_value.is_valid():
+		return
+	drag_started.emit()
+	position_now = clampf(position_now + fraction, 0.0, 1.0)
+	value_submitted.emit(to_value.call(position_now))
+	drag_finished.emit()
 
 
 func _begin_typing() -> void:

@@ -526,6 +526,7 @@ func _gui_input(event: InputEvent) -> void:
 	var motion := event as InputEventMouseMotion
 	if motion != null and _dragging_key == "":
 		_update_hover(motion.position)
+		_update_cable_hover(motion.position)
 
 	if motion != null and _dragging_key != "":
 		var snapped_point := _to_graph(motion.position)
@@ -607,6 +608,14 @@ var port_levels: Dictionary = {}
 ## thing you are about to connect to gives no sign of being the thing you are about
 ## to connect to, and you find out by letting go. This is what tells you first.
 var hovered_port: Dictionary = {}
+
+## The cable under the pointer, as a connection dictionary, or empty.
+##
+## GraphEdit brightens a hovered cable on its own once the theme says what that looks
+## like. What it cannot do is show you where the cable *goes* — and on a busy canvas
+## that is the only thing anybody wanted to know, which is why following one by eye is
+## the gesture this view asks for most and supports least.
+var hovered_cable: Dictionary = {}
 
 signal port_hovered(widget_name: String, side: String, index: int)
 
@@ -855,7 +864,10 @@ class GlowOverlay extends Control:
 		if graph == null:
 			return
 
-		if not graph.port_levels.is_empty() or not graph.hovered_port.is_empty():
+		var anything: bool = not graph.port_levels.is_empty()
+		anything = anything or not graph.hovered_port.is_empty()
+		anything = anything or not graph.hovered_cable.is_empty()
+		if anything:
 			queue_redraw()
 
 	## A ring around whatever the pointer is over.
@@ -863,7 +875,41 @@ class GlowOverlay extends Control:
 	## Not suppressed by reduced motion: it is a static response to where the pointer
 	## already is rather than something that moves on its own, and removing it would
 	## take away the only sign that a port is under the cursor at all.
+	## Both ends of the cable under the pointer.
+	##
+	## The cable itself is already brightened by GraphEdit. The ends are the part that
+	## answers the question somebody actually had: a highlighted curve still has to be
+	## followed with the eye to find where it lands, and on a dense patch that is the
+	## whole of the difficulty.
+	func _draw_cable_ends() -> void:
+		if graph.hovered_cable.is_empty():
+			return
+		var from_node := graph.get_node_or_null(
+			NodePath(str(graph.hovered_cable["from_node"]))) as GraphNode
+		var to_node := graph.get_node_or_null(
+			NodePath(str(graph.hovered_cable["to_node"]))) as GraphNode
+		if from_node == null or to_node == null:
+			return
+		var from_port := int(graph.hovered_cable["from_port"])
+		var to_port := int(graph.hovered_cable["to_port"])
+		if from_port >= from_node.get_output_port_count():
+			return
+		if to_port >= to_node.get_input_port_count():
+			return
+
+		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		var colour: Color = from_node.get_output_port_color(from_port)
+		var ends := [
+			from_node.position_offset + from_node.get_output_port_position(from_port),
+			to_node.position_offset + to_node.get_input_port_position(to_port),
+		]
+		for spot: Vector2 in ends:
+			draw_arc(spot * scale - graph.scroll_offset, 13.0 * scale, 0.0, TAU, 32,
+				Color(colour.r, colour.g, colour.b, 0.9), 2.0 * scale, true)
+
+
 	func _draw_hover() -> void:
+		_draw_cable_ends()
 		if graph.hovered_port.is_empty():
 			return
 		var node := graph.get_node_or_null(
@@ -1028,3 +1074,13 @@ func fit_graph() -> void:
 		room.y / maxf(bounds.size.y, 1.0))
 	zoom = clampf(wanted, zoom_min, zoom_max)
 	centre_on(bounds)
+
+
+## Tracks which cable the pointer is over, using the same reach as picking one up, so
+## that hovering and dragging agree about which cable is meant.
+func _update_cable_hover(local_point: Vector2) -> void:
+	var found := _connection_at(_to_graph(local_point))
+	if found == hovered_cable:
+		return
+	hovered_cable = found
+	queue_redraw()
