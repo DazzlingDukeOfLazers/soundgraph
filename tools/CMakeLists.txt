@@ -32,3 +32,18 @@ if(MSVC)
 else()
     target_compile_options(sfxr-ref PRIVATE -ffp-contract=off)
 endif()
+
+# The OPL2 oracle. Nuked-OPL3 is integer state machines throughout — bit-exact by
+# construction, so it needs none of the float pinning the sfxr oracle does. Same
+# isolation rule though: it links the vendored emulator (LGPL 2.1, licence in
+# tests/opl2/reference/) and the WAV writer, and nothing links it.
+# The top-level project enables only CXX, so the emulator's .c file would be silently
+# skipped (one compile step, three unresolved externals — that is what it looks like).
+# C is enabled here, where the one C file lives, rather than project-wide.
+enable_language(C)
+add_executable(opl2-ref
+    opl2-ref/main.cpp
+    ${CMAKE_SOURCE_DIR}/tests/opl2/reference/opl3.c
+)
+target_include_directories(opl2-ref PRIVATE ${CMAKE_SOURCE_DIR}/tests/opl2/reference)
+target_link_libraries(opl2-ref PRIVATE soundgraph::wav)

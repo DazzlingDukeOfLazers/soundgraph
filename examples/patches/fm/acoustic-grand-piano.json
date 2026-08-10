@@ -2,7 +2,7 @@
   "schema_version": 1,
   "metadata": {
     "name": "Acoustic Grand Piano",
-    "description": "Acoustic Grand Piano — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: operator feedback 7 not applied; modulator waveform 2 rendered as sine; modulator key scaling ignored; carrier waveform 4 rendered as sine; carrier key scaling ignored.",
+    "description": "Acoustic Grand Piano — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: feedback 7 applied without envelope scaling; modulator waveform 2 rendered as sine; modulator key scaling ignored; carrier waveform 4 rendered as sine; carrier key scaling ignored.",
     "author": "Freedoom contributors (instrument), SoundGraph opl2-import (mapping)",
     "tags": [
       "fm",
@@ -34,7 +34,9 @@
     {
       "id": "mod",
       "type": "SineOscillator",
-      "parameters": {}
+      "parameters": {
+        "feedback": 2
+      }
     },
     {
       "id": "mod_env",

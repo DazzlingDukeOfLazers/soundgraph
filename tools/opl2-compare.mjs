@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+// Plays every vendored OPL2 instrument twice — once through Nuked-OPL3, once through
+// the imported SoundGraph patch — and measures whether they are the same instrument.
+//
+//   node tools/opl2-compare.mjs [--verbose]
+//
+// This is not a byte comparison and never will be: the mapping is a translation, not
+// an emulation, and its constants are approximations by design. What must hold is
+// coarser and matters more:
+//
+//   pitch    — both renders share a fundamental within 3%. A mapping that moves the
+//              pitch has misread multiple, fnum arithmetic or the graph wiring, and
+//              every one of those has a failure mode that sounds "fine" in isolation.
+//   presence — both renders actually sound (RMS above the floor). A silent patch is a
+//              wiring bug wearing a tolerance.
+//
+// Level and spectral distance are reported but not asserted, so drift is visible in
+// the log for the day the mapping constants get measured against these renders
+// properly. Fundamentals come from autocorrelation, not zero crossings — FM output is
+// exactly the waveform family that taught this repo (three times) how crossings lie.
+
+import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const instruments = join(root, 'tools', 'opl2', 'instruments');
+const patches = join(root, 'examples', 'patches', 'fm');
+const bin = join(root, 'build', 'bin');
+const scratch = mkdtempSync(join(tmpdir(), 'opl2-compare-'));
+const verbose = process.argv.includes('--verbose');
+
+// 220 Hz = MIDI 57. The oracle takes hertz and sg-render takes note numbers; these two
+// constants are the same statement in both languages.
+const FREQUENCY = 220;
+const NOTE = 57;
+
+function readWav(path) {
+  const bytes = readFileSync(path);
+  const data = bytes.indexOf(Buffer.from('data'));
+  const rate = bytes.readUInt32LE(24);
+  const samples = [];
+  for (let i = data + 8; i + 1 < bytes.length; i += 2) {
+    samples.push(bytes.readInt16LE(i) / 32768);
+  }
+  return { rate, samples };
+}
+
+// The strongest self-similarity lag inside the held part of the note.
+function fundamental(wav) {
+  const start = Math.floor(0.2 * wav.rate);
+  const length = Math.floor(0.8 * wav.rate);
+  const slice = wav.samples.slice(start, start + length);
+  const lagLow = Math.floor(wav.rate / 2000);
+  const lagHigh = Math.floor(wav.rate / 40);
+  let bestLag = 0;
+  let bestScore = -1;
+  for (let lag = lagLow; lag <= lagHigh; ++lag) {
+    let dot = 0;
+    let energy = 0;
+    for (let i = 0; i + lag < slice.length; ++i) {
+      dot += slice[i] * slice[i + lag];
+      energy += slice[i] * slice[i];
+    }
+    const score = energy > 0 ? dot / energy : 0;
+    if (score > bestScore) {
+      bestScore = score;
+      bestLag = lag;
+    }
+  }
+  return bestLag > 0 ? wav.rate / bestLag : 0;
+}
+
+const rms = (wav) => {
+  const sum = wav.samples.reduce((a, s) => a + s * s, 0);
+  return Math.sqrt(sum / wav.samples.length);
+};
+
+// Autocorrelation finds the *period*, and a harmonic instrument is periodic at f0/2 or
+// f0/3 as well; two measurements that disagree by an integer ratio agree about pitch.
+function octaveFolded(measured, reference) {
+  for (const fold of [1, 2, 3, 4]) {
+    for (const candidate of [measured * fold, measured / fold]) {
+      if (Math.abs(candidate - reference) / reference < 0.03) return candidate;
+    }
+  }
+  return measured;
+}
+
+const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+let failures = 0;
+const files = readdirSync(instruments).filter((f) => f.endsWith('.sbi')).sort();
+for (const file of files) {
+  const bytes = readFileSync(join(instruments, file));
+  const name = bytes.toString('latin1', 4, 36).replace(/\0.*$/, '').trim();
+  const patch = join(patches, `${slug(name)}.json`);
+
+  const oracleWav = join(scratch, `${slug(name)}-oracle.wav`);
+  const oursWav = join(scratch, `${slug(name)}-ours.wav`);
+  execFileSync(join(bin, 'opl2-ref'), [join(instruments, file), oracleWav,
+    '--seconds', '2', '--frequency', String(FREQUENCY), '--gate', '0.7']);
+  execFileSync(join(bin, 'sg-render'), [patch, oursWav,
+    '--seconds', '2', '--notes', String(NOTE), '--gate', '0.7', '--quiet']);
+
+  const oracle = readWav(oracleWav);
+  const ours = readWav(oursWav);
+  const oracleF0 = fundamental(oracle);
+  const oursF0 = octaveFolded(fundamental(ours), oracleF0);
+  const pitchError = Math.abs(oursF0 - oracleF0) / oracleF0;
+  const oracleRms = rms(oracle);
+  const oursRms = rms(ours);
+  const levelDb = 20 * Math.log10(oursRms / Math.max(oracleRms, 1e-9));
+
+  const ok = pitchError < 0.03 && oursRms > 0.01 && oracleRms > 0.001;
+  if (!ok) failures += 1;
+  const line = `  ${ok ? 'ok  ' : 'FAIL'} ${slug(name).padEnd(26)} `
+    + `f0 ${oursF0.toFixed(1)} vs ${oracleF0.toFixed(1)} Hz `
+    + `(${(pitchError * 100).toFixed(1)}%), level ${levelDb >= 0 ? '+' : ''}`
+    + `${levelDb.toFixed(1)} dB vs oracle`;
+  if (!ok || verbose) console.error(line);
+  else console.log(line);
+}
+
+if (failures > 0) {
+  console.error(`\n${failures} instrument(s) disagree with the Nuked-OPL3 oracle.`);
+  process.exit(1);
+}
+console.log(`All ${files.length} imported instruments agree with the oracle on pitch and presence.`);

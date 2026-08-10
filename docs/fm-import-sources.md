@@ -81,14 +81,23 @@ universe, good fourth once OPL2 and DX7 mappers exist to share code.
 
 ## The dsp-core work the imports gate on
 
-1. `pm` input (linear phase, audio-rate) on the oscillators — the actual FM.
-2. Operator feedback — self-phase-modulation with the OPL/DX averaging behaviour;
-   either a feedback-capable operator node or a one-sample-delay loop the scheduler
-   blesses.
+1. ~~`pm` input (linear phase, audio-rate) on the oscillators~~ — **done**, with a
+   lesson attached: the feedback golden diverged to full scale in WASM because three
+   libms round `std::sin` three ways and a feedback loop compounds one ULP to
+   everything. dsp-core owns its sine now (committed table, `make-sine-table.py`), and
+   all 20 goldens are bit-exact across native, WASM and the ESP32.
+2. ~~Operator feedback~~ — **done**: `feedback` on SineOscillator, two-sample averaged
+   like the chips. The importer maps OPL feedback 1–7 to 2^(fb−1)/32 cycles (fb 7 = the
+   chip's 4π). Remaining honesty gap: the chip feeds back the *enveloped* output, ours
+   is constant-strength — noted per patch.
 3. OPL waveform variants (half/abs/quarter sine) — a shape parameter, cheap everywhere
-   including the ESP32.
-4. Rate-based envelopes (OPL and DX both specify *rates*, not times) — likely a mapper
-   concern (convert rate→time at import), not a new node.
+   including the ESP32. **Still open**, and the largest remaining fidelity gap.
+4. Rate-based envelopes — handled in the mapper as a fitted rate→time curve. The
+   **Nuked-OPL3 oracle now exists** (`tools/opl2-ref`, LGPL emulator vendored under
+   `tests/opl2/reference/`) and `tools/opl2-compare.mjs` holds every import to the
+   oracle's pitch and presence in ctest; the fitted curve's calibration against oracle
+   renders is the natural next use of it. Current level offset vs the oracle: a uniform
+   +10 to +22 dB (the chip mixes nine voices into its headroom), reported per run.
 
 Each step lands like every dsp-core change: unit tests, a golden vector, native/WASM
 parity, ESP32 verification when a board is on.

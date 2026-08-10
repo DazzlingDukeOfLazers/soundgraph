@@ -57,6 +57,16 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/opl2-import.mjs --check)
 endif()
 
+# Every imported instrument, played through Nuked-OPL3 and through its SoundGraph
+# mapping, must agree on pitch and actually sound. Not a byte comparison — the mapping
+# is a translation with documented approximations — but the coarse truths that catch
+# real wiring bugs, measured against the accepted OPL emulator rather than against
+# whoever wrote the importer's idea of what it meant.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME opl2_imports_agree_with_the_oracle
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/opl2-compare.mjs)
+endif()
+
 # And the same again one step further along: the Godot editor ships its own copy of the
 # examples, because Godot cannot read outside res://. That copy has now gone stale twice by
 # two different routes, the second time because the thing that syncs it lives in a build

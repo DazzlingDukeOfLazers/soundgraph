@@ -91,10 +91,17 @@ function parseSbi(bytes, file) {
   };
 }
 
+// OPL feedback strength doubles per step; the strongest setting is 4pi radians of
+// self-modulation = 2 cycles, which is exactly the sine's parameter ceiling.
+const feedbackCycles = (fb) => (fb <= 0 ? 0 : Math.pow(2, fb - 1) / 32);
+
 function fidelityNotes(voice) {
   const notes = [];
   if (voice.feedback > 0) {
-    notes.push(`operator feedback ${voice.feedback} not applied`);
+    // Representable now, with one honest gap: the chip feeds back the operator's
+    // *enveloped* output, while the sine's feedback parameter is constant — so a
+    // decaying note keeps its bite slightly longer than the hardware would.
+    notes.push(`feedback ${voice.feedback} applied without envelope scaling`);
   }
   for (const [role, op] of [['modulator', voice.modulator], ['carrier', voice.carrier]]) {
     if (op.wave !== 0) notes.push(`${role} waveform ${op.wave} rendered as sine`);
@@ -129,7 +136,9 @@ function buildPatch(voice, sourceFile) {
       parameters: { factor: voice.modulator.multiple } },
     { id: 'car_pitch', type: 'Multiply',
       parameters: { factor: voice.carrier.multiple } },
-    { id: 'mod', type: 'SineOscillator', parameters: {} },
+    { id: 'mod', type: 'SineOscillator',
+      parameters: voice.feedback > 0
+        ? { feedback: Number(feedbackCycles(voice.feedback).toFixed(5)) } : {} },
     { id: 'mod_env', type: 'ADSR', parameters: envelopeParameters(voice.modulator) },
     { id: 'mod_vca', type: 'Multiply', parameters: {} },
     { id: 'car', type: 'SineOscillator', parameters: {} },
