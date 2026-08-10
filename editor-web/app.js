@@ -260,6 +260,10 @@ function noteOff(note) {
     keyElements.get(note)?.classList.remove('held');
 }
 
+function noteName(note) {
+    return `${NOTE_NAMES[note % 12]}${Math.floor(note / 12) - 1}`;
+}
+
 function buildKeyboard() {
     ui.keyboard.replaceChildren();
     keyElements.clear();
@@ -272,9 +276,14 @@ function buildKeyboard() {
     }
 
     for (const note of whiteNotes) {
-        const key = document.createElement('div');
+        // Buttons, not divs: a div piano is invisible to assistive tech and
+        // untabbable, and this page is meant to be the zero-install doorway
+        // for everyone who scans the QR — not everyone who can use a mouse.
+        const key = document.createElement('button');
+        key.type = 'button';
         key.className = 'key';
         key.dataset.note = String(note);
+        key.setAttribute('aria-label', noteName(note));
         if (note % 12 === 0) {
             key.textContent = `${NOTE_NAMES[0]}${Math.floor(note / 12) - 1}`;
         }
@@ -291,9 +300,11 @@ function buildKeyboard() {
             whiteIndex += 1;
             continue;
         }
-        const key = document.createElement('div');
+        const key = document.createElement('button');
+        key.type = 'button';
         key.className = 'key black';
         key.dataset.note = String(note);
+        key.setAttribute('aria-label', noteName(note));
         key.style.left = `calc(${whiteIndex * whiteWidth}% - 2.1%)`;
         key.style.width = '4.2%';
         ui.keyboard.append(key);
@@ -394,6 +405,10 @@ async function loadExample(path) {
     const response = await fetch(path);
     const text = await response.text();
     ui.patch.value = text.trimEnd();
+    // A textarea keeps its scroll position when its value is replaced, so
+    // without this a freshly loaded patch opens wherever the previous one
+    // happened to be — mid-file, looking like the top.
+    ui.patch.scrollTop = 0;
     applyPatch();
 }
 
@@ -414,6 +429,7 @@ ui.open.addEventListener('change', async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     ui.patch.value = (await file.text()).trimEnd();
+    ui.patch.scrollTop = 0;
     applyPatch();
     event.target.value = '';
 });
