@@ -75,6 +75,10 @@ static func snap_up(value: float, step: float) -> float:
 ## would have meant twenty-three lines nobody would ever check. So the menu is built by
 ## scanning instead. This dictionary is the ordering and the labels, which is a decision;
 ## the contents are not.
+## New scripts are preloaded rather than trusted to the class-name cache, which
+## headless runs do not refresh.
+const ModuleAuthor := preload("res://module_author.gd")
+
 const EXAMPLE_GROUPS := {
 	"": "",
 	"game": "Game",
@@ -200,6 +204,7 @@ var inspecting := {}                   # {"node": id, "port": name} or empty
 var suppress_reload := false
 ## The file dialog does open, save and import; this says which is in flight.
 var _importing_module := false
+var _importing_definition := false
 
 ## Undo works on whole-document snapshots rather than per-operation inverses. A patch is
 ## a few kilobytes, and the code that turns one into a view is the same well-exercised
@@ -768,16 +773,22 @@ func _build_toolbar() -> Control:
 	arrange_popup = arrange_menu.get_popup()
 	arrange_popup.add_item("Auto-place everything", 0)
 	arrange_popup.add_item("Arrange selection", 1)
+	arrange_popup.add_item("Collapse selection into module", 2)
 	arrange_popup.set_item_tooltip(0, "Lay the whole graph out left to right. The same "
 		+ "patch always lands the same way, wherever things were before.")
+	arrange_popup.set_item_tooltip(2, "The selected nodes become a module: one node "
+		+ "wearing their boundary as ports and their settings as knobs. Undo undoes it.")
 	arrange_popup.set_item_disabled(1, true)
+	arrange_popup.set_item_disabled(2, true)
 	# if/elif rather than match: a lambda closes with a bracket on the last line, and a
 	# match arm followed by ")" is not something the parser will accept.
 	arrange_popup.id_pressed.connect(func(id: int) -> void:
 		if id == 0:
 			_auto_place()
 		elif id == 1:
-			_arrange_selection())
+			_arrange_selection()
+		elif id == 2:
+			_collapse_selection())
 	graph_group.add_child(_defocus(arrange_menu))
 
 	# Fit comes out of that menu and sits beside it, spelled out.
@@ -832,6 +843,10 @@ func _build_toolbar() -> Control:
 	var file_popup := file_menu.get_popup()
 	file_popup.add_item("Open…", 0)
 	file_popup.add_item("Add module…", 1)
+	file_popup.add_item("Add module as definition…", 3)
+	file_popup.set_item_tooltip(3, "Add an existing patch as a reusable module: one "
+		+ "definition, one instance, its terminals becoming the ports. The patch stays "
+		+ "one thing instead of dissolving into copied nodes.")
 	file_popup.add_item("Save as…", 2)
 	file_popup.set_item_tooltip(1, "Add an existing patch into this one. Its nodes are "
 		+ "copied in with their names prefixed; its own inputs and outputs are left out, "
@@ -970,6 +985,7 @@ const CASE_WIDTHS := [0, 84, 104, 168]
 
 func _on_file_menu(id: int) -> void:
 	_importing_module = id == 1
+	_importing_definition = id == 3
 	if _on_web():
 		if id == 2:
 			_web_save()
@@ -982,7 +998,8 @@ func _on_file_menu(id: int) -> void:
 		file_dialog.current_file = "patch.json"
 	else:
 		file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-		file_dialog.title = "Add a patch as a module" if id == 1 else "Open patch"
+		file_dialog.title = "Add a patch as a module" if id == 1 else (
+			"Add a patch as a module definition" if id == 3 else "Open patch")
 	file_dialog.popup_centered_ratio(0.6)
 
 
@@ -2735,6 +2752,7 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 func _refresh_selection_button() -> void:
 	if arrange_popup != null:
 		arrange_popup.set_item_disabled(1, _selected_ids().size() < 2)
+		arrange_popup.set_item_disabled(2, _selected_ids().size() < 2)
 
 
 func _selected_ids() -> Array:
@@ -2764,6 +2782,31 @@ func _arrange_selection() -> void:
 		_say("select two or more nodes to arrange them together")
 		return
 	await _arrange(selected)
+
+
+## Wiring becomes notation: the selection turns into a definition plus one instance.
+## The transform itself lives in ModuleAuthor and never touches the editor; this is
+## the ceremony around it — the undo snapshot, the descriptor refresh, the rebuild.
+func _collapse_selection() -> void:
+	var selected := _selected_ids()
+	if selected.size() < 2:
+		_say("select two or more nodes to collapse into a module")
+		return
+	var terminals: Array = []
+	for type_name in registry:
+		if str(registry[type_name].get("category", "")) == "Terminals":
+			terminals.append(type_name)
+	var result := ModuleAuthor.collapse(patch, selected, terminals)
+	if not result.ok():
+		_say(result.error)
+		return
+	_begin_edit()
+	patch = result.patch
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("collapse into %s" % result.module_name)
+	_say("collapsed %d nodes into '%s'" % [selected.size(), result.module_name])
 
 
 func _arrange(movable: Array) -> void:
@@ -3419,13 +3462,19 @@ func _load_example(name: String) -> void:
 	if not _examples.has(name):
 		return
 	var path := _example_path(_examples[name])
-	if _importing_module:
+	if _importing_module or _importing_definition:
+		var as_definition := _importing_definition
 		_importing_module = false
+		_importing_definition = false
 		var module_file := FileAccess.open(path, FileAccess.READ)
 		if module_file == null:
 			_say("could not read %s" % path)
 			return
-		_import_module(module_file.get_as_text(), ModuleImport.name_from_path(path))
+		if as_definition:
+			_import_module_as_definition(module_file.get_as_text(),
+				ModuleImport.name_from_path(path))
+		else:
+			_import_module(module_file.get_as_text(), ModuleImport.name_from_path(path))
 		return
 
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -3454,6 +3503,20 @@ func _on_file_selected(path: String) -> void:
 	if file == null:
 		_say("could not open %s" % path)
 		return
+	# Both import modes, which this dialog path never actually honoured — "Add module"
+	# through the native dialog fell through to a plain open, replacing the document it
+	# was meant to add to. Found while wiring the definition sibling in beside it.
+	if _importing_module or _importing_definition:
+		var as_definition := _importing_definition
+		_importing_module = false
+		_importing_definition = false
+		if as_definition:
+			_import_module_as_definition(file.get_as_text(),
+				ModuleImport.name_from_path(path))
+		else:
+			_import_module(file.get_as_text(), ModuleImport.name_from_path(path))
+		return
+
 	# Named, which opening through the dialog never did — the toolbar went on showing
 	# whatever had been open before, and the one place that says which file you are
 	# editing was quietly lying.
@@ -3517,6 +3580,31 @@ func _on_web_file_chosen(arguments: Array) -> void:
 		return
 	_set_document_name(chosen_name)
 	_load_text(str(arguments[0]))
+
+
+## Adds a foreign patch as a module definition plus one instance — the import that
+## keeps the patch one thing. Its terminals become the declared ports; ModuleAuthor
+## carries the transform, this carries the ceremony.
+func _import_module_as_definition(text: String, module_name: String) -> void:
+	var parsed: Variant = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		_say("that file is not a patch")
+		return
+	var terminals: Array = []
+	for type_name in registry:
+		if str(registry[type_name].get("category", "")) == "Terminals":
+			terminals.append(type_name)
+	var result := ModuleAuthor.from_patch(patch, parsed, module_name, terminals)
+	if not result.ok():
+		_say(result.error)
+		return
+	_begin_edit()
+	patch = result.patch
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("add module %s" % result.module_name)
+	_say("added '%s' as a definition with one instance — wire it up" % result.module_name)
 
 
 ## Inlines another patch into this one. Undoable like any other edit, and validated

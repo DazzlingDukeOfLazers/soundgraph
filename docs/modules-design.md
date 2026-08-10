@@ -150,6 +150,15 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 
 ## Staged plan, with exit tests
 
+> **Stage 3 landed.** ModuleAuthor carries both authoring transforms, registry-blind:
+> collapse-selection (Arrange menu) factors nodes into a definition plus one instance,
+> boundary connections becoming ports, every authored knob an export, controls and
+> automation remapped through the facade — the exit test renders the collapsed and
+> original documents to byte-identical audio. Import-as-definition (File menu) brings
+> a foreign patch in as one thing, its terminals becoming ports named for what fed
+> them. Fixed en route: the native dialog import path had never honoured the
+> add-module flag at all — it opened the file over the current document.
+
 > **Stage 2 landed.** Instances render as single nodes wearing their declared
 > surface — synthesized registry descriptors under "module:<name>", consumed by the
 > graph, rack, outline and inspector without any of them learning what a module is.

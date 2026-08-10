@@ -1761,6 +1761,87 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 
+	# ---- modules, stage 3: collapse is the inverse of expansion -----------------------
+	# First Synth is open. Collapse the filter sweep — the LFO and the filter — then
+	# hold the exit criterion in rendered bytes: the collapsed document and the
+	# original flat one must make the same sound. Structure asserts come first; the
+	# byte proof runs through sg-render, the same tool every other audio guarantee in
+	# this repository trusts.
+	var flat_text: String = main.engine.format_patch(JSON.stringify(main.patch))
+
+	for id in ["lfo", "filter"]:
+		main.widgets[id].selected = true
+	await main._collapse_selection()
+	for i in 6:
+		await process_frame
+
+	check(main.patch.has("modules") and main.patch["modules"].has("part"),
+		"the selection became a definition named part")
+	check(main.widgets.has("part") and not main.widgets.has("filter"),
+		"and one instance stands where two nodes were (%d widgets)" % main.widgets.size())
+	var part_def: Dictionary = main.patch["modules"]["part"]
+	check(part_def.get("parameters", []).size() == 7,
+		"every authored knob was exported (%d)" % part_def.get("parameters", []).size())
+	check(part_def.get("inputs", []).size() == 1 and part_def.get("outputs", []).size() == 1,
+		"the boundary became the ports (%d in, %d out)"
+			% [part_def.get("inputs", []).size(), part_def.get("outputs", []).size()])
+
+	var collapsed_text: String = main.engine.format_patch(JSON.stringify(main.patch))
+	check(collapsed_text.contains("\"modules\""), "the saved document carries the definition")
+
+	# The byte proof. sg-render lives in the build directory; on a machine without the
+	# native build the check reports itself skipped rather than quietly passing.
+	var repo := ProjectSettings.globalize_path("res://").path_join("..")
+	var renderer := repo.path_join("build/bin/sg-render.exe")
+	if not FileAccess.file_exists(renderer):
+		renderer = repo.path_join("build/bin/sg-render")
+	if FileAccess.file_exists(renderer):
+		var scratch := OS.get_environment("TEMP")
+		if scratch == "":
+			scratch = "/tmp"
+		var flat_json := scratch.path_join("sg-collapse-flat.json")
+		var collapsed_json := scratch.path_join("sg-collapse-mod.json")
+		var flat_file := FileAccess.open(flat_json, FileAccess.WRITE)
+		flat_file.store_string(flat_text)
+		flat_file.close()
+		var collapsed_file := FileAccess.open(collapsed_json, FileAccess.WRITE)
+		collapsed_file.store_string(collapsed_text)
+		collapsed_file.close()
+		var flat_wav := scratch.path_join("sg-collapse-flat.wav")
+		var collapsed_wav := scratch.path_join("sg-collapse-mod.wav")
+		var code_a := OS.execute(renderer, [flat_json, flat_wav,
+			"--seconds", "1", "--notes", "57", "--gate", "0.7", "--quiet"])
+		var code_b := OS.execute(renderer, [collapsed_json, collapsed_wav,
+			"--seconds", "1", "--notes", "57", "--gate", "0.7", "--quiet"])
+		check(code_a == 0 and code_b == 0,
+			"both notations render (%d, %d)" % [code_a, code_b])
+		var bytes_flat := FileAccess.get_file_as_bytes(flat_wav)
+		var bytes_collapsed := FileAccess.get_file_as_bytes(collapsed_wav)
+		check(bytes_flat.size() > 0 and bytes_flat == bytes_collapsed,
+			"collapse, save, expand: byte-identical audio (%d bytes)" % bytes_flat.size())
+	else:
+		check(true, "byte comparison SKIPPED: sg-render not built on this machine")
+	# The import sibling: a foreign patch arrives as one definition plus one instance,
+	# its terminals becoming the ports — named after what fed them, because
+	# "frequency" says what to plug in and "in" does not.
+	var foreign_text := FileAccess.get_file_as_string(
+		main._repository_examples().path_join("first-synth.json"))
+	await main._import_module_as_definition(foreign_text, "voice")
+	for i in 6:
+		await process_frame
+	check(main.patch.get("modules", {}).has("voice"),
+		"a foreign patch becomes a definition")
+	var voice_def: Dictionary = main.patch["modules"]["voice"]
+	var input_names: Array = voice_def.get("inputs", []).map(func(b): return str(b["name"]))
+	check(input_names.has("frequency") and input_names.has("gate"),
+		"its terminals became ports named for what fed them (%s)" % str(input_names))
+	check(main.widgets.has("voice"), "and one instance arrived, ready to wire")
+
+	# And undo puts the two nodes back, because a collapse is an edit like any other.
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+
 	# ---- no operating text below the floor, measured on the built editor -------------
 	# The token check in design_test proves the scale is sound; this proves the editor
 	# uses it. An override typed as a literal, or a legacy constant surviving in a
