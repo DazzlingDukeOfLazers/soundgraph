@@ -131,6 +131,19 @@ cases.push({ algorithm: 0, feedback: 0, name: 'DLY', kind: 'fade',
   ops: { 1: { coarse: 1, level: CARRIER_LEVEL } },
   lfo: { speed: 10, delay: 55, pmd: 99, pms: 7 } });
 
+// Algorithms 4 and 6 loop feedback *through* other operators (OP4->OP6 and
+// OP5->OP6). The oracle runs those loops open — fm_core.cc's "todo: more than one
+// op in a feedback loop"; FB_IN alone takes the pure path — and the import now
+// carries msfa's verbatim table so it runs them open too. These voices set
+// feedback 7, the loudest possible loop: under the old Dexed-style table edit
+// (self-feedback on OP6) they disagree with the oracle by tens of dB in the upper
+// harmonics, which is exactly the drift these cases exist to catch.
+cases.push({ algorithm: 3, feedback: 7, name: 'LOOP4',
+  ops: { 4: { coarse: 1, level: 80 }, 5: { coarse: 1, level: 85 },
+    6: { coarse: 1, level: 85 } } });
+cases.push({ algorithm: 5, feedback: 7, name: 'LOOP6',
+  ops: { 5: { coarse: 1, level: 80 }, 6: { coarse: 1, level: 85 } } });
+
 // Live velocity, held as a response curve: a lone full-sensitivity carrier struck
 // at four velocities, each engine's loudness taken relative to its own strike at
 // 100 (so absolute level scales cancel), and the responses must agree within

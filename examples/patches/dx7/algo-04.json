@@ -2,7 +2,7 @@
   "schema_version": 2,
   "metadata": {
     "name": "ALGO 04",
-    "description": "ALGO 04 — DX7 voice, algorithm 4, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: multi-op feedback loop approximated as self-feedback.",
+    "description": "ALGO 04 — DX7 voice, algorithm 4, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: the chip loops feedback OP4->OP6; runs open here, matching the oracle.",
     "author": "SoundGraph dx7-import (mapping)",
     "tags": [
       "fm",
@@ -149,8 +149,7 @@
         "attack": 0.0017,
         "decay": 2.132,
         "sustain": 0.125,
-        "release": 0.1677,
-        "feedback": 0.05731
+        "release": 0.1677
       }
     },
     {

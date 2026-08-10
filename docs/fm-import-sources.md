@@ -83,9 +83,14 @@ made audible.
   modulation, so tremolo alone is stated, not oracle-held. Velocity is live:
   sensitive operators ride NoteInput's velocity output through a squared-affine
   curve, exact at velocities 100 and 127, held to the oracle's response within
-  0.5 dB at 50 and 80 (dx7-ref grew a --velocity flag for exactly this). Pending:
-  the algorithm 4/6 multi-op loops, tremolo reaching the feedback loop, and
-  deep-feedback (fb 7 near full level) chaos parity.
+  0.5 dB at 50 and 80 (dx7-ref grew a --velocity flag for exactly this). The
+  algorithm 4/6 multi-op feedback loops run open, exactly as the oracle runs them:
+  msfa's own table marks them FB_IN/FB_OUT and its fm_core leaves them as a todo,
+  and our table had silently carried Dexed's 0xc1 edit (self-feedback on OP6),
+  disagreeing with the oracle by 22 dB in the upper harmonics at feedback 7 —
+  found when the loop cases were added to dx7-index-check, which now pin the open
+  loop. Pending: tremolo reaching the feedback loop, and deep-feedback (fb 7 near
+  full level) chaos parity.
 
 ### 3. OPN2 / YM2612 — Sega Genesis instruments (4-operator)
 

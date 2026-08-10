@@ -28,12 +28,13 @@
 //                LFO destinations; tremolo per Dexed's fork (the vendored oracle
 //                has no amplitude modulation, so tremolo alone is not oracle-held);
 //                live velocity as a squared-affine curve off NoteInput's velocity
-//                output, exact at the reference so nothing baked moved
-//   pending    — multi-op feedback loops (algorithms 4 and 6) fall back to
-//                self-feedback on the loop's driving op; feedback 7 on a
-//                near-full-level op period-doubles in msfa's fixed-point loop
-//                where our float loop stays period-1 (see dx7-index-check.mjs);
-//                tremolo does not reach the feedback loop
+//                output, exact at the reference so nothing baked moved; the
+//                algorithm 4/6 multi-op feedback loops run open, exactly as the
+//                oracle runs them (its own todo — the real chip's per-sample
+//                cross-operator path is representable in neither engine)
+//   pending    — feedback 7 on a near-full-level op period-doubles in msfa's
+//                fixed-point loop where our float loop stays period-1 (see
+//                dx7-index-check.mjs); tremolo does not reach the feedback loop
 //   measured   — the rate->seconds curves, against the vendored msfa oracle
 //   by ear     — the modulation index scale (INDEX_FULL)
 // Every voice records what was dropped in its own metadata.
@@ -48,12 +49,21 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const source = process.env.DX7_SOURCE ?? join(root, 'tools', 'dx7', 'banks');
 const target = process.env.DX7_TARGET ?? join(root, 'examples', 'patches', 'dx7');
 
-// msfa's FmCore::algorithms, verbatim. Byte layout: in-bus = (b>>4)&3, out-bus = b&3,
-// 0x04 = add to the bus (out-bus 0 with add = a carrier), 0xc0 = the feedback op.
+// msfa's FmCore::algorithms, verbatim — including algorithms 4 and 6, this time.
+// Byte layout: in-bus = (b>>4)&3, out-bus = b&3, 0x04 = add to the bus (out-bus 0
+// with add = a carrier), 0x40 = FB_IN, 0x80 = FB_OUT; only both together (0xc0)
+// is an op feeding itself back. Algorithms 4 and 6 are the two where the chip
+// loops feedback *through* other operators (OP4->OP6, OP5->OP6): msfa leaves that
+// loop open — fm_core.cc line 129, "todo: more than one op in a feedback loop",
+// FB_IN alone takes the pure path — and this table used to carry Dexed's edit
+// (0xc1 in place of 0x41), which bends the loop into self-feedback on OP6. That
+// made the import quietly disagree with the very oracle everything else here is
+// held to — by 22 dB in the upper harmonics at feedback 7 — so the verbatim bytes
+// are back and the open loop is pinned by dx7-index-check's loop cases.
 const ALGORITHMS = [
   [0xc1, 0x11, 0x11, 0x14, 0x01, 0x14], [0x01, 0x11, 0x11, 0x14, 0xc1, 0x14],
-  [0xc1, 0x11, 0x14, 0x01, 0x11, 0x14], [0xc1, 0x11, 0x94, 0x01, 0x11, 0x14],
-  [0xc1, 0x14, 0x01, 0x14, 0x01, 0x14], [0xc1, 0x94, 0x01, 0x14, 0x01, 0x14],
+  [0xc1, 0x11, 0x14, 0x01, 0x11, 0x14], [0x41, 0x11, 0x94, 0x01, 0x11, 0x14],
+  [0xc1, 0x14, 0x01, 0x14, 0x01, 0x14], [0x41, 0x94, 0x01, 0x14, 0x01, 0x14],
   [0xc1, 0x11, 0x05, 0x14, 0x01, 0x14], [0x01, 0x11, 0xc5, 0x14, 0x01, 0x14],
   [0x01, 0x11, 0x05, 0x14, 0xc1, 0x14], [0x01, 0x05, 0x14, 0xc1, 0x11, 0x14],
   [0xc1, 0x05, 0x14, 0x01, 0x11, 0x14], [0x01, 0x05, 0x05, 0x14, 0xc1, 0x14],
@@ -72,13 +82,17 @@ const ALGORITHMS = [
 // Runs the bus machine symbolically. Returns, in DX7 numbering (op 1..6):
 //   edges     — [from, to] modulation connections
 //   carriers  — ops that reach the output
-//   feedback  — the op the algorithm feeds back on itself
+//   feedback  — the op the algorithm feeds back on itself (0xc0: both FB bits)
+//   loop      — a multi-op feedback path {from, to} (FB_OUT on one op, FB_IN on
+//               another), which the oracle and therefore this import run open
 // ops[0] is OP6 and ops[5] is OP1, matching both msfa and the wire format.
 function decodeAlgorithm(bytes) {
   const buses = { 1: [], 2: [] };
   const carriers = [];
   const edges = [];
   let feedback = 0;
+  let loopIn = 0;
+  let loopOut = 0;
   for (let index = 0; index < 6; ++index) {
     const op = 6 - index;
     const flags = bytes[index];
@@ -86,6 +100,8 @@ function decodeAlgorithm(bytes) {
     const outBus = flags & 3;
     const add = (flags & 0x04) !== 0;
     if ((flags & 0xc0) === 0xc0) feedback = op;
+    else if ((flags & 0xc0) === 0x40) loopIn = op;
+    else if ((flags & 0xc0) === 0x80) loopOut = op;
     if (inBus !== 0) {
       for (const from of buses[inBus]) edges.push([from, op]);
     }
@@ -97,7 +113,8 @@ function decodeAlgorithm(bytes) {
       buses[outBus] = [op];
     }
   }
-  return { edges, carriers, feedback };
+  return { edges, carriers, feedback,
+    loop: loopIn > 0 && loopOut > 0 ? { from: loopOut, to: loopIn } : null };
 }
 
 // ---------------------------------------------------------------------------------
@@ -378,11 +395,17 @@ function operatorRatio(op) {
 function buildPatch(voice, bankName, voiceIndex) {
   const topology = decodeAlgorithm(ALGORITHMS[voice.algorithm]);
   const notes = [];
-  if ([4, 6].includes(voice.algorithm + 1) === false && topology.feedback === 0) {
+  if (topology.feedback === 0 && topology.loop === null) {
     notes.push('no feedback op in algorithm decode');
   }
-  if (voice.algorithm + 1 === 4 || voice.algorithm + 1 === 6) {
-    notes.push('multi-op feedback loop approximated as self-feedback');
+  if (topology.loop !== null && voice.feedbackLevel > 0) {
+    // The chip loops feedback through other operators here; a per-sample
+    // cross-node path is representable neither in this graph nor in the oracle
+    // (msfa's own todo), so the loop runs open on both. Dexed instead bends its
+    // algorithm table to self-feedback on the driving op — anyone wanting that
+    // growl can turn the operator module's exported feedback knob by hand.
+    notes.push(`the chip loops feedback OP${topology.loop.from}->OP`
+      + `${topology.loop.to}; runs open here, matching the oracle`);
   }
 
   // The voice's global pitch story: vibrato depth from PMD through the sensitivity
