@@ -89,8 +89,13 @@ made audible.
   and our table had silently carried Dexed's 0xc1 edit (self-feedback on OP6),
   disagreeing with the oracle by 22 dB in the upper harmonics at feedback 7 —
   found when the loop cases were added to dx7-index-check, which now pin the open
-  loop. Pending: tremolo reaching the feedback loop, and deep-feedback (fb 7 near
-  full level) chaos parity.
+  loop. Tremolo and velocity reach the feedback loop: the sine oscillator grew a
+  feedback input that multiplies its feedback parameter (bit-identical when
+  unconnected — goldens hold on native, WASM and the ESP32), the operator module
+  declares it as fb_mod, and the FBVEL case holds the velocity half to the oracle
+  at 0.32 dB (tremolo rides the identical wire but has no oracle). Pending:
+  deep-feedback (fb 7 near full level) chaos parity, and the loop's bite decaying
+  with the envelope (the parameter still holds the envelope's peak).
 
 ### 3. OPN2 / YM2612 — Sega Genesis instruments (4-operator)
 

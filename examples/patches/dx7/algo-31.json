@@ -91,6 +91,11 @@
           "name": "fm",
           "node": "osc",
           "port": "fm"
+        },
+        {
+          "name": "fb_mod",
+          "node": "osc",
+          "port": "feedback"
         }
       ],
       "outputs": [
@@ -561,6 +566,16 @@
       "to": {
         "node": "op3_vel",
         "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "vel7_curve",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6",
+        "port": "fb_mod"
       }
     },
     {

@@ -91,6 +91,11 @@
           "name": "fm",
           "node": "osc",
           "port": "fm"
+        },
+        {
+          "name": "fb_mod",
+          "node": "osc",
+          "port": "feedback"
         }
       ],
       "outputs": [

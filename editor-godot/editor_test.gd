@@ -1721,9 +1721,9 @@ func _initialize() -> void:
 	var instance_widget: GraphNode = main.widgets["op1"]
 	var declared_inputs: Array = main._port_list("op1", "inputs")
 	var declared_outputs: Array = main._port_list("op1", "outputs")
-	# note, gate, pm, and — since the stage-2 fidelity pass — fm for the voice's
-	# global pitch modulation.
-	check(declared_inputs.size() == 4 and declared_outputs.size() == 1,
+	# note, gate, pm, fm for the voice's pitch modulation, and fb_mod so tremolo
+	# and velocity can scale the feedback loop's bite.
+	check(declared_inputs.size() == 5 and declared_outputs.size() == 1,
 		"an instance wears the declared surface (%d in, %d out)"
 			% [declared_inputs.size(), declared_outputs.size()])
 

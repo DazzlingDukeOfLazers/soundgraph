@@ -68,6 +68,27 @@ constexpr ParameterDescriptor kOscParameters[] = {
 constexpr int kSineFeedback = 1;
 constexpr int kSineShape = 2;
 
+// The sine also gets one extra input the others lack, for the same reason it alone
+// has feedback: on the chips, the feedback displacement is the operator's
+// *gain-scaled* output, so anything that moves the operator's level — envelope,
+// tremolo, velocity — moves the bite of its feedback with it. The port multiplies
+// the feedback parameter; unconnected it multiplies by exactly 1 and the sample
+// arithmetic is bit-identical to before the port existed, which the golden vectors
+// hold. Indices 0-2 mirror kOscInputs exactly — OscillatorBase reads them by
+// position.
+constexpr PortDescriptor kSineInputs[] = {
+    {"frequency", SignalType::Control, "Hz", false, false,
+     "Pitch in hertz. Replaces the frequency parameter while connected."},
+    {"fm", SignalType::Control, "octaves", false, false,
+     "Frequency modulation in octaves. 1.0 is an octave up, -1.0 an octave down."},
+    {"pm", SignalType::Audio, "cycles", false, false,
+     "Phase modulation in cycles, added linearly. This is the FM of FM synthesis: "
+     "feed another oscillator in here to make sidebands, not vibrato."},
+    {"feedback", SignalType::Control, "", false, false,
+     "Multiplied with the feedback parameter. Connect an envelope here so the bite "
+     "follows the level, the way FM chips do."},
+};
+
 // The OPL2 waveform set: the same sine bent three cheap ways. Half keeps the positive
 // lobes, absolute rectifies, quarter keeps the rising quarter of each lobe. On the
 // chip these were nearly free — a mask on the table read — and that is exactly what
@@ -105,6 +126,9 @@ public:
         const float* frequency_in = context.inputs[0];
         const float* fm_in = context.inputs[1];
         const float* pm_in = context.inputs[2];
+        // Declared only by the sine; for Saw and Square the scheduler leaves every
+        // undeclared slot nullptr, so reading it here is safe and always null.
+        const float* feedback_in = context.inputs[3];
         float* out = context.outputs[0];
         const float base_frequency = parameter(kOscFrequency);
         const float nyquist = sample_rate_ * 0.5f;
@@ -135,7 +159,17 @@ public:
                 displaced = true;
             }
             if (feedback != 0.0f) {
-                displacement += feedback * 0.5f * (history_a_ + history_b_);
+                if (feedback_in != nullptr) {
+                    // The scale is clamped to [0, 4]: with the parameter capped at 2
+                    // the displacement stays within the same +-8 cycles the pm input
+                    // is held to, and wrap01 walks excess off one cycle at a time.
+                    const float scale = dsp::clampf(feedback_in[i], 0.0f, 4.0f);
+                    displacement += feedback * scale * 0.5f * (history_a_ + history_b_);
+                } else {
+                    // Kept verbatim: this exact expression is what the golden
+                    // vectors were rendered through.
+                    displacement += feedback * 0.5f * (history_a_ + history_b_);
+                }
                 displaced = true;
             }
             const float read_phase =
@@ -485,7 +519,7 @@ const NodeTypeDescriptor kSineOscillator = {
     "SineOscillator", "Sine Oscillator", "Sources",
     "A pure tone with no harmonics.",
     "sine|sin|pure tone|test tone|simple wave|fundamental|fm operator|feedback",
-    Slice<PortDescriptor>(kOscInputs),
+    Slice<PortDescriptor>(kSineInputs),
     Slice<PortDescriptor>(kAudioOut),
     Slice<ParameterDescriptor>(kSineParameters),
     false, NodeRole::Processor, false,

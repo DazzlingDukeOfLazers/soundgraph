@@ -144,6 +144,21 @@ cases.push({ algorithm: 3, feedback: 7, name: 'LOOP4',
 cases.push({ algorithm: 5, feedback: 7, name: 'LOOP6',
   ops: { 5: { coarse: 1, level: 80 }, 6: { coarse: 1, level: 85 } } });
 
+// Velocity reaching the feedback loop, held spectrally: a feedback-7 carrier with
+// full velocity sensitivity, struck softly. On the chip the loop displaces by the
+// gain-scaled output, so a soft strike thins the feedback bite along with the
+// level; the import routes its velocity curve into the sine's feedback input to
+// match. Without that wire the harmonic ladder renders at full-velocity bite and
+// disagrees by tens of dB — this is the oracle-held proxy for the whole
+// feedback-input path, tremolo included (tremolo rides the identical wire but has
+// no oracle to answer to). Struck at 50, not 60: the squared-affine velocity
+// curve is 11% hot at 60 (its documented worst spot), and feedback compounds that
+// up the ladder to 2.85 dB at H6; at 50 the curve crosses the table almost
+// exactly (0.156 vs 0.155), so this case measures the wire, not the known fit
+// error the VEL case already bounds.
+cases.push({ algorithm: 31, feedback: 7, name: 'FBVEL', velocity: 50,
+  ops: { 6: { coarse: 1, level: FEEDBACK_CARRIER_LEVEL, vel: 7 } } });
+
 // Live velocity, held as a response curve: a lone full-sensitivity carrier struck
 // at four velocities, each engine's loudness taken relative to its own strike at
 // 100 (so absolute level scales cancel), and the responses must agree within
@@ -282,7 +297,7 @@ for (const c of cases) {
 
   const oracleWav = join(scratch, `${id}-oracle.wav`);
   const oursWav = join(scratch, `${id}-ours.wav`);
-  renderPair(oracleWav, oursWav, 100);
+  renderPair(oracleWav, oursWav, c.velocity ?? 100);
 
   const oracle = readWav(oracleWav);
   const ours = readWav(oursWav);
