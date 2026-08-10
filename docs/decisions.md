@@ -725,3 +725,18 @@ So this last step cannot be automated from here. It needs a person to click the 
 The tap above is the way to read the answer when they do: it reports the peak amplitude
 actually reaching the speakers, rather than asking someone whether they think they heard
 something.
+
+## Schema-level modules: designed, reversing an earlier stance — 2026-08-10
+
+module_import.gd's header declared there would never be a sub-graph in the patch
+format, for two reasons that still bind: one file must run everywhere, and opening a
+patch must never resolve external links. docs/modules-design.md reverses the
+conclusion while keeping both reasons: definitions are inline (no links, ever) and
+patch-io flattens instances before dsp-core sees them (every target links the same
+patch-io, so "a second thing every target must understand" is one function in the one
+shared loader). What changed was measurement: the DX7 import made 33-node documents,
+the modular layout recovered readability up to its packing floor (~68%), and the
+repetition the layout has to rediscover geometrically is knowledge the importer had
+and the format could not hold. A module is a notation, like a loop is to its unrolled
+body — schema_version 2 only when used, byte-identical flattened audio as the stage-1
+exit test.
