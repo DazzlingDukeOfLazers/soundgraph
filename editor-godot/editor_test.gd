@@ -1447,33 +1447,199 @@ func _initialize() -> void:
 	for port in ports_at_full:
 		port_spots_at_full.append(node_widget.get_input_port_position(port))
 
+	# ---- the acceptance tests for semantic zoom -------------------------------------
+	#
+	# Two rules, both measured in real pixels rather than in stylesheet pixels, because
+	# the canvas is the one place in the application where those differ: GraphEdit scales
+	# its nodes, so a label that says 16px arrives at 10.4 at 65% and a test that reads
+	# the declaration would call that fine.
+	#
+	#   1. no operational text reaches the reader below its minimum
+	#   2. no control outlives the words that say what it is
+	#
+	# The second one is the regression. This suite used to assert its exact opposite —
+	# "reduced detail keeps the sliders and hides the words" — which is how the 65% view
+	# came to be a node of unlabelled grooves.
+	# "survives" is the other half of the bargain, and the half a decluttering rule can
+	# cheat on: hiding everything satisfies "no control without a label" perfectly. Each
+	# band therefore also names what the reader must still be receiving, in real pixels.
+	var levels := [
+		{"zoom": 1.00, "level": main.PatchGraph.Detail.FULL, "name": "100%",
+			"survives": ["parameter", "value", "port"], "controls": true},
+		{"zoom": 0.75, "level": main.PatchGraph.Detail.COMPACT, "name": "75%",
+			"survives": ["parameter", "value", "port"], "controls": false},
+		{"zoom": 0.65, "level": main.PatchGraph.Detail.COMPACT, "name": "65%",
+			"survives": ["parameter", "value", "port"], "controls": false},
+		{"zoom": 0.50, "level": main.PatchGraph.Detail.SUMMARY, "name": "50%",
+			"survives": ["port"], "controls": false},
+		{"zoom": 0.30, "level": main.PatchGraph.Detail.TOPOLOGY, "name": "30%",
+			"survives": [], "controls": false},
+	]
+	for band in levels:
+		# Set from full detail each time so the hysteresis is not being asked to climb
+		# down several bands at once; the wheel cannot do that either.
+		main.graph_edit.zoom = 1.0
+		main.graph_edit._update_detail()
+		main.graph_edit.zoom = band["zoom"]
+		main.graph_edit._update_detail()
+		main._apply_detail(main.graph_edit.detail)
+		for i in 3:
+			await process_frame
+		check(main.graph_edit.detail == band["level"],
+			"%s selects the %s level of detail (got %d)"
+				% [band["name"], band["name"], main.graph_edit.detail])
+
+		var zoom_now: float = main.graph_edit.zoom
+		var undersized := []
+		var unlabelled := 0
+		var labelled_controls := 0
+		var reaching := {}
+		for id in main.widgets:
+			var node: GraphNode = main.widgets[id]
+			for label in main.PatchGraph.ScreenText._marked(node):
+				var got: float = main.PatchGraph.ScreenText.screen_size(label, zoom_now)
+				var kind := str(label.get_meta("screen_kind", ""))
+				if got > 0.0:
+					reaching[kind] = int(reaching.get(kind, 0)) + 1
+				# 0 means the reader is not being shown it at all, which is always a
+				# legal answer — dropping information is what a level of detail is for.
+				# Showing it too small never is.
+				if got > 0.0 and got < float(label.get_meta("screen_min")) - 0.01:
+					undersized.append("%s %.1fpx" % [label.text, got])
+			# Rule 2, per row: a visible control whose label is not reaching the reader.
+			for child in node.get_children():
+				var row := child as Control
+				if row == null or str(row.get_meta("row", "")) != "parameter" \
+						or not row.is_visible_in_tree():
+					continue
+				var control_showing := false
+				for part in row.get_children():
+					if (part is HSlider or part is OptionButton) \
+							and (part as Control).is_visible_in_tree():
+						control_showing = true
+				if not control_showing:
+					continue
+				var name_label := row.get_meta("name_label", null) as Label
+				var words: float = 0.0 if name_label == null else \
+					main.PatchGraph.ScreenText.screen_size(name_label, zoom_now)
+				if words <= 0.0:
+					unlabelled += 1
+				else:
+					labelled_controls += 1
+		check(undersized.is_empty(),
+			"%s renders no operational text under its minimum (%s)"
+				% [band["name"], "none" if undersized.is_empty()
+					else ", ".join(undersized.slice(0, 3))])
+		check(unlabelled == 0,
+			"%s shows no control without its label (%d unlabelled, %d labelled)"
+				% [band["name"], unlabelled, labelled_controls])
+
+		# And the half that stops "hide everything" from being a passing grade.
+		var missing := []
+		for kind in band["survives"]:
+			if int(reaching.get(kind, 0)) == 0:
+				missing.append(str(kind))
+		check(missing.is_empty(),
+			"%s still delivers %s (missing %s)"
+				% [band["name"], ", ".join(band["survives"]) if not band["survives"].is_empty()
+					else "nothing but identity and wiring",
+					"none" if missing.is_empty() else ", ".join(missing)])
+		var controls_showing := labelled_controls > 0
+		check(controls_showing == band["controls"],
+			"%s %s the controls (%d showing)"
+				% [band["name"], "keeps" if band["controls"] else "puts away",
+					labelled_controls])
+
+	# The same rule stated as the regression it is, rather than as a property of one
+	# zoom: sweeping the whole range must never produce a groove with nothing saying
+	# what it does. This is the check that would have caught the old behaviour.
+	var worst_unlabelled := 0
+	for step in 16:
+		main.graph_edit.zoom = 1.0
+		main.graph_edit._update_detail()
+		main.graph_edit.zoom = 1.0 - float(step) * 0.05
+		main.graph_edit._update_detail()
+		main._apply_detail(main.graph_edit.detail)
+		await process_frame
+		for id in main.widgets:
+			var node: GraphNode = main.widgets[id]
+			for child in node.get_children():
+				var row := child as Control
+				if row == null or str(row.get_meta("row", "")) != "parameter" \
+						or not row.is_visible_in_tree():
+					continue
+				var showing := false
+				for part in row.get_children():
+					if (part is HSlider or part is OptionButton) \
+							and (part as Control).is_visible_in_tree():
+						showing = true
+				if not showing:
+					continue
+				var words := row.get_meta("name_label", null) as Label
+				if words == null or main.PatchGraph.ScreenText.screen_size(
+						words, main.graph_edit.zoom) <= 0.0:
+					worst_unlabelled += 1
+	check(worst_unlabelled == 0,
+		"across the whole zoom range no control ever loses its label (%d found)"
+			% worst_unlabelled)
+
+	# Hit targets are screen-space too. A port hotzone is a theme constant read in graph
+	# space, so without compensation the thing the pointer has to land on shrinks with
+	# everything else — the one part of a node that is *only* a target and cannot be read
+	# instead.
+	var smallest_target := 1e9
+	for step in 10:
+		main.graph_edit.zoom = 1.0 - float(step) * 0.07
+		main.graph_edit._update_hit_targets()
+		await process_frame
+		smallest_target = minf(smallest_target,
+			float(main.graph_edit.get_theme_constant("port_hotzone_outer_extent"))
+				* main.graph_edit.zoom)
+	check(smallest_target >= float(main.PatchGraph.PORT_TARGET_MIN) - 0.51,
+		"port hit targets hold their real size as the canvas zooms (%.1fpx smallest)"
+			% smallest_target)
+
+	# UI scale and graph zoom are different questions — "how much do I want to see" and
+	# "how big must things be for me to read them" — and multiplying them into one number
+	# is how a reader who asked for larger text gets it taken away by zooming out. The
+	# band must depend on the zoom alone, and the larger scale must genuinely arrive.
+	var scale_before: int = Design.ui_scale
+	var band_at_comfortable: int = main.PatchGraph.level_for(0.65)
+	Design.ui_scale = Design.Scale.XL
+	await main._rebuild_view()
+	main.graph_edit.zoom = 0.65
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	for i in 3:
+		await process_frame
+	check(main.PatchGraph.level_for(0.65) == band_at_comfortable,
+		"the level of detail answers to the zoom alone, not to the UI scale")
+	var xl_biggest := 0.0
+	for id in main.widgets:
+		for label in main.PatchGraph.ScreenText._marked(main.widgets[id]):
+			if str(label.get_meta("screen_kind", "")) == "parameter":
+				xl_biggest = maxf(xl_biggest,
+					main.PatchGraph.ScreenText.screen_size(label, 0.65))
+	check(xl_biggest > float(Design.MIN_SCREEN_LABEL),
+		"and a reader who asked for XL text gets more than the minimum at 65%% (%.1fpx)"
+			% xl_biggest)
+	Design.ui_scale = scale_before
+	await main._rebuild_view()
+	await process_frame
+	# A rebuild frees every widget, so anything held from before it is a dangling
+	# reference — and a script error inside _initialize skips the quit() at the end,
+	# which is why that mistake presents as a hung headless run rather than as a
+	# failure. Re-taken here rather than debugged again later.
+	node_widget = main.widgets["filter"]
+
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
 	main.graph_edit.zoom = 0.5
 	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
 	await process_frame
-	check(main.graph_edit.detail == main.PatchGraph.Detail.REDUCED,
-		"zooming out drops to reduced detail (level %d)" % main.graph_edit.detail)
-
-	# The controls out-survive the words. The floor is a rule about text — a slider is
-	# geometry — so REDUCED keeps every slider and hides every word beside it. The
-	# first version hid whole rows, and the fitted default view was a wall of empty
-	# aluminium that read as broken rather than as zoomed out.
-	var sliders_shown := 0
-	var words_shown := 0
-	for child in node_widget.get_children():
-		var row := child as Control
-		if row == null or str(row.get_meta("row", "")) != "parameter" or not row.visible:
-			continue
-		for part in row.get_children():
-			if part is HSlider and (part as Control).is_visible_in_tree():
-				sliders_shown += 1
-			elif (part is Label or part is ValueField) \
-					and (part as Control).is_visible_in_tree():
-				words_shown += 1
-	check(sliders_shown > 0 and words_shown == 0,
-		"reduced detail keeps the sliders and hides the words (%d sliders, %d words)"
-			% [sliders_shown, words_shown])
 	check(node_widget.get_combined_minimum_size().y <= full_height,
-		"and the node does not grow for it (%.0f, was %.0f)"
+		"and the node does not grow as detail drops (%.0f, was %.0f)"
 			% [node_widget.get_combined_minimum_size().y, full_height])
 
 	# A rebuild while zoomed out has to land in the level already in force. Fresh
@@ -1484,17 +1650,18 @@ func _initialize() -> void:
 	await main._rebuild_view()
 	await process_frame
 	var fresh: GraphNode = main.widgets["filter"]
-	var fresh_words := 0
+	var fresh_controls := 0
 	for child in fresh.get_children():
 		var row := child as Control
 		if row == null or str(row.get_meta("row", "")) != "parameter":
 			continue
 		for part in row.get_children():
-			if (part is Label or part is ValueField) and (part as Control).is_visible_in_tree():
-				fresh_words += 1
-	check(fresh_words == 0,
-		"rebuilding while zoomed out respects the level in force (%d words showing)"
-			% fresh_words)
+			if (part is HSlider or part is OptionButton) \
+					and (part as Control).is_visible_in_tree():
+				fresh_controls += 1
+	check(fresh_controls == 0,
+		"rebuilding while zoomed out respects the level in force (%d controls showing)"
+			% fresh_controls)
 	node_widget = fresh
 
 	main.graph_edit.zoom = 0.3
@@ -1535,14 +1702,20 @@ func _initialize() -> void:
 		"and not one of them has moved (%d of %d shifted)" % [shifted, ports_now])
 
 	# Hysteresis: a zoom sitting on a threshold must not flip level on every jitter.
+	# Asymmetric on purpose — detail drops the moment it must, because staying is how
+	# text ends up under its minimum, and only climbs back once clear of the boundary.
 	main.graph_edit.zoom = 0.40
 	main.graph_edit._update_detail()
 	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
-		"a nudge back over the boundary does not flip the level straight away")
+		"a nudge back onto the boundary does not flip the level straight away")
 	main.graph_edit.zoom = 0.50
 	main.graph_edit._update_detail()
-	check(main.graph_edit.detail == main.PatchGraph.Detail.REDUCED,
+	check(main.graph_edit.detail == main.PatchGraph.Detail.SUMMARY,
 		"but a real move does")
+	main.graph_edit.zoom = 0.39
+	main.graph_edit._update_detail()
+	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
+		"and dropping detail needs no margin at all")
 
 	# Zoom hides parameter rows and so does the "n more" disclosure. Coming back to full
 	# detail must not un-fold the rows the reader chose to hide — two features writing the

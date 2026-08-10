@@ -89,30 +89,69 @@ var grid_major_colour := Color(1, 1, 1, GRID_RESTING[2])
 ##
 ## Zooming out of a patcher normally just makes everything smaller, so at the point where
 ## you can finally see the whole graph none of it is readable and the view is useless for
-## the one thing it is good for — seeing the shape of the thing. Detail is dropped in
-## stages instead: parameters go first, then port names, leaving titles and topology.
+## the one thing it is good for — seeing the shape of the thing.
+##
+## A map is the model, not a photograph. Zooming out of a map does not shrink the word
+## "Chicago" until it is a smudge; the representation changes, and the words that survive
+## stay readable. So each band is a different *drawing* of a node rather than the same
+## drawing at a smaller size, and the words that survive are pinned to screen-space
+## minimums by ScreenText below.
+##
+##   FULL      everything, edited in place
+##   COMPACT   the words and the numbers; the sliders give up their room to the words
+##   SUMMARY   identity, ports and port names — no control panel
+##   TOPOLOGY  identity and wiring, which is all anyone is reading at this size
 ##
 ## The thresholds have hysteresis. Without it a zoom sitting exactly on a boundary makes
 ## every node in the graph flicker between two layouts as the mouse wheel jitters.
-enum Detail { FULL, REDUCED, TOPOLOGY }
+enum Detail { FULL, COMPACT, SUMMARY, TOPOLOGY }
 
-## The full-detail boundary is derived, not chosen: parameters hide at the zoom where
-## their text would render below Design.TYPE_FLOOR. The old hand-picked 0.68 let a 16px
-## value shrink to 10.9 rendered pixels while the design system elsewhere promised
-## nothing operational below 14 — the floor stopped at the canvas edge, and the canvas
-## is where the most-read text in the application lives. Geometric zoom does not get to
-## produce sizes the type scale is not allowed to ask for; below the boundary the text
-## is hidden rather than shrunk, which is the LOD's whole job.
+## The full-detail boundary is derived, not chosen: it is the zoom at which a parameter
+## value stops being legible on its own, so it is also the zoom at which the node stops
+## being a control panel that can be read without help. The old hand-picked 0.68 let a
+## 16px value shrink to 10.9 rendered pixels while the design system elsewhere promised
+## nothing operational below 14 — the floor stopped at the canvas edge, and the canvas is
+## where the most-read text in the application lives.
+##
+## Below here the words do not shrink and are not dropped: ScreenText draws them at their
+## own minimum instead. What the boundary marks is the end of *editing in place* — the
+## point past which the controls are too small to aim at and their room is better spent
+## on the words that say what they are.
 static func _full_floor() -> float:
 	return float(Design.TYPE_FLOOR) / float(Design.SIZE_NUMERIC)
 
-const DETAIL_DOWN_DEEP := 0.38      ## below this even port names go
-const DETAIL_UP := [0.95, 0.46]     ## hysteresis: come back above this to return
+## Where the control panel stops being worth drawing, and where the node stops being a
+## panel at all. Unlike the FULL boundary these are not derivable from the type scale —
+## below FULL the words are screen-space pinned and stay legible at any zoom, so what
+## ends each band is *room*, not legibility: at 0.60 a compensated label has stopped
+## fitting beside a compensated value, and at 0.40 the node is too small to hold a row
+## of text at all without the words spilling over their own node.
+const COMPACT_FLOOR := 0.60
+const SUMMARY_FLOOR := 0.40
+
+## Zoom must clear a boundary by this much before detail comes *back*, so a wheel click
+## resting on a threshold does not flicker every node in the graph between two layouts.
+const DETAIL_HYSTERESIS := 0.04
+
+## Port hit targets, in real pixels, for the same reason the type has them.
+##
+## GraphEdit reads these extents in graph space, so they shrink with the zoom exactly as
+## the text does: at 65% an 18px outer extent is a 11.7px target, which is smaller than
+## the marker looks and well under anything aimable. Counter-scaled below so what the
+## pointer has to hit stays the size the design system asked for however far out the
+## canvas is — geometry may shrink, and the things a hand has to land on may not.
+##
+## Horizontal extents only, which is why growing them cannot make two stacked ports
+## fight: their vertical share is set by the row pitch, not by these.
+const PORT_HOTZONE_INNER := 14
+const PORT_HOTZONE_OUTER := 18
+const PORT_TARGET_MIN := 24
 
 signal detail_changed(level: int)
 
 var detail: int = Detail.FULL
 
+var _hotzone_zoom := -1.0
 var _grid_emphasis := 0.0
 var _grid_target := 0.0
 
@@ -631,7 +670,7 @@ signal port_hovered(widget_name: String, side: String, index: int)
 
 var _overlay: CrossingOverlay
 var _glow: GlowOverlay
-var _titles: TitleOverlay
+var _titles: ScreenText
 
 
 func _ready() -> void:
@@ -645,7 +684,7 @@ func _ready() -> void:
 	_glow = GlowOverlay.new()
 	_glow.graph = self
 	add_child(_glow)
-	_titles = TitleOverlay.new()
+	_titles = ScreenText.new()
 	_titles.graph = self
 	add_child(_titles)
 	begin_node_move.connect(func() -> void: _grid_target = 1.0)
@@ -655,6 +694,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_detail()
+	_update_hit_targets()
 	if is_equal_approx(_grid_emphasis, _grid_target):
 		return
 	var step := delta / GRID_FADE
@@ -817,17 +857,49 @@ func clear_waypoints() -> void:
 
 ## Polled rather than driven by a signal, because GraphEdit does not emit one for
 ## zoom — and the wheel changes it without going through any code of ours.
+## The band a given zoom belongs to, with no memory. Detail rises as the number falls:
+## FULL is 0, TOPOLOGY is 3.
+static func level_for(z: float) -> int:
+	if z >= _full_floor():
+		return Detail.FULL
+	if z >= COMPACT_FLOOR:
+		return Detail.COMPACT
+	if z >= SUMMARY_FLOOR:
+		return Detail.SUMMARY
+	return Detail.TOPOLOGY
+
+
+## Keeps the port hotzones a constant size on the glass. Called with _update_detail, and
+## it writes only when the zoom has actually moved: a theme override is a notification to
+## every child, which is not something to do sixty times a second for no change.
+func _update_hit_targets() -> void:
+	if is_equal_approx(zoom, _hotzone_zoom):
+		return
+	_hotzone_zoom = zoom
+	var compensation: float = float(PORT_TARGET_MIN) / maxf(zoom, 0.05)
+	add_theme_constant_override("port_hotzone_outer_extent",
+		int(roundf(maxf(float(Design.scale(PORT_HOTZONE_OUTER)), compensation))))
+	# The inner extent reaches back across the node, so it is allowed to grow but not to
+	# run off toward the far side of a narrow one.
+	add_theme_constant_override("port_hotzone_inner_extent",
+		int(roundf(minf(maxf(float(Design.scale(PORT_HOTZONE_INNER)), compensation),
+			60.0))))
+
+
 func _update_detail() -> void:
+	var plain := level_for(zoom)
 	var level := detail
-	if detail == Detail.FULL and zoom < _full_floor():
-		level = Detail.REDUCED
-	elif detail == Detail.REDUCED:
-		if zoom < DETAIL_DOWN_DEEP:
-			level = Detail.TOPOLOGY
-		elif zoom > DETAIL_UP[0]:
-			level = Detail.FULL
-	elif detail == Detail.TOPOLOGY and zoom > DETAIL_UP[1]:
-		level = Detail.REDUCED
+	if plain > detail:
+		# Zoomed out past a boundary. Detail drops the moment it has to: staying is
+		# how text ends up under its minimum, which is the one thing this may not do.
+		level = plain
+	elif plain < detail:
+		# Zoomed in. Detail only comes back once the zoom is clear of the boundary by
+		# the hysteresis margin — asked at the stricter zoom, so sitting exactly on a
+		# threshold answers "stay".
+		var stricter := level_for(zoom - DETAIL_HYSTERESIS)
+		if stricter < detail:
+			level = stricter
 	if level == detail:
 		return
 	detail = level
@@ -1115,19 +1187,26 @@ func _update_cable_hover(local_point: Vector2) -> void:
 	queue_redraw()
 
 
-## Node titles at a readable size while the canvas is zoomed out.
+## Graph text at a readable size while the canvas is zoomed out.
 ##
-## GraphEdit scales everything geometrically, so at 55% a 17px title rendered at 9.4px —
-## under the type floor, on the only text left once the level-of-detail has hidden the
-## parameters. The first fix grew the labels' logical size to compensate, and the port
-## test refused it, correctly: a bigger title makes a taller titlebar, which pushes every
-## port row down, and a node's geometry must not depend on how far out somebody is
-## standing. So the titles move up here instead — the same screen-space trick as the
-## glow, drawn over the graph without being part of it. While this layer is on, the real
-## labels are made transparent (not hidden: collapsing them would change the titlebar
-## height, which is the exact thing being avoided) and every title is drawn at the floor,
-## which is the size the type system says legible starts at.
-class TitleOverlay extends Control:
+## This is the layer that makes "world-space geometry, screen-space typography" true
+## rather than aspirational. GraphEdit scales everything geometrically, so at 65% a 16px
+## parameter label arrives as 10.4 real pixels — the stylesheet still says 16 and the
+## reader still cannot read it. Checking the declared size proves nothing here; what
+## matters is what lands on the glass.
+##
+## Counter-scaling the labels in place was tried first and the port test refused it,
+## correctly: a bigger label makes a taller row, which moves every port under it, and a
+## node's geometry must not depend on how far out somebody is standing. Cables would
+## crawl as you zoomed. So the words move *up* here instead — drawn over the graph
+## without being part of it, at their own minimum, at the place their label sits. While
+## a label is being drawn up here its real one is made transparent rather than hidden,
+## because hiding it would collapse the row and change the very geometry this exists to
+## protect.
+##
+## Any Label carrying a `screen_min` meta joins in, so marking a new piece of node text
+## as operational is one line at the place it is built rather than a case in here.
+class ScreenText extends Control:
 	var graph: GraphEdit
 	var _fingerprint := ""
 
@@ -1136,11 +1215,6 @@ class TitleOverlay extends Control:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		# Above the nodes, under the glow.
 		z_index = 99
-
-	## On when the geometric title would render below the floor.
-	func _active() -> bool:
-		return graph.zoom * float(Design.type(Design.SIZE_NODE_TITLE)) \
-			< float(Design.TYPE_FLOOR) - 0.5
 
 	func _process(_delta: float) -> void:
 		if graph == null:
@@ -1153,27 +1227,161 @@ class TitleOverlay extends Control:
 	func _draw() -> void:
 		if graph == null:
 			return
-		var active := _active()
 		for child in graph.get_children():
 			var node := child as GraphNode
 			if node == null or not node.visible:
 				continue
-			var label := node.get_meta("title_label", null) as Label
-			if label != null:
-				label.self_modulate.a = 0.0 if active else 1.0
-			if not active:
+			_draw_title(node)
+			_draw_labels(node)
+
+	## The title is drawn from the node rather than from its Label because the titlebar
+	## is GraphNode's own furniture: its height is what the port rows are measured from,
+	## so it is the one place where a grown label would cost the most.
+	func _draw_title(node: GraphNode) -> void:
+		var size := Design.type(Design.SIZE_NODE_TITLE)
+		var active := Design.below_screen_minimum(size, graph.zoom,
+			Design.MIN_SCREEN_NODE_TITLE)
+		var label := node.get_meta("title_label", null) as Label
+		if label != null:
+			label.self_modulate.a = 0.0 if active else 1.0
+		if not active:
+			return
+
+		var top_left: Vector2 = node.position_offset * graph.zoom - graph.scroll_offset
+		var bar := node.get_titlebar_hbox()
+		var bar_height: float = (bar.size.y if bar != null else 30.0) * graph.zoom
+		var room: float = node.size.x * graph.zoom - 12.0
+		if room < 20.0:
+			return
+		var font := Design.font(Design.WEIGHT_SEMIBOLD)
+		var drawn := Design.MIN_SCREEN_NODE_TITLE
+		var baseline := top_left + Vector2(6.0,
+			(bar_height + font.get_ascent(drawn) - font.get_descent(drawn)) * 0.5)
+		draw_string(font, baseline, _elided(font, node.title, drawn, room),
+			HORIZONTAL_ALIGNMENT_LEFT, room, drawn, Design.INK_BRIGHT)
+
+	## Text cut to fit, with an ellipsis saying so.
+	##
+	## A title held at 15px inside a node three hundred pixels narrower than that title
+	## simply ran off its own end, and a word that stops mid-letter reads as a rendering
+	## fault rather than as a name too long for the box. The character is the difference
+	## between "this is broken" and "there is more here than fits".
+	static func _elided(font: Font, text: String, size: int, room: float) -> String:
+		if font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x <= room:
+			return text
+		var cut := text
+		while cut.length() > 1:
+			cut = cut.substr(0, cut.length() - 1)
+			if font.get_string_size(cut + "…", HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+					size).x <= room:
+				return cut.strip_edges(false, true) + "…"
+		return "…"
+
+	## How a marked label is reaching the reader.
+	##
+	##   IN_PLACE     the node's own label, big enough on its own
+	##   COMPENSATED  drawn up here at the minimum instead
+	##   NO_ROOM      its box is too narrow to hold it honestly, so it is not drawn
+	enum Fit { IN_PLACE, COMPENSATED, NO_ROOM }
+
+	## The whole screen-space typography decision, in one function.
+	##
+	## Split out from the drawing on purpose: the acceptance tests have to be able to ask
+	## what the reader actually receives, and a test that reasons about font sizes on its
+	## own is a second implementation of this rule that can agree with the stylesheet
+	## while the screen disagrees with both. Asking the same function the renderer asks
+	## is the only version of the check that means anything.
+	static func fit_for(label: Label, zoom: float) -> Fit:
+		var minimum: int = int(label.get_meta("screen_min", Design.TYPE_FLOOR))
+		if not Design.below_screen_minimum(label.get_theme_font_size("font_size"),
+				zoom, minimum):
+			return Fit.IN_PLACE
+		var font := label.get_theme_font("font")
+		if font == null:
+			return Fit.IN_PLACE
+		var needs := font.get_string_size(label.text, label.horizontal_alignment, -1.0,
+			minimum).x
+		return Fit.NO_ROOM if needs > room_for(label) else Fit.COMPENSATED
+
+	## The room a label may grow into, in real pixels.
+	##
+	## Not its own box. A shrink-wrapped label — every port name is one — is sized to its
+	## text at the *declared* size, so once the zoom has shrunk that box it is by
+	## definition too small to hold the same text at the minimum: measuring against it
+	## refuses precisely the compensations that most need making, and the survival test
+	## caught exactly that (port names reaching nobody from 75% down while the level of
+	## detail believed it was showing them).
+	##
+	## What must not be overrun is the neighbour, so the bound is the nearest visible
+	## sibling in the direction the text grows, and the parent's edge when there is none.
+	static func room_for(label: Label) -> float:
+		var rect := label.get_global_rect()
+		var parent := label.get_parent() as Control
+		if parent == null:
+			return rect.size.x
+		var bounds := parent.get_global_rect()
+		var rightward := label.horizontal_alignment != HORIZONTAL_ALIGNMENT_RIGHT
+		var limit: float = bounds.end.x if rightward else bounds.position.x
+		for sibling in parent.get_children():
+			var other := sibling as Control
+			if other == null or other == label or not other.is_visible_in_tree():
+				continue
+			var edge := other.get_global_rect()
+			if rightward and edge.position.x >= rect.end.x - 0.5:
+				limit = minf(limit, edge.position.x)
+			elif not rightward and edge.end.x <= rect.position.x + 0.5:
+				limit = maxf(limit, edge.end.x)
+		var room: float = limit - rect.position.x if rightward else rect.end.x - limit
+		return maxf(rect.size.x, room)
+
+	## What the reader receives, in real pixels — 0 when the label is not reaching them
+	## at all. The tests' unit of measurement.
+	static func screen_size(label: Label, zoom: float) -> float:
+		if not label.is_visible_in_tree():
+			return 0.0
+		match fit_for(label, zoom):
+			Fit.IN_PLACE:
+				return float(label.get_theme_font_size("font_size")) * zoom
+			Fit.COMPENSATED:
+				return float(label.get_meta("screen_min", Design.TYPE_FLOOR))
+			_:
+				return 0.0
+
+	## Every marked label inside the node, at its own screen rect.
+	##
+	## The rect comes from the label itself, so the node's layout keeps deciding where
+	## words go and this only decides how big they are. A label whose own box has become
+	## too narrow to hold its text at the minimum says nothing rather than saying it over
+	## the top of its neighbour: overlapping words are worse than a band that has run out
+	## of room, and running out is what the next band down is for.
+	func _draw_labels(node: GraphNode) -> void:
+		for label in _marked(node):
+			if not label.is_visible_in_tree():
+				continue
+			var how := fit_for(label, graph.zoom)
+			label.self_modulate.a = 1.0 if how == Fit.IN_PLACE else 0.0
+			if how != Fit.COMPENSATED:
 				continue
 
-			var scale_now: float = graph.zoom
-			var top_left: Vector2 = node.position_offset * scale_now - graph.scroll_offset
-			var bar := node.get_titlebar_hbox()
-			var bar_height: float = (bar.size.y if bar != null else 30.0) * scale_now
-			var size := Design.TYPE_FLOOR
-			var room: float = node.size.x * scale_now - 12.0
-			if room < 20.0:
-				continue
-			var font := Design.font(Design.WEIGHT_SEMIBOLD)
-			var baseline := top_left + Vector2(6.0,
-				(bar_height + font.get_ascent(size) - font.get_descent(size)) * 0.5)
-			draw_string(font, baseline, node.title,
-				HORIZONTAL_ALIGNMENT_LEFT, room, size, Design.INK_BRIGHT)
+			var minimum: int = int(label.get_meta("screen_min", Design.TYPE_FLOOR))
+			var font := label.get_theme_font("font")
+			var rect := label.get_global_rect()
+			var room := room_for(label)
+			# Right-aligned text is drawn from where its box *ends*, so the extra room
+			# it was granted opens to the left where its neighbour is not.
+			var left: float = rect.position.x if label.horizontal_alignment \
+				!= HORIZONTAL_ALIGNMENT_RIGHT else rect.end.x - room
+			var local := Vector2(left, rect.position.y) - global_position
+			var baseline := local + Vector2(0.0,
+				(rect.size.y + font.get_ascent(minimum) - font.get_descent(minimum)) * 0.5)
+			draw_string(font, baseline, label.text, label.horizontal_alignment,
+				room, minimum, label.get_theme_color("font_color"))
+
+	static func _marked(from: Node, into: Array[Label] = []) -> Array[Label]:
+		for child in from.get_children():
+			var label := child as Label
+			if label != null and label.has_meta("screen_min"):
+				into.append(label)
+			if child.get_child_count() > 0:
+				_marked(child, into)
+		return into

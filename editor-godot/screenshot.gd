@@ -101,6 +101,17 @@ func _initialize() -> void:
 		for i in 4:
 			await process_frame
 
+	# A twelfth argument sets the graph zoom, because the level-of-detail work is the one
+	# part of this editor whose whole subject is what a node looks like at a given zoom,
+	# and until now there was no way to photograph that — the measurements said 14.0px
+	# and only a picture says whether the result reads as an instrument.
+	if arguments.size() > 11 and arguments[11] != "":
+		main.graph_edit.zoom = float(arguments[11])
+		main.graph_edit._update_detail()
+		main._apply_detail(main.graph_edit.detail)
+		for i in 8:
+			await process_frame
+
 	var image := root.get_texture().get_image()
 	var status := image.save_png(output)
 	if status == OK:

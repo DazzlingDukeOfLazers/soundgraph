@@ -84,6 +84,12 @@ func _ready() -> void:
 	_label.add_theme_font_override("font", Design.numeric_font())
 	_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NUMERIC))
 	_label.add_theme_color_override("font_color", Design.INK_BRIGHT)
+	# A parameter's value is operational text, so it is pinned to a readable size in
+	# screen space when this field is living on a zoomed-out graph canvas. Marked on the
+	# inner label rather than on the field, because the field is a control and what has
+	# to stay legible is the word inside it. See PatchGraph.ScreenText.
+	_label.set_meta("screen_min", Design.MIN_SCREEN_LABEL)
+	_label.set_meta("screen_kind", "value")
 	add_child(_label)
 
 	# A ring, because it can hold focus now and a focus you cannot see is a focus that

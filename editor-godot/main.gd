@@ -1883,6 +1883,11 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 	# later without the category having to move when they arrive.
 	tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	# Metadata, and the first thing decluttering drops: it is the one piece of node text
+	# that is *not* pinned to a screen minimum, because the honest answer when there is
+	# no room for a category is to stop saying the category. The level of detail hides
+	# it below FULL rather than drawing it at nine pixels.
+	widget.set_meta("category_tag", tag)
 	titlebar.add_child(tag)
 
 
@@ -1949,6 +1954,11 @@ func _port_label(port: Dictionary, align_right: bool) -> Control:
 	name_label.text = str(port["name"])
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_label.set_meta("port_label", true)
+	# Operational: what is plugged in here is not guessable from the colour alone, so
+	# the name is pinned to a readable size in screen space rather than shrinking with
+	# the node. See PatchGraph.ScreenText.
+	name_label.set_meta("screen_min", Design.MIN_SCREEN_LABEL)
+	name_label.set_meta("screen_kind", "port")
 	row.add_child(name_label)
 
 	# Name then unit, always — including on the right-hand side, where the first
@@ -1973,6 +1983,8 @@ func _unit_label(unit: String) -> Label:
 	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_UNIT))
 	label.add_theme_color_override("font_color", Design.INK_SECOND)
 	label.set_meta("port_label", true)
+	label.set_meta("screen_min", Design.MIN_SCREEN_UNIT)
+	label.set_meta("screen_kind", "unit")
 	return label
 
 
@@ -2053,6 +2065,11 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
 	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
 	label.add_theme_color_override("font_color", Design.INK_NORMAL)
+	label.set_meta("screen_min", Design.MIN_SCREEN_LABEL)
+	label.set_meta("screen_kind", "parameter")
+	# Findable by the level of detail, which gives this label the slider's room once the
+	# slider has stopped being worth drawing.
+	row.set_meta("name_label", label)
 	row.add_child(label)
 
 	if parameter.has("enum"):
@@ -2128,6 +2145,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 
 	row.add_child(_defocus(slider))
 	row.add_child(readout)
+	row.set_meta("value_field", readout)
 	_remember_parameter_widget(node_id, name, slider, readout, parameter)
 	return row
 
@@ -3223,51 +3241,87 @@ func _reachable_from(node_id: String, downstream: bool) -> Array:
 ## every cable below that point would attach to the wrong port. Hiding the labels keeps the
 ## row — and the port — exactly where it was.
 func _apply_detail(level: int) -> void:
-	var show_parameters := level == PatchGraph.Detail.FULL
-	# Port names hide with the parameters now, not two bands later. They are the same
-	# 16px as the parameter text, so at any zoom where one has fallen under the type
-	# floor the other has too — showing them into REDUCED meant nine-pixel smudges
-	# beside every jack, which is decoration pretending to be information. Below FULL
-	# a node says what it is (the title overlay holds that at a readable size) and
-	# shows where its jacks are; what each jack is called comes back with the zoom.
-	var show_port_names := level == PatchGraph.Detail.FULL
-	# The controls out-survive the words by one level. The type floor is a rule about
-	# text — a slider is geometry, and geometry scales. Hiding whole parameter rows at
-	# REDUCED made the fitted default view a wall of empty aluminium, which read as
-	# broken rather than as zoomed out ("the controls aren't visible" — the first
-	# reload of the web build after fit-on-load landed). Now REDUCED keeps every
-	# slider and hides every word beside it: the node still looks like an instrument,
-	# the knobs still answer the mouse, and nothing renders under the floor.
-	var show_rows := level != PatchGraph.Detail.TOPOLOGY
+	var full: bool = level == PatchGraph.Detail.FULL
+	# Words out-survive controls, which is the reverse of what this used to do.
+	#
+	# The old rule kept every slider and hid every word beside it, on the reasoning that
+	# the type floor is a rule about text and a slider is geometry. The result at 65% was
+	# a node of unlabelled sliders: controls with nothing saying what they controlled,
+	# which is not a denser view of a synth so much as a worse one. Between "frequency"
+	# and a nameless groove, the word is the part carrying the meaning — the groove is
+	# recoverable by zooming in, and at this size it could not be aimed at anyway.
+	#
+	# So COMPACT keeps the row, keeps the name and the number, and gives the slider's
+	# room to the words. The earlier attempt that hid whole rows — the wall of empty
+	# aluminium that read as broken — failed because it dropped the words *too*; keeping
+	# them is what makes a compact row still look like an instrument.
+	var show_rows: bool = level == PatchGraph.Detail.FULL \
+		or level == PatchGraph.Detail.COMPACT
+	# Port names survive to SUMMARY. They used to hide with the parameters, because at
+	# 16px scaled to nine they were smudges pretending to be information — true then,
+	# and no longer, now that ScreenText draws them at their own minimum instead of at
+	# whatever the zoom left. A summary node is exactly "what is this and what plugs
+	# into it", so the names are most of the point of that band.
+	var show_port_names: bool = level != PatchGraph.Detail.TOPOLOGY
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
+		# Metadata goes first, and goes entirely: a category drawn at nine pixels is
+		# decoration, and there is no size at which it outranks a parameter name.
+		var tag := widget.get_meta("category_tag", null) as Label
+		if tag != null:
+			tag.visible = full
 		for child in widget.get_children():
 			var control := child as Control
 			if control == null:
 				continue
 			match str(control.get_meta("row", "")):
 				"parameter":
-					# The "N more" disclosure is only words, so it goes with the words.
+					# The "N more" disclosure is a control for secondary parameters, so
+					# it goes when the secondary controls do.
 					if control is Button:
-						control.visible = show_parameters
+						control.visible = full
 						continue
-					# A row with no slider — an enum selector — is only words too.
-					var has_slider := false
-					for part in control.get_children():
-						if part is HSlider:
-							has_slider = true
-					control.visible = (show_parameters or (show_rows and has_slider)) \
+					control.visible = show_rows \
 						and not control.get_meta("collapsed", false)
+					# The room the hidden slider leaves goes to the *value*, not to the
+					# name. Both were tried and the pictures settled it: with the slider
+					# gone and nothing expanding, name and value pack up against each
+					# other, and each is left with only its own shrink-wrapped box — at
+					# 65% "10.0 ms" fitted and "120.0 ms" did not, so a column of numbers
+					# came up half empty with no rule a reader could see. Expanding the
+					# value's box pushes it back to the right edge, which is where it
+					# sits at full detail anyway, and opens the gap that gives the name
+					# its room too.
+					var value_field := control.get_meta("value_field", null) as Control
+					if value_field != null:
+						value_field.size_flags_horizontal = Control.SIZE_FILL if full \
+							else Control.SIZE_EXPAND_FILL
 					for part in control.get_children():
-						(part as Control).visible = show_parameters or part is HSlider
+						var piece := part as Control
+						if piece == null:
+							continue
+						# Sliders and dropdowns are the controls; everything else in a
+						# row is words, and words stay. An enum row loses its current
+						# value with the dropdown, which is the one place this band
+						# costs information rather than only aim.
+						piece.visible = full if (piece is HSlider or piece is OptionButton) \
+							else true
 				"port":
 					# One level deeper than it used to be: a port caption is now a name and a
 					# unit in their own box, so the labels are grandchildren of the row.
 					for side in control.get_children():
 						for part in (side as Control).get_children():
 							var label := part as Label
-							if label != null and label.has_meta("port_label"):
-								label.visible = show_port_names
+							if label == null or not label.has_meta("port_label"):
+								continue
+							# The unit goes a band before the name it annotates, which is
+							# both the priority order — a unit is metadata, a port name is
+							# the thing you are looking for — and what makes the name
+							# legible at all: packed immediately beside it, the unit was
+							# the wall the name's compensated text ran into, so at 65% a
+							# node showed "Hz octaves cycles" and not one port's name.
+							label.visible = show_port_names \
+								and (full or str(label.get_meta("screen_kind", "")) != "unit")
 
 
 ## Says what a port is, in words, while the pointer is on it.

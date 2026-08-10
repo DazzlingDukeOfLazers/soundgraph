@@ -262,6 +262,24 @@ const SIZE_HEADING := 15          ## semibold — section headings
 ## compress; the ones already at it hold, and Compact saves its space on spacing.
 const TYPE_FLOOR := 14
 
+## What the reader must actually receive, after the graph zoom has had its say.
+##
+## TYPE_FLOOR is a floor on what the type scale may *ask for*. On the canvas that is not
+## the same question: GraphEdit scales its nodes geometrically, so a 16px label sitting
+## inside a graph at 65% arrives as 10.4 real pixels while its declaration still says 16.
+## The design system was telling the truth about the stylesheet and the wrong thing about
+## the screen.
+##
+## These are the sizes below which text is not rendered at all — it is drawn in screen
+## space at the minimum instead, or dropped by the level of detail. Geometry may shrink
+## without limit; words may not. Per role, because a unit really can go a size under a
+## value without becoming decoration, and a node title really does need to survive the
+## zoom at which everything else has gone.
+const MIN_SCREEN_NODE_TITLE := 15
+const MIN_SCREEN_LABEL := 14      ## port names, parameter names, parameter values
+const MIN_SCREEN_UNIT := 13
+const MIN_SCREEN_META := 12       ## category tags — the first thing decluttering drops
+
 enum Scale { COMPACT, COMFORTABLE, LARGE, XL }
 
 const SCALE_NAMES := ["Compact", "Comfortable", "Large", "XL"]
@@ -291,6 +309,13 @@ static func scale(value: float) -> int:
 ## icons and hit targets, and a 12px gap is not a legibility problem the way 12px text is.
 static func type(value: float) -> int:
 	return maxi(scale(value), TYPE_FLOOR)
+
+
+## True when `logical` px of type, once `zoom` has scaled it, lands under `minimum` real
+## pixels. The half-pixel of slack keeps a size that rounds to exactly the minimum from
+## flickering in and out of compensation as the zoom jitters.
+static func below_screen_minimum(logical: int, zoom: float, minimum: int) -> bool:
+	return float(logical) * zoom < float(minimum) - 0.5
 
 
 static var _faces: Dictionary = {}
