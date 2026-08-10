@@ -99,6 +99,63 @@ TEST(oscillator_pm_at_zero_is_no_modulator_at_all) {
     CHECK(identical);
 }
 
+TEST(sine_feedback_at_zero_is_a_pure_sine_to_the_bit) {
+    NodeHarness with("SineOscillator", kOneSecond, kSampleRate);
+    with.set("frequency", 440.0f);
+    with.set("feedback", 0.0f);
+    with.process();
+
+    NodeHarness without("SineOscillator", kOneSecond, kSampleRate,
+        testing::Coverage::SmokeTest);
+    without.set("frequency", 440.0f);
+    without.process();
+
+    bool identical = true;
+    for (std::size_t i = 0; i < with.output().size(); ++i) {
+        if (with.output()[i] != without.output()[i]) {
+            identical = false;
+            break;
+        }
+    }
+    CHECK(identical);
+}
+
+TEST(sine_feedback_adds_harmonics_without_moving_the_pitch) {
+    // 0.12, not more, and the bound is physics rather than taste: self-modulation keeps
+    // the phase monotonic only below 1/2pi ≈ 0.159 cycles. Above that the wave folds
+    // back on itself and rising crossings arrive in pairs — the authentic OPL buzz at
+    // high feedback, and the third time this suite has had to learn that zero-crossing
+    // counting and deep phase modulation do not mix.
+    NodeHarness harness("SineOscillator", kOneSecond, kSampleRate);
+    harness.set("frequency", 220.0f);
+    harness.set("feedback", 0.12f);
+    harness.process();
+
+    // Still 220 crossings — feedback distorts the shape, not the period.
+    CHECK_NEAR(testing::rising_zero_crossings(harness.output()), 220, 1);
+
+    // But no longer the shape a bare sine would have: compare against one sample by
+    // sample and require a real divergence, not a rounding one.
+    NodeHarness pure("SineOscillator", kOneSecond, kSampleRate,
+        testing::Coverage::SmokeTest);
+    pure.set("frequency", 220.0f);
+    pure.process();
+    float widest = 0.0f;
+    for (std::size_t i = 0; i < pure.output().size(); ++i) {
+        widest = std::max(widest,
+            std::abs(harness.output()[i] - pure.output()[i]));
+    }
+    CHECK(widest > 0.2f);
+
+    // And the loop is tame: bounded output, no NaN. The two-sample average exists to
+    // damp the period-two squeal, and this is where that promise gets checked.
+    CHECK(testing::peak(harness.output()) <= 1.2f);
+    for (float sample : harness.output()) {
+        CHECK(std::isfinite(sample));
+        if (!std::isfinite(sample)) break;
+    }
+}
+
 TEST(saw_oscillator_sweeps_the_full_range_and_is_band_limited) {
     NodeHarness harness("SawOscillator", kOneSecond, kSampleRate);
     harness.set("frequency", 440.0f);

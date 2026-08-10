@@ -56,6 +56,25 @@ constexpr ParameterDescriptor kOscParameters[] = {
      "Pitch when nothing is connected to the frequency input.", nullptr, 0},
 };
 
+// The sine gets one thing the others do not: operator feedback, the oscillator phase-
+// modulating itself. Every FM chip has it on exactly one operator per voice and it is
+// where their bite comes from — a sine at feedback 0 is pure, and by 2 it has leaned
+// most of the way to a saw. The two-sample average is the chip trick (OPL and OPN both
+// do it): feeding back only the previous sample lets the loop lock into a period-two
+// squeal, and averaging damps precisely that mode.
+//
+// Its own array rather than an entry in kOscParameters, because Saw and Square share
+// that array and their parameter indices are load-bearing.
+constexpr int kSineFeedback = 1;
+
+constexpr ParameterDescriptor kSineParameters[] = {
+    {"frequency", "Hz", 0.01f, 20000.0f, 440.0f, Scaling::Exponential,
+     "Pitch when nothing is connected to the frequency input.", nullptr, 0},
+    {"feedback", "cycles", 0.0f, 2.0f, 0.0f, Scaling::Linear,
+     "Self phase-modulation. 0 is a pure sine; around 0.5 it turns brassy, and by 2 "
+     "it is most of the way to a saw. OPL's strongest setting is 2.", nullptr, 0},
+};
+
 class OscillatorBase : public DspNode {
 public:
     void prepare(const PrepareContext& context) override {
@@ -63,7 +82,11 @@ public:
         reset();
     }
 
-    void reset() override { phase_ = 0.0f; }
+    void reset() override {
+        phase_ = 0.0f;
+        history_a_ = 0.0f;
+        history_b_ = 0.0f;
+    }
 
     void process(const ProcessContext& context) override {
         const float* frequency_in = context.inputs[0];
@@ -72,6 +95,7 @@ public:
         float* out = context.outputs[0];
         const float base_frequency = parameter(kOscFrequency);
         const float nyquist = sample_rate_ * 0.5f;
+        const float feedback = feedback_amount();
 
         for (int i = 0; i < context.frames; ++i) {
             float frequency = frequency_in != nullptr ? frequency_in[i] : base_frequency;
@@ -81,16 +105,32 @@ public:
             frequency = dsp::clampf(frequency, 0.0f, nyquist);
 
             const float increment = frequency / sample_rate_;
-            float read_phase = phase_;
+
+            // The phase being *read* this sample, as distinct from the free-running
+            // phase underneath: modulation displaces one and never touches the other.
+            // Assembled so that with nothing modulating, read_phase is phase_ to the
+            // bit — the golden vectors depend on that literally.
+            float displacement = 0.0f;
+            bool displaced = false;
             if (pm_in != nullptr) {
                 // Clamped to a few cycles either way before wrapping: wrap01 walks the
                 // excess off one cycle at a time (fmod is slow on the ESP32), and a
                 // patch that feeds an unscaled audio signal in here should get a rough
                 // sound, not a slow engine. Real modulation indices live well inside
                 // this range — a DX7 at full depth is about 2 cycles.
-                read_phase = dsp::wrap01(phase_ + dsp::clampf(pm_in[i], -8.0f, 8.0f));
+                displacement += dsp::clampf(pm_in[i], -8.0f, 8.0f);
+                displaced = true;
             }
+            if (feedback != 0.0f) {
+                displacement += feedback * 0.5f * (history_a_ + history_b_);
+                displaced = true;
+            }
+            const float read_phase =
+                displaced ? dsp::wrap01(phase_ + displacement) : phase_;
+
             out[i] = render(read_phase, increment);
+            history_b_ = history_a_;
+            history_a_ = out[i];
             phase_ = dsp::wrap01(phase_ + increment);
         }
     }
@@ -98,13 +138,19 @@ public:
 protected:
     virtual float render(float phase, float increment) = 0;
 
+    // Only the sine overrides this; see kSineParameters for why feedback is its alone.
+    virtual float feedback_amount() const { return 0.0f; }
+
     float sample_rate_ = 48000.0f;
     float phase_ = 0.0f;
+    float history_a_ = 0.0f;
+    float history_b_ = 0.0f;
 };
 
 class SineOscillator final : public OscillatorBase {
 protected:
-    float render(float phase, float) override { return std::sin(dsp::kTwoPi * phase); }
+    float render(float phase, float) override { return dsp::sine01(phase); }
+    float feedback_amount() const override { return parameter(kSineFeedback); }
 };
 
 class SawOscillator final : public OscillatorBase {
@@ -361,7 +407,7 @@ public:
 private:
     float shape_value(int shape, float increment) {
         switch (shape) {
-            case 0: return std::sin(dsp::kTwoPi * phase_);
+            case 0: return dsp::sine01(phase_);
             case 1: return 4.0f * std::fabs(phase_ - 0.5f) - 1.0f;
             case 2: return (2.0f * phase_ - 1.0f) - dsp::poly_blep(phase_, increment);
             case 3: return phase_ < 0.5f ? 1.0f : -1.0f;
@@ -409,10 +455,10 @@ std::unique_ptr<DspNode> make() {
 const NodeTypeDescriptor kSineOscillator = {
     "SineOscillator", "Sine Oscillator", "Sources",
     "A pure tone with no harmonics.",
-    "sine|sin|pure tone|test tone|simple wave|fundamental",
+    "sine|sin|pure tone|test tone|simple wave|fundamental|fm operator|feedback",
     Slice<PortDescriptor>(kOscInputs),
     Slice<PortDescriptor>(kAudioOut),
-    Slice<ParameterDescriptor>(kOscParameters),
+    Slice<ParameterDescriptor>(kSineParameters),
     false, NodeRole::Processor, false,
     ResourceCost{3.0f, 8, 0},
     &make<SineOscillator>,

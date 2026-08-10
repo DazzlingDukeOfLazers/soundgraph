@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: operator feedback",
+    "description": "A single sine with feedback 0.7 \u2014 self phase-modulation, the FM chip's bite. Pins the two-sample averaging loop, which is state the other cases never touch.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "osc",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 220,
+        "feedback": 0.7
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

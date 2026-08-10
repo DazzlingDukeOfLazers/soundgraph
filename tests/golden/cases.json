@@ -109,6 +109,11 @@
       "name": "phase-mod",
       "patch": "cases/phase-mod.json",
       "frames": 4800
+    },
+    {
+      "name": "feedback",
+      "patch": "cases/feedback.json",
+      "frames": 4800
     }
   ]
 }

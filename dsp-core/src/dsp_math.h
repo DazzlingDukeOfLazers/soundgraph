@@ -3,6 +3,8 @@
 
 #include <cmath>
 
+#include "sine_table.h"
+
 namespace soundgraph {
 namespace dsp {
 
@@ -11,6 +13,24 @@ inline constexpr float kTwoPi = 6.28318530717958647692f;
 
 inline float clampf(float value, float low, float high) {
     return value < low ? low : (value > high ? high : value);
+}
+
+// Sine of a phase in [0, 1), from the committed table with linear interpolation.
+//
+// Not std::sin, deliberately. MSVC, musl (WASM) and xtensa libm each round a handful
+// of arguments differently, which is inaudible in an open-loop oscillator and fatal in
+// a feedback one: the loop compounds a single ULP of disagreement to full scale in
+// under a tenth of a second, and the golden vectors stop being one definition of
+// correctness. Table lookup and lerp are plain IEEE arithmetic, which every target
+// rounds identically — the same move as the sfxr reference owning its PRNG.
+// Interpolation error at 4096 entries is under 3e-7, tighter than libm agreement was.
+inline float sine01(float phase01) {
+    const float scaled = phase01 * static_cast<float>(kSineTableSize);
+    const int index = static_cast<int>(scaled);
+    const float fraction = scaled - static_cast<float>(index);
+    const float a = kSineTable[index];
+    const float b = kSineTable[index + 1];
+    return a + (b - a) * fraction;
 }
 
 // Wraps a phase in [0, 1). Uses subtraction rather than fmod: the argument is always

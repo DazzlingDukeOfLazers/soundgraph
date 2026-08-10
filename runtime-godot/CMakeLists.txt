@@ -143,23 +143,17 @@ add_custom_command(TARGET soundgraph_godot POST_BUILD
 #
 # tools/mirror-examples.mjs remains the authority — its --check runs in the test suite,
 # and it is the thing that also catches orphans. This is the copy; that is the guarantee.
-# The directory is emptied first so a deleted example cannot survive here.
-file(GLOB_RECURSE SOUNDGRAPH_EXAMPLE_PATCHES
-    RELATIVE ${SOUNDGRAPH_ROOT}/examples/patches
-    ${SOUNDGRAPH_ROOT}/examples/patches/*.json
-)
-set(SOUNDGRAPH_MIRROR_COMMANDS
-    COMMAND ${CMAKE_COMMAND} -E rm -rf ${SOUNDGRAPH_GODOT_EXAMPLES}
-)
-foreach(patch IN LISTS SOUNDGRAPH_EXAMPLE_PATCHES)
-    list(APPEND SOUNDGRAPH_MIRROR_COMMANDS
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${SOUNDGRAPH_ROOT}/examples/patches/${patch}
-                ${SOUNDGRAPH_GODOT_EXAMPLES}/${patch}
-    )
-endforeach()
-
+# The directory is emptied first so a deleted example cannot survive here — and the
+# copy is copy_directory, not a per-file list. The previous version globbed the file
+# names at *configure* time and then rm -rf'd the target at *build* time, which is a
+# delete that stays current paired with a copy that does not: any patch added after the
+# last configure was erased from the editor by the next extension rebuild. That is how
+# the freshly imported FM library vanished — the same configure-time-snapshot trap this
+# file already documents twice, wearing its third costume.
 add_custom_target(soundgraph_godot_examples ALL
-    ${SOUNDGRAPH_MIRROR_COMMANDS}
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${SOUNDGRAPH_GODOT_EXAMPLES}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${SOUNDGRAPH_ROOT}/examples/patches
+            ${SOUNDGRAPH_GODOT_EXAMPLES}
     COMMENT "Mirroring the example patches into editor-godot/examples"
 )
