@@ -34,6 +34,15 @@ func check(condition: bool, description: String) -> void:
 
 
 func _initialize() -> void:
+	# Nothing this run does may reach the real settings file. The suite drives the
+	# theme and the UI scale on purpose, and every one of those was being written down
+	# — so a run changed the preferences of whoever ran it, and the next run started
+	# from wherever the last one stopped.
+	Settings.suspended = true
+	Design.use_palette(Design.Palette.LAB)
+	Design.ui_scale = Design.Scale.COMFORTABLE
+	Rack.density = Rack.Density.INSTRUMENT
+
 	var main = load("res://main.tscn").instantiate()
 	root.add_child(main)
 	await process_frame
@@ -639,6 +648,76 @@ func _initialize() -> void:
 			sandbox_labels += 1
 	check(sandbox_labels <= 1,
 		"and the tab shows at most one long line of prose (%d)" % sandbox_labels)
+	main.views.current_tab = 0
+	await process_frame
+
+	# ---- rack cables answer where they go -------------------------------------------
+	# The rack draws its own cables, which is why the *dimming* half lives here and not in
+	# the graph view: GraphEdit paints connections itself and offers no per-cable alpha, so
+	# there the best available answer was to brighten a path and leave the rest alone.
+	main.views.current_tab = 1
+	Rack.density = Rack.Density.INSTRUMENT
+	main.rack.rebuild()
+	for i in 4:
+		await process_frame
+
+	var rack_cables: Array = main.rack.cable_endpoints()
+	check(rack_cables.size() > 0, "the rack has cables (%d)" % rack_cables.size())
+	check(rack_cables[0].size() >= 5,
+		"and each one knows which nodes it joins, not only where it starts and ends")
+
+	# Hit-tested against the drawn hanging_curve, not the straight line between the ends. A
+	# catenary sags a couple of hundred pixels below its own chord, so testing the chord
+	# would pick whichever cable happened to pass overhead.
+	main.rack.cable_style = Rack.CableStyle.CATENARY
+	var sample: Array = rack_cables[0]
+	var chord_middle: Vector2 = (sample[0] + sample[1]) * 0.5
+	var cable_span: float = absf(sample[1].x - sample[0].x)
+	var cable_sag: float = clampf(cable_span * Rack.SAG_FRACTION, Rack.SAG_MIN, Rack.SAG_MAX)
+	var hanging_curve: PackedVector2Array = Rack.catenary(sample[0], sample[1], cable_sag)
+	var hanging_curve_middle: Vector2 = hanging_curve[hanging_curve.size() / 2]
+	check(hanging_curve_middle.distance_to(chord_middle) > 20.0,
+		"a hanging cable is nowhere near its own chord (%.0f px below)"
+			% (hanging_curve_middle.y - chord_middle.y))
+	check(main.rack.cable_at(hanging_curve_middle) >= 0,
+		"so hovering is measured against the curve, and finds it")
+	check(main.rack.cable_at(chord_middle) != 0 or rack_cables.size() == 1,
+		"rather than against the straight line nobody drew")
+
+	# Selecting a module has to reach the cable layer, which is a sibling of the modules
+	# rather than one of them — redrawing the modules alone left every cable at full
+	# strength and the dimming invisible.
+	# What gets dimmed, asked of the rack rather than inferred from the pixels. The first
+	# attempt at this counted redraws instead, and passed with the feature removed —
+	# something else in the test environment was redrawing the layer every frame anyway.
+	main.rack.select("filter")
+	var touching := 0
+	var elsewhere := 0
+	for index in rack_cables.size():
+		var entry: Array = rack_cables[index]
+		var touches: bool = entry[3] == "filter" or entry[4] == "filter"
+		if main.rack.cable_related(index, rack_cables) == touches:
+			if touches:
+				touching += 1
+			else:
+				elsewhere += 1
+	check(touching > 0 and elsewhere > 0,
+		"selecting a module keeps its own cables lit and turns the rest down (%d and %d)"
+			% [touching, elsewhere])
+
+	main.rack.hovered_cable = 0
+	check(main.rack.cable_related(0) and not main.rack.cable_related(1),
+		"and a pointer on one cable beats the selection, because that is a narrower question")
+	main.rack.hovered_cable = -1
+	main.rack.select("")
+	check(main.rack.cable_related(0) and main.rack.cable_related(1),
+		"with nothing chosen at all, nothing is dimmed")
+	await process_frame
+
+	main.rack.cable_at(Vector2(-900, -900))
+	main.rack._update_cable_hover(Vector2(-900, -900))
+	check(main.rack.hovered_cable == -1, "and moving away from all of them lets go")
+
 	main.views.current_tab = 0
 	await process_frame
 

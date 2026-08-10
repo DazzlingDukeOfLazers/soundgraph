@@ -82,6 +82,18 @@ func _initialize() -> void:
 		for i in 6:
 			await process_frame
 
+	# A tenth argument selects a rack module, so the cable dimming can be looked at, or
+	# "cable:N" to put the pointer on one — the highlight is drawn rather than computed,
+	# so the only way to know it looks like anything is to look at it.
+	if arguments.size() > 9 and arguments[9] != "":
+		if arguments[9].begins_with("cable:"):
+			main.rack.hovered_cable = int(arguments[9].split(":")[1])
+			main.rack._cables.queue_redraw()
+		else:
+			main.rack.select(arguments[9])
+		for i in 4:
+			await process_frame
+
 	var image := root.get_texture().get_image()
 	var status := image.save_png(output)
 	if status == OK:

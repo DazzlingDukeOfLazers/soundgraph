@@ -191,6 +191,14 @@ These all cost real time once and are written up in `decisions.md` or the compon
 READMEs. Collected here because the pattern is the same each time — the symptom pointed
 somewhere other than the cause.
 
+- **Counting redraws does not test a redraw.** The rack's cable dimming needed
+  `Rack.select()` to redraw the cable layer, which is a sibling of the modules rather than
+  one of them. The test counted `_draw()` calls before and after — and passed with the fix
+  taken back out, because something else in the test environment was already redrawing that
+  layer every frame. The screenshot was the only thing that had told the truth. What made
+  the test real was moving the decision out of `_draw()` into `Rack.cable_related()` and
+  asking *that*: which cables are lit, given a selection. A test of a side effect is at the
+  mercy of everything else that causes the same side effect; a test of a decision is not.
 - A **GDScript type-inference error** leaves a half-built editor, and the headless test
   then awaits a coroutine that never resolves. It *hangs* instead of printing the parse
   error. `editor_test.gd` now bails out early; if a run ever hangs again, look for a parse

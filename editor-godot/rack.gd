@@ -166,6 +166,9 @@ var case_hp: int = 0:
 
 var selected_id := ""
 
+## Which cable the pointer is over, as an index into cable_endpoints(), or -1.
+var hovered_cable := -1
+
 ## Where a hand-set rack order lives in the document.
 ##
 ## Under "arrangement" rather than "metadata". Metadata is what a person wrote about the
@@ -441,6 +444,10 @@ func select(node_id: String) -> void:
 	selected_id = node_id
 	for id in _modules:
 		_modules[id].queue_redraw()
+	# The cables care too, now that selecting a module turns down everything it is not
+	# connected to. They live in their own layer, so redrawing the modules misses them.
+	if _cables != null:
+		_cables.queue_redraw()
 
 
 ## Called when a value changed somewhere else — the graph view's slider, an undo, a reload —
@@ -484,6 +491,95 @@ func _draw_rail(rect: Rect2) -> void:
 # ---------------------------------------------------------------------------------
 
 ## Every cable, as [from_position, to_position, colour]. Positions are in rack space.
+## Mouse motion over the case itself — which is where the cables are.
+##
+## The modules take their own input, so this only sees the gaps between them, and the
+## gaps are exactly where a hanging cable is. A cable that runs behind a module is
+## unreachable, which is correct: you cannot touch it there either.
+func _gui_input(event: InputEvent) -> void:
+	var motion := event as InputEventMouseMotion
+	if motion != null:
+		_update_cable_hover(motion.position)
+
+
+## Nothing under the pointer means nothing highlighted, and leaving the case entirely
+## has to count — otherwise the last cable hovered stays lit for ever.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_MOUSE_EXIT and hovered_cable != -1:
+		hovered_cable = -1
+		if _cables != null:
+			_cables.queue_redraw()
+
+
+## The cable nearest a point, or -1 if none is close enough.
+##
+## Measured against the drawn curve rather than the straight line between the ends,
+## because in this view they are nowhere near each other — a catenary sags a couple
+## of hundred pixels below its own chord, so hit-testing the chord would highlight
+## whichever cable happened to pass overhead rather than the one under the pointer.
+func cable_at(point: Vector2) -> int:
+	var cables := cable_endpoints()
+	var lane_step := 13.0
+	var best := -1
+	# A little wider than the cable is drawn, so it can be caught without precision.
+	var best_distance := 12.0
+	for index in cables.size():
+		var entry: Array = cables[index]
+		var a: Vector2 = entry[0]
+		var b: Vector2 = entry[1]
+		var points: PackedVector2Array
+		if cable_style == CableStyle.CATENARY:
+			var span := absf(b.x - a.x)
+			var sag := clampf(span * SAG_FRACTION, SAG_MIN, SAG_MAX)
+			points = catenary(a, b, sag)
+		else:
+			points = pcb_route(a, b, maxf(a.y, b.y) + 34.0 + index * lane_step)
+		for i in points.size() - 1:
+			var segment := points[i + 1] - points[i]
+			var length_squared := segment.length_squared()
+			var along: float = 0.0 if length_squared <= 0.0 else clampf(
+				(point - points[i]).dot(segment) / length_squared, 0.0, 1.0)
+			var distance := point.distance_to(points[i] + segment * along)
+			if distance < best_distance:
+				best_distance = distance
+				best = index
+	return best
+
+
+## Whether a cable should be drawn at full strength rather than turned down.
+##
+## Hovering beats selection. A pointer resting on a cable is a direct question about that
+## one cable, and answering it with "and also everything else touching the selected module"
+## answers a question nobody asked.
+##
+## With nothing hovered and nothing selected everything stays bright: dimming only means
+## something when there is something to pick out, and a rack that is permanently three
+## quarters faded has just been drawn badly.
+##
+## Pass the endpoints in if you already have them — the drawing does, and re-reading the
+## patch once per cable would make painting the case quadratic in the number of cables.
+func cable_related(index: int, cables: Array = []) -> bool:
+	if hovered_cable >= 0:
+		return index == hovered_cable
+	if selected_id == "":
+		return true
+	var entries: Array = cables if not cables.is_empty() else cable_endpoints()
+	if index < 0 or index >= entries.size():
+		return false
+	var entry: Array = entries[index]
+	return str(entry[3]) == selected_id or str(entry[4]) == selected_id
+
+
+## Tracks the cable under the pointer.
+func _update_cable_hover(point: Vector2) -> void:
+	var found := cable_at(point)
+	if found == hovered_cable:
+		return
+	hovered_cable = found
+	if _cables != null:
+		_cables.queue_redraw()
+
+
 func cable_endpoints() -> Array:
 	var cables: Array = []
 	for connection in patch.get("connections", []):
@@ -496,7 +592,10 @@ func cable_endpoints() -> Array:
 		if a == null or b == null:
 			continue
 		var signal_type := from_module.port_type(str(connection["from"]["port"]), false)
-		cables.append([a, b, type_colours.get(signal_type, Color.WHITE)])
+		# The node ids travel with the geometry, so the layer can tell which cables
+		# belong to what without going back to the patch for every one of them.
+		cables.append([a, b, type_colours.get(signal_type, Color.WHITE),
+			str(connection["from"]["node"]), str(connection["to"]["node"])])
 	return cables
 
 
@@ -586,16 +685,32 @@ static func _chamfer(points: PackedVector2Array, radius: float) -> PackedVector2
 class CableLayer extends Control:
 	var rack: Control
 
+	## How far a cable is turned down when it has nothing to do with what is selected.
+	##
+	## Dimming rather than hiding: an unrelated cable is still part of the patch and
+	## still tells you the rack is busy. A third of the way down is enough to fall
+	## behind without disappearing.
+	const UNRELATED := 0.3
+
 	func _draw() -> void:
 		if rack == null:
 			return
 		var cables: Array = rack.cable_endpoints()
 		var lane_step := 13.0
+
+		# The rack draws its own cables, which is why the dimming half of this is here
+		# and not in the graph view: GraphEdit paints connections itself and offers no
+		# per-cable alpha, so there the best available answer was to brighten a path and
+		# leave the rest alone. Here every cable is ours to turn down.
 		for index in cables.size():
 			var entry: Array = cables[index]
 			var a: Vector2 = entry[0]
 			var b: Vector2 = entry[1]
 			var colour: Color = entry[2]
+
+			var hovered: bool = index == rack.hovered_cable
+			var related: bool = rack.cable_related(index, cables)
+
 			var points: PackedVector2Array
 			if rack.cable_style == Rack.CableStyle.CATENARY:
 				var span := absf(b.x - a.x)
@@ -605,12 +720,23 @@ class CableLayer extends Control:
 				var lane := maxf(a.y, b.y) + 34.0 + index * lane_step
 				points = Rack.pcb_route(a, b, lane)
 
+			var alpha: float = 1.0 if related else UNRELATED
+			var width: float = 5.0 if hovered else 4.0
+			var ink := Color(colour.r, colour.g, colour.b, alpha)
+
 			# Drawn twice: a dark, slightly wider pass underneath reads as the shadow side
 			# of a round cable and keeps overlapping cables legible against each other.
-			draw_polyline(points, Color(0, 0, 0, 0.45), 7.0, true)
-			draw_polyline(points, colour, 4.0, true)
-			draw_circle(a, 5.0, colour)
-			draw_circle(b, 5.0, colour)
+			draw_polyline(points, Color(0, 0, 0, 0.45 * alpha), width + 3.0, true)
+			draw_polyline(points, ink, width, true)
+			draw_circle(a, 5.0, ink)
+			draw_circle(b, 5.0, ink)
+
+			# Both ends of the hovered cable, because a brightened curve still has to be
+			# followed by eye to find where it lands — which in a rack means across a
+			# tangle of other cables doing the same thing.
+			if hovered:
+				for spot: Vector2 in [a, b]:
+					draw_arc(spot, 12.0, 0.0, TAU, 28, colour, 2.0, true)
 
 
 # ---------------------------------------------------------------------------------

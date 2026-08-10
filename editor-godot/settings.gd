@@ -20,6 +20,17 @@ const PATH := "user://settings.json"
 static var _values: Dictionary = {}
 static var _loaded := false
 
+## When true, nothing is written to disk.
+##
+## For the headless tests, which drive the theme and the UI scale to check they work
+## and were persisting every one of those choices into the real settings file. Two
+## costs: a test run silently changed the preferences of whoever ran it, and — worse —
+## the next run started from whatever the last one happened to leave behind, so a
+## test that aborted midway made the following run fail somewhere unrelated. Both
+## showed up as "XL makes the text bigger (20 from 20)", which is a confusing way to
+## be told your test suite has memory.
+static var suspended := false
+
 
 static func _ensure_loaded() -> void:
 	if _loaded:
@@ -43,6 +54,8 @@ static func store(key: String, value: Variant) -> void:
 	if _values.get(key) == value:
 		return
 	_values[key] = value
+	if suspended:
+		return
 	var file := FileAccess.open(PATH, FileAccess.WRITE)
 	if file == null:
 		# Not worth an error dialog. A preference that fails to persist is a preference
