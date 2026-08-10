@@ -49,6 +49,14 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/game-sounds.mjs --check)
 endif()
 
+# The FM library is generated from the vendored Freedoom instruments by the same
+# pattern: tools/opl2-import.mjs is the recipe, the committed patches are its output,
+# and this notices when they stop agreeing.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME opl2_imports_match_the_importer
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/opl2-import.mjs --check)
+endif()
+
 # And the same again one step further along: the Godot editor ships its own copy of the
 # examples, because Godot cannot read outside res://. That copy has now gone stale twice by
 # two different routes, the second time because the thing that syncs it lives in a build
