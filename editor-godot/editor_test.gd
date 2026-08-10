@@ -111,6 +111,16 @@ func _initialize() -> void:
 
 	# ---- the graph view is generated from that vocabulary -----------------------------
 	var file := FileAccess.open("res://examples/first-synth.json", FileAccess.READ)
+	if file == null:
+		# editor-godot/examples is build output. When it is missing, every check
+		# from here on is about a patch that was never loaded — and the null
+		# dereference that used to happen here left the process alive forever,
+		# because an error inside an awaiting _initialize never reaches quit().
+		# A run that hangs says less than one that fails.
+		print("  FAIL res://examples/first-synth.json is missing")
+		print("       the examples are mirrored by the runtime-godot build; see its README")
+		quit(1)
+		return
 	await main._load_text(file.get_as_text())
 	await process_frame
 	await process_frame

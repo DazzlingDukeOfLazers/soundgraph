@@ -8,14 +8,22 @@ Open problems, ordered by how much they threaten the Knobcon demo.
   straight into the board's NVS, and everything around it is verified, but the serial port
   chooser is gesture-gated by design so a human has to try it. This is step 7–9 of the
   90-second demo, so it should be the next thing anyone tests.
-- **The web editor has never been looked at.** Every element was verified from a script,
-  but nobody has opened the page and used it. The Godot editor has now had several rounds
-  of real use; the browser one has had none.
+- **The web editor has now been used, on macOS Chromium.** A full session against the
+  Mac-built wasm: audio starts clean, the meter follows the envelope and LFO, patch
+  switching regenerates the controls, validator messages arrive specific and actionable,
+  and a rejected Apply leaves the last good graph running. Two paper cuts found and
+  fixed: a freshly loaded patch kept the previous patch's scroll position, and the piano
+  keys were divs — invisible to assistive tech. They are buttons with note names now.
+  Still true: no human has *heard* it (the session was driven, not listened to), and no
+  WebKit browser has run it.
 - **Only Chrome has run the browser build.** Safari is the one to worry about — its
   AudioWorklet implementation has historically been the fussiest, and it matters for the
   "open a URL on a phone" story.
-- **macOS and Linux have never been compiled.** CMake and miniaudio cover them; nothing
-  has exercised them.
+- **Linux has never been compiled.** CMake and miniaudio cover it; nothing has exercised
+  it. macOS arm64 now has: the tree builds warning-free, `sg-play` opens CoreAudio through
+  miniaudio, the CLI tools work, and the Godot editor loads the extension and passes all
+  280 of its checks. Four defects found doing it are fixed; see docs/decisions.md for
+  the one that needed a decision.
 - **No `getUserMedia` in the browser.** `AudioInput` nodes schedule correctly but receive
   silence, so `delay-echo.json` validates and runs in the browser without doing anything
   audible.

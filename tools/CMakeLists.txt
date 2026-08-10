@@ -13,3 +13,22 @@ add_executable(sfxr-ref
 )
 target_include_directories(sfxr-ref PRIVATE ${CMAKE_SOURCE_DIR}/tests/sfxr/reference)
 target_link_libraries(sfxr-ref PRIVATE soundgraph::wav)
+
+# No fused multiply-add in the oracle.
+#
+# The committed corpus is only a fixed target if regenerating it gives back the same
+# bytes on every machine, which is why the reference already substitutes its own PRNG.
+# Contraction breaks the same promise by a different route: clang fuses a*b+c into a
+# single fma by default, which is more accurate and therefore *different*, and on Apple
+# silicon every one of the 41 vectors came out changed — by about 1e-8, enough to fail a
+# byte comparison and small enough to look like nothing.
+#
+# Only this target needs it. dsp-core is compared within declared tolerances and is free
+# to be as accurate as the hardware allows; an oracle is not, because its whole job is to
+# be the same thing twice.
+if(MSVC)
+    # /fp:precise is the default, but the default is what changed underfoot elsewhere.
+    target_compile_options(sfxr-ref PRIVATE /fp:precise)
+else()
+    target_compile_options(sfxr-ref PRIVATE -ffp-contract=off)
+endif()

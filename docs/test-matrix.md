@@ -8,7 +8,7 @@
 | WASM (Chrome) | yes    | via core  | yes            | yes        | Milestone B done |
 | Godot 4.7 win | yes    | 30 checks | via round trip | yes        | Milestone C done |
 | ESP32-S3      | yes    | via core  | yes            | yes (Waveshare audio board) | Milestone F done |
-| macOS arm64   | —      | —         | —              | —          | not yet exercised |
+| macOS arm64   | yes    | yes       | 12/12 ctest    | yes (miniaudio, CoreAudio) | Godot editor suite green; wasm built with emcc 6.0.6 matches all 18 goldens |
 | Linux x64     | —      | —         | —              | —          | not yet exercised |
 | Safari        | —      | —         | —              | —          | not yet exercised |
 | Firefox       | —      | —         | —              | —          | not yet exercised |
