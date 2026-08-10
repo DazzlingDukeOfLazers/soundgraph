@@ -49,6 +49,19 @@ Toolchains live outside the repository: ESP-IDF v5.5 at `C:\Users\danie\esp-idf`
 Emscripten at `C:\Users\danie\emsdk`, Godot 4.7.1 under `C:\Users\danie\Downloads\gofo\`,
 and a repo-local `.venv` with pyserial and esptool.
 
+The native `build/` directory on the Windows machine is **Ninja + MSVC**, so `cmake
+--build build` only works from a shell that has the VS environment loaded — run it from a
+"x64 Native Tools" prompt, or wrap it:
+
+```bash
+cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul && cmake --build build'
+```
+
+The trap is that it does not fail immediately: already-built targets keep running and
+ctest stays green, so a plain shell looks fine right up until a pull adds a new source
+file — then `cl.exe` can't find `<string>` and the errors point at the code instead of at
+the environment. That is exactly how the macos-support merge first presented on Windows.
+
 ## Done in this phase
 
 - Device reliability: malformed-patch abuse suite, thirty-cycle power soak with **0 bytes**
