@@ -510,6 +510,36 @@ for (const bank of banks) {
   });
 }
 
+// One committed modular fixture — voice 0 of the demo bank in schema-v2 form — so the
+// editor has a modules document to open, test against and mirror. Stage 4 flips the
+// whole bank to this notation; until then the fixture is the bridgehead.
+{
+  const bank = banks[0];
+  if (bank !== undefined) {
+    const voice = readBank(join(source, bank))[0];
+    const modular = modularize(buildPatch(voice, bank, 0));
+    if (modular !== null) {
+      modular.metadata = {
+        ...modular.metadata,
+        name: `${voice.name} (modular)`,
+      };
+      const text = JSON.stringify(modular, null, 2) + '\n';
+      const out = join(target, 'algo-01-modular.json');
+      written += 1;
+      if (check) {
+        let committed = '';
+        try { committed = readFileSync(out, 'utf8'); } catch { /* different */ }
+        if (committed !== text) {
+          console.error(`  differs: ${out}`);
+          differences += 1;
+        }
+      } else {
+        writeFileSync(out, text);
+      }
+    }
+  }
+}
+
 if (check) {
   if (differences > 0) {
     console.error(`${differences} imported patch(es) differ from the importer's output.`);

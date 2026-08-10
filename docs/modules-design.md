@@ -150,6 +150,16 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 
 ## Staged plan, with exit tests
 
+> **Stage 2 landed.** Instances render as single nodes wearing their declared
+> surface — synthesized registry descriptors under "module:<name>", consumed by the
+> graph, rack, outline and inspector without any of them learning what a module is.
+> Exported knobs write the instance in the document and reach the inner node in the
+> engine; glow and scopes read through the facade; saving writes the hierarchy. The
+> committed fixture algo-01-modular opens as 15 authored nodes at 39% fit against the
+> flat 33-node 23% floor — and getting there taught the layout to judge its own
+> output: a flat result that is too wide *or* too empty (under 22% packing) re-lays
+> itself through the modular flow.
+
 > **Stage 1 landed.** parse/validate/expand/write in patch-io; schema updated; the
 > documented abuses refuse with named diagnostics; all 32 demo voices render
 > byte-identical flat vs modular (in ctest as modules_flatten_to_identical_audio);

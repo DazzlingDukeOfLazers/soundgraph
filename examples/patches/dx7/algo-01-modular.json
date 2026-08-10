@@ -1,0 +1,528 @@
+{
+  "schema_version": 2,
+  "metadata": {
+    "name": "ALGO 01 (modular)",
+    "description": "ALGO 01 — DX7 voice, algorithm 1, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: LFO, key scaling, pitch envelope and velocity not applied.",
+    "author": "SoundGraph dx7-import (mapping)",
+    "tags": [
+      "fm",
+      "dx7",
+      "imported",
+      "algorithm-1"
+    ],
+    "source": "tools/dx7/banks/algorithm-demos.syx"
+  },
+  "modules": {
+    "operator": {
+      "description": "One DX7 operator: pitch ratio, sine, envelope, VCA.",
+      "nodes": [
+        {
+          "id": "pitch",
+          "type": "Multiply",
+          "parameters": {
+            "factor": 1
+          }
+        },
+        {
+          "id": "osc",
+          "type": "SineOscillator",
+          "parameters": {}
+        },
+        {
+          "id": "env",
+          "type": "ADSR",
+          "parameters": {}
+        },
+        {
+          "id": "vca",
+          "type": "Multiply",
+          "parameters": {}
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "node": "pitch",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "frequency"
+          }
+        },
+        {
+          "from": {
+            "node": "osc",
+            "port": "out"
+          },
+          "to": {
+            "node": "vca",
+            "port": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "env",
+            "port": "out"
+          },
+          "to": {
+            "node": "vca",
+            "port": "b"
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "name": "note",
+          "node": "pitch",
+          "port": "a"
+        },
+        {
+          "name": "gate",
+          "node": "env",
+          "port": "gate"
+        },
+        {
+          "name": "pm",
+          "node": "osc",
+          "port": "pm"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "node": "vca",
+          "port": "out"
+        }
+      ],
+      "parameters": [
+        {
+          "name": "ratio",
+          "node": "pitch",
+          "parameter": "factor"
+        },
+        {
+          "name": "feedback",
+          "node": "osc",
+          "parameter": "feedback"
+        },
+        {
+          "name": "attack",
+          "node": "env",
+          "parameter": "attack"
+        },
+        {
+          "name": "decay",
+          "node": "env",
+          "parameter": "decay"
+        },
+        {
+          "name": "sustain",
+          "node": "env",
+          "parameter": "sustain"
+        },
+        {
+          "name": "release",
+          "node": "env",
+          "parameter": "release"
+        }
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "note",
+      "type": "NoteInput",
+      "parameters": {}
+    },
+    {
+      "id": "op6",
+      "type": "module",
+      "module": "operator",
+      "parameters": {
+        "ratio": 1,
+        "attack": 0.0017,
+        "decay": 2.132,
+        "sustain": 0.1259,
+        "release": 0.1677,
+        "feedback": 0.1152
+      }
+    },
+    {
+      "id": "op5",
+      "type": "module",
+      "module": "operator",
+      "parameters": {
+        "ratio": 2,
+        "attack": 0.0017,
+        "decay": 2.132,
+        "sustain": 0.1259,
+        "release": 0.1677
+      }
+    },
+    {
+      "id": "op4",
+      "type": "module",
+      "module": "operator",
+      "parameters": {
+        "ratio": 1,
+        "attack": 0.0017,
+        "decay": 2.132,
+        "sustain": 0.1259,
+        "release": 0.1677
+      }
+    },
+    {
+      "id": "op3",
+      "type": "module",
+      "module": "operator",
+      "parameters": {
+        "ratio": 3,
+        "attack": 0.0017,
+        "decay": 2.132,
+        "sustain": 0.1259,
+        "release": 0.1677
+      }
+    },
+    {
+      "id": "op2",
+      "type": "module",
+      "module": "operator",
+      "parameters": {
+        "ratio": 1,
+        "attack": 0.001,
+        "decay": 1.5889,
+        "sustain": 0.4597,
+        "release": 0.1036
+      }
+    },
+    {
+      "id": "op1",
+      "type": "module",
+      "module": "operator",
+      "parameters": {
+        "ratio": 14,
+        "attack": 0.001,
+        "decay": 1.5889,
+        "sustain": 0.4597,
+        "release": 0.1036
+      }
+    },
+    {
+      "id": "op6_index_5",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.4608
+      }
+    },
+    {
+      "id": "op5_index_4",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.3877
+      }
+    },
+    {
+      "id": "op4_index_3",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.3262
+      }
+    },
+    {
+      "id": "op2_index_1",
+      "type": "Gain",
+      "parameters": {
+        "gain": 2
+      }
+    },
+    {
+      "id": "op3_level",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.1372
+      }
+    },
+    {
+      "id": "op1_level",
+      "type": "Gain",
+      "parameters": {
+        "gain": 1
+      }
+    },
+    {
+      "id": "carrier_sum_1",
+      "type": "Add",
+      "parameters": {}
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 0.7035
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op6",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op6",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op5",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op5",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op4",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op4",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op3",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op3",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op2",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op2",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op1",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op1",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "op6",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6_index_5",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op6_index_5",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op5",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5_index_4",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op5_index_4",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op4",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_index_3",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op4_index_3",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op2",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_index_1",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_index_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op3",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3_level",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op1",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_level",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op3_level",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier_sum_1",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_level",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier_sum_1",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "carrier_sum_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "carrier_sum_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ]
+}

@@ -548,7 +548,8 @@ func _build_ui() -> void:
 	rack.read_port = func(node_id: String, port: String) -> PackedFloat32Array:
 		if engine == null or not engine.is_loaded():
 			return PackedFloat32Array()
-		return engine.get_port_signal(node_id, port)
+		var source := _engine_signal_source(node_id, port)
+		return engine.get_port_signal(source[0], source[1])
 	rack.ink = INK
 	rack.ink_dim = INK_DIM
 	rack.parameter_changed.connect(_on_rack_parameter_changed)
@@ -1566,10 +1567,13 @@ func _rebuild_level_targets() -> void:
 		var widget: GraphNode = widgets[node_id]
 		var outputs := _port_list(node_id, "outputs")
 		for index in outputs.size():
+			# Instances glow too: the declared port's signal lives on an inner node in
+			# the flattened graph, so the engine-facing source is resolved here, once.
+			var source := _engine_signal_source(node_id, str(outputs[index]["name"]))
 			_level_targets.append({
-				"node": node_id,
+				"node": source[0],
+				"port": source[1],
 				"widget": String(widget.name),
-				"port": str(outputs[index]["name"]),
 				"index": index,
 				"audio": str(outputs[index]["type"]) == "audio",
 			})
@@ -1645,8 +1649,106 @@ func _rebuild_view() -> void:
 		rack.rebuild()
 
 
+# ---------------------------------------------------------------------------------
+# Modules — stage 2 of docs/modules-design.md.
+#
+# An instance is one node with the module's declared surface. The editor's whole node
+# pipeline — widgets, ports, the rack, the outline, the inspector — consumes registry
+# descriptors, so an instance becomes ordinary by synthesizing a descriptor from its
+# definition and registering it under "module:<name>". Everything downstream keys on
+# _type_key(node) instead of the raw type and never learns anything else. The engine
+# knows only the flattened graph, so the two places the editor talks to it about a
+# *live* node — setting a parameter, reading a port — translate through the facade
+# with _engine_parameter_target and _engine_signal_source.
+# ---------------------------------------------------------------------------------
+
+## The registry key a node's descriptor lives under.
+func _type_key(node: Dictionary) -> String:
+	if str(node.get("type", "")) == "module":
+		return "module:%s" % str(node.get("module", ""))
+	return str(node.get("type", ""))
+
+
+## Builds a registry-shaped descriptor for each module definition, so instances flow
+## through every code path a plain node does. Signal types, units and parameter ranges
+## come from the inner nodes' own registry entries — the facade renames, it does not
+## invent.
+func _synthesize_module_descriptors() -> void:
+	for key in registry.keys().filter(func(k): return str(k).begins_with("module:")):
+		registry.erase(key)
+	for module_name in patch.get("modules", {}):
+		var definition: Dictionary = patch["modules"][module_name]
+		var inner := {}
+		for node in definition.get("nodes", []):
+			inner[node["id"]] = node
+		var port_entry := func(binding: Dictionary, list_key: String) -> Dictionary:
+			var inner_node: Dictionary = inner.get(binding["node"], {})
+			var inner_type: Dictionary = registry.get(str(inner_node.get("type", "")), {})
+			for port in inner_type.get(list_key, []):
+				if port["name"] == binding["port"]:
+					var cloned: Dictionary = port.duplicate()
+					cloned["name"] = binding["name"]
+					return cloned
+			return {"name": binding["name"], "type": "control", "doc": ""}
+		var inputs: Array = []
+		for binding in definition.get("inputs", []):
+			inputs.append(port_entry.call(binding, "inputs"))
+		var outputs: Array = []
+		for binding in definition.get("outputs", []):
+			outputs.append(port_entry.call(binding, "outputs"))
+		var parameters: Array = []
+		for binding in definition.get("parameters", []):
+			var inner_node: Dictionary = inner.get(binding["node"], {})
+			var inner_type: Dictionary = registry.get(str(inner_node.get("type", "")), {})
+			for parameter in inner_type.get("parameters", []):
+				if parameter["name"] == binding["parameter"]:
+					var cloned: Dictionary = parameter.duplicate()
+					cloned["name"] = binding["name"]
+					# The definition's own inner value, when set, is the default the
+					# instance starts from — that is what "definition" means.
+					var authored: Variant = inner_node.get("parameters", {}) \
+						.get(binding["parameter"], null)
+					if authored != null:
+						cloned["default"] = authored
+					parameters.append(cloned)
+					break
+		registry["module:%s" % module_name] = {
+			"name": "module:%s" % module_name,
+			"display_name": str(module_name).capitalize(),
+			"category": "Modules",
+			"summary": str(definition.get("description", "")),
+			"inputs": inputs,
+			"outputs": outputs,
+			"parameters": parameters,
+		}
+
+
+## Where the engine actually hears about an instance's exported parameter.
+func _engine_parameter_target(node_id: String, parameter: String) -> Array:
+	for node in patch.get("nodes", []):
+		if node["id"] != node_id or str(node.get("type", "")) != "module":
+			continue
+		var definition: Dictionary = patch.get("modules", {}).get(str(node["module"]), {})
+		for binding in definition.get("parameters", []):
+			if binding["name"] == parameter:
+				return ["%s.%s" % [node_id, binding["node"]], binding["parameter"]]
+	return [node_id, parameter]
+
+
+## Where an instance's declared port actually carries signal, for scopes and glow.
+func _engine_signal_source(node_id: String, port: String) -> Array:
+	for node in patch.get("nodes", []):
+		if node["id"] != node_id or str(node.get("type", "")) != "module":
+			continue
+		var definition: Dictionary = patch.get("modules", {}).get(str(node["module"]), {})
+		for binding in definition.get("outputs", []):
+			if binding["name"] == port:
+				return ["%s.%s" % [node_id, binding["node"]], binding["port"]]
+	return [node_id, port]
+
+
 func _create_widget(node: Dictionary) -> void:
-	var type_name: String = node["type"]
+	var type_name: String = _type_key(node)
 	var descriptor: Dictionary = registry.get(type_name, {})
 
 	var widget := GraphNode.new()
@@ -2086,7 +2188,11 @@ func _format_value(value: float) -> String:
 ## records it in the document. Rebuilding would interrupt the sound, which is exactly what
 ## "patching should feel immediate" rules out.
 func _set_parameter(node_id: String, parameter: String, value: float) -> void:
-	engine.set_parameter(node_id, parameter, value)
+	# The engine runs the flattened graph, so an instance's exported knob reaches it
+	# by its inner name; the document records the value on the instance, because the
+	# facade is what the file says.
+	var target := _engine_parameter_target(node_id, parameter)
+	engine.set_parameter(target[0], target[1], value)
 	for node in patch.get("nodes", []):
 		if node["id"] == node_id:
 			if not node.has("parameters"):
@@ -2545,8 +2651,11 @@ func _on_search_changed(query: String) -> void:
 
 	# The ranking is the core's, so "make quieter" finds the same node here, in the
 	# browser, and on the command line.
+	# Synthesized module descriptors are not addable types; the palette lists the core's
+	# vocabulary only.
 	var names: PackedStringArray = engine.search_nodes(query) if query.strip_edges() != "" \
-		else PackedStringArray(registry.keys())
+		else PackedStringArray(registry.keys().filter(
+			func(k): return not str(k).begins_with("module:")))
 
 	_search_top_result = names[0] if names.size() > 0 else ""
 	for type_name in names:
@@ -3504,6 +3613,9 @@ func _load_text(text: String) -> void:
 			positioned["%s,%s" % [node["position"].get("x", 0.0),
 				node["position"].get("y", 0.0)]] = true
 	var needs_layout: bool = patch["nodes"].size() > 1 and positioned.size() <= 1
+
+	# Before any widget is built, so every instance finds its descriptor waiting.
+	_synthesize_module_descriptors()
 
 	undo_redo.clear_history(true)
 	_pending_snapshot = {}

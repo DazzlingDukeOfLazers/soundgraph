@@ -58,6 +58,23 @@ const MODULE_MAX := 6
 const ROW_ASPECT := 2.6
 const ROW_GAP := 100.0
 
+## Below CLUSTER_THRESHOLD, the wrap triggers on shape instead: a flat layout wider
+## than this many times its height is a ribbon whatever its node count says.
+const RIBBON_MIN_NODES := 10
+const RIBBON_ASPECT := 3.5
+
+## A flat layout keeping less than this fraction of its bounds as actual nodes is
+## judged wasteful and re-laid modular. The big-patch flow packs about 40-70%; a deep
+## chain of towers under the plain path measured 16%.
+const PACKING_FLOOR := 0.22
+
+
+## The request, marked to take the plain path — used for the try-flat-first probe.
+static func _plain_copy(request: Dictionary) -> Dictionary:
+	var copy := request.duplicate()
+	copy["_plain"] = true
+	return copy
+
 
 static func arrange(request: Dictionary) -> Dictionary:
 	var ids: Array = request["nodes"]
@@ -68,6 +85,27 @@ static func arrange(request: Dictionary) -> Dictionary:
 	# inner and outer calls come back here with "_plain" set, so the recursion is one
 	# level deep by construction.
 	if ids.size() >= CLUSTER_THRESHOLD and not request.get("_plain", false):
+		return _arrange_modular(request)
+	# Middling graphs earn the same treatment by *result*, not size. The fifteen-node
+	# modular DX7 voice is a chain thirteen layers deep: the plain path spread it over
+	# 4744x1915 — not a ribbon by aspect, but 16% packing, five-sixths of the frame
+	# spent on air. So the plain layout runs first and is judged on both counts: too
+	# wide, or too empty, and the modular wrap takes over.
+	if ids.size() >= RIBBON_MIN_NODES and not request.get("_plain", false):
+		var flat := arrange(_plain_copy(request))
+		var low := Vector2(INF, INF)
+		var high := Vector2(-INF, -INF)
+		var content := 0.0
+		for id in ids:
+			var size: Vector2 = request["sizes"].get(id, Vector2(240, 140))
+			low = low.min(flat[id])
+			high = high.max(flat[id] + size)
+			content += size.x * size.y
+		var bounds := high - low
+		var ribbon: bool = bounds.x > RIBBON_ASPECT * maxf(bounds.y, 500.0)
+		var wasteful: bool = content < PACKING_FLOOR * bounds.x * bounds.y
+		if not ribbon and not wasteful:
+			return flat
 		return _arrange_modular(request)
 
 	var sizes: Dictionary = request["sizes"]

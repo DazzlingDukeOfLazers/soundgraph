@@ -138,6 +138,10 @@ func refresh() -> void:
 func _type_of(node_id: String) -> String:
 	for node in patch.get("nodes", []):
 		if str(node["id"]) == node_id:
+			# Instances resolve to their synthesized descriptor key, so this view
+			# treats a module like any node without ever learning what one is.
+			if str(node["type"]) == "module":
+				return "module:%s" % str(node.get("module", ""))
 			return str(node["type"])
 	return ""
 

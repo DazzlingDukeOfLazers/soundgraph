@@ -1705,6 +1705,62 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 
+	# ---- modules, stage 2: an instance is one node wearing its declared surface -------
+	# The fixture is voice 0 of the demo bank in schema-v2 form: one operator
+	# definition, six instances. The engine sees 33 flattened nodes; the editor must
+	# see 15 authored ones.
+	await main._load_example("DX7: algo-01-modular")
+	for i in 8:
+		await process_frame
+	check(main.widgets.size() == 15,
+		"the editor shows the authored graph, not the expansion (%d widgets)"
+			% main.widgets.size())
+	check(main.widgets.has("op1") and not main.widgets.has("op1.osc"),
+		"instances are nodes; their internals are not")
+
+	var instance_widget: GraphNode = main.widgets["op1"]
+	var declared_inputs: Array = main._port_list("op1", "inputs")
+	var declared_outputs: Array = main._port_list("op1", "outputs")
+	check(declared_inputs.size() == 3 and declared_outputs.size() == 1,
+		"an instance wears the declared surface (%d in, %d out)"
+			% [declared_inputs.size(), declared_outputs.size()])
+
+	# The exported knob: editing it writes the instance in the document and reaches
+	# the inner node in the engine.
+	check(main.parameter_widgets.has("op1") and main.parameter_widgets["op1"].has("ratio"),
+		"exported parameters appear as ordinary knobs")
+	main._set_parameter("op1", "ratio", 2.5)
+	var instance_value := 0.0
+	for node in main.patch["nodes"]:
+		if node["id"] == "op1":
+			instance_value = float(node.get("parameters", {}).get("ratio", 0.0))
+	check(is_equal_approx(instance_value, 2.5),
+		"editing an exported parameter records it on the instance (%.1f)" % instance_value)
+	var engine_target: Array = main._engine_parameter_target("op1", "ratio")
+	check(str(engine_target[0]) == "op1.pitch" and str(engine_target[1]) == "factor",
+		"and the engine hears it at the inner node (%s.%s)" % [engine_target[0], engine_target[1]])
+
+	# The glow sweep reads flattened sources for instance ports.
+	var glows_inner := false
+	for entry in main._level_targets:
+		if str(entry["node"]).begins_with("op1."):
+			glows_inner = true
+	check(glows_inner, "signal levels are read from the inner nodes")
+
+	# Round trip: saving writes the hierarchy, never the expansion.
+	var modular_saved: String = main.engine.format_patch(JSON.stringify(main.patch))
+	check(modular_saved.contains("\"modules\""), "saving keeps the modules section")
+	check(not modular_saved.contains("op1.pitch"), "and never leaks the flattened form")
+
+	# The exit measurement: 15 nodes fit far above the 33-node packing floor.
+	check(main.graph_edit.zoom >= 0.3,
+		"the modular voice opens materially closer than the flat one (%.0f%%)"
+			% (main.graph_edit.zoom * 100.0))
+
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+
 	# ---- no operating text below the floor, measured on the built editor -------------
 	# The token check in design_test proves the scale is sound; this proves the editor
 	# uses it. An override typed as a literal, or a legacy constant surviving in a

@@ -74,7 +74,10 @@ static func content_height(parameters: int) -> float:
 static func measure(patch_nodes: Array, registry: Dictionary) -> float:
 	var tallest := MODULE_MIN_HEIGHT
 	for node in patch_nodes:
-		var descriptor: Dictionary = registry.get(str(node.get("type", "")), {})
+		var type_key := str(node.get("type", ""))
+		if type_key == "module":
+			type_key = "module:%s" % str(node.get("module", ""))
+		var descriptor: Dictionary = registry.get(type_key, {})
 		tallest = maxf(tallest,
 			content_height(int(descriptor.get("parameters", []).size())))
 	return tallest + DENSITY_BAND[density]
@@ -274,7 +277,7 @@ func rebuild() -> void:
 		var module := RackModule.new()
 		module.rack = self
 		module.node_id = str(node["id"])
-		module.type_name = str(node["type"])
+		module.type_name = "module:%s" % str(node.get("module", "")) 			if str(node["type"]) == "module" else str(node["type"])
 		module.descriptor = registry.get(module.type_name, {})
 		var given_name: String = str(node.get("name", ""))
 		module.title = given_name if given_name != "" else \
@@ -350,6 +353,10 @@ func _module_order() -> Array:
 func _type_of(node_id: String) -> String:
 	for node in patch.get("nodes", []):
 		if str(node["id"]) == node_id:
+			# Instances resolve to their synthesized descriptor key, so this view
+			# treats a module like any node without ever learning what one is.
+			if str(node["type"]) == "module":
+				return "module:%s" % str(node.get("module", ""))
 			return str(node["type"])
 	return ""
 
