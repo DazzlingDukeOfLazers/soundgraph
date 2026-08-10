@@ -1706,10 +1706,10 @@ func _initialize() -> void:
 		await process_frame
 
 	# ---- modules, stage 2: an instance is one node wearing its declared surface -------
-	# The fixture is voice 0 of the demo bank in schema-v2 form: one operator
+	# Since stage 4 the importer emits this notation by default: one operator
 	# definition, six instances. The engine sees 33 flattened nodes; the editor must
 	# see 15 authored ones.
-	await main._load_example("DX7: algo-01-modular")
+	await main._load_example("DX7: algo-01")
 	for i in 8:
 		await process_frame
 	check(main.widgets.size() == 15,

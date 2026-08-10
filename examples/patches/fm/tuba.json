@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "metadata": {
     "name": "Tuba",
     "description": "Tuba — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: feedback 5 applied without envelope scaling; modulator level key-scaling ignored; carrier tremolo/vibrato flag ignored.",
@@ -11,6 +11,128 @@
     ],
     "source": "freedoom/lumps/genmidi/instruments/instr059.sbi"
   },
+  "modules": {
+    "operator": {
+      "description": "One OPL2 operator: pitch ratio, shaped sine, envelope, VCA.",
+      "nodes": [
+        {
+          "id": "pitch",
+          "type": "Multiply",
+          "parameters": {
+            "factor": 1
+          }
+        },
+        {
+          "id": "osc",
+          "type": "SineOscillator",
+          "parameters": {}
+        },
+        {
+          "id": "env",
+          "type": "ADSR",
+          "parameters": {}
+        },
+        {
+          "id": "vca",
+          "type": "Multiply",
+          "parameters": {}
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "node": "pitch",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "frequency"
+          }
+        },
+        {
+          "from": {
+            "node": "osc",
+            "port": "out"
+          },
+          "to": {
+            "node": "vca",
+            "port": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "env",
+            "port": "out"
+          },
+          "to": {
+            "node": "vca",
+            "port": "b"
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "name": "note",
+          "node": "pitch",
+          "port": "a"
+        },
+        {
+          "name": "gate",
+          "node": "env",
+          "port": "gate"
+        },
+        {
+          "name": "pm",
+          "node": "osc",
+          "port": "pm"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "node": "vca",
+          "port": "out"
+        }
+      ],
+      "parameters": [
+        {
+          "name": "ratio",
+          "node": "pitch",
+          "parameter": "factor"
+        },
+        {
+          "name": "shape",
+          "node": "osc",
+          "parameter": "shape"
+        },
+        {
+          "name": "feedback",
+          "node": "osc",
+          "parameter": "feedback"
+        },
+        {
+          "name": "attack",
+          "node": "env",
+          "parameter": "attack"
+        },
+        {
+          "name": "decay",
+          "node": "env",
+          "parameter": "decay"
+        },
+        {
+          "name": "sustain",
+          "node": "env",
+          "parameter": "sustain"
+        },
+        {
+          "name": "release",
+          "node": "env",
+          "parameter": "release"
+        }
+      ]
+    }
+  },
   "nodes": [
     {
       "id": "note",
@@ -18,60 +140,29 @@
       "parameters": {}
     },
     {
-      "id": "mod_pitch",
-      "type": "Multiply",
-      "parameters": {
-        "factor": 1
-      }
-    },
-    {
-      "id": "car_pitch",
-      "type": "Multiply",
-      "parameters": {
-        "factor": 1
-      }
-    },
-    {
       "id": "mod",
-      "type": "SineOscillator",
+      "type": "module",
+      "module": "operator",
       "parameters": {
+        "ratio": 1,
+        "attack": 0.05,
+        "decay": 0.096,
+        "sustain": 0.7079,
+        "release": 0.7202,
         "feedback": 0.08891
       }
     },
     {
-      "id": "mod_env",
-      "type": "ADSR",
-      "parameters": {
-        "attack": 0.05,
-        "decay": 0.096,
-        "sustain": 0.7079,
-        "release": 0.7202
-      }
-    },
-    {
-      "id": "mod_vca",
-      "type": "Multiply",
-      "parameters": {}
-    },
-    {
       "id": "car",
-      "type": "SineOscillator",
-      "parameters": {}
-    },
-    {
-      "id": "car_env",
-      "type": "ADSR",
+      "type": "module",
+      "module": "operator",
       "parameters": {
+        "ratio": 1,
         "attack": 0.0175,
         "decay": 1.7278,
         "sustain": 0.3548,
         "release": 0.5039
       }
-    },
-    {
-      "id": "car_vca",
-      "type": "Multiply",
-      "parameters": {}
     },
     {
       "id": "out",
@@ -102,38 +193,18 @@
         "port": "frequency"
       },
       "to": {
-        "node": "mod_pitch",
-        "port": "a"
+        "node": "mod",
+        "port": "note"
       }
     },
     {
       "from": {
         "node": "note",
         "port": "frequency"
-      },
-      "to": {
-        "node": "car_pitch",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "mod_pitch",
-        "port": "out"
-      },
-      "to": {
-        "node": "mod",
-        "port": "frequency"
-      }
-    },
-    {
-      "from": {
-        "node": "car_pitch",
-        "port": "out"
       },
       "to": {
         "node": "car",
-        "port": "frequency"
+        "port": "note"
       }
     },
     {
@@ -142,7 +213,7 @@
         "port": "gate"
       },
       "to": {
-        "node": "mod_env",
+        "node": "mod",
         "port": "gate"
       }
     },
@@ -152,53 +223,13 @@
         "port": "gate"
       },
       "to": {
-        "node": "car_env",
+        "node": "car",
         "port": "gate"
       }
     },
     {
       "from": {
         "node": "mod",
-        "port": "out"
-      },
-      "to": {
-        "node": "mod_vca",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "mod_env",
-        "port": "out"
-      },
-      "to": {
-        "node": "mod_vca",
-        "port": "b"
-      }
-    },
-    {
-      "from": {
-        "node": "car",
-        "port": "out"
-      },
-      "to": {
-        "node": "car_vca",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "car_env",
-        "port": "out"
-      },
-      "to": {
-        "node": "car_vca",
-        "port": "b"
-      }
-    },
-    {
-      "from": {
-        "node": "mod_vca",
         "port": "out"
       },
       "to": {
@@ -218,7 +249,7 @@
     },
     {
       "from": {
-        "node": "car_vca",
+        "node": "car",
         "port": "out"
       },
       "to": {

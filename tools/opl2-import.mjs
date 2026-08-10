@@ -266,6 +266,153 @@ function buildPatch(voice, sourceFile) {
 
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+// ---------------------------------------------------------------------------------
+// Modular form — stage 4 of docs/modules-design.md, the OPL2 half.
+//
+// Same shape as the DX7 importer's: modularize() factors the flat patch, replacing
+// each operator cluster (X_pitch, X, X_env, X_vca for X in mod/car) with an instance
+// of an "operator" module. The module exports everything an OPL operator varies —
+// ratio, waveform shape, feedback, the four envelope times — and --modular-check
+// proves the factoring with rendered bytes across all 128 instruments.
+// ---------------------------------------------------------------------------------
+
+const OPERATOR_MODULE = {
+  description: 'One OPL2 operator: pitch ratio, shaped sine, envelope, VCA.',
+  nodes: [
+    { id: 'pitch', type: 'Multiply', parameters: { factor: 1 } },
+    { id: 'osc', type: 'SineOscillator', parameters: {} },
+    { id: 'env', type: 'ADSR', parameters: {} },
+    { id: 'vca', type: 'Multiply', parameters: {} },
+  ],
+  connections: [
+    { from: { node: 'pitch', port: 'out' }, to: { node: 'osc', port: 'frequency' } },
+    { from: { node: 'osc', port: 'out' }, to: { node: 'vca', port: 'a' } },
+    { from: { node: 'env', port: 'out' }, to: { node: 'vca', port: 'b' } },
+  ],
+  inputs: [
+    { name: 'note', node: 'pitch', port: 'a' },
+    { name: 'gate', node: 'env', port: 'gate' },
+    { name: 'pm', node: 'osc', port: 'pm' },
+  ],
+  outputs: [{ name: 'out', node: 'vca', port: 'out' }],
+  parameters: [
+    { name: 'ratio', node: 'pitch', parameter: 'factor' },
+    { name: 'shape', node: 'osc', parameter: 'shape' },
+    { name: 'feedback', node: 'osc', parameter: 'feedback' },
+    { name: 'attack', node: 'env', parameter: 'attack' },
+    { name: 'decay', node: 'env', parameter: 'decay' },
+    { name: 'sustain', node: 'env', parameter: 'sustain' },
+    { name: 'release', node: 'env', parameter: 'release' },
+  ],
+};
+
+function modularize(flat) {
+  const byId = new Map(flat.nodes.map((n) => [n.id, n]));
+  const clusters = ['mod', 'car'].filter((x) =>
+    byId.has(`${x}_pitch`) && byId.has(x) && byId.has(`${x}_env`) && byId.has(`${x}_vca`));
+  if (clusters.length === 0) return null;
+
+  const inner = new Set();
+  for (const x of clusters) {
+    for (const id of [`${x}_pitch`, x, `${x}_env`, `${x}_vca`]) inner.add(id);
+  }
+
+  const nodes = [];
+  for (const node of flat.nodes) {
+    const cluster = clusters.find((x) => node.id === `${x}_pitch`);
+    if (cluster !== undefined) {
+      const osc = byId.get(cluster);
+      const env = byId.get(`${cluster}_env`);
+      const parameters = {
+        ratio: node.parameters.factor,
+        attack: env.parameters.attack,
+        decay: env.parameters.decay,
+        sustain: env.parameters.sustain,
+        release: env.parameters.release,
+      };
+      if (osc.parameters.shape !== undefined) parameters.shape = osc.parameters.shape;
+      if (osc.parameters.feedback !== undefined) {
+        parameters.feedback = osc.parameters.feedback;
+      }
+      nodes.push({ id: cluster, type: 'module', module: 'operator', parameters });
+      continue;
+    }
+    if (inner.has(node.id)) continue;
+    nodes.push(node);
+  }
+
+  const owner = (id) => {
+    for (const x of clusters) {
+      if (id === `${x}_pitch` || id === x || id === `${x}_env` || id === `${x}_vca`) {
+        return { instance: x, part: id === x ? 'osc' : id.slice(x.length + 1) };
+      }
+    }
+    return null;
+  };
+  const connections = [];
+  for (const connection of flat.connections) {
+    const from = owner(connection.from.node);
+    const to = owner(connection.to.node);
+    if (from !== null && to !== null && from.instance === to.instance) continue;
+    const rewritten = { from: { ...connection.from }, to: { ...connection.to } };
+    if (from !== null) rewritten.from = { node: from.instance, port: 'out' };
+    if (to !== null) {
+      const port = to.part === 'pitch' ? 'note' : to.part === 'env' ? 'gate' : 'pm';
+      rewritten.to = { node: to.instance, port };
+    }
+    connections.push(rewritten);
+  }
+
+  return {
+    schema_version: 2,
+    metadata: flat.metadata,
+    modules: { operator: OPERATOR_MODULE },
+    nodes,
+    connections,
+  };
+}
+
+// --modular-check: every instrument built flat and factored modular, both rendered,
+// byte-identical or bust. The same guarantee the DX7 importer carries.
+if (process.argv.includes('--modular-check')) {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const scratch = mkdtempSync(join(tmpdir(), 'opl2-modular-'));
+  const bin = join(root, 'build', 'bin');
+  let differing = 0;
+  let factored = 0;
+  const newline = String.fromCharCode(10);
+  for (const file of readdirSync(source).filter((f) => f.endsWith('.sbi')).sort()) {
+    const voice = parseSbi(readFileSync(join(source, file)), file);
+    const flat = buildPatch(voice, file);
+    const modular = modularize(flat);
+    if (modular === null) continue;
+    factored += 1;
+    const flatPath = join(scratch, `${slug(voice.name)}-flat.json`);
+    const modularPath = join(scratch, `${slug(voice.name)}-mod.json`);
+    writeFileSync(flatPath, JSON.stringify(flat) + newline);
+    writeFileSync(modularPath, JSON.stringify(modular) + newline);
+    const flatWav = join(scratch, `${slug(voice.name)}-flat.wav`);
+    const modularWav = join(scratch, `${slug(voice.name)}-mod.wav`);
+    execFileSync(join(bin, 'sg-render'), [flatPath, flatWav,
+      '--seconds', '1', '--notes', '57', '--gate', '0.7', '--quiet']);
+    execFileSync(join(bin, 'sg-render'), [modularPath, modularWav,
+      '--seconds', '1', '--notes', '57', '--gate', '0.7', '--quiet']);
+    if (!readFileSync(flatWav).equals(readFileSync(modularWav))) {
+      console.error(`  differs: ${voice.name}`);
+      differing += 1;
+    }
+  }
+  if (differing > 0 || factored === 0) {
+    console.error(`${differing} instrument(s) render differently modular vs flat `
+      + `(${factored} factored).`);
+    process.exit(1);
+  }
+  console.log(`All ${factored} instruments render byte-identical audio, modular and flat.`);
+  process.exit(0);
+}
+
 const check = process.argv.includes('--check');
 let differences = 0;
 mkdirSync(target, { recursive: true });
@@ -273,7 +420,9 @@ mkdirSync(target, { recursive: true });
 const files = readdirSync(source).filter((f) => f.endsWith('.sbi')).sort();
 for (const file of files) {
   const voice = parseSbi(readFileSync(join(source, file)), file);
-  const patch = buildPatch(voice, file);
+  // The importer emits what it knows: two operators as two instances of one module.
+  const flat = buildPatch(voice, file);
+  const patch = modularize(flat) ?? flat;
   const text = JSON.stringify(patch, null, 2) + '\n';
   const out = join(target, `${slug(voice.name)}.json`);
 

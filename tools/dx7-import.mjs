@@ -490,7 +490,13 @@ for (const bank of banks) {
   const voices = readBank(join(source, bank));
   const used = new Set();
   voices.forEach((voice, index) => {
-    const patch = buildPatch(voice, bank, index);
+    // Stage 4 of docs/modules-design.md: the importer emits what it knows. A voice is
+    // one operator module and six instances, so that is what the file says —
+    // modularize() is proven byte-identical against the flat form by --modular-check,
+    // which still builds both. A voice with nothing to factor (all fixed-frequency
+    // operators) stays flat, which a mixed library is allowed to be.
+    const flat = buildPatch(voice, bank, index);
+    const patch = modularize(flat) ?? flat;
     let name = slug(voice.name || `voice-${index + 1}`);
     while (used.has(name)) name = `${name}-${index + 1}`;
     used.add(name);
@@ -508,36 +514,6 @@ for (const bank of banks) {
       writeFileSync(out, text);
     }
   });
-}
-
-// One committed modular fixture — voice 0 of the demo bank in schema-v2 form — so the
-// editor has a modules document to open, test against and mirror. Stage 4 flips the
-// whole bank to this notation; until then the fixture is the bridgehead.
-{
-  const bank = banks[0];
-  if (bank !== undefined) {
-    const voice = readBank(join(source, bank))[0];
-    const modular = modularize(buildPatch(voice, bank, 0));
-    if (modular !== null) {
-      modular.metadata = {
-        ...modular.metadata,
-        name: `${voice.name} (modular)`,
-      };
-      const text = JSON.stringify(modular, null, 2) + '\n';
-      const out = join(target, 'algo-01-modular.json');
-      written += 1;
-      if (check) {
-        let committed = '';
-        try { committed = readFileSync(out, 'utf8'); } catch { /* different */ }
-        if (committed !== text) {
-          console.error(`  differs: ${out}`);
-          differences += 1;
-        }
-      } else {
-        writeFileSync(out, text);
-      }
-    }
-  }
 }
 
 if (check) {

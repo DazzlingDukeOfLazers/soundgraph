@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "metadata": {
     "name": "ALGO 01",
     "description": "ALGO 01 — DX7 voice, algorithm 1, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: LFO, key scaling, pitch envelope and velocity not applied.",
@@ -12,6 +12,123 @@
     ],
     "source": "tools/dx7/banks/algorithm-demos.syx"
   },
+  "modules": {
+    "operator": {
+      "description": "One DX7 operator: pitch ratio, sine, envelope, VCA.",
+      "nodes": [
+        {
+          "id": "pitch",
+          "type": "Multiply",
+          "parameters": {
+            "factor": 1
+          }
+        },
+        {
+          "id": "osc",
+          "type": "SineOscillator",
+          "parameters": {}
+        },
+        {
+          "id": "env",
+          "type": "ADSR",
+          "parameters": {}
+        },
+        {
+          "id": "vca",
+          "type": "Multiply",
+          "parameters": {}
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "node": "pitch",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "frequency"
+          }
+        },
+        {
+          "from": {
+            "node": "osc",
+            "port": "out"
+          },
+          "to": {
+            "node": "vca",
+            "port": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "env",
+            "port": "out"
+          },
+          "to": {
+            "node": "vca",
+            "port": "b"
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "name": "note",
+          "node": "pitch",
+          "port": "a"
+        },
+        {
+          "name": "gate",
+          "node": "env",
+          "port": "gate"
+        },
+        {
+          "name": "pm",
+          "node": "osc",
+          "port": "pm"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "node": "vca",
+          "port": "out"
+        }
+      ],
+      "parameters": [
+        {
+          "name": "ratio",
+          "node": "pitch",
+          "parameter": "factor"
+        },
+        {
+          "name": "feedback",
+          "node": "osc",
+          "parameter": "feedback"
+        },
+        {
+          "name": "attack",
+          "node": "env",
+          "parameter": "attack"
+        },
+        {
+          "name": "decay",
+          "node": "env",
+          "parameter": "decay"
+        },
+        {
+          "name": "sustain",
+          "node": "env",
+          "parameter": "sustain"
+        },
+        {
+          "name": "release",
+          "node": "env",
+          "parameter": "release"
+        }
+      ]
+    }
+  },
   "nodes": [
     {
       "id": "note",
@@ -19,23 +136,24 @@
       "parameters": {}
     },
     {
-      "id": "op6_pitch",
-      "type": "Multiply",
+      "id": "op6",
+      "type": "module",
+      "module": "operator",
       "parameters": {
-        "factor": 1
-      }
-    },
-    {
-      "id": "op6_osc",
-      "type": "SineOscillator",
-      "parameters": {
+        "ratio": 1,
+        "attack": 0.0017,
+        "decay": 2.132,
+        "sustain": 0.1259,
+        "release": 0.1677,
         "feedback": 0.1152
       }
     },
     {
-      "id": "op6_env",
-      "type": "ADSR",
+      "id": "op5",
+      "type": "module",
+      "module": "operator",
       "parameters": {
+        "ratio": 2,
         "attack": 0.0017,
         "decay": 2.132,
         "sustain": 0.1259,
@@ -43,26 +161,11 @@
       }
     },
     {
-      "id": "op6_vca",
-      "type": "Multiply",
-      "parameters": {}
-    },
-    {
-      "id": "op5_pitch",
-      "type": "Multiply",
+      "id": "op4",
+      "type": "module",
+      "module": "operator",
       "parameters": {
-        "factor": 2
-      }
-    },
-    {
-      "id": "op5_osc",
-      "type": "SineOscillator",
-      "parameters": {}
-    },
-    {
-      "id": "op5_env",
-      "type": "ADSR",
-      "parameters": {
+        "ratio": 1,
         "attack": 0.0017,
         "decay": 2.132,
         "sustain": 0.1259,
@@ -70,26 +173,11 @@
       }
     },
     {
-      "id": "op5_vca",
-      "type": "Multiply",
-      "parameters": {}
-    },
-    {
-      "id": "op4_pitch",
-      "type": "Multiply",
+      "id": "op3",
+      "type": "module",
+      "module": "operator",
       "parameters": {
-        "factor": 1
-      }
-    },
-    {
-      "id": "op4_osc",
-      "type": "SineOscillator",
-      "parameters": {}
-    },
-    {
-      "id": "op4_env",
-      "type": "ADSR",
-      "parameters": {
+        "ratio": 3,
         "attack": 0.0017,
         "decay": 2.132,
         "sustain": 0.1259,
@@ -97,53 +185,11 @@
       }
     },
     {
-      "id": "op4_vca",
-      "type": "Multiply",
-      "parameters": {}
-    },
-    {
-      "id": "op3_pitch",
-      "type": "Multiply",
+      "id": "op2",
+      "type": "module",
+      "module": "operator",
       "parameters": {
-        "factor": 3
-      }
-    },
-    {
-      "id": "op3_osc",
-      "type": "SineOscillator",
-      "parameters": {}
-    },
-    {
-      "id": "op3_env",
-      "type": "ADSR",
-      "parameters": {
-        "attack": 0.0017,
-        "decay": 2.132,
-        "sustain": 0.1259,
-        "release": 0.1677
-      }
-    },
-    {
-      "id": "op3_vca",
-      "type": "Multiply",
-      "parameters": {}
-    },
-    {
-      "id": "op2_pitch",
-      "type": "Multiply",
-      "parameters": {
-        "factor": 1
-      }
-    },
-    {
-      "id": "op2_osc",
-      "type": "SineOscillator",
-      "parameters": {}
-    },
-    {
-      "id": "op2_env",
-      "type": "ADSR",
-      "parameters": {
+        "ratio": 1,
         "attack": 0.001,
         "decay": 1.5889,
         "sustain": 0.4597,
@@ -151,36 +197,16 @@
       }
     },
     {
-      "id": "op2_vca",
-      "type": "Multiply",
-      "parameters": {}
-    },
-    {
-      "id": "op1_pitch",
-      "type": "Multiply",
+      "id": "op1",
+      "type": "module",
+      "module": "operator",
       "parameters": {
-        "factor": 14
-      }
-    },
-    {
-      "id": "op1_osc",
-      "type": "SineOscillator",
-      "parameters": {}
-    },
-    {
-      "id": "op1_env",
-      "type": "ADSR",
-      "parameters": {
+        "ratio": 14,
         "attack": 0.001,
         "decay": 1.5889,
         "sustain": 0.4597,
         "release": 0.1036
       }
-    },
-    {
-      "id": "op1_vca",
-      "type": "Multiply",
-      "parameters": {}
     },
     {
       "id": "op6_index_5",
@@ -244,18 +270,8 @@
         "port": "frequency"
       },
       "to": {
-        "node": "op6_pitch",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op6_pitch",
-        "port": "out"
-      },
-      "to": {
-        "node": "op6_osc",
-        "port": "frequency"
+        "node": "op6",
+        "port": "note"
       }
     },
     {
@@ -264,28 +280,8 @@
         "port": "gate"
       },
       "to": {
-        "node": "op6_env",
+        "node": "op6",
         "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "op6_osc",
-        "port": "out"
-      },
-      "to": {
-        "node": "op6_vca",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op6_env",
-        "port": "out"
-      },
-      "to": {
-        "node": "op6_vca",
-        "port": "b"
       }
     },
     {
@@ -294,18 +290,8 @@
         "port": "frequency"
       },
       "to": {
-        "node": "op5_pitch",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op5_pitch",
-        "port": "out"
-      },
-      "to": {
-        "node": "op5_osc",
-        "port": "frequency"
+        "node": "op5",
+        "port": "note"
       }
     },
     {
@@ -314,28 +300,8 @@
         "port": "gate"
       },
       "to": {
-        "node": "op5_env",
+        "node": "op5",
         "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "op5_osc",
-        "port": "out"
-      },
-      "to": {
-        "node": "op5_vca",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op5_env",
-        "port": "out"
-      },
-      "to": {
-        "node": "op5_vca",
-        "port": "b"
       }
     },
     {
@@ -344,18 +310,8 @@
         "port": "frequency"
       },
       "to": {
-        "node": "op4_pitch",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op4_pitch",
-        "port": "out"
-      },
-      "to": {
-        "node": "op4_osc",
-        "port": "frequency"
+        "node": "op4",
+        "port": "note"
       }
     },
     {
@@ -364,28 +320,8 @@
         "port": "gate"
       },
       "to": {
-        "node": "op4_env",
+        "node": "op4",
         "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "op4_osc",
-        "port": "out"
-      },
-      "to": {
-        "node": "op4_vca",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op4_env",
-        "port": "out"
-      },
-      "to": {
-        "node": "op4_vca",
-        "port": "b"
       }
     },
     {
@@ -394,18 +330,8 @@
         "port": "frequency"
       },
       "to": {
-        "node": "op3_pitch",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op3_pitch",
-        "port": "out"
-      },
-      "to": {
-        "node": "op3_osc",
-        "port": "frequency"
+        "node": "op3",
+        "port": "note"
       }
     },
     {
@@ -414,28 +340,8 @@
         "port": "gate"
       },
       "to": {
-        "node": "op3_env",
+        "node": "op3",
         "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "op3_osc",
-        "port": "out"
-      },
-      "to": {
-        "node": "op3_vca",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op3_env",
-        "port": "out"
-      },
-      "to": {
-        "node": "op3_vca",
-        "port": "b"
       }
     },
     {
@@ -444,18 +350,8 @@
         "port": "frequency"
       },
       "to": {
-        "node": "op2_pitch",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op2_pitch",
-        "port": "out"
-      },
-      "to": {
-        "node": "op2_osc",
-        "port": "frequency"
+        "node": "op2",
+        "port": "note"
       }
     },
     {
@@ -464,28 +360,8 @@
         "port": "gate"
       },
       "to": {
-        "node": "op2_env",
+        "node": "op2",
         "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "op2_osc",
-        "port": "out"
-      },
-      "to": {
-        "node": "op2_vca",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op2_env",
-        "port": "out"
-      },
-      "to": {
-        "node": "op2_vca",
-        "port": "b"
       }
     },
     {
@@ -494,18 +370,8 @@
         "port": "frequency"
       },
       "to": {
-        "node": "op1_pitch",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op1_pitch",
-        "port": "out"
-      },
-      "to": {
-        "node": "op1_osc",
-        "port": "frequency"
+        "node": "op1",
+        "port": "note"
       }
     },
     {
@@ -514,33 +380,13 @@
         "port": "gate"
       },
       "to": {
-        "node": "op1_env",
+        "node": "op1",
         "port": "gate"
       }
     },
     {
       "from": {
-        "node": "op1_osc",
-        "port": "out"
-      },
-      "to": {
-        "node": "op1_vca",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "op1_env",
-        "port": "out"
-      },
-      "to": {
-        "node": "op1_vca",
-        "port": "b"
-      }
-    },
-    {
-      "from": {
-        "node": "op6_vca",
+        "node": "op6",
         "port": "out"
       },
       "to": {
@@ -554,13 +400,13 @@
         "port": "out"
       },
       "to": {
-        "node": "op5_osc",
+        "node": "op5",
         "port": "pm"
       }
     },
     {
       "from": {
-        "node": "op5_vca",
+        "node": "op5",
         "port": "out"
       },
       "to": {
@@ -574,13 +420,13 @@
         "port": "out"
       },
       "to": {
-        "node": "op4_osc",
+        "node": "op4",
         "port": "pm"
       }
     },
     {
       "from": {
-        "node": "op4_vca",
+        "node": "op4",
         "port": "out"
       },
       "to": {
@@ -594,13 +440,13 @@
         "port": "out"
       },
       "to": {
-        "node": "op3_osc",
+        "node": "op3",
         "port": "pm"
       }
     },
     {
       "from": {
-        "node": "op2_vca",
+        "node": "op2",
         "port": "out"
       },
       "to": {
@@ -614,13 +460,13 @@
         "port": "out"
       },
       "to": {
-        "node": "op1_osc",
+        "node": "op1",
         "port": "pm"
       }
     },
     {
       "from": {
-        "node": "op3_vca",
+        "node": "op3",
         "port": "out"
       },
       "to": {
@@ -630,7 +476,7 @@
     },
     {
       "from": {
-        "node": "op1_vca",
+        "node": "op1",
         "port": "out"
       },
       "to": {

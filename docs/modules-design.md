@@ -150,6 +150,14 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 
 ## Staged plan, with exit tests
 
+> **Stage 4 landed — the design is complete.** Both importers emit modules by
+> default: the DX7 bank is one operator definition and six instances per voice, the
+> OPL2 bank one definition and two instances per instrument, and each importer
+> carries a --modular-check in ctest that renders every voice both ways and demands
+> byte-identical audio (32 + 128, all green on the flip). Both oracle comparators run
+> over the modular documents without noticing — which is the design's promise kept:
+> notation for people, the same flat graph for everything that measures.
+
 > **Stage 3 landed.** ModuleAuthor carries both authoring transforms, registry-blind:
 > collapse-selection (Arrange menu) factors nodes into a definition plus one instance,
 > boundary connections becoming ports, every authored knob an export, controls and
