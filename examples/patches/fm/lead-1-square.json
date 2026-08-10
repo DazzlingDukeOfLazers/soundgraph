@@ -2,7 +2,7 @@
   "schema_version": 1,
   "metadata": {
     "name": "Lead 1 (square)",
-    "description": "Lead 1 (square) — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: feedback 2 applied without envelope scaling; modulator waveform 2 rendered as sine; modulator key scaling ignored; carrier waveform 6 rendered as sine.",
+    "description": "Lead 1 (square) — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: feedback 2 applied without envelope scaling; modulator level key-scaling ignored.",
     "author": "Freedoom contributors (instrument), SoundGraph opl2-import (mapping)",
     "tags": [
       "fm",
@@ -35,7 +35,8 @@
       "id": "mod",
       "type": "SineOscillator",
       "parameters": {
-        "feedback": 0.0625
+        "shape": 2,
+        "feedback": 0.00027
       }
     },
     {
@@ -43,9 +44,9 @@
       "type": "ADSR",
       "parameters": {
         "attack": 0,
-        "decay": 0.006,
+        "decay": 0,
         "sustain": 1,
-        "release": 0.006
+        "release": 0.0022
       }
     },
     {
@@ -56,16 +57,18 @@
     {
       "id": "car",
       "type": "SineOscillator",
-      "parameters": {}
+      "parameters": {
+        "shape": 2
+      }
     },
     {
       "id": "car_env",
       "type": "ADSR",
       "parameters": {
         "attack": 0,
-        "decay": 0.006,
+        "decay": 0.0001,
         "sustain": 0.5012,
-        "release": 0.006
+        "release": 0.002
       }
     },
     {

@@ -114,6 +114,11 @@
       "name": "feedback",
       "patch": "cases/feedback.json",
       "frames": 4800
+    },
+    {
+      "name": "opl-shapes",
+      "patch": "cases/opl-shapes.json",
+      "frames": 4800
     }
   ]
 }

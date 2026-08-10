@@ -13,6 +13,7 @@ approximations are documented at the top of that script and recorded per-patch i
 metadata; the plan for making them measurements instead of approximations is a
 Nuked-OPL3 oracle, per `docs/fm-import-sources.md`.
 
-Currently vendored: eight voices curated across instrument families (piano, e-piano,
-bells, organ, bass, strings, brass, lead). The full bank is 175; the importer handles
-any `.sbi` dropped in here, so widening the set is a copy, a rerun, and a commit.
+Currently vendored: all 128 General MIDI melodic primary voices. Not yet imported:
+the `-2` second voices of dual-voice instruments (a detuned richness layer) and the 47
+percussion entries (note-mapped drum hits, a different kind of library). The importer
+handles any `.sbi` dropped in here.

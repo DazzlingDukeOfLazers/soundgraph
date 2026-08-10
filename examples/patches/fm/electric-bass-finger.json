@@ -2,7 +2,7 @@
   "schema_version": 1,
   "metadata": {
     "name": "Electric Bass (finger)",
-    "description": "Electric Bass (finger) — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: feedback 5 applied without envelope scaling; modulator key scaling ignored; carrier key scaling ignored.",
+    "description": "Electric Bass (finger) — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: feedback 5 applied without envelope scaling; modulator level key-scaling ignored.",
     "author": "Freedoom contributors (instrument), SoundGraph opl2-import (mapping)",
     "tags": [
       "fm",
@@ -35,7 +35,7 @@
       "id": "mod",
       "type": "SineOscillator",
       "parameters": {
-        "feedback": 0.5
+        "feedback": 0.04088
       }
     },
     {
@@ -45,7 +45,7 @@
         "attack": 0,
         "decay": 10,
         "sustain": 0,
-        "release": 0.384
+        "release": 0.003
       }
     },
     {
@@ -65,7 +65,7 @@
         "attack": 0,
         "decay": 10,
         "sustain": 0,
-        "release": 0.768
+        "release": 0.006
       }
     },
     {

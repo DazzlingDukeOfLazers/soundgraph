@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Golden: OPL shapes",
+    "description": "A quarter-sine modulator with feedback into a half-sine carrier \u2014 every OPL2 waveform trick in one voice, so the shape arithmetic is pinned in combination, not just alone.",
+    "tags": [
+      "golden"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "mod",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 440,
+        "feedback": 0.5,
+        "shape": 3
+      }
+    },
+    {
+      "id": "index",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.7
+      }
+    },
+    {
+      "id": "car",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 220,
+        "shape": 1
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 1,
+        "safety_limit": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "mod",
+        "port": "out"
+      },
+      "to": {
+        "node": "index",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "index",
+        "port": "out"
+      },
+      "to": {
+        "node": "car",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "car",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

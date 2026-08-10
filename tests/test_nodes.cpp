@@ -156,6 +156,63 @@ TEST(sine_feedback_adds_harmonics_without_moving_the_pitch) {
     }
 }
 
+TEST(sine_shapes_bend_the_wave_the_opl_ways) {
+    // Shape 1, half: the positive lobes survive untouched, the negative ones are gone.
+    NodeHarness half("SineOscillator", kOneSecond, kSampleRate);
+    half.set("frequency", 100.0f);
+    half.set("shape", 1.0f);
+    half.process();
+    float lowest = 1.0f;
+    for (float sample : half.output()) lowest = std::min(lowest, sample);
+    CHECK(lowest >= 0.0f);
+    CHECK(testing::peak(half.output()) > 0.99f);
+
+    // Shape 2, absolute: rectification doubles the period, so a 100 Hz oscillator
+    // reads as 200 to anything counting repetitions — that is the octave-up trick
+    // every OPL organ patch leans on.
+    NodeHarness rectified("SineOscillator", kOneSecond, kSampleRate);
+    rectified.set("frequency", 100.0f);
+    rectified.set("shape", 2.0f);
+    rectified.process();
+    float rect_low = 1.0f;
+    for (float sample : rectified.output()) rect_low = std::min(rect_low, sample);
+    CHECK(rect_low >= 0.0f);
+
+    // Shape 3, quarter: strictly quieter than absolute — same lobes, half of each
+    // kept — and never negative either.
+    NodeHarness quarter("SineOscillator", kOneSecond, kSampleRate);
+    quarter.set("frequency", 100.0f);
+    quarter.set("shape", 3.0f);
+    quarter.process();
+    float quarter_energy = 0.0f;
+    float rect_energy = 0.0f;
+    for (std::size_t i = 0; i < quarter.output().size(); ++i) {
+        quarter_energy += quarter.output()[i] * quarter.output()[i];
+        rect_energy += rectified.output()[i] * rectified.output()[i];
+    }
+    CHECK(quarter_energy > 0.0f);
+    CHECK(quarter_energy < rect_energy * 0.75f);
+
+    // And shape 0 is exactly the sine it always was.
+    NodeHarness plain("SineOscillator", kOneSecond, kSampleRate,
+        testing::Coverage::SmokeTest);
+    plain.set("frequency", 100.0f);
+    plain.set("shape", 0.0f);
+    plain.process();
+    NodeHarness reference("SineOscillator", kOneSecond, kSampleRate,
+        testing::Coverage::SmokeTest);
+    reference.set("frequency", 100.0f);
+    reference.process();
+    bool identical = true;
+    for (std::size_t i = 0; i < plain.output().size(); ++i) {
+        if (plain.output()[i] != reference.output()[i]) {
+            identical = false;
+            break;
+        }
+    }
+    CHECK(identical);
+}
+
 TEST(saw_oscillator_sweeps_the_full_range_and_is_band_limited) {
     NodeHarness harness("SawOscillator", kOneSecond, kSampleRate);
     harness.set("frequency", 440.0f);

@@ -18,20 +18,17 @@
 //   ADSR rates                -> ADSR times via the approximation below
 //   additive connection       -> both operators through their envelopes into an Add
 //
-// Approximations, all recorded per-patch in the metadata so nobody has to diff bytes to
-// learn them:
+// Now representable and applied: waveforms 0-3 (the sine's shape enum was built to be
+// exactly this set), operator feedback (2^(fb-1)/32 cycles, the chip's own ladder up
+// to 4pi), and rate key-scaling via constants measured at A3. The envelope clock is
+// MEASURED against the Nuked-OPL3 oracle by tools/opl2-calibrate.mjs, not fitted.
 //
-//   rate -> time is a documented curve, not the chip's envelope generator. OPL rates
-//   double in speed per step; the constants below are fitted to the published timings,
-//   and the day tools/ grows a Nuked-OPL3 oracle (the plan of record), these become
-//   measured instead of fitted.
-//
-//   the modulation index scale (INDEX_FULL) is chosen by ear pending that oracle.
-//
-//   waveforms 1..3 (half/abs/quarter sine), operator feedback, key scaling and
-//   vibrato/tremolo flags are not representable yet. Instruments that use them import
-//   with a fidelity note. Feedback and the bent waveforms are the two that matter most
-//   and both are on the list in docs/fm-import-sources.md.
+// Approximations that remain, recorded per-patch in the metadata so nobody has to
+// diff bytes to learn them: the modulation index scale (INDEX_FULL) is still by ear;
+// feedback is constant-strength where the chip envelopes it; KSL and the
+// tremolo/vibrato flags are ignored; non-sustaining envelopes are reshaped onto the
+// ADSR. tools/opl2-compare.mjs holds every import to the oracle's pitch and presence
+// in ctest, which is what keeps this list honest.
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -52,12 +49,25 @@ const INDEX_FULL = 0.85;
 
 const attenuation = (level) => Math.pow(10, (-0.75 * level) / 20);
 
-// OPL envelope rates double in speed per step. Zero means "never" for an attack and
-// "hangs forever" for a release; both clamp to the ADSR's 10s ceiling.
-const attackSeconds = (rate) =>
-  rate >= 15 ? 0 : Math.min(10, 0.002 * Math.pow(2, 15 - rate));
-const fallSeconds = (rate) =>
-  rate <= 0 ? 10 : Math.min(10, 0.006 * Math.pow(2, 15 - rate));
+// OPL envelope rates double in speed per step: t = k * 2^(15 - rate). The k values are
+// MEASURED, by tools/opl2-calibrate.mjs against the Nuked-OPL3 oracle at A3 — attack
+// read at 90% of peak, falls at -20 dB — and they convicted the previous fitted
+// guesses of being fourteen times too slow, which is why half the slow-attack bank
+// failed the oracle comparison: a trumpet that takes two seconds to speak is not a
+// trumpet. KSR gets its own measured constants rather than a reasoned-about rate
+// offset, because the chip derives the offset from pitch and A3 is where the
+// comparison is played.
+const ATTACK_K = 1.367e-4;
+const ATTACK_KSR_K = 4.883e-5;
+const FALL_K = 4.687e-4;
+const FALL_KSR_K = 1.563e-4;
+
+const attackSeconds = (rate, ksr) =>
+  rate >= 15 ? 0
+    : Math.min(10, (ksr ? ATTACK_KSR_K : ATTACK_K) * Math.pow(2, 15 - rate));
+const fallSeconds = (rate, ksr) =>
+  rate <= 0 ? 10
+    : Math.min(10, (ksr ? FALL_KSR_K : FALL_K) * Math.pow(2, 15 - rate));
 
 // Sustain level is attenuation in 3dB steps; 15 is the chip's "all the way down".
 const sustainLevel = (level) => (level >= 15 ? 0 : Math.pow(10, (-3 * level) / 20));
@@ -80,7 +90,11 @@ function parseSbi(bytes, file) {
     decay: attackDecay & 0x0f,
     sustain: sustainRelease >> 4,
     release: sustainRelease & 0x0f,
-    wave: wave & 0x07,
+    // Masked to 2 bits, because that is what the chip does: OPL2's wave select is
+    // 0-3, and an SBI byte saying 4 plays as sine on real hardware (the first parse
+    // here kept 3 bits and dutifully reported "waveform 4 rendered as sine" about an
+    // instrument that was sine all along).
+    wave: wave & 0x03,
   });
   return {
     name,
@@ -104,23 +118,54 @@ function fidelityNotes(voice) {
     notes.push(`feedback ${voice.feedback} applied without envelope scaling`);
   }
   for (const [role, op] of [['modulator', voice.modulator], ['carrier', voice.carrier]]) {
-    if (op.wave !== 0) notes.push(`${role} waveform ${op.wave} rendered as sine`);
-    if (op.keyScaleLevel > 0 || op.keyScaleRate) notes.push(`${role} key scaling ignored`);
+    if (op.keyScaleLevel > 0) notes.push(`${role} level key-scaling ignored`);
     if (op.tremolo || op.vibrato) notes.push(`${role} tremolo/vibrato flag ignored`);
     if (!op.sustaining) notes.push(`${role} percussive envelope approximated`);
   }
   return notes;
 }
 
+// An operator's oscillator settings: its waveform bend, and — for the modulator —
+// the voice's feedback. The shape numbers map one to one onto the sine's shape enum,
+// which was built to be exactly this set.
+function operatorParameters(op, feedbackCyclesEffective) {
+  const parameters = {};
+  if (op.wave !== 0) parameters.shape = op.wave;
+  if (feedbackCyclesEffective > 0) {
+    parameters.feedback = Number(feedbackCyclesEffective.toFixed(5));
+  }
+  return parameters;
+}
+
 function envelopeParameters(op) {
-  // A non-sustaining OPL envelope decays through its sustain level to silence while the
-  // key is still down. The nearest shape this ADSR makes is sustain-at-zero with the
-  // decay carrying the fall; the release keeps its own rate for early key-ups.
+  // The measured constant is "seconds per 20 dB of fall", so each stage's time is that
+  // scaled by how many dB the stage actually covers: decay runs from peak to the
+  // sustain level, release from there to the chip's -93 dB floor.
+  const slDb = op.sustain >= 15 ? 93 : 3 * op.sustain;
+  const per20 = (rate) => fallSeconds(rate, op.keyScaleRate);
+  const decayStage = per20(op.decay) * Math.max(slDb, 2) / 20;
+  const releaseStage = per20(op.release) * Math.max(93 - slDb, 6) / 20;
+
+  if (op.sustaining) {
+    return {
+      attack: Number(attackSeconds(op.attack, op.keyScaleRate).toFixed(4)),
+      decay: Number(Math.min(10, decayStage).toFixed(4)),
+      sustain: Number(sustainLevel(op.sustain).toFixed(4)),
+      release: Number(Math.min(10, releaseStage).toFixed(4)),
+    };
+  }
+
+  // Non-sustaining: the chip falls through the sustain level at the decay rate and
+  // keeps falling at the *release* rate while the key is still down. One decay knob
+  // has to carry both slopes, so it gets their summed time — the first version ran
+  // the whole fall at decay speed, and once the clock was calibrated (fast), every
+  // percussive voice was silent before the comparison window opened. Marimbas died
+  // of accuracy.
   return {
-    attack: Number(attackSeconds(op.attack).toFixed(4)),
-    decay: Number(fallSeconds(op.decay).toFixed(4)),
-    sustain: op.sustaining ? Number(sustainLevel(op.sustain).toFixed(4)) : 0,
-    release: Number(fallSeconds(op.release).toFixed(4)),
+    attack: Number(attackSeconds(op.attack, op.keyScaleRate).toFixed(4)),
+    decay: Number(Math.min(10, decayStage + releaseStage).toFixed(4)),
+    sustain: 0,
+    release: Number(Math.min(10, per20(op.release) * 93 / 20).toFixed(4)),
   };
 }
 
@@ -130,18 +175,28 @@ function buildPatch(voice, sourceFile) {
     `${voice.name} — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs.`
     + (notes.length > 0 ? ` Approximated: ${notes.join('; ')}.` : '');
 
+  // The chip feeds back the operator's output *after* total-level attenuation — the
+  // feedback tap in Nuked reads the enveloped, attenuated sample. The sine's feedback
+  // parameter self-modulates at full oscillator amplitude, so the register value has
+  // to be scaled by the modulator's TL here or a quiet modulator feeds back at full
+  // strength. Unscaled, synth-bass-1 (feedback 5, TL 14) drove itself into a DC-shifted
+  // equilibrium — mean -0.13, a wave leaning on its own tail — which is how every
+  // strong-feedback bass in the bank came back "pitchless": DC autocorrelates equally
+  // well at every lag, and the measurement dutifully returned its own search bound.
+  const effectiveFeedback =
+    feedbackCycles(voice.feedback) * attenuation(voice.modulator.totalLevel);
+
   const nodes = [
     { id: 'note', type: 'NoteInput', parameters: {} },
     { id: 'mod_pitch', type: 'Multiply',
       parameters: { factor: voice.modulator.multiple } },
     { id: 'car_pitch', type: 'Multiply',
       parameters: { factor: voice.carrier.multiple } },
-    { id: 'mod', type: 'SineOscillator',
-      parameters: voice.feedback > 0
-        ? { feedback: Number(feedbackCycles(voice.feedback).toFixed(5)) } : {} },
+    { id: 'mod', type: 'SineOscillator', parameters: operatorParameters(
+      voice.modulator, effectiveFeedback) },
     { id: 'mod_env', type: 'ADSR', parameters: envelopeParameters(voice.modulator) },
     { id: 'mod_vca', type: 'Multiply', parameters: {} },
-    { id: 'car', type: 'SineOscillator', parameters: {} },
+    { id: 'car', type: 'SineOscillator', parameters: operatorParameters(voice.carrier, 0) },
     { id: 'car_env', type: 'ADSR', parameters: envelopeParameters(voice.carrier) },
     { id: 'car_vca', type: 'Multiply', parameters: {} },
     // Additive voices are two full operators summed, so they get half the headroom —

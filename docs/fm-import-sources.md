@@ -90,8 +90,11 @@ universe, good fourth once OPL2 and DX7 mappers exist to share code.
    like the chips. The importer maps OPL feedback 1–7 to 2^(fb−1)/32 cycles (fb 7 = the
    chip's 4π). Remaining honesty gap: the chip feeds back the *enveloped* output, ours
    is constant-strength — noted per patch.
-3. OPL waveform variants (half/abs/quarter sine) — a shape parameter, cheap everywhere
-   including the ESP32. **Still open**, and the largest remaining fidelity gap.
+3. ~~OPL waveform variants~~ — **done**: a shape enum on the sine (sine/half/
+   absolute/quarter), built from the owned table so the shapes are bit-exact on every
+   target. The full 128-voice melodic bank is imported and every voice agrees with the
+   Nuked-OPL3 oracle on pitch and presence in ctest. Second voices (-2 files) and the
+   47 percussion entries remain out of scope, noted in tools/opl2/README.md.
 4. Rate-based envelopes — handled in the mapper as a fitted rate→time curve. The
    **Nuked-OPL3 oracle now exists** (`tools/opl2-ref`, LGPL emulator vendored under
    `tests/opl2/reference/`) and `tools/opl2-compare.mjs` holds every import to the

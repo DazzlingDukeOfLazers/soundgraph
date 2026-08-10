@@ -2,7 +2,7 @@
   "schema_version": 1,
   "metadata": {
     "name": "Trumpet (DMX FIXED)",
-    "description": "Trumpet (DMX FIXED) — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: feedback 6 applied without envelope scaling; modulator key scaling ignored.",
+    "description": "Trumpet (DMX FIXED) — Freedoom's OPL2 GENMIDI voice, imported by tools/opl2-import.mjs. Approximated: feedback 6 applied without envelope scaling; modulator level key-scaling ignored.",
     "author": "Freedoom contributors (instrument), SoundGraph opl2-import (mapping)",
     "tags": [
       "fm",
@@ -35,17 +35,17 @@
       "id": "mod",
       "type": "SineOscillator",
       "parameters": {
-        "feedback": 1
+        "feedback": 0.17783
       }
     },
     {
       "id": "mod_env",
       "type": "ADSR",
       "parameters": {
-        "attack": 0.512,
-        "decay": 10,
+        "attack": 0.035,
+        "decay": 0.144,
         "sustain": 0.7079,
-        "release": 10
+        "release": 4.3195
       }
     },
     {
@@ -62,10 +62,10 @@
       "id": "car_env",
       "type": "ADSR",
       "parameters": {
-        "attack": 0.512,
-        "decay": 6.144,
+        "attack": 0.035,
+        "decay": 0.048,
         "sustain": 1,
-        "release": 1.536
+        "release": 0.5579
       }
     },
     {

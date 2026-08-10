@@ -79,6 +79,7 @@ const EXAMPLE_GROUPS := {
 	"": "",
 	"game": "Game",
 	"nodes": "Node",
+	"fm": "FM",
 }
 
 ## Filled by _scan_examples() at startup: menu label -> path relative to examples/patches.
@@ -697,11 +698,30 @@ func _build_toolbar() -> Control:
 	examples.flat = false
 	_scan_examples()
 	var examples_popup := examples.get_popup()
-	var example_names: Array = _examples.keys()
-	for index in example_names.size():
-		examples_popup.add_item(str(example_names[index]), index)
+	# The FM bank is 128 instruments; flattened into this menu they would bury the eight
+	# hand-picked examples under a wall of General MIDI. A submenu keeps the top level
+	# curated and the bank one hover away — the shape a bank is, rather than a list it
+	# has been poured into.
+	var fm_names: Array = []
+	var top_names: Array = []
+	for label in _examples.keys():
+		if str(label).begins_with("FM: "):
+			fm_names.append(label)
+		else:
+			top_names.append(label)
+	for index in top_names.size():
+		examples_popup.add_item(str(top_names[index]), index)
+	if not fm_names.is_empty():
+		var fm_popup := PopupMenu.new()
+		fm_popup.name = "FmExamples"
+		examples_popup.add_child(fm_popup)
+		examples_popup.add_submenu_item("FM instruments", "FmExamples")
+		for index in fm_names.size():
+			fm_popup.add_item(str(fm_names[index]).trim_prefix("FM: ").capitalize(), index)
+		fm_popup.id_pressed.connect(func(id: int) -> void:
+			_load_example(str(fm_names[id])))
 	examples_popup.id_pressed.connect(func(id: int) -> void:
-		_load_example(str(example_names[id])))
+		_load_example(str(top_names[id])))
 	project.add_child(_defocus(examples))
 
 	# ---- graph: the core verb, and the two that tidy up after it -----------------

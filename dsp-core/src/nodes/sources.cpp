@@ -66,6 +66,15 @@ constexpr ParameterDescriptor kOscParameters[] = {
 // Its own array rather than an entry in kOscParameters, because Saw and Square share
 // that array and their parameter indices are load-bearing.
 constexpr int kSineFeedback = 1;
+constexpr int kSineShape = 2;
+
+// The OPL2 waveform set: the same sine bent three cheap ways. Half keeps the positive
+// lobes, absolute rectifies, quarter keeps the rising quarter of each lobe. On the
+// chip these were nearly free — a mask on the table read — and that is exactly what
+// they are here too, which is why they live on the sine as a shape rather than as
+// three more node types: an FM operator on any of these chips is "a sine and a bend",
+// and a patch that swaps the bend should not have to rewire its graph.
+constexpr const char* kSineShapeLabels[] = {"sine", "half", "absolute", "quarter"};
 
 constexpr ParameterDescriptor kSineParameters[] = {
     {"frequency", "Hz", 0.01f, 20000.0f, 440.0f, Scaling::Exponential,
@@ -73,6 +82,10 @@ constexpr ParameterDescriptor kSineParameters[] = {
     {"feedback", "cycles", 0.0f, 2.0f, 0.0f, Scaling::Linear,
      "Self phase-modulation. 0 is a pure sine; around 0.5 it turns brassy, and by 2 "
      "it is most of the way to a saw. OPL's strongest setting is 2.", nullptr, 0},
+    {"shape", "", 0.0f, 3.0f, 0.0f, Scaling::Linear,
+     "The OPL waveform family: pure, positive lobes only, rectified, or the rising "
+     "quarters. Each adds its own harmonics before any modulation does.",
+     kSineShapeLabels, 4},
 };
 
 class OscillatorBase : public DspNode {
@@ -149,7 +162,23 @@ protected:
 
 class SineOscillator final : public OscillatorBase {
 protected:
-    float render(float phase, float) override { return dsp::sine01(phase); }
+    float render(float phase, float) override {
+        // Everything is built from the owned table plus arithmetic every target rounds
+        // identically — fabs and a comparison — so the shapes inherit the sine's
+        // bit-exactness across native, WASM and the ESP32 for free.
+        switch (static_cast<int>(parameter(kSineShape))) {
+            default:
+            case 0: return dsp::sine01(phase);
+            case 1: return phase < 0.5f ? dsp::sine01(phase) : 0.0f;
+            case 2: return std::fabs(dsp::sine01(phase));
+            case 3: {
+                // The rising quarter of each lobe: |sin| in the first and third
+                // quarters of the cycle, silence in between.
+                const bool rising = phase < 0.25f || (phase >= 0.5f && phase < 0.75f);
+                return rising ? std::fabs(dsp::sine01(phase)) : 0.0f;
+            }
+        }
+    }
     float feedback_amount() const override { return parameter(kSineFeedback); }
 };
 
