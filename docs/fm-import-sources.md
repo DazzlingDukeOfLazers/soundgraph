@@ -80,7 +80,10 @@ made audible.
   as lfo.cc's hold-then-ramp (approximated as a squared ramp; the same check holds
   the oracle's pitch trajectory to it, ramp average within 0.01 octave), and
   tremolo follows Dexed's fork formula — the vendored msfa has no amplitude
-  modulation, so tremolo alone is stated, not oracle-held. Pending: live velocity,
+  modulation, so tremolo alone is stated, not oracle-held. Velocity is live:
+  sensitive operators ride NoteInput's velocity output through a squared-affine
+  curve, exact at velocities 100 and 127, held to the oracle's response within
+  0.5 dB at 50 and 80 (dx7-ref grew a --velocity flag for exactly this). Pending:
   the algorithm 4/6 multi-op loops, tremolo reaching the feedback loop, and
   deep-feedback (fb 7 near full level) chaos parity.
 

@@ -26,9 +26,11 @@
 //                vibrato as an LFO into the oscillators' fm inputs; the pitch
 //                envelope as an ADSR in octaves; the LFO delay as a fade on both
 //                LFO destinations; tremolo per Dexed's fork (the vendored oracle
-//                has no amplitude modulation, so tremolo alone is not oracle-held)
-//   pending    — live velocity; multi-op feedback loops (algorithms 4 and 6) fall
-//                back to self-feedback on the loop's driving op; feedback 7 on a
+//                has no amplitude modulation, so tremolo alone is not oracle-held);
+//                live velocity as a squared-affine curve off NoteInput's velocity
+//                output, exact at the reference so nothing baked moved
+//   pending    — multi-op feedback loops (algorithms 4 and 6) fall back to
+//                self-feedback on the loop's driving op; feedback 7 on a
 //                near-full-level op period-doubles in msfa's fixed-point loop
 //                where our float loop stays period-1 (see dx7-index-check.mjs);
 //                tremolo does not reach the feedback loop
@@ -194,6 +196,24 @@ function scaleVelocity(velocity, sensitivity) {
   const clamped = Math.max(0, Math.min(127, velocity));
   const value = VELOCITY_DATA[clamped >> 1] - 239;
   return ((sensitivity * value + 7) >> 3) << 4;
+}
+
+// Live velocity as a graph the engine can run. The true response relative to the
+// baked reference is g(v) = 2^((sv(v) - sv(100))/256) — a table through an
+// exponential, which the node vocabulary cannot spell. It can spell a squared
+// affine, (alpha + beta*v01)^2, and that is a genuinely good fit because the DX7
+// curve is close to a square law in MIDI velocity: anchored exact at velocities
+// 100 (g = 1, so every reference render is untouched) and 127, it lands within
+// ~0.5 dB across the playing range at full sensitivity (checked against the table
+// at 50 and 80: 0.1 and 0.5 dB). Below MIDI ~20 the parabola bottoms out and
+// rises again where the chip keeps fading — the notes say so. v01 is the engine's
+// NoteInput velocity, MIDI/127.
+function velocityCurve(sensitivity) {
+  const g127 = Math.pow(2,
+    (scaleVelocity(127, sensitivity) - scaleVelocity(100, sensitivity)) / 256);
+  const anchor = 100 / 127;
+  const beta = (Math.sqrt(g127) - 1) / (1 - anchor);
+  return { alpha: 1 - beta * anchor, beta };
 }
 
 const PITCH_MOD_SENS = [0, 10, 20, 33, 55, 92, 153, 255];
@@ -551,14 +571,46 @@ function buildPatch(voice, bankName, voiceIndex) {
       notes.push('tremolo does not reach the feedback loop');
     }
   }
-  const opOut = (n) => tremolo.get(n) ?? `op${n}_vca`;
+  const postVca = new Map(tremolo);
+
+  // Live velocity: the static amplitudes above stay baked at the reference
+  // velocity (so nothing else in this file moved), and each sensitive operator is
+  // multiplied by the squared-affine response — see velocityCurve() for why that
+  // shape and what it costs. One curve chain per distinct sensitivity, shared;
+  // one multiply per operator, composed after tremolo so both wobbles reach the
+  // modulator index and the carrier mix alike.
+  const velocityOps = liveOps.filter((o) => o.velocitySens > 0);
+  if (velocityOps.length > 0) {
+    const curves = new Map();
+    for (const op of velocityOps) {
+      const sens = op.velocitySens;
+      if (!curves.has(sens)) {
+        const { alpha, beta } = velocityCurve(sens);
+        nodes.push({ id: `vel${sens}_scale`, type: 'Multiply',
+          parameters: { factor: Number(beta.toFixed(5)) } });
+        wire('note', 'velocity', `vel${sens}_scale`, 'a');
+        nodes.push({ id: `vel${sens}_bias`, type: 'Add',
+          parameters: { offset: Number(alpha.toFixed(5)) } });
+        wire(`vel${sens}_scale`, 'out', `vel${sens}_bias`, 'a');
+        nodes.push({ id: `vel${sens}_curve`, type: 'Multiply', parameters: {} });
+        wire(`vel${sens}_bias`, 'out', `vel${sens}_curve`, 'a');
+        wire(`vel${sens}_bias`, 'out', `vel${sens}_curve`, 'b');
+        curves.set(sens, `vel${sens}_curve`);
+      }
+      const id = `op${op.op}`;
+      nodes.push({ id: `${id}_vel`, type: 'Multiply', parameters: {} });
+      wire(postVca.get(op.op) ?? `${id}_vca`, 'out', `${id}_vel`, 'a');
+      wire(curves.get(sens), 'out', `${id}_vel`, 'b');
+      postVca.set(op.op, `${id}_vel`);
+    }
+    notes.push('live velocity as a squared-affine curve, exact at velocities '
+      + '100 and 127, overstating below about 20');
+  }
+  const opOut = (n) => postVca.get(n) ?? `op${n}_vca`;
 
   // What the scaling arithmetic above silently fixed at the reference point.
   if (liveOps.some((o) => o.rateScaling > 0 || o.leftDepth > 0 || o.rightDepth > 0)) {
     notes.push('key scaling evaluated at MIDI 57 only');
-  }
-  if (liveOps.some((o) => o.velocitySens > 0)) {
-    notes.push('velocity response baked at velocity 100');
   }
 
   // Modulation inputs: each modulated op sums its sources through Add nodes into pm.

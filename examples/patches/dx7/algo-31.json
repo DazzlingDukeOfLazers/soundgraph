@@ -2,7 +2,7 @@
   "schema_version": 2,
   "metadata": {
     "name": "ALGO 31",
-    "description": "ALGO 31 — DX7 voice, algorithm 31, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: velocity response baked at velocity 100.",
+    "description": "ALGO 31 — DX7 voice, algorithm 31, imported by tools/dx7-import.mjs from algorithm-demos.syx. Approximated: live velocity as a squared-affine curve, exact at velocities 100 and 127, overstating below about 20.",
     "author": "SoundGraph dx7-import (mapping)",
     "tags": [
       "fm",
@@ -214,6 +214,45 @@
       }
     },
     {
+      "id": "vel7_scale",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 1.52982
+      }
+    },
+    {
+      "id": "vel7_bias",
+      "type": "Add",
+      "parameters": {
+        "offset": -0.20458
+      }
+    },
+    {
+      "id": "vel7_curve",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op6_vel",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op5_vel",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op4_vel",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
+      "id": "op3_vel",
+      "type": "Multiply",
+      "parameters": {}
+    },
+    {
       "id": "op6_index_5",
       "type": "Gain",
       "parameters": {
@@ -406,7 +445,127 @@
     },
     {
       "from": {
+        "node": "note",
+        "port": "velocity"
+      },
+      "to": {
+        "node": "vel7_scale",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vel7_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "vel7_bias",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vel7_bias",
+        "port": "out"
+      },
+      "to": {
+        "node": "vel7_curve",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vel7_bias",
+        "port": "out"
+      },
+      "to": {
+        "node": "vel7_curve",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
         "node": "op6",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6_vel",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vel7_curve",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6_vel",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "op5",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5_vel",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vel7_curve",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5_vel",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "op4",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_vel",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vel7_curve",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_vel",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "op3",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3_vel",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vel7_curve",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3_vel",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "op6_vel",
         "port": "out"
       },
       "to": {
@@ -426,7 +585,7 @@
     },
     {
       "from": {
-        "node": "op5",
+        "node": "op5_vel",
         "port": "out"
       },
       "to": {
@@ -436,7 +595,7 @@
     },
     {
       "from": {
-        "node": "op4",
+        "node": "op4_vel",
         "port": "out"
       },
       "to": {
@@ -466,7 +625,7 @@
     },
     {
       "from": {
-        "node": "op3",
+        "node": "op3_vel",
         "port": "out"
       },
       "to": {

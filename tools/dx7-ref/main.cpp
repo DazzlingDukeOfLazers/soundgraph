@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     if (argc < 4) {
         std::fprintf(stderr,
             "usage: dx7-ref <bank.syx> <voice 0-31> <out.wav> "
-            "[--seconds N] [--note MIDI] [--gate F]\n");
+            "[--seconds N] [--note MIDI] [--gate F] [--velocity 0-127]\n");
         return 2;
     }
     const std::string bank_path = argv[1];
@@ -48,10 +48,12 @@ int main(int argc, char** argv) {
     double seconds = 2.0;
     int note = 57;
     double gate = 0.7;
+    int velocity = 100;
     for (int i = 4; i + 1 < argc; i += 2) {
         if (std::strcmp(argv[i], "--seconds") == 0) seconds = std::atof(argv[i + 1]);
         if (std::strcmp(argv[i], "--note") == 0) note = std::atoi(argv[i + 1]);
         if (std::strcmp(argv[i], "--gate") == 0) gate = std::atof(argv[i + 1]);
+        if (std::strcmp(argv[i], "--velocity") == 0) velocity = std::atoi(argv[i + 1]);
     }
     if (voice_index < 0 || voice_index > 31) {
         std::fprintf(stderr, "voice index must be 0-31\n");
@@ -99,7 +101,7 @@ int main(int argc, char** argv) {
     controllers.values_[kControllerPitch] = 0x2000;  // pitch wheel centred
 
     Dx7Note dx7_note;
-    dx7_note.init(unpacked, note, 100);
+    dx7_note.init(unpacked, note, velocity);
     lfo.keydown();
 
     const int total = static_cast<int>(seconds * kSampleRate);

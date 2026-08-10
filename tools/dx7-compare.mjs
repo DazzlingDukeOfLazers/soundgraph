@@ -50,8 +50,12 @@ for (const bank of readdirSync(banks).filter((f) => f.endsWith('.syx')).sort()) 
     const oursWav = join(scratch, `${id}-ours.wav`);
     execFileSync(join(bin, 'dx7-ref'), [join(banks, bank), String(voice), oracleWav,
       '--seconds', '2', '--note', String(NOTE), '--gate', '0.7']);
+    // The oracle plays MIDI velocity 100; sg-render's default is 0.9 (~114).
+    // Since the imports respond to velocity live, both engines must be struck
+    // equally hard: 100/127.
     execFileSync(join(bin, 'sg-render'), [patch, oursWav,
-      '--seconds', '2', '--notes', String(NOTE), '--gate', '0.7', '--quiet']);
+      '--seconds', '2', '--notes', String(NOTE), '--gate', '0.7',
+      '--velocity', String(100 / 127), '--quiet']);
 
     const oracle = readWav(oracleWav);
     const ours = readWav(oursWav);

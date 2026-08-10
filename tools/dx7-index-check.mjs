@@ -28,7 +28,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readWav, fundamental } from './lib/audio-compare.mjs';
+import { readWav, fundamental, rms } from './lib/audio-compare.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const bin = join(root, 'build', 'bin');
@@ -47,11 +47,12 @@ const TOLERANCE_DB = 2.0;
 
 const FLAT = { rates: [99, 99, 99, 99], levels: [99, 99, 99, 0] };
 
-function packOperator(bytes, at, coarse, level) {
+function packOperator(bytes, at, coarse, level, vel) {
   bytes.set(FLAT.rates, at);
   bytes.set(FLAT.levels, at + 4);
   bytes[at + 8] = 39;              // break point C3, depths 0 — no key scaling
   bytes[at + 12] = 7 << 3;         // detune centred, rate scaling 0
+  bytes[at + 13] = vel << 2;       // velocity sensitivity, amp-mod 0
   bytes[at + 14] = level;
   bytes[at + 15] = coarse << 1;    // ratio mode
 }
@@ -60,8 +61,8 @@ function packVoice(bank, index, { algorithm, feedback, ops, name, lfo }) {
   const voice = bank.subarray(index * 128, (index + 1) * 128);
   for (let slot = 0; slot < 6; ++slot) {
     const op = 6 - slot;
-    const { coarse = 1, level = 0 } = ops[op] ?? {};
-    packOperator(voice, slot * 17, coarse, level);
+    const { coarse = 1, level = 0, vel = 0 } = ops[op] ?? {};
+    packOperator(voice, slot * 17, coarse, level, vel);
   }
   voice.fill(50, 102, 110);        // pitch EG neutral
   voice[110] = algorithm;
@@ -129,6 +130,20 @@ for (const feedback of FEEDBACKS) {
 cases.push({ algorithm: 0, feedback: 0, name: 'DLY', kind: 'fade',
   ops: { 1: { coarse: 1, level: CARRIER_LEVEL } },
   lfo: { speed: 10, delay: 55, pmd: 99, pms: 7 } });
+
+// Live velocity, held as a response curve: a lone full-sensitivity carrier struck
+// at four velocities, each engine's loudness taken relative to its own strike at
+// 100 (so absolute level scales cancel), and the responses must agree within
+// 1.5 dB. The import's squared-affine curve is exact at 100 and 127 by
+// construction; 50 and 80 are where the fit is being held to the chip's table
+// (predicted errors 0.1 and 0.5 dB — the tolerance leaves room for the envelope's
+// attack shifting slightly with level, not for a wrong curve). Level 80, not
+// full: a full-level carrier struck at 127 gains 1.76x past the importer's
+// 0.8-normalised output and clips *our* WAV — the first run of this case read
+// +2.3 dB where the curve says +4.9, and that was the writer's clamp, not the
+// curve. Ordinary mixing headroom, but not what this case measures.
+cases.push({ algorithm: 31, feedback: 0, name: 'VEL', kind: 'velocity',
+  ops: { 6: { coarse: 1, level: 80, vel: 7 } } });
 
 const scratch = mkdtempSync(join(tmpdir(), 'dx7-index-'));
 const bankDir = join(scratch, 'banks');
@@ -213,12 +228,48 @@ const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 let failures = 0;
 for (const c of cases) {
   const id = slug(c.name);
+
+  // Both engines must be struck equally hard now that the imports respond to
+  // velocity live: the oracle plays MIDI units, sg-render plays fractions.
+  const renderPair = (oracleWav, oursWav, velocity) => {
+    execFileSync(join(bin, 'dx7-ref'), [bankPath, String(cases.indexOf(c)),
+      oracleWav, '--seconds', '2', '--note', String(NOTE), '--gate', '0.7',
+      '--velocity', String(velocity)]);
+    execFileSync(join(bin, 'sg-render'), [join(patchDir, `${id}.json`), oursWav,
+      '--seconds', '2', '--notes', String(NOTE), '--gate', '0.7',
+      '--velocity', String(velocity / 127), '--quiet']);
+  };
+
+  if (c.kind === 'velocity') {
+    const rmsPair = (velocity) => {
+      const o = join(scratch, `${id}-o${velocity}.wav`);
+      const u = join(scratch, `${id}-u${velocity}.wav`);
+      renderPair(o, u, velocity);
+      return { oracle: rms(readWav(o)), ours: rms(readWav(u)) };
+    };
+    const base = rmsPair(100);
+    let worst = 0;
+    let worstAt = 0;
+    const readings = [];
+    for (const velocity of [50, 80, 127]) {
+      const r = rmsPair(velocity);
+      const oracleDb = 20 * Math.log10(r.oracle / Math.max(base.oracle, 1e-9));
+      const oursDb = 20 * Math.log10(r.ours / Math.max(base.ours, 1e-9));
+      readings.push(`v${velocity} ${oracleDb.toFixed(1)}/${oursDb.toFixed(1)}`);
+      const diff = Math.abs(oracleDb - oursDb);
+      if (diff > worst) { worst = diff; worstAt = velocity; }
+    }
+    const ok = worst <= 1.5;
+    if (!ok) failures += 1;
+    console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${id.padEnd(10)} velocity response `
+      + `(oracle/ours dB re 100): ${readings.join(', ')} — worst gap `
+      + `${worst.toFixed(2)} dB at v${worstAt}`);
+    continue;
+  }
+
   const oracleWav = join(scratch, `${id}-oracle.wav`);
   const oursWav = join(scratch, `${id}-ours.wav`);
-  execFileSync(join(bin, 'dx7-ref'), [bankPath, String(cases.indexOf(c)), oracleWav,
-    '--seconds', '2', '--note', String(NOTE), '--gate', '0.7']);
-  execFileSync(join(bin, 'sg-render'), [join(patchDir, `${id}.json`), oursWav,
-    '--seconds', '2', '--notes', String(NOTE), '--gate', '0.7', '--quiet']);
+  renderPair(oracleWav, oursWav, 100);
 
   const oracle = readWav(oracleWav);
   const ours = readWav(oursWav);
