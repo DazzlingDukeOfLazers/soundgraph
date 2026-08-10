@@ -39,6 +39,24 @@ func _initialize() -> void:
 	# nobody measures is a theme that ships one unreadable pairing.
 	var surface_names := ["canvas", "panel", "raised", "active"]
 
+	# The piano's type, which is not palette-dependent and so is checked once. Both are
+	# floors on *rendered* size at every UI scale: the letters had been hardcoded at 12
+	# and 13 pixels, under the system's own 14px floor, in the file least able to say so.
+	check(Keyboard.keycap_size() >= Design.MIN_SCREEN_KEYCAP,
+		"piano key letters are at least %dpx (%d)"
+			% [Design.MIN_SCREEN_KEYCAP, Keyboard.keycap_size()])
+	check(Keyboard.octave_size() >= Design.MIN_SCREEN_OCTAVE,
+		"octave landmarks are at least %dpx (%d)"
+			% [Design.MIN_SCREEN_OCTAVE, Keyboard.octave_size()])
+	var scale_before: int = Design.ui_scale
+	var smallest_keycap := 99
+	for preset in Design.SCALE_NAMES.size():
+		Design.ui_scale = preset
+		smallest_keycap = mini(smallest_keycap, Keyboard.keycap_size())
+	Design.ui_scale = scale_before
+	check(smallest_keycap >= Design.MIN_SCREEN_KEYCAP,
+		"and Compact cannot take them under it (%d)" % smallest_keycap)
+
 	for choice in Design.PALETTES.size():
 		Design.use_palette(choice)
 		var theme_name: String = Design.PALETTE_NAMES[choice]
@@ -61,6 +79,25 @@ func _initialize() -> void:
 		check(worst_text >= TEXT_FLOOR,
 			"%-16s operating text clears 7:1 (worst %.2f, %s)"
 				% [theme_name, worst_text, worst_where])
+
+		# The piano, which this suite could not see until its colours became tokens.
+		#
+		# It drew from private constants in keyboard.gd, so the one surface in the
+		# application designed to be read while somebody's hands are busy was the one
+		# surface no contrast test covered — and it was carrying its key letters at
+		# 3.60:1, about half the floor every other piece of text in the editor is held
+		# to. A token the suite cannot reach is a promise nobody is keeping.
+		var worst_key := 99.0
+		var key_where := ""
+		for entry in [["white key", Design.WHITE_KEY_INK, Design.WHITE_KEY],
+				["black key", Design.BLACK_KEY_INK, Design.BLACK_KEY]]:
+			var ratio := Design.contrast(entry[1], entry[2])
+			if ratio < worst_key:
+				worst_key = ratio
+				key_where = str(entry[0])
+		check(worst_key >= TEXT_FLOOR,
+			"%-16s piano key text clears 7:1 (worst %.2f, %s)"
+				% [theme_name, worst_key, key_where])
 
 		# Semantic colour, against what it is drawn on.
 		var worst_signal := 99.0

@@ -144,6 +144,23 @@ static var AUDIO := Color("57e3b4")
 static var CONTROL := Color("8fb8ff")
 static var TRIGGER := Color("f6c85f")
 
+## The piano's own surfaces, and the ink on them.
+##
+## Here rather than in keyboard.gd because that is where they were, drawn from private
+## constants the contrast suite could not reach — and what it could not reach it could not
+## check: the white keys carried their letters at 3.6:1, roughly half this project's own
+## floor for text, on the one surface in the application whose entire job is to be read
+## while somebody's hands are busy. A token nobody can test is a promise nobody kept.
+##
+## The keys are genuinely light and genuinely dark, which is a deliberate reversal. They
+## were dulled to keep the graph the hero, and that reasoning was sound about attention
+## and wrong about legibility: a piano is not decoration at the bottom of the window, it
+## is the instrument. Attention is bought back with the dock's own framing instead.
+static var WHITE_KEY := Color("f4f6fa")
+static var WHITE_KEY_INK := Color("151922")
+static var BLACK_KEY := Color("171b23")
+static var BLACK_KEY_INK := Color("ffffff")
+
 static var WARNING := Color("f6c85f")
 static var ERROR := Color("ff7a7a")
 ## Panic is not an error and does not borrow the colour of one: red on a control promises
@@ -279,6 +296,19 @@ const MIN_SCREEN_NODE_TITLE := 15
 const MIN_SCREEN_LABEL := 14      ## port names, parameter names, parameter values
 const MIN_SCREEN_UNIT := 13
 const MIN_SCREEN_META := 12       ## category tags — the first thing decluttering drops
+
+## The letters on the piano keys, and the octave landmarks beside them.
+##
+## Higher than ordinary secondary text, and deliberately so: a keycap letter is a
+## *control* — it is the answer to "which computer key plays this note" — read at a
+## glance, at arm's length, by somebody whose hands are already on the keyboard. It had
+## been drawn at a hardcoded 12 and 13 pixels, under this system's own 14px floor, in a
+## file that took no part in the type scale at all and so did not scale with the UI
+## setting either.
+const SIZE_KEYCAP := 17
+const SIZE_OCTAVE := 15
+const MIN_SCREEN_KEYCAP := 16
+const MIN_SCREEN_OCTAVE := 14
 
 enum Scale { COMPACT, COMFORTABLE, LARGE, XL }
 

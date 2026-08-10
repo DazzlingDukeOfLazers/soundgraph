@@ -71,7 +71,11 @@ func _initialize() -> void:
 	# something to show. A screenshot of a silent instrument cannot tell you whether
 	# the "this is running" cue works.
 	if arguments.size() > 4 and arguments[4] == "play":
-		main.engine.note_on(57, 0.9)
+		# Through the editor's own note path rather than straight at the engine, so the
+		# keyboard lights up too. Poking the engine alone left every key unlit, which
+		# made "play" useless for photographing the one state the piano exists to show —
+		# and I nearly signed off a held-key redesign on a screenshot with nothing held.
+		main._hold_note(57)
 		for i in 90:
 			main._update_port_levels(0.05)
 			await process_frame

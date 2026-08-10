@@ -1452,9 +1452,16 @@ func _numeric(text: String) -> Label:
 	return label
 
 
+## A heading in the words it was written in.
+##
+## These were uppercased here, which turned "The graph" into "THE GRAPH" — small capitals
+## used as decoration. Capitals cost the reader the word-shape that lowercase letters
+## carry, and this project's typeface was chosen precisely because its lowercase forms
+## are unusually distinguishable; setting them in caps at 15px throws away the reason it
+## is here. The call sites already pass sentence case, so this only stopped shouting it.
 func _section_heading(text: String) -> Label:
 	var label := Label.new()
-	label.text = text.to_upper()
+	label.text = text
 	label.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
 	label.add_theme_font_size_override("font_size",
 		Design.type(Design.SIZE_HEADING))
@@ -1979,8 +1986,10 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 	if category == "":
 		return
 	var tag := Label.new()
-	tag.text = category.to_upper()
-	tag.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	# Sentence case, not capitals: the same argument as the section headings, and this one
+	# was the smallest text on the node while shouting the least important thing on it.
+	tag.text = category
+	tag.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
 	# Secondary, not heading. The tag shares a line with the node title and is the
 	# quieter of the two on purpose; when SIZE_HEADING grew to proper heading size the
 	# tag could not follow without arguing with the title six pixels to its left.
