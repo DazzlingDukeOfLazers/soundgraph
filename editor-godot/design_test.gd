@@ -64,33 +64,51 @@ func _initialize() -> void:
 	# its left — touching the join rather than crossing it.
 	var centres: Dictionary = Keyboard.black_centres()
 	var joins := {1: 1.0, 3: 2.0, 6: 4.0, 8: 5.0, 10: 6.0}
-	var crossing := 0
-	var thinnest := 1.0
+	var lean_worst := 0.0
+	var lean_where := ""
 	for semitone in centres:
-		var half: float = Keyboard.BLACK_WIDTH * 0.5
-		var left: float = centres[semitone] - half
-		var right: float = centres[semitone] + half
-		var join: float = joins[semitone]
-		if left < join and right > join:
-			crossing += 1
-			# How much of the key lies on its thinner side, as a fraction of the key.
-			thinnest = minf(thinnest,
-				minf(join - left, right - join) / Keyboard.BLACK_WIDTH)
-	check(crossing == centres.size(),
-		"every black key crosses the join it is named for (%d of %d)"
-			% [crossing, centres.size()])
-	check(thinnest > 0.2,
-		"and sits across it rather than beside it (thinnest side %.0f%% of the key)"
-			% (thinnest * 100.0))
+		# How lopsided the key is across its join: 0 is a perfect half-and-half, 1 is
+		# entirely on one side, which is what the hand-picked positions used to be.
+		var offset: float = absf(float(centres[semitone]) - joins[semitone])
+		var share: float = offset / (Keyboard.BLACK_WIDTH * 0.5)
+		if share > lean_worst:
+			lean_worst = share
+			lean_where = str(semitone)
+	check(lean_worst < 0.001,
+		"every black key sits half on each of the two white keys it names "
+			+ "(worst lean %.1f%%, semitone %s)" % [lean_worst * 100.0, lean_where])
 
-	# Each group is symmetric about its middle, which is the property that makes a piano
-	# scannable — and the reason the white key tops come out equal.
+	# Each group stays symmetric about its middle, which is what keeps the 2-and-3
+	# pattern findable by feel.
 	var cde: float = float(centres[1]) + float(centres[3])
 	var fgab: float = float(centres[6]) + float(centres[10])
 	check(absf(cde - 3.0) < 0.001 and absf(fgab - 10.0) < 0.001
 			and absf(float(centres[8]) - 5.0) < 0.001,
 		"and each group is symmetric about its centre (C-D-E %.3f, F-G-A-B %.3f)"
 			% [cde * 0.5, fgab * 0.5])
+
+	# The price of halving, stated rather than discovered later: centring on the joins
+	# makes the inner white tops narrower than the outer ones, where a real piano keeps
+	# them equal. Held to a floor so the thin ones stay a usable strip rather than
+	# quietly closing up if the black keys are ever widened.
+	var narrowest := 1.0
+	for white in Keyboard.WHITE_OFFSETS:
+		var low: float = 0.0
+		var high: float = 1.0
+		for semitone in centres:
+			var edge_low: float = float(centres[semitone]) - Keyboard.BLACK_WIDTH * 0.5 \
+				- float(Keyboard.WHITE_OFFSETS.find(white))
+			var edge_high: float = float(centres[semitone]) + Keyboard.BLACK_WIDTH * 0.5 \
+				- float(Keyboard.WHITE_OFFSETS.find(white))
+			if edge_low < high and edge_high > low:
+				if edge_low <= low:
+					low = maxf(low, edge_high)
+				else:
+					high = minf(high, edge_low)
+		narrowest = minf(narrowest, high - low)
+	check(narrowest >= 0.3,
+		"and the narrowest white key top is still a usable strip (%.2f of a key)"
+			% narrowest)
 
 	check(Keyboard.note_name(49).contains("♯") and Keyboard.note_name(49).contains("♭")
 			and Keyboard.note_name(48) == "C3",
@@ -126,17 +144,17 @@ func _initialize() -> void:
 		# surface no contrast test covered — and it was carrying its key letters at
 		# 3.60:1, about half the floor every other piece of text in the editor is held
 		# to. A token the suite cannot reach is a promise nobody is keeping.
-		var worst_key := 99.0
+		var worst_key_text := 99.0
 		var key_where := ""
 		for entry in [["white key", Design.WHITE_KEY_INK, Design.WHITE_KEY],
 				["black key", Design.BLACK_KEY_INK, Design.BLACK_KEY]]:
 			var ratio := Design.contrast(entry[1], entry[2])
-			if ratio < worst_key:
-				worst_key = ratio
+			if ratio < worst_key_text:
+				worst_key_text = ratio
 				key_where = str(entry[0])
-		check(worst_key >= TEXT_FLOOR,
+		check(worst_key_text >= TEXT_FLOOR,
 			"%-16s piano key text clears 7:1 (worst %.2f, %s)"
-				% [theme_name, worst_key, key_where])
+				% [theme_name, worst_key_text, key_where])
 
 		# Semantic colour, against what it is drawn on.
 		var worst_signal := 99.0

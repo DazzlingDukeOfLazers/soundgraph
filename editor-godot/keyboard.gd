@@ -31,28 +31,33 @@ const BLACK_WIDTH := 0.62
 const BLACK_BETWEEN := {1: ["C", "D"], 3: ["D", "E"], 6: ["F", "G"], 8: ["G", "A"],
 	10: ["A", "B"]}
 
-## Where each black key's centre sits, in white-key widths from the octave's left edge.
+## Where each black key's centre sits, in white-key widths from the octave's left edge:
+## exactly on the join between the two white keys it belongs to.
 ##
-## Derived, because the five numbers this replaces (0.7, 1.7, 3.7, 4.7, 5.7) were picked
-## by hand and put every black key almost entirely *over* the white key to its left: at
-## 0.62 wide, the C# at 0.7 spanned 0.39 to 1.01 and so merely touched the C|D join
-## rather than crossing it. A piano's black keys cross it. That is what makes the 2-and-3
-## grouping legible at a glance, and it is why a player can find F# without counting.
+## Two things this is not. It is not the five hand-picked numbers it started as — 0.7,
+## 1.7, 3.7, 4.7, 5.7 — which at 0.62 wide put the C# at 0.39 to 1.01, merely touching
+## the C|D join with 98% of the key sitting over C. And it is not quite a real piano
+## either: an acoustic keyboard shifts these so that every white key's *top* comes out
+## the same width, which lands C# about two-thirds over C.
 ##
-## The rule is the instrument's own: within a group of white keys — C-D-E, then F-G-A-B —
-## the black keys and the narrowed white tops divide the group evenly, which leaves the
-## group symmetric about its middle. Two black keys over three whites, three over four.
+## Halved deliberately instead. The relationship this keyboard has to teach is that one
+## key is the sharp of the note below it and the flat of the note above — the same pitch
+## under two names — and a key sitting equally on both says that without a caption. The
+## cost is paid by the white tops, which are no longer equal: D, G and A come out
+## narrower than C, E, F and B. That is a real departure from the instrument, made with
+## its eyes open, and it costs nothing in aim — a click above the black keys still falls
+## to the white key whose column it is in.
 static func black_centres() -> Dictionary:
 	var centres := {}
-	for group in [{"start": 0, "whites": 3, "blacks": [1, 3]},
-			{"start": 3, "whites": 4, "blacks": [6, 8, 10]}]:
-		var whites: float = float(group["whites"])
-		var top: float = (whites - (whites - 1.0) * BLACK_WIDTH) / whites
-		var index := 0.0
-		for semitone in group["blacks"]:
-			centres[semitone] = float(group["start"]) + top * (index + 1.0) \
-				+ BLACK_WIDTH * (index + 0.5)
-			index += 1.0
+	for semitone in BLACK_OFFSETS:
+		# The join is the boundary between the pair the key is named for, and the white
+		# keys below a black one are always consecutive, so the join is simply how many
+		# white keys precede the upper of the pair.
+		var whites_below := 0
+		for offset in WHITE_OFFSETS:
+			if offset < semitone:
+				whites_below += 1
+		centres[semitone] = float(whites_below)
 	return centres
 
 static var BLACK_POSITIONS: Dictionary = black_centres()
