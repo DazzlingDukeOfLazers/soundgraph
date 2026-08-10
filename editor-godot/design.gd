@@ -503,6 +503,44 @@ static func relative_luminance(colour: Color) -> float:
 
 
 ## WCAG contrast ratio, 1.0 (identical) to 21.0 (black on white).
+## The quietest version of a colour that still reads against a surface.
+##
+## For de-emphasis — a rack cable that has nothing to do with the selected module, and
+## anything else that should fall behind without leaving. Mixes toward the surface rather
+## than fading to transparent, which is not the same thing: transparency assumes what is
+## behind is dark, and on Paper Lab a receding colour has to get *lighter*.
+##
+## The amount of mixing is found rather than fixed, because how much a colour can give up
+## depends on how much it had. A fixed 45% put mint at 4.2:1 on Lab and 2.5:1 on Paper —
+## the same instruction, one result inside the floor and one under it. Asking for a target
+## contrast instead gives the same legibility on every palette and takes whatever mixing
+## that happens to need.
+##
+## A colour already at or below the target is returned untouched. There is nothing to take.
+static func recede(ink: Color, surface: Color, target := 3.6) -> Color:
+	var key := "%s|%s|%.2f" % [ink.to_html(), surface.to_html(), target]
+	if _receded.has(key):
+		return _receded[key]
+	var result := ink
+	if contrast(ink, surface) > target:
+		# Contrast falls monotonically as the mix goes up, so a bisection is exact enough
+		# in a dozen steps and there is no closed form worth deriving for it.
+		var low := 0.0
+		var high := 1.0
+		for i in 14:
+			var middle := (low + high) * 0.5
+			if contrast(ink.lerp(surface, middle), surface) >= target:
+				low = middle
+			else:
+				high = middle
+		result = ink.lerp(surface, low)
+	_receded[key] = result
+	return result
+
+
+static var _receded: Dictionary = {}
+
+
 static func contrast(foreground: Color, background: Color) -> float:
 	var a := relative_luminance(foreground)
 	var b := relative_luminance(background)

@@ -687,10 +687,35 @@ class CableLayer extends Control:
 
 	## How far a cable is turned down when it has nothing to do with what is selected.
 	##
-	## Dimming rather than hiding: an unrelated cable is still part of the patch and
-	## still tells you the rack is busy. A third of the way down is enough to fall
-	## behind without disappearing.
-	const UNRELATED := 0.3
+	## Stated as the contrast a dimmed cable should still hold against the case, and handed
+	## to Design.recede() to work out the mixing, which is not the same as fading out.
+	##
+	## At alpha 0.3 an unrelated cable fell to 1.86:1 — under even the 3.25:1 this project
+	## holds a plain UI boundary to, so "still part of the patch" was not what was on
+	## screen. Naming a floor rather than an amount is what makes it hold on all five
+	## palettes: a fixed 45% mix landed at 4.2:1 on Lab and 2.5:1 on Paper Lab, the same
+	## instruction giving one result inside the floor and one under it.
+	const DIM_TARGET := 3.6
+
+	## A dimmed cable is drawn thinner as well as quieter.
+	##
+	## Because contrast alone cannot carry this on every palette. Paper Lab's signal
+	## colours start at about 6.5:1 against its case, so once a dimmed one is held at the
+	## 3.6 floor there is only 1.8 times left between them — where Lab has 2.6. Rather
+	## than let the effect be strong on the dark themes and weak on the light one, some of
+	## the work goes to a cue that does not vary with the palette at all.
+	##
+	## It is also the cue that survives the reader: somebody who cannot separate mint from
+	## blue can still see which cable is thinner.
+	const DIM_WIDTH := 0.8
+
+	## The shadow under a dimmed cable, as a fraction of the one under a lit cable.
+	##
+	## Not zero. The dark pass is what gives a cable its drawn width, so multiplying it by
+	## the same amount as the colour cost dimmed cables ~40% of their thickness as well as
+	## their contrast — two cues collapsing together, which is how a cable stopped reading
+	## as a cable. Kept faint so the weight holds without the dim ones looking heavy.
+	const DIM_SHADOW := 0.4
 
 	func _draw() -> void:
 		if rack == null:
@@ -720,13 +745,16 @@ class CableLayer extends Control:
 				var lane := maxf(a.y, b.y) + 34.0 + index * lane_step
 				points = Rack.pcb_route(a, b, lane)
 
-			var alpha: float = 1.0 if related else UNRELATED
 			var width: float = 5.0 if hovered else 4.0
-			var ink := Color(colour.r, colour.g, colour.b, alpha)
+			if not related:
+				width *= DIM_WIDTH
+			var ink: Color = colour if related \
+				else Design.recede(colour, Design.SURFACES[Design.Surface.CANVAS], DIM_TARGET)
+			var shadow: float = 0.45 if related else 0.45 * DIM_SHADOW
 
 			# Drawn twice: a dark, slightly wider pass underneath reads as the shadow side
 			# of a round cable and keeps overlapping cables legible against each other.
-			draw_polyline(points, Color(0, 0, 0, 0.45 * alpha), width + 3.0, true)
+			draw_polyline(points, Color(0, 0, 0, shadow), width + 3.0, true)
 			draw_polyline(points, ink, width, true)
 			draw_circle(a, 5.0, ink)
 			draw_circle(b, 5.0, ink)

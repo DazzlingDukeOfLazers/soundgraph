@@ -134,7 +134,43 @@ func _initialize() -> void:
 			"%-16s audio, control and trigger are far apart in hue (%.0f degrees)"
 				% [theme_name, nearest_hue])
 
+		# ---- a dimmed rack cable is quieter, not gone --------------------------------
+		# The first version of the rack's cable dimming used alpha 0.3 and put unrelated
+		# cables at 1.86:1 against the case — below the 3.25 this project asks of a plain
+		# UI boundary, so what the code called "still part of the patch" was very nearly
+		# not on screen. Both halves are checked: loud enough to read, and quiet enough
+		# that the distinction is doing something.
+		var case: Color = Design.SURFACES[Design.Surface.CANVAS]
+		var faintest := 99.0
+		var least_separation := 99.0
+		for signal_colour: Color in [Design.AUDIO, Design.CONTROL, Design.TRIGGER]:
+			var dimmed: Color = Design.recede(signal_colour, case, Rack.CableLayer.DIM_TARGET)
+			faintest = minf(faintest, Design.contrast(dimmed, case))
+			least_separation = minf(least_separation,
+				Design.contrast(signal_colour, case) / Design.contrast(dimmed, case))
+		check(faintest >= 3.25,
+			"%-16s a dimmed cable still reads against the case (%.2f:1)"
+				% [theme_name, faintest])
+		# 1.75 rather than the 2.0 asked for first. Paper Lab's signal colours start at
+		# about 6.5:1 against its case, so holding a dimmed one at the 3.6 floor leaves
+		# 1.8 times and no more — the original threshold was describing the dark palettes
+		# and calling it a rule. What closes the gap is DIM_WIDTH, checked below, which
+		# does not vary with the palette.
+		check(least_separation >= 1.75,
+			"%-16s and is clearly quieter than a lit one (%.1f times)"
+				% [theme_name, least_separation])
+
 	Design.use_palette(Design.Palette.LAB)
+
+	# ---- the dimming does not rely on colour alone -----------------------------------
+	# Every de-emphasis in this editor that went wrong went wrong by asking one channel to
+	# do all of it. A reader who cannot separate mint from blue can still see which cable
+	# is thinner, and a palette with no contrast headroom left still has width to spend.
+	check(Rack.CableLayer.DIM_WIDTH < 1.0,
+		"a dimmed cable is drawn thinner as well as quieter (%.0f%% of the width)"
+			% (Rack.CableLayer.DIM_WIDTH * 100.0))
+	check(Rack.CableLayer.DIM_SHADOW > 0.0,
+		"but keeps a shadow, so it does not lose its thickness twice over")
 
 	# ---- the ink levels are actually distinguishable from one another ----------------
 	# Four names for the same grey would be a system on paper only.
