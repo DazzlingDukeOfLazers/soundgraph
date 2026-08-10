@@ -87,6 +87,11 @@ const EXAMPLE_GROUPS := {
 ## pouring 128 instruments into the top level buried the eight curated examples.
 const EXAMPLE_SUBMENU_THRESHOLD := 16
 
+## How many execution-order chips the inspector shows before folding the rest.
+## Eight: two rows at the inspector's narrowest. Twelve passed the height budget by
+## three pixels, and a budget met by three pixels is a budget about to fail.
+const ORDER_CHIP_LIMIT := 8
+
 ## Filled by _scan_examples() at startup: menu label -> path relative to examples/patches.
 var _examples: Dictionary = {}
 
@@ -1276,8 +1281,25 @@ func _fill_graph_context() -> void:
 	var flow := HFlowContainer.new()
 	flow.add_theme_constant_override("h_separation", Design.SPACE_XS)
 	flow.add_theme_constant_override("v_separation", Design.SPACE_XS)
-	for node in info["nodes"]:
-		flow.add_child(_stage_chip(str(node["id"])))
+	# A summary, not a census. Chips read well up to a dozen; a 35-node DX7 voice
+	# wrapped them into a 428px-tall block, and because nothing in the inspector column
+	# scrolls, that became the *minimum height of the editor* — which is how loading a
+	# big patch silently pushed the keyboard dock below the bottom of the window. The
+	# strip shows the head of the order and folds the rest into one chip that opens the
+	# Outline, which is the view built for reading a big graph as a list.
+	var order: Array = info["nodes"]
+	var shown: int = mini(order.size(), ORDER_CHIP_LIMIT)
+	if order.size() == ORDER_CHIP_LIMIT + 1:
+		shown = order.size()  # "+1 more" would take the space of the thing it hides
+	for index in shown:
+		flow.add_child(_stage_chip(str(order[index]["id"])))
+	if shown < order.size():
+		var more := Button.new()
+		more.text = "+%d more" % (order.size() - shown)
+		more.tooltip_text = "The full order is in the Outline view."
+		more.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+		more.pressed.connect(func() -> void: views.current_tab = 3)
+		flow.add_child(_defocus(more))
 	context_panel.add_child(flow)
 
 	if not info["feedback"].is_empty():

@@ -82,6 +82,13 @@ func _initialize() -> void:
 		for i in 6:
 			await process_frame
 
+	# An eleventh argument loads an example by its menu label first — "DX7: algo-01" —
+	# because the layout questions worth photographing are patch-dependent.
+	if arguments.size() > 10 and arguments[10] != "":
+		await main._load_example(arguments[10])
+		for i in 6:
+			await process_frame
+
 	# A tenth argument selects a rack module, so the cable dimming can be looked at, or
 	# "cable:N" to put the pointer on one — the highlight is drawn rather than computed,
 	# so the only way to know it looks like anything is to look at it.

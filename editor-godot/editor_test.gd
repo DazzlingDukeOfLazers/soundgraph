@@ -1687,6 +1687,24 @@ func _initialize() -> void:
 	check(needed <= 1280.0,
 		"the editor fits a 1280px window (needs %.0f)" % needed)
 
+	# ---- and a 1280x800 window, even with a big patch open ---------------------------
+	# The width budget's sibling, found the same way the width was: by something
+	# important quietly leaving the screen. A 35-node DX7 voice made the inspector's
+	# execution-order strip wrap into a 428px block, nothing in that column scrolls, so
+	# the editor's *minimum height* grew past a laptop window and the keyboard dock —
+	# the last child of the column — was simply below the bottom. Nobody hid it;
+	# arithmetic did.
+	await main._load_example("DX7: algo-01")
+	for i in 6:
+		await process_frame
+	var tall_needed: float = column.get_combined_minimum_size().y
+	check(tall_needed <= 800.0,
+		"the editor fits an 800px-tall window with a 35-node patch open (needs %.0f)"
+			% tall_needed)
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+
 	# ---- no operating text below the floor, measured on the built editor -------------
 	# The token check in design_test proves the scale is sound; this proves the editor
 	# uses it. An override typed as a literal, or a legacy constant surviving in a
