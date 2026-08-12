@@ -1186,6 +1186,15 @@ class Knob extends Control:
 	var node_id := ""
 	var descriptor: Dictionary = {}
 
+	## Dial only, with the name and the value left to whatever is placing it.
+	##
+	## The graph view puts the name above the number beside the dial rather than below
+	## it, and that is the whole difference between the two views' cells. Stacking them
+	## as the rack does makes a cell 99px tall; a graph node with four of those is taller
+	## than the sliders it replaced, which is the opposite of the point. Same control,
+	## same keyboard, same signal path — one draws its own caption and one does not.
+	var compact := false
+
 	var _position := 0.0               # 0..1 along the parameter's own scaling
 	var _dragging := false
 	var _drag_origin := 0.0
@@ -1234,6 +1243,11 @@ class Knob extends Control:
 		return low if low.length() > high.length() else high
 
 	func _get_minimum_size() -> Vector2:
+		if compact:
+			# The dial and nothing else. Its own hit area still has to clear the rule
+			# every other control in this application obeys.
+			var dial := Rack.knob_radius() * 2.0 + 8.0
+			return Vector2(dial, maxf(dial, Design.scale(Design.HIT_TARGET)))
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
 		var label_size := Design.type(Design.SIZE_SECONDARY)
 		var value_font: Font = Design.numeric_font()
@@ -1357,7 +1371,8 @@ class Knob extends Control:
 
 	func _draw() -> void:
 		var font: Font = get_theme_default_font()
-		var centre := Vector2(size.x * 0.5, Rack.knob_radius() + 6.0)
+		var centre := Vector2(size.x * 0.5,
+			size.y * 0.5 if compact else Rack.knob_radius() + 6.0)
 		var angle := START + SWEEP * _position
 
 		draw_arc(centre, Rack.knob_radius() + 5.0, START, START + SWEEP, 40,
@@ -1381,7 +1396,9 @@ class Knob extends Control:
 			centre + Vector2(cos(angle), sin(angle)) * (Rack.knob_radius() - 3.0),
 			rack.ink, 2.5, true)
 
-		if font == null:
+		# Compact draws the dial and stops: its name and its number belong to whatever
+		# placed it, and drawing them here too would print one over the other.
+		if font == null or compact:
 			return
 		# Names in Medium at the secondary size, values in the tabular face at the
 		# numeric size — which is larger, not smaller.

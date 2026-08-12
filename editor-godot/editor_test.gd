@@ -16,6 +16,24 @@ func rack_ready(main) -> void:
 
 
 ## Every scrap of text in a tree, however deep.
+
+## Every parameter cell in a node, however they are grouped into lines.
+##
+## Parameter rows used to be one parameter each and are two now, so a check that walked
+## a node's children found lines where it expected cells — and reported "0 controls
+## showing" on a node full of them.
+func _parameter_cells(node: GraphNode) -> Array:
+	var cells: Array = []
+	for child in node.get_children():
+		var line := child as Control
+		if line == null or str(line.get_meta("row", "")) != "parameter":
+			continue
+		for cell_child in line.get_children():
+			var cell := cell_child as Control
+			if cell != null:
+				cells.append(cell)
+	return cells
+
 func _tree_text(row: TreeItem) -> String:
 	var collected := ""
 	while row != null:
@@ -1471,20 +1489,26 @@ func _initialize() -> void:
 	check(is_equal_approx(after_nonsense, before_nonsense),
 		"and something that is not a number changes nothing (%.0f)" % after_nonsense)
 
-	# The slider and the field are two views of one value, so moving either has to move
-	# the other. A field that drifted out of step with its slider would be worse than the
-	# label it replaced.
-	var cutoff_slider: HSlider = main.parameter_widgets["filter"]["cutoff"]["slider"]
+	# The dial and the field are two views of one value, so moving either has to move
+	# the other. A field that drifted out of step with its control would be worse than
+	# the label it replaced. The control is the rack's knob now, in both views, so this
+	# is also the check that the graph and the rack cannot disagree about a parameter.
+	var cutoff_dial: Rack.Knob = main.parameter_widgets["filter"]["cutoff"]["slider"]
 	cutoff_field._on_typed("1000")
 	await process_frame
-	var slider_spot: float = main._to_position(main.parameter_widgets["filter"]["cutoff"]["descriptor"],
-		1000.0)
-	# To within the slider's own step, because the slider quantises its position and the
-	# field does not. That is the right way round: the stored value stays exactly what
-	# was typed, and only the handle is snapped.
-	check(absf(cutoff_slider.value - slider_spot) <= cutoff_slider.step,
-		"typing a value moves the slider with it (%.6f vs %.6f, step %.4f)"
-			% [cutoff_slider.value, slider_spot, cutoff_slider.step])
+	check(absf(cutoff_dial.value() - 1000.0) < 1.0,
+		"typing a value moves the dial with it (%.1f)" % cutoff_dial.value())
+	# And the other way. The knob writes through the rack's signal, which is the one path
+	# both views share, so this fails if the graph ever grows a second wiring of its own.
+	var dial_press := InputEventKey.new()
+	dial_press.keycode = KEY_RIGHT
+	dial_press.pressed = true
+	cutoff_dial._gui_input(dial_press)
+	await process_frame
+	check(absf(cutoff_field.position_now
+			- main._to_position(main.parameter_widgets["filter"]["cutoff"]["descriptor"],
+				cutoff_dial.value())) < 0.01,
+		"and moving the dial moves the field (%.3f)" % cutoff_field.position_now)
 
 	# ---- zoom drops detail rather than just shrinking it ---------------------------
 	# Zooming out of a patcher normally makes everything smaller, so at the point where the
@@ -1562,14 +1586,10 @@ func _initialize() -> void:
 				if got > 0.0 and got < float(label.get_meta("screen_min")) - 0.01:
 					undersized.append("%s %.1fpx" % [label.text, got])
 			# Rule 2, per row: a visible control whose label is not reaching the reader.
-			for child in node.get_children():
-				var row := child as Control
-				if row == null or str(row.get_meta("row", "")) != "parameter" \
-						or not row.is_visible_in_tree():
-					continue
+			for row in _parameter_cells(node):
 				var control_showing := false
 				for part in row.get_children():
-					if (part is HSlider or part is OptionButton) \
+					if (part is Rack.Knob or part is HSlider or part is OptionButton) \
 							and (part as Control).is_visible_in_tree():
 						control_showing = true
 				if not control_showing:
@@ -1618,14 +1638,10 @@ func _initialize() -> void:
 		await process_frame
 		for id in main.widgets:
 			var node: GraphNode = main.widgets[id]
-			for child in node.get_children():
-				var row := child as Control
-				if row == null or str(row.get_meta("row", "")) != "parameter" \
-						or not row.is_visible_in_tree():
-					continue
+			for row in _parameter_cells(node):
 				var showing := false
 				for part in row.get_children():
-					if (part is HSlider or part is OptionButton) \
+					if (part is Rack.Knob or part is HSlider or part is OptionButton) \
 							and (part as Control).is_visible_in_tree():
 						showing = true
 				if not showing:
@@ -1841,12 +1857,9 @@ func _initialize() -> void:
 	await process_frame
 	var fresh: GraphNode = main.widgets["filter"]
 	var fresh_controls := 0
-	for child in fresh.get_children():
-		var row := child as Control
-		if row == null or str(row.get_meta("row", "")) != "parameter":
-			continue
+	for row in _parameter_cells(fresh):
 		for part in row.get_children():
-			if (part is HSlider or part is OptionButton) \
+			if (part is Rack.Knob or part is HSlider or part is OptionButton) \
 					and (part as Control).is_visible_in_tree():
 				fresh_controls += 1
 	check(fresh_controls == 0,

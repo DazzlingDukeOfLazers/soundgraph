@@ -1425,11 +1425,21 @@ class ScreenText extends Control:
 	## own minimum. If the two genuinely cannot both fit, the *value* goes, because a name
 	## with no number still says what the node has and a number with no name says nothing.
 	func _draw_pairs(node: GraphNode, handled: Dictionary) -> void:
+		# A line, then the cells on it. This drew one pair per row because a row *was*
+		# one parameter; a row holds two now, and reading the row's own metas would
+		# have stretched the first cell's name across the whole line and dropped the
+		# second parameter's words entirely.
+		var cells: Array[Control] = []
 		for child in node.get_children():
-			var row := child as Control
-			if row == null or str(row.get_meta("row", "")) != "parameter" \
-					or not row.is_visible_in_tree():
+			var line := child as Control
+			if line == null or str(line.get_meta("row", "")) != "parameter" \
+					or not line.is_visible_in_tree():
 				continue
+			for cell_child in line.get_children():
+				var cell := cell_child as Control
+				if cell != null and cell.is_visible_in_tree():
+					cells.append(cell)
+		for row in cells:
 			var name_label: Label = row.get_meta("name_label") \
 				if row.has_meta("name_label") else null
 			if name_label == null or not name_label.is_visible_in_tree():

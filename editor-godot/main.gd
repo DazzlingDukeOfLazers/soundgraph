@@ -1113,6 +1113,9 @@ func _fit_toolbar(width: float = -1.0) -> void:
 	_fitting_toolbar = false
 
 
+## How many parameter cells share a line in a graph node.
+const PARAMETERS_PER_LINE := 2
+
 const CASE_LABELS := ["Case: fit window", "Case: 84 HP", "Case: 104 HP", "Case: 168 HP"]
 const CASE_WIDTHS := [0, 84, 104, 168]
 
@@ -2270,13 +2273,29 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 
 	# Progressive complexity: a node shows its common case, and says how much it is
 	# holding back rather than hiding it silently.
-	var always_visible: int = 2 if parameters.size() > 3 else parameters.size()
+	#
+	# Counted in lines rather than in parameters now that a line holds two of them. Two
+	# always visible is the same promise as before; it is one row instead of two.
+	var always_visible: int = 1 if parameters.size() > 3 else 99
 	var extra: Array[Control] = []
 
+	# Two cells to a line. This is the whole of "not as tall": a four-knob node was four
+	# 44px lines and is now two, and it buys the height with width — about 480px against
+	# 344 — which is the trade a graph can afford and a rack panel cannot.
+	var lines: Array[Control] = []
+	var line: HBoxContainer = null
 	for index in parameters.size():
-		var row := _build_parameter_row(node, parameters[index])
-		row.set_meta("row", "parameter")
-		widget.add_child(row)
+		if index % PARAMETERS_PER_LINE == 0:
+			line = HBoxContainer.new()
+			line.add_theme_constant_override("separation",
+				Design.scale(Design.SPACE_M))
+			line.set_meta("row", "parameter")
+			widget.add_child(line)
+			lines.append(line)
+		line.add_child(_build_parameter_row(node, parameters[index]))
+
+	for index in lines.size():
+		var row: Control = lines[index]
 		if index >= always_visible:
 			row.visible = false
 			# Recorded, not just hidden. The zoom level-of-detail hides parameter rows too,
@@ -2285,6 +2304,7 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 			# memory between them is how a node quietly grows every time you zoom.
 			row.set_meta("collapsed", true)
 			extra.append(row)
+
 
 	if extra.is_empty():
 		return
@@ -2298,7 +2318,13 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 	var toggle := Button.new()
 	toggle.toggle_mode = true
 	toggle.flat = true
-	toggle.text = "%d more" % extra.size()
+	# Parameters, not lines. A line holds two of them, so "1 more" for two hidden knobs
+	# is simply untrue — and this label is the only thing telling the reader there is
+	# anything behind it.
+	var hidden_count := 0
+	for hidden_row in extra:
+		hidden_count += (hidden_row as Control).get_child_count()
+	toggle.text = "%d more" % hidden_count
 	toggle.icon = _icon(Icons.Kind.CARET_RIGHT, Design.INK_SECOND,
 		Design.SIZE_SECONDARY)
 	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -2310,20 +2336,27 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 		for row in extra:
 			row.set_meta("collapsed", not pressed)
 			row.visible = pressed and graph_edit.detail == PatchGraph.Detail.FULL
-		toggle.text = "fewer" if pressed else "%d more" % extra.size()
+		toggle.text = "fewer" if pressed else "%d more" % hidden_count
 		toggle.icon = _icon(Icons.Kind.CARET_DOWN if pressed else Icons.Kind.CARET_RIGHT,
 			Design.INK_SECOND, Design.SIZE_SECONDARY))
 	toggle.set_meta("row", "parameter")
 	widget.add_child(_defocus(toggle))
 
 
+## One parameter, as the rack's knob with its name over its number beside it.
+##
+## The graph's control used to be a 112px slider on a line of its own. This is the rack's
+## dial — the same class, the same keyboard, the same signal path — laid out horizontally
+## rather than stacked, because the rack's own cell is 99px tall and four of those make a
+## node taller than the sliders they replaced. Beside the dial it is one hit-target high,
+## and two of them fit on a line.
 func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	var row := HBoxContainer.new()
-	# Name, control, value and unit on one line at a fixed height, so a stack of
-	# parameters reads as a table rather than as a pile.
-	row.custom_minimum_size.y = Design.scale(Design.NODE_ROW_HEIGHT)
-	row.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
+	row.custom_minimum_size.y = Design.scale(Design.HIT_TARGET)
+	row.add_theme_constant_override("separation", Design.scale(Design.SPACE_S))
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.set_meta("cell", "parameter")
 	var name: String = parameter["name"]
 	var node_id: String = node["id"]
 	var current: float = float(node.get("parameters", {}).get(name, parameter["default"]))
@@ -2334,7 +2367,14 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# names are operating text; the unit is the metadata here, and it is already smaller.
 	var label := Label.new()
 	label.text = name
-	label.custom_minimum_size.x = Design.scale(96)
+	# Narrower than the 96px column it used to hold open — the name is above the number
+	# now rather than beside it — but not zero. The compensated text ScreenText draws at
+	# the bottom of the full-detail band needs somewhere to go, and a shrink-wrapped
+	# label in a half-width cell gave it nowhere: two controls came out of the zoom sweep
+	# with their names dropped entirely.
+	label.custom_minimum_size.x = Design.scale(84)
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.tooltip_text = str(parameter.get("doc", ""))
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
@@ -2345,9 +2385,13 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# Findable by the level of detail, which gives this label the slider's room once the
 	# slider has stopped being worth drawing.
 	row.set_meta("name_label", label)
-	row.add_child(label)
 
 	if parameter.has("enum"):
+		# A dropdown keeps the old shape — name, control, chosen option on one line —
+		# because there is no dial to put beside it and the option text is prose, not a
+		# number that wants to sit under its name.
+		label.custom_minimum_size.x = Design.scale(96)
+		row.add_child(label)
 		var options := OptionButton.new()
 		for entry in parameter["enum"]:
 			options.add_item(str(entry))
@@ -2383,31 +2427,25 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		_remember_parameter_widget(node_id, name, options, null, parameter)
 		return row
 
-	var slider := HSlider.new()
-	slider.min_value = 0.0
-	slider.max_value = 1.0
-	slider.step = 0.0001
-	slider.value = _to_position(parameter, current)
-	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slider.custom_minimum_size.x = Design.scale(112)
+	# The rack's knob, in compact dress. Routed through the rack's own signals rather
+	# than through a second copy of the wiring: `parameter_changed` already lands in
+	# _on_rack_parameter_changed, which writes the value and syncs whichever widget did
+	# not originate it, so the two views cannot drift apart over what a knob means.
+	var slider := Rack.Knob.new()
+	slider.rack = rack
+	slider.compact = true
+	slider.node_id = node_id
+	slider.descriptor = parameter
+	slider.set_value_silently(current)
+	slider.tooltip_text = str(parameter.get("doc", ""))
 
-	# Bipolar controls show where zero is. Modulation depth, transpose and offsets all
-	# have a meaningful centre, and a slider that gives no hint of it makes finding
-	# "no modulation" a matter of watching the number. Only when zero really does sit
-	# in the middle — an exponential or asymmetric range would put a tick in a place
-	# that means nothing, which is worse than no tick at all.
-	if float(parameter["min"]) < 0.0 and float(parameter["max"]) > 0.0:
-		var centre := _to_position(parameter, 0.0)
-		if absf(centre - 0.5) < 0.01:
-			slider.tick_count = 3
-			slider.ticks_on_borders = false
 
 	# The number is a control, not a caption. A slider 112px wide cannot resolve 20 Hz
 	# to 20 kHz — at the bottom of an exponential range one pixel is several hertz —
 	# so the only way to ask for exactly 440 was to drag until it happened to say 440.
 	# Drag the figure, double click to type it, Alt-click for the default.
 	var readout := ValueField.new()
-	readout.custom_minimum_size.x = Design.scale(84)
+	readout.custom_minimum_size.x = Design.scale(72)
 	readout.text = _format_with_unit(parameter, current)
 	readout.default_value = float(parameter["default"])
 	readout.position_now = _to_position(parameter, current)
@@ -2417,7 +2455,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		return _to_position(parameter, value)
 	readout.value_submitted.connect(func(value: float) -> void:
 		var clamped: float = clampf(value, float(parameter["min"]), float(parameter["max"]))
-		slider.set_value_no_signal(_to_position(parameter, clamped))
+		slider.set_value_silently(clamped)
 		readout.position_now = _to_position(parameter, clamped)
 		readout.text = _format_with_unit(parameter, clamped)
 		_set_parameter(node_id, name, clamped))
@@ -2425,23 +2463,22 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	readout.drag_started.connect(func() -> void: _begin_edit())
 	readout.drag_finished.connect(func() -> void: _commit_edit("set %s" % name))
 
-	slider.value_changed.connect(func(position: float) -> void:
-		var value := _to_value(parameter, position)
-		readout.text = _format_with_unit(parameter, value)
-		readout.position_now = position
-		_set_parameter(node_id, name, value))
+	# No value_changed/drag handlers here: the knob emits on the rack's signals and
+	# _on_rack_parameter_changed owns the write and the sync. Wiring it twice would put
+	# two writers on one parameter, which is how a drag ends up costing two undo steps.
 
-	# A whole drag is one undo step. Bracketing on the drag rather than on each value
-	# change is what stops a single sweep of a knob from filling the history.
-	slider.drag_started.connect(func() -> void: _begin_edit())
-	slider.drag_ended.connect(func(changed: bool) -> void:
-		if changed:
-			_commit_edit("set %s" % name)
-		else:
-			_pending_snapshot = {})
+	# Name above number, dial beside both. A VBox rather than three things on a line,
+	# because the name is what identifies the control and the number is what changes
+	# while you watch, and side by side in a half-width cell neither had room.
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 0)
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	stack.add_child(label)
+	stack.add_child(readout)
 
 	row.add_child(_defocus(slider))
-	row.add_child(readout)
+	row.add_child(stack)
 	row.set_meta("value_field", readout)
 	_remember_parameter_widget(node_id, name, slider, readout, parameter)
 	return row
@@ -2662,7 +2699,11 @@ func _on_rack_parameter_changed(node_id: String, parameter: String, value: float
 	if entry.is_empty():
 		return
 	var control: Control = entry["slider"]
-	if control is HSlider:
+	if control is Rack.Knob:
+		# Silently: the knob that emitted this is already where it should be, and the
+		# other view's knob has to follow without emitting again and starting a loop.
+		control.set_value_silently(value)
+	elif control is HSlider:
 		# set_value_no_signal, or the slider's own handler would write the value back and
 		# the two would fight over every drag.
 		control.set_value_no_signal(_to_position(entry["descriptor"], value))
@@ -3549,6 +3590,35 @@ func _reachable_from(node_id: String, downstream: bool) -> Array:
 ## the index of a visible child, so hiding a row would renumber the slots underneath it and
 ## every cable below that point would attach to the wrong port. Hiding the labels keeps the
 ## row — and the port — exactly where it was.
+
+## What a reduced level of detail does inside one parameter cell.
+##
+## The room the hidden control leaves goes to the *value*, not to the name. Both were
+## tried and the pictures settled it: with the control gone and nothing expanding, name
+## and value pack up against each other and each is left with only its own shrink-wrapped
+## box — at 65% "10.0 ms" fitted and "120.0 ms" did not, so a column of numbers came up
+## half empty with no rule a reader could see.
+##
+## Dials and dropdowns are the controls; everything else in a cell is words, and words
+## stay. An enum cell hands its chosen option to a label as the dropdown goes, so it
+## never shows a name with nothing beside it — "shape" and "safety_limit" floating alone
+## was the same failure as an unlabelled slider, seen from the other end.
+func _apply_cell_detail(cell: Control, full: bool) -> void:
+	var value_field: Control = cell.get_meta("value_field") 		if cell.has_meta("value_field") else null
+	if value_field != null:
+		value_field.size_flags_horizontal = Control.SIZE_FILL if full 			else Control.SIZE_EXPAND_FILL
+	var enum_value: Label = cell.get_meta("enum_value") 		if cell.has_meta("enum_value") else null
+	for part in cell.get_children():
+		var piece := part as Control
+		if piece == null:
+			continue
+		if piece is Rack.Knob or piece is HSlider or piece is OptionButton:
+			piece.visible = full
+		elif enum_value != null and piece == enum_value:
+			piece.visible = not full
+		else:
+			piece.visible = true
+
 func _apply_detail(level: int) -> void:
 	var full: bool = level == PatchGraph.Detail.FULL
 	# Words out-survive controls, which is the reverse of what this used to do.
@@ -3601,36 +3671,13 @@ func _apply_detail(level: int) -> void:
 						continue
 					control.visible = show_rows \
 						and not control.get_meta("collapsed", false)
-					# The room the hidden slider leaves goes to the *value*, not to the
-					# name. Both were tried and the pictures settled it: with the slider
-					# gone and nothing expanding, name and value pack up against each
-					# other, and each is left with only its own shrink-wrapped box — at
-					# 65% "10.0 ms" fitted and "120.0 ms" did not, so a column of numbers
-					# came up half empty with no rule a reader could see. Expanding the
-					# value's box pushes it back to the right edge, which is where it
-					# sits at full detail anyway, and opens the gap that gives the name
-					# its room too.
-					var value_field: Control = control.get_meta("value_field") if control.has_meta("value_field") else null
-					if value_field != null:
-						value_field.size_flags_horizontal = Control.SIZE_FILL if full \
-							else Control.SIZE_EXPAND_FILL
-					# Sliders and dropdowns are the controls; everything else in a row is
-					# words, and words stay. An enum row hands its chosen option to a label
-					# as the dropdown goes, so it never shows a name with nothing beside it
-					# — "shape" and "safety_limit" floating alone was the same failure as
-					# an unlabelled slider, seen from the other end.
-					var enum_value: Label = control.get_meta("enum_value") \
-						if control.has_meta("enum_value") else null
-					for part in control.get_children():
-						var piece := part as Control
-						if piece == null:
-							continue
-						if piece is HSlider or piece is OptionButton:
-							piece.visible = full
-						elif enum_value != null and piece == enum_value:
-							piece.visible = not full
-						else:
-							piece.visible = true
+					# One level deeper than it used to be. A line holds two cells and a cell holds
+					# the dial, the name and the number, so the words the level of detail protects
+					# are grandchildren of the row rather than children of it.
+					for cell_child in control.get_children():
+						var cell := cell_child as Control
+						if cell != null:
+							_apply_cell_detail(cell, full)
 				"port":
 					# One level deeper than it used to be: a port caption is now a name and a
 					# unit in their own box, so the labels are grandchildren of the row.
