@@ -590,6 +590,59 @@ func _initialize() -> void:
 				whole = false
 		check(whole, "and an enum knob only ever produces whole positions")
 
+		# ---- and the knob is a control, not a picture of one ------------------------
+		# The graph view's sliders and readouts took arrow keys in the accessibility
+		# pass and the rack's knobs did not, so half this application was reachable from
+		# the keyboard and half of it was a mouse-only drawing of hardware. The knob is
+		# about to become the graph's control too, which makes this the difference
+		# between porting a layout and losing keyboard access to every parameter.
+		check(cutoff.focus_mode == Control.FOCUS_ALL, "a knob can be reached by Tab")
+		var cutoff_before_keys: float = cutoff.value()
+		cutoff.set_value_silently(2500.0)
+		var knob_before: float = cutoff.value()
+		var knob_press := InputEventKey.new()
+		knob_press.keycode = KEY_RIGHT
+		knob_press.pressed = true
+		cutoff._gui_input(knob_press)
+		check(cutoff.value() > knob_before,
+			"and Right moves it (%.1f from %.1f)" % [cutoff.value(), knob_before])
+		var knob_fine: float = cutoff.value() - knob_before
+		cutoff.set_value_silently(2500.0)
+		knob_press.shift_pressed = true
+		cutoff._gui_input(knob_press)
+		check(cutoff.value() - knob_before > knob_fine * 2.0,
+			"and Shift moves it further (%.1f against %.1f)"
+				% [cutoff.value() - knob_before, knob_fine])
+		# Home and End, because a knob's two ends are the two settings hardest to reach
+		# by dragging and the two most often wanted.
+		knob_press.shift_pressed = false
+		knob_press.keycode = KEY_HOME
+		cutoff._gui_input(knob_press)
+		check(absf(cutoff.value() - float(cutoff.descriptor["min"])) < 1.0,
+			"Home takes it to the bottom of its range (%.1f)" % cutoff.value())
+		knob_press.keycode = KEY_END
+		cutoff._gui_input(knob_press)
+		check(absf(cutoff.value() - float(cutoff.descriptor["max"])) < 1.0,
+			"and End to the top (%.1f)" % cutoff.value())
+		# One press, one undo step — not one per key repeat and not none at all.
+		# The counter is an array because a GDScript lambda captures a local by *value*:
+		# the first version incremented a copy and reported 0 edits from a control that
+		# was emitting them correctly.
+		var knob_edits := [0]
+		var count_edit := func(_label: String) -> void: knob_edits[0] += 1
+		main.rack.edit_finished.connect(count_edit)
+		knob_press.keycode = KEY_LEFT
+		cutoff._gui_input(knob_press)
+		main.rack.edit_finished.disconnect(count_edit)
+		check(knob_edits[0] == 1, "and a press is one undo step (%d)" % knob_edits[0])
+
+		# Put it back. This block drives the cutoff to both ends of its range, and the
+		# analysis check further down asks whether the filter's output differs from its
+		# input — which it does not, at 20 kHz. A test that leaves the instrument
+		# somewhere else is a test that breaks the next one for no reason.
+		cutoff.set_value_silently(cutoff_before_keys)
+		main.rack.parameter_changed.emit(filter_id, "cutoff", cutoff.value())
+
 	# ---- the graph, as text -----------------------------------------------------------
 	# A second way to read the same program: keyboard-navigable, readable aloud, and the
 	# fastest answer to "what is connected to this" — which on a canvas means tracing a

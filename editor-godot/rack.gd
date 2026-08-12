@@ -1193,6 +1193,13 @@ class Knob extends Control:
 
 	func _ready() -> void:
 		mouse_default_cursor_shape = Control.CURSOR_VSIZE
+		# Reachable by Tab, and announced as the control it is rather than as a drawing.
+		focus_mode = Control.FOCUS_ALL
+		# The ring is drawn by _draw, and _draw does not run again on its own when focus
+		# moves — so without these the ring appeared on the first knob to be focused and
+		# then never moved.
+		focus_entered.connect(queue_redraw)
+		focus_exited.connect(queue_redraw)
 		# The name in full ahead of the documentation, because the panel may only have
 		# had room for "cutoff_sw…" and the first question a truncated label raises is
 		# what it was truncated from.
@@ -1283,9 +1290,55 @@ class Knob extends Control:
 				return clampf(sqrt(maxf(0.0, (value - low) / (high - low))), 0.0, 1.0)
 		return clampf((value - low) / (high - low), 0.0, 1.0)
 
+	## One step of the keyboard, as a fraction of the knob's travel. The same numbers the
+	## graph view's readout uses, because a reader who has learned that Left is a small
+	## step and Shift+Left a large one has learned it for the application, not for a
+	## widget.
+	const KEY_STEP := 0.01
+	const KEY_COARSE := 0.1
+
+	## Moves the knob by a fraction of its travel and reports it, as one undo step.
+	##
+	## Presses are their own edit rather than being folded into a drag: a drag has a
+	## beginning and an end the mouse announces, and a key press has neither.
+	func nudge(fraction: float) -> void:
+		var before := _position
+		_position = clampf(_position + fraction, 0.0, 1.0)
+		if is_equal_approx(before, _position):
+			return
+		rack.edit_started.emit()
+		rack.parameter_changed.emit(node_id, str(descriptor["name"]), value())
+		rack.edit_finished.emit("set %s" % str(descriptor["name"]))
+		queue_redraw()
+
 	func _gui_input(event: InputEvent) -> void:
+		# A knob you cannot reach from the keyboard is a knob half the people who might
+		# use this cannot reach at all. The graph view's sliders and readouts have taken
+		# arrow keys since the accessibility pass; this is the same control wearing a
+		# different picture, so it takes them too.
+		if event is InputEventKey and event.pressed:
+			var step: float = KEY_COARSE if event.shift_pressed else KEY_STEP
+			if event.keycode == KEY_LEFT or event.keycode == KEY_DOWN:
+				nudge(-step)
+				accept_event()
+				return
+			if event.keycode == KEY_RIGHT or event.keycode == KEY_UP:
+				nudge(step)
+				accept_event()
+				return
+			if event.keycode == KEY_HOME:
+				nudge(-1.0)
+				accept_event()
+				return
+			if event.keycode == KEY_END:
+				nudge(1.0)
+				accept_event()
+				return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
+				# So the arrow keys go to the knob that was just touched, rather than to
+				# whatever held focus before it.
+				grab_focus()
 				_dragging = true
 				_drag_origin = event.position.y
 				_drag_from = _position
@@ -1311,6 +1364,13 @@ class Knob extends Control:
 			Rack.KNOB_TRACK, 3.0, true)
 		draw_arc(centre, Rack.knob_radius() + 5.0, START, angle, 40,
 			Rack.SELECTED, 3.0, true)
+
+		# Focus is drawn around the whole cell, not around the dial: the name and the
+		# value are part of what is focused, and a ring that hugged the circle looked
+		# like a selected knob rather than a keyboard position.
+		if has_focus():
+			draw_rect(Rect2(Vector2.ONE, size - Vector2.ONE * 2.0), Design.FOCUS,
+				false, 2.0)
 
 		draw_circle(centre, Rack.knob_radius(), Rack.KNOB_BODY)
 		draw_circle(centre, Rack.knob_radius(), Color(0, 0, 0, 0.5), false, 1.0)
