@@ -1157,12 +1157,21 @@ func _fit_side_panel() -> void:
 	if split == null or views == null:
 		return
 	var wanted := side_panel_width if side_panel_open else SIDE_PANEL_COLLAPSED
+	var graph_minimum := views.get_combined_minimum_size().x
+	# Never wider than the room there is. A minimum size is a promise the container has
+	# to keep, so asking for 340 in a window with 200 left does not give a 340px panel —
+	# it gives a layout wider than the window, and everything past the edge simply is not
+	# drawn: the order chips ran off the right of the screen and the cost line lost its
+	# last words. The panel gives way before the window does, and the graph keeps a
+	# usable strip whatever happens.
+	if split.size.x > 0.0:
+		var room: float = split.size.x - minf(graph_minimum, split.size.x * 0.45)
+		wanted = int(clampf(float(wanted), float(SIDE_PANEL_COLLAPSED), maxf(room, 0.0)))
 	# The minimum size is what actually holds the width open; the split offset alone
 	# lets the container squeeze the panel narrower than asked, which clipped the scope
 	# and cut the ends off every readout in it.
 	if side_panel != null:
 		side_panel.custom_minimum_size.x = wanted
-	var graph_minimum := views.get_combined_minimum_size().x
 	split.split_offset = int(split.size.x - wanted - graph_minimum)
 
 
@@ -1229,10 +1238,21 @@ func _build_side_panel() -> Control:
 		inset.add_theme_constant_override("margin_" + edge, Design.scale(Design.SPACE_M))
 	side_panel.add_child(inset)
 
+	# The panel scrolls rather than growing past the bottom of the window. Its content
+	# is not a fixed list — the run order grows with the patch, the problem list with
+	# the mistakes — so on a short window the cost line and everything under it were
+	# simply off-screen with no way to reach them. Vertical only: a sideways scrollbar
+	# under a column of text is a sign that something is too wide, not a way to read it.
+	var body_scroll := ScrollContainer.new()
+	body_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	inset.add_child(body_scroll)
+
 	side_panel_body = VBoxContainer.new()
 	side_panel_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side_panel_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	side_panel_body.add_theme_constant_override("separation", Design.SPACE_M)
-	inset.add_child(side_panel_body)
+	body_scroll.add_child(side_panel_body)
 
 	var panel := side_panel_body
 
@@ -3427,10 +3447,6 @@ func _apply_detail(level: int) -> void:
 		# detail restores exactly what the document asked for, and only the *height* is
 		# released: the width is what the value column aligns to, and the ports sit above
 		# the parameters, so nothing here moves a cable.
-		if not widget.has_meta("authored_size"):
-			widget.set_meta("authored_size", widget.size)
-		var authored: Vector2 = widget.get_meta("authored_size")
-		widget.size.y = authored.y if full else 0.0
 		for child in widget.get_children():
 			var control := child as Control
 			if control == null:
@@ -3491,6 +3507,19 @@ func _apply_detail(level: int) -> void:
 							label.visible = show_port_names \
 								and (full or str(label.get_meta("screen_kind", "")) != "unit")
 
+
+	# The height a node gives back, measured after its contents have changed rather
+	# than before. Setting it inside the loop above shrank each node against the
+	# contents it still had, so at 51% the bodies kept their full-editor height and the
+	# graph read as a pile of overlapping rectangles. A frame is allowed to pass so
+	# Godot has recomputed the minimum from the rows that are actually visible.
+	await get_tree().process_frame
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		if not widget.has_meta("authored_size"):
+			widget.set_meta("authored_size", widget.size)
+		var authored: Vector2 = widget.get_meta("authored_size")
+		widget.size.y = authored.y if full else widget.get_combined_minimum_size().y
 
 ## Says what a port is, in words, while the pointer is on it.
 ##
