@@ -2018,6 +2018,22 @@ func _engine_signal_source(node_id: String, port: String) -> Array:
 	return [node_id, port]
 
 
+## How far the graph's world space is stretched relative to the document's.
+##
+## Node widths scale with the reader's UI preference. The positions in the file do not,
+## and must not: they belong to the document, and a patch should not move because the
+## person opening it likes larger text. Those two facts together are what put 464px-wide
+## nodes 400 units apart at XL — every node overlapping its neighbour by 64 units at
+## every zoom — and it presented as a text bug, because what you see is one node's "out"
+## printed over the next one's "in". The labels were placed correctly the whole time,
+## inside node rectangles that were on top of each other.
+##
+## So world = document x this, converted at the three places the two spaces meet: making
+## a widget, reading a widget back, and dropping a new node where the pointer is.
+func _graph_scale() -> float:
+	return Design.SCALE_FACTORS[Design.ui_scale]
+
+
 func _create_widget(node: Dictionary) -> void:
 	var type_name: String = _type_key(node)
 	var descriptor: Dictionary = registry.get(type_name, {})
@@ -2031,7 +2047,7 @@ func _create_widget(node: Dictionary) -> void:
 	widget.tooltip_text = descriptor.get("summary", "")
 	widget.position_offset = Vector2(
 		node.get("position", {}).get("x", 0.0),
-		node.get("position", {}).get("y", 0.0))
+		node.get("position", {}).get("y", 0.0)) * _graph_scale()
 	widget.set_meta("patch_id", node["id"])
 	widget.set_meta("type", type_name)
 
@@ -2994,7 +3010,11 @@ func _add_first_result() -> void:
 ## and reopening the search for each one is the slow way to do it.
 func _add_from_search(type_name: String) -> void:
 	# Fan successive additions down the grid so they do not land on top of each other.
-	var spawn := (_search_spawn + graph_edit.scroll_offset) / graph_edit.zoom
+	# Screen to world by the zoom, world to document by the UI scale. Only the first was
+	# happening, so at XL a node dropped where the pointer was landed a third of the way
+	# further out every time the file was reopened.
+	var spawn := (_search_spawn + graph_edit.scroll_offset) / graph_edit.zoom \
+		/ _graph_scale()
 	spawn += Vector2(0.0, _added_since_open * GRID * 4.0)
 	_added_since_open += 1
 
@@ -3117,7 +3137,12 @@ func _arrange(movable: Array) -> void:
 	var sizes := {}
 	for node in patch["nodes"]:
 		var widget: GraphNode = widgets.get(node["id"])
-		sizes[node["id"]] = widget.size if widget != null else Vector2(240.0, 140.0)
+		# Measured in world pixels, handed over in document units, because everything
+		# else the layout engine is given — the pitch, the gutter, the grid, the anchors
+		# — is in document units. Mixing the two is how the arrangement came out tight at
+		# XL and loose at Compact from the same patch.
+		sizes[node["id"]] = (widget.size / _graph_scale()) if widget != null \
+			else Vector2(240.0, 140.0)
 
 	var anchors := {}
 	var moving := {}
@@ -3378,7 +3403,7 @@ func _restore_waypoints() -> void:
 func _capture_positions() -> void:
 	for node in patch.get("nodes", []):
 		if widgets.has(node["id"]):
-			var offset: Vector2 = widgets[node["id"]].position_offset
+			var offset: Vector2 = widgets[node["id"]].position_offset / _graph_scale()
 			node["position"] = {"x": offset.x, "y": offset.y}
 
 

@@ -14,7 +14,7 @@
       "type": "NoteInput",
       "position": {
         "x": 0,
-        "y": 200
+        "y": 400
       }
     },
     {
@@ -33,7 +33,7 @@
       "type": "AhdEnvelope",
       "position": {
         "x": 400,
-        "y": 200
+        "y": 400
       },
       "parameters": {
         "attack": 0.005,

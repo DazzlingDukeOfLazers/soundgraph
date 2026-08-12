@@ -1658,6 +1658,117 @@ func _initialize() -> void:
 	# failure. Re-taken here rather than debugged again later.
 	node_widget = main.widgets["filter"]
 
+	# ---- the nodes do not sit on top of each other, at any size preference -----------
+	# Reported as a text bug — "out" printed over the next node's "in" at XL and 63% —
+	# and chased through three wrong theories in the label overlay before anybody
+	# measured the node rectangles. The labels were placed correctly the whole time,
+	# inside boxes that overlapped by 40px: node widths scale with the UI preference and
+	# the positions in the file do not, so at XL a 464-wide node sat 400 units from its
+	# neighbour. Checked here rather than in the overlay because the overlay was never
+	# the thing that was wrong.
+	for scale_choice in [Design.Scale.COMPACT, Design.Scale.COMFORTABLE,
+			Design.Scale.LARGE, Design.Scale.XL]:
+		Design.ui_scale = scale_choice
+		# Freshly loaded, because by this line the suite has opened disclosures and
+		# driven the level of detail all over the place, and a node with its "2 more"
+		# expanded is 84px taller than the one the file describes. Measured in that
+		# state this reported a 43px overlap in first-synth that no screenshot could
+		# find and that the file does not contain — the suite reading back its own
+		# earlier clicks.
+		await main._load_example("First Synth")
+		# Generously, because a GraphNode's height is settled a frame *after* its rows
+		# are shown — the level-of-detail pass does the resize separately for exactly
+		# that reason. Measured at three frames every node still carried its pre-layout
+		# height and this reported a 43px overlap that no screenshot could find.
+		for i in 6:
+			await process_frame
+		# At full detail, which is where the nodes are tallest and therefore where they
+		# collide first. Fit-on-load leaves the graph zoomed out and summarised, and a
+		# summarised node is short enough to clear anything.
+		main.graph_edit.zoom = 1.0
+		main.graph_edit._update_detail()
+		main._apply_detail(main.graph_edit.detail)
+		for i in 10:
+			await process_frame
+		var overlap_worst := ""
+		var overlap_ids: Array = main.widgets.keys()
+		for overlap_first in overlap_ids.size():
+			for overlap_second in range(overlap_first + 1, overlap_ids.size()):
+				var overlap_one: GraphNode = main.widgets[overlap_ids[overlap_first]]
+				var overlap_two: GraphNode = main.widgets[overlap_ids[overlap_second]]
+				var overlap_area := Rect2(overlap_one.position_offset,
+					overlap_one.size).intersection(
+						Rect2(overlap_two.position_offset, overlap_two.size))
+				if overlap_area.size.x > 0.5 and overlap_area.size.y > 0.5:
+					overlap_worst = "%s over %s by %.0fx%.0f" % [
+						overlap_ids[overlap_first], overlap_ids[overlap_second],
+						overlap_area.size.x, overlap_area.size.y]
+		check(overlap_worst == "", "no two nodes overlap at %s (%s)"
+			% [Design.SCALE_NAMES[scale_choice],
+				overlap_worst if overlap_worst != "" else "clear"])
+
+	# The shipped patches themselves, at the one scale, because an example that opens
+	# with its nodes on top of each other is the first thing a new reader sees. All eight
+	# game sounds did: they were authored on 200-unit rows and the nodes they describe
+	# are 267 tall, so every one of them overlapped by 67px and had done since the day
+	# the parameter rows grew.
+	Design.ui_scale = Design.Scale.COMFORTABLE
+	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",
+			"Game: jump2", "DX7: algo-01"]:
+		await main._load_example(example_name)
+		# Frames before the zoom, not after. Opening a patch fits it to the window a few
+		# frames later, so a zoom set immediately was overwritten and everything below
+		# measured a summary-detail graph of short nodes — which reported "clear" on a
+		# layout that overlaps by 115px. The check was reading its own timing.
+		for i in 6:
+			await process_frame
+		main.graph_edit.zoom = 1.0
+		main.graph_edit._update_detail()
+		main._apply_detail(main.graph_edit.detail)
+		for i in 10:
+			await process_frame
+		var shipped_worst := ""
+		var shipped_ids: Array = main.widgets.keys()
+		for shipped_first in shipped_ids.size():
+			for shipped_second in range(shipped_first + 1, shipped_ids.size()):
+				var shipped_one: GraphNode = main.widgets[shipped_ids[shipped_first]]
+				var shipped_two: GraphNode = main.widgets[shipped_ids[shipped_second]]
+				var shipped_area := Rect2(shipped_one.position_offset,
+					shipped_one.size).intersection(
+						Rect2(shipped_two.position_offset, shipped_two.size))
+				if shipped_area.size.x > 0.5 and shipped_area.size.y > 0.5:
+					shipped_worst = "%s over %s by %.0fx%.0f" % [
+						shipped_ids[shipped_first], shipped_ids[shipped_second],
+						shipped_area.size.x, shipped_area.size.y]
+		check(shipped_worst == "", "%s opens with its nodes clear of each other (%s)"
+			% [example_name, shipped_worst if shipped_worst != "" else "clear"])
+	await main._load_example("First Synth")
+	await process_frame
+
+	# And the document does not move when the preference does. Positions belong to the
+	# patch; scaling them into the graph's world is a rendering decision, and a rendering
+	# decision that wrote itself back into the file would walk every node outward by 35%
+	# each time somebody opened the patch at XL and saved it.
+	var before_positions := {}
+	for node in main.patch["nodes"]:
+		before_positions[node["id"]] = Vector2(node["position"]["x"], node["position"]["y"])
+	Design.ui_scale = Design.Scale.XL
+	await main._rebuild_view()
+	await process_frame
+	main._capture_positions()
+	var drifted := ""
+	for node in main.patch["nodes"]:
+		var now := Vector2(node["position"]["x"], node["position"]["y"])
+		if not now.is_equal_approx(before_positions[node["id"]]):
+			drifted = "%s %s to %s" % [node["id"], before_positions[node["id"]], now]
+	check(drifted == "", "and a save at XL writes the same coordinates back (%s)"
+		% [drifted if drifted != "" else "unmoved"])
+
+	Design.ui_scale = scale_before
+	await main._rebuild_view()
+	await process_frame
+	node_widget = main.widgets["filter"]
+
 	main.graph_edit.zoom = 1.0
 	main.graph_edit._update_detail()
 	main.graph_edit.zoom = 0.5

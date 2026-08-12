@@ -3,13 +3,19 @@
   "metadata": {
     "name": "jump2",
     "description": "The second jump of a double jump. Generated from sfxr case jump-0 by tools/game-sounds.mjs. Do not edit by hand.",
-    "tags": ["sfxr", "game"]
+    "tags": [
+      "sfxr",
+      "game"
+    ]
   },
   "nodes": [
     {
       "id": "slide",
       "type": "Slide",
-      "position": {"x": 0, "y": 0},
+      "position": {
+        "x": 0,
+        "y": 0
+      },
       "parameters": {
         "slide": 11.1336,
         "acceleration": 0,
@@ -20,16 +26,22 @@
     {
       "id": "osc",
       "type": "SquareOscillator",
-      "position": {"x": 400, "y": 0},
+      "position": {
+        "x": 400,
+        "y": 0
+      },
       "parameters": {
         "pulse_width": 0.22973,
-        "pulse_width_sweep": -0
+        "pulse_width_sweep": 0
       }
     },
     {
       "id": "highpass",
       "type": "OnePoleFilter",
-      "position": {"x": 800, "y": 0},
+      "position": {
+        "x": 800,
+        "y": 0
+      },
       "parameters": {
         "cutoff": 151.537,
         "mode": 1,
@@ -39,7 +51,10 @@
     {
       "id": "phaser",
       "type": "Phaser",
-      "position": {"x": 1200, "y": 0},
+      "position": {
+        "x": 1200,
+        "y": 0
+      },
       "parameters": {
         "offset": 0,
         "sweep": 0,
@@ -49,7 +64,10 @@
     {
       "id": "trigger",
       "type": "NoteInput",
-      "position": {"x": 800, "y": 200},
+      "position": {
+        "x": 800,
+        "y": 400
+      },
       "parameters": {
         "transpose": 21.4181
       }
@@ -57,7 +75,10 @@
     {
       "id": "envelope",
       "type": "AhdEnvelope",
-      "position": {"x": 1200, "y": 200},
+      "position": {
+        "x": 1200,
+        "y": 400
+      },
       "parameters": {
         "attack": 0,
         "hold": 0.219266,
@@ -68,7 +89,10 @@
     {
       "id": "amp",
       "type": "Gain",
-      "position": {"x": 1600, "y": 0},
+      "position": {
+        "x": 1600,
+        "y": 0
+      },
       "parameters": {
         "gain": 0.025
       }
@@ -76,7 +100,10 @@
     {
       "id": "out",
       "type": "StereoOutput",
-      "position": {"x": 2000, "y": 0},
+      "position": {
+        "x": 2000,
+        "y": 0
+      },
       "parameters": {
         "level": 1,
         "safety_limit": 0
@@ -85,44 +112,104 @@
   ],
   "connections": [
     {
-      "from": {"node": "slide", "port": "frequency"},
-      "to": {"node": "osc", "port": "frequency"}
+      "from": {
+        "node": "slide",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
     },
     {
-      "from": {"node": "osc", "port": "out"},
-      "to": {"node": "highpass", "port": "in"}
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "highpass",
+        "port": "in"
+      }
     },
     {
-      "from": {"node": "highpass", "port": "out"},
-      "to": {"node": "phaser", "port": "in"}
+      "from": {
+        "node": "highpass",
+        "port": "out"
+      },
+      "to": {
+        "node": "phaser",
+        "port": "in"
+      }
     },
     {
-      "from": {"node": "trigger", "port": "frequency"},
-      "to": {"node": "slide", "port": "frequency"}
+      "from": {
+        "node": "trigger",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "slide",
+        "port": "frequency"
+      }
     },
     {
-      "from": {"node": "trigger", "port": "trigger"},
-      "to": {"node": "envelope", "port": "gate"}
+      "from": {
+        "node": "trigger",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "envelope",
+        "port": "gate"
+      }
     },
     {
-      "from": {"node": "phaser", "port": "out"},
-      "to": {"node": "amp", "port": "in"}
+      "from": {
+        "node": "phaser",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
     },
     {
-      "from": {"node": "envelope", "port": "out"},
-      "to": {"node": "amp", "port": "gain"}
+      "from": {
+        "node": "envelope",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
     },
     {
-      "from": {"node": "trigger", "port": "trigger"},
-      "to": {"node": "slide", "port": "gate"}
+      "from": {
+        "node": "trigger",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "slide",
+        "port": "gate"
+      }
     },
     {
-      "from": {"node": "amp", "port": "out"},
-      "to": {"node": "out", "port": "left"}
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
     },
     {
-      "from": {"node": "amp", "port": "out"},
-      "to": {"node": "out", "port": "right"}
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
     }
   ]
 }

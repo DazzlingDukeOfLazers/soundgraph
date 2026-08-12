@@ -3,13 +3,19 @@
   "metadata": {
     "name": "powerup",
     "description": "Getting a power-up. Generated from sfxr case powerup-0 by tools/game-sounds.mjs. Do not edit by hand.",
-    "tags": ["sfxr", "game"]
+    "tags": [
+      "sfxr",
+      "game"
+    ]
   },
   "nodes": [
     {
       "id": "slide",
       "type": "Slide",
-      "position": {"x": 0, "y": 0},
+      "position": {
+        "x": 0,
+        "y": 0
+      },
       "parameters": {
         "slide": 75.7114,
         "acceleration": 0,
@@ -20,12 +26,18 @@
     {
       "id": "osc",
       "type": "SawOscillator",
-      "position": {"x": 400, "y": 0}
+      "position": {
+        "x": 400,
+        "y": 0
+      }
     },
     {
       "id": "phaser",
       "type": "Phaser",
-      "position": {"x": 800, "y": 0},
+      "position": {
+        "x": 800,
+        "y": 0
+      },
       "parameters": {
         "offset": 0,
         "sweep": 0,
@@ -35,7 +47,10 @@
     {
       "id": "trigger",
       "type": "NoteInput",
-      "position": {"x": 400, "y": 200},
+      "position": {
+        "x": 400,
+        "y": 400
+      },
       "parameters": {
         "transpose": -1.60134
       }
@@ -43,7 +58,10 @@
     {
       "id": "envelope",
       "type": "AhdEnvelope",
-      "position": {"x": 800, "y": 200},
+      "position": {
+        "x": 800,
+        "y": 400
+      },
       "parameters": {
         "attack": 0,
         "hold": 0.155323,
@@ -54,7 +72,10 @@
     {
       "id": "amp",
       "type": "Gain",
-      "position": {"x": 1200, "y": 0},
+      "position": {
+        "x": 1200,
+        "y": 0
+      },
       "parameters": {
         "gain": 0.05
       }
@@ -62,7 +83,10 @@
     {
       "id": "repeat",
       "type": "Retrigger",
-      "position": {"x": 0, "y": -200},
+      "position": {
+        "x": 0,
+        "y": -400
+      },
       "parameters": {
         "rate": 6.62881,
         "width": 1
@@ -71,7 +95,10 @@
     {
       "id": "out",
       "type": "StereoOutput",
-      "position": {"x": 1600, "y": 0},
+      "position": {
+        "x": 1600,
+        "y": 0
+      },
       "parameters": {
         "level": 1,
         "safety_limit": 0
@@ -80,40 +107,94 @@
   ],
   "connections": [
     {
-      "from": {"node": "slide", "port": "frequency"},
-      "to": {"node": "osc", "port": "frequency"}
+      "from": {
+        "node": "slide",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
     },
     {
-      "from": {"node": "osc", "port": "out"},
-      "to": {"node": "phaser", "port": "in"}
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "phaser",
+        "port": "in"
+      }
     },
     {
-      "from": {"node": "trigger", "port": "frequency"},
-      "to": {"node": "slide", "port": "frequency"}
+      "from": {
+        "node": "trigger",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "slide",
+        "port": "frequency"
+      }
     },
     {
-      "from": {"node": "trigger", "port": "trigger"},
-      "to": {"node": "envelope", "port": "gate"}
+      "from": {
+        "node": "trigger",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "envelope",
+        "port": "gate"
+      }
     },
     {
-      "from": {"node": "phaser", "port": "out"},
-      "to": {"node": "amp", "port": "in"}
+      "from": {
+        "node": "phaser",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
     },
     {
-      "from": {"node": "envelope", "port": "out"},
-      "to": {"node": "amp", "port": "gain"}
+      "from": {
+        "node": "envelope",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
     },
     {
-      "from": {"node": "repeat", "port": "gate"},
-      "to": {"node": "slide", "port": "gate"}
+      "from": {
+        "node": "repeat",
+        "port": "gate"
+      },
+      "to": {
+        "node": "slide",
+        "port": "gate"
+      }
     },
     {
-      "from": {"node": "amp", "port": "out"},
-      "to": {"node": "out", "port": "left"}
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
     },
     {
-      "from": {"node": "amp", "port": "out"},
-      "to": {"node": "out", "port": "right"}
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
     }
   ]
 }
