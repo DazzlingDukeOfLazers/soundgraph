@@ -65,9 +65,15 @@ static var module_height := 404.0
 
 
 ## The height a module needs for its own content, before the density band.
-static func content_height(parameters: int) -> float:
+##
+## The jacks used to be stacked under the knobs and cost two rows of height on every
+## module whether it had four ports or one. They are beside them now — inputs down the
+## left edge, outputs down the right — so the height is whichever of the two columns is
+## taller, and a two-knob oscillator is a short module again.
+static func content_height(parameters: int, ports: int = 0) -> float:
 	var knob_rows: int = int(ceil(parameters / 2.0))
-	return TITLE_BAND + 16.0 + knob_rows * KNOB_CELL.y + JACK_ROW_HEIGHT * 2.0 + 10.0
+	return TITLE_BAND + KNOB_PAD * 2.0 + maxf(knob_rows * KNOB_CELL.y,
+		ports * JACK_ROW_HEIGHT)
 
 
 ## Recomputed whenever the rack is rebuilt or the density changes.
@@ -78,9 +84,17 @@ static func measure(patch_nodes: Array, registry: Dictionary) -> float:
 		if type_key == "module":
 			type_key = "module:%s" % str(node.get("module", ""))
 		var descriptor: Dictionary = registry.get(type_key, {})
-		tallest = maxf(tallest,
-			content_height(int(descriptor.get("parameters", []).size())))
-	return tallest + DENSITY_BAND[density]
+		tallest = maxf(tallest, content_height(
+			int(descriptor.get("parameters", []).size()),
+			maxi(int(descriptor.get("inputs", []).size()),
+				int(descriptor.get("outputs", []).size()))))
+	# Scaled once, here, rather than at each term. The shared height has to be at least
+	# what the tallest module's own contents ask for, and those grow with the reader's
+	# size preference; left unscaled, every module at XL outgrew the shared height
+	# individually and the rack went ragged, which is the one thing a rack must not be.
+	return Design.scale(tallest + DENSITY_BAND[density])
+
+
 const RAIL := 16.0
 const ROW_GAP := 34.0
 const CASE_MARGIN := 26.0
@@ -89,7 +103,34 @@ const TITLE_BAND := 40.0
 const JACK_RADIUS := 11.0
 const JACK_ROW_HEIGHT := 46.0
 const KNOB_RADIUS := 21.0
-const KNOB_CELL := Vector2(66.0, 74.0)
+const KNOB_CELL := Vector2(66.0, 78.0)
+
+## Breathing room inside a knob cell, and between the knob grid and the panel edges.
+##
+## The cell used to be a constant 66px and the name and the value were drawn centred at
+## whatever width they happened to measure, with no bound at all — so "cutoff_sweep" ran
+## straight over "mode" on the next knob and "safety_limit" left the panel entirely. A
+## cell is now as wide as the widest thing in it, which is what the padding is measured
+## from rather than added to.
+const KNOB_PAD := 10.0
+
+## How much of a port name a panel shows before eliding it. The full name is on the
+## tooltip; what the panel owes the reader is enough to tell one jack from the next.
+const JACK_LABEL_MAX := 92.0
+
+
+## The knob and the socket, after the reader's size preference.
+##
+## Geometry was the one part of this panel that ignored the setting: at XL the labels
+## grew 35% and the thing they label stayed 21px, so the knobs read as undersized
+## controls on an oversized panel — and at Compact the socket was a smaller target than
+## the hit-size rule allows anywhere else in the application.
+static func knob_radius() -> float:
+	return Design.scale(KNOB_RADIUS)
+
+
+static func jack_radius() -> float:
+	return Design.scale(JACK_RADIUS)
 
 # Cable sag, as a fraction of the horizontal span, clamped so that a very short patch still
 # droops and a very long one does not fall off the case.
@@ -785,80 +826,116 @@ class RackModule extends Control:
 	var title := ""
 	var descriptor: Dictionary = {}
 
-	var _jacks: Array = []   # {"name", "input", "type", "centre"}
+	var _jacks: Array = []   # Jack controls, both columns
+	var _grid: GridContainer = null
 	var _dragging := false
 	var _grab_offset := Vector2.ZERO
 
+	## Signal in on the left, controls in the middle, signal out on the right.
+	##
+	## The jacks were in two rows across the bottom, which is where a Eurorack module puts
+	## them and which costs this one the two things the arrangement is supposed to buy. On
+	## real hardware the patch cables are in front of the panel and you read the labels
+	## around them; here the cables are drawn *over* the module, so a bottom row put every
+	## cable across the face of the thing it belongs to. And a rack module whose signal
+	## runs left to right is the same object as a graph node, which is what lets the two
+	## views share a layout instead of arguing about one.
+	##
+	## Built out of containers rather than arithmetic. Every overlap on this panel came
+	## from a hand-computed offset that did not know how wide the text next to it was.
 	func build(node: Dictionary) -> Dictionary:
 		var inputs: Array = descriptor.get("inputs", [])
 		var outputs: Array = descriptor.get("outputs", [])
 		var parameters: Array = descriptor.get("parameters", [])
 
-		# Width in whole HP, from whatever the node actually has. A module with more to say
-		# is wider, which is also true of the real thing.
-		var knob_columns := 2
-		var jack_columns := maxi(inputs.size(), outputs.size())
-		var needed := maxi(int(ceil(knob_columns * Rack.KNOB_CELL.x / Rack.HP)),
-			int(ceil(jack_columns * 46.0 / Rack.HP)) + 1)
-		var hp := maxi(Rack.MIN_HP, needed)
-		size = Vector2(hp * Rack.HP, Rack.module_height)
-		custom_minimum_size = size
+		var frame := MarginContainer.new()
+		frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		frame.add_theme_constant_override("margin_left", int(Rack.KNOB_PAD))
+		frame.add_theme_constant_override("margin_right", int(Rack.KNOB_PAD))
+		frame.add_theme_constant_override("margin_top", int(Rack.TITLE_BAND))
+		frame.add_theme_constant_override("margin_bottom", int(Rack.KNOB_PAD) + 8)
+		# So a drag still begins anywhere on bare panel: the layout is scaffolding, and
+		# scaffolding that swallowed the mouse would take the one gesture the rack has.
+		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(frame)
+
+		var body := HBoxContainer.new()
+		body.add_theme_constant_override("separation", Design.SPACE_M)
+		body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		frame.add_child(body)
+
+		_jacks.clear()
+		body.add_child(_jack_column(inputs, true))
+
+		# The knobs take the middle and sit in the middle of it. A GridContainer has no
+		# alignment of its own, so left to itself it packs against the input jacks and
+		# leaves the gap on the outside — which reads as a module that has been assembled
+		# wrong rather than one with room to spare.
+		var centre := CenterContainer.new()
+		centre.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		body.add_child(centre)
+
+		var grid := GridContainer.new()
+		grid.columns = 1 if parameters.size() <= 2 else 2
+		grid.add_theme_constant_override("h_separation", 0)
+		grid.add_theme_constant_override("v_separation", 0)
+		grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		centre.add_child(grid)
+		_grid = grid
 
 		var knobs: Dictionary = {}
-		var knob_area_top := Rack.TITLE_BAND + 16.0
-		for index in parameters.size():
-			var parameter: Dictionary = parameters[index]
-			var column := index % knob_columns
-			var row := index / knob_columns
-			var cell_origin := Vector2(
-				(size.x - knob_columns * Rack.KNOB_CELL.x) * 0.5 + column * Rack.KNOB_CELL.x,
-				knob_area_top + row * Rack.KNOB_CELL.y)
+		for parameter: Dictionary in parameters:
 			var knob := Knob.new()
 			knob.rack = rack
 			knob.node_id = node_id
 			knob.descriptor = parameter
-			knob.position = cell_origin
-			knob.size = Rack.KNOB_CELL
 			knob.set_value_silently(float(node.get("parameters", {})
 				.get(str(parameter["name"]), parameter["default"])))
-			add_child(knob)
+			grid.add_child(knob)
 			knobs[str(parameter["name"])] = knob
 
-		# Jacks along the bottom: inputs on their own row, outputs beneath, which is the
-		# convention the eye already has from the hardware.
-		_jacks.clear()
-		# Measured from the bottom, so the jack rows stay on the same line across a rack
-		# of modules with different numbers of knobs — which is what makes a row of them
-		# read as one instrument rather than several.
-		var jack_top := size.y - Rack.JACK_ROW_HEIGHT * 2.0 - 10.0
-		_place_jack_row(inputs, true, jack_top)
-		_place_jack_row(outputs, false, jack_top + Rack.JACK_ROW_HEIGHT)
+		body.add_child(_jack_column(outputs, false))
+
+		# Whole HP, from what the contents actually measure. A module with more to say is
+		# wider, which is also true of the real thing — but "more to say" now includes a
+		# long parameter name, which is what used to overflow instead of widening.
+		var wanted: float = frame.get_combined_minimum_size().x + Rack.KNOB_PAD * 2.0
+		var hp := maxi(Rack.MIN_HP, int(ceil(wanted / Rack.HP)))
+		custom_minimum_size = Vector2(hp * Rack.HP,
+			maxf(Rack.module_height, frame.get_combined_minimum_size().y))
+		size = custom_minimum_size
 		return knobs
 
-	func _place_jack_row(ports: Array, is_input: bool, row_y: float) -> void:
-		if ports.is_empty():
-			return
-		var step := size.x / float(ports.size())
-		for index in ports.size():
-			var port: Dictionary = ports[index]
-			_jacks.append({
-				"name": str(port["name"]),
-				"input": is_input,
-				"type": str(port.get("type", "")),
-				"centre": Vector2(step * (index + 0.5), row_y + Rack.JACK_RADIUS + 4.0),
-			})
+	## One edge of the panel: its jacks, stacked, centred against the knobs.
+	func _jack_column(ports: Array, is_input: bool) -> Control:
+		var column := VBoxContainer.new()
+		column.alignment = BoxContainer.ALIGNMENT_CENTER
+		column.add_theme_constant_override("separation", 0)
+		column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for port: Dictionary in ports:
+			var jack := Jack.new()
+			jack.rack = rack
+			jack.port_name = str(port["name"])
+			jack.type_name = str(port.get("type", ""))
+			jack.is_input = is_input
+			column.add_child(jack)
+			_jacks.append(jack)
+		return column
 
 	func port_type(port_name: String, is_input: bool) -> String:
-		for jack in _jacks:
-			if jack["name"] == port_name and jack["input"] == is_input:
-				return str(jack["type"])
+		for jack: Jack in _jacks:
+			if jack.port_name == port_name and jack.is_input == is_input:
+				return jack.type_name
 		return ""
 
 	## Centre of a jack, in rack space, or null when this module has no such port.
 	func jack_position(port_name: String, is_input: bool):
-		for jack in _jacks:
-			if jack["name"] == port_name and jack["input"] == is_input:
-				return position + (jack["centre"] as Vector2)
+		for jack: Jack in _jacks:
+			if jack.port_name == port_name and jack.is_input == is_input:
+				return position + jack.global_position - global_position \
+					+ jack.socket_centre()
 		return null
 
 	# Dragging slides a module along the rail — the one thing you can do to a real rack
@@ -927,12 +1004,17 @@ class RackModule extends Control:
 		if outputs.is_empty():
 			return
 
-		var knob_rows: int = int(ceil(descriptor.get("parameters", []).size() / 2.0))
-		var top: float = Rack.TITLE_BAND + 16.0 + knob_rows * Rack.KNOB_CELL.y + 6.0
-		var bottom: float = size.y - Rack.JACK_ROW_HEIGHT * 2.0 - 16.0
+		# Under whatever the layout actually did, rather than under a re-derivation of it.
+		# The old version counted knob rows and multiplied by a cell height to guess where
+		# the knobs ended, which was a second copy of the layout kept in step by hand.
+		if _grid == null:
+			return
+		var top: float = _grid.global_position.y - global_position.y + _grid.size.y + 10.0
+		var bottom: float = size.y - Rack.KNOB_PAD - 10.0
 		if bottom - top < 24.0:
 			return
-		var area := Rect2(12.0, top, size.x - 24.0, bottom - top)
+		var area := Rect2(Rack.KNOB_PAD + 4.0, top, size.x - Rack.KNOB_PAD * 2.0 - 8.0,
+			bottom - top)
 
 		# Recessed into the panel, the way a display on a real module is.
 		draw_rect(area, Rack.JACK_HOLE)
@@ -1008,9 +1090,6 @@ class RackModule extends Control:
 
 		_draw_analysis()
 
-		for jack in _jacks:
-			_draw_jack(font, jack)
-
 		# Mounting screws, in the rail above and below.
 		for point in [Vector2(11.0, 9.0), Vector2(size.x - 11.0, 9.0),
 				Vector2(11.0, size.y - 9.0), Vector2(size.x - 11.0, size.y - 9.0)]:
@@ -1020,37 +1099,76 @@ class RackModule extends Control:
 		if rack != null and rack.selected_id == node_id:
 			draw_rect(Rect2(Vector2.ZERO, size), Rack.SELECTED, false, 2.0)
 
-	func _draw_jack(font: Font, jack: Dictionary) -> void:
-		var centre: Vector2 = jack["centre"]
-		var colour: Color = rack.type_colours.get(str(jack["type"]), Color.WHITE)
-		# The nut, then the hole. An input and an output differ by the ring, not only by
-		# where they sit.
-		draw_circle(centre, Rack.JACK_RADIUS, Color(0.20, 0.21, 0.24))
-		draw_circle(centre, Rack.JACK_RADIUS, Color(0, 0, 0, 0.55), false, 1.0)
-		draw_circle(centre, Rack.JACK_RADIUS - 3.0, Rack.JACK_HOLE)
-		if bool(jack["input"]):
-			draw_circle(centre, Rack.JACK_RADIUS - 1.5, colour, false, 2.0)
-		else:
-			draw_circle(centre, Rack.JACK_RADIUS - 5.5, colour)
 
-		if font != null:
-			# Clipped to its own column rather than centred at full length.
-			#
-			# A jack label was drawn at whatever width the name happened to be, so on a
-			# narrow module "cutoff_mod" and "resonance" ran into each other and neither
-			# could be read. The name is available in full from the tooltip; what the panel
-			# needs is enough of it to tell one jack from the next.
-			var text := str(jack["name"])
-			var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
-			if label_font == null:
-				label_font = font
-			var label_size := Design.type(Design.SIZE_SECONDARY)
-			var column := Rack.JACK_ROW_HEIGHT - 4.0
-			var width: float = minf(label_font.get_string_size(text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, label_size).x, column)
-			draw_string(label_font,
-				centre + Vector2(-width * 0.5, Rack.JACK_RADIUS + 14.0), text,
-				HORIZONTAL_ALIGNMENT_CENTER, column, label_size, rack.ink_dim)
+# ---------------------------------------------------------------------------------
+# A jack
+# ---------------------------------------------------------------------------------
+
+## One socket and its name, as a control that knows how much room it needs.
+##
+## It was drawn straight onto the panel at a computed centre, with the name clipped to a
+## fixed 42px column — which is why every port on the keyboard read "freque", "gatı",
+## "velocit", "trigge". A control can ask for the width its own text wants, and the
+## column it sits in can be as wide as its widest member. That is the whole fix.
+class Jack extends Control:
+	var rack: Control
+	var port_name := ""
+	var type_name := ""
+	var is_input := true
+
+	func _ready() -> void:
+		# The full name, always, whatever the panel had room to print.
+		tooltip_text = port_name
+		mouse_filter = Control.MOUSE_FILTER_PASS
+
+	func _label_font() -> Font:
+		return Design.font(Design.WEIGHT_MEDIUM)
+
+	func _label_size() -> int:
+		return Design.type(Design.SIZE_SECONDARY)
+
+	func _text_width() -> float:
+		var font := _label_font()
+		if font == null:
+			return 0.0
+		return minf(font.get_string_size(port_name, HORIZONTAL_ALIGNMENT_LEFT, -1,
+			_label_size()).x, Design.scale(Rack.JACK_LABEL_MAX))
+
+	func _get_minimum_size() -> Vector2:
+		return Vector2(Rack.jack_radius() * 2.0 + 6.0 + _text_width(),
+			maxf(Rack.jack_radius() * 2.0 + 6.0, float(_label_size()) + 12.0))
+
+	## Where the cable lands, in this control's own space. The socket hugs the outer edge
+	## so a cable leaves the panel rather than crossing it.
+	func socket_centre() -> Vector2:
+		return Vector2(Rack.jack_radius() if is_input else size.x - Rack.jack_radius(),
+			size.y * 0.5)
+
+	func _draw() -> void:
+		var centre := socket_centre()
+		var colour: Color = rack.type_colours.get(type_name, Color.WHITE)
+		# The nut, then the hole. An input and an output differ by the ring, not only by
+		# which edge they sit on.
+		draw_circle(centre, Rack.jack_radius(), Color(0.20, 0.21, 0.24))
+		draw_circle(centre, Rack.jack_radius(), Color(0, 0, 0, 0.55), false, 1.0)
+		draw_circle(centre, Rack.jack_radius() - 3.0, Rack.JACK_HOLE)
+		if is_input:
+			draw_circle(centre, Rack.jack_radius() - 1.5, colour, false, 2.0)
+		else:
+			draw_circle(centre, Rack.jack_radius() - 5.5, colour)
+
+		var font := _label_font()
+		if font == null:
+			return
+		var room := size.x - Rack.jack_radius() * 2.0 - 6.0
+		if room <= 4.0:
+			return
+		var text := Rack.elided(font, port_name, _label_size(), room)
+		var baseline := size.y * 0.5 + float(_label_size()) * 0.36
+		draw_string(font,
+			Vector2(Rack.jack_radius() * 2.0 + 6.0 if is_input else 0.0, baseline), text,
+			HORIZONTAL_ALIGNMENT_LEFT if is_input else HORIZONTAL_ALIGNMENT_RIGHT,
+			room, _label_size(), rack.ink_dim)
 
 
 # ---------------------------------------------------------------------------------
@@ -1075,7 +1193,55 @@ class Knob extends Control:
 
 	func _ready() -> void:
 		mouse_default_cursor_shape = Control.CURSOR_VSIZE
-		tooltip_text = str(descriptor.get("doc", ""))
+		# The name in full ahead of the documentation, because the panel may only have
+		# had room for "cutoff_sw…" and the first question a truncated label raises is
+		# what it was truncated from.
+		var doc := str(descriptor.get("doc", ""))
+		tooltip_text = str(descriptor["name"]) + ("\n" + doc if doc != "" else "")
+
+	func _name_text() -> String:
+		return str(descriptor["name"])
+
+	func _value_text() -> String:
+		if descriptor.has("enum"):
+			var options: Array = descriptor["enum"]
+			return str(options[clampi(int(value()), 0, options.size() - 1)])
+		return Rack.format_value(value())
+
+	## The widest this knob's value will ever be, so the cell does not resize while it is
+	## being turned.
+	##
+	## Measuring the *current* value would make the grid reflow mid-drag — the panel
+	## breathing in and out under the pointer as 9.99 became 10.0 — and would let a knob
+	## that happens to be sitting at 0 claim a cell too narrow for the number it is about
+	## to show.
+	func _widest_value() -> String:
+		if descriptor.has("enum"):
+			var longest := ""
+			for option in descriptor["enum"]:
+				if str(option).length() > longest.length():
+					longest = str(option)
+			return longest
+		var low := Rack.format_value(float(descriptor.get("min", 0.0)))
+		var high := Rack.format_value(float(descriptor.get("max", 1.0)))
+		return low if low.length() > high.length() else high
+
+	func _get_minimum_size() -> Vector2:
+		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
+		var label_size := Design.type(Design.SIZE_SECONDARY)
+		var value_font: Font = Design.numeric_font()
+		var value_size := Design.type(Design.SIZE_NUMERIC)
+		var widest := Rack.knob_radius() * 2.0 + 12.0
+		if label_font != null:
+			widest = maxf(widest, minf(label_font.get_string_size(_name_text(),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, label_size).x,
+				Design.scale(Rack.JACK_LABEL_MAX)))
+		if value_font != null:
+			widest = maxf(widest, value_font.get_string_size(_widest_value(),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, value_size).x)
+		return Vector2(widest + Rack.KNOB_PAD * 2.0,
+			maxf(Rack.KNOB_CELL.y, Rack.knob_radius() * 2.0 + 14.0
+				+ float(label_size) + float(value_size) + 10.0))
 
 	func value() -> float:
 		var raw := _to_value(_position)
@@ -1138,21 +1304,21 @@ class Knob extends Control:
 
 	func _draw() -> void:
 		var font: Font = get_theme_default_font()
-		var centre := Vector2(size.x * 0.5, Rack.KNOB_RADIUS + 6.0)
+		var centre := Vector2(size.x * 0.5, Rack.knob_radius() + 6.0)
 		var angle := START + SWEEP * _position
 
-		draw_arc(centre, Rack.KNOB_RADIUS + 5.0, START, START + SWEEP, 40,
+		draw_arc(centre, Rack.knob_radius() + 5.0, START, START + SWEEP, 40,
 			Rack.KNOB_TRACK, 3.0, true)
-		draw_arc(centre, Rack.KNOB_RADIUS + 5.0, START, angle, 40,
+		draw_arc(centre, Rack.knob_radius() + 5.0, START, angle, 40,
 			Rack.SELECTED, 3.0, true)
 
-		draw_circle(centre, Rack.KNOB_RADIUS, Rack.KNOB_BODY)
-		draw_circle(centre, Rack.KNOB_RADIUS, Color(0, 0, 0, 0.5), false, 1.0)
-		draw_circle(centre - Vector2(0, 1), Rack.KNOB_RADIUS - 5.0,
+		draw_circle(centre, Rack.knob_radius(), Rack.KNOB_BODY)
+		draw_circle(centre, Rack.knob_radius(), Color(0, 0, 0, 0.5), false, 1.0)
+		draw_circle(centre - Vector2(0, 1), Rack.knob_radius() - 5.0,
 			Rack.KNOB_BODY.lightened(0.10))
 		# The pointer, which is what actually tells you where the knob is set.
 		draw_line(centre + Vector2(cos(angle), sin(angle)) * 6.0,
-			centre + Vector2(cos(angle), sin(angle)) * (Rack.KNOB_RADIUS - 3.0),
+			centre + Vector2(cos(angle), sin(angle)) * (Rack.knob_radius() - 3.0),
 			rack.ink, 2.5, true)
 
 		if font == null:
@@ -1165,23 +1331,41 @@ class Knob extends Control:
 		# you learn once, and the value tells you where it is set, which is what you came
 		# to read and what changes while you watch. At 11px it was the weakest text in
 		# the application.
+		# Both bounded by the cell, which is itself as wide as the wider of them. Drawn
+		# with an explicit width and centred alignment rather than by subtracting a
+		# measured half-width from the middle: the old version had no bound at all, so a
+		# name wider than its cell simply printed over the knob beside it.
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
 		var label_size := Design.type(Design.SIZE_SECONDARY)
-		var name_text := str(descriptor["name"])
-		var name_width := label_font.get_string_size(name_text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, label_size).x
-		draw_string(label_font, Vector2((size.x - name_width) * 0.5, size.y - 17.0),
-			name_text, HORIZONTAL_ALIGNMENT_LEFT, -1, label_size, rack.ink_dim)
-		var value_text := Rack.format_value(value())
-		if descriptor.has("enum"):
-			var options: Array = descriptor["enum"]
-			value_text = str(options[clampi(int(value()), 0, options.size() - 1)])
+		var room := size.x - Rack.KNOB_PAD * 2.0
 		var value_font: Font = Design.numeric_font()
 		var value_size := Design.type(Design.SIZE_NUMERIC)
-		var value_width := value_font.get_string_size(value_text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, value_size).x
-		draw_string(value_font, Vector2((size.x - value_width) * 0.5, size.y - 2.0),
-			value_text, HORIZONTAL_ALIGNMENT_LEFT, -1, value_size, rack.ink)
+		var value_baseline := size.y - Rack.KNOB_PAD * 0.5
+		var name_baseline := value_baseline - float(value_size) - 4.0
+		draw_string(label_font, Vector2(Rack.KNOB_PAD, name_baseline),
+			Rack.elided(label_font, _name_text(), label_size, room),
+			HORIZONTAL_ALIGNMENT_CENTER, room, label_size, rack.ink_dim)
+		draw_string(value_font, Vector2(Rack.KNOB_PAD, value_baseline),
+			Rack.elided(value_font, _value_text(), value_size, room),
+			HORIZONTAL_ALIGNMENT_CENTER, room, value_size, rack.ink)
+
+
+## Trims text to the room there is, with an ellipsis to say it was trimmed.
+##
+## An ellipsis rather than a hard cut, because "cutoff_mo" and "cutoff_mod" are two
+## plausible port names and the reader cannot tell which one they are looking at.
+static func elided(font: Font, text: String, size: int, room: float) -> String:
+	if font == null or room <= 0.0:
+		return ""
+	if font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= room:
+		return text
+	var kept := text
+	while kept.length() > 1:
+		kept = kept.substr(0, kept.length() - 1)
+		if font.get_string_size(kept + "…", HORIZONTAL_ALIGNMENT_LEFT, -1,
+				size).x <= room:
+			return kept + "…"
+	return "…"
 
 
 static func format_value(value: float) -> String:
