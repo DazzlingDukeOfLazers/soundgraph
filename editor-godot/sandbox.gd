@@ -162,7 +162,15 @@ func _ready() -> void:
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(WORLD_SIZE)
 	viewport.transparent_bg = false
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# WHEN_VISIBLE, not ALWAYS. With ALWAYS this viewport drew every frame of every
+	# session, including the ones spent entirely on the Graph tab — and while the tab is
+	# hidden its container is laid out at 0x0, so `stretch` drove the viewport down to
+	# Godot's 2x2 floor while the override below still asked for 960x540. Rendering that
+	# produced a transform with no inverse, and one "Condition det == 0 is true" per
+	# frame for as long as the editor was open: about sixty a second of log noise, which
+	# is the kind of thing that trains you to stop reading the console. Not rendering a
+	# game world nobody is looking at is the right behaviour independently of that.
+	viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	# The logical size the game is drawn in, whatever size it is displayed at.
 	#
 	# This is the actual cause of the empty region. SubViewportContainer.stretch
