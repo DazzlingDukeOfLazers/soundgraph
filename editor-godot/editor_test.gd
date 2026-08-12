@@ -1891,10 +1891,50 @@ func _initialize() -> void:
 	# layout wider than any normal window and pushed the inspector off the right side
 	# with its text cut in half. It took rendering the editor to a PNG and looking at
 	# it. This is the assertion that would have caught it without that.
+	# What it needs with everything showing. Not a failure on its own — a bar that wants
+	# 1377px on a 1600px monitor is a bar using the room it has — but it is the number the
+	# ladder below has to be able to get under, and worth printing when it moves.
 	var column: Control = main.split.get_parent()
+	main._apply_toolbar_rung(main.Rung.FULL)
+	await process_frame
+	var wanted: float = column.get_combined_minimum_size().x
+
+	# The floor: everything the bar is willing to give up, given up. This is the number
+	# that decides whether the editor can be opened on a small laptop at all, because
+	# below it the column stops shrinking and starts pushing the inspector off the screen.
+	main._apply_toolbar_rung(main.RUNG_COUNT - 1)
+	await process_frame
 	var needed: float = column.get_combined_minimum_size().x
 	check(needed <= 1280.0,
-		"the editor fits a 1280px window (needs %.0f)" % needed)
+		"the editor fits a 1280px window (needs %.0f, wants %.0f)" % [needed, wanted])
+
+	# And it gets there on its own. The ladder existing is not the same as the ladder
+	# being climbed: this is the half that would have caught a _fit_toolbar wired to
+	# nothing, which is the shape the last three responsiveness bugs in this file took.
+	main._apply_toolbar_rung(main.Rung.FULL)
+	main._fit_toolbar(1280.0)
+	await process_frame
+	check(column.get_combined_minimum_size().x <= 1280.0,
+		"and asked to fit one, it does so by itself (rung %d, %.0f)"
+			% [main.toolbar_rung, column.get_combined_minimum_size().x])
+
+	# It also has to give up the right things. A bar that fits by dropping Silence has
+	# solved the arithmetic and broken the instrument: the panic control is the one thing
+	# here somebody reaches for while something is already wrong and loud.
+	main._apply_toolbar_rung(main.RUNG_COUNT - 1)
+	await process_frame
+	check(main.transport_dot.visible and main.document_label.visible,
+		"the narrowest bar still says what is running and what is open")
+	var kept: bool = main.toolbar_performance_group.visible
+	for button in main._primary_buttons:
+		if not (button as Button).is_visible_in_tree():
+			kept = false
+	check(kept, "and keeps Add node, Audition and Silence at every width")
+	# Given room again it takes it back, so a maximised window is not stuck narrow.
+	main._fit_toolbar(2000.0)
+	await process_frame
+	check(main.toolbar_rung == main.Rung.FULL,
+		"widened again, the bar puts everything back (rung %d)" % main.toolbar_rung)
 
 	# ---- and a 1280x800 window, even with a big patch open ---------------------------
 	# The width budget's sibling, found the same way the width was: by something

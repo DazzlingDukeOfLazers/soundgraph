@@ -213,6 +213,42 @@ var _importing_definition := false
 var undo_redo := UndoRedo.new()
 var _pending_snapshot: Dictionary = {}
 var toolbar: Control
+
+# ---- the toolbar's responsiveness ------------------------------------------------
+#
+# The bar wants about 1600px to show everything and windows are not obliged to be that
+# wide. What used to happen on a narrower one was not that the bar got smaller: a
+# minimum size is a promise the container keeps, so the whole column was forced wider
+# than the window and the inspector was pushed off the right-hand edge with its text cut
+# through the middle. Nothing was hidden — it was drawn somewhere nobody could see it,
+# which is the worst of both.
+#
+# So the bar gives things up deliberately, in an order decided here rather than by
+# whichever control happened to be last. Each rung is a thing the bar can lose without
+# losing what it is for, and every one of them stays reachable another way.
+## Cheapest loss first, but "cheap" measured in what it costs the reader rather than in
+## pixels — and then checked against the pixels, because a rung that buys nothing is a
+## rung that makes the next one fire for no reason. Undo and redo come before the
+## identity block on both counts: they are worth 140px to the bar against the product
+## name's 65, and they are the only two controls here that keep working when they are
+## gone, because Ctrl+Z does not need a button to exist.
+enum Rung {
+	FULL,       ## everything
+	STATUS,     ## the status words go; the transport dot and its tooltip stay
+	EDIT,       ## undo and redo go; Ctrl+Z and Ctrl+Y do not
+	IDENTITY,   ## the product name goes; the document name stays
+}
+const RUNG_COUNT := 4
+
+var toolbar_identity: VBoxContainer
+var toolbar_title: Label
+var toolbar_edit_group: HBoxContainer
+var toolbar_performance_group: HBoxContainer
+var toolbar_rung := Rung.FULL
+## Which VSeparator introduces which group, so hiding a group takes its rule with it.
+## A group that vanishes and leaves its divider behind reads as an empty slot.
+var _toolbar_rules: Dictionary = {}
+var _fitting_toolbar := false
 var undo_button: Button
 var redo_button: Button
 
@@ -465,6 +501,11 @@ func _build_ui() -> void:
 
 	toolbar = _build_toolbar()
 	root.add_child(toolbar)
+	# The window resizing is the event the ladder actually cares about. The bar's own
+	# resized signal is still connected, for the first layout and for the rebuilds a UI
+	# scale change causes, but it does not fire when the window shrinks past the point
+	# where the bar stops fitting — by then the bar is already wider than the screen.
+	get_viewport().size_changed.connect(_fit_toolbar.bind(-1.0))
 
 	split = HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -657,6 +698,8 @@ func _toolbar_group(bar: HBoxContainer, first: bool = false) -> HBoxContainer:
 	var group := HBoxContainer.new()
 	group.add_theme_constant_override("separation", Design.SPACE_XS)
 	bar.add_child(group)
+	if not first:
+		_toolbar_rules[group] = bar.get_child(bar.get_child_count() - 2)
 	return group
 
 
@@ -669,8 +712,15 @@ func _build_toolbar() -> Control:
 	# The product name and the open document were at opposite ends of the bar with
 	# nine buttons between them. Together, top left, they answer "where am I" before
 	# anything asks "what do you want to do".
+	_toolbar_rules.clear()
 	var identity := VBoxContainer.new()
+	toolbar_identity = identity
 	identity.add_theme_constant_override("separation", 0)
+	# Centred, so the block sits in the middle of the bar whether it is two lines or the
+	# one it drops to on a narrow window. Top-aligned it was fine at full width and read
+	# as a mistake the moment the product name went, with the file name left hanging off
+	# the top edge of a 52px bar.
+	identity.alignment = BoxContainer.ALIGNMENT_CENTER
 	# 150 was 37px more than the widest thing in it, on a toolbar that had eight pixels
 	# of room. The floor is still here — it keeps the block from collapsing and stops the
 	# rest of the bar shuffling sideways every time a document is opened — but it is now
@@ -678,6 +728,7 @@ func _build_toolbar() -> Control:
 	identity.custom_minimum_size.x = Design.scale(120)
 
 	var title := Label.new()
+	toolbar_title = title
 	title.text = "SoundGraph"
 	title.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
 	title.add_theme_font_size_override("font_size", Design.type(Design.SIZE_APP_TITLE))
@@ -822,6 +873,7 @@ func _build_toolbar() -> Control:
 	# rather than hoped for in a font, and these were the two widest buttons in the bar's
 	# narrowest group. The tooltips still say the word and the shortcut.
 	var edit_group := _toolbar_group(bar)
+	toolbar_edit_group = edit_group
 	undo_button = Button.new()
 	undo_button.icon = _icon(Icons.Kind.UNDO, Design.INK_NORMAL)
 	undo_button.disabled = true
@@ -932,6 +984,7 @@ func _build_toolbar() -> Control:
 	message_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	bar.add_child(message_label)
 	var performance := _toolbar_group(bar)
+	toolbar_performance_group = performance
 
 	var retrigger := Button.new()
 	# "Fire" was a personality word that only reads as one if you already know what it
@@ -994,7 +1047,70 @@ func _build_toolbar() -> Control:
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_right", Design.SPACE_M)
 	bar.add_child(margin)
+	bar.resized.connect(_fit_toolbar)
 	return bar
+
+
+## Shows or hides a toolbar group along with the rule that introduces it.
+func _show_toolbar_group(group: HBoxContainer, shown: bool) -> void:
+	if group == null:
+		return
+	group.visible = shown
+	if _toolbar_rules.has(group):
+		(_toolbar_rules[group] as Control).visible = shown
+
+
+## Puts the bar on a given rung. Everything above the rung is showing, everything at or
+## below it has been given up.
+##
+## Deliberately not "hide whatever does not fit". Which control that turns out to be
+## depends on the order they were added in, so the bar would lose Silence on one window
+## and the product name on another, and nobody could learn what a narrow window costs.
+func _apply_toolbar_rung(rung: int) -> void:
+	toolbar_rung = clampi(rung, Rung.FULL, RUNG_COUNT - 1)
+	if status_label != null:
+		# The dot survives every rung. It is the part that answers "is this running" at a
+		# glance, it is the only part that is legible from across a table, and it costs
+		# fourteen pixels; the words it stands in for are on its tooltip.
+		status_label.visible = toolbar_rung < Rung.STATUS
+	if toolbar_title != null:
+		toolbar_title.visible = toolbar_rung < Rung.IDENTITY
+	if toolbar_identity != null:
+		# The floor drops with the title, or the block goes on holding open 120px of
+		# nothing and giving the name up buys the bar exactly zero.
+		toolbar_identity.custom_minimum_size.x = Design.scale(
+			120 if toolbar_rung < Rung.IDENTITY else 72)
+	_show_toolbar_group(toolbar_edit_group, toolbar_rung < Rung.EDIT)
+
+
+## Picks the highest rung the window can afford, from the top.
+##
+## From the top every time rather than stepping up and down from where it was: a ladder
+## that only ever descends never comes back when the window is widened again, and one
+## that steps by one has to be run repeatedly to settle.
+## A width can be passed in, so a test can ask what a 1280px window would look like
+## without owning a 1280px window. Left at -1 it measures the bar it has.
+func _fit_toolbar(width: float = -1.0) -> void:
+	if toolbar == null or _fitting_toolbar:
+		return
+	# The window, not the bar. Measuring the bar is circular and silently defeats the
+	# whole ladder: when the column's minimum is wider than the window the container
+	# hands the toolbar that minimum anyway — the bar is 1610px wide on a 1280px screen,
+	# 330 of it off the edge — so asking the bar how much room it has gets the answer
+	# "as much as I asked for", every time, and no rung is ever climbed. The viewport is
+	# the one width in the chain that content cannot inflate.
+	var available: float = width
+	if available <= 0.0:
+		var view := get_viewport()
+		available = view.get_visible_rect().size.x if view != null else 0.0
+	if available <= 0.0:
+		return
+	_fitting_toolbar = true
+	for rung in RUNG_COUNT:
+		_apply_toolbar_rung(rung)
+		if toolbar.get_combined_minimum_size().x <= available:
+			break
+	_fitting_toolbar = false
 
 
 const CASE_LABELS := ["Case: fit window", "Case: 84 HP", "Case: 104 HP", "Case: 168 HP"]
@@ -3617,7 +3733,11 @@ func _refresh_status() -> void:
 	if transport_dot != null:
 		transport_dot.texture = _icon(Icons.Kind.DOT,
 			Design.ACCENT if running else Design.INK_DISABLED, Design.SIZE_SECONDARY)
-		transport_dot.tooltip_text = "Audio running" if running else "Audio stopped"
+		# The whole line, not just the transport half. On a narrow window this dot is all
+		# that is left of the status strip, and a tooltip that answers only one of the two
+		# questions it now stands for would leave "is the graph valid" with no answer
+		# anywhere in the chrome.
+		transport_dot.tooltip_text = _status_sentence(running, valid)
 
 	var parts := ["Audio running" if running else "Audio stopped"]
 	parts.append("Graph valid" if valid else "%d problem%s"
@@ -3628,10 +3748,18 @@ func _refresh_status() -> void:
 	# line says "48000 Hz" in full a few inches away. Two copies of a constant were paying
 	# for themselves in toolbar width, on a bar with eight pixels of room left.
 	status_label.text = "  ·  ".join(parts)
-	status_label.tooltip_text = ("Audio %s · graph %s · 48000 Hz"
-		% ["running" if running else "stopped", "valid" if valid else "has problems"])
+	status_label.tooltip_text = _status_sentence(running, valid)
 	status_label.add_theme_color_override("font_color",
 		Design.INK_SECOND if valid else Design.ERROR)
+	# The words just changed width, and on a bar this full that can be the difference
+	# between fitting and forcing the window open.
+	_fit_toolbar()
+
+
+## The status strip spelled out, for whichever of its two parts is left to hover.
+func _status_sentence(running: bool, valid: bool) -> String:
+	return ("Audio %s · graph %s · 48000 Hz"
+		% ["running" if running else "stopped", "valid" if valid else "has problems"])
 
 
 func _highlight(node_ids: Array) -> void:
