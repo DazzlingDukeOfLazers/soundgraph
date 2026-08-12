@@ -2367,12 +2367,6 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# names are operating text; the unit is the metadata here, and it is already smaller.
 	var label := Label.new()
 	label.text = name
-	# Narrower than the 96px column it used to hold open — the name is above the number
-	# now rather than beside it — but not zero. The compensated text ScreenText draws at
-	# the bottom of the full-detail band needs somewhere to go, and a shrink-wrapped
-	# label in a half-width cell gave it nowhere: two controls came out of the zoom sweep
-	# with their names dropped entirely.
-	label.custom_minimum_size.x = Design.scale(84)
 	label.clip_text = true
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.tooltip_text = str(parameter.get("doc", ""))
@@ -2382,21 +2376,57 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	label.add_theme_color_override("font_color", Design.INK_NORMAL)
 	label.set_meta("screen_min", Design.MIN_SCREEN_LABEL)
 	label.set_meta("screen_kind", "parameter")
+
+	# Wide enough to still hold this name once the type has hit its screen floor.
+	#
+	# The name box is what ScreenText compensates *into*: below the full-detail floor the
+	# label is redrawn at MIN_SCREEN_LABEL rather than at the zoom, and a box too narrow
+	# for that text gets nothing drawn in it at all — a control with no word beside it,
+	# which is the one outcome the level of detail may not produce. So the reservation is
+	# derived from the worst case rather than picked: the name at its own minimum, over
+	# the lowest zoom that still draws a control. A flat 84px was two pixels short of
+	# "safety_limit" at 0.90 and dropped it, and the number before that — 96 — was only
+	# ever right by accident.
+	var floor_zoom: float = maxf(PatchGraph._full_floor(), 0.1)
+	var name_font := Design.font(Design.WEIGHT_MEDIUM)
+	var name_room: float = name_font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+		Design.screen_minimum(Design.MIN_SCREEN_LABEL)).x / floor_zoom
+	# Floored so short names still line up in a column, capped so one very long one cannot
+	# set the width of every node it appears in — past the cap the honest drop is correct.
+	label.custom_minimum_size.x = clampf(ceilf(name_room), Design.scale(84),
+		Design.scale(132))
+
 	# Findable by the level of detail, which gives this label the slider's room once the
 	# slider has stopped being worth drawing.
 	row.set_meta("name_label", label)
 
 	if parameter.has("enum"):
-		# A dropdown keeps the old shape — name, control, chosen option on one line —
-		# because there is no dial to put beside it and the option text is prose, not a
-		# number that wants to sit under its name.
-		label.custom_minimum_size.x = Design.scale(96)
-		row.add_child(label)
+		# A dropdown takes the dial's place rather than keeping a shape of its own.
+		#
+		# It used to be name, control, chosen option strung across one line with the name
+		# holding a 96px column open — beside a numeric cell that reads dial-then-stack,
+		# that put "shape" and its dropdown at opposite ends of the row with eighty pixels
+		# of nothing between them, and made one line out of two different grammars. There
+		# is still no dial to put on the left, but the dropdown *is* the control, so it
+		# goes where every other control goes and the words go where the words go.
 		var options := OptionButton.new()
 		for entry in parameter["enum"]:
 			options.add_item(str(entry))
 		options.selected = clampi(int(round(current)), 0, parameter["enum"].size() - 1)
-		options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		options.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		# Wide enough for the widest option, not for the chosen one. An OptionButton
+		# measures itself against whatever it is currently showing, so picking "triangle"
+		# after "sine" widened the control, which widened the cell, which relaid the line
+		# under the pointer that had just clicked it — the same reflow the knob's readout
+		# avoids by reserving room for the widest value it could ever show.
+		var option_font := Design.font(Design.WEIGHT_MEDIUM)
+		var option_size := Design.type(Design.SIZE_CONTROL)
+		var widest := 0.0
+		for entry in parameter["enum"]:
+			widest = maxf(widest, option_font.get_string_size(str(entry),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, option_size).x)
+		# Text, plus the arrow and the button's own padding.
+		options.custom_minimum_size.x = widest + Design.scale(40)
 		# The chosen option, in words, for the bands where the dropdown is put away.
 		#
 		# Without it a compact node showed the word "shape" with nothing beside it and an
@@ -2421,8 +2451,20 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 			_begin_edit()
 			_set_parameter(node_id, name, float(index))
 			_commit_edit("set %s" % name))
+
+		# Name over value, exactly as the numeric cell stacks them. At full detail the
+		# value line is empty because the dropdown is already showing the option, and the
+		# name centres itself against the control; at reduced detail the dropdown goes and
+		# the word it was showing surfaces here, which is what keeps a compact node from
+		# printing "shape" with nothing beside it.
+		var enum_stack := VBoxContainer.new()
+		enum_stack.add_theme_constant_override("separation", 0)
+		enum_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		enum_stack.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		enum_stack.add_child(label)
+		enum_stack.add_child(chosen)
 		row.add_child(_defocus(options))
-		row.add_child(chosen)
+		row.add_child(enum_stack)
 		row.set_meta("enum_value", chosen)
 		_remember_parameter_widget(node_id, name, options, null, parameter)
 		return row
@@ -3614,10 +3656,13 @@ func _apply_cell_detail(cell: Control, full: bool) -> void:
 			continue
 		if piece is Rack.Knob or piece is HSlider or piece is OptionButton:
 			piece.visible = full
-		elif enum_value != null and piece == enum_value:
-			piece.visible = not full
 		else:
 			piece.visible = true
+	# By reference rather than by walking the cell's own children: the chosen option now
+	# lives inside the name stack, one level down, and the loop above would only ever have
+	# shown the stack that contains it.
+	if enum_value != null:
+		enum_value.visible = not full
 
 func _apply_detail(level: int) -> void:
 	var full: bool = level == PatchGraph.Detail.FULL
