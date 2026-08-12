@@ -110,6 +110,12 @@ func _run_matrix(spec_path: String) -> void:
 
 
 func _initialize() -> void:
+	# From the defaults, not from whoever is running this. A review shot taken at the
+	# reviewer's own UI scale is not a shot of the product, and two people comparing the
+	# same numbered file are comparing two different pictures — the shots above were
+	# rendered at somebody's XL preference without saying so anywhere on them. Arguments
+	# still set the scale explicitly; that is the point of having them.
+	Settings.isolate()
 	var arguments := OS.get_cmdline_user_args()
 	if arguments.size() > 1 and arguments[0] == "--matrix":
 		await _run_matrix(arguments[1])

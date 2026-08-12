@@ -32,10 +32,13 @@ static var _loaded := false
 static var suspended := false
 
 
+## Cuts this run off from the settings file in both directions. See isolate().
 static func _ensure_loaded() -> void:
 	if _loaded:
 		return
 	_loaded = true
+	if suspended:
+		return
 	var file := FileAccess.open(PATH, FileAccess.READ)
 	if file == null:
 		return
@@ -63,6 +66,20 @@ static func store(key: String, value: Variant) -> void:
 		push_warning("could not write %s" % PATH)
 		return
 	file.store_string(JSON.stringify(_values, "  "))
+
+
+## Runs this session against the defaults, reading nothing and writing nothing.
+##
+## Suspension used to stop the writing only, which is half of an isolated run and the
+## less important half. The suite went on *reading* the file, so every check that did
+## not set the UI scale itself ran at whatever scale the person running it last picked
+## in the app — and the one check whose whole subject is that scale compared XL against
+## XL and reported "XL makes the text bigger (22 from 22)". A suite that passes or fails
+## on a preference nobody mentioned is not measuring the thing it says it measures.
+static func isolate() -> void:
+	suspended = true
+	_values = {}
+	_loaded = true
 
 
 ## Applies everything stored to the design system, before any UI is built.

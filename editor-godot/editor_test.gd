@@ -55,11 +55,13 @@ func check(condition: bool, description: String) -> void:
 
 
 func _initialize() -> void:
-	# Nothing this run does may reach the real settings file. The suite drives the
-	# theme and the UI scale on purpose, and every one of those was being written down
-	# — so a run changed the preferences of whoever ran it, and the next run started
-	# from wherever the last one stopped.
-	Settings.suspended = true
+	# Nothing this run does may reach the real settings file, in either direction. The
+	# suite drives the theme and the UI scale on purpose, and every one of those was
+	# being written down — so a run changed the preferences of whoever ran it, and the
+	# next run started from wherever the last one stopped. It was also still reading the
+	# file, which is how the four lines below came to be overwritten a moment later by
+	# Settings.apply() and the whole suite ran at somebody's XL preference.
+	Settings.isolate()
 	Design.use_palette(Design.Palette.LAB)
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	Rack.density = Rack.Density.INSTRUMENT
