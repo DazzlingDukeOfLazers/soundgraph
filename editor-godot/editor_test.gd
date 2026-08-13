@@ -1502,6 +1502,45 @@ func _initialize() -> void:
 	check(builder.module_name == "" or not builder._entries.is_empty(),
 		"and it copes with a document that has no modules at all")
 
+	# ---- and on a patch with no modules, adding a node starts one --------------------
+	# Without this the tab could only edit a module that already existed, and the only
+	# thing that makes one is collapsing a selection over in the Graph. Adding a node here
+	# put it in the document, where this view does not show it, so the button looked dead.
+	check(builder.module_name == "",
+		"the restored document has no module to edit (%s)" % builder.module_name)
+	var document_nodes: int = main.patch["nodes"].size()
+	var first_inside: String = await main._add_node("SineOscillator", Vector2(0, 0))
+	for _settle in 6:
+		await process_frame
+	check(main.patch.get("modules", {}).size() == 1,
+		"adding a node with nothing to put it in starts a module (%s)"
+			% str(main.patch.get("modules", {}).keys()))
+	var started_name: String = builder.module_name
+	var inside_new: Array = main.patch.get("modules", {}).get(started_name, {}) \
+		.get("nodes", [])
+	check(first_inside != "" and inside_new.size() == 1,
+		"and the node goes inside it, not beside it (%d)" % inside_new.size())
+	# An instance comes with it, because the palette does not offer module types — a
+	# definition with nothing pointing at it would be a thing you built and could not use.
+	var placed_instance := false
+	for node in main.patch["nodes"]:
+		if str(node.get("module", "")) == started_name:
+			placed_instance = true
+	check(placed_instance and main.patch["nodes"].size() == document_nodes + 1,
+		"and one instance is placed with it (%d nodes, was %d)"
+			% [main.patch["nodes"].size(), document_nodes])
+	check(int(main.patch.get("schema_version", 1)) == 2,
+		"and the document says it holds modules now (v%d)"
+			% int(main.patch.get("schema_version", 1)))
+
+	main._undo()
+	for _settle in 6:
+		await process_frame
+	check(main.patch.get("modules", {}).is_empty()
+			and main.patch["nodes"].size() == document_nodes,
+		"and one undo takes the module and its instance back out (%d modules, %d nodes)"
+			% [main.patch.get("modules", {}).size(), main.patch["nodes"].size()])
+
 	main.show_view("Graph")
 	await process_frame
 

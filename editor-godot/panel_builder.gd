@@ -303,8 +303,8 @@ func _draw_list() -> void:
 		_list.remove_child(child)
 		child.queue_free()
 	if module_name == "":
-		_note.text = "This patch has no modules yet. Select two or more nodes in the " \
-			+ "graph and collapse them into one, and its face gets built here."
+		_note.text = "No modules yet. Add a node and this tab starts one for you — or " \
+			+ "select two or more nodes in the graph and collapse them into one."
 		return
 	if _entries.is_empty():
 		_note.text = "'%s' exports nothing to put on a panel — its inner nodes were " \

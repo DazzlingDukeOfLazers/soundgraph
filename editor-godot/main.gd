@@ -2180,6 +2180,45 @@ func _on_definition_wired(edited_module: String, from_node: String, from_port: S
 	_commit_edit("wire %s.%s to %s.%s" % [from_node, from_port, to_node, to_port])
 
 
+## An empty definition and one instance of it, ready to be built into.
+##
+## Named "combo" rather than collapse's "part", so where a module came from is legible
+## from its default name until somebody renames it — which the field beside the picker is
+## now there for.
+func _start_definition() -> void:
+	if not patch.has("modules"):
+		patch["modules"] = {}
+	var base := "combo"
+	var module_name := base
+	var counter := 1
+	while patch["modules"].has(module_name):
+		counter += 1
+		module_name = "%s%d" % [base, counter]
+	patch["modules"][module_name] = {"nodes": [], "connections": []}
+
+	var taken := {}
+	for node in patch.get("nodes", []):
+		taken[str(node["id"])] = true
+	var instance_id := module_name
+	counter = 1
+	while taken.has(instance_id):
+		counter += 1
+		instance_id = "%s%d" % [module_name, counter]
+	# Placed clear of what is already there, so it is findable rather than under
+	# something. The rack seeds its own position; this is for the graph.
+	var rightmost := 0.0
+	for node in patch.get("nodes", []):
+		rightmost = maxf(rightmost, float(node.get("position", {}).get("x", 0.0)))
+	patch["nodes"].append({
+		"id": instance_id,
+		"type": "module",
+		"module": module_name,
+		"position": {"x": rightmost + COLUMN_PITCH, "y": 0.0},
+	})
+	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
+	builder.module_name = module_name
+
+
 ## What a module may be called: letters, digits, underscore and hyphen.
 ##
 ## Narrower than the schema, which puts no pattern on a definition's key at all, and
@@ -3549,7 +3588,7 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 	# On the builder, "add a node" means add it to the module being built. It used to mean
 	# what it means everywhere else — append to the document — which on that tab put the
 	# node somewhere the tab does not show, and read as a button that did nothing.
-	if builder != null and builder.is_visible_in_tree() and builder.module_name != "":
+	if builder != null and builder.is_visible_in_tree():
 		return await _add_node_to_definition(type_name)
 	_begin_edit()
 	var descriptor: Dictionary = registry.get(type_name, {})
@@ -3594,9 +3633,6 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 ## docs/modules-design.md), and a terminal is the edge of a finished patch — a NoteInput
 ## inside a subcircuit is the thing the declared `note` input exists to replace.
 func _add_node_to_definition(type_name: String) -> String:
-	var definition: Dictionary = patch.get("modules", {}).get(builder.module_name, {})
-	if definition.is_empty():
-		return ""
 	if type_name.begins_with("module:"):
 		_say("modules may not contain modules yet — see docs/modules-design.md")
 		return ""
@@ -3606,6 +3642,23 @@ func _add_node_to_definition(type_name: String) -> String:
 		return ""
 
 	_begin_edit()
+	# Nothing to put it in yet? Then this is the first node of a new module, and making
+	# one is what the author just asked for.
+	#
+	# Without this the tab could only ever edit a module that already existed, and the
+	# only thing that makes one is collapsing a selection over in the Graph — so "open the
+	# builder and start adding" put nodes in the document, where this view does not show
+	# them, and looked like a button that did nothing.
+	#
+	# An instance goes down with the definition, because the palette deliberately does not
+	# offer module types: a definition with nothing pointing at it would be a thing you
+	# had built and could not place.
+	if builder.module_name == "":
+		_start_definition()
+	var definition: Dictionary = patch.get("modules", {}).get(builder.module_name, {})
+	if definition.is_empty():
+		return ""
+
 	# Unique within the definition, not the document: inner ids live in their own
 	# namespace and only meet the document's after expansion puts a dot between them.
 	var existing := {}
