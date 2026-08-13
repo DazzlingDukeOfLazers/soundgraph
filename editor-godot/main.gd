@@ -135,6 +135,7 @@ var ids: Dictionary = {}               # GraphNode.name -> patch node id
 var graph_edit: GraphEdit
 var views: TabContainer
 var rack: Rack
+var graphrack: GraphRack
 var sandbox: Sandbox
 var outline: Outline
 var keyboard: Keyboard
@@ -605,6 +606,32 @@ func _build_ui() -> void:
 	rack_scroll.add_child(rack)
 	views.add_child(rack_scroll)
 
+	# Where the patcher goes next, in a tab of its own so it can be looked at.
+	#
+	# A copy of the rack today and nothing more — see graphrack.gd. It sits beside the
+	# original rather than replacing the Graph tab because the departure is a thing to
+	# steer by eye, and a replacement you cannot compare against is not a comparison. The
+	# GraphEdit view it is aimed at is preserved at the `graph-refactor` tag.
+	var graphrack_scroll := ScrollContainer.new()
+	graphrack_scroll.name = "Graphrack"
+	graphrack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	graphrack = GraphRack.new()
+	graphrack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	graphrack.type_colours = TYPE_COLOURS
+	graphrack.read_port = func(node_id: String, port: String) -> PackedFloat32Array:
+		if engine == null or not engine.is_loaded():
+			return PackedFloat32Array()
+		var source := _engine_signal_source(node_id, port)
+		return engine.get_port_signal(source[0], source[1])
+	graphrack.ink = INK
+	graphrack.ink_dim = INK_DIM
+	graphrack.parameter_changed.connect(_on_rack_parameter_changed)
+	graphrack.edit_started.connect(func() -> void: _begin_edit())
+	graphrack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
+	graphrack.node_selected.connect(_on_rack_node_selected)
+	graphrack_scroll.add_child(graphrack)
+	views.add_child(graphrack_scroll)
+
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
 	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
 	# rebuild, is the argument for shipping instructions rather than recordings.
@@ -643,6 +670,7 @@ func _build_ui() -> void:
 	# is first shown — before that it has no size to flow modules into.
 	views.tab_changed.connect(func(_index: int) -> void:
 		rack.rebuild()
+		graphrack.rebuild()
 		if sandbox != null and sandbox.is_visible_in_tree():
 			sandbox.ensure_sounds_loaded())
 	split.add_child(views)
@@ -1151,6 +1179,8 @@ func _on_view_menu(id: int) -> void:
 			view_popup.set_item_checked(view_popup.get_item_index(40 + entry),
 				entry == Rack.density)
 		rack.rebuild()
+		GraphRack.density = Rack.density
+		graphrack.rebuild()
 		_say("rack: %s" % Rack.DENSITY_NAMES[Rack.density])
 		return
 	if id >= 30:
@@ -1210,6 +1240,8 @@ func _use_ui_scale(index: int) -> void:
 	_refresh_keyboard_range()
 	if rack != null:
 		rack.rebuild()
+	if graphrack != null:
+		graphrack.rebuild()
 	if outline != null:
 		outline.refresh()
 	_say("size: %s" % Design.SCALE_NAMES[Design.ui_scale])
@@ -1257,6 +1289,9 @@ func _use_palette(index: int) -> void:
 	if rack != null:
 		rack.type_colours = TYPE_COLOURS
 		rack.rebuild()
+	if graphrack != null:
+		graphrack.type_colours = TYPE_COLOURS
+		graphrack.rebuild()
 	_say("theme: %s" % Design.PALETTE_NAMES[index])
 
 
@@ -1268,6 +1303,22 @@ func _all_notes_off() -> void:
 	held_notes.clear()
 	if keyboard != null:
 		keyboard.set_held_notes(held_notes)
+
+
+## Selects a view by its tab title.
+##
+## By name rather than by index. "views.current_tab = 3" meant Outline until a tab was
+## added in front of it, at which point it silently meant Sandbox — and the check that
+## caught it was a sandbox assertion three hundred lines away, which is a long way from
+## the mistake. Tabs are going to keep moving while the patcher is being replaced.
+func show_view(title: String) -> bool:
+	if views == null:
+		return false
+	for index in views.get_tab_count():
+		if views.get_tab_title(index).to_lower() == title.to_lower():
+			views.current_tab = index
+			return true
+	return false
 
 
 ## Keeps the inspector at a fixed width against the right edge, whatever the window
@@ -1473,7 +1524,7 @@ func _fill_graph_context() -> void:
 		more.text = "+%d more" % (order.size() - shown)
 		more.tooltip_text = "The full order is in the Outline view."
 		more.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-		more.pressed.connect(func() -> void: views.current_tab = 3)
+		more.pressed.connect(func() -> void: show_view("Outline"))
 		flow.add_child(_defocus(more))
 	context_panel.add_child(flow)
 
@@ -1685,6 +1736,8 @@ func _process(_delta: float) -> void:
 	_update_port_levels(_delta)
 	if rack != null and rack.is_visible_in_tree():
 		rack.refresh_displays()
+	if graphrack != null and graphrack.is_visible_in_tree():
+		graphrack.refresh_displays()
 	if message_label != null and message_label.text != "" \
 			and Time.get_ticks_msec() > _message_clears_at:
 		message_label.text = ""
@@ -1827,6 +1880,10 @@ func _rebuild_view() -> void:
 
 	# The rack reads the same document, so it is rebuilt from the same place rather than
 	# kept in step by hand.
+	if graphrack != null:
+		graphrack.registry = registry
+		graphrack.patch = patch
+		graphrack.rebuild()
 	if rack != null:
 		rack.registry = registry
 		rack.patch = patch

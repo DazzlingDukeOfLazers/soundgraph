@@ -724,7 +724,7 @@ func _initialize() -> void:
 	# on drawing its fixed 960 units — and everything past that was blank. The grey region
 	# was never a layout problem: it was the part of a viewport nothing had drawn into,
 	# with the goal flag sitting just outside the part that had.
-	main.views.current_tab = 2
+	main.show_view("Sandbox")
 	for i in 6:
 		await process_frame
 	var sandbox_viewport: SubViewport = null
@@ -755,14 +755,14 @@ func _initialize() -> void:
 			sandbox_labels += 1
 	check(sandbox_labels <= 1,
 		"and the tab shows at most one long line of prose (%d)" % sandbox_labels)
-	main.views.current_tab = 0
+	main.show_view("Graph")
 	await process_frame
 
 	# ---- rack cables answer where they go -------------------------------------------
 	# The rack draws its own cables, which is why the *dimming* half lives here and not in
 	# the graph view: GraphEdit paints connections itself and offers no per-cable alpha, so
 	# there the best available answer was to brighten a path and leave the rest alone.
-	main.views.current_tab = 1
+	main.show_view("Rack")
 	Rack.density = Rack.Density.INSTRUMENT
 	main.rack.rebuild()
 	for i in 4:
@@ -825,13 +825,13 @@ func _initialize() -> void:
 	main.rack._update_cable_hover(Vector2(-900, -900))
 	check(main.rack.hovered_cable == -1, "and moving away from all of them lets go")
 
-	main.views.current_tab = 0
+	main.show_view("Graph")
 	await process_frame
 
 	# ---- rack modules show what they are doing --------------------------------------
 	# The argument for a hardware metaphor is that hardware tells you something by being
 	# looked at. A panel that only holds knobs is a picture of hardware.
-	main.views.current_tab = 1
+	main.show_view("Rack")
 	Rack.density = Rack.Density.ANALYSIS
 	rack_ready(main)
 	main.engine.note_on(45, 0.9)
@@ -864,7 +864,7 @@ func _initialize() -> void:
 
 	main.engine.all_notes_off()
 	Rack.density = Rack.Density.INSTRUMENT
-	main.views.current_tab = 0
+	main.show_view("Graph")
 	await process_frame
 
 	# ---- the rack fits its content ---------------------------------------------------
