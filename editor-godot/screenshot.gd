@@ -22,29 +22,43 @@ const SETTLE_FRAMES := 12
 
 ## Applies one shot's worth of state and returns when the frame is worth grabbing.
 ##
-## Every field is applied every time rather than only when it differs from the last shot.
-## A matrix that carried state between entries would make each picture depend on the one
-## before it, which is exactly the property that makes a regression set untrustworthy —
-## the shot you are looking at has to be the shot the spec asked for.
+## Every field is applied every time rather than only when it differs from the last shot,
+## and a field the spec leaves out gets its default rather than its predecessor. A matrix
+## that carried state between entries would make each picture depend on the one before it,
+## which is exactly the property that makes a regression set untrustworthy — the shot you
+## are looking at has to be the shot the spec asked for.
+##
+## This was written as a promise before it was true of the code; see the view and the held
+## notes below, both of which leaked for as long as this comment has been here.
 func _stage(main, shot: Dictionary) -> void:
 	main._use_palette(int(shot.get("palette", 0)))
 	main._use_ui_scale(int(shot.get("ui_scale", 1)))
 	for i in 4:
 		await process_frame
 
-	# The example reload also clears the selection and the held notes, so each shot
-	# starts from the same place whatever the one before it did.
+	# Explicitly, rather than trusting the reload to do it. The note held down for the
+	# "note held" shot was still held three shots later — the accent key is lit in the
+	# two DX7 pictures — because nothing ever let go of it, and a picture of a patch
+	# with a stuck key is not a picture of that patch.
+	main._all_notes_off()
+
 	await main._load_example(str(shot.get("example", "First Synth")))
 	for i in 8:
 		await process_frame
 
-	var view := str(shot.get("view", ""))
-	if view != "":
-		for index in main.views.get_tab_count():
-			if main.views.get_tab_title(index).to_lower() == view.to_lower():
-				main.views.current_tab = index
-		for i in 8:
-			await process_frame
+	# Graph when the spec does not say, never "whatever the last shot left".
+	#
+	# This read `shot.get("view", "")` and skipped the switch when it was empty, which is
+	# the one behaviour the note above says this function does not have: shots 22 to 27
+	# inherited the Outline tab from shot 21 and were six photographs of a text listing.
+	# Two of them are the large-patch pair, whose entire question is how a fifteen-node
+	# DX7 patch lays out at 100% and 63% — asked, rendered, filed, and never answered.
+	var view := str(shot.get("view", "Graph"))
+	for index in main.views.get_tab_count():
+		if main.views.get_tab_title(index).to_lower() == view.to_lower():
+			main.views.current_tab = index
+	for i in 8:
+		await process_frame
 
 	if shot.get("zoom", 0.0) > 0.0:
 		# Set from full detail so the level of detail is reached the same way every time,
