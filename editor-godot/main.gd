@@ -670,6 +670,7 @@ func _build_ui() -> void:
 	builder.panel_edited.connect(_on_panel_edited)
 	builder.wired.connect(_on_definition_wired)
 	builder.module_renamed.connect(_on_module_renamed)
+	builder.ports_edited.connect(_on_ports_edited)
 	builder.refused.connect(func(reason: String) -> void: _say(reason))
 	views.add_child(builder)
 
@@ -2178,6 +2179,60 @@ func _on_definition_wired(edited_module: String, from_node: String, from_port: S
 	builder.rebuild()
 	_apply()
 	_commit_edit("wire %s.%s to %s.%s" % [from_node, from_port, to_node, to_port])
+
+
+## Stores the declared ports the builder just drew.
+##
+## Unlike a panel, this is surface and not presentation: a port is the only way the
+## outside reaches in, so undeclaring one is a real edit that can strand a cable. Any
+## connection landing on a port that no longer exists is removed here rather than left to
+## fail validation — a document that cannot be loaded is a worse way to learn that a
+## checkbox mattered.
+func _on_ports_edited(edited_module: String, inputs: Array, outputs: Array,
+		label: String) -> void:
+	var definition: Dictionary = patch.get("modules", {}).get(edited_module, {})
+	if definition.is_empty():
+		return
+	_begin_edit()
+	if inputs.is_empty():
+		definition.erase("inputs")
+	else:
+		definition["inputs"] = inputs
+	if outputs.is_empty():
+		definition.erase("outputs")
+	else:
+		definition["outputs"] = outputs
+
+	var still_there := {}
+	for binding in inputs + outputs:
+		still_there[str(binding["name"])] = true
+	var instances := {}
+	for node in patch.get("nodes", []):
+		if str(node.get("module", "")) == edited_module:
+			instances[str(node["id"])] = true
+	var kept: Array = []
+	var stranded := 0
+	for connection in patch.get("connections", []):
+		var from_gone: bool = instances.has(str(connection["from"]["node"])) \
+			and not still_there.has(str(connection["from"]["port"]))
+		var to_gone: bool = instances.has(str(connection["to"]["node"])) \
+			and not still_there.has(str(connection["to"]["port"]))
+		if from_gone or to_gone:
+			stranded += 1
+			continue
+		kept.append(connection)
+	patch["connections"] = kept
+
+	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	builder.patch = patch
+	builder.rebuild()
+	_apply()
+	_commit_edit(label)
+	if stranded > 0:
+		_say("%s — and %d cable%s that had nowhere to land"
+			% [label, stranded, "" if stranded == 1 else "s"])
 
 
 ## An empty definition and one instance of it, ready to be built into.
@@ -3967,6 +4022,7 @@ func _undo() -> void:
 	undo_redo.undo()
 	_say("undid %s" % label)
 	_refresh_undo_buttons()
+	_refresh_builder()
 
 
 func _redo() -> void:
@@ -3975,6 +4031,24 @@ func _redo() -> void:
 	undo_redo.redo()
 	_say("redid %s" % undo_redo.get_current_action_name())
 	_refresh_undo_buttons()
+	_refresh_builder()
+
+
+## Points the builder back at the document after it has been swapped underneath.
+##
+## Undo restores a whole snapshot, so the module the builder was editing may not be in the
+## document any more — and it went on holding the name, the entries and the port list of
+## something that no longer existed. The other views are rebuilt from the document by the
+## undo action itself; this one is not, because its list is normally the thing being
+## edited and rebuilding it mid-edit takes the field out from under the cursor. An undo is
+## the exception: nothing the author typed survives it anyway.
+func _refresh_builder() -> void:
+	if builder == null:
+		return
+	builder.patch = patch
+	if not patch.get("modules", {}).has(builder.module_name):
+		builder.module_name = ""
+	builder.rebuild()
 
 
 func _refresh_undo_buttons() -> void:

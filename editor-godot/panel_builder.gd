@@ -28,6 +28,8 @@ signal wired(module_name: String, from_node: String, from_port: String,
 signal refused(reason: String)
 ## A new name for the definition being edited.
 signal module_renamed(from_name: String, to_name: String)
+## The declared surface: which inner ports the module shows the world, and as what.
+signal ports_edited(module_name: String, inputs: Array, outputs: Array, label: String)
 
 const LIST_WIDTH := 520.0
 
@@ -58,9 +60,21 @@ var module_name := ""
 ## "breaks": bool}. The single source this view edits; everything else is drawn from it.
 var _entries: Array = []
 
+## One per inner port that could be declared, in the order the inner nodes give them:
+## {"node": String, "port": String, "is_input": bool, "on": bool, "name": String}.
+##
+## Separate from _entries because ports and knobs are separate questions. A knob is
+## presentation — turning it off changes what a face shows and nothing else. A port is
+## *surface*: declaring one is the only thing that lets the outside reach in, and
+## undeclaring one takes a cable off the instance. The two lists look alike and are not
+## alike, which is why they carry different headings and this comment.
+var _ports: Array = []
+
 var _picker: OptionButton
 var _name_field: LineEdit
 var _list: VBoxContainer
+var _ports_box: VBoxContainer
+var _ports_note: Label
 var _note: Label
 var _inner: GraphRack
 var _inner_holder: Control
@@ -154,6 +168,23 @@ func _build_right() -> Control:
 	naming.add_child(_name_field)
 	column.add_child(naming)
 
+	# Ports before knobs, because that is the order the questions arrive in: what the
+	# module connects to, then what somebody turns on it. It is also the shorter list —
+	# a module has two or three ports and can have a dozen knobs — so putting it first
+	# costs the knobs almost nothing.
+	column.add_child(_heading("Ports"))
+	_ports_note = Label.new()
+	_ports_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ports_note.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	_ports_note.add_theme_color_override("font_color", ink_dim)
+	column.add_child(_ports_note)
+	_ports_box = VBoxContainer.new()
+	_ports_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ports_box.add_theme_constant_override("separation", Design.SPACE_XS)
+	column.add_child(_ports_box)
+
+	column.add_child(_heading("Knobs"))
 	_note = Label.new()
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_note.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
@@ -244,7 +275,9 @@ func rebuild() -> void:
 	_building = false
 
 	_seed_entries()
+	_seed_ports()
 	_draw_list()
+	_draw_ports()
 	_rebuild_racks()
 
 
@@ -296,6 +329,144 @@ func _seed_entries() -> void:
 			continue
 		_entries.append({"name": key, "on": false,
 			"caption": str(labels.get(key, "")), "breaks": false})
+
+
+## Every inner port that could be a module port, and whether it already is.
+##
+## An input already fed by a cable inside the definition is left out: it has a source, and
+## offering to give it a second one is offering to sum two things somebody has not asked
+## to sum. Outputs are always listed — an inner output feeding another inner node can
+## perfectly well also leave the module, which is what fan-out is.
+func _seed_ports() -> void:
+	_ports.clear()
+	if module_name == "":
+		return
+	var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
+	var fed := {}
+	for connection in definition.get("connections", []):
+		fed["%s/%s" % [str(connection["to"]["node"]), str(connection["to"]["port"])]] = true
+
+	var declared := {}
+	for side in ["inputs", "outputs"]:
+		for binding: Dictionary in definition.get(side, []):
+			declared["%s/%s" % [str(binding["node"]), str(binding["port"])]] = \
+				str(binding["name"])
+
+	for node: Dictionary in definition.get("nodes", []):
+		var type_entry: Dictionary = registry.get(str(node.get("type", "")), {})
+		for side in ["inputs", "outputs"]:
+			for port: Dictionary in type_entry.get(side, []):
+				var key := "%s/%s" % [str(node["id"]), str(port["name"])]
+				if side == "inputs" and fed.has(key) and not declared.has(key):
+					continue
+				_ports.append({
+					"node": str(node["id"]),
+					"port": str(port["name"]),
+					"is_input": side == "inputs",
+					"on": declared.has(key),
+					"name": str(declared.get(key, port["name"])),
+				})
+
+
+func _draw_ports() -> void:
+	for child in _ports_box.get_children():
+		_ports_box.remove_child(child)
+		child.queue_free()
+	if module_name == "":
+		_ports_note.text = ""
+		return
+	if _ports.is_empty():
+		_ports_note.text = "Nothing inside this module has a free port yet."
+		return
+	_ports_note.text = "What the outside can reach. A port left undeclared is not on " \
+		+ "the instance at all, so nothing can be plugged into it."
+	for index in _ports.size():
+		_ports_box.add_child(_build_port_row(index))
+
+
+func _build_port_row(index: int) -> Control:
+	var entry: Dictionary = _ports[index]
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Design.SPACE_XS)
+
+	var on := CheckBox.new()
+	on.button_pressed = bool(entry["on"])
+	on.focus_mode = Control.FOCUS_NONE
+	on.tooltip_text = "Show this port on the instance"
+	on.toggled.connect(func(pressed: bool) -> void:
+		_ports[index]["on"] = pressed
+		_commit_ports("%s %s.%s" % ["declare" if pressed else "undeclare",
+			entry["node"], entry["port"]]))
+	row.add_child(on)
+
+	# Which way the signal goes, in a word. Inputs and outputs are interleaved here — a
+	# module's ports are its nodes' ports, in node order — so nothing about the position
+	# says which edge of the panel a jack lands on. Words rather than arrows: the design
+	# suite checks that every character the editor shows is one the font can actually
+	# draw, and it caught "→" the first time this was written.
+	var direction := Label.new()
+	direction.text = "in" if bool(entry["is_input"]) else "out"
+	direction.custom_minimum_size.x = Design.scale(30)
+	direction.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	direction.add_theme_color_override("font_color", ink_dim)
+	row.add_child(direction)
+
+	var inner := Label.new()
+	inner.text = "%s.%s" % [str(entry["node"]), str(entry["port"])]
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inner.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+	inner.add_theme_color_override("font_color", ink if bool(entry["on"]) else ink_dim)
+	row.add_child(inner)
+
+	# The name the outside sees. Unlike a knob's caption this *is* the binding — a cable
+	# lands on it — so it is the port's name and not a label beside one.
+	var named := LineEdit.new()
+	named.text = str(entry["name"])
+	named.placeholder_text = str(entry["port"])
+	named.custom_minimum_size.x = Design.scale(110)
+	named.editable = bool(entry["on"])
+	named.tooltip_text = "What a cable connects to on the instance"
+	named.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
+	named.text_submitted.connect(func(_text: String) -> void: named.release_focus())
+	named.focus_exited.connect(func() -> void:
+		var wanted := named.text.strip_edges()
+		if wanted == str(_ports[index]["name"]) or wanted == "":
+			named.text = str(_ports[index]["name"])
+			return
+		_ports[index]["name"] = wanted
+		_commit_ports("rename port %s" % wanted))
+	row.add_child(named)
+	return row
+
+
+## The declared surface this list now describes, as two arrays of bindings.
+##
+## Names are made unique per side the way ModuleAuthor does it — falling back to
+## node_port — because two ports called the same thing is a document the loader refuses,
+## and refusing to save is a worse answer than choosing a name.
+func to_ports() -> Dictionary:
+	var inputs: Array = []
+	var outputs: Array = []
+	for entry: Dictionary in _ports:
+		if not bool(entry["on"]):
+			continue
+		var side: Array = inputs if bool(entry["is_input"]) else outputs
+		var name := str(entry["name"])
+		for existing in side:
+			if str(existing["name"]) == name:
+				name = "%s_%s" % [str(entry["node"]), str(entry["port"])]
+				break
+		side.append({"name": name, "node": str(entry["node"]),
+			"port": str(entry["port"])})
+	return {"inputs": inputs, "outputs": outputs}
+
+
+func _commit_ports(label: String) -> void:
+	if _building or module_name == "":
+		return
+	var declared := to_ports()
+	ports_edited.emit(module_name, declared["inputs"], declared["outputs"], label)
 
 
 func _draw_list() -> void:

@@ -1541,6 +1541,71 @@ func _initialize() -> void:
 		"and one undo takes the module and its instance back out (%d modules, %d nodes)"
 			% [main.patch.get("modules", {}).size(), main.patch["nodes"].size()])
 
+	# ---- and its ports are declared, not derived -------------------------------------
+	# collapse reads a module's surface off the boundary connections it is factoring out.
+	# A module built here was never in the graph, so there is no boundary to read and the
+	# instance arrived with no ports at all — a box nothing could be plugged into.
+	await main._add_node("ADSR", Vector2(0, 0))
+	await main._add_node("Gain", Vector2(0, 0))
+	for _settle in 6:
+		await process_frame
+	var built: String = builder.module_name
+	main._on_definition_wired(built, "adsr", "out", "gain", "gain")
+	for _settle in 6:
+		await process_frame
+
+	var offered := []
+	for entry: Dictionary in builder._ports:
+		offered.append("%s.%s" % [str(entry["node"]), str(entry["port"])])
+	check(not offered.has("gain.gain"),
+		"a port already fed from inside is not offered — it has a source (%s)"
+			% str(offered))
+	check(offered.has("adsr.gate") and offered.has("gain.in")
+			and offered.has("gain.out"),
+		"and every free port is (%s)" % str(offered))
+
+	for entry: Dictionary in builder._ports:
+		if str(entry["node"]) + "." + str(entry["port"]) in \
+				["adsr.gate", "gain.in", "gain.out"]:
+			entry["on"] = true
+	builder._commit_ports("declare")
+	for _settle in 8:
+		await process_frame
+	var built_descriptor: Dictionary = main.registry.get("module:%s" % built, {})
+	check(built_descriptor.get("inputs", []).size() == 2
+			and built_descriptor.get("outputs", []).size() == 1,
+		"declaring puts them on the instance (%d in, %d out)"
+			% [built_descriptor.get("inputs", []).size(),
+				built_descriptor.get("outputs", []).size()])
+
+	# A cable onto one of them, and then the port taken away underneath it. The document
+	# must not be left describing a connection to somewhere that no longer exists.
+	var built_instance := ""
+	for node in main.patch["nodes"]:
+		if str(node.get("module", "")) == built:
+			built_instance = str(node["id"])
+	main.patch["connections"].append({
+		"from": {"node": built_instance, "port": "out"},
+		"to": {"node": "out", "port": "left"}})
+	var wired_count: int = main.patch["connections"].size()
+	for entry: Dictionary in builder._ports:
+		if str(entry["node"]) == "gain" and str(entry["port"]) == "out":
+			entry["on"] = false
+	builder._commit_ports("undeclare")
+	for _settle in 8:
+		await process_frame
+	check(main.patch["connections"].size() == wired_count - 1,
+		"and undeclaring one takes the cable that was on it (%d, was %d)"
+			% [main.patch["connections"].size(), wired_count])
+	var to_nowhere := []
+	for connection in main.patch["connections"]:
+		if str(connection["from"]["node"]) == built_instance \
+				and str(connection["from"]["port"]) == "out":
+			to_nowhere.append("out")
+	check(to_nowhere.is_empty(),
+		"leaving nothing pointing at a port the module no longer has (%s)"
+			% str(to_nowhere))
+
 	main.show_view("Graph")
 	await process_frame
 
