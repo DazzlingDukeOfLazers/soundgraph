@@ -9,18 +9,34 @@ extends HSplitContainer
 ## exports every knob the inner nodes had, in the order they were found, under names like
 ## `amp_gain`, and a module built to be smaller than its parts arrives bigger.
 ##
-## So this is the pruning half. On the left, the definition's own nodes, wired as the
-## author left them — the thing being wrapped, not an abstraction of it. On the right, one
-## line per export: on the panel or not, what it is called there, where it sits, and where
-## a row breaks. Underneath, an actual instance of the module being edited, built by the
-## same code that builds it everywhere else, so the preview cannot drift from the article.
+## So this began as the pruning half. On the left, the definition's own nodes, wired as
+## the author left them — the thing being wrapped, not an abstraction of it. On the right,
+## the module's ports and its knobs, and underneath, an actual instance built by the same
+## code that builds it everywhere else, so the preview cannot drift from the article.
 ##
-## Nothing here touches the surface. Turning a knob off takes it off the face and leaves it
-## exported, settable and automatable — see docs/modules-design.md. The worst this view can
-## do to a patch is make it look different.
+## It declares as well as prunes, because pruning alone only ever worked on a module that
+## collapse had already made. Collapse derives a surface from context — ports from the
+## connections crossing the selection boundary, exports from the values an author had
+## already set — and a module assembled here was never in the graph, so there is no
+## boundary to read and nothing has been set. Built from nothing, it came out with no
+## ports and no knobs: a box that could not be plugged in or turned.
+##
+## Two kinds of edit live here and the difference is worth keeping straight, because they
+## look alike in the list and do not behave alike:
+##
+##   surface — declared ports, exported parameters. What a patch can reach. Taking one
+##             away strands cables and controls, so this view removes them and says so.
+##   face    — the panel: which exports get a knob, in what order, called what. Purely
+##             presentation, and a knob taken off the face is still exported.
+##
+## See docs/modules-design.md. The face half still cannot damage a patch; the surface half
+## can, which is why it is the half that reports what it took with it.
 
-## The panel as it now stands, ready to store on the definition. `label` is the undo entry.
-signal panel_edited(module_name: String, panel: Dictionary, label: String)
+## What the knob list now says: which inner parameters the module exports, and which of
+## those are on its face. Sent together because they are edited together — a knob cannot
+## be on a face it is not exported to. `label` is the undo entry.
+signal surface_edited(module_name: String, parameters: Array, panel: Dictionary,
+	label: String)
 ## A cable the author just patched between two of the definition's own nodes.
 signal wired(module_name: String, from_node: String, from_port: String,
 	to_node: String, to_port: String)
@@ -56,8 +72,13 @@ var ink_dim := Color.GRAY
 ## Which definition is being given a face. Empty when the document has no modules.
 var module_name := ""
 
-## One per export, in panel order: {"name": String, "on": bool, "caption": String,
-## "breaks": bool}. The single source this view edits; everything else is drawn from it.
+## One per inner parameter, exported or not, in panel order:
+## {"name": String, "node": String, "parameter": String, "exported": bool, "on": bool,
+## "caption": String, "breaks": bool}.
+##
+## `name` is the export binding — what the outside sets — and `caption` is only what the
+## panel calls it. `exported` is the surface, `on` is the face. The single source this
+## view edits; everything else is drawn from it.
 var _entries: Array = []
 
 ## One per inner port that could be declared, in the order the inner nodes give them:
@@ -294,41 +315,74 @@ func _seed_entries() -> void:
 		return
 	var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
 	var surface: Array = definition.get("parameters", [])
-	var declared := {}
-	for binding: Dictionary in surface:
-		declared[str(binding["name"])] = true
-
 	var panel: Dictionary = definition.get("panel", {})
 	var labels: Dictionary = panel.get("labels", {})
 	var rows: Array = panel.get("rows", [])
+
+	# The already-exported ones first and verbatim, so nothing a collapse derived is lost
+	# or renamed by passing through this list. Everything else follows as an offer.
+	var by_export := {}
+	var covered := {}
+	for binding: Dictionary in surface:
+		var entry := {
+			"name": str(binding["name"]),
+			"node": str(binding.get("node", "")),
+			"parameter": str(binding.get("parameter", "")),
+			"exported": true,
+			"on": rows.is_empty(),
+			"caption": str(labels.get(str(binding["name"]), "")),
+			"breaks": false,
+		}
+		by_export[str(binding["name"])] = entry
+		covered["%s/%s" % [entry["node"], entry["parameter"]]] = true
+
+	# Panel order decides the order of the exported ones; anything the panel never
+	# mentioned keeps its place after them, off the face but visible.
+	var ordered: Array = []
 	if rows.is_empty():
 		var index := 0
 		for binding: Dictionary in surface:
-			_entries.append({"name": str(binding["name"]), "on": true,
-				"caption": "", "breaks": index % 2 == 0})
+			var entry: Dictionary = by_export[str(binding["name"])]
+			entry["breaks"] = index % 2 == 0
+			ordered.append(entry)
 			index += 1
-		return
+	else:
+		var placed := {}
+		for row: Array in rows:
+			var first := true
+			for export_name in row:
+				var key := str(export_name)
+				if not by_export.has(key) or placed.has(key):
+					continue
+				placed[key] = true
+				var entry: Dictionary = by_export[key]
+				entry["on"] = true
+				entry["breaks"] = first
+				ordered.append(entry)
+				first = false
+		for binding: Dictionary in surface:
+			if not placed.has(str(binding["name"])):
+				ordered.append(by_export[str(binding["name"])])
 
-	# Panel order first, then whatever the panel never mentioned — off, but present, so
-	# an export added to the definition after the panel was written is visible here
-	# rather than silently missing.
-	var placed := {}
-	for row: Array in rows:
-		var first := true
-		for export_name in row:
-			var key := str(export_name)
-			if not declared.has(key) or placed.has(key):
+	# And every inner parameter that is not exported yet, offered rather than assumed.
+	# A module built here has none exported at all — collapse gets its exports from the
+	# values an author had already set, and nothing added in this tab has been set.
+	for node: Dictionary in definition.get("nodes", []):
+		var type_entry: Dictionary = registry.get(str(node.get("type", "")), {})
+		for parameter: Dictionary in type_entry.get("parameters", []):
+			var key := "%s/%s" % [str(node["id"]), str(parameter["name"])]
+			if covered.has(key):
 				continue
-			placed[key] = true
-			_entries.append({"name": key, "on": true,
-				"caption": str(labels.get(key, "")), "breaks": first})
-			first = false
-	for binding: Dictionary in surface:
-		var key := str(binding["name"])
-		if placed.has(key):
-			continue
-		_entries.append({"name": key, "on": false,
-			"caption": str(labels.get(key, "")), "breaks": false})
+			ordered.append({
+				"name": str(parameter["name"]),
+				"node": str(node["id"]),
+				"parameter": str(parameter["name"]),
+				"exported": false,
+				"on": false,
+				"caption": "",
+				"breaks": false,
+			})
+	_entries = ordered
 
 
 ## Every inner port that could be a module port, and whether it already is.
@@ -493,8 +547,28 @@ func _build_entry_row(index: int) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Design.SPACE_XS)
 
+	# Two checkboxes, because these are two questions and the second one used to have no
+	# way of being asked. Exported puts the knob on the module's surface: a patch can set
+	# it, a control can drive it, automation can reach it. On the face puts it on the
+	# panel. Exported-but-off-the-face is a real and useful state — it is what `mode` and
+	# `cutoff_sweep` are on the filter combo — so it gets its own control rather than
+	# being inferred from the other.
+	var exported := CheckBox.new()
+	exported.button_pressed = bool(entry["exported"])
+	exported.tooltip_text = "Export this knob: the module's surface, what a patch can set"
+	exported.focus_mode = Control.FOCUS_NONE
+	exported.toggled.connect(func(pressed: bool) -> void:
+		_entries[index]["exported"] = pressed
+		# Nothing can be on a face it is not exported to, and a newly exported knob
+		# almost always wants to be seen — so the face follows unless it is being taken
+		# away, where it has no choice.
+		_entries[index]["on"] = pressed
+		_commit("%s %s" % ["export" if pressed else "unexport", entry["name"]]))
+	row.add_child(exported)
+
 	var on := CheckBox.new()
 	on.button_pressed = bool(entry["on"])
+	on.disabled = not bool(entry["exported"])
 	on.tooltip_text = "Show this knob on the panel"
 	on.focus_mode = Control.FOCUS_NONE
 	on.toggled.connect(func(pressed: bool) -> void:
@@ -503,11 +577,12 @@ func _build_entry_row(index: int) -> Control:
 	row.add_child(on)
 
 	var name_label := Label.new()
-	name_label.text = str(entry["name"])
+	name_label.text = str(entry["name"]) if bool(entry["exported"]) \
+		else "%s.%s" % [str(entry["node"]), str(entry["parameter"])]
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
 	name_label.add_theme_color_override("font_color",
-		ink if bool(entry["on"]) else ink_dim)
+		ink if bool(entry["exported"]) else ink_dim)
 	row.add_child(name_label)
 
 	# The caption, not a rename: what the panel calls it. Empty means the export name,
@@ -527,15 +602,19 @@ func _build_entry_row(index: int) -> Control:
 		_commit("rename %s" % entry["name"]))
 	row.add_child(caption)
 
-	row.add_child(_step_button("↑", index > 0, func() -> void: _move(index, -1)))
-	row.add_child(_step_button("↓", index < _entries.size() - 1,
+	# Words, not arrows. These were ↑ ↓ ↵ and rendered fine in a screenshot because the
+	# system font quietly filled in behind — design_test asks the project's own font
+	# whether it can draw each character, which is the question that matters for the web
+	# export and for anybody else's machine.
+	row.add_child(_step_button("up", index > 0, func() -> void: _move(index, -1)))
+	row.add_child(_step_button("dn", index < _entries.size() - 1,
 		func() -> void: _move(index, 1)))
 
 	# Where a row ends. The first knob on the panel always starts one, so its toggle is
 	# fixed on rather than hidden — a control that vanishes is harder to understand than
 	# one that is plainly not yours to press.
 	var breaks := Button.new()
-	breaks.text = "↵"
+	breaks.text = "row"
 	breaks.toggle_mode = true
 	breaks.button_pressed = bool(entry["breaks"])
 	breaks.disabled = index == _first_on()
@@ -582,12 +661,33 @@ func _move(index: int, by: int) -> void:
 ## Rows are cut at the breaks, so the model stays one flat ordered list and the row
 ## structure is derived — which is what makes moving a knob a single operation rather than
 ## a remove from one row and an insert into another.
+## The declared parameters this list now says the module exports.
+##
+## Names are made unique the way ModuleAuthor does it, falling back to node_parameter,
+## because two exports called the same thing is a document the loader refuses — and two
+## inner nodes with a knob called `gain` is the ordinary case, not an odd one.
+func to_exports() -> Array:
+	var exported: Array = []
+	for entry: Dictionary in _entries:
+		if not bool(entry["exported"]):
+			continue
+		var name := str(entry["name"])
+		for existing in exported:
+			if str(existing["name"]) == name:
+				name = "%s_%s" % [str(entry["node"]), str(entry["parameter"])]
+				break
+		entry["name"] = name
+		exported.append({"name": name, "node": str(entry["node"]),
+			"parameter": str(entry["parameter"])})
+	return exported
+
+
 func to_panel() -> Dictionary:
 	var rows: Array = []
 	var labels := {}
 	var current: Array = []
 	for entry: Dictionary in _entries:
-		if not bool(entry["on"]):
+		if not bool(entry["on"]) or not bool(entry["exported"]):
 			continue
 		if bool(entry["breaks"]) and not current.is_empty():
 			rows.append(current)
@@ -608,7 +708,10 @@ func to_panel() -> Dictionary:
 func _commit(label: String) -> void:
 	if _building or module_name == "":
 		return
-	panel_edited.emit(module_name, to_panel(), label)
+	# Exports first: to_panel only emits rows for knobs that are exported, and to_exports
+	# is what settles their names when two of them collide.
+	var exported := to_exports()
+	surface_edited.emit(module_name, exported, to_panel(), label)
 	_draw_list()
 
 

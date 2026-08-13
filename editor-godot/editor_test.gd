@@ -1224,15 +1224,26 @@ func _initialize() -> void:
 	# Every export is listed, on the panel or not — an export the panel never mentioned
 	# has to be visible here, or adding one to a definition would silently lose it.
 	var listed := []
+	var offered_unexported := []
 	for entry: Dictionary in builder._entries:
-		listed.append(str(entry["name"]))
+		if bool(entry["exported"]):
+			listed.append(str(entry["name"]))
+		else:
+			offered_unexported.append("%s.%s" % [str(entry["node"]),
+				str(entry["parameter"])])
 	check(listed.size() == 3, "every export is on the list (%s)" % str(listed))
+	# And every inner knob that is *not* exported is offered rather than hidden — the
+	# ADSR has decay and sustain that this definition never exported.
+	check(offered_unexported.has("env.decay") and offered_unexported.has("env.sustain"),
+		"and every inner knob that is not exported yet is offered (%s)"
+			% str(offered_unexported))
 	var off_the_face := []
 	for entry: Dictionary in builder._entries:
-		if not bool(entry["on"]):
+		if bool(entry["exported"]) and not bool(entry["on"]):
 			off_the_face.append(str(entry["name"]))
 	check(off_the_face == ["gain"],
-		"with the one the panel leaves out shown as off (%s)" % str(off_the_face))
+		"with the exported one the panel leaves out shown as off (%s)"
+			% str(off_the_face))
 
 	# What it reads back is what it was given. The round trip through the list must be
 	# the identity, or opening this tab would quietly redraw a face nobody touched.
@@ -1605,6 +1616,57 @@ func _initialize() -> void:
 	check(to_nowhere.is_empty(),
 		"leaving nothing pointing at a port the module no longer has (%s)"
 			% str(to_nowhere))
+
+	# ---- and its knobs are exported, not derived -------------------------------------
+	# The other half of the same gap: collapse takes its exports from the values an author
+	# had already set, and nothing added in this tab has been set, so a module built here
+	# arrived with no knobs at all.
+	var built_exports: int = main.registry.get("module:%s" % built, {}) \
+		.get("parameters", []).size()
+	check(built_exports == 0,
+		"a module built from nothing starts with no knobs (%d)" % built_exports)
+	var offered_knobs := []
+	for entry: Dictionary in builder._entries:
+		offered_knobs.append("%s.%s" % [str(entry["node"]), str(entry["parameter"])])
+	check(offered_knobs.has("adsr.attack") and offered_knobs.has("gain.gain"),
+		"but every inner knob is offered (%s)" % str(offered_knobs))
+
+	for entry: Dictionary in builder._entries:
+		if str(entry["node"]) == "adsr" and str(entry["parameter"]) == "attack":
+			entry["exported"] = true
+			entry["on"] = true
+	builder._commit("export attack")
+	for _settle in 8:
+		await process_frame
+	var built_surface: Array = main.patch["modules"][built].get("parameters", [])
+	check(built_surface.size() == 1 and str(built_surface[0]["node"]) == "adsr",
+		"exporting one puts it on the surface (%s)" % str(built_surface))
+	check(main.registry.get("module:%s" % built, {}).get("parameters", []).size() == 1,
+		"and the instance grows a knob (%d)"
+			% main.registry.get("module:%s" % built, {}).get("parameters", []).size())
+	var built_rows: Array = main.patch["modules"][built].get("panel", {}).get("rows", [])
+	check(str(built_rows) == '[["attack"]]',
+		"and it lands on the face, because a knob nobody can see is not why you exported"
+			+ " it (%s)" % str(built_rows))
+
+	# Un-exporting is surface again, not presentation: an instance value for a knob that
+	# is no longer exported would be a number nothing reads.
+	for node in main.patch["nodes"]:
+		if str(node.get("module", "")) == built:
+			node["parameters"] = {"attack": 0.25}
+	for entry: Dictionary in builder._entries:
+		if str(entry["node"]) == "adsr" and str(entry["parameter"]) == "attack":
+			entry["exported"] = false
+	builder._commit("unexport attack")
+	for _settle in 8:
+		await process_frame
+	var leftover := {}
+	for node in main.patch["nodes"]:
+		if str(node.get("module", "")) == built:
+			leftover = node.get("parameters", {})
+	check(leftover.is_empty(),
+		"and un-exporting takes the value an instance had set for it (%s)"
+			% str(leftover))
 
 	main.show_view("Graph")
 	await process_frame

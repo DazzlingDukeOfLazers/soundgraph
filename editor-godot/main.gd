@@ -667,7 +667,7 @@ func _build_ui() -> void:
 	builder.type_colours = TYPE_COLOURS
 	builder.ink = INK
 	builder.ink_dim = INK_DIM
-	builder.panel_edited.connect(_on_panel_edited)
+	builder.surface_edited.connect(_on_surface_edited)
 	builder.wired.connect(_on_definition_wired)
 	builder.module_renamed.connect(_on_module_renamed)
 	builder.ports_edited.connect(_on_ports_edited)
@@ -2119,12 +2119,48 @@ func _panel_rows(definition: Dictionary, parameters: Array) -> Array:
 ## `panel`. Nothing about the surface, the inner nodes or the wiring is reachable from
 ## here — which is what makes an experiment with the layout free: the worst outcome is a
 ## module that looks wrong, and one Ctrl-Z away from looking how it did.
-func _on_panel_edited(edited_module: String, panel: Dictionary, label: String) -> void:
+func _on_surface_edited(edited_module: String, parameters: Array, panel: Dictionary,
+		label: String) -> void:
 	var definitions: Dictionary = patch.get("modules", {})
 	if not definitions.has(edited_module):
 		return
 	_begin_edit()
 	var definition: Dictionary = definitions[edited_module]
+
+	# The surface, which unlike the panel is not presentation: an export is what a patch
+	# can set, a control can drive and automation can reach. Un-exporting one takes those
+	# away, so anything still pointing at it goes rather than being left to fail
+	# validation — the same rule undeclaring a port follows.
+	var exported := {}
+	for binding in parameters:
+		exported[str(binding["name"])] = true
+	if parameters.is_empty():
+		definition.erase("parameters")
+	else:
+		definition["parameters"] = parameters
+	var instances := {}
+	for node in patch.get("nodes", []):
+		if str(node.get("module", "")) == edited_module:
+			instances[str(node["id"])] = true
+			# A value set on an instance for a knob that is no longer exported is not an
+			# error, but it is a lie: nothing reads it, and saving it would suggest
+			# something does.
+			var values: Dictionary = node.get("parameters", {})
+			for value_name in values.keys():
+				if not exported.has(str(value_name)):
+					values.erase(value_name)
+	var dropped := 0
+	for list_key in ["controls", "automation"]:
+		var kept_targets: Array = []
+		for item in patch.get(list_key, []):
+			var target: Dictionary = item.get("target", {})
+			if instances.has(str(target.get("node", ""))) \
+					and not exported.has(str(target.get("parameter", ""))):
+				dropped += 1
+				continue
+			kept_targets.append(item)
+		if patch.has(list_key):
+			patch[list_key] = kept_targets
 	# An empty panel is stored as no panel at all, not as an empty object. "Every export,
 	# in declared order" and "a panel that happens to say nothing" are the same face, and
 	# a document should have one spelling for one meaning.
@@ -2138,7 +2174,11 @@ func _on_panel_edited(edited_module: String, panel: Dictionary, label: String) -
 	if builder != null:
 		builder.patch = patch
 		builder.refresh()
+	_apply()
 	_commit_edit(label)
+	if dropped > 0:
+		_say("%s — and %d control%s that had nothing left to drive"
+			% [label, dropped, "" if dropped == 1 else "s"])
 
 
 ## Runs a cable between two of a definition's own nodes.
