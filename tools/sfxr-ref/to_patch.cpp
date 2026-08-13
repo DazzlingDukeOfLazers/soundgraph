@@ -44,8 +44,21 @@ std::string number(double value) {
 // does not — so the mapper says roughly where things go and lets a real editor improve on
 // it. The grid matches the Godot editor's own column pitch and row step, so a generated
 // patch lands on the same lines a hand-placed one does.
-constexpr double kColumnPitch = 400.0;
-constexpr double kRowStep = 200.0;
+// 560 rather than 400, a whole number of 40px grid cells clear of the widest panel.
+//
+// The editor's own arrange does not use a fixed pitch: it takes whichever is larger of
+// the pitch and the widest node in the column plus a gutter, so it spreads to fit
+// whatever it is laying out. A generator writing coordinates once has no such feedback,
+// and 400 stopped clearing a node when the node grew — a saved patch then opened with its
+// panels drawn through each other, because stored positions are honoured rather than
+// re-laid. This is the floor the editor would never go below for a panel this wide.
+constexpr double kColumnPitch = 560.0;
+// And 360 rather than 200, for the same reason on the other axis. Both are whole numbers
+// of 40px grid cells chosen to clear the largest node the editor draws, measured rather
+// than guessed: 429 wide and 329 tall across the shipped corpus. Two guesses at the row
+// step (240, then 280) each cleared one overlapping pair and left another, which is what
+// picking the number off the last failure rather than off the measurement gets you.
+constexpr double kRowStep = 360.0;
 
 struct Node {
     std::string id;

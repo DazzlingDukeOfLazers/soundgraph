@@ -20,12 +20,12 @@
     {
       "id": "osc",
       "type": "SawOscillator",
-      "position": {"x": 400, "y": 0}
+      "position": {"x": 560, "y": 0}
     },
     {
       "id": "phaser",
       "type": "Phaser",
-      "position": {"x": 800, "y": 0},
+      "position": {"x": 1120, "y": 0},
       "parameters": {
         "offset": 0,
         "sweep": 0,
@@ -35,7 +35,7 @@
     {
       "id": "trigger",
       "type": "NoteInput",
-      "position": {"x": 400, "y": 200},
+      "position": {"x": 560, "y": 360},
       "parameters": {
         "transpose": 8.16158
       }
@@ -43,7 +43,7 @@
     {
       "id": "envelope",
       "type": "AhdEnvelope",
-      "position": {"x": 800, "y": 200},
+      "position": {"x": 1120, "y": 360},
       "parameters": {
         "attack": 0,
         "hold": 0.0523625,
@@ -54,7 +54,7 @@
     {
       "id": "amp",
       "type": "Gain",
-      "position": {"x": 1200, "y": 0},
+      "position": {"x": 1680, "y": 0},
       "parameters": {
         "gain": 0.05
       }
@@ -62,7 +62,7 @@
     {
       "id": "repeat",
       "type": "Retrigger",
-      "position": {"x": 0, "y": -200},
+      "position": {"x": 0, "y": -360},
       "parameters": {
         "rate": 8.10662,
         "width": 1
@@ -71,7 +71,7 @@
     {
       "id": "out",
       "type": "StereoOutput",
-      "position": {"x": 1600, "y": 0},
+      "position": {"x": 2240, "y": 0},
       "parameters": {
         "level": 1,
         "safety_limit": 0

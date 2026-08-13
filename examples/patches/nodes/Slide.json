@@ -14,14 +14,14 @@
       "type": "NoteInput",
       "position": {
         "x": 0,
-        "y": 400
+        "y": 360
       }
     },
     {
       "id": "demo",
       "type": "Slide",
       "position": {
-        "x": 400,
+        "x": 560,
         "y": 0
       },
       "parameters": {
@@ -35,7 +35,7 @@
       "id": "osc",
       "type": "SquareOscillator",
       "position": {
-        "x": 800,
+        "x": 1120,
         "y": 0
       },
       "parameters": {
@@ -46,8 +46,8 @@
       "id": "env",
       "type": "AhdEnvelope",
       "position": {
-        "x": 800,
-        "y": 400
+        "x": 1120,
+        "y": 360
       },
       "parameters": {
         "attack": 0.005,
@@ -59,7 +59,7 @@
       "id": "amp",
       "type": "Gain",
       "position": {
-        "x": 1200,
+        "x": 1680,
         "y": 0
       },
       "parameters": {
@@ -70,7 +70,7 @@
       "id": "out",
       "type": "StereoOutput",
       "position": {
-        "x": 1600,
+        "x": 2240,
         "y": 0
       },
       "parameters": {

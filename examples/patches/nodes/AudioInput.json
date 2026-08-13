@@ -24,7 +24,7 @@
       "id": "filter",
       "type": "StateVariableFilter",
       "position": {
-        "x": 400,
+        "x": 560,
         "y": 0
       },
       "parameters": {
@@ -36,7 +36,7 @@
       "id": "out",
       "type": "StereoOutput",
       "position": {
-        "x": 800,
+        "x": 1120,
         "y": 0
       },
       "parameters": {

@@ -20,7 +20,7 @@
     {
       "id": "arpeggio",
       "type": "Arpeggio",
-      "position": {"x": 400, "y": 0},
+      "position": {"x": 560, "y": 0},
       "parameters": {
         "time": 0.0537395,
         "interval": 6.08923,
@@ -30,7 +30,7 @@
     {
       "id": "osc",
       "type": "SquareOscillator",
-      "position": {"x": 800, "y": 0},
+      "position": {"x": 1120, "y": 0},
       "parameters": {
         "pulse_width": 0.5,
         "pulse_width_sweep": -0
@@ -39,7 +39,7 @@
     {
       "id": "phaser",
       "type": "Phaser",
-      "position": {"x": 1200, "y": 0},
+      "position": {"x": 1680, "y": 0},
       "parameters": {
         "offset": 0,
         "sweep": 0,
@@ -49,7 +49,7 @@
     {
       "id": "trigger",
       "type": "NoteInput",
-      "position": {"x": 800, "y": 200},
+      "position": {"x": 1120, "y": 360},
       "parameters": {
         "transpose": 35.6079
       }
@@ -57,7 +57,7 @@
     {
       "id": "envelope",
       "type": "AhdEnvelope",
-      "position": {"x": 1200, "y": 200},
+      "position": {"x": 1680, "y": 360},
       "parameters": {
         "attack": 0,
         "hold": 0.022099,
@@ -68,7 +68,7 @@
     {
       "id": "amp",
       "type": "Gain",
-      "position": {"x": 1600, "y": 0},
+      "position": {"x": 2240, "y": 0},
       "parameters": {
         "gain": 0.025
       }
@@ -76,7 +76,7 @@
     {
       "id": "out",
       "type": "StereoOutput",
-      "position": {"x": 2000, "y": 0},
+      "position": {"x": 2800, "y": 0},
       "parameters": {
         "level": 1,
         "safety_limit": 0

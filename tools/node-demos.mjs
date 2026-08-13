@@ -25,10 +25,21 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const target = join(root, 'examples', 'patches', 'nodes');
 
-// Grid spacing, matching the mapper and the editor's own column pitch and row step, so a
-// generated patch opens laid out rather than piled at the origin.
-const COLUMN = 400;
-const LANE = 200;
+// Grid spacing, matching the mapper, so a generated patch opens laid out rather than
+// piled at the origin.
+//
+// 560 rather than 400, and deliberately not "the editor's column pitch" any more. The
+// editor's arrange takes whichever is larger of that pitch and the widest node in the
+// column plus a gutter, so it spreads to fit whatever it is laying out; a generator
+// writing coordinates once has no such feedback, and 400 stopped clearing a node when the
+// node grew. Stored positions are honoured rather than re-laid, so the result was a saved
+// patch opening with its panels drawn through each other. Keep this a whole number of
+// 40px grid cells, and keep it in step with kColumnPitch in tools/sfxr-ref/to_patch.cpp.
+const COLUMN = 560;
+// And 360 rather than 200, for the same reason on the other axis. Both are whole numbers
+// of 40px grid cells chosen to clear the largest node the editor draws, measured rather
+// than guessed: 429 wide and 329 tall across the shipped corpus.
+const LANE = 360;
 
 const node = (id, type, parameters = {}, column = 0, lane = 0) =>
   ({ id, type, parameters, column, lane });
