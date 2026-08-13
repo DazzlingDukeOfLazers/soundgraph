@@ -669,6 +669,7 @@ func _build_ui() -> void:
 	builder.ink_dim = INK_DIM
 	builder.panel_edited.connect(_on_panel_edited)
 	builder.wired.connect(_on_definition_wired)
+	builder.module_renamed.connect(_on_module_renamed)
 	builder.refused.connect(func(reason: String) -> void: _say(reason))
 	views.add_child(builder)
 
@@ -2177,6 +2178,106 @@ func _on_definition_wired(edited_module: String, from_node: String, from_port: S
 	builder.rebuild()
 	_apply()
 	_commit_edit("wire %s.%s to %s.%s" % [from_node, from_port, to_node, to_port])
+
+
+## What a module may be called: letters, digits, underscore and hyphen.
+##
+## Narrower than the schema, which puts no pattern on a definition's key at all, and
+## narrower than a node id, which also permits `.` and `:`. Both of those matter after
+## expansion — the dot is the separator between an instance and the node inside it — so a
+## module called `a.b` would produce ids nobody could read back. A name is refused here
+## rather than allowed and regretted at load.
+const MODULE_NAME_ALLOWED := "^[A-Za-z0-9_-]+$"
+
+
+## Renames a definition, and any instance still going by its old name.
+##
+## The instance rule is the whole reason this exists. ModuleAuthor.collapse names a fresh
+## definition "part" and then names the instance after it, so both arrive called the same
+## placeholder and the running order reads `part.filter`. Renaming the definition alone
+## would fix the half nobody sees and leave the half everything prints. An instance the
+## author has already named something else is left alone — that name was a decision, and
+## this is not the place to overrule it.
+func _on_module_renamed(old_name: String, new_name: String) -> void:
+	var definitions: Dictionary = patch.get("modules", {})
+	if not definitions.has(old_name):
+		return
+	if not RegEx.create_from_string(MODULE_NAME_ALLOWED).search(new_name):
+		_say("a module name may hold letters, digits, _ and - and nothing else")
+		builder.rebuild()
+		return
+	if definitions.has(new_name):
+		_say("this patch already has a module called '%s'" % new_name)
+		builder.rebuild()
+		return
+	# An instance may only take the new name if nothing else in the document has it.
+	var taken := {}
+	for node in patch.get("nodes", []):
+		taken[str(node["id"])] = true
+	var rename_instances: bool = not taken.has(new_name)
+
+	_begin_edit()
+	# Rebuilt in order rather than erased and re-added, because a definition that jumped
+	# to the end of the file every time it was renamed would make a one-word change look
+	# like a rewrite in the diff.
+	var renamed_modules := {}
+	for key in definitions:
+		if str(key) == old_name:
+			renamed_modules[new_name] = definitions[key]
+		else:
+			renamed_modules[key] = definitions[key]
+	patch["modules"] = renamed_modules
+
+	var moved := {}
+	for node in patch.get("nodes", []):
+		if str(node.get("module", "")) == old_name:
+			node["module"] = new_name
+		if rename_instances and str(node["id"]) == old_name \
+				and str(node.get("type", "")) == "module":
+			moved[old_name] = new_name
+			node["id"] = new_name
+	# Everything that refers to an instance by id follows it. Miss one of these and the
+	# patch is quietly broken in a way that only shows up as a cable that stopped
+	# existing — see the connection, control and automation lists in patch.schema.json.
+	if not moved.is_empty():
+		for connection in patch.get("connections", []):
+			if moved.has(str(connection["from"]["node"])):
+				connection["from"]["node"] = moved[str(connection["from"]["node"])]
+			if moved.has(str(connection["to"]["node"])):
+				connection["to"]["node"] = moved[str(connection["to"]["node"])]
+		for control in patch.get("controls", []):
+			var control_target: Dictionary = control.get("target", {})
+			if moved.has(str(control_target.get("node", ""))):
+				control_target["node"] = moved[str(control_target["node"])]
+		for lane in patch.get("automation", []):
+			var lane_target: Dictionary = lane.get("target", {})
+			if moved.has(str(lane_target.get("node", ""))):
+				lane_target["node"] = moved[str(lane_target["node"])]
+		# Arrangement hints are keyed by id too, and a stale place is a module that jumps
+		# back to the seed the next time the patch is opened.
+		var arrangement: Dictionary = patch.get(GraphRack.ARRANGEMENT_KEY, {})
+		var hints: Dictionary = arrangement.get(GraphRack.PLACES_KEY, {})
+		for id in moved:
+			if hints.has(id):
+				hints[moved[id]] = hints[id]
+				hints.erase(id)
+		# And the rack order, which is a list of ids rather than a map of them.
+		var order: Array = arrangement.get(GraphRack.ORDER_KEY, [])
+		for index in order.size():
+			if moved.has(str(order[index])):
+				order[index] = moved[str(order[index])]
+
+	builder.module_name = new_name
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	builder.patch = patch
+	builder.rebuild()
+	_apply()
+	_commit_edit("rename %s to %s" % [old_name, new_name])
+	if rename_instances:
+		_say("renamed '%s' to '%s', and the instance with it" % [old_name, new_name])
+	else:
+		_say("renamed '%s' to '%s'" % [old_name, new_name])
 
 
 ## A module's name as a person would write it: "dx7_operator" is a DX7 Operator.

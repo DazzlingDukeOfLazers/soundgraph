@@ -60,29 +60,15 @@ func _initialize() -> void:
 		return
 	main.patch = result.patch
 
-	# collapse names a fresh definition "part". A combo people are meant to reach for
-	# deserves a name, and renaming a definition is a key move plus the instances that
-	# point at it — which is exactly why the builder should grow a rename field.
-	var definition: Dictionary = main.patch["modules"][result.module_name]
-	main.patch["modules"].erase(result.module_name)
-	main.patch["modules"]["filter_env"] = definition
-	for node in main.patch["nodes"]:
-		if str(node.get("module", "")) == result.module_name:
-			node["module"] = "filter_env"
-	# And the instance, which collapse names after the definition and so also calls
-	# "part". Nothing shows it on the panel — the face takes its title from the module —
-	# but it is what the running order and every diagnostic say, and "part.filter" tells
-	# a reader nothing about which part.
-	for node in main.patch["nodes"]:
-		if str(node.get("id", "")) == result.instance_id:
-			node["id"] = "voice"
-	for connection in main.patch["connections"]:
-		if str(connection["from"]["node"]) == result.instance_id:
-			connection["from"]["node"] = "voice"
-		if str(connection["to"]["node"]) == result.instance_id:
-			connection["to"]["node"] = "voice"
-	main._synthesize_module_descriptors()
-	await main._rebuild_view()
+	# collapse names a fresh definition "part", and the instance after it, so both arrive
+	# as the same placeholder. The builder's rename moves the definition, every instance
+	# pointing at it, and any instance still going by the old name — which is this one.
+	# This used to be twenty lines of hand-editing here, with a comment saying the builder
+	# ought to grow a rename field. It has.
+	main.builder.patch = main.patch
+	main.builder.module_name = result.module_name
+	await main._on_module_renamed(result.module_name, "filter_env")
+	var definition: Dictionary = main.patch["modules"]["filter_env"]
 
 	print("derived surface: %s" % str(definition.get("parameters", [])
 		.map(func(p): return str(p["name"]))))

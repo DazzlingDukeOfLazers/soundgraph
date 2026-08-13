@@ -26,6 +26,8 @@ signal wired(module_name: String, from_node: String, from_port: String,
 	to_node: String, to_port: String)
 ## Something the author tried that could not be done, in words for the status line.
 signal refused(reason: String)
+## A new name for the definition being edited.
+signal module_renamed(from_name: String, to_name: String)
 
 const LIST_WIDTH := 520.0
 
@@ -57,6 +59,7 @@ var module_name := ""
 var _entries: Array = []
 
 var _picker: OptionButton
+var _name_field: LineEdit
 var _list: VBoxContainer
 var _note: Label
 var _inner: GraphRack
@@ -126,6 +129,31 @@ func _build_right() -> Control:
 	top.add_child(_picker)
 	column.add_child(top)
 
+	# The name, editable, because until now there was none anywhere in the editor and
+	# collapse calls every fresh definition "part". The face never showed it — a panel
+	# takes its title from the module's display name — but the running order, the outline
+	# and every diagnostic say it, and "part.filter" tells a reader nothing about which
+	# part. Kept beneath the picker rather than replacing it: one control chooses which
+	# module, the other says what it is called, and a single control doing both is how you
+	# rename something by trying to select it.
+	var naming := HBoxContainer.new()
+	naming.add_theme_constant_override("separation", Design.SPACE_S)
+	var naming_label := Label.new()
+	naming_label.text = "Name"
+	naming_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+	naming_label.add_theme_color_override("font_color", ink_dim)
+	naming.add_child(naming_label)
+	_name_field = LineEdit.new()
+	_name_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_name_field.tooltip_text = "Renames the definition, and any instance still carrying" \
+		+ " its old name. Letters, digits, _ and - only."
+	_name_field.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
+	_name_field.text_submitted.connect(func(_text: String) -> void:
+		_name_field.release_focus())
+	_name_field.focus_exited.connect(_submit_name)
+	naming.add_child(_name_field)
+	column.add_child(naming)
+
 	_note = Label.new()
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_note.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
@@ -172,6 +200,19 @@ func _pad(inner: Control) -> Control:
 	return margin
 
 
+## Asks for a rename, if the field says something new. The document decides whether it is
+## allowed — this view has no business knowing what makes a name legal, and duplicating
+## that rule here is how the two answers drift apart.
+func _submit_name() -> void:
+	if _building or module_name == "":
+		return
+	var wanted := _name_field.text.strip_edges()
+	if wanted == module_name or wanted == "":
+		_name_field.text = module_name
+		return
+	module_renamed.emit(module_name, wanted)
+
+
 func _heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
@@ -198,6 +239,8 @@ func rebuild() -> void:
 		module_name = str(names[0]) if not names.is_empty() else ""
 	if module_name != "":
 		_picker.select(names.find(module_name))
+	_name_field.text = module_name
+	_name_field.editable = module_name != ""
 	_building = false
 
 	_seed_entries()

@@ -1317,6 +1317,54 @@ func _initialize() -> void:
 		"and so is a module inside a module (%d)"
 			% main.patch["modules"]["envamp"]["nodes"].size())
 
+	# ---- and the module can be given a name ------------------------------------------
+	# Collapse calls every fresh definition "part" and then names the instance after it,
+	# so both arrive as the same placeholder and the running order reads "part.env".
+	# Renaming the definition alone would fix the half nobody sees.
+	builder._name_field.text = "shaper"
+	builder._submit_name()
+	for _settle in 6:
+		await process_frame
+	check(main.patch["modules"].has("shaper") and not main.patch["modules"].has("envamp"),
+		"renaming moves the definition (%s)" % str(main.patch["modules"].keys()))
+	var instance_types := []
+	for node in main.patch["nodes"]:
+		if str(node.get("type", "")) == "module":
+			instance_types.append(str(node["module"]))
+	check(instance_types == ["shaper"],
+		"and every instance points at the new name (%s)" % str(instance_types))
+	check(main.registry.has("module:shaper") and not main.registry.has("module:envamp"),
+		"and the descriptor follows it")
+	# The instance here is called "voice", which somebody chose — so it keeps its name.
+	var still_voice := false
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == "voice":
+			still_voice = true
+	check(still_voice,
+		"an instance the author named is left alone — that name was a decision")
+
+	# The names it must refuse, each for its own reason.
+	builder._name_field.text = "shaper.two"
+	builder._submit_name()
+	await process_frame
+	check(main.patch["modules"].has("shaper"),
+		"a name with a dot is refused — that is the separator expansion uses (%s)"
+			% str(main.patch["modules"].keys()))
+	builder._name_field.text = ""
+	builder._submit_name()
+	await process_frame
+	check(main.patch["modules"].has("shaper"), "and an empty name is not a rename")
+
+	main._undo()
+	for _settle in 6:
+		await process_frame
+	check(main.patch.get("modules", {}).has("envamp"),
+		"and undo puts the old name back (%s)"
+			% str(main.patch.get("modules", {}).keys()))
+	builder.patch = main.patch
+	builder.rebuild()
+	await process_frame
+
 	# ---- and its jacks patch, which is what makes the tab able to start from nothing ---
 	# A definition's declared surface is derived from its wiring, so a cable run here is
 	# not only a connection: it is how ports appear on every instance of the module.
@@ -1401,6 +1449,47 @@ func _initialize() -> void:
 	check(envamp.call().get("nodes", []).size() == 2,
 		"and undo again takes the added primitive back out (%d)"
 			% envamp.call().get("nodes", []).size())
+
+	# ---- and an instance carrying the definition's name goes with it -----------------
+	# The shape collapse produces, and the whole reason rename exists: definition and
+	# instance both called the same placeholder. Set up by hand here because the builder
+	# has no way to rename an instance on its own — which is the point.
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == "voice":
+			node["id"] = "envamp"
+	for connection in main.patch["connections"]:
+		if str(connection["from"]["node"]) == "voice":
+			connection["from"]["node"] = "envamp"
+		if str(connection["to"]["node"]) == "voice":
+			connection["to"]["node"] = "envamp"
+	main._synthesize_module_descriptors()
+	await main._rebuild_view()
+	builder.patch = main.patch
+	builder.rebuild()
+	await process_frame
+
+	builder._name_field.text = "combo"
+	builder._submit_name()
+	for _settle in 6:
+		await process_frame
+	var instance_ids := []
+	for node in main.patch["nodes"]:
+		if str(node.get("type", "")) == "module":
+			instance_ids.append(str(node["id"]))
+	check(instance_ids == ["combo"],
+		"an instance still wearing the placeholder is renamed too (%s)"
+			% str(instance_ids))
+	var orphaned := []
+	var live_ids := {}
+	for node in main.patch["nodes"]:
+		live_ids[str(node["id"])] = true
+	for connection in main.patch["connections"]:
+		for end in ["from", "to"]:
+			if not live_ids.has(str(connection[end]["node"])):
+				orphaned.append(str(connection[end]["node"]))
+	check(orphaned.is_empty(),
+		"and no cable is left pointing at a node that no longer exists (%s)"
+			% ("none" if orphaned.is_empty() else str(orphaned)))
 
 	main.patch = before_panels
 	main._synthesize_module_descriptors()

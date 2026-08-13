@@ -16,7 +16,7 @@
         "port": "gate"
       },
       "to": {
-        "node": "voice",
+        "node": "filter_env",
         "port": "gate"
       }
     },
@@ -26,13 +26,13 @@
         "port": "out"
       },
       "to": {
-        "node": "voice",
+        "node": "filter_env",
         "port": "in"
       }
     },
     {
       "from": {
-        "node": "voice",
+        "node": "filter_env",
         "port": "out"
       },
       "to": {
@@ -42,7 +42,7 @@
     },
     {
       "from": {
-        "node": "voice",
+        "node": "filter_env",
         "port": "out"
       },
       "to": {
@@ -199,13 +199,13 @@
         "frequency": 110
       },
       "position": {
-        "x": 560.0,
+        "x": 400.0,
         "y": 0.0
       },
       "type": "SawOscillator"
     },
     {
-      "id": "voice",
+      "id": "filter_env",
       "module": "filter_env",
       "parameters": {
         "attack": 0.005,
@@ -230,7 +230,7 @@
         "safety_limit": 1
       },
       "position": {
-        "x": 1680.0,
+        "x": 1600.0,
         "y": 0.0
       },
       "type": "StereoOutput"
