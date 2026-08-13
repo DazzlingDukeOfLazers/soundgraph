@@ -55,14 +55,23 @@ static var density: int = Density.INSTRUMENT
 ## The floor, so a module with no knobs at all is still a module.
 const MODULE_MIN_HEIGHT := 190.0
 
-## The height every module in this rack shares, worked out from the busiest one.
+## The tallest module in this rack. Sets the row pitch, no longer the module height.
 ##
-## Uniform on purpose: modules in a real case share a rail, and a rack of ragged
-## panels stops looking like hardware. What was wrong was not that they matched, it
-## was that they matched a constant — so a patch of two-knob oscillators reserved the
-## same 404px as a patch with a six-parameter filter in it, and spent the difference
-## on nothing.
+## Every module used to be this tall, on the argument that panels sharing a rail is what
+## makes a case read as hardware. Half of that is right: what makes it read as hardware is
+## the *top* edge lining up, because that is where the screws go. The bottom edge lining
+## up is what a real case gets for free from panels being cut to 3U, and it is what a
+## two-knob oscillator pays for here with a hundred and fifty pixels of empty aluminium.
+##
+## So modules hang from the rail and stop where their contents stop. The tops align, the
+## bottoms are ragged, and the rack is shorter than it was.
 static var module_height := 404.0
+
+
+## What one module needs, floored and banded. The per-module answer to measure().
+static func height_for(parameters: int, ports: int = 0) -> float:
+	return Design.scale(maxf(MODULE_MIN_HEIGHT, content_height(parameters, ports))
+		+ DENSITY_BAND[density])
 
 
 ## The height a module needs for its own content, before the density band.
@@ -236,6 +245,9 @@ var _modules: Dictionary = {}          # node id -> RackModule
 var _knobs: Dictionary = {}            # node id -> {parameter name -> Knob}
 var _cables: CableLayer
 var _content_size := Vector2.ZERO
+## Where each row's rail sits, and how deep that row's tallest module made it.
+var _row_tops: Array[float] = []
+var _row_depths: Array[float] = []
 
 
 func _ready() -> void:
@@ -413,6 +425,14 @@ func _relayout() -> void:
 	var x := CASE_MARGIN
 	var y := CASE_MARGIN + RAIL
 	var row_widest := 0.0
+	# Where each row's rail goes, and how deep that row turned out to be. Recorded rather
+	# than recomputed from a pitch, because rows are no longer all the same height — the
+	# one in the middle of a patch full of six-knob filters is deeper than the one holding
+	# three utilities, and _draw has no way to know that from arithmetic.
+	_row_tops.clear()
+	_row_depths.clear()
+	_row_tops.append(y - RAIL)
+	_row_depths.append(0.0)
 
 	for id in _module_order():
 		var module: RackModule = _modules.get(id)
@@ -420,15 +440,20 @@ func _relayout() -> void:
 			continue
 		if x > CASE_MARGIN and x + module.size.x > CASE_MARGIN + available:
 			x = CASE_MARGIN
-			y += module_height + RAIL * 2.0 + ROW_GAP
+			y += _row_depths[-1] + RAIL + ROW_GAP
+			_row_tops.append(y - RAIL)
+			_row_depths.append(0.0)
+		# Hung from the rail: every module in a row shares a top edge, and stops wherever
+		# its own contents stop.
 		module.position = Vector2(x, y)
 		x += module.size.x
 		row_widest = maxf(row_widest, x)
+		_row_depths[-1] = maxf(_row_depths[-1], module.size.y)
 
 	# Room below the last row for cables to hang into. Without it a catenary between two
 	# modules on the bottom row is clipped off by the scroll extent.
 	_content_size = Vector2(row_widest + CASE_MARGIN,
-		y + module_height + RAIL + CASE_MARGIN + SAG_MAX * 0.5)
+		y + _row_depths[-1] + CASE_MARGIN + SAG_MAX * 0.5)
 	custom_minimum_size = Vector2(0.0, _content_size.y)
 	queue_redraw()
 	if _cables != null:
@@ -459,9 +484,13 @@ func move_module_to(node_id: String, at: Vector2) -> void:
 		var module: RackModule = _modules.get(order[index])
 		if module == null:
 			continue
-		var centre := module.position + module.size * 0.5
-		var a_row_below := centre.y > at.y + module_height * 0.5
-		var further_right := absf(centre.y - at.y) <= module_height * 0.5 and centre.x > at.x
+		# Against the module's own top edge, not against a shared height. Modules hang
+		# from the rail and end where they end, so "same row" means "hung from the same
+		# rail" — comparing centres worked only while every centre was at one depth, and
+		# with ragged panels a short module's centre sits a row-height above a tall one's.
+		var same_row: bool = absf(module.position.y - _row_top_near(at.y)) < 1.0
+		var a_row_below: bool = module.position.y > _row_top_near(at.y) + 1.0
+		var further_right: bool = same_row and module.position.x + module.size.x * 0.5 > at.x
 		if a_row_below or further_right:
 			insert_at = index
 			break
@@ -470,6 +499,20 @@ func move_module_to(node_id: String, at: Vector2) -> void:
 	_order_override = order
 	_store_order()
 	_relayout()
+
+
+## The y a module would hang at if it were dropped at this height.
+##
+## Rows are not a fixed pitch any more, so "which row is this point in" is a lookup rather
+## than a division: the last rail at or above the point, and the first rail if the point is
+## above all of them.
+func _row_top_near(y: float) -> float:
+	var best: float = CASE_MARGIN + RAIL
+	for index in _row_tops.size():
+		var hangs_at: float = _row_tops[index] + RAIL
+		if y >= hangs_at - RAIL:
+			best = hangs_at
+	return best
 
 
 ## Back to the order the layering gives, which is what a freshly loaded patch shows.
@@ -514,15 +557,16 @@ func show_parameter(node_id: String, parameter: String, value: float) -> void:
 # ---------------------------------------------------------------------------------
 
 func _draw() -> void:
-	# Rails behind every row, drawn the full width so the case reads as continuous even
-	# where a row is not full.
-	var row_pitch := module_height + RAIL * 2.0 + ROW_GAP
-	var rows := int(ceil(maxf(_content_size.y - CASE_MARGIN, 1.0) / row_pitch))
-	for row in maxi(rows, 1):
-		var top := CASE_MARGIN + row * row_pitch
-		_draw_rail(Rect2(CASE_MARGIN * 0.5, top, size.x - CASE_MARGIN, RAIL))
-		_draw_rail(Rect2(CASE_MARGIN * 0.5, top + RAIL + module_height,
-			size.x - CASE_MARGIN, RAIL))
+	# One rail per row, at the top, drawn the full width so the case reads as continuous
+	# even where a row is not full.
+	#
+	# There was a second rail under every row. It had to go the moment modules stopped
+	# sharing a height: a bottom rail is a straight line drawn under a ragged edge, which
+	# reads as a mistake rather than as hardware — and it was the thing forcing every
+	# panel to reach it. The top rail is the one that means something anyway; it is where
+	# the screws are and what the modules hang from.
+	for row in _row_tops.size():
+		_draw_rail(Rect2(CASE_MARGIN * 0.5, _row_tops[row], size.x - CASE_MARGIN, RAIL))
 
 
 func _draw_rail(rect: Rect2) -> void:
@@ -903,8 +947,11 @@ class RackModule extends Control:
 		# long parameter name, which is what used to overflow instead of widening.
 		var wanted: float = frame.get_combined_minimum_size().x + GraphRack.KNOB_PAD * 2.0
 		var hp := maxi(GraphRack.MIN_HP, int(ceil(wanted / GraphRack.HP)))
+		# Its own height, not the rack's tallest. See GraphRack.module_height.
 		custom_minimum_size = Vector2(hp * GraphRack.HP,
-			maxf(GraphRack.module_height, frame.get_combined_minimum_size().y))
+			maxf(GraphRack.height_for(parameters.size(),
+				maxi(inputs.size(), outputs.size())),
+				frame.get_combined_minimum_size().y))
 		size = custom_minimum_size
 		return knobs
 
@@ -1091,9 +1138,10 @@ class RackModule extends Control:
 
 		_draw_analysis()
 
-		# Mounting screws, in the rail above and below.
-		for point in [Vector2(11.0, 9.0), Vector2(size.x - 11.0, 9.0),
-				Vector2(11.0, size.y - 9.0), Vector2(size.x - 11.0, size.y - 9.0)]:
+		# Mounting screws, in the rail above. There is no rail below to screw into now,
+		# and two screws floating over the bottom edge of a panel that ends wherever its
+		# knobs end look like exactly what they would be: screws holding nothing.
+		for point in [Vector2(11.0, 9.0), Vector2(size.x - 11.0, 9.0)]:
 			draw_circle(point, 3.4, GraphRack.SCREW)
 			draw_circle(point, 3.4, Color(0, 0, 0, 0.5), false, 1.0)
 
