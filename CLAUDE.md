@@ -89,6 +89,25 @@ Every meaningful DSP node should have, where practical:
 
 Compare native/WASM/embedded outputs within declared tolerances.
 
+### The gate
+
+`tools/pre-push.sh` builds, runs ctest, and runs the three Godot suites. Enable it once
+per clone — hooks are not cloned, only the script is:
+
+```sh
+git config core.hooksPath tools/hooks
+git config soundgraph.godot /path/to/godot_console   # optional; the suites skip without it
+```
+
+It runs everything rather than a chosen few. Two of those ctest cases —
+`node_demos_match_the_registry` and `game_sounds_match_the_corpus` — went red and stayed
+red across several commits without anybody noticing, which is what prompted this. They are
+the checks that catch a *generated* file edited by hand instead of the generator that
+writes it: a mistake that looks fixed until something regenerates.
+
+`git push --no-verify` skips it. That is for a push that cannot break anything, not for
+getting past a red suite.
+
 ## Worktrees
 
 Parallel worktrees are encouraged after interfaces stabilize.

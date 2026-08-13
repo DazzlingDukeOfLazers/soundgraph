@@ -1,0 +1,7 @@
+#!/bin/sh
+# Tracked so the gate travels with the repository. Enable it once per clone:
+#
+#   git config core.hooksPath tools/hooks
+#
+# The work is in tools/pre-push.sh; this is only the thing git knows how to call.
+exec "$(git rev-parse --show-toplevel)/tools/pre-push.sh" "$@"
