@@ -49,19 +49,6 @@ signal ports_edited(module_name: String, inputs: Array, outputs: Array, label: S
 
 const LIST_WIDTH := 520.0
 
-## Room for a face, at whatever size the face has to be shrunk to.
-##
-## It was 420 and fixed, on the reasoning that a preview clipped through its own bottom
-## row of knobs answers a different question from the one it exists to answer. True, and
-## it made the wrong trade: a four-knob row is wider than this column, so the module ran
-## off the right edge, and a full-height preview left the *list* — the thing actually
-## being edited — showing four of five rows with the fifth below the fold. The knob whose
-## caption had been customised was the one you could not see.
-##
-## So the preview zooms to fit instead of reserving its natural size, and the list gets
-## the rest. A face read at 60% still says what is on it and in what order, which is what
-## somebody arranging one needs to know.
-const PREVIEW_HEIGHT := 300.0
 
 var patch: Dictionary = {}
 var registry: Dictionary = {}
@@ -212,22 +199,15 @@ func _build_right() -> Control:
 	_note.add_theme_color_override("font_color", ink_dim)
 	column.add_child(_note)
 
-	var scroller := ScrollContainer.new()
-	scroller.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", Design.SPACE_XS)
-	scroller.add_child(_list)
-	column.add_child(scroller)
+	column.add_child(_list)
 
 	column.add_child(_heading("Face"))
 	# The preview is a real instance in a real rack. A hand-drawn approximation would be
 	# one more thing that can disagree with the module, and disagreeing quietly is exactly
 	# what a preview must never do.
-	var preview_scroll := ScrollContainer.new()
-	preview_scroll.custom_minimum_size.y = Design.scale(PREVIEW_HEIGHT)
-	preview_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	_preview = GraphRack.new()
 	_preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_preview.type_colours = type_colours
@@ -236,9 +216,26 @@ func _build_right() -> Control:
 	_preview_holder = Control.new()
 	_preview_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_preview_holder.add_child(_preview)
-	preview_scroll.add_child(_preview_holder)
-	column.add_child(preview_scroll)
-	return _pad(column)
+	column.add_child(_preview_holder)
+
+	# One scroller, around everything, rather than one per list.
+	#
+	# The knob list used to have its own and be the only thing set to expand, which worked
+	# while it was the only list. Ports arrived above it, took the height, and the knobs
+	# vanished entirely — heading, note, then straight on to Face, with no scrollbar
+	# anywhere to say that anything was missing. Nested scrollers also mean a wheel over
+	# the pane scrolls whichever one the pointer happens to be inside.
+	#
+	# So nothing inside expands and the whole column scrolls as one. The preview loses its
+	# scroller with the rest; it zooms to fit, so it had nothing to scroll to.
+	var scroller := ScrollContainer.new()
+	scroller.custom_minimum_size.x = Design.scale(LIST_WIDTH)
+	scroller.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroller.add_child(column)
+	return _pad(scroller)
 
 
 ## Room around a half. Both panes butt against the tab edge otherwise, and the left one
@@ -535,8 +532,12 @@ func _draw_list() -> void:
 		_note.text = "'%s' exports nothing to put on a panel — its inner nodes were " \
 			% module_name + "left at their defaults, so there is no knob to show."
 		return
-	_note.text = "On the face, in order. A knob turned off here is still exported: " \
-		+ "controls, automation and the file all keep it."
+	# The two switches are adjacent and identical, so the note has to say which is which —
+	# left then right, in the order they appear. A column header would say it better and
+	# would have to line up with two checkboxes whose width the theme decides.
+	_note.text = "Left switch exports a knob: what a patch can set. Right switch puts " \
+		+ "it on the face. A knob off the face is still exported — controls, automation " \
+		+ "and the file all keep it."
 
 	for index in _entries.size():
 		_list.add_child(_build_entry_row(index))
