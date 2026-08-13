@@ -646,6 +646,10 @@ func _build_ui() -> void:
 	graphrack_scroll.add_child(graphrack_holder)
 	graphrack_column.add_child(_build_graphrack_zoom_bar())
 	graphrack_column.add_child(graphrack_scroll)
+	# Leftmost, and the one the editor opens on. It was added after the views it is
+	# replacing so that it could be compared against them; it leads now, and they stay
+	# where they are for as long as the comparison is still worth making.
+	views.move_child(graphrack_column, 0)
 
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
 	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
@@ -677,6 +681,7 @@ func _build_ui() -> void:
 	outline.node_chosen.connect(func(node_id: String) -> void:
 		_focus_node(node_id))
 	views.add_child(outline)
+	views.current_tab = 0
 	# Both views start on the style the toolbar says they are on. Worth knowing when
 	# comparing them: dragging a cable waypoint is a PCB-mode gesture — a hanging cable
 	# has no corners to grab, which is part of what is being traded.
