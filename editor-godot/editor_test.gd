@@ -929,6 +929,57 @@ func _initialize() -> void:
 		"fit puts the whole case inside the window (%.0f in %.0f)"
 			% [holder.custom_minimum_size.x, scroller.size.x])
 	main.graphrack.zoom = 1.0
+	await process_frame
+
+	# ---- the graphrack keeps what you place ------------------------------------------
+	# The rack flows: order is the whole arrangement, and a resize re-wraps the rows. That
+	# is right for a case you are reading and wrong for a patcher you are building in —
+	# the module you just put beside its filter jumps to the end of the line above, and
+	# nothing you did to the layout survives.
+	var placed_id: String = main.graphrack._modules.keys()[0]
+	var placed_module: Control = main.graphrack._modules[placed_id]
+	var somewhere := Vector2(620.0, main.graphrack.rail_for(
+		placed_module.position.y + main.graphrack.rail_pitch()))
+	main.graphrack.place_module(placed_id, somewhere)
+	for _settle in 3:
+		await process_frame
+	check(placed_module.position.is_equal_approx(somewhere),
+		"a dropped module lands where it was dropped (%s)" % placed_module.position)
+
+	# A resize is the case that used to destroy the layout.
+	var was_width: float = main.graphrack._viewport_width()
+	main.graphrack.size.x = was_width * 0.6
+	main.graphrack._relayout()
+	for _settle in 3:
+		await process_frame
+	check(placed_module.position.is_equal_approx(somewhere),
+		"and stays there when the case is resized (%s)" % placed_module.position)
+
+	# And through a rebuild, which is what a palette change or a reload does.
+	main.graphrack.rebuild()
+	for _settle in 3:
+		await process_frame
+	var after_rebuild: Control = main.graphrack._modules.get(placed_id)
+	check(after_rebuild != null and after_rebuild.position.is_equal_approx(somewhere),
+		"and survives a rebuild (%s)" % ("gone" if after_rebuild == null
+			else str(after_rebuild.position)))
+
+	# Written into the document, so saving keeps it.
+	var stored: Dictionary = main.graphrack.patch.get(GraphRack.ARRANGEMENT_KEY, {}) \
+		.get(GraphRack.PLACES_KEY, {})
+	check(stored.has(placed_id)
+			and is_equal_approx(float(stored[placed_id]["x"]), somewhere.x),
+		"and the document remembers it (%s)" % ("missing" if not stored.has(placed_id)
+			else str(stored[placed_id])))
+
+	# Free left to right, latched top to bottom: a drop between rails hangs from one.
+	# Re-fetched, because rebuild() freed every module and the old handle with it.
+	placed_module = main.graphrack._modules[placed_id]
+	main.graphrack.place_module(placed_id, Vector2(300.0, somewhere.y + 40.0))
+	await process_frame
+	check(is_equal_approx(placed_module.position.y,
+			main.graphrack.rail_for(somewhere.y + 40.0)),
+		"a module dropped between rails hangs from one (%.0f)" % placed_module.position.y)
 
 	main.show_view("Graph")
 	await process_frame

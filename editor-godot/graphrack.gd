@@ -246,11 +246,23 @@ var hovered_cable := -1
 ## second file. One file that carries its own presentation travels properly.
 const ARRANGEMENT_KEY := "arrangement"
 const ORDER_KEY := "rack_order"
+## Where each module was left, as {node id: {x, y}} in rack coordinates.
+const PLACES_KEY := "rack_places"
 
 ## Explicit rack order, set by dragging. Empty means "use the layering", which is the
 ## default and what a freshly loaded patch gets.
 var _order_override: Array = []
 
+## Re-entry guard for _relayout.
+##
+## _relayout is wired to `resized` and now sets `size` itself, so it re-enters through its
+## own output. It converges only if the value settles, and it does not always settle: the
+## width takes maxf(content, viewport), the viewport depends on whether the scroll bar is
+## showing, and the bar depends on the height — so a case near the threshold flips between
+## two answers for ever. Godot does not detect that; the editor simply stops.
+var _laying_out := false
+
+var _places: Dictionary = {}           # node id -> Vector2, in rack coordinates
 var _modules: Dictionary = {}          # node id -> RackModule
 var _knobs: Dictionary = {}            # node id -> {parameter name -> Knob}
 var _cables: CableLayer
@@ -415,6 +427,22 @@ func rebuild() -> void:
 				if present.has(str(id)):
 					_order_override.append(str(id))
 
+	# A document arriving with remembered places takes them, so a patch opens with its
+	# modules where they were left rather than flowed afresh. Ids no longer in the patch
+	# are dropped; nodes with no entry are seeded by _relayout. An out-of-date hint
+	# degrades rather than breaks.
+	var present := {}
+	for node in patch.get("nodes", []):
+		present[str(node["id"])] = true
+	for id in _places.keys():
+		if not present.has(id):
+			_places.erase(id)
+	var stored_places: Dictionary = patch.get(ARRANGEMENT_KEY, {}).get(PLACES_KEY, {})
+	for id in stored_places:
+		if present.has(str(id)) and not _places.has(str(id)):
+			var spot: Dictionary = stored_places[id]
+			_places[str(id)] = Vector2(float(spot.get("x", 0.0)), float(spot.get("y", 0.0)))
+
 	for node in patch.get("nodes", []):
 		var module := RackModule.new()
 		module.rack = self
@@ -503,121 +531,130 @@ func _type_of(node_id: String) -> String:
 	return ""
 
 
-## Flow the modules into rack rows, wrapping at the case width. A module is never split
-## across rows and never resized to fit — a rack that reflows by stretching its modules
-## would not look like a rack.
+## Put every module where it was left, and size the case around them.
+##
+## Modules are placed, not flowed. The rack flows — a real case has no coordinates, you
+## slide panels along a rail and the order is the whole of the arrangement — and that is
+## right for a case you are reading. It is wrong for a patcher you are building in: a
+## window resize re-wrapped the rows, so the module you had just put beside its filter
+## moved to the end of the line above, and nothing you did to the layout survived. Where
+## a module sits is now something the reader decides and the document remembers.
+##
+## Nodes with no remembered place get one from arrange(), which is the old flow kept as a
+## seeding pass — a patch has to open somewhere, and a pile at the origin is not somewhere.
 func _relayout() -> void:
-	# The width to flow into is the viewport's, and the zoom does not enter into it.
-	#
-	# Two wrong answers were tried before this one. Reading `size.x` feeds the layout its
-	# own output, because zooming sets a minimum size larger than the viewport and size.x
-	# stops being the visible width. Dividing the viewport by the zoom is worse and less
-	# obvious: it shrinks the *case* as the reader leans in, so zooming to 125% re-wrapped
-	# fifteen of a seven-module patch's panels into a narrower rack and the case came out
-	# smaller than it started. A case has a width; how close you are standing is not part
-	# of it. Zoom magnifies, and only the window changes the wrapping.
-	var available := maxf(_viewport_width() - CASE_MARGIN * 2.0, 200.0)
-	if case_hp > 0:
-		available = minf(available, case_hp * HP)
-	var x := CASE_MARGIN
-	var y := CASE_MARGIN + RAIL
-	var row_widest := 0.0
-	# Where each row's rail goes, and how deep that row turned out to be. Recorded rather
-	# than recomputed from a pitch, because rows are no longer all the same height — the
-	# one in the middle of a patch full of six-knob filters is deeper than the one holding
-	# three utilities, and _draw has no way to know that from arithmetic.
+	if _laying_out:
+		return
+	_laying_out = true
+	var unplaced: Array = []
+	for id in _modules:
+		if not _places.has(id):
+			unplaced.append(id)
+	if not unplaced.is_empty():
+		_seed_places(unplaced)
+
+	var extent := Vector2(CASE_MARGIN, CASE_MARGIN)
+	for id in _modules:
+		var module: RackModule = _modules[id]
+		module.position = _places.get(id, Vector2(CASE_MARGIN, CASE_MARGIN + RAIL))
+		extent = extent.max(module.position + module.size)
+
+	# Rails at a fixed pitch across the whole case, rather than one per flowed row. With
+	# free placement there are no rows to speak of — what there is, is a ladder of heights
+	# a module may hang from, and a module snaps to the nearest one when it is dropped.
 	_row_tops.clear()
-	_row_depths.clear()
-	_row_tops.append(y - RAIL)
-	_row_depths.append(0.0)
+	var pitch := rail_pitch()
+	var rails := int(ceil((extent.y - CASE_MARGIN) / pitch)) + 1
+	for row in maxi(rails, 1):
+		_row_tops.append(CASE_MARGIN + row * pitch)
 
-	for id in _module_order():
-		var module: RackModule = _modules.get(id)
-		if module == null:
-			continue
-		if x > CASE_MARGIN and x + module.size.x > CASE_MARGIN + available:
-			x = CASE_MARGIN
-			y += _row_depths[-1] + RAIL + ROW_GAP
-			_row_tops.append(y - RAIL)
-			_row_depths.append(0.0)
-		# Hung from the rail: every module in a row shares a top edge, and stops wherever
-		# its own contents stop.
-		module.position = Vector2(x, y)
-		x += module.size.x
-		row_widest = maxf(row_widest, x)
-		_row_depths[-1] = maxf(_row_depths[-1], module.size.y)
-
-	# Room below the last row for cables to hang into. Without it a catenary between two
-	# modules on the bottom row is clipped off by the scroll extent.
-	_content_size = Vector2(row_widest + CASE_MARGIN,
-		y + _row_depths[-1] + CASE_MARGIN + SAG_MAX * 0.5)
+	# Room past the furthest module for cables to hang into. Without it a catenary between
+	# two modules at the bottom is clipped off by the scroll extent.
+	_content_size = Vector2(maxf(extent.x + CASE_MARGIN, _viewport_width()),
+		extent.y + CASE_MARGIN + SAG_MAX * 0.5)
 	# Drawn through `scale`, so everything on the panel — dials, captions, cables, jack
 	# labels — magnifies together rather than each needing a zoom term of its own. The
 	# room is reserved on the holder in scaled pixels, because the scroll container sizes
 	# itself from a child's minimum and knows nothing about that child's transform.
 	scale = Vector2(zoom, zoom)
-	size = _content_size
+	if not size.is_equal_approx(_content_size):
+		size = _content_size
 	var holder := get_parent() as Control
 	if holder != null and not (holder is Container):
 		holder.custom_minimum_size = _content_size * zoom
 	queue_redraw()
 	if _cables != null:
 		_cables.queue_redraw()
+	_laying_out = false
 
 
-## Moves a module to the slot nearest a point, in rack coordinates.
-func move_module_to(node_id: String, at: Vector2) -> void:
-	var order: Array = _module_order()
-	var from := order.find(node_id)
-	if from < 0:
+## The vertical distance from one rail to the next.
+##
+## Off the tallest module in the patch, so a rail is always far enough below the one above
+## it that a full-height panel hung from the upper one does not reach it.
+func rail_pitch() -> float:
+	return module_height + RAIL + ROW_GAP
+
+
+## The y a module hangs at if dropped at this height: the nearest rail, never above the
+## first. Free left to right, latched top to bottom — which is how a rack works, and is
+## also what stops a wall of panels from going gently out of true as they are moved.
+func rail_for(y: float) -> float:
+	var pitch := rail_pitch()
+	var index := maxi(0, int(roundf((y - CASE_MARGIN - RAIL) / pitch)))
+	return CASE_MARGIN + RAIL + index * pitch
+
+
+## Drops a module at a point, in rack coordinates, and remembers it there.
+func place_module(node_id: String, at: Vector2) -> void:
+	if not _modules.has(node_id):
 		return
+	edit_started.emit()
+	_places[node_id] = Vector2(maxf(at.x, CASE_MARGIN), rail_for(at.y))
+	_store_places()
+	_relayout()
+	edit_finished.emit("move %s" % node_id)
 
-	# The target slot is whichever module currently covers that point, by centre distance.
-	# Comparing centres rather than edges is what makes a drag land where it looks like it
-	# should when modules are different widths.
-	# Taken out of the running first. Comparing the drop point against every module
-	# *including the one being dropped* only ever finds that module — it is sitting under
-	# the cursor at distance zero — so the answer was always "where it already was" and
-	# every drag snapped back.
-	order.remove_at(from)
 
-	# Where it lands is the first slot that reads as *after* the drop point: a row below,
-	# or further right on the same row. Reading order rather than nearest centre, because
-	# a rack is a sequence and dropping between two modules should mean between them.
-	var insert_at := order.size()
-	for index in order.size():
-		var module: RackModule = _modules.get(order[index])
-		if module == null:
-			continue
-		# Against the module's own top edge, not against a shared height. Modules hang
-		# from the rail and end where they end, so "same row" means "hung from the same
-		# rail" — comparing centres worked only while every centre was at one depth, and
-		# with ragged panels a short module's centre sits a row-height above a tall one's.
-		var same_row: bool = absf(module.position.y - _row_top_near(at.y)) < 1.0
-		var a_row_below: bool = module.position.y > _row_top_near(at.y) + 1.0
-		var further_right: bool = same_row and module.position.x + module.size.x * 0.5 > at.x
-		if a_row_below or further_right:
-			insert_at = index
-			break
-
-	order.insert(insert_at, node_id)
-	_order_override = order
-	_store_order()
+## Flows the modules into rows, left to right, in signal order — the layout this view used
+## to recompute on every resize. Kept as an explicit action: it is a useful thing to ask
+## for and a terrible thing to have happen to you.
+func arrange() -> void:
+	_seed_places(_modules.keys())
+	_store_places()
 	_relayout()
 
 
-## The y a module would hang at if it were dropped at this height.
-##
-## Rows are not a fixed pitch any more, so "which row is this point in" is a lookup rather
-## than a division: the last rail at or above the point, and the first rail if the point is
-## above all of them.
-func _row_top_near(y: float) -> float:
-	var best: float = CASE_MARGIN + RAIL
-	for index in _row_tops.size():
-		var hangs_at: float = _row_tops[index] + RAIL
-		if y >= hangs_at - RAIL:
-			best = hangs_at
-	return best
+func _seed_places(ids: Array) -> void:
+	var available := maxf(_viewport_width() - CASE_MARGIN * 2.0, 200.0)
+	if case_hp > 0:
+		available = minf(available, case_hp * HP)
+	var wanted := {}
+	for id in ids:
+		wanted[id] = true
+
+	var x := CASE_MARGIN
+	var y := CASE_MARGIN + RAIL
+	var row_depth := 0.0
+	# Walked in signal order over *every* module, not only the ones being seeded, so a node
+	# added to a placed patch lands after the modules it follows rather than at the origin.
+	for id in _module_order():
+		var module: RackModule = _modules.get(id)
+		if module == null:
+			continue
+		if x > CASE_MARGIN and x + module.size.x > CASE_MARGIN + available:
+			x = CASE_MARGIN
+			y += row_depth + RAIL + ROW_GAP
+			row_depth = 0.0
+		if wanted.has(id):
+			_places[id] = Vector2(x, rail_for(y))
+		x += module.size.x
+		row_depth = maxf(row_depth, module.size.y)
+
+
+## Where a drop lands is now place_module(); the slot-swapping mover it replaced, and the
+## rail lookup it needed, went with the reflow. Order still decides where an unplaced
+## module is seeded — see _seed_places — so _module_order and the stored order stay.
 
 
 ## Back to the order the layering gives, which is what a freshly loaded patch shows.
@@ -631,6 +668,15 @@ func clear_order_override() -> void:
 
 
 ## Writes the order into the document so that saving keeps it.
+func _store_places() -> void:
+	if not patch.has(ARRANGEMENT_KEY):
+		patch[ARRANGEMENT_KEY] = {}
+	var out := {}
+	for id in _places:
+		out[id] = {"x": _places[id].x, "y": _places[id].y}
+	patch[ARRANGEMENT_KEY][PLACES_KEY] = out
+
+
 func _store_order() -> void:
 	if not patch.has(ARRANGEMENT_KEY):
 		patch[ARRANGEMENT_KEY] = {}
@@ -1103,9 +1149,9 @@ class RackModule extends Control:
 					+ jack.socket_centre()
 		return null
 
-	# Dragging slides a module along the rail — the one thing you can do to a real rack
-	# that the graph view has no equivalent for. Knobs sit on top and take their own input
-	# first, so a drag can only begin on bare panel, which is also true of the hardware.
+	# Dragging puts a module where you drop it and leaves it there. Knobs sit on top and
+	# take their own input first, so a drag can only begin on bare panel, which is also
+	# true of the hardware.
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
@@ -1117,7 +1163,7 @@ class RackModule extends Control:
 			elif _dragging:
 				_dragging = false
 				z_index = 0
-				rack.move_module_to(node_id, position + size * 0.5)
+				rack.place_module(node_id, position)
 			accept_event()
 		elif event is InputEventMouseMotion and _dragging:
 			position += event.position - _grab_offset
