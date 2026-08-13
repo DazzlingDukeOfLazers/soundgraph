@@ -612,9 +612,16 @@ func _build_ui() -> void:
 	# original rather than replacing the Graph tab because the departure is a thing to
 	# steer by eye, and a replacement you cannot compare against is not a comparison. The
 	# GraphEdit view it is aimed at is preserved at the `graph-refactor` tag.
+	var graphrack_column := VBoxContainer.new()
+	graphrack_column.name = "Graphrack"
+	graphrack_column.add_theme_constant_override("separation", 0)
+	views.add_child(graphrack_column)
+
 	var graphrack_scroll := ScrollContainer.new()
-	graphrack_scroll.name = "Graphrack"
-	graphrack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	graphrack_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# Auto, not disabled. Zoomed in, the case is wider than the window and a rack you
+	# cannot pan sideways is a rack with its right-hand modules amputated.
+	graphrack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	graphrack = GraphRack.new()
 	graphrack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	graphrack.type_colours = TYPE_COLOURS
@@ -629,8 +636,16 @@ func _build_ui() -> void:
 	graphrack.edit_started.connect(func() -> void: _begin_edit())
 	graphrack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
 	graphrack.node_selected.connect(_on_rack_node_selected)
-	graphrack_scroll.add_child(graphrack)
-	views.add_child(graphrack_scroll)
+	# A plain Control between the scroll container and the rack. Containers reset their
+	# children's scale on every layout pass, so a rack parented straight to the scroller
+	# could reserve the room for a zoom but never actually draw at it. The holder takes
+	# the scaled size; the rack inside it keeps its own transform.
+	var graphrack_holder := Control.new()
+	graphrack_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	graphrack_holder.add_child(graphrack)
+	graphrack_scroll.add_child(graphrack_holder)
+	graphrack_column.add_child(_build_graphrack_zoom_bar())
+	graphrack_column.add_child(graphrack_scroll)
 
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
 	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
@@ -1303,6 +1318,59 @@ func _all_notes_off() -> void:
 	held_notes.clear()
 	if keyboard != null:
 		keyboard.set_held_notes(held_notes)
+
+
+## The graphrack's zoom strip.
+##
+## A strip above the case rather than a panel floating over it. The graph's zoom control
+## was an overlay pinned to the top-left of the canvas, and in every screenshot taken of
+## that view it is sitting on top of a node's port labels — a control for looking at the
+## patch, placed so that it covers the patch. There is room for a 30px strip.
+func _build_graphrack_zoom_bar() -> Control:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", Design.scale(Design.SPACE_XS))
+	bar.alignment = BoxContainer.ALIGNMENT_END
+
+	var readout := Label.new()
+	readout.text = "100%"
+	readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	# Held open at the width of the widest reading, so stepping through the ladder does
+	# not shuffle the buttons beside it left and right.
+	readout.custom_minimum_size.x = Design.scale(48)
+	readout.add_theme_font_override("font", Design.numeric_font())
+	readout.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+	readout.add_theme_color_override("font_color", Design.INK_SECOND)
+	bar.add_child(readout)
+
+	var out_button := Button.new()
+	out_button.text = "−"
+	out_button.tooltip_text = "Zoom out"
+	out_button.pressed.connect(func() -> void: graphrack.step_zoom(false))
+	bar.add_child(_defocus(out_button))
+
+	var reset := Button.new()
+	reset.text = "1"
+	reset.tooltip_text = "Actual size"
+	reset.pressed.connect(func() -> void: graphrack.zoom = 1.0)
+	bar.add_child(_defocus(reset))
+
+	var in_button := Button.new()
+	in_button.text = "+"
+	in_button.tooltip_text = "Zoom in"
+	in_button.pressed.connect(func() -> void: graphrack.step_zoom(true))
+	bar.add_child(_defocus(in_button))
+
+	var fit := Button.new()
+	fit.text = "Fit"
+	fit.tooltip_text = "Fit the whole case on screen"
+	fit.pressed.connect(func() -> void: graphrack.zoom_to_fit())
+	bar.add_child(_defocus(fit))
+
+	graphrack.zoom_changed.connect(func(value: float) -> void:
+		readout.text = "%d%%" % int(roundf(value * 100.0))
+		_say("graphrack: %d%%" % int(roundf(value * 100.0))))
+	return bar
 
 
 ## Selects a view by its tab title.

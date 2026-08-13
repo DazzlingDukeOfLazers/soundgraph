@@ -259,6 +259,84 @@ var _content_size := Vector2.ZERO
 var _row_tops: Array[float] = []
 var _row_depths: Array[float] = []
 
+## How close the reader is standing. Magnifies; never re-wraps. See _relayout.
+const ZOOM_STEPS := [0.50, 0.63, 0.75, 0.90, 1.00, 1.25, 1.50, 2.00]
+const ZOOM_MIN := 0.50
+const ZOOM_MAX := 2.00
+
+signal zoom_changed(value: float)
+
+var zoom := 1.0:
+	set(value):
+		var clamped: float = clampf(value, ZOOM_MIN, ZOOM_MAX)
+		if is_equal_approx(clamped, zoom):
+			return
+		zoom = clamped
+		_relayout()
+		zoom_changed.emit(zoom)
+
+
+## The scrolling viewport this rack lives in, if it is in one.
+##
+## Found by walking up rather than taken as the parent, because a Container resets its
+## children's scale every time it lays them out — `Container.fit_child_in_rect` sets the
+## rect and clears rotation and scale, which silently undid the zoom on the very next
+## frame and left a rack that reserved more room without ever getting bigger. So there is
+## a plain Control between this and the scroll container: containers own their children's
+## transforms, and this one needs its own.
+func _scroller() -> ScrollContainer:
+	var walk := get_parent()
+	while walk != null:
+		if walk is ScrollContainer:
+			return walk
+		walk = walk.get_parent()
+	return null
+
+
+## The width the reader can actually see, in unscaled pixels.
+func _viewport_width() -> float:
+	var scroller := _scroller()
+	if scroller == null:
+		return size.x
+	# The vertical scrollbar's width comes off whether or not it is showing at the moment.
+	#
+	# Subtracting it only when visible makes the case width depend on the scrollbar, the
+	# scrollbar depend on the content height, and the content height depend on the case
+	# width — so zooming out far enough to lose the scrollbar widened the case by fifteen
+	# pixels and re-wrapped the rack. A case whose width flinches when a scrollbar appears
+	# is not a case. Reserving it always costs a strip of background and nothing else.
+	var room := scroller.size.x
+	var bar := scroller.get_v_scroll_bar()
+	if bar != null:
+		room -= bar.size.x
+	return maxf(room, 200.0)
+
+
+## The next step up or down the ladder, so the button does something predictable.
+func step_zoom(up: bool) -> void:
+	if up:
+		for value in ZOOM_STEPS:
+			if value > zoom + 0.001:
+				zoom = value
+				return
+		zoom = ZOOM_MAX
+		return
+	for index in range(ZOOM_STEPS.size() - 1, -1, -1):
+		if ZOOM_STEPS[index] < zoom - 0.001:
+			zoom = ZOOM_STEPS[index]
+			return
+	zoom = ZOOM_MIN
+
+
+## The zoom that puts the whole case on screen, so a big patch is one gesture away.
+func zoom_to_fit() -> void:
+	if _content_size.x <= 0.0 or _content_size.y <= 0.0:
+		return
+	var scroller := _scroller()
+	if scroller == null:
+		return
+	zoom = minf(scroller.size.x / _content_size.x, scroller.size.y / _content_size.y)
+
 
 func _ready() -> void:
 	_cables = CableLayer.new()
@@ -429,7 +507,16 @@ func _type_of(node_id: String) -> String:
 ## across rows and never resized to fit — a rack that reflows by stretching its modules
 ## would not look like a rack.
 func _relayout() -> void:
-	var available := maxf(size.x - CASE_MARGIN * 2.0, 200.0)
+	# The width to flow into is the viewport's, and the zoom does not enter into it.
+	#
+	# Two wrong answers were tried before this one. Reading `size.x` feeds the layout its
+	# own output, because zooming sets a minimum size larger than the viewport and size.x
+	# stops being the visible width. Dividing the viewport by the zoom is worse and less
+	# obvious: it shrinks the *case* as the reader leans in, so zooming to 125% re-wrapped
+	# fifteen of a seven-module patch's panels into a narrower rack and the case came out
+	# smaller than it started. A case has a width; how close you are standing is not part
+	# of it. Zoom magnifies, and only the window changes the wrapping.
+	var available := maxf(_viewport_width() - CASE_MARGIN * 2.0, 200.0)
 	if case_hp > 0:
 		available = minf(available, case_hp * HP)
 	var x := CASE_MARGIN
@@ -464,7 +551,15 @@ func _relayout() -> void:
 	# modules on the bottom row is clipped off by the scroll extent.
 	_content_size = Vector2(row_widest + CASE_MARGIN,
 		y + _row_depths[-1] + CASE_MARGIN + SAG_MAX * 0.5)
-	custom_minimum_size = Vector2(0.0, _content_size.y)
+	# Drawn through `scale`, so everything on the panel — dials, captions, cables, jack
+	# labels — magnifies together rather than each needing a zoom term of its own. The
+	# room is reserved on the holder in scaled pixels, because the scroll container sizes
+	# itself from a child's minimum and knows nothing about that child's transform.
+	scale = Vector2(zoom, zoom)
+	size = _content_size
+	var holder := get_parent() as Control
+	if holder != null and not (holder is Container):
+		holder.custom_minimum_size = _content_size * zoom
 	queue_redraw()
 	if _cables != null:
 		_cables.queue_redraw()
@@ -603,6 +698,18 @@ func _gui_input(event: InputEvent) -> void:
 	var motion := event as InputEventMouseMotion
 	if motion != null:
 		_update_cable_hover(motion.position)
+
+	# Ctrl-wheel, because it is what everybody tries first. Plain wheel is left alone —
+	# that is the scroll container's, and a rack taller than the window is the common case,
+	# so stealing it would trade the gesture people need for the one they use occasionally.
+	var wheel := event as InputEventMouseButton
+	if wheel != null and wheel.pressed and wheel.ctrl_pressed:
+		if wheel.button_index == MOUSE_BUTTON_WHEEL_UP:
+			step_zoom(true)
+			accept_event()
+		elif wheel.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			step_zoom(false)
+			accept_event()
 
 
 ## Nothing under the pointer means nothing highlighted, and leaving the case entirely

@@ -864,6 +864,72 @@ func _initialize() -> void:
 
 	main.engine.all_notes_off()
 	Rack.density = Rack.Density.INSTRUMENT
+
+	# ---- the graphrack zooms ----------------------------------------------------------
+	main.show_view("Graphrack")
+	for _settle in 8:
+		await process_frame
+	# Laid out explicitly, not merely set to the value it already holds. The zoom setter
+	# short-circuits when nothing changes, so `zoom = 1.0` on a fresh rack does nothing at
+	# all and the baseline below was a snapshot of the layout from before the tab had a
+	# width — against which every later zoom looked like a re-wrap.
+	main.graphrack.zoom = 1.0
+	main.graphrack._relayout()
+	for _settle in 3:
+		await process_frame
+
+	# Where every module hangs, at actual size. Positions are in the rack's own
+	# coordinates, so zoom must not move them at all — only the transform on top.
+	var hung_at := {}
+	for module_id in main.graphrack._modules:
+		hung_at[module_id] = (main.graphrack._modules[module_id] as Control).position
+	check(hung_at.size() > 0, "the graphrack has modules to zoom (%d)" % hung_at.size())
+
+	# The holder, not the rack: the reserved room lives on the plain Control between the
+	# rack and the scroll container, because a container would reset the rack's transform.
+	var holder: Control = main.graphrack.get_parent()
+	var before_minimum: Vector2 = holder.custom_minimum_size
+	main.graphrack.step_zoom(true)
+	await process_frame
+	check(main.graphrack.zoom > 1.0,
+		"zooming in climbs the ladder (%.2f)" % main.graphrack.zoom)
+	check(holder.custom_minimum_size.x > before_minimum.x,
+		"and the case reserves the room it now takes (%.0f from %.0f)"
+			% [holder.custom_minimum_size.x, before_minimum.x])
+	check(main.graphrack.scale.x > 1.0,
+		"and the panels are actually magnified (scale %.2f)" % main.graphrack.scale.x)
+
+	# The one that matters. A layout reading its own width instead of the viewport's
+	# re-wraps every time the zoom changes, and a module walks to another row for no
+	# reason the reader can see.
+	var wandered := 0
+	for level in [2.0, 0.5, 1.25, 1.0]:
+		main.graphrack.zoom = level
+		for _settle in 3:
+			await process_frame
+		for module_id in hung_at:
+			var module: Control = main.graphrack._modules.get(module_id)
+			if module == null or not module.position.is_equal_approx(hung_at[module_id]):
+				wandered += 1
+	check(wandered == 0,
+		"zooming magnifies the rack without re-wrapping it (%d moved)" % wandered)
+
+	main.graphrack.zoom = 99.0
+	check(main.graphrack.zoom <= GraphRack.ZOOM_MAX + 0.001,
+		"zoom is bounded above (%.2f)" % main.graphrack.zoom)
+	main.graphrack.zoom = 0.01
+	check(main.graphrack.zoom >= GraphRack.ZOOM_MIN - 0.001,
+		"and below (%.2f)" % main.graphrack.zoom)
+
+	main.graphrack.zoom_to_fit()
+	await process_frame
+	var scroller: Control = holder.get_parent()
+	check(holder.custom_minimum_size.x > 0.0
+			and holder.custom_minimum_size.x <= scroller.size.x + 1.0,
+		"fit puts the whole case inside the window (%.0f in %.0f)"
+			% [holder.custom_minimum_size.x, scroller.size.x])
+	main.graphrack.zoom = 1.0
+
 	main.show_view("Graph")
 	await process_frame
 
