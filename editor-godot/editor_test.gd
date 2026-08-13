@@ -1146,11 +1146,87 @@ func _initialize() -> void:
 		check(str(right._name_text()) == "Snap",
 			"the knob shows the caption (%s)" % str(right._name_text()))
 
+	# ---- and the builder is where that face gets drawn -------------------------------
+	main.show_view("Builder")
+	for _settle in 6:
+		await process_frame
+	var builder: PanelBuilder = main.builder
+	check(builder != null and builder.module_name == "envamp",
+		"the builder opens on the patch's module (%s)"
+			% ("missing" if builder == null else builder.module_name))
+
+	# Every export is listed, on the panel or not — an export the panel never mentioned
+	# has to be visible here, or adding one to a definition would silently lose it.
+	var listed := []
+	for entry: Dictionary in builder._entries:
+		listed.append(str(entry["name"]))
+	check(listed.size() == 3, "every export is on the list (%s)" % str(listed))
+	var off_the_face := []
+	for entry: Dictionary in builder._entries:
+		if not bool(entry["on"]):
+			off_the_face.append(str(entry["name"]))
+	check(off_the_face == ["gain"],
+		"with the one the panel leaves out shown as off (%s)" % str(off_the_face))
+
+	# What it reads back is what it was given. The round trip through the list must be
+	# the identity, or opening this tab would quietly redraw a face nobody touched.
+	var read_back: Dictionary = builder.to_panel()
+	check(str(read_back.get("rows", [])) == '[["release", "attack"]]',
+		"reading the panel back gives the panel (%s)" % str(read_back.get("rows", [])))
+	check(str(read_back.get("labels", {}).get("attack", "")) == "Snap",
+		"captions and all (%s)" % str(read_back.get("labels", {})))
+
+	# Turning "release" off is one document edit that touches the panel and nothing else.
+	var was_surface: int = main.registry["module:envamp"]["parameters"].size()
+	builder._entries[0]["on"] = false
+	builder._commit("hide release")
+	for _settle in 6:
+		await process_frame
+	var after: Array = main.patch["modules"]["envamp"]["panel"]["rows"]
+	check(str(after) == '[["attack"]]',
+		"turning a knob off takes it off the face (%s)" % str(after))
+	check(main.registry["module:envamp"]["parameters"].size() == was_surface,
+		"and leaves the surface exactly as wide (%d of %d)"
+			% [main.registry["module:envamp"]["parameters"].size(), was_surface])
+	check(main.patch["modules"]["envamp"]["parameters"].size() == 3,
+		"the definition still exports all three (%d)"
+			% main.patch["modules"]["envamp"]["parameters"].size())
+
+	# The preview is a real instance built by the real code, so it moved with it.
+	var preview_knobs: Dictionary = builder._preview._knobs.get("envamp", {})
+	check(preview_knobs.size() == 1,
+		"the preview wears the face being drawn (%d knob)" % preview_knobs.size())
+	# And so did the case behind it — the same document, so the same face everywhere.
+	check(main.graphrack._knobs.get("voice", {}).size() == 1,
+		"and so does the module in the rack (%d)"
+			% main.graphrack._knobs.get("voice", {}).size())
+
+	# An ordinary edit, so it undoes like one — back to the document as written, unresolved
+	# "ghost" row and all. Undo restores a snapshot; it does not re-normalise what it
+	# restores, which is what makes it safe to undo past an edit made by a tool that
+	# understood the file better than the file's author did.
+	main._undo()
+	for _settle in 6:
+		await process_frame
+	check(str(main.patch["modules"]["envamp"]["panel"]["rows"])
+			== '[["release", "attack"], ["ghost"]]',
+		"and undo puts the knob back, exactly as the document had it (%s)"
+			% str(main.patch["modules"]["envamp"]["panel"]["rows"]))
+
+	# The left half shows the primitives, wired as the definition has them.
+	check(builder._inner._modules.size() == 2,
+		"the builder shows what is inside (%d modules)" % builder._inner._modules.size())
+
 	main.patch = before_panels
 	main._synthesize_module_descriptors()
 	await main._rebuild_view()
-	for _settle in 3:
+	main.show_view("Builder")
+	for _settle in 4:
 		await process_frame
+	builder.rebuild()
+	await process_frame
+	check(builder.module_name == "" or not builder._entries.is_empty(),
+		"and it copes with a document that has no modules at all")
 
 	main.show_view("Graph")
 	await process_frame

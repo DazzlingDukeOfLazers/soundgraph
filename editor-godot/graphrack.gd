@@ -65,7 +65,13 @@ const MODULE_MIN_HEIGHT := 190.0
 ##
 ## So modules hang from the rail and stop where their contents stop. The tops align, the
 ## bottoms are ragged, and the rack is shorter than it was.
-static var module_height := 404.0
+##
+## Per rack, not static, because there is now more than one on screen: the panel builder
+## puts a rack of primitives beside a one-module preview, and rebuild() assigns this from
+## whatever patch that rack holds. Shared, the small preview would quietly reset the rail
+## pitch of the case behind it and every placed module would move. Density stays static —
+## that one is a reading preference and is meant to be the same everywhere.
+var module_height := 404.0
 
 
 ## What one module needs, floored and banded. The per-module answer to measure().

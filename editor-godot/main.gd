@@ -136,6 +136,7 @@ var graph_edit: GraphEdit
 var views: TabContainer
 var rack: Rack
 var graphrack: GraphRack
+var builder: PanelBuilder
 var sandbox: Sandbox
 var outline: Outline
 var keyboard: Keyboard
@@ -651,6 +652,18 @@ func _build_ui() -> void:
 	# where they are for as long as the comparison is still worth making.
 	views.move_child(graphrack_column, 0)
 
+	# Where a composite gets a face. See panel_builder.gd: collapsing already works, and
+	# what it cannot do is make the result smaller than its parts, which is the reason
+	# anybody collapses anything.
+	builder = PanelBuilder.new()
+	builder.name = "Builder"
+	builder.registry = registry
+	builder.type_colours = TYPE_COLOURS
+	builder.ink = INK
+	builder.ink_dim = INK_DIM
+	builder.panel_edited.connect(_on_panel_edited)
+	views.add_child(builder)
+
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
 	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
 	# rebuild, is the argument for shipping instructions rather than recordings.
@@ -691,6 +704,9 @@ func _build_ui() -> void:
 	views.tab_changed.connect(func(_index: int) -> void:
 		rack.rebuild()
 		graphrack.rebuild()
+		if builder != null and builder.is_visible_in_tree():
+			builder.patch = patch
+			builder.rebuild()
 		if sandbox != null and sandbox.is_visible_in_tree():
 			sandbox.ensure_sounds_loaded())
 	split.add_child(views)
@@ -1961,6 +1977,12 @@ func _rebuild_view() -> void:
 		rack.registry = registry
 		rack.patch = patch
 		rack.rebuild()
+	# Given the document but not repopulated: the builder's list is the thing being
+	# edited, and rebuilding it here would take the caption field out from under a cursor
+	# that is still in it. It repopulates when the tab is opened or the module changes.
+	if builder != null:
+		builder.registry = registry
+		builder.patch = patch
 
 
 # ---------------------------------------------------------------------------------
@@ -2079,6 +2101,34 @@ func _panel_rows(definition: Dictionary, parameters: Array) -> Array:
 		if not resolved.is_empty():
 			out.append(resolved)
 	return out
+
+
+## Stores a face the builder just drew onto its definition.
+##
+## An ordinary document edit, undoable like any other, and the only thing it may touch is
+## `panel`. Nothing about the surface, the inner nodes or the wiring is reachable from
+## here — which is what makes an experiment with the layout free: the worst outcome is a
+## module that looks wrong, and one Ctrl-Z away from looking how it did.
+func _on_panel_edited(edited_module: String, panel: Dictionary, label: String) -> void:
+	var definitions: Dictionary = patch.get("modules", {})
+	if not definitions.has(edited_module):
+		return
+	_begin_edit()
+	var definition: Dictionary = definitions[edited_module]
+	# An empty panel is stored as no panel at all, not as an empty object. "Every export,
+	# in declared order" and "a panel that happens to say nothing" are the same face, and
+	# a document should have one spelling for one meaning.
+	if panel.is_empty():
+		definition.erase("panel")
+	else:
+		definition["panel"] = panel
+	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	if builder != null:
+		builder.patch = patch
+		builder.refresh()
+	_commit_edit(label)
 
 
 ## A module's name as a person would write it: "dx7_operator" is a DX7 Operator.
