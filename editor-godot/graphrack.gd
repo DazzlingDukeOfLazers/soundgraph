@@ -253,6 +253,10 @@ const PLACES_KEY := "rack_places"
 ## default and what a freshly loaded patch gets.
 var _order_override: Array = []
 
+## Below this, the case has not been laid out yet and its width means nothing. See
+## _relayout: a patch seeded against the fallback width comes out as one long column.
+const SEED_MIN_WIDTH := 400.0
+
 ## Re-entry guard for _relayout.
 ##
 ## _relayout is wired to `resized` and now sets `size` itself, so it re-enters through its
@@ -550,7 +554,15 @@ func _relayout() -> void:
 	for id in _modules:
 		if not _places.has(id):
 			unplaced.append(id)
-	if not unplaced.is_empty():
+	# Not until the case knows how wide it is.
+	#
+	# _relayout runs on the first frame, when the scroll container has no size yet and
+	# _viewport_width() falls back to its 200px floor — so the seeding flow wrapped after
+	# every module and laid the patch out as one long column. That used to correct itself,
+	# because the old layout re-flowed on every resize; now that a placement is permanent,
+	# the first guess is the one the reader is stuck with. Deferred to the pass that
+	# `resized` will bring along once there is a real width to flow into.
+	if not unplaced.is_empty() and _viewport_width() > SEED_MIN_WIDTH:
 		_seed_places(unplaced)
 
 	var extent := Vector2(CASE_MARGIN, CASE_MARGIN)
@@ -1145,8 +1157,17 @@ class RackModule extends Control:
 	func jack_position(port_name: String, is_input: bool):
 		for jack: Jack in _jacks:
 			if jack.port_name == port_name and jack.is_input == is_input:
-				return position + jack.global_position - global_position \
-					+ jack.socket_centre()
+				# Three terms, one coordinate space. `position` and socket_centre() are
+				# both in the rack's own units, but the difference of two global positions
+				# is in *screen* units — the rack draws through `scale`, so that delta
+				# arrives multiplied by the zoom. Added to the other two unchanged it put
+				# every cable end where the jack would have been at 100%, which is why the
+				# cables stayed behind while the panels moved. Divided back out here rather
+				# than compensated at the drawing, because what this function promises is a
+				# point in rack coordinates and that promise should not depend on the zoom.
+				var within: Vector2 = (jack.global_position - global_position) \
+					/ maxf(float(rack.zoom), 0.01)
+				return position + within + jack.socket_centre()
 		return null
 
 	# Dragging puts a module where you drop it and leaves it there. Knobs sit on top and

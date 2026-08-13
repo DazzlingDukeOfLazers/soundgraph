@@ -914,6 +914,57 @@ func _initialize() -> void:
 	check(wandered == 0,
 		"zooming magnifies the rack without re-wrapping it (%d moved)" % wandered)
 
+	# A jack's position is a point in rack coordinates, so the zoom must not move it. It
+	# did: the offset of a jack inside its module was measured as a difference of two
+	# global positions, which the rack's own scale had already multiplied, so every cable
+	# end stayed where the jack had been at 100% while the panels magnified away from it.
+	var jack_spots := {}
+	main.graphrack.zoom = 1.0
+	main.graphrack._relayout()
+	await process_frame
+	for module_id in main.graphrack._modules:
+		var module = main.graphrack._modules[module_id]
+		for port in module.descriptor.get("inputs", []):
+			var spot = module.jack_position(str(port["name"]), true)
+			if spot != null:
+				jack_spots["%s.%s" % [module_id, str(port["name"])]] = spot
+
+	check(jack_spots.size() > 0, "there are jacks to measure (%d)" % jack_spots.size())
+
+	# Seeded against a real width, not the fallback. A patch laid out on the first frame,
+	# before the scroll container has a size, wraps after every module and opens as one
+	# long column — which used to be corrected by the next resize and is now permanent.
+	var seeded_rows := {}
+	for module_id in main.graphrack._modules:
+		seeded_rows[(main.graphrack._modules[module_id] as Control).position.y] = true
+	check(seeded_rows.size() < main.graphrack._modules.size(),
+		"a fresh patch opens several modules to a row (%d rows for %d modules)"
+			% [seeded_rows.size(), main.graphrack._modules.size()])
+	var jacks_drifted := 0
+	var jack_worst := 0.0
+	for level in [0.5, 1.5, 2.0]:
+		main.graphrack.zoom = level
+		for _settle in 3:
+			await process_frame
+		for module_id in main.graphrack._modules:
+			var module = main.graphrack._modules[module_id]
+			for port in module.descriptor.get("inputs", []):
+				var key := "%s.%s" % [module_id, str(port["name"])]
+				if not jack_spots.has(key):
+					continue
+				var now = module.jack_position(str(port["name"]), true)
+				if now == null:
+					continue
+				var off: float = (now as Vector2).distance_to(jack_spots[key])
+				if off > 0.5:
+					jacks_drifted += 1
+					jack_worst = maxf(jack_worst, off)
+	check(jacks_drifted == 0,
+		"a jack stays at the same rack coordinate through the zoom (%d drifted, worst %.1fpx)"
+			% [jacks_drifted, jack_worst])
+	main.graphrack.zoom = 1.0
+	await process_frame
+
 	main.graphrack.zoom = 99.0
 	check(main.graphrack.zoom <= GraphRack.ZOOM_MAX + 0.001,
 		"zoom is bounded above (%.2f)" % main.graphrack.zoom)
