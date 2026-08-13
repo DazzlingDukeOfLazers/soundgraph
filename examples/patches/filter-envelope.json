@@ -1,0 +1,240 @@
+{
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "voice",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "voice",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "voice",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "voice",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "metadata": {
+    "description": "A state-variable filter and an ADSR as one module: cutoff and resonance on the top row, the envelope shaping them underneath. Built through the Builder tab — collapse, then prune the face.",
+    "name": "Filter envelope",
+    "tags": [
+      "module",
+      "panel"
+    ]
+  },
+  "modules": {
+    "filter_env": {
+      "connections": [
+        {
+          "from": {
+            "node": "env",
+            "port": "out"
+          },
+          "to": {
+            "node": "filter",
+            "port": "cutoff_mod"
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "name": "gate",
+          "node": "env",
+          "port": "gate"
+        },
+        {
+          "name": "in",
+          "node": "filter",
+          "port": "in"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "env",
+          "parameters": {
+            "attack": 0.005,
+            "decay": 0.35,
+            "release": 0.4,
+            "sustain": 0.25
+          },
+          "position": {
+            "x": 560,
+            "y": 360
+          },
+          "type": "ADSR"
+        },
+        {
+          "id": "filter",
+          "parameters": {
+            "cutoff": 800.0,
+            "cutoff_sweep": 0.0,
+            "mode": 0,
+            "resonance": 0.6
+          },
+          "position": {
+            "x": 1120,
+            "y": 0
+          },
+          "type": "StateVariableFilter"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "node": "filter",
+          "port": "out"
+        }
+      ],
+      "panel": {
+        "labels": {
+          "cutoff": "Freq",
+          "resonance": "Q"
+        },
+        "rows": [
+          [
+            "cutoff",
+            "resonance"
+          ],
+          [
+            "attack",
+            "decay",
+            "sustain",
+            "release"
+          ]
+        ]
+      },
+      "parameters": [
+        {
+          "name": "attack",
+          "node": "env",
+          "parameter": "attack"
+        },
+        {
+          "name": "decay",
+          "node": "env",
+          "parameter": "decay"
+        },
+        {
+          "name": "sustain",
+          "node": "env",
+          "parameter": "sustain"
+        },
+        {
+          "name": "release",
+          "node": "env",
+          "parameter": "release"
+        },
+        {
+          "name": "cutoff",
+          "node": "filter",
+          "parameter": "cutoff"
+        },
+        {
+          "name": "resonance",
+          "node": "filter",
+          "parameter": "resonance"
+        },
+        {
+          "name": "mode",
+          "node": "filter",
+          "parameter": "mode"
+        },
+        {
+          "name": "cutoff_sweep",
+          "node": "filter",
+          "parameter": "cutoff_sweep"
+        }
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "type": "NoteInput"
+    },
+    {
+      "id": "osc",
+      "parameters": {
+        "frequency": 110
+      },
+      "position": {
+        "x": 560.0,
+        "y": 0.0
+      },
+      "type": "SawOscillator"
+    },
+    {
+      "id": "voice",
+      "module": "filter_env",
+      "parameters": {
+        "attack": 0.005,
+        "cutoff": 800.0,
+        "cutoff_sweep": 0.0,
+        "decay": 0.35,
+        "mode": 0,
+        "release": 0.4,
+        "resonance": 0.6,
+        "sustain": 0.25
+      },
+      "position": {
+        "x": 560.0,
+        "y": 360.0
+      },
+      "type": "module"
+    },
+    {
+      "id": "out",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      },
+      "position": {
+        "x": 1680.0,
+        "y": 0.0
+      },
+      "type": "StereoOutput"
+    }
+  ],
+  "schema_version": 2
+}
