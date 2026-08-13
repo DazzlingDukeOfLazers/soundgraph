@@ -2068,14 +2068,34 @@ func _create_widget(node: Dictionary) -> void:
 	var inputs: Array = descriptor.get("inputs", [])
 	var outputs: Array = descriptor.get("outputs", [])
 
-	# One row per port pair, at a fixed height off the spacing scale. Rows that each took
-	# whatever height their label happened to measure is most of what "crowded" meant.
-	var rows: int = maxi(inputs.size(), outputs.size())
-	for row in rows:
+	# One row carries a port on each flank and a slice of the knob grid between them.
+	#
+	# This is the rack module's layout, reached without leaving GraphEdit's slot system: a
+	# slot anchors its ports at the *row's* vertical centre on the node edge, so a row is
+	# free to be as tall as a rack cell and to hold whatever it likes in the middle. Ports
+	# used to be rows of their own stacked above the parameters, which is the arrangement
+	# that made a graph node read as a different kind of object from the module it stands
+	# for — and which spent over half a DX7 operator's height on port rows alone.
+	#
+	# Rows are max(ports, knob lines) rather than the sum. Surplus ports keep a short
+	# jack-only row; surplus knob lines get a row with no slot on it.
+	var parameters: Array = descriptor.get("parameters", [])
+	var port_rows: int = maxi(inputs.size(), outputs.size())
+	var cell_lines: int = int(ceil(float(parameters.size()) / float(PARAMETERS_PER_LINE)))
+	# Progressive complexity, counted in lines: a node shows its common case and says how
+	# much it is holding back rather than hiding it silently.
+	var always_visible: int = 1 if parameters.size() > 3 else cell_lines
+	var folded: Array[Control] = []
+
+	for row in maxi(port_rows, cell_lines):
 		var line := HBoxContainer.new()
-		line.custom_minimum_size.y = Design.scale(Design.NODE_ROW_HEIGHT)
 		line.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
 		line.alignment = BoxContainer.ALIGNMENT_CENTER
+		line.set_meta("row", "module")
+		# A row with a slot on it may never be hidden. GraphEdit binds a slot to the index
+		# of a *visible* child, so hiding one renumbers every slot below it and the cables
+		# reattach to the wrong ports.
+		line.set_meta("has_slot", row < port_rows)
 
 		# Name and unit as two labels, not one string.
 		#
@@ -2085,17 +2105,36 @@ func _create_widget(node: Dictionary) -> void:
 		# information, ranked: the unit is metadata and now looks like it. Parentheses
 		# gone too; they were doing the separating that a colour change does better.
 		var left := _port_label(inputs[row] if row < inputs.size() else {}, false)
+		left.set_meta("port_label", true)
 		line.add_child(left)
 
+		var cells := HBoxContainer.new()
+		cells.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
+		cells.alignment = BoxContainer.ALIGNMENT_CENTER
+		cells.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cells.set_meta("cells", true)
+		for column in PARAMETERS_PER_LINE:
+			var index: int = row * PARAMETERS_PER_LINE + column
+			if index < parameters.size():
+				cells.add_child(_build_parameter_row(node, parameters[index]))
+		line.add_child(cells)
+		line.set_meta("cells_box", cells)
+
 		var right := _port_label(outputs[row] if row < outputs.size() else {}, true)
-		line.add_child(right)
-		# Tagged so the zoom level-of-detail can find the parts of a node worth hiding
-		# without having to guess from child order.
-		line.set_meta("row", "port")
-		left.set_meta("port_label", true)
 		right.set_meta("port_label", true)
+		line.add_child(right)
 		widget.add_child(line)
 
+		if cells.get_child_count() > 0 and row >= always_visible:
+			# Recorded, not just hidden. The zoom level-of-detail hides these too, and when
+			# it puts them back it must not un-collapse what the reader chose to fold away.
+			cells.visible = false
+			cells.set_meta("collapsed", true)
+			folded.append(cells)
+		_fit_row_height(line)
+
+		if row >= port_rows:
+			continue
 		var has_input := row < inputs.size()
 		var has_output := row < outputs.size()
 		widget.set_slot(row,
@@ -2113,7 +2152,7 @@ func _create_widget(node: Dictionary) -> void:
 		if has_output:
 			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
 
-	_add_parameter_rows(widget, node, descriptor)
+	_add_disclosure(widget, folded)
 
 	graph_edit.add_child(widget)
 	widgets[node["id"]] = widget
@@ -2135,6 +2174,15 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 		label.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
 		label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NODE_TITLE))
 		label.add_theme_color_override("font_color", Design.INK_BRIGHT)
+		# Centred and in capitals, as on the module. A left title with a tag pushed to the
+		# right is a software header; a centred legend is a panel, and the whole point of
+		# this pass is that the two views are drawings of one object.
+		#
+		# Upper-cased for display only. The node's name is the reader's own text and is
+		# still stored, searched and saved exactly as they typed it.
+		label.text = label.text.to_upper()
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		# Findable later: the counter-scaling that keeps titles legible when zoomed out
 		# needs this label back without walking the titlebar again on every wheel click.
 		widget.set_meta("title_label", label)
@@ -2164,6 +2212,22 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 	# it below FULL rather than drawing it at nine pixels.
 	widget.set_meta("category_tag", tag)
 	titlebar.add_child(tag)
+
+	# A counterweight the same width as the tag, at the other end.
+	#
+	# Without it "centred" means centred in whatever half of the bar the tag left over,
+	# which is not centred over the node — the first attempt set the alignment, looked
+	# right in the code and came out plainly off-centre in the picture. Measured from the
+	# text rather than read back from the layout, so it is correct on the first frame.
+	var counterweight := Control.new()
+	counterweight.custom_minimum_size.x = tag.get_theme_font("font").get_string_size(
+		category, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+		tag.get_theme_font_size("font_size")).x
+	counterweight.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	titlebar.add_child(counterweight)
+	titlebar.move_child(counterweight, 0)
+	# It exists to balance the tag, so it goes when the tag goes.
+	widget.set_meta("category_counterweight", counterweight)
 
 
 ## A small texture per signal type, drawn once and shared.
@@ -2266,47 +2330,26 @@ func _unit_label(unit: String) -> Label:
 	return label
 
 
-func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictionary) -> void:
-	var parameters: Array = descriptor.get("parameters", [])
-	if parameters.is_empty():
-		return
-
-	# Progressive complexity: a node shows its common case, and says how much it is
-	# holding back rather than hiding it silently.
-	#
-	# Counted in lines rather than in parameters now that a line holds two of them. Two
-	# always visible is the same promise as before; it is one row instead of two.
-	var always_visible: int = 1 if parameters.size() > 3 else 99
-	var extra: Array[Control] = []
-
-	# Two cells to a line. This is the whole of "not as tall": a four-knob node was four
-	# 44px lines and is now two, and it buys the height with width — about 480px against
-	# 344 — which is the trade a graph can afford and a rack panel cannot.
-	var lines: Array[Control] = []
-	var line: HBoxContainer = null
-	for index in parameters.size():
-		if index % PARAMETERS_PER_LINE == 0:
-			line = HBoxContainer.new()
-			line.add_theme_constant_override("separation",
-				Design.scale(Design.SPACE_M))
-			line.set_meta("row", "parameter")
-			widget.add_child(line)
-			lines.append(line)
-		line.add_child(_build_parameter_row(node, parameters[index]))
-
-	for index in lines.size():
-		var row: Control = lines[index]
-		if index >= always_visible:
-			row.visible = false
-			# Recorded, not just hidden. The zoom level-of-detail hides parameter rows too,
-			# and when it puts them back it must not also un-collapse the ones the reader
-			# chose to fold away — two features writing the same `visible` flag with no
-			# memory between them is how a node quietly grows every time you zoom.
-			row.set_meta("collapsed", true)
-			extra.append(row)
+## A module row is as tall as what it is carrying, and no taller.
+##
+## Rows holding knob cells get a rack cell's height; rows down to a pair of jacks get the
+## port height back. Called on build and again whenever the cells come and go, because a
+## row that kept its tall minimum after its knobs were folded away left a node with a band
+## of empty panel where the controls used to be — which is the "full node with pieces
+## missing" that the level of detail exists to avoid.
+func _fit_row_height(line: Control) -> void:
+	var cells: Control = line.get_meta("cells_box") if line.has_meta("cells_box") else null
+	var tall: bool = cells != null and cells.visible and cells.get_child_count() > 0
+	line.custom_minimum_size.y = Design.scale(
+		Design.PARAMETER_CELL_HEIGHT if tall else Design.NODE_ROW_HEIGHT)
+	# A row with nothing on it at all disappears — unless it is carrying a slot, in which
+	# case it stays whatever else happens, because a hidden row renumbers the cables.
+	if not bool(line.get_meta("has_slot", false)):
+		line.visible = tall
 
 
-	if extra.is_empty():
+func _add_disclosure(widget: GraphNode, folded: Array[Control]) -> void:
+	if folded.is_empty():
 		return
 
 	# A quiet line of text, not a switch.
@@ -2322,8 +2365,8 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 	# is simply untrue — and this label is the only thing telling the reader there is
 	# anything behind it.
 	var hidden_count := 0
-	for hidden_row in extra:
-		hidden_count += (hidden_row as Control).get_child_count()
+	for hidden_cells in folded:
+		hidden_count += (hidden_cells as Control).get_child_count()
 	toggle.text = "%d more" % hidden_count
 	toggle.icon = _icon(Icons.Kind.CARET_RIGHT, Design.INK_SECOND,
 		Design.SIZE_SECONDARY)
@@ -2332,30 +2375,42 @@ func _add_parameter_rows(widget: GraphNode, node: Dictionary, descriptor: Dictio
 	toggle.add_theme_color_override("font_color", Design.INK_SECOND)
 	toggle.add_theme_color_override("font_hover_color", Design.INK_NORMAL)
 	toggle.add_theme_color_override("font_pressed_color", Design.INK_SECOND)
+	# The cells fold, not the rows. A folded row may still be carrying a port on each
+	# flank, and hiding it would take the cables with it — so what collapses is the knob
+	# box in the middle, and the row shrinks back to jack height around it.
 	toggle.toggled.connect(func(pressed: bool) -> void:
-		for row in extra:
-			row.set_meta("collapsed", not pressed)
-			row.visible = pressed and graph_edit.detail == PatchGraph.Detail.FULL
+		for cells in folded:
+			cells.set_meta("collapsed", not pressed)
+			cells.visible = pressed and graph_edit.detail == PatchGraph.Detail.FULL
+			var line := cells.get_parent() as Control
+			if line != null:
+				_fit_row_height(line)
 		toggle.text = "fewer" if pressed else "%d more" % hidden_count
 		toggle.icon = _icon(Icons.Kind.CARET_DOWN if pressed else Icons.Kind.CARET_RIGHT,
 			Design.INK_SECOND, Design.SIZE_SECONDARY))
-	toggle.set_meta("row", "parameter")
+	toggle.set_meta("row", "disclosure")
 	widget.add_child(_defocus(toggle))
 
 
-## One parameter, as the rack's knob with its name over its number beside it.
+## One parameter, as the rack's cell: dial on top, name under it, number under that.
 ##
-## The graph's control used to be a 112px slider on a line of its own. This is the rack's
-## dial — the same class, the same keyboard, the same signal path — laid out horizontally
-## rather than stacked, because the rack's own cell is 99px tall and four of those make a
-## node taller than the sliders they replaced. Beside the dial it is one hit-target high,
-## and two of them fit on a line.
+## Stacked rather than laid out sideways, which is a reversal of the previous shape and
+## the point of the whole exercise — a graph node is meant to read as the same object as
+## its rack module, and the cell is the loudest part of that. The horizontal version was
+## chosen when the height sums looked bad, on a measurement that held the port rows fixed
+## and so compared the wrong thing; ports share these rows now, which is where the height
+## comes back from.
+##
+## Real controls rather than the rack's drawn captions, deliberately. The rack draws its
+## own name and value inside Knob._draw, which is cheaper and completely opaque to the
+## level of detail — ScreenText compensates *Labels*, and a drawn caption is not one. So
+## the cell is a dial with a Label and a ValueField under it: the rack's shape with the
+## graph's behaviour, still draggable, still typeable, still legible when zoomed out.
 func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = Design.scale(Design.HIT_TARGET)
-	row.add_theme_constant_override("separation", Design.scale(Design.SPACE_S))
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", 0)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.set_meta("cell", "parameter")
 	var name: String = parameter["name"]
 	var node_id: String = node["id"]
@@ -2371,6 +2426,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.tooltip_text = str(parameter.get("doc", ""))
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
 	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
 	label.add_theme_color_override("font_color", Design.INK_NORMAL)
@@ -2401,14 +2457,10 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	row.set_meta("name_label", label)
 
 	if parameter.has("enum"):
-		# A dropdown takes the dial's place rather than keeping a shape of its own.
+		# A dropdown sits where the dial sits — on top, with the words under it.
 		#
-		# It used to be name, control, chosen option strung across one line with the name
-		# holding a 96px column open — beside a numeric cell that reads dial-then-stack,
-		# that put "shape" and its dropdown at opposite ends of the row with eighty pixels
-		# of nothing between them, and made one line out of two different grammars. There
-		# is still no dial to put on the left, but the dropdown *is* the control, so it
-		# goes where every other control goes and the words go where the words go.
+		# Same argument as when the dropdown moved to the left of the horizontal cell: it
+		# is the control, so it goes where controls go. Only the direction has changed.
 		var options := OptionButton.new()
 		for entry in parameter["enum"]:
 			options.add_item(str(entry))
@@ -2437,7 +2489,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		var chosen := Label.new()
 		chosen.text = str(parameter["enum"][clampi(int(round(current)), 0,
 			parameter["enum"].size() - 1)])
-		chosen.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		chosen.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		chosen.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		chosen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		chosen.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
@@ -2452,19 +2504,10 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 			_set_parameter(node_id, name, float(index))
 			_commit_edit("set %s" % name))
 
-		# Name over value, exactly as the numeric cell stacks them. At full detail the
-		# value line is empty because the dropdown is already showing the option, and the
-		# name centres itself against the control; at reduced detail the dropdown goes and
-		# the word it was showing surfaces here, which is what keeps a compact node from
-		# printing "shape" with nothing beside it.
-		var enum_stack := VBoxContainer.new()
-		enum_stack.add_theme_constant_override("separation", 0)
-		enum_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		enum_stack.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		enum_stack.add_child(label)
-		enum_stack.add_child(chosen)
+		options.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		row.add_child(_defocus(options))
-		row.add_child(enum_stack)
+		row.add_child(label)
+		row.add_child(chosen)
 		row.set_meta("enum_value", chosen)
 		_remember_parameter_widget(node_id, name, options, null, parameter)
 		return row
@@ -2475,7 +2518,10 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# not originate it, so the two views cannot drift apart over what a knob means.
 	var slider := Rack.Knob.new()
 	slider.rack = rack
+	# Compact still means "dial only, no drawn captions" — the captions below are real
+	# Labels so the level of detail can reach them. Same dial, same size, same keyboard.
 	slider.compact = true
+	slider.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	slider.node_id = node_id
 	slider.descriptor = parameter
 	slider.set_value_silently(current)
@@ -2488,6 +2534,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# Drag the figure, double click to type it, Alt-click for the default.
 	var readout := ValueField.new()
 	readout.custom_minimum_size.x = Design.scale(72)
+	readout.centred = true
 	readout.text = _format_with_unit(parameter, current)
 	readout.default_value = float(parameter["default"])
 	readout.position_now = _to_position(parameter, current)
@@ -2509,18 +2556,13 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# _on_rack_parameter_changed owns the write and the sync. Wiring it twice would put
 	# two writers on one parameter, which is how a drag ends up costing two undo steps.
 
-	# Name above number, dial beside both. A VBox rather than three things on a line,
-	# because the name is what identifies the control and the number is what changes
-	# while you watch, and side by side in a half-width cell neither had room.
-	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation", 0)
-	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stack.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	stack.add_child(label)
-	stack.add_child(readout)
-
+	# Dial, name, number — top to bottom, the rack's order. The name and the number each
+	# get the full width of the cell now rather than sharing a half-width line with the
+	# dial, which is also what stops a long name from crowding its own value out of the
+	# picture: "safety_limit" and its number no longer compete for the same strip.
 	row.add_child(_defocus(slider))
-	row.add_child(stack)
+	row.add_child(label)
+	row.add_child(readout)
 	row.set_meta("value_field", readout)
 	_remember_parameter_widget(node_id, name, slider, readout, parameter)
 	return row
@@ -3694,6 +3736,10 @@ func _apply_detail(level: int) -> void:
 		var tag: Label = widget.get_meta("category_tag") if widget.has_meta("category_tag") else null
 		if tag != null:
 			tag.visible = full
+		var counterweight: Control = widget.get_meta("category_counterweight") \
+			if widget.has_meta("category_counterweight") else null
+		if counterweight != null:
+			counterweight.visible = full
 		# The node gives back the height its controls were using.
 		#
 		# GraphNode keeps whatever size it was last given, so a compact node used to be a
@@ -3708,25 +3754,29 @@ func _apply_detail(level: int) -> void:
 			if control == null:
 				continue
 			match str(control.get_meta("row", "")):
-				"parameter":
-					# The "N more" disclosure is a control for secondary parameters, so
-					# it goes when the secondary controls do.
-					if control is Button:
-						control.visible = full
-						continue
-					control.visible = show_rows \
-						and not control.get_meta("collapsed", false)
-					# One level deeper than it used to be. A line holds two cells and a cell holds
-					# the dial, the name and the number, so the words the level of detail protects
-					# are grandchildren of the row rather than children of it.
-					for cell_child in control.get_children():
-						var cell := cell_child as Control
-						if cell != null:
-							_apply_cell_detail(cell, full)
-				"port":
-					# One level deeper than it used to be: a port caption is now a name and a
-					# unit in their own box, so the labels are grandchildren of the row.
+				"disclosure":
+					# A control for secondary parameters, so it goes when they do.
+					control.visible = full
+				"module":
+					# One row, three jobs: a port on each flank and the knob cells between
+					# them. The cells fold; the row never does, because it is carrying the
+					# slot the cables are attached to.
+					var cells: Control = control.get_meta("cells_box") \
+						if control.has_meta("cells_box") else null
+					if cells != null:
+						cells.visible = show_rows \
+							and not bool(cells.get_meta("collapsed", false)) \
+							and cells.get_child_count() > 0
+						for cell_child in cells.get_children():
+							var cell := cell_child as Control
+							if cell != null:
+								_apply_cell_detail(cell, full)
+					_fit_row_height(control)
+					# A port caption is a name and a unit in their own box, so the labels
+					# are grandchildren of the row.
 					for side in control.get_children():
+						if side == cells:
+							continue
 						for part in (side as Control).get_children():
 							var label := part as Label
 							if label == null or not label.has_meta("port_label"):

@@ -26,9 +26,12 @@ func _parameter_cells(node: GraphNode) -> Array:
 	var cells: Array = []
 	for child in node.get_children():
 		var line := child as Control
-		if line == null or str(line.get_meta("row", "")) != "parameter":
+		if line == null or str(line.get_meta("row", "")) != "module":
 			continue
-		for cell_child in line.get_children():
+		var box: Control = line.get_meta("cells_box") if line.has_meta("cells_box") else null
+		if box == null:
+			continue
+		for cell_child in box.get_children():
 			var cell := cell_child as Control
 			if cell != null:
 				cells.append(cell)
@@ -1524,7 +1527,7 @@ func _initialize() -> void:
 	var ports_at_full := node_widget.get_input_port_count()
 	var port_spots_at_full := []
 	for port in ports_at_full:
-		port_spots_at_full.append(node_widget.get_input_port_position(port))
+		port_spots_at_full.append(node_widget.get_input_port_slot(port))
 
 	# ---- the acceptance tests for semantic zoom -------------------------------------
 	#
@@ -1884,9 +1887,15 @@ func _initialize() -> void:
 	var visible_port_labels := 0
 	for child in node_widget.get_children():
 		var control := child as Control
-		if control == null or str(control.get_meta("row", "")) != "port":
+		if control == null or str(control.get_meta("row", "")) != "module":
 			continue
+		# The knob box shares the row with the jacks now, and its labels are not port
+		# labels — count them and this asserts something it was never about.
+		var box: Control = control.get_meta("cells_box") \
+			if control.has_meta("cells_box") else null
 		for side in control.get_children():
+			if side == box:
+				continue
 			for part in (side as Control).get_children():
 				if part is Label and (part as Label).visible:
 					visible_port_labels += 1
@@ -1896,13 +1905,21 @@ func _initialize() -> void:
 	var ports_now := node_widget.get_input_port_count()
 	check(ports_now == ports_at_full,
 		"and the port count is unchanged (%d, was %d)" % [ports_now, ports_at_full])
+	# Which child row each port is bound to, not where that row happens to sit.
+	#
+	# This compared port *positions* and could, because ports used to be rows of their own
+	# stacked above the parameters — nothing below them moved, so nothing moved them. Ports
+	# share their rows with the knob cells now, so a row giving back its height at COMPACT
+	# moves the ports on it, and the cables follow, which is correct and is the whole point
+	# of a node that shrinks. What must not change is the binding: a hidden row renumbers
+	# every slot beneath it and the cables reattach to the wrong ports, and that is what
+	# this asks about directly rather than inferring it from pixels.
 	var shifted := 0
 	for port in mini(ports_now, ports_at_full):
-		if not node_widget.get_input_port_position(port).is_equal_approx(
-				port_spots_at_full[port]):
+		if node_widget.get_input_port_slot(port) != port_spots_at_full[port]:
 			shifted += 1
 	check(shifted == 0,
-		"and not one of them has moved (%d of %d shifted)" % [shifted, ports_now])
+		"and not one of them has changed slot (%d of %d rebound)" % [shifted, ports_now])
 
 	# Hysteresis: a zoom sitting on a threshold must not flip level on every jitter.
 	# Asymmetric on purpose — detail drops the moment it must, because staying is how
@@ -1943,9 +1960,15 @@ func _initialize() -> void:
 	var unfolded_by_zoom := 0
 	for child in node_widget.get_children():
 		var control := child as Control
-		if control != null and control.get_meta("collapsed", false):
+		if control == null:
+			continue
+		# The collapsed flag sits on the knob box, not on the row: a row may be carrying a
+		# port on each flank, so what folds is the middle of it.
+		var box: Control = control.get_meta("cells_box") \
+			if control.has_meta("cells_box") else null
+		if box != null and box.get_meta("collapsed", false):
 			folded += 1
-			if control.visible:
+			if box.visible:
 				unfolded_by_zoom += 1
 	check(folded > 0, "the filter has folded-away parameters to check (%d)" % folded)
 	check(unfolded_by_zoom == 0,

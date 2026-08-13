@@ -1432,10 +1432,14 @@ class ScreenText extends Control:
 		var cells: Array[Control] = []
 		for child in node.get_children():
 			var line := child as Control
-			if line == null or str(line.get_meta("row", "")) != "parameter" \
+			if line == null or str(line.get_meta("row", "")) != "module" \
 					or not line.is_visible_in_tree():
 				continue
-			for cell_child in line.get_children():
+			var box: Control = line.get_meta("cells_box") \
+				if line.has_meta("cells_box") else null
+			if box == null or not box.is_visible_in_tree():
+				continue
+			for cell_child in box.get_children():
 				var cell := cell_child as Control
 				if cell != null and cell.is_visible_in_tree():
 					cells.append(cell)

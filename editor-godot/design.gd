@@ -224,6 +224,14 @@ const NODE_PADDING_H := 14
 const NODE_PADDING_V := 10
 const NODE_ROW_HEIGHT := 28
 
+## A graph node's parameter cell, stacked: dial, name, number.
+##
+## Deliberately close to the rack's own KNOB_CELL, because the point of the stacked cell
+## is that a node and the module it stands for are recognisably the same object. Slightly
+## under it: the rack cell carries a caption the graph draws as a real Label instead, and
+## the graph has no panel margin to clear.
+const PARAMETER_CELL_HEIGHT := 74
+
 ## What a free-standing control offers a finger or a shaky pointer, whatever the visible
 ## part measures. 44 is the number every platform guideline converges on, and it is a
 ## statement about the target, not the paint: the button can look 38px tall while the

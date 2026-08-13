@@ -44,6 +44,14 @@ var text: String = "":
 			_label.text = value
 
 var default_value := 0.0
+
+## Centres the number instead of setting it against the right edge.
+##
+## Right is correct in a row, where a column of values lines up on its last digit and the
+## eye can compare magnitudes down the column. It is wrong in a rack cell, where the
+## number sits under its own name with nothing to line up against and an off-centre
+## figure just looks like it slipped. Set before the field enters the tree.
+var centred := false
 ## Maps a 0..1 position to a value and back, so this stays out of the scaling rules.
 var to_value: Callable
 var to_position: Callable
@@ -77,7 +85,8 @@ func _ready() -> void:
 
 	_label = Label.new()
 	_label.text = text
-	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER if centred \
+		else HORIZONTAL_ALIGNMENT_RIGHT
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -105,7 +114,8 @@ func _ready() -> void:
 
 	_entry = LineEdit.new()
 	_entry.visible = false
-	_entry.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_entry.alignment = HORIZONTAL_ALIGNMENT_CENTER if centred \
+		else HORIZONTAL_ALIGNMENT_RIGHT
 	_entry.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_entry.add_theme_font_override("font", Design.numeric_font())
 	_entry.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NUMERIC))
