@@ -27,10 +27,21 @@ signal wired(module_name: String, from_node: String, from_port: String,
 ## Something the author tried that could not be done, in words for the status line.
 signal refused(reason: String)
 
-const LIST_WIDTH := 420.0
-## Enough to hold a whole module. A preview clipped through its own bottom row of knobs
-## is answering a different question from the one it was put there to answer.
-const PREVIEW_HEIGHT := 420.0
+const LIST_WIDTH := 520.0
+
+## Room for a face, at whatever size the face has to be shrunk to.
+##
+## It was 420 and fixed, on the reasoning that a preview clipped through its own bottom
+## row of knobs answers a different question from the one it exists to answer. True, and
+## it made the wrong trade: a four-knob row is wider than this column, so the module ran
+## off the right edge, and a full-height preview left the *list* — the thing actually
+## being edited — showing four of five rows with the fifth below the fold. The knob whose
+## caption had been customised was the one you could not see.
+##
+## So the preview zooms to fit instead of reserving its natural size, and the list gets
+## the rest. A face read at 60% still says what is on it and in what order, which is what
+## somebody arranging one needs to know.
+const PREVIEW_HEIGHT := 300.0
 
 var patch: Dictionary = {}
 var registry: Dictionary = {}
@@ -426,4 +437,11 @@ func _rebuild_racks() -> void:
 	_inner._relayout()
 	_preview._relayout()
 	_inner_holder.custom_minimum_size = _inner.size
-	_preview_holder.custom_minimum_size = _preview.size
+	# The face, whole, at whatever size whole requires. A module with four knobs on a row
+	# is wider than this column and being shown three of them is worse than being shown
+	# all four small.
+	_preview.zoom_to_fit()
+	await get_tree().process_frame
+	if not is_instance_valid(_preview):
+		return
+	_preview_holder.custom_minimum_size = _preview.size * _preview.zoom
