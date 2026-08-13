@@ -3372,6 +3372,11 @@ func _add_from_search(type_name: String) -> void:
 
 
 func _add_node(type_name: String, at_position: Vector2) -> String:
+	# On the builder, "add a node" means add it to the module being built. It used to mean
+	# what it means everywhere else — append to the document — which on that tab put the
+	# node somewhere the tab does not show, and read as a button that did nothing.
+	if builder != null and builder.is_visible_in_tree() and builder.module_name != "":
+		return await _add_node_to_definition(type_name)
 	_begin_edit()
 	var descriptor: Dictionary = registry.get(type_name, {})
 	var base: String = type_name.to_snake_case()
@@ -3401,6 +3406,64 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 	await _rebuild_view()
 	_apply()
 	_commit_edit("add %s" % registry.get(type_name, {}).get("display_name", type_name))
+	return node_id
+
+
+## Adds a primitive to the definition the builder is editing.
+##
+## Editing a definition edits every instance of it — that is what a definition is, and
+## the undo model is document-snapshot-based, so it costs nothing new. What it does mean
+## is that the new node is unwired: a definition's surface is derived from its wiring, so
+## a primitive dropped in on its own changes no port and no export until it is connected.
+##
+## Two types are refused rather than added. A module inside a module is not supported (see
+## docs/modules-design.md), and a terminal is the edge of a finished patch — a NoteInput
+## inside a subcircuit is the thing the declared `note` input exists to replace.
+func _add_node_to_definition(type_name: String) -> String:
+	var definition: Dictionary = patch.get("modules", {}).get(builder.module_name, {})
+	if definition.is_empty():
+		return ""
+	if type_name.begins_with("module:"):
+		_say("modules may not contain modules yet — see docs/modules-design.md")
+		return ""
+	if str(registry.get(type_name, {}).get("category", "")) == "Terminals":
+		_say("%s is a terminal; a module is a subcircuit, not a finished patch"
+			% registry.get(type_name, {}).get("display_name", type_name))
+		return ""
+
+	_begin_edit()
+	# Unique within the definition, not the document: inner ids live in their own
+	# namespace and only meet the document's after expansion puts a dot between them.
+	var existing := {}
+	for node in definition.get("nodes", []):
+		existing[str(node["id"])] = true
+	var base: String = type_name.to_snake_case()
+	var node_id := base
+	var suffix := 1
+	while existing.has(node_id):
+		suffix += 1
+		node_id = "%s%d" % [base, suffix]
+
+	var parameters := {}
+	for parameter in registry.get(type_name, {}).get("parameters", []):
+		parameters[parameter["name"]] = parameter["default"]
+	if not definition.has("nodes"):
+		definition["nodes"] = []
+	definition["nodes"].append({
+		"id": node_id,
+		"type": type_name,
+		"parameters": parameters,
+	})
+	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	builder.patch = patch
+	builder.rebuild()
+	_apply()
+	_commit_edit("add %s to %s" % [registry.get(type_name, {})
+		.get("display_name", type_name), builder.module_name])
+	_say("added %s inside '%s' — wire it up and its ports become the module's"
+		% [node_id, builder.module_name])
 	return node_id
 
 

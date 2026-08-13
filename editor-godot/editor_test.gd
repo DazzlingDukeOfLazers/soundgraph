@@ -1217,6 +1217,47 @@ func _initialize() -> void:
 	check(builder._inner._modules.size() == 2,
 		"the builder shows what is inside (%d modules)" % builder._inner._modules.size())
 
+	# ---- and adding a node on this tab means adding it to the module ------------------
+	# It used to mean what it means everywhere else — append to the document — which put
+	# the node on a tab that does not show the document, and read as a button doing
+	# nothing at all.
+	var document_was: int = main.patch["nodes"].size()
+	var added: String = await main._add_node("SineOscillator", Vector2(0, 0))
+	for _settle in 6:
+		await process_frame
+	var inside: Array = main.patch["modules"]["envamp"]["nodes"]
+	check(added != "" and inside.size() == 3,
+		"a node added on the builder lands inside the module (%d)" % inside.size())
+	check(main.patch["nodes"].size() == document_was,
+		"and not in the document around it (%d, was %d)"
+			% [main.patch["nodes"].size(), document_was])
+	check(builder._inner._modules.size() == 3,
+		"the builder shows it straight away (%d)" % builder._inner._modules.size())
+	# Unwired, so it changed nothing about what the module offers: a definition's surface
+	# is derived from its wiring, and this primitive is not connected to anything yet.
+	check(main.registry["module:envamp"]["parameters"].size() == 3,
+		"an unwired primitive exports nothing yet (%d)"
+			% main.registry["module:envamp"]["parameters"].size())
+
+	# The two types a definition may not hold are refused rather than added.
+	var refused: String = await main._add_node("NoteInput", Vector2(0, 0))
+	await process_frame
+	check(refused == "" and main.patch["modules"]["envamp"]["nodes"].size() == 3,
+		"a terminal is refused — a module is a subcircuit, not a finished patch (%d)"
+			% main.patch["modules"]["envamp"]["nodes"].size())
+	var nested: String = await main._add_node("module:envamp", Vector2(0, 0))
+	await process_frame
+	check(nested == "" and main.patch["modules"]["envamp"]["nodes"].size() == 3,
+		"and so is a module inside a module (%d)"
+			% main.patch["modules"]["envamp"]["nodes"].size())
+
+	main._undo()
+	for _settle in 6:
+		await process_frame
+	check(main.patch["modules"]["envamp"]["nodes"].size() == 2,
+		"and undo takes the added primitive back out (%d)"
+			% main.patch["modules"]["envamp"]["nodes"].size())
+
 	main.patch = before_panels
 	main._synthesize_module_descriptors()
 	await main._rebuild_view()
