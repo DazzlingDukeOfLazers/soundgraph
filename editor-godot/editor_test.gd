@@ -1032,6 +1032,126 @@ func _initialize() -> void:
 			main.graphrack.rail_for(somewhere.y + 40.0)),
 		"a module dropped between rails hangs from one (%.0f)" % placed_module.position.y)
 
+	# ---- a module wears the face its panel describes ---------------------------------
+	# The derived surface exports every knob its inner nodes had, which is right for not
+	# losing anything and wrong for reading. A panel says which of them are on the front,
+	# how they line up, and what they are called — without changing what the module can do.
+	var before_panels: Dictionary = main.patch.duplicate(true)
+	main.patch = {
+		"schema_version": 2,
+		"modules": {
+			"envamp": {
+				"nodes": [
+					{"id": "env", "type": "ADSR",
+						"parameters": {"attack": 0.02, "release": 0.4}},
+					{"id": "amp", "type": "Gain", "parameters": {"gain": 0.8}},
+				],
+				"connections": [
+					{"from": {"node": "env", "port": "out"},
+						"to": {"node": "amp", "port": "gain"}},
+				],
+				"inputs": [{"name": "gate", "node": "env", "port": "gate"},
+					{"name": "in", "node": "amp", "port": "in"}],
+				"outputs": [{"name": "out", "node": "amp", "port": "out"}],
+				"parameters": [
+					{"name": "attack", "node": "env", "parameter": "attack"},
+					{"name": "release", "node": "env", "parameter": "release"},
+					{"name": "gain", "node": "amp", "parameter": "gain"},
+				],
+				# Two on a line, one below, "gain" left off entirely, and a name that is
+				# not exported at all — which must cost a knob, not the whole panel.
+				"panel": {
+					"rows": [["release", "attack"], ["ghost"]],
+					"labels": {"attack": "Snap"},
+				},
+			},
+		},
+		"nodes": [
+			{"id": "note", "type": "NoteInput", "position": {"x": 0, "y": 0}},
+			{"id": "voice", "type": "module", "module": "envamp",
+				"position": {"x": 560, "y": 0}},
+			{"id": "out", "type": "StereoOutput", "position": {"x": 1120, "y": 0}},
+		],
+		"connections": [
+			{"from": {"node": "note", "port": "gate"},
+				"to": {"node": "voice", "port": "gate"}},
+			{"from": {"node": "voice", "port": "out"},
+				"to": {"node": "out", "port": "left"}},
+		],
+	}
+	main._synthesize_module_descriptors()
+	await main._rebuild_view()
+	for _settle in 3:
+		await process_frame
+
+	var faced: Dictionary = main.registry.get("module:envamp", {})
+	check(faced.get("parameters", []).size() == 3,
+		"the declared surface still carries every export (%d)"
+			% faced.get("parameters", []).size())
+	var faced_rows: Array = faced.get("panel_rows", [])
+	# One row, not two: the second named only "ghost", and a row with nothing left in it
+	# is not an empty row on the panel — it is no row at all.
+	check(faced_rows.size() == 1,
+		"a row naming nothing this module exports leaves no gap (%d rows)"
+			% faced_rows.size())
+	if faced_rows.size() == 1:
+		check(faced_rows[0].size() == 2,
+			"and the surviving row holds what the panel put on it (%d)"
+				% faced_rows[0].size())
+		# Declared attack-then-release; the panel asked for the other way round.
+		check(str(faced_rows[0][0]["name"]) == "release",
+			"in the panel's order, not the export order (%s)" % str(faced_rows[0][0]["name"]))
+		check(str(faced_rows[0][1].get("display_name", "")) == "Snap",
+			"wearing the panel's caption (%s)"
+				% str(faced_rows[0][1].get("display_name", "-")))
+		check(str(faced_rows[0][1]["name"]) == "attack",
+			"which is a caption and not a rename — the binding is untouched (%s)"
+				% str(faced_rows[0][1]["name"]))
+
+	# The face is not the surface. "gain" has no knob and is still a parameter this
+	# instance can set — which is what stops a panel from quietly breaking a patch.
+	var surface_names := []
+	for parameter: Dictionary in faced.get("parameters", []):
+		surface_names.append(str(parameter["name"]))
+	check(surface_names.has("gain"),
+		"a knob left off the panel is still exported (%s)" % str(surface_names))
+
+	var shape := GraphRack.face_shape(faced)
+	check(shape == Vector2i(2, 1),
+		"and the module is only as tall as the knobs it shows (%s)" % str(shape))
+
+	main.show_view("Graphrack")
+	for _settle in 4:
+		await process_frame
+	var faced_module = main.graphrack.module_for("voice")
+	check(faced_module != null, "the panelled module is in the case")
+	var faced_knobs: Dictionary = main.graphrack._knobs.get("voice", {})
+	check(faced_knobs.size() == 2,
+		"two knobs on the face, not the three it exports (%d)" % faced_knobs.size())
+	check(faced_knobs.has("release") and faced_knobs.has("attack")
+			and not faced_knobs.has("gain"),
+		"and they are the ones the panel named (%s)" % str(faced_knobs.keys()))
+	if faced_knobs.has("release") and faced_knobs.has("attack"):
+		# The load-bearing geometric claim. Two parameters with no panel wrap into a
+		# *one*-column grid and stack; the panel put them on a line, so they must share a
+		# top edge and differ across. Reading the names alone would pass either way.
+		var left: Control = faced_knobs["release"]
+		var right: Control = faced_knobs["attack"]
+		check(is_equal_approx(left.global_position.y, right.global_position.y),
+			"laid out as the row the panel drew, not stacked (y %.0f vs %.0f)"
+				% [left.global_position.y, right.global_position.y])
+		check(right.global_position.x > left.global_position.x,
+			"and in the panel's left-to-right order (x %.0f then %.0f)"
+				% [left.global_position.x, right.global_position.x])
+		check(str(right._name_text()) == "Snap",
+			"the knob shows the caption (%s)" % str(right._name_text()))
+
+	main.patch = before_panels
+	main._synthesize_module_descriptors()
+	await main._rebuild_view()
+	for _settle in 3:
+		await process_frame
+
 	main.show_view("Graph")
 	await process_frame
 

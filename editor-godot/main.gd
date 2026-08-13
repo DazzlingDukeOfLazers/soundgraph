@@ -2026,7 +2026,7 @@ func _synthesize_module_descriptors() -> void:
 						cloned["default"] = authored
 					parameters.append(cloned)
 					break
-		registry["module:%s" % module_name] = {
+		var descriptor := {
 			"name": "module:%s" % module_name,
 			"display_name": _module_display_name(str(module_name)),
 			"category": "Modules",
@@ -2035,6 +2035,50 @@ func _synthesize_module_descriptors() -> void:
 			"outputs": outputs,
 			"parameters": parameters,
 		}
+		var panel_rows := _panel_rows(definition, parameters)
+		if not panel_rows.is_empty():
+			descriptor["panel_rows"] = panel_rows
+		registry["module:%s" % module_name] = descriptor
+
+
+## The knobs a module's face shows, row by row, resolved against its exports.
+##
+## `parameters` above is the whole declared surface and stays that way — the inspector
+## sets any of it, controls and automation target any of it, the file carries all of it.
+## This is only the face. A definition with no panel gets no rows and every consumer falls
+## back to laying out the full surface, which is what modules did before panels existed.
+##
+## A row naming something this module does not export is dropped rather than refused: a
+## panel is presentation, and the rule presentation follows here is arrangement's, not the
+## surface's. Unlike arrangement.rack_order, exports the panel leaves out are *not*
+## appended — leaving a knob off is the whole authoring act.
+func _panel_rows(definition: Dictionary, parameters: Array) -> Array:
+	var panel: Dictionary = definition.get("panel", {})
+	var rows: Array = panel.get("rows", [])
+	if rows.is_empty():
+		return []
+	var by_name := {}
+	for parameter: Dictionary in parameters:
+		by_name[str(parameter["name"])] = parameter
+	var labels: Dictionary = panel.get("labels", {})
+	var placed := {}
+	var out: Array = []
+	for row in rows:
+		var resolved: Array = []
+		for export_name in row:
+			var key := str(export_name)
+			if not by_name.has(key) or placed.has(key):
+				continue
+			placed[key] = true
+			# `name` is the binding — the knob writes back through it — so a caption is a
+			# second field beside it, never a rename. See Knob._name_text.
+			var cloned: Dictionary = (by_name[key] as Dictionary).duplicate(true)
+			if labels.has(key) and str(labels[key]) != "":
+				cloned["display_name"] = str(labels[key])
+			resolved.append(cloned)
+		if not resolved.is_empty():
+			out.append(resolved)
+	return out
 
 
 ## A module's name as a person would write it: "dx7_operator" is a DX7 Operator.

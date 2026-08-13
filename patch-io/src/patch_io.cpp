@@ -679,6 +679,42 @@ bool parse_patch(const std::string& text,
                         }
                     }
                 }
+                // The panel is presentation, so it is read the way Arrangement is read:
+                // leniently. A row naming a parameter this definition does not export
+                // costs a missing knob, not a refused patch — the same degrade-don't-break
+                // rule rack_order follows, and for the same reason. Strictness belongs on
+                // the surface, which is validated above.
+                if (const json::Value* panel = body.find("panel")) {
+                    if (panel->is_object()) {
+                        if (const json::Value* rows = panel->find("rows")) {
+                            if (rows->is_array()) {
+                                for (const json::Value& row_entry : rows->array()) {
+                                    if (!row_entry.is_array()) {
+                                        continue;
+                                    }
+                                    std::vector<std::string> row;
+                                    for (const json::Value& name : row_entry.array()) {
+                                        if (name.is_string()) {
+                                            row.push_back(name.as_string());
+                                        }
+                                    }
+                                    definition.panel.rows.push_back(std::move(row));
+                                }
+                            }
+                        }
+                        if (const json::Value* labels = panel->find("labels")) {
+                            if (labels->is_object()) {
+                                for (const auto& caption : labels->object()) {
+                                    if (caption.second.is_string()) {
+                                        definition.panel.labels.push_back(
+                                            ModulePanelLabel{caption.first,
+                                                             caption.second.as_string()});
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 out.modules.push_back(std::move(definition));
             }
         }
@@ -946,6 +982,28 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
                         parameter.name, parameter.node, "parameter", parameter.parameter));
                 }
                 body.set("parameters", std::move(parameters));
+            }
+            if (!definition.panel.empty()) {
+                json::Value panel = json::Value::make_object();
+                if (!definition.panel.rows.empty()) {
+                    json::Value rows = json::Value::make_array();
+                    for (const std::vector<std::string>& row : definition.panel.rows) {
+                        json::Value entry = json::Value::make_array();
+                        for (const std::string& name : row) {
+                            entry.push_back(json::Value(name));
+                        }
+                        rows.push_back(std::move(entry));
+                    }
+                    panel.set("rows", std::move(rows));
+                }
+                if (!definition.panel.labels.empty()) {
+                    json::Value labels = json::Value::make_object();
+                    for (const ModulePanelLabel& entry : definition.panel.labels) {
+                        labels.set(entry.parameter, json::Value(entry.label));
+                    }
+                    panel.set("labels", std::move(labels));
+                }
+                body.set("panel", std::move(panel));
             }
             modules.set(definition.name, std::move(body));
         }

@@ -531,6 +531,97 @@ TEST(modules_round_trip_preserves_the_hierarchy) {
     CHECK(soundgraph::write_patch(again) == written);  // stable from then on
 }
 
+namespace {
+
+// The same voice wearing a face: two exports, one of them off the panel, one renamed,
+// and a row naming something that does not exist.
+std::string panelled_patch() {
+    std::string text = modular_patch();
+    const std::string exports =
+        R"("parameters": [
+                    { "name": "frequency", "node": "osc", "parameter": "frequency" },
+                    { "name": "attack", "node": "env", "parameter": "attack" }
+                ],
+                "panel": {
+                    "rows": [["attack", "ghost"]],
+                    "labels": { "attack": "Snap" }
+                })";
+    const std::string original =
+        R"("parameters": [
+                    { "name": "frequency", "node": "osc", "parameter": "frequency" }
+                ])";
+    const std::size_t at = text.find(original);
+    CHECK(at != std::string::npos);  // the fixture moved; this test moved with it
+    text.replace(at, original.size(), exports);
+    return text;
+}
+
+}  // namespace
+
+TEST(module_panels_are_presentation_and_survive_the_round_trip) {
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    // A row naming a parameter the module does not export is a missing knob, not a
+    // refused patch — the rule arrangement follows, because a panel is presentation.
+    CHECK(soundgraph::parse_patch(panelled_patch(), description, diagnostics));
+
+    const soundgraph::ModuleDescription* voice = description.find_module("voice");
+    CHECK(voice != nullptr);
+    CHECK(voice->panel.rows.size() == 1);
+    // "ghost" is kept verbatim rather than dropped here. A loader is not the place to
+    // decide a knob is unwanted: a tool that saves a patch it does not fully understand
+    // must give the file back intact, and it is the surface that renders the panel which
+    // skips a name it cannot resolve. Leniency at the edge, fidelity in the middle.
+    CHECK(voice->panel.rows[0].size() == 2);
+    CHECK(voice->panel.rows[0][0] == "attack");
+    const std::string* caption = voice->panel.label_for("attack");
+    CHECK(caption != nullptr && *caption == "Snap");
+    CHECK(voice->panel.label_for("frequency") == nullptr);
+
+    // The face is not the surface: "frequency" is off the panel and still exported, so
+    // instance "a" still overrides it and the engine still sees 330.
+    const soundgraph::NodeDescription* a_osc = description.find_node("a.osc");
+    const soundgraph::ParameterValue* a_freq = a_osc->find_parameter("frequency");
+    CHECK(a_freq != nullptr && std::fabs(a_freq->value - 330.0) < 1e-9);
+
+    // And the panel changes nothing about what gets built.
+    GraphDescription plain;
+    std::vector<Diagnostic> plain_diagnostics;
+    CHECK(soundgraph::parse_patch(modular_patch(), plain, plain_diagnostics));
+    CHECK(description.nodes.size() == plain.nodes.size());
+    CHECK(description.connections.size() == plain.connections.size());
+}
+
+TEST(module_panels_round_trip_through_the_hierarchy) {
+    // Written from a description that still carries its modules — the editor's path,
+    // not the engine's. parse_patch flattens, so the hierarchy is rebuilt here the way
+    // an authoring tool holds it.
+    GraphDescription description;
+    description.schema_version = 2;
+    soundgraph::ModuleDescription voice;
+    voice.name = "voice";
+    voice.nodes.push_back(soundgraph::NodeDescription{});
+    voice.nodes.back().id = "env";
+    voice.nodes.back().type = "ADSR";
+    voice.parameters.push_back(
+        soundgraph::ModuleParameterDescription{"attack", "env", "attack"});
+    voice.parameters.push_back(
+        soundgraph::ModuleParameterDescription{"release", "env", "release"});
+    voice.panel.rows.push_back({"attack"});
+    voice.panel.rows.push_back({"release"});
+    voice.panel.labels.push_back(soundgraph::ModulePanelLabel{"attack", "Snap"});
+    description.modules.push_back(std::move(voice));
+
+    const std::string written = soundgraph::write_patch(description);
+    CHECK(written.find("\"panel\"") != std::string::npos);
+    CHECK(written.find("\"Snap\"") != std::string::npos);
+
+    GraphDescription again;
+    std::vector<Diagnostic> again_diagnostics;
+    CHECK(soundgraph::parse_patch(written, again, again_diagnostics));
+    CHECK(soundgraph::write_patch(again) == written);  // stable, panel and all
+}
+
 TEST(modules_refuse_the_documented_abuses) {
     auto refuses = [](std::string text, const std::string& code) {
         GraphDescription description;

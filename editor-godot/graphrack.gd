@@ -69,9 +69,25 @@ static var module_height := 404.0
 
 
 ## What one module needs, floored and banded. The per-module answer to measure().
-static func height_for(parameters: int, ports: int = 0) -> float:
-	return Design.scale(maxf(MODULE_MIN_HEIGHT, content_height(parameters, ports))
+static func height_for(parameters: int, ports: int = 0, rows: int = -1) -> float:
+	return Design.scale(maxf(MODULE_MIN_HEIGHT, content_height(parameters, ports, rows))
 		+ DENSITY_BAND[density])
+
+
+## How many knobs a module's face carries, and how many rows they sit in.
+##
+## Both come off the panel when the module has one: a panel showing three of twelve
+## exports must reserve three knobs of height, not twelve, and it says for itself how
+## many lines they occupy. Without a panel the surface is the face, wrapped two to a row.
+static func face_shape(descriptor: Dictionary) -> Vector2i:
+	var panel_rows: Array = descriptor.get("panel_rows", [])
+	if panel_rows.is_empty():
+		var count: int = descriptor.get("parameters", []).size()
+		return Vector2i(count, int(ceil(count / 2.0)))
+	var knobs := 0
+	for row: Array in panel_rows:
+		knobs += row.size()
+	return Vector2i(knobs, panel_rows.size())
 
 
 ## The height a module needs for its own content, before the density band.
@@ -80,8 +96,8 @@ static func height_for(parameters: int, ports: int = 0) -> float:
 ## module whether it had four ports or one. They are beside them now — inputs down the
 ## left edge, outputs down the right — so the height is whichever of the two columns is
 ## taller, and a two-knob oscillator is a short module again.
-static func content_height(parameters: int, ports: int = 0) -> float:
-	var knob_rows: int = int(ceil(parameters / 2.0))
+static func content_height(parameters: int, ports: int = 0, rows: int = -1) -> float:
+	var knob_rows: int = int(ceil(parameters / 2.0)) if rows < 0 else rows
 	return TITLE_BAND + KNOB_PAD * 2.0 + maxf(
 		knob_rows * KNOB_CELL.y + maxi(knob_rows - 1, 0) * KNOB_ROW_GAP,
 		ports * JACK_ROW_HEIGHT)
@@ -95,10 +111,11 @@ static func measure(patch_nodes: Array, registry: Dictionary) -> float:
 		if type_key == "module":
 			type_key = "module:%s" % str(node.get("module", ""))
 		var descriptor: Dictionary = registry.get(type_key, {})
-		tallest = maxf(tallest, content_height(
-			int(descriptor.get("parameters", []).size()),
+		var shape := face_shape(descriptor)
+		tallest = maxf(tallest, content_height(shape.x,
 			maxi(int(descriptor.get("inputs", []).size()),
-				int(descriptor.get("outputs", []).size()))))
+				int(descriptor.get("outputs", []).size())),
+			shape.y))
 	# Scaled once, here, rather than at each term. The shared height has to be at least
 	# what the tallest module's own contents ask for, and those grow with the reader's
 	# size preference; left unscaled, every module at XL outgrew the shared height
@@ -1047,7 +1064,9 @@ class RackModule extends Control:
 	var descriptor: Dictionary = {}
 
 	var _jacks: Array = []   # Jack controls, both columns
-	var _grid: GridContainer = null
+	# Whatever holds the knobs: a wrapping grid, or a stack of rows when the module carries
+	# a panel. Only its rectangle is ever read, so the two are interchangeable here.
+	var _grid: Control = null
 	var _dragging := false
 	var _grab_offset := Vector2.ZERO
 
@@ -1096,24 +1115,37 @@ class RackModule extends Control:
 		centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		body.add_child(centre)
 
-		var grid := GridContainer.new()
-		grid.columns = 1 if parameters.size() <= 2 else 2
-		grid.add_theme_constant_override("h_separation", 0)
-		grid.add_theme_constant_override("v_separation", Design.scale(KNOB_ROW_GAP))
-		grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		centre.add_child(grid)
-		_grid = grid
-
+		# A module carrying a panel says where its knobs go and how many are on a line, so
+		# its rows are laid out as rows. Everything else wraps into two columns the way it
+		# always has — and keeps the GridContainer that does it, because a grid also aligns
+		# knob widths down a column and a stack of HBoxes does not. Two paths, so that
+		# adding panels changes nothing about the face of a module that has no panel.
+		var panel_rows: Array = descriptor.get("panel_rows", [])
 		var knobs: Dictionary = {}
-		for parameter: Dictionary in parameters:
-			var knob := Knob.new()
-			knob.rack = rack
-			knob.node_id = node_id
-			knob.descriptor = parameter
-			knob.set_value_silently(float(node.get("parameters", {})
-				.get(str(parameter["name"]), parameter["default"])))
-			grid.add_child(knob)
-			knobs[str(parameter["name"])] = knob
+		if panel_rows.is_empty():
+			var grid := GridContainer.new()
+			grid.columns = 1 if parameters.size() <= 2 else 2
+			grid.add_theme_constant_override("h_separation", 0)
+			grid.add_theme_constant_override("v_separation", Design.scale(KNOB_ROW_GAP))
+			grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			centre.add_child(grid)
+			_grid = grid
+			for parameter: Dictionary in parameters:
+				knobs[str(parameter["name"])] = _add_knob(grid, node, parameter)
+		else:
+			var stack := VBoxContainer.new()
+			stack.add_theme_constant_override("separation", Design.scale(KNOB_ROW_GAP))
+			stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			centre.add_child(stack)
+			_grid = stack
+			for row: Array in panel_rows:
+				var line := HBoxContainer.new()
+				line.add_theme_constant_override("separation", 0)
+				line.alignment = BoxContainer.ALIGNMENT_CENTER
+				line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				stack.add_child(line)
+				for parameter: Dictionary in row:
+					knobs[str(parameter["name"])] = _add_knob(line, node, parameter)
 
 		body.add_child(_jack_column(outputs, false))
 
@@ -1123,12 +1155,25 @@ class RackModule extends Control:
 		var wanted: float = frame.get_combined_minimum_size().x + GraphRack.KNOB_PAD * 2.0
 		var hp := maxi(GraphRack.MIN_HP, int(ceil(wanted / GraphRack.HP)))
 		# Its own height, not the rack's tallest. See GraphRack.module_height.
+		var shape := GraphRack.face_shape(descriptor)
 		custom_minimum_size = Vector2(hp * GraphRack.HP,
-			maxf(GraphRack.height_for(parameters.size(),
-				maxi(inputs.size(), outputs.size())),
+			maxf(GraphRack.height_for(shape.x,
+				maxi(inputs.size(), outputs.size()), shape.y),
 				frame.get_combined_minimum_size().y))
 		size = custom_minimum_size
 		return knobs
+
+
+	## One knob, wired to the rack and showing the instance's value for its export.
+	func _add_knob(into: Control, node: Dictionary, parameter: Dictionary) -> Knob:
+		var knob := Knob.new()
+		knob.rack = rack
+		knob.node_id = node_id
+		knob.descriptor = parameter
+		knob.set_value_silently(float(node.get("parameters", {})
+			.get(str(parameter["name"]), parameter["default"])))
+		into.add_child(knob)
+		return knob
 
 	## One edge of the panel: its jacks, stacked, centred against the knobs.
 	func _jack_column(ports: Array, is_input: bool) -> Control:
@@ -1446,10 +1491,18 @@ class Knob extends Control:
 		# had room for "cutoff_sw…" and the first question a truncated label raises is
 		# what it was truncated from.
 		var doc := str(descriptor.get("doc", ""))
-		tooltip_text = str(descriptor["name"]) + ("\n" + doc if doc != "" else "")
+		var caption := _name_text()
+		var binding := str(descriptor["name"])
+		# When a panel renamed this knob, the tooltip is the only place left that says what
+		# it is underneath — and "level (gain)" is what somebody reading the file needs.
+		if caption != binding:
+			caption = "%s (%s)" % [caption, binding]
+		tooltip_text = caption + ("\n" + doc if doc != "" else "")
 
+	## The caption. `name` is the binding the knob writes back through, so a panel's label
+	## sits beside it rather than replacing it — see main._panel_rows.
 	func _name_text() -> String:
-		return str(descriptor["name"])
+		return str(descriptor.get("display_name", descriptor["name"]))
 
 	func _value_text() -> String:
 		if descriptor.has("enum"):

@@ -39,6 +39,15 @@ const ModuleParameterDescription* ModuleDescription::find_parameter(
     return nullptr;
 }
 
+const std::string* ModulePanel::label_for(const std::string& parameter) const {
+    for (const ModulePanelLabel& entry : labels) {
+        if (entry.parameter == parameter) {
+            return &entry.label;
+        }
+    }
+    return nullptr;
+}
+
 const ModuleDescription* GraphDescription::find_module(const std::string& module_name) const {
     for (const ModuleDescription& definition : modules) {
         if (definition.name == module_name) {

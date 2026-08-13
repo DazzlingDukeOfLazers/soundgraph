@@ -118,6 +118,31 @@ struct ModuleParameterDescription {
     std::string parameter;  // and which parameter there
 };
 
+// The face an instance wears: which exported parameters get a knob, how they are grouped
+// into rows, and what each is called on the panel.
+//
+// Presentation only, in the same sense as Arrangement — it never changes what a patch
+// sounds like, and it never changes the declared surface. A parameter left off the panel
+// is still exported, still settable per instance, still a legal target for controls and
+// automation; it simply has no knob on the face. That separation is the whole point: the
+// derived surface errs toward exporting everything, and a panel is where an author says
+// which six of the thirty a player actually turns.
+//
+// An absent panel means "every export, in declared order" — what every module written
+// before panels had, and what a fresh collapse still produces.
+struct ModulePanelLabel {
+    std::string parameter;  // the exported name
+    std::string label;      // what the panel calls it instead
+};
+
+struct ModulePanel {
+    std::vector<std::vector<std::string>> rows;  // exported parameter names, per panel row
+    std::vector<ModulePanelLabel> labels;
+
+    bool empty() const { return rows.empty() && labels.empty(); }
+    const std::string* label_for(const std::string& parameter) const;
+};
+
 struct ModuleDescription {
     std::string name;
     std::string description;
@@ -126,6 +151,7 @@ struct ModuleDescription {
     std::vector<ModulePortDescription> inputs;
     std::vector<ModulePortDescription> outputs;
     std::vector<ModuleParameterDescription> parameters;
+    ModulePanel panel;
 
     const ModulePortDescription* find_input(const std::string& port_name) const;
     const ModulePortDescription* find_output(const std::string& port_name) const;

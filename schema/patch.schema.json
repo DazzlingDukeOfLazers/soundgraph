@@ -446,6 +446,33 @@
           "items": {
             "$ref": "#/$defs/module_parameter"
           }
+        },
+        "panel": {
+          "$ref": "#/$defs/module_panel"
+        }
+      }
+    },
+    "module_panel": {
+      "description": "The face an instance wears. Presentation only, like arrangement: it never changes what a patch sounds like and never changes the declared surface. An exported parameter left off the panel is still exported, still settable per instance, and still a legal control or automation target — it simply has no knob. Omit the whole object to get every export in declared order.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "description": "Exported parameter names, grouped into panel rows, left to right and top to bottom. A name this module does not export is ignored, so an out-of-date panel degrades rather than breaks. Unlike arrangement.rack_order, exports missing from the rows are NOT appended: leaving one out is the authoring act.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "labels": {
+          "description": "What the panel calls an export, by exported name. Derived export names like \"op1_gain\" say where a knob goes; a caption says what it does.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     }

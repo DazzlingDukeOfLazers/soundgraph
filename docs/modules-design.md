@@ -102,6 +102,32 @@ Rules, each one a validator check:
 - **No modules inside modules** in this version. Definitions instantiate node types
   only. This removes recursion, makes the expansion bound `instances × definition
   size`, and postpones a real question (below) rather than answering it badly.
+- **A panel is presentation, never surface.** A definition may carry an optional
+  `panel` saying which exported parameters get a knob, how they group into rows, and
+  what each is called there:
+
+  ```json
+  "panel": {
+    "rows": [["attack", "decay", "sustain", "release"], ["gain"]],
+    "labels": { "gain": "Level" }
+  }
+  ```
+
+  It changes nothing else. A parameter left off the panel is still exported, still
+  overridable per instance, still a legal control and automation target — it simply has
+  no knob on the face. That separation is the point: the derived surface errs toward
+  exporting everything, and the panel is where an author says which six of the thirty a
+  player actually turns. An absent panel means every export in declared order, which is
+  what modules had before panels and what a fresh collapse still produces.
+
+  A row naming something the module does not export costs that knob and nothing else —
+  the rule `arrangement` follows, because both are presentation. Two asymmetries worth
+  knowing: unlike `rack_order`, exports the panel omits are **not** appended, since
+  omission is the whole authoring act; and unlike the renderer, the *loader* keeps an
+  unresolvable name verbatim, because a tool that saves a patch it does not fully
+  understand must hand the file back intact. Leniency at the edge, fidelity in the
+  middle.
+
 - **`schema_version: 2` iff the document contains modules.** A module-free document
   is byte-for-byte a v1 document, forever. Version is a capability floor, and the
   existing contract — "a runtime must refuse a patch whose schema_version it does not
