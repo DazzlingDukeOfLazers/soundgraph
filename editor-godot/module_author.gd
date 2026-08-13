@@ -30,7 +30,20 @@ class Result extends RefCounted:
 ## `terminal_types` names the node types that may not live inside a module (the
 ## caller reads them from the registry's Terminals category — this class stays
 ## registry-blind).
-static func collapse(patch: Dictionary, selected: Array, terminal_types: Array) -> Result:
+##
+## `nominated` is an optional surface the author picked by hand, in the order they picked
+## it: an array of {"kind": "input"|"output"|"parameter", "node": id, "port"/"parameter":
+## name}. Given one, it is used verbatim and nothing is derived — which is the difference
+## between a module whose face was designed and one whose face was inferred. The order
+## survives into the panel, because the order somebody clicked things in is the only
+## statement of intent available at that moment and throwing it away to re-derive one
+## would be perverse.
+##
+## Left empty, everything below derives as it always has: boundary connections become
+## ports, authored parameters become knobs. That is still the right answer for collapsing
+## a working circuit, where the wiring already says where the edges are.
+static func collapse(patch: Dictionary, selected: Array, terminal_types: Array,
+		nominated: Array = []) -> Result:
 	var result := Result.new()
 	if selected.size() < 2:
 		result.error = "select two or more nodes to collapse into a module"
@@ -59,11 +72,45 @@ static func collapse(patch: Dictionary, selected: Array, terminal_types: Array) 
 	result.instance_id = _unique_name(result.module_name,
 		patch.get("nodes", []).map(func(n): return str(n["id"])))
 
-	# ---- boundary analysis: connections crossing the selection edge become ports -----
 	var internal: Array = []
 	var inputs: Array = []            # declared input bindings
 	var outputs: Array = []           # declared output bindings
+	var exported: Array = []          # declared parameter bindings
+	var instance_parameters := {}
 	var rewritten: Array = []         # the document's connections, post-collapse
+	var inner_by_id := {}
+	for node in inner_nodes:
+		inner_by_id[str(node["id"])] = node
+
+	# ---- the author's own surface, first and in the order they picked it -------------
+	# Before the boundary analysis rather than after, so a connection crossing the edge
+	# onto a port they already nominated finds that binding and reuses its name instead
+	# of declaring a second port for the same place. It also means the panel needs no
+	# statement of its own: declared order is click order, and the face is drawn in
+	# declared order.
+	for pick: Dictionary in nominated:
+		var pick_node := str(pick.get("node", ""))
+		if not chosen.has(pick_node):
+			continue
+		match str(pick.get("kind", "")):
+			"input":
+				_binding_name(inputs, pick_node, str(pick.get("port", "")))
+			"output":
+				_binding_name(outputs, pick_node, str(pick.get("port", "")))
+			"parameter":
+				var parameter := str(pick.get("parameter", ""))
+				var export_name := _export_for(exported, instance_parameters, pick_node,
+					parameter)
+				var authored: Variant = inner_by_id.get(pick_node, {}) \
+					.get("parameters", {}).get(parameter, null)
+				if authored != null:
+					instance_parameters[export_name] = authored
+
+	# ---- boundary analysis: connections crossing the selection edge become ports -----
+	# A boundary connection still declares a port even when the author nominated a
+	# surface and left this one out. The alternative is dropping a cable somebody had
+	# wired, which is a worse answer than a module having one more port than was asked
+	# for — and the port is genuinely needed, because something is plugged into it.
 	for connection in patch.get("connections", []):
 		var from_in: bool = chosen.has(str(connection["from"]["node"]))
 		var to_in: bool = chosen.has(str(connection["to"]["node"]))
@@ -85,18 +132,21 @@ static func collapse(patch: Dictionary, selected: Array, terminal_types: Array) 
 		rewritten.append(copy)
 
 	# ---- exports: every knob the author had touched --------------------------------
-	var exported: Array = []
-	var instance_parameters := {}
-	for node in inner_nodes:
-		for parameter_name in node.get("parameters", {}):
-			var export_name := str(parameter_name)
-			for existing in exported:
-				if existing["name"] == export_name:
-					export_name = "%s_%s" % [str(node["id"]), parameter_name]
-					break
-			exported.append({"name": export_name, "node": str(node["id"]),
-				"parameter": str(parameter_name)})
-			instance_parameters[export_name] = node["parameters"][parameter_name]
+	# Only when they nominated nothing. "Every parameter that was set" is a good guess at
+	# what matters and a bad substitute for being told: it is the rule that makes a
+	# collapsed module arrive with thirty knobs. Where there is a nomination, it is the
+	# whole answer.
+	if nominated.is_empty():
+		for node in inner_nodes:
+			for parameter_name in node.get("parameters", {}):
+				var export_name := str(parameter_name)
+				for existing in exported:
+					if existing["name"] == export_name:
+						export_name = "%s_%s" % [str(node["id"]), parameter_name]
+						break
+				exported.append({"name": export_name, "node": str(node["id"]),
+					"parameter": str(parameter_name)})
+				instance_parameters[export_name] = node["parameters"][parameter_name]
 
 	# ---- controls and automation follow their targets through the facade -------------
 	# First Synth's cutoff knob targets the filter; after the filter moves inside a

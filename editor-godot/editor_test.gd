@@ -1,4 +1,8 @@
 extends SceneTree
+
+## The authoring transforms, reached directly so a collapse can be checked without going
+## through a menu. main.gd preloads the same file.
+const ModuleAuthor := preload("res://module_author.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -2620,6 +2624,72 @@ func _initialize() -> void:
 			% [example_name, shipped_worst if shipped_worst != "" else "clear"])
 	await main._load_example("First Synth")
 	await process_frame
+
+	# ---- collapse takes a surface it is given, rather than guessing one ---------------
+	# The derivation is a good guess and a bad substitute for being told: "every
+	# parameter that was set" is the rule that makes a collapsed module arrive with
+	# thirty knobs. Nominating is how the wand says what a module is for.
+	var nominating := {
+		"schema_version": 1,
+		"nodes": [
+			{"id": "kb", "type": "NoteInput"},
+			{"id": "env", "type": "ADSR", "parameters": {"attack": 0.02, "decay": 0.3}},
+			{"id": "amp", "type": "Gain", "parameters": {"gain": 0.5}},
+			{"id": "out", "type": "StereoOutput"},
+		],
+		"connections": [
+			{"from": {"node": "kb", "port": "gate"}, "to": {"node": "env", "port": "gate"}},
+			{"from": {"node": "env", "port": "out"}, "to": {"node": "amp", "port": "gain"}},
+			{"from": {"node": "amp", "port": "out"}, "to": {"node": "out", "port": "left"}},
+		],
+	}
+	var terminals_here: Array = []
+	for type_name in main.registry:
+		if str(main.registry[type_name].get("category", "")) == "Terminals":
+			terminals_here.append(type_name)
+
+	var derived = ModuleAuthor.collapse(nominating, ["env", "amp"], terminals_here)
+	check(derived.ok(), "the derived collapse still works (%s)" % derived.error)
+	var derived_exports: Array = derived.patch["modules"][derived.module_name] \
+		.get("parameters", []).map(func(p): return str(p["name"]))
+	check(derived_exports.size() == 3,
+		"deriving exports every knob that was set (%s)" % str(derived_exports))
+
+	# The same selection, told what it is for: two knobs, in the order they were picked.
+	var picked = ModuleAuthor.collapse(nominating, ["env", "amp"], terminals_here, [
+		{"kind": "parameter", "node": "amp", "parameter": "gain"},
+		{"kind": "parameter", "node": "env", "parameter": "attack"},
+	])
+	check(picked.ok(), "a nominated collapse works (%s)" % picked.error)
+	var picked_definition: Dictionary = picked.patch["modules"][picked.module_name]
+	var picked_exports: Array = picked_definition.get("parameters", []) \
+		.map(func(p): return str(p["name"]))
+	check(picked_exports == ["gain", "attack"],
+		"a nominated surface is taken verbatim, in the order it was picked (%s)"
+			% str(picked_exports))
+	# No panel: declared order is click order and the face is drawn in declared order, so
+	# a panel here would be a second statement of the same thing.
+	check(not picked_definition.has("panel"), "and needs no panel to say so")
+
+	# The wiring still decides what must exist. gate and out cross the boundary and were
+	# not nominated; dropping them would drop cables somebody had wired.
+	var picked_in: Array = picked_definition.get("inputs", []) \
+		.map(func(p): return str(p["name"]))
+	var picked_out: Array = picked_definition.get("outputs", []) \
+		.map(func(p): return str(p["name"]))
+	check(picked_in == ["gate"] and picked_out == ["out"],
+		"a boundary connection still declares its port even when unnominated (%s, %s)"
+			% [str(picked_in), str(picked_out)])
+	var picked_orphans := []
+	var picked_ids := {}
+	for node in picked.patch["nodes"]:
+		picked_ids[str(node["id"])] = true
+	for connection in picked.patch["connections"]:
+		for end in ["from", "to"]:
+			if not picked_ids.has(str(connection[end]["node"])):
+				picked_orphans.append(str(connection[end]["node"]))
+	check(picked_orphans.is_empty(),
+		"so no cable is left dangling (%s)" % str(picked_orphans))
 
 	# And the document does not move when the preference does. Positions belong to the
 	# patch; scaling them into the graph's world is a rendering decision, and a rendering
