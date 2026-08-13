@@ -637,6 +637,12 @@ func _build_ui() -> void:
 	graphrack.edit_started.connect(func() -> void: _begin_edit())
 	graphrack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
 	graphrack.node_selected.connect(_on_rack_node_selected)
+	# Jacks take the mouse now, so the case has to do something with a cable dragged
+	# between two of them or the gesture would be swallowed here while working next door
+	# in the builder. Patching the document from the rack is where this view is going
+	# anyway — it is the only thing left that made it a picture of a patcher.
+	graphrack.connection_made.connect(_on_rack_connection_made)
+	graphrack.patch_refused.connect(func(reason: String) -> void: _say(reason))
 	# A plain Control between the scroll container and the rack. Containers reset their
 	# children's scale on every layout pass, so a rack parented straight to the scroller
 	# could reserve the room for a zoom but never actually draw at it. The holder takes
@@ -662,6 +668,8 @@ func _build_ui() -> void:
 	builder.ink = INK
 	builder.ink_dim = INK_DIM
 	builder.panel_edited.connect(_on_panel_edited)
+	builder.wired.connect(_on_definition_wired)
+	builder.refused.connect(func(reason: String) -> void: _say(reason))
 	views.add_child(builder)
 
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
@@ -2131,6 +2139,46 @@ func _on_panel_edited(edited_module: String, panel: Dictionary, label: String) -
 	_commit_edit(label)
 
 
+## Runs a cable between two of a definition's own nodes.
+##
+## This is the operation that makes the builder able to start from nothing: a definition's
+## declared surface is *derived from its wiring*, so a cable here does not merely connect
+## two primitives — it is also how ports appear and disappear on every instance of the
+## module. Wiring an ADSR's out into an Amp's gain is what turns two nodes into one thing
+## with a face.
+##
+## Several cables may land on one input and they sum, which is what happens in the Graph
+## tab and what ModuleAuthor already assumes — its port bindings deduplicate precisely so
+## that "two sources feeding one inner port" survives expansion unchanged. Patching the
+## same pair twice is the one case refused, because that is a slip rather than a mix.
+func _on_definition_wired(edited_module: String, from_node: String, from_port: String,
+		to_node: String, to_port: String) -> void:
+	var definition: Dictionary = patch.get("modules", {}).get(edited_module, {})
+	if definition.is_empty():
+		return
+	if not definition.has("connections"):
+		definition["connections"] = []
+	for connection in definition["connections"]:
+		if str(connection["from"]["node"]) == from_node \
+				and str(connection["from"]["port"]) == from_port \
+				and str(connection["to"]["node"]) == to_node \
+				and str(connection["to"]["port"]) == to_port:
+			_say("%s.%s already feeds %s.%s" % [from_node, from_port, to_node, to_port])
+			return
+	_begin_edit()
+	definition["connections"].append({
+		"from": {"node": from_node, "port": from_port},
+		"to": {"node": to_node, "port": to_port},
+	})
+	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	builder.patch = patch
+	builder.rebuild()
+	_apply()
+	_commit_edit("wire %s.%s to %s.%s" % [from_node, from_port, to_node, to_port])
+
+
 ## A module's name as a person would write it: "dx7_operator" is a DX7 Operator.
 ##
 ## capitalize() alone gave "Dx7 Operator", because it has no way to know that dx7 is a
@@ -2919,6 +2967,31 @@ func _on_connection_request(from_node: StringName, from_port: int, to_node: Stri
 		"to": {"node": to_id, "port": to_ports[to_port]["name"]},
 	})
 	graph_edit.connect_node(from_node, from_port, to_node, to_port)
+	_apply()
+	_commit_edit("connect")
+
+
+## The same edit as _on_connection_request, arriving from a rack instead of a GraphEdit.
+##
+## By port name rather than by index, because that is what a rack has: a jack knows what
+## it is called and never learned its position in a slot list. The two paths agree on
+## everything that matters — several cables into one input sum, an exact duplicate is a
+## slip and is refused.
+func _on_rack_connection_made(from_node: String, from_port: String,
+		to_node: String, to_port: String) -> void:
+	for connection in patch.get("connections", []):
+		if str(connection["from"]["node"]) == from_node \
+				and str(connection["from"]["port"]) == from_port \
+				and str(connection["to"]["node"]) == to_node \
+				and str(connection["to"]["port"]) == to_port:
+			_say("%s.%s already feeds %s.%s" % [from_node, from_port, to_node, to_port])
+			return
+	_begin_edit()
+	patch["connections"].append({
+		"from": {"node": from_node, "port": from_port},
+		"to": {"node": to_node, "port": to_port},
+	})
+	await _rebuild_view()
 	_apply()
 	_commit_edit("connect")
 

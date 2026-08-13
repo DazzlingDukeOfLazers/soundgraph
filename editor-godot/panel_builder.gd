@@ -21,6 +21,11 @@ extends HSplitContainer
 
 ## The panel as it now stands, ready to store on the definition. `label` is the undo entry.
 signal panel_edited(module_name: String, panel: Dictionary, label: String)
+## A cable the author just patched between two of the definition's own nodes.
+signal wired(module_name: String, from_node: String, from_port: String,
+	to_node: String, to_port: String)
+## Something the author tried that could not be done, in words for the status line.
+signal refused(reason: String)
 
 const LIST_WIDTH := 420.0
 ## Enough to hold a whole module. A preview clipped through its own bottom row of knobs
@@ -72,6 +77,15 @@ func _build_left() -> Control:
 	_inner.type_colours = type_colours
 	_inner.ink = ink
 	_inner.ink_dim = ink_dim
+	# Patching, inside the module. This is the half that makes the tab able to build a
+	# combo from nothing: add two primitives, run a cable between them, and the module's
+	# declared surface follows — a definition's ports are derived from its wiring.
+	_inner.connection_made.connect(func(from_node: String, from_port: String,
+			to_node: String, to_port: String) -> void:
+		if module_name == "":
+			return
+		wired.emit(module_name, from_node, from_port, to_node, to_port))
+	_inner.patch_refused.connect(func(reason: String) -> void: refused.emit(reason))
 	# A plain Control between scroller and rack, for the same reason the main case has
 	# one: a container resets its children's transform on every layout pass.
 	_inner_holder = Control.new()

@@ -1251,12 +1251,90 @@ func _initialize() -> void:
 		"and so is a module inside a module (%d)"
 			% main.patch["modules"]["envamp"]["nodes"].size())
 
+	# ---- and its jacks patch, which is what makes the tab able to start from nothing ---
+	# A definition's declared surface is derived from its wiring, so a cable run here is
+	# not only a connection: it is how ports appear on every instance of the module.
+	var wire_from: GraphRack.Jack = null
+	var wire_to: GraphRack.Jack = null
+	for module_id in builder._inner._modules:
+		var each = builder._inner._modules[module_id]
+		for jack: GraphRack.Jack in each._jacks:
+			if module_id == added and not jack.is_input and wire_from == null:
+				wire_from = jack
+			elif module_id == "amp" and jack.is_input and wire_to == null:
+				wire_to = jack
+	check(wire_from != null and wire_to != null,
+		"the new primitive and the amp both have jacks to patch between")
+	if wire_from != null and wire_to != null:
+		var wires_was: int = main.patch["modules"]["envamp"]["connections"].size()
+
+		# Let go over nothing. Reaching for a jack and missing is the most ordinary thing
+		# that happens with a patch lead, so it cancels rather than complains.
+		builder._inner.begin_patch(wire_from,
+			builder._inner._modules[added].jack_position(wire_from.port_name, false))
+		builder._inner.finish_patch(Vector2(-4000, -4000))
+		await process_frame
+		check(main.patch["modules"]["envamp"]["connections"].size() == wires_was,
+			"a cable dropped on nothing is a cancel, not a cable (%d)"
+				% main.patch["modules"]["envamp"]["connections"].size())
+
+		# Output to output is refused, and says why rather than doing nothing.
+		var other_out: GraphRack.Jack = null
+		for jack: GraphRack.Jack in builder._inner._modules["amp"]._jacks:
+			if not jack.is_input:
+				other_out = jack
+		if other_out != null:
+			builder._inner.begin_patch(wire_from,
+				builder._inner._modules[added].jack_position(wire_from.port_name, false))
+			builder._inner.finish_patch(
+				builder._inner._modules["amp"].jack_position(other_out.port_name, false))
+			await process_frame
+			check(main.patch["modules"]["envamp"]["connections"].size() == wires_was,
+				"two outputs do not make a cable (%d)"
+					% main.patch["modules"]["envamp"]["connections"].size())
+
+		# And the real thing: out into in.
+		builder._inner.begin_patch(wire_from,
+			builder._inner._modules[added].jack_position(wire_from.port_name, false))
+		builder._inner.finish_patch(
+			builder._inner._modules["amp"].jack_position(wire_to.port_name, true))
+		for _settle in 6:
+			await process_frame
+		var wires: Array = main.patch["modules"]["envamp"]["connections"]
+		check(wires.size() == wires_was + 1,
+			"dragging one jack onto another runs a cable (%d, was %d)"
+				% [wires.size(), wires_was])
+		if wires.size() == wires_was + 1:
+			var made: Dictionary = wires[wires.size() - 1]
+			check(str(made["from"]["node"]) == added
+					and str(made["to"]["node"]) == "amp",
+				"from the output end to the input end, whichever was grabbed first (%s → %s)"
+					% [str(made["from"]["node"]), str(made["to"]["node"])])
+		# The cable is in the definition, so it is in every instance — and the module's
+		# own view of itself moved with it.
+		check(builder._inner.cable_endpoints().size() == wires.size(),
+			"and the builder draws it (%d)" % builder._inner.cable_endpoints().size())
+
+	# Read through get() from here on. An earlier check failing changes how far these
+	# undos travel, and indexing a document that no longer has a `modules` key throws —
+	# which in this harness aborts _initialize before it can quit() and turns one honest
+	# failure into a hung run that reports nothing at all.
+	var envamp := func() -> Dictionary:
+		return main.patch.get("modules", {}).get("envamp", {})
+
 	main._undo()
 	for _settle in 6:
 		await process_frame
-	check(main.patch["modules"]["envamp"]["nodes"].size() == 2,
-		"and undo takes the added primitive back out (%d)"
-			% main.patch["modules"]["envamp"]["nodes"].size())
+	check(envamp.call().get("connections", []).size() == 1,
+		"undo pulls the cable back out (%d)"
+			% envamp.call().get("connections", []).size())
+
+	main._undo()
+	for _settle in 6:
+		await process_frame
+	check(envamp.call().get("nodes", []).size() == 2,
+		"and undo again takes the added primitive back out (%d)"
+			% envamp.call().get("nodes", []).size())
 
 	main.patch = before_panels
 	main._synthesize_module_descriptors()

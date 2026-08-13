@@ -861,6 +861,92 @@ func cable_related(index: int, cables: Array = []) -> bool:
 	return str(entry[3]) == selected_id or str(entry[4]) == selected_id
 
 
+# ---------------------------------------------------------------------------------
+# Patching
+#
+# Drag from one jack to another and a cable exists. The rack owns the middle of the
+# gesture because it is the thing that knows where all the other jacks are; the ends
+# are handled on Jack, which is where Godot delivers them. See Jack._gui_input.
+# ---------------------------------------------------------------------------------
+
+## A cable the author just made. The rack does not touch the document itself — the same
+## arrangement every other edit here uses, so undo stays in one place.
+signal connection_made(from_node: String, from_port: String,
+	to_node: String, to_port: String)
+## Why a drop did not become a cable, in words meant for the status line.
+signal patch_refused(reason: String)
+
+var _patch_from: Jack = null
+var _patch_to := Vector2.ZERO
+
+
+func begin_patch(jack: Jack, at: Vector2) -> void:
+	_patch_from = jack
+	_patch_to = at
+	if _cables != null:
+		_cables.queue_redraw()
+
+
+func update_patch(at: Vector2) -> void:
+	if _patch_from == null:
+		return
+	_patch_to = at
+	if _cables != null:
+		_cables.queue_redraw()
+
+
+## Where the cable was let go. A drop on nothing is a cancel, not an error: reaching for
+## a jack and missing is the most ordinary thing that happens with a patch lead, and
+## saying so every time would be nagging.
+func finish_patch(at: Vector2) -> void:
+	var from := _patch_from
+	_patch_from = null
+	if _cables != null:
+		_cables.queue_redraw()
+	if from == null:
+		return
+	var target: Jack = jack_at(at)
+	if target == null or target == from:
+		return
+	if target.is_input == from.is_input:
+		patch_refused.emit("%s and %s are both %ss — a cable runs from an output to an input"
+			% [from.port_name, target.port_name, "input" if from.is_input else "output"])
+		return
+	var source: Jack = from if not from.is_input else target
+	var sink: Jack = target if not from.is_input else from
+	connection_made.emit(source.node_id, source.port_name, sink.node_id, sink.port_name)
+
+
+## The jack under a point in rack coordinates, across every module, or null.
+func jack_at(point: Vector2):
+	for node_id in _modules:
+		var module: RackModule = _modules[node_id]
+		if module == null:
+			continue
+		var found = module.jack_near(point)
+		if found != null:
+			return found
+	return null
+
+
+## Where the cable being dragged runs, as [from, to, colour], or an empty array.
+func patch_in_flight() -> Array:
+	if _patch_from == null:
+		return []
+	var module: RackModule = _modules.get(_patch_from.node_id)
+	if module == null:
+		return []
+	var at: Variant = module.jack_position(_patch_from.port_name, _patch_from.is_input)
+	if at == null:
+		return []
+	var colour: Color = type_colours.get(_patch_from.type_name, Color.WHITE)
+	# Drawn from the socket to the pointer in whichever order puts the output first, so a
+	# cable dragged backwards out of an input still hangs the way a cable hangs.
+	if _patch_from.is_input:
+		return [_patch_to, at as Vector2, colour]
+	return [at as Vector2, _patch_to, colour]
+
+
 ## Tracks the cable under the pointer.
 func _update_cable_hover(point: Vector2) -> void:
 	var found := cable_at(point)
@@ -1057,6 +1143,23 @@ class CableLayer extends Control:
 				for spot: Vector2 in [a, b]:
 					draw_arc(spot, 12.0, 0.0, TAU, 28, colour, 2.0, true)
 
+		# The cable being dragged, on top of the rest and never dimmed — it is the only
+		# thing on the case that is currently anybody's business.
+		var flight: Array = rack.patch_in_flight()
+		if not flight.is_empty():
+			var a: Vector2 = flight[0]
+			var b: Vector2 = flight[1]
+			var colour: Color = flight[2]
+			var span := absf(b.x - a.x)
+			var sag := clampf(span * GraphRack.SAG_FRACTION, GraphRack.SAG_MIN,
+				GraphRack.SAG_MAX)
+			var points := GraphRack.catenary(a, b, sag)
+			draw_polyline(points, Color(0, 0, 0, 0.45), 7.0, true)
+			draw_polyline(points, colour, 4.0, true)
+			# A ring at the loose end, so it is obvious which end you are holding.
+			draw_circle(a, 5.0, colour)
+			draw_arc(b, 10.0, 0.0, TAU, 24, colour, 2.0, true)
+
 
 # ---------------------------------------------------------------------------------
 # A module
@@ -1191,6 +1294,7 @@ class RackModule extends Control:
 		for port: Dictionary in ports:
 			var jack := Jack.new()
 			jack.rack = rack
+			jack.node_id = node_id
 			jack.port_name = str(port["name"])
 			jack.type_name = str(port.get("type", ""))
 			jack.is_input = is_input
@@ -1203,6 +1307,26 @@ class RackModule extends Control:
 			if jack.port_name == port_name and jack.is_input == is_input:
 				return jack.type_name
 		return ""
+
+	## The jack whose socket is nearest `point`, in rack coordinates, or null.
+	##
+	## Generous on purpose. A socket is about eight pixels across and a cable end dropped
+	## two pixels outside one is unmistakably aimed at it — a hit test as small as the
+	## drawing would make patching a test of aim rather than of intent.
+	func jack_near(point: Vector2):
+		var reach: float = GraphRack.jack_radius() * 2.2
+		var closest = null
+		var best := reach
+		for jack: Jack in _jacks:
+			var at: Variant = jack_position(jack.port_name, jack.is_input)
+			if at == null:
+				continue
+			var away: float = (at as Vector2).distance_to(point)
+			if away < best:
+				best = away
+				closest = jack
+		return closest
+
 
 	## Centre of a jack, in rack space, or null when this module has no such port.
 	func jack_position(port_name: String, is_input: bool):
@@ -1396,14 +1520,52 @@ class RackModule extends Control:
 ## column it sits in can be as wide as its widest member. That is the whole fix.
 class Jack extends Control:
 	var rack: Control
+	## Which module this jack belongs to. A cable needs both ends named, and asking the
+	## parent chain at drop time is one more thing that can be wrong.
+	var node_id := ""
 	var port_name := ""
 	var type_name := ""
 	var is_input := true
 
+	var _patching := false
+
 	func _ready() -> void:
 		# The full name, always, whatever the panel had room to print.
 		tooltip_text = port_name
-		mouse_filter = Control.MOUSE_FILTER_PASS
+		# STOP, not PASS. A press on a jack is the start of a cable; passed through, it
+		# reached the panel underneath and started dragging the module instead, which is
+		# the same gesture meaning two things a few pixels apart.
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+	## Patching, from the end that started it.
+	##
+	## The whole gesture is handled here rather than on the rack because Godot keeps
+	## sending motion and the release to whichever control took the press — so this is the
+	## only place that reliably sees the end of a drag that finishes somewhere else. Where
+	## it finished is a question for the rack, which is the thing that knows where every
+	## other jack is.
+	func _gui_input(event: InputEvent) -> void:
+		var button := event as InputEventMouseButton
+		if button != null and button.button_index == MOUSE_BUTTON_LEFT:
+			if button.pressed:
+				_patching = true
+				rack.begin_patch(self, _rack_point(button.global_position))
+				accept_event()
+			elif _patching:
+				_patching = false
+				rack.finish_patch(_rack_point(button.global_position))
+				accept_event()
+			return
+		var motion := event as InputEventMouseMotion
+		if motion != null and _patching:
+			rack.update_patch(_rack_point(motion.global_position))
+			accept_event()
+
+	## Screen to rack coordinates. Through the rack's own transform, so this stays right
+	## at every zoom — the class of bug that once left every cable end at its 100% place.
+	func _rack_point(global_point: Vector2) -> Vector2:
+		return rack.get_global_transform().affine_inverse() * global_point
 
 	func _label_font() -> Font:
 		return Design.font(Design.WEIGHT_MEDIUM)
