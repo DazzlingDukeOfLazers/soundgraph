@@ -698,9 +698,44 @@ var hovered_cable: Dictionary = {}
 
 signal port_hovered(widget_name: String, side: String, index: int)
 
+# ---------------------------------------------------------------------------------
+# The wand
+#
+# A module declares a surface — the ports a patch can plug into, the knobs it can turn.
+# Collapse used to derive that surface from the wiring, which is a fair guess and a poor
+# substitute for being told: "every parameter that was set becomes a knob" is the rule
+# that makes a collapsed module arrive wearing thirty of them. The wand is being told.
+# Click the jacks and knobs that should show, in the order they should show in, and
+# ModuleAuthor.collapse takes the list verbatim.
+#
+# It has to happen *before* the collapse, because that is the only moment the parts are
+# still on the canvas. Afterwards the instance wears one face and its insides are not
+# there to point at.
+#
+# Only selected nodes are pickable, which is also the whole explanation of collapse
+# ignoring a nomination from outside the selection: the selection says what goes inside
+# the module and the wand says what shows on it, so a knob that is not going inside has
+# no face to appear on. Better that there is nothing there to click than a sentence
+# explaining why the click did nothing.
+#
+# Picking is done from `_input` rather than `_gui_input`, which is the only reason this
+# needs no shields over the knobs. A knob is a real Control and swallows its own clicks,
+# so by the time GraphEdit hears about a press on one it is far too late — but `_input`
+# runs *before* the GUI pass, so the wand gets first refusal and hands back anything it
+# does not want. Selecting, dragging and panning are untouched while it is up.
+## True while the wand is picking. Set through `set_wand` so the input hook follows it.
+var wand := false
+## The picks, resolved for drawing: {"widget", "side", "index", "ordinal"} for a jack,
+## {"row": Control, "ordinal": int} for a knob. Written by the editor, read by the overlay.
+var wand_marks: Array = []
+
+signal port_picked(widget_name: String, side: String, index: int)
+signal parameter_picked(widget_name: String, parameter: String)
+
 var _overlay: CrossingOverlay
 var _glow: GlowOverlay
 var _titles: ScreenText
+var _wand_overlay: WandOverlay
 
 
 func _ready() -> void:
@@ -717,6 +752,10 @@ func _ready() -> void:
 	_titles = ScreenText.new()
 	_titles.graph = self
 	add_child(_titles)
+	_wand_overlay = WandOverlay.new()
+	_wand_overlay.graph = self
+	add_child(_wand_overlay)
+	set_process_input(false)
 	begin_node_move.connect(func() -> void: _grid_target = 1.0)
 	end_node_move.connect(func() -> void: _grid_target = 0.0)
 	set_process(true)
@@ -1079,9 +1118,187 @@ class GlowOverlay extends Control:
 						Color(colour.r, colour.g, colour.b, MAX_ALPHA * level * ring[1]))
 
 
+## What the wand can reach, and what it has already taken.
+##
+## Two jobs, one canvas item, because they answer one question between them: everything
+## the wand could touch is outlined, and everything it has touched wears the number it
+## was given. The numbers are the point — declared order is click order and a module's
+## face is drawn in declared order, so the badges are a live preview of the panel, not
+## decoration on a selection.
+class WandOverlay extends Control:
+	var graph = null
+
+	## Big enough to hold two digits and still read at half zoom. A module with more than
+	## ninety-nine things on its face has a problem this badge is not going to fix.
+	const BADGE_RADIUS := 11.0
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		# Above the nodes, for the same reason the glow is: a badge behind the panel it
+		# belongs to is a badge nobody sees. See GlowOverlay for why this is z_index and
+		# not a reorder.
+		z_index = 101
+
+	func _process(_delta: float) -> void:
+		if graph != null and graph.wand:
+			queue_redraw()
+
+	func _draw() -> void:
+		if graph == null or not graph.wand:
+			return
+		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		var available := Color(Design.ACCENT, 0.34)
+
+		# What can be picked. Only the selection, which is what makes the rule legible
+		# without a sentence: the wand reaches exactly as far as the module will.
+		for child in graph.get_children():
+			var node := child as GraphNode
+			if node == null or not node.visible or not node.selected:
+				continue
+			for side in ["left", "right"]:
+				var count: int = node.get_input_port_count() if side == "left" \
+					else node.get_output_port_count()
+				for index in count:
+					draw_arc(_jack(node, side, index), Design.scale(9.0) * scale, 0.0, TAU, 20,
+						available, 1.5, true)
+			for row in _rows(node):
+				draw_rect(_local(row.get_global_rect()).grow(2.0), available, false, 1.5)
+
+		# What has been picked, wearing its ordinal.
+		for mark: Dictionary in graph.wand_marks:
+			var ordinal := int(mark.get("ordinal", 0))
+			if mark.has("row"):
+				if not is_instance_valid(mark["row"]):
+					continue
+				var row := mark["row"] as Control
+				if row == null or not row.is_visible_in_tree():
+					continue
+				var rect := _local(row.get_global_rect())
+				draw_rect(rect.grow(2.0), Design.ACCENT, false, 2.0)
+				_badge(rect.position + Vector2(rect.size.x, 0.0), ordinal, scale)
+				continue
+			var node := graph.get_node_or_null(NodePath(str(mark.get("widget", "")))) as GraphNode
+			if node == null:
+				continue
+			_badge(_jack(node, str(mark.get("side", "left")), int(mark.get("index", 0))),
+				ordinal, scale)
+
+	## A jack's centre, in this overlay's coordinates.
+	func _jack(node: GraphNode, side: String, index: int) -> Vector2:
+		var spot: Vector2 = node.get_input_port_position(index) if side == "left" \
+			else node.get_output_port_position(index)
+		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		return (node.position_offset + spot) * scale - graph.scroll_offset
+
+	## Global rects come from the nodes, which live under GraphEdit's own transform; this
+	## overlay does not. Converting is cheaper than assuming they agree.
+	func _local(rect: Rect2) -> Rect2:
+		var inverse := get_global_transform().affine_inverse()
+		return Rect2(inverse * rect.position, rect.size * inverse.get_scale())
+
+	func _rows(node: Node, found: Array = []) -> Array:
+		for child in node.get_children():
+			var control := child as Control
+			if control == null or not control.is_visible_in_tree():
+				continue
+			if control.get_meta("cell", "") == "parameter":
+				found.append(control)
+				continue
+			_rows(control, found)
+		return found
+
+	func _badge(centre: Vector2, ordinal: int, scale: float) -> void:
+		var radius: float = Design.scale(BADGE_RADIUS) * scale
+		draw_circle(centre, radius, Design.ACCENT)
+		var font := Design.font(Design.WEIGHT_SEMIBOLD)
+		var size: int = maxi(int(radius * 1.2), 8)
+		var text := str(ordinal)
+		var measured := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1.0, size)
+		draw_string(font, centre + Vector2(-measured.x * 0.5, measured.y * 0.34), text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ON_ACCENT)
+
+
+## Sets whether the wand is picking. The input hook is installed and removed with it, so
+## nothing at all is intercepted when the wand is down.
+func set_wand(active: bool) -> void:
+	if wand == active:
+		return
+	wand = active
+	set_process_input(active)
+	if not active:
+		wand_marks.clear()
+	if _wand_overlay != null:
+		_wand_overlay.queue_redraw()
+
+
+## First refusal on a click, ahead of the GUI pass — which is what lets a knob be picked
+## at all, since a knob is a Control and would otherwise eat its own press. Anything the
+## wand does not want falls through untouched, so selecting, dragging and panning still
+## work with it up.
+func _input(event: InputEvent) -> void:
+	if not wand or not is_visible_in_tree():
+		return
+	var button := event as InputEventMouseButton
+	if button == null or button.button_index != MOUSE_BUTTON_LEFT or not button.pressed:
+		return
+	var rect := get_global_rect()
+	if not rect.has_point(button.position):
+		return
+
+	# Jacks first. They sit on the node's edge and their hot zone overlaps the body, so
+	# asking about knobs first would make an edge knob unreachable.
+	var port := port_at(button.position - rect.position, true)
+	if not port.is_empty():
+		port_picked.emit(str(port["widget"]), str(port["side"]), int(port["index"]))
+		get_viewport().set_input_as_handled()
+		return
+
+	var row := parameter_row_at(button.position)
+	if row == null:
+		return
+	var holder: Node = row
+	while holder != null and not (holder is GraphNode):
+		holder = holder.get_parent()
+	if holder == null:
+		return
+	parameter_picked.emit(String(holder.name), str(row.get_meta("parameter_name", "")))
+	get_viewport().set_input_as_handled()
+
+
+## The parameter row under a viewport-space point, or null. Rows fold away under the
+## disclosure triangle and at low zoom, and `is_visible_in_tree` is what stops the wand
+## picking a knob that is not on screen to be picked.
+func parameter_row_at(point: Vector2) -> Control:
+	for child in get_children():
+		var node := child as GraphNode
+		if node == null or not node.visible or not node.selected:
+			continue
+		var found := _row_at(node, point)
+		if found != null:
+			return found
+	return null
+
+
+func _row_at(parent: Node, point: Vector2) -> Control:
+	for child in parent.get_children():
+		var control := child as Control
+		if control == null or not control.is_visible_in_tree():
+			continue
+		if control.get_meta("cell", "") == "parameter":
+			if control.get_global_rect().has_point(point):
+				return control
+			continue
+		var deeper := _row_at(control, point)
+		if deeper != null:
+			return deeper
+	return null
+
+
 ## Finds the port nearest the pointer, within the same reach as the connection hot
-## zone so that hovering and dropping agree about which port you mean.
-func _update_hover(local_point: Vector2) -> void:
+## zone so that hovering and dropping agree about which port you mean. `only_selected`
+## narrows it to the current selection, which is what the wand picks from.
+func port_at(local_point: Vector2, only_selected: bool = false) -> Dictionary:
 	var reach: float = float(get_theme_constant("port_hotzone_outer_extent"))
 	var scale: float = zoom if zoom > 0.0 else 1.0
 	var best := {}
@@ -1090,6 +1307,8 @@ func _update_hover(local_point: Vector2) -> void:
 	for child in get_children():
 		var node := child as GraphNode
 		if node == null or not node.visible:
+			continue
+		if only_selected and not node.selected:
 			continue
 		for side in ["left", "right"]:
 			var count: int = node.get_input_port_count() if side == "left" \
@@ -1102,7 +1321,11 @@ func _update_hover(local_point: Vector2) -> void:
 				if distance < best_distance:
 					best_distance = distance
 					best = {"widget": String(node.name), "side": side, "index": index}
+	return best
 
+
+func _update_hover(local_point: Vector2) -> void:
+	var best := port_at(local_point)
 	if best == hovered_port:
 		return
 	hovered_port = best

@@ -71,6 +71,42 @@ func _collect_buttons(node: Node, found: Array) -> void:
 		_collect_buttons(child, found)
 
 
+# ---- the wand, clicked rather than called ----------------------------------------
+# The picks could be pushed straight into main._toggle_pick, and that would test the
+# bookkeeping and none of the part most likely to break. What makes a knob pickable at
+# all is that PatchGraph takes the press in `_input`, ahead of the GUI pass, before the
+# Control under the pointer can swallow it — so the clicks below go in as real mouse
+# events at real screen positions and are hit-tested the way a hand's would be.
+
+## The viewport point a jack sits at: the same arithmetic the hit test uses, which is
+## fair here because a wrong constant in it moves the drawn jack and the hot zone
+## together, and the drawn position is checked by the screenshot suite.
+func _jack_point(main, widget: GraphNode, side: String, index: int) -> Vector2:
+	var graph = main.graph_edit
+	var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
+	var spot: Vector2 = widget.get_input_port_position(index) if side == "left" \
+		else widget.get_output_port_position(index)
+	return graph.get_global_rect().position \
+		+ (widget.position_offset + spot) * scale - graph.scroll_offset
+
+
+## The middle of the row a knob lives in. Returns INF when the row is not on screen,
+## which is a failure the caller should see rather than a click into empty canvas.
+func _knob_point(main, widget: GraphNode, parameter: String) -> Vector2:
+	var row: Control = main._parameter_row(widget, parameter)
+	if row == null or not row.is_visible_in_tree():
+		return Vector2.INF
+	return row.get_global_rect().get_center()
+
+
+func _wand_click(main, point: Vector2) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = true
+	event.position = point
+	main.graph_edit._input(event)
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -3197,6 +3233,128 @@ func _initialize() -> void:
 	check(main.widgets.has("voice"), "and one instance arrived, ready to wire")
 
 	# And undo puts the two nodes back, because a collapse is an edit like any other.
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+
+	# ---- the wand: the face is pointed at, not worked out ----------------------------
+	# The same two nodes, collapsed the other way round. Raise the wand, click a jack and
+	# two knobs, and the module comes out wearing those and not the seven the derivation
+	# would have given it. Full zoom first: below the compact floor the level of detail
+	# folds knob rows away, and a knob that is not on screen is one the wand may not pick.
+	main.graph_edit.zoom = 1.0
+	for i in 4:
+		await process_frame
+	for id in ["lfo", "filter"]:
+		main.widgets[id].selected = true
+	main._refresh_selection_button()
+	main._set_wand(true)
+	check(main.graph_edit.wand, "the wand goes up")
+
+	var wand_filter: GraphNode = main.widgets["filter"]
+	var wand_lfo: GraphNode = main.widgets["lfo"]
+	var out_index: int = main._output_port_index("filter", "out")
+	_wand_click(main, _jack_point(main, wand_filter, "right", out_index))
+	check(main.wand_picks.size() == 1 and str(main.wand_picks[0].get("kind", "")) == "output",
+		"clicking a jack picks it as an output (%s)" % str(main.wand_picks))
+
+	var cutoff_point := _knob_point(main, wand_filter, "cutoff")
+	check(cutoff_point != Vector2.INF, "the cutoff knob is on screen to be picked")
+	_wand_click(main, cutoff_point)
+	check(main.wand_picks.size() == 2
+			and str(main.wand_picks[1].get("parameter", "")) == "cutoff",
+		"clicking a knob picks it, ahead of the Control that would have eaten the press")
+
+	# Clicking it again takes it back off, which is the only repair a misclick has.
+	_wand_click(main, cutoff_point)
+	check(main.wand_picks.size() == 1, "clicking a pick again drops it (%d)"
+		% main.wand_picks.size())
+	_wand_click(main, cutoff_point)
+
+	var rate_point := _knob_point(main, wand_lfo, "rate")
+	check(rate_point != Vector2.INF, "the LFO's rate knob is on screen to be picked")
+	_wand_click(main, rate_point)
+	check(main.wand_picks.size() == 3, "and a third pick lands (%d)" % main.wand_picks.size())
+
+	# Nothing outside the selection is pickable. The osc feeds the filter, so its output
+	# jack is exactly the kind of thing a hand reaches for by mistake.
+	#
+	# Asserted twice on purpose, because two separate things enforce it and either alone
+	# would let the check pass: the hit test declines to find the jack, and the
+	# bookkeeping drops a pick whose node is not selected. The first is what stops the
+	# status line announcing a pick that is about to be thrown away; the second is what
+	# holds once the selection changes afterwards. Only checking the click proved the
+	# pair, which is how a guard that had stopped working would have gone unnoticed.
+	var osc_index: int = main._output_port_index("osc", "out")
+	var osc_point := _jack_point(main, main.widgets["osc"], "right", osc_index)
+	var graph_origin: Vector2 = main.graph_edit.get_global_rect().position
+	check(main.graph_edit.port_at(osc_point - graph_origin).has("widget"),
+		"the osc's jack is where the test is aiming")
+	check(main.graph_edit.port_at(osc_point - graph_origin, true).is_empty(),
+		"and the hit test does not find it, because its node is not selected")
+	_wand_click(main, osc_point)
+	check(main.wand_picks.size() == 3,
+		"so clicking it picks nothing (%d)" % main.wand_picks.size())
+
+	# A press the wand does not want is a press it does not take. Nothing else on this
+	# canvas would work otherwise — selecting, dragging, panning and rubber-banding all
+	# arrive through the same button, and an interceptor that swallowed everything would
+	# make the wand a mode you cannot select anything in.
+	var title_point: Vector2 = wand_filter.get_global_rect().position \
+		+ Vector2(wand_filter.size.x * 0.5, 8.0)
+	check(main.graph_edit.port_at(title_point - graph_origin, true).is_empty()
+			and main.graph_edit.parameter_row_at(title_point) == null,
+		"a press on the node's own title is neither a jack nor a knob")
+	_wand_click(main, title_point)
+	check(main.wand_picks.size() == 3, "so the wand lets it through (%d)"
+		% main.wand_picks.size())
+
+	# Taking a node out of the selection takes its picks with it, and the ones left close
+	# ranks — a badge reading 3 with no 2 above it would be lying about the panel order.
+	wand_lfo.selected = false
+	main._refresh_selection_button()
+	check(main.wand_picks.size() == 2, "deselecting a node drops its picks (%d)"
+		% main.wand_picks.size())
+	var ordinals: Array = main.graph_edit.wand_marks.map(func(m): return int(m["ordinal"]))
+	check(ordinals == [1, 2], "and the rest renumber from one (%s)" % str(ordinals))
+	wand_lfo.selected = true
+	main._refresh_selection_button()
+	_wand_click(main, _knob_point(main, wand_lfo, "rate"))
+
+	await main._collapse_selection()
+	for i in 6:
+		await process_frame
+
+	check(not main.graph_edit.wand and main.wand_picks.is_empty(),
+		"collapsing puts the wand down and empties it")
+	var picked_def: Dictionary = main.patch.get("modules", {}).get("part", {})
+	var picked_names: Array = picked_def.get("parameters", []) \
+		.map(func(binding): return str(binding["name"]))
+	check(picked_names.slice(0, 2) == ["cutoff", "rate"],
+		"the picked knobs are the face, in the order they were picked (%s)"
+			% str(picked_names))
+	check(not picked_names.has("mode") and not picked_names.has("offset"),
+		"and the knobs nobody pointed at stayed inside (%s)" % str(picked_names))
+	# Two rules a nomination does not get to override, for the same reason: something is
+	# already attached. A boundary connection declares its port whether or not it was
+	# picked, and a control targeting an inner knob exports that knob whether or not it
+	# was picked — dropping either would break wiring somebody had made.
+	var picked_inputs: Array = picked_def.get("inputs", []) \
+		.map(func(binding): return str(binding["name"]))
+	var picked_outputs: Array = picked_def.get("outputs", []) \
+		.map(func(binding): return str(binding["name"]))
+	check(picked_inputs == ["in"], "an unpicked boundary port is still declared (%s)"
+		% str(picked_inputs))
+	check(picked_outputs == ["out"],
+		"and the picked one is not declared twice when the boundary reaches it too (%s)"
+			% str(picked_outputs))
+	check(picked_names.has("resonance") and picked_names.has("amount"),
+		"a knob with a control on it is exported unpicked, so the control still works (%s)"
+			% str(picked_names))
+	check(picked_names.size() == 4,
+		"which is the whole face: two picked, two owed to controls (%d, was 7 derived)"
+			% picked_names.size())
+
 	await main._load_example("First Synth")
 	for i in 6:
 		await process_frame

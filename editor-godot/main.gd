@@ -133,6 +133,14 @@ var widgets: Dictionary = {}           # patch node id -> GraphNode
 var ids: Dictionary = {}               # GraphNode.name -> patch node id
 
 var graph_edit: GraphEdit
+## The face being picked, in the order it was picked, in exactly the shape
+## ModuleAuthor.collapse takes: {"kind", "node", "port"/"parameter"}. Stored against patch
+## ids rather than against widgets, because a rebuild throws every widget away and renames
+## the ones it makes — picks that survive a rebuild are the whole reason this is not just
+## a list of Controls.
+var wand_picks: Array = []
+var wand_button: Button
+var wand_confirm: Button
 var views: TabContainer
 var rack: Rack
 var graphrack: GraphRack
@@ -574,6 +582,8 @@ func _build_ui() -> void:
 	# rather than one per pixel of mouse movement.
 	graph_edit.detail_changed.connect(_apply_detail)
 	graph_edit.port_hovered.connect(_on_port_hovered)
+	graph_edit.port_picked.connect(_on_port_picked)
+	graph_edit.parameter_picked.connect(_on_parameter_picked)
 	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
 	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
@@ -919,6 +929,29 @@ func _build_toolbar() -> Control:
 		elif id == 2:
 			_collapse_selection())
 	graph_group.add_child(_defocus(arrange_menu))
+
+	# The wand, and the verb it exists to feed.
+	#
+	# Collapse is in the Arrange menu because it is a rearrangement of the document; the
+	# wand is out here because it is a gesture, and a gesture buried in a menu is a gesture
+	# nobody finds. Its confirm button appears beside it only while it is up — a permanently
+	# greyed "Make module" would be the fourteenth control on this bar earning nothing.
+	wand_button = Button.new()
+	wand_button.toggle_mode = true
+	wand_button.text = "Wand"
+	wand_button.tooltip_text = "Point at the jacks and knobs the module should show, in " \
+		+ "the order they should appear. Only the selected nodes can be picked, because " \
+		+ "only they are going inside. Pick nothing and the module works out its own face."
+	wand_button.toggled.connect(func(pressed: bool) -> void: _set_wand(pressed))
+	graph_group.add_child(_defocus(wand_button))
+
+	wand_confirm = Button.new()
+	wand_confirm.text = "Make module"
+	wand_confirm.tooltip_text = "The selected nodes become one module wearing what the " \
+		+ "wand picked. Undo undoes it."
+	wand_confirm.visible = false
+	wand_confirm.pressed.connect(func() -> void: _collapse_selection())
+	graph_group.add_child(_defocus(wand_confirm))
 
 	# Fit comes out of that menu and sits beside it, spelled out.
 	#
@@ -1977,6 +2010,11 @@ func _rebuild_view() -> void:
 	# re-applied to the widgets that were not there when it was announced.
 	_apply_detail(graph_edit.detail)
 
+	# Every widget in the marks is now a freed object, and the rows the wand was pointing
+	# at went with them. Re-resolving here is what keeps the overlay from drawing against
+	# a dangling Control on the frame after a rebuild.
+	_refresh_wand()
+
 	# The rack reads the same document, so it is rebuilt from the same place rather than
 	# kept in step by hand.
 	if graphrack != null:
@@ -2919,6 +2957,9 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.set_meta("cell", "parameter")
+	# What the wand needs to name this knob once somebody points at it. The row is the
+	# thing with a rect; without this it is a rect with no idea what it controls.
+	row.set_meta("parameter_name", str(parameter["name"]))
 	var name: String = parameter["name"]
 	var node_id: String = node["id"]
 	var current: float = float(node.get("parameters", {}).get(name, parameter["default"]))
@@ -3806,6 +3847,7 @@ func _refresh_selection_button() -> void:
 	if arrange_popup != null:
 		arrange_popup.set_item_disabled(1, _selected_ids().size() < 2)
 		arrange_popup.set_item_disabled(2, _selected_ids().size() < 2)
+	_refresh_wand()
 
 
 func _selected_ids() -> Array:
@@ -3840,6 +3882,11 @@ func _arrange_selection() -> void:
 ## Wiring becomes notation: the selection turns into a definition plus one instance.
 ## The transform itself lives in ModuleAuthor and never touches the editor; this is
 ## the ceremony around it — the undo snapshot, the descriptor refresh, the rebuild.
+##
+## The wand's picks ride along as the nominated surface. Empty, which it is unless
+## somebody went and pointed at things, collapse derives a surface exactly as it always
+## has — so this stays one verb with one keyboard path whether or not the face was
+## designed.
 func _collapse_selection() -> void:
 	var selected := _selected_ids()
 	if selected.size() < 2:
@@ -3849,17 +3896,160 @@ func _collapse_selection() -> void:
 	for type_name in registry:
 		if str(registry[type_name].get("category", "")) == "Terminals":
 			terminals.append(type_name)
-	var result := ModuleAuthor.collapse(patch, selected, terminals)
+	var picked: Array = wand_picks.duplicate(true)
+	var result := ModuleAuthor.collapse(patch, selected, terminals, picked)
 	if not result.ok():
 		_say(result.error)
 		return
 	_begin_edit()
 	patch = result.patch
 	_synthesize_module_descriptors()
+	_set_wand(false)
 	await _rebuild_view()
 	_apply()
 	_commit_edit("collapse into %s" % result.module_name)
-	_say("collapsed %d nodes into '%s'" % [selected.size(), result.module_name])
+	if picked.is_empty():
+		_say("collapsed %d nodes into '%s'" % [selected.size(), result.module_name])
+	else:
+		_say("collapsed %d nodes into '%s', wearing the %d things you picked"
+			% [selected.size(), result.module_name, picked.size()])
+
+
+# ---------------------------------------------------------------------------------
+# The wand
+#
+# The argument for it, and how a click reaches a knob at all, are in patch_graph.gd.
+# This half is the bookkeeping: what has been picked, in what order, and keeping that
+# list honest as the canvas moves under it.
+# ---------------------------------------------------------------------------------
+
+func _set_wand(active: bool) -> void:
+	if graph_edit == null:
+		return
+	graph_edit.set_wand(active)
+	if wand_button != null and wand_button.button_pressed != active:
+		wand_button.button_pressed = active
+	if wand_confirm != null:
+		wand_confirm.visible = active
+	if not active:
+		# Put down, the picks go with it. Keeping them would mean a face being designed
+		# with nothing on screen saying so, and the next collapse quietly wearing choices
+		# made some minutes ago.
+		wand_picks.clear()
+		_refresh_wand()
+		return
+	_refresh_wand()
+	if _selected_ids().size() < 2:
+		_say("select the nodes the module is made of, then point at what it should show")
+	else:
+		_say("point at the jacks and knobs the module should show, in the order they go")
+
+
+func _on_port_picked(widget_name: String, side: String, index: int) -> void:
+	var node_id: String = ids.get(widget_name, "")
+	if node_id == "":
+		return
+	var ports := _port_list(node_id, "inputs" if side == "left" else "outputs")
+	if index < 0 or index >= ports.size():
+		return
+	_toggle_pick({
+		"kind": "input" if side == "left" else "output",
+		"node": node_id,
+		"port": str(ports[index]["name"]),
+	})
+
+
+func _on_parameter_picked(widget_name: String, parameter: String) -> void:
+	var node_id: String = ids.get(widget_name, "")
+	if node_id == "" or parameter == "":
+		return
+	_toggle_pick({"kind": "parameter", "node": node_id, "parameter": parameter})
+
+
+## Pointing at something already picked takes it back off. Without that the only repair
+## for a misclick is building the whole face again from the start, and a gesture whose
+## mistakes cannot be undone is one people stop making.
+func _toggle_pick(pick: Dictionary) -> void:
+	var key := _pick_key(pick)
+	for index in wand_picks.size():
+		if _pick_key(wand_picks[index]) == key:
+			wand_picks.remove_at(index)
+			_refresh_wand()
+			_say("dropped %s — %d left on the face" % [_pick_label(pick), wand_picks.size()])
+			return
+	wand_picks.append(pick)
+	_refresh_wand()
+	_say("%d. %s" % [wand_picks.size(), _pick_label(pick)])
+
+
+func _pick_key(pick: Dictionary) -> String:
+	return "%s/%s/%s" % [str(pick.get("kind", "")), str(pick.get("node", "")),
+		str(pick.get("port", pick.get("parameter", "")))]
+
+
+func _pick_label(pick: Dictionary) -> String:
+	return "%s.%s" % [str(pick.get("node", "")),
+		str(pick.get("port", pick.get("parameter", "")))]
+
+
+## Resolves the picks against what is on the canvas now, and drops the ones that have
+## stopped meaning anything — a node deleted, or one taken back out of the selection.
+##
+## Dropping rather than dimming, because collapse ignores a nomination from outside the
+## selection: a badge left numbered on a deselected node would be promising a knob that
+## is not going to be there. Ordinals are assigned here, after the drop, so the numbers
+## on screen are always 1..n with nothing missing out of the middle.
+func _refresh_wand() -> void:
+	if graph_edit == null:
+		return
+	var kept: Array = []
+	var marks: Array = []
+	for pick: Dictionary in wand_picks:
+		var widget: GraphNode = widgets.get(str(pick.get("node", "")))
+		if widget == null or not is_instance_valid(widget) or not widget.selected:
+			continue
+		var mark := _mark_for(widget, pick)
+		if mark.is_empty():
+			continue
+		kept.append(pick)
+		mark["ordinal"] = kept.size()
+		marks.append(mark)
+	wand_picks = kept
+	graph_edit.wand_marks = marks
+	if wand_confirm != null:
+		wand_confirm.text = "Make module" if marks.is_empty() \
+			else "Make module (%d)" % marks.size()
+		wand_confirm.disabled = _selected_ids().size() < 2
+
+
+## Where a pick is drawn: a jack by slot index, a knob by the row that holds it. A folded
+## row still resolves — the disclosure triangle hides a knob, it does not un-pick it — and
+## the overlay is what declines to draw a badge nobody could see.
+func _mark_for(widget: GraphNode, pick: Dictionary) -> Dictionary:
+	var kind := str(pick.get("kind", ""))
+	var node_id := str(pick.get("node", ""))
+	if kind == "parameter":
+		var row := _parameter_row(widget, str(pick.get("parameter", "")))
+		return {} if row == null else {"row": row}
+	var ports := _port_list(node_id, "inputs" if kind == "input" else "outputs")
+	for index in ports.size():
+		if str(ports[index]["name"]) == str(pick.get("port", "")):
+			return {"widget": String(widget.name), "side":
+				"left" if kind == "input" else "right", "index": index}
+	return {}
+
+
+func _parameter_row(parent: Node, parameter: String) -> Control:
+	for child in parent.get_children():
+		var control := child as Control
+		if control == null:
+			continue
+		if str(control.get_meta("parameter_name", "")) == parameter:
+			return control
+		var deeper := _parameter_row(control, parameter)
+		if deeper != null:
+			return deeper
+	return null
 
 
 func _arrange(movable: Array) -> void:

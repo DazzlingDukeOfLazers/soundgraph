@@ -115,10 +115,30 @@ Rules, each one a validator check:
 
   It changes nothing else. A parameter left off the panel is still exported, still
   overridable per instance, still a legal control and automation target — it simply has
-  no knob on the face. That separation is the point: the derived surface errs toward
+  no knob on the face. That separation is the point: a derived surface errs toward
   exporting everything, and the panel is where an author says which six of the thirty a
   player actually turns. An absent panel means every export in declared order, which is
-  what modules had before panels and what a fresh collapse still produces.
+  what modules had before panels and what a *derived* collapse still produces.
+
+- **A surface may be nominated instead of derived.** Deriving is a fair guess standing
+  in for being told, and one of its rules hurts: "every parameter that was set becomes a
+  knob" is what makes a collapsed module arrive wearing thirty. So `collapse` takes an
+  optional nomination — the ports and knobs an author pointed at, in the order they
+  pointed at them — and given one, derives nothing. In the editor that pointing is the
+  **wand** (Graph tab): raise it, click the jacks and knobs on the selected nodes, and
+  the badges number them as they go. Only the selection is pickable, which is the same
+  rule as "a nomination outside the selection is ignored", stated so that there is
+  nothing there to click rather than a sentence explaining a click that did nothing.
+
+  A nomination needs no panel: declared order is click order and a face is drawn in
+  declared order, so a panel here would restate it. The panel earns its keep when a knob
+  is dragged somewhere the order would not have put it.
+
+  Two things override a nomination, for one reason — something is already attached. A
+  boundary connection declares its port whether or not it was picked, and a control or
+  automation lane targeting an inner knob exports that knob whether or not it was
+  picked. Honouring the nomination in either case would silently drop wiring somebody
+  had made, which is worse than a module having one more port than was asked for.
 
   A row naming something the module does not export costs that knob and nothing else —
   the rule `arrangement` follows, because both are presentation. Two asymmetries worth
@@ -175,6 +195,16 @@ export names, module-typed node inside a definition, and an expansion-size bomb
   the inspector on the instance plus expand-in-place read-only.
 
 ## Staged plan, with exit tests
+
+> **The wand landed.** A module's face can be pointed at rather than worked out:
+> select the nodes, raise the wand in the Graph toolbar, click the jacks and knobs it
+> should show. Picks are numbered as they accumulate, clicking one again takes it back
+> off, and taking a node out of the selection takes its picks with it and renumbers the
+> rest. Picking happens in `PatchGraph._input`, ahead of the GUI pass, which is the only
+> reason a knob can be picked at all — a knob is a Control and would otherwise swallow
+> its own press; anything the wand does not want falls straight through, so selecting,
+> dragging and panning are untouched with it up. Still to come: dragging a knob on a
+> module's face to rearrange it, which is what writes a `panel`.
 
 > **Stage 4 landed — the design is complete.** Both importers emit modules by
 > default: the DX7 bank is one operator definition and six instances per voice, the
