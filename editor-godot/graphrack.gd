@@ -289,6 +289,8 @@ const SEED_MIN_WIDTH := 400.0
 ## two answers for ever. Godot does not detect that; the editor simply stops.
 var _laying_out := false
 
+## The document the places and the order below belong to, held by identity. See rebuild().
+var _held_for: Dictionary = {}
 var _places: Dictionary = {}           # node id -> Vector2, in rack coordinates
 var _modules: Dictionary = {}          # node id -> RackModule
 var _knobs: Dictionary = {}            # node id -> {parameter name -> Knob}
@@ -421,6 +423,23 @@ func refresh_displays() -> void:
 
 
 func rebuild() -> void:
+	# A different document is a different rack, tested by being one rather than by
+	# looking like one.
+	#
+	# Both the places and the hand-set order used to be kept across a document change and
+	# pruned only by "is there still a node with this id" — which two patches can both
+	# answer yes to. Loading the four-node envelope-amp after the seven-node first-synth
+	# gave its output the *other* patch's position, on a third rail, below the bottom of a
+	# case that only needed two: a module you could only find by scrolling for it.
+	#
+	# Nothing is lost by forgetting. A place somebody actually made is written into the
+	# document by _store_places and read back below; what gets dropped here is the seed,
+	# which is derived and lands the same way every time.
+	if not is_same(_held_for, patch):
+		_held_for = patch
+		_places.clear()
+		_order_override.clear()
+
 	# Before anything is placed, because every module is built against it.
 	module_height = measure(patch.get("nodes", []), registry)
 	for child in get_children():
@@ -483,6 +502,14 @@ func rebuild() -> void:
 		add_child(module)
 		_modules[module.node_id] = module
 		_knobs[module.node_id] = module.build(node)
+
+	# Now that the panels exist, from what they actually measure rather than from what
+	# measure() predicted. rail_pitch() promises that a full-height panel hung from one
+	# rail does not reach the next, and that promise is only true against real heights: a
+	# module whose contents come out taller than height_for() estimates — more jacks than
+	# knobs will do it — used to hang straight through the rail below.
+	for id in _modules:
+		module_height = maxf(module_height, (_modules[id] as Control).size.y)
 
 	# The cable layer is added first but must draw last, over every module.
 	move_child(_cables, get_child_count() - 1)
@@ -668,9 +695,22 @@ func _seed_places(ids: Array) -> void:
 	for id in ids:
 		wanted[id] = true
 
+	# Counted in rails, not in pixels.
+	#
+	# This used to advance a y by the measured depth of the row it had just filled and
+	# then snap that with rail_for(), which quantises by rail_pitch() — the *tallest*
+	# module in the patch. Two different notions of "one row down", and the rounding
+	# between them decided where a wrapped module landed. Where a row was shallow the
+	# advance came to less than half a pitch and rounded back to the rail above, so the
+	# next row was drawn straight through the previous one. Where a row was deeper than
+	# rail_pitch's estimate — a panel whose contents measure taller than height_for()
+	# predicts, which is any module with more jacks than knobs — it rounded up past a
+	# rail, leaving one empty and putting the module a whole screen further down than the
+	# patch needed. A four-node patch could hide its own output below the fold.
+	#
+	# A wrap is one rail. There is no arithmetic left to round.
 	var x := CASE_MARGIN
-	var y := CASE_MARGIN + RAIL
-	var row_depth := 0.0
+	var rail := 0
 	# Walked in signal order over *every* module, not only the ones being seeded, so a node
 	# added to a placed patch lands after the modules it follows rather than at the origin.
 	for id in _module_order():
@@ -679,12 +719,10 @@ func _seed_places(ids: Array) -> void:
 			continue
 		if x > CASE_MARGIN and x + module.size.x > CASE_MARGIN + available:
 			x = CASE_MARGIN
-			y += row_depth + RAIL + ROW_GAP
-			row_depth = 0.0
+			rail += 1
 		if wanted.has(id):
-			_places[id] = Vector2(x, rail_for(y))
+			_places[id] = Vector2(x, CASE_MARGIN + RAIL + rail * rail_pitch())
 		x += module.size.x
-		row_depth = maxf(row_depth, module.size.y)
 
 
 ## Where a drop lands is now place_module(); the slot-swapping mover it replaced, and the

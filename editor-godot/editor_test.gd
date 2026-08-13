@@ -940,6 +940,72 @@ func _initialize() -> void:
 	check(seeded_rows.size() < main.graphrack._modules.size(),
 		"a fresh patch opens several modules to a row (%d rows for %d modules)"
 			% [seeded_rows.size(), main.graphrack._modules.size()])
+
+	# How a seeded patch hangs, checked against the patch that showed it was wrong.
+	#
+	# first-synth does not exercise this: its rows happen to round the way the old
+	# arithmetic wanted, and both checks below passed against the broken seeder. The
+	# envelope-amp example is the reproducer — three modules on one rail, the output
+	# wrapping to the next — so that is what they run on. A guard that cannot fail on the
+	# fixture it is given is not a guard.
+	var seeding_check := func(what: String) -> void:
+		var overlaps: Array = []
+		var placed_ids: Array = main.graphrack._modules.keys()
+		for first in placed_ids.size():
+			for second in range(first + 1, placed_ids.size()):
+				var one: Control = main.graphrack._modules[placed_ids[first]]
+				var two: Control = main.graphrack._modules[placed_ids[second]]
+				# Shrunk a hair: panels butt together along a rail, as they do in a case,
+				# and sharing an edge is not overlapping.
+				var one_rect := Rect2(one.position, one.size).grow(-1.0)
+				var two_rect := Rect2(two.position, two.size).grow(-1.0)
+				if one_rect.intersects(two_rect):
+					overlaps.append("%s/%s" % [placed_ids[first], placed_ids[second]])
+		check(overlaps.is_empty(),
+			"%s: no two seeded modules are drawn through each other (%s)"
+				% [what, "none" if overlaps.is_empty() else str(overlaps)])
+
+		# And the rails run consecutively from the top. A gap means a module sitting a
+		# whole screen further down than the patch needs — which is how a four-node patch
+		# managed to hide its own output below the fold.
+		var pitch: float = main.graphrack.rail_pitch()
+		var rails_used := {}
+		for module_id in main.graphrack._modules:
+			var top: float = (main.graphrack._modules[module_id] as Control).position.y
+			rails_used[int(roundf(
+				(top - GraphRack.CASE_MARGIN - GraphRack.RAIL) / pitch))] = true
+		var highest: int = 0
+		for rail in rails_used:
+			highest = maxi(highest, int(rail))
+		check(rails_used.size() == highest + 1,
+			"%s: every rail down to the last one carries something (%d used of %d deep)"
+				% [what, rails_used.size(), highest + 1])
+
+	seeding_check.call("first synth")
+
+	await main._load_example("Envelope Amp")
+	main.show_view("Graphrack")
+	for _settle in 8:
+		await process_frame
+	check(main.patch.get("modules", {}).has("env_amp"),
+		"the envelope-amp example loaded (%s)"
+			% str(main.patch.get("modules", {}).keys()))
+	seeding_check.call("envelope amp")
+	# Every module inside the room the case reserves for itself. The output used to be
+	# placed past it entirely, which is what "off-screen" meant in practice.
+	var beyond: Array = []
+	for module_id in main.graphrack._modules:
+		var each: Control = main.graphrack._modules[module_id]
+		if each.position.y + each.size.y > main.graphrack._content_size.y + 1.0:
+			beyond.append(module_id)
+	check(beyond.is_empty(),
+		"and nothing hangs past the bottom of the case (%s)"
+			% ("none" if beyond.is_empty() else str(beyond)))
+
+	await main._load_example("First Synth")
+	main.show_view("Graphrack")
+	for _settle in 8:
+		await process_frame
 	var jacks_drifted := 0
 	var jack_worst := 0.0
 	for level in [0.5, 1.5, 2.0]:
