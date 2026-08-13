@@ -82,7 +82,8 @@ static func height_for(parameters: int, ports: int = 0) -> float:
 ## taller, and a two-knob oscillator is a short module again.
 static func content_height(parameters: int, ports: int = 0) -> float:
 	var knob_rows: int = int(ceil(parameters / 2.0))
-	return TITLE_BAND + KNOB_PAD * 2.0 + maxf(knob_rows * KNOB_CELL.y,
+	return TITLE_BAND + KNOB_PAD * 2.0 + maxf(
+		knob_rows * KNOB_CELL.y + maxi(knob_rows - 1, 0) * KNOB_ROW_GAP,
 		ports * JACK_ROW_HEIGHT)
 
 
@@ -123,6 +124,15 @@ const KNOB_CELL := Vector2(66.0, 78.0)
 ## cell is now as wide as the widest thing in it, which is what the padding is measured
 ## from rather than added to.
 const KNOB_PAD := 10.0
+
+## Between one row of knobs and the next.
+##
+## The grid ran at zero separation, which put the caption of one knob directly against the
+## dial of the one below it: on the Keyboard module "glide" and its value sat hard on top
+## of "transpose", and two controls with nothing between them read as one block of text
+## with a dial in it. The cell's own padding is horizontal — it is measured from the widest
+## caption — so there was nothing doing this job vertically.
+const KNOB_ROW_GAP := 12.0
 
 ## How much of a port name a panel shows before eliding it. The full name is on the
 ## tooltip; what the panel owes the reader is enough to tell one jack from the next.
@@ -924,7 +934,7 @@ class RackModule extends Control:
 		var grid := GridContainer.new()
 		grid.columns = 1 if parameters.size() <= 2 else 2
 		grid.add_theme_constant_override("h_separation", 0)
-		grid.add_theme_constant_override("v_separation", 0)
+		grid.add_theme_constant_override("v_separation", Design.scale(KNOB_ROW_GAP))
 		grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		centre.add_child(grid)
 		_grid = grid
