@@ -2306,10 +2306,85 @@ func _initialize() -> void:
 	check(picked_orphans.is_empty(),
 		"so no cable is left dangling (%s)" % str(picked_orphans))
 
+	# ---- expand is the inverse of collapse -------------------------------------------
+	# The claim the whole open-a-module idea rests on: a module and the nodes it stands for
+	# are two notations for one graph, so looking inside one can be the document changing
+	# notation rather than the editor drawing something that is not there. Held here as a
+	# round trip — collapse, expand, and the wiring comes back with every cable pointing
+	# where it did, every value on the knob it came from, every control still reaching.
+	var round_trip: Dictionary = {
+		"schema_version": 1,
+		"nodes": [
+			{"id": "note", "type": "NoteInput"},
+			{"id": "env", "type": "ADSR", "parameters": {"attack": 0.02}},
+			{"id": "amp", "type": "Gain", "parameters": {"gain": 0.4}},
+			{"id": "out", "type": "StereoOutput"},
+		],
+		"connections": [
+			{"from": {"node": "note", "port": "gate"}, "to": {"node": "env", "port": "gate"}},
+			{"from": {"node": "env", "port": "out"}, "to": {"node": "amp", "port": "gain"}},
+			{"from": {"node": "amp", "port": "out"}, "to": {"node": "out", "port": "left"}},
+		],
+		"controls": [
+			{"id": "a", "label": "A", "kind": "knob", "min": 0.0, "max": 2.0,
+				"target": {"node": "env", "parameter": "attack"}},
+		],
+	}
+	var flat_wiring := JSON.stringify(round_trip["connections"])
+	var trip_module = ModuleAuthor.collapse(round_trip, ["env", "amp"], terminals_here)
+	check(trip_module.ok(), "the pair collapses (%s)" % trip_module.error)
+	var trip_open = ModuleAuthor.expand(trip_module.patch, trip_module.instance_id)
+	check(trip_open.ok(), "and the instance opens again (%s)" % trip_open.error)
+	check(trip_open.members == ["%s.env" % trip_module.instance_id, "%s.amp" % trip_module.instance_id],
+		"its parts come back under the instance's name (%s)" % str(trip_open.members))
+	check(not trip_open.patch.has("modules"),
+		"and the definition goes with its last instance (%s)"
+			% str(trip_open.patch.get("modules", {}).keys()))
+
+	# Every cable back where it was, under the new ids. Compared as a set of endpoints
+	# rather than as a list, because the order they come out in is not a promise.
+	var before_edges: Array = []
+	for connection in round_trip["connections"]:
+		before_edges.append("%s.%s>%s.%s" % [str(connection["from"]["node"]),
+			str(connection["from"]["port"]), str(connection["to"]["node"]),
+			str(connection["to"]["port"])])
+	var after_edges: Array = []
+	for connection in trip_open.patch["connections"]:
+		after_edges.append("%s.%s>%s.%s" % [
+			str(connection["from"]["node"]).trim_prefix(trip_module.instance_id + "."),
+			str(connection["from"]["port"]),
+			str(connection["to"]["node"]).trim_prefix(trip_module.instance_id + "."),
+			str(connection["to"]["port"])])
+	before_edges.sort()
+	after_edges.sort()
+	check(before_edges == after_edges,
+		"and every cable is where it started (%s)" % str(after_edges))
+	check(JSON.stringify(round_trip["connections"]) == flat_wiring,
+		"with the document it was handed left alone")
+
+	var retrip_open_attack := 0.0
+	var retrip_open_gain := 0.0
+	for node in trip_open.patch["nodes"]:
+		if str(node["id"]).ends_with(".env"):
+			retrip_open_attack = float(node.get("parameters", {}).get("attack", 0.0))
+		if str(node["id"]).ends_with(".amp"):
+			retrip_open_gain = float(node.get("parameters", {}).get("gain", 0.0))
+	check(is_equal_approx(retrip_open_attack, 0.02) and is_equal_approx(retrip_open_gain, 0.4),
+		"the values the instance carried land back on the knobs they came from (%.3f, %.3f)"
+			% [retrip_open_attack, retrip_open_gain])
+	var control_target: Dictionary = trip_open.patch["controls"][0]["target"]
+	check(str(control_target["node"]).ends_with(".env")
+			and str(control_target["parameter"]) == "attack",
+		"and a control follows its knob back down through the facade (%s)"
+			% str(control_target))
+	check(trip_open.surface.get("parameters", []).size() == 2,
+		"the surface it had is handed back, so it can be put on again (%d)"
+			% trip_open.surface.get("parameters", []).size())
+
 	# And the document does not move when the preference does. Positions belong to the
 	# patch; scaling them into the graph's world is a rendering decision, and a rendering
 	# decision that wrote itself back into the file would walk every node outward by 35%
-	# each time somebody opened the patch at XL and saved it.
+	# each time somebody trip_open the patch at XL and saved it.
 	var before_positions := {}
 	for node in main.patch["nodes"]:
 		before_positions[node["id"]] = Vector2(node["position"]["x"], node["position"]["y"])

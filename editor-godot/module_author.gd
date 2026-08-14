@@ -21,6 +21,11 @@ class Result extends RefCounted:
 	var module_name := ""
 	var instance_id := ""
 	var error := ""
+	## What an expansion freed, and what the definition declared before it went. The two
+	## together are everything a caller needs to put the module back exactly as it was —
+	## which is what makes opening one a view rather than a decision.
+	var members: Array = []
+	var surface: Dictionary = {}
 
 	func ok() -> bool:
 		return error.is_empty()
@@ -215,6 +220,149 @@ static func collapse(patch: Dictionary, selected: Array, terminal_types: Array,
 	if not remapped_automation.is_empty():
 		out["automation"] = remapped_automation
 	result.patch = out
+	return result
+
+
+## Puts an instance's insides back on the canvas: the exact inverse of `collapse`.
+##
+## Not a rendering trick. A module and the nodes it stands for are two notations for one
+## graph — that is the claim the stage-3 exit test holds in rendered bytes — so "look
+## inside this module" can be the document changing notation rather than the editor
+## learning to draw a thing that is not there. Everything else in the editor goes on
+## working because what it is looking at is, either way, an ordinary patch.
+##
+## Inner nodes come back under `instance.inner`, the separator expansion already uses, so
+## two instances of one definition can be open at once without their nodes colliding. They
+## come back at the positions the definition kept for them — collapse copied those verbatim
+## out of the document, so opening a module puts its parts where they were.
+##
+## The definition goes when this was its last instance. Leaving it would be a definition
+## nothing points at, which is a thing the file has no use for and a reader has to work
+## out. `Result.surface` carries what it declared so a caller can put it back.
+static func expand(patch: Dictionary, instance_id: String) -> Result:
+	var result := Result.new()
+	var instance := {}
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == instance_id:
+			instance = node
+			break
+	if instance.is_empty() or str(instance.get("type", "")) != "module":
+		result.error = "%s is not a module instance" % instance_id
+		return result
+	result.module_name = str(instance.get("module", ""))
+	var definition: Dictionary = patch.get("modules", {}).get(result.module_name, {})
+	if definition.is_empty():
+		result.error = "no definition called '%s'" % result.module_name
+		return result
+	result.instance_id = instance_id
+
+	var inner_id := func(name: String) -> String:
+		return "%s.%s" % [instance_id, name]
+
+	# The values this instance had set, pushed down onto the nodes they belonged to. An
+	# instance's parameters are overrides of the definition's own defaults, so on the way
+	# out they stop being overrides and become the value.
+	var values: Dictionary = instance.get("parameters", {})
+	var by_export := {}
+	for binding in definition.get("parameters", []):
+		by_export[str(binding["name"])] = binding
+
+	var freed: Array = []
+	for node in definition.get("nodes", []):
+		var copy: Dictionary = node.duplicate(true)
+		copy["id"] = inner_id.call(str(node["id"]))
+		freed.append(copy)
+	var by_inner := {}
+	for node in freed:
+		by_inner[str(node["id"])] = node
+	for export_name in values:
+		var binding: Dictionary = by_export.get(str(export_name), {})
+		if binding.is_empty():
+			continue
+		var target: Dictionary = by_inner.get(inner_id.call(str(binding["node"])), {})
+		if target.is_empty():
+			continue
+		if not target.has("parameters"):
+			target["parameters"] = {}
+		target["parameters"][str(binding["parameter"])] = values[export_name]
+
+	# Where each declared port actually lands, so the cables outside can be re-aimed at it.
+	var ports := {}
+	for side in ["inputs", "outputs"]:
+		for binding in definition.get(side, []):
+			ports["%s/%s" % [side, str(binding["name"])]] = {
+				"node": inner_id.call(str(binding["node"])), "port": str(binding["port"])}
+
+	var connections: Array = []
+	for connection in definition.get("connections", []):
+		connections.append({
+			"from": {"node": inner_id.call(str(connection["from"]["node"])),
+				"port": str(connection["from"]["port"])},
+			"to": {"node": inner_id.call(str(connection["to"]["node"])),
+				"port": str(connection["to"]["port"])},
+		})
+	for connection in patch.get("connections", []):
+		var copy: Dictionary = connection.duplicate(true)
+		# A cable landing on a port the definition never declared is dropped rather than
+		# left pointing at a node that has stopped existing. It cannot happen from a
+		# document this editor wrote; it can happen from one somebody edited by hand.
+		if str(copy["to"]["node"]) == instance_id:
+			var landing: Dictionary = ports.get("inputs/%s" % str(copy["to"]["port"]), {})
+			if landing.is_empty():
+				continue
+			copy["to"] = landing.duplicate()
+		if str(copy["from"]["node"]) == instance_id:
+			var leaving: Dictionary = ports.get("outputs/%s" % str(copy["from"]["port"]), {})
+			if leaving.is_empty():
+				continue
+			copy["from"] = leaving.duplicate()
+		connections.append(copy)
+
+	var out: Dictionary = patch.duplicate(true)
+	var new_nodes: Array = []
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == instance_id:
+			new_nodes.append_array(freed)
+			continue
+		new_nodes.append(node.duplicate(true))
+	out["nodes"] = new_nodes
+	out["connections"] = connections
+
+	# Controls and automation follow their target back down through the facade, the same
+	# remapping collapse does on the way up and for the same reason: a knob that stops
+	# reaching what it drives is a patch that has quietly lost a control.
+	for list_key in ["controls", "automation"]:
+		var kept: Array = []
+		for item in out.get(list_key, []):
+			var copy: Dictionary = item.duplicate(true)
+			var target: Dictionary = copy.get("target", {})
+			if str(target.get("node", "")) == instance_id:
+				var binding: Dictionary = by_export.get(str(target.get("parameter", "")), {})
+				if binding.is_empty():
+					continue
+				copy["target"] = {"node": inner_id.call(str(binding["node"])),
+					"parameter": str(binding["parameter"])}
+			kept.append(copy)
+		if out.has(list_key):
+			out[list_key] = kept
+
+	result.surface = {
+		"inputs": definition.get("inputs", []).duplicate(true),
+		"outputs": definition.get("outputs", []).duplicate(true),
+		"parameters": definition.get("parameters", []).duplicate(true),
+		"panel": (definition.get("panel", {}) as Dictionary).duplicate(true),
+	}
+	var still_used := false
+	for node in out["nodes"]:
+		if str(node.get("module", "")) == result.module_name:
+			still_used = true
+	if not still_used:
+		(out["modules"] as Dictionary).erase(result.module_name)
+		if (out["modules"] as Dictionary).is_empty():
+			out.erase("modules")
+			out["schema_version"] = 1
+	result.patch = out
+	result.members = freed.map(func(n): return str(n["id"]))
 	return result
 
 
