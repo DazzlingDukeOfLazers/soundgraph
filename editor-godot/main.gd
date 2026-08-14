@@ -583,6 +583,8 @@ func _build_ui() -> void:
 	graph_edit.port_hovered.connect(_on_port_hovered)
 	graph_edit.port_picked.connect(_on_port_picked)
 	graph_edit.parameter_picked.connect(_on_parameter_picked)
+	graph_edit.region_drawn.connect(_on_region_drawn)
+	graph_edit.group_closed.connect(func(name: String) -> void: _close_module(name))
 	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
 	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
@@ -928,12 +930,14 @@ func _build_toolbar() -> Control:
 	wand_button.toggled.connect(func(pressed: bool) -> void: _set_wand(pressed))
 	graph_group.add_child(_defocus(wand_button))
 
+	# Its own gesture now, and always available: draw a rectangle round some nodes and
+	# what is inside it becomes a module, opened, with its name on the frame. It used to
+	# be the wand's confirm button and appeared only while the wand was up, which made the
+	# verb this whole feature exists for conditional on a tool being raised.
 	wand_confirm = Button.new()
 	wand_confirm.text = "Make module"
-	wand_confirm.tooltip_text = "The selected nodes become one module wearing what the " \
-		+ "wand picked. Undo undoes it."
-	wand_confirm.visible = false
-	wand_confirm.pressed.connect(func() -> void: _collapse_selection())
+	wand_confirm.tooltip_text = "Draw a rectangle round some nodes. What is wholly inside it becomes a module, left open so you can see and arrange its parts."
+	wand_confirm.pressed.connect(func() -> void: _begin_module_region())
 	graph_group.add_child(_defocus(wand_confirm))
 
 	# Fit comes out of that menu and sits beside it, spelled out.
@@ -2027,6 +2031,7 @@ func _rebuild_view() -> void:
 	# at went with them. Re-resolving here is what keeps the overlay from drawing against
 	# a dangling Control on the frame after a rebuild.
 	_refresh_wand()
+	_refresh_groups()
 
 	# The rack reads the same document, so it is rebuilt from the same place rather than
 	# kept in step by hand.
@@ -3713,6 +3718,112 @@ func _collapse_selection() -> void:
 
 
 # ---------------------------------------------------------------------------------
+# Open modules
+#
+# The frames on the canvas are read out of the document rather than remembered here: a
+# definition with no instance is an open module, and its parts are the nodes named after
+# it. So there is no editor-side state to keep in step, nothing to lose on a reload, and
+# an open module that gets saved comes back open.
+# ---------------------------------------------------------------------------------
+
+## Arms the rectangle. Making a module is drawing the frame first.
+func _begin_module_region() -> void:
+	if graph_edit == null:
+		return
+	if views != null and not graph_edit.is_visible_in_tree():
+		show_view("Graph")
+	graph_edit.set_drawing(true)
+	_say("draw a rectangle round the nodes this module is made of")
+
+
+## Whatever ended up wholly inside the rectangle becomes a module, and the module is left
+## open — because the thing you have just drawn a box around is the thing you want to look
+## at, and closing it immediately would hide it at the moment of making it.
+func _on_region_drawn(widget_names: Array) -> void:
+	var chosen: Array = []
+	for widget_name in widget_names:
+		var node_id: String = ids.get(str(widget_name), "")
+		if node_id != "":
+			chosen.append(node_id)
+	if chosen.size() < 2:
+		_say("draw round two or more nodes — a module of one is the node you started with")
+		return
+	var terminals: Array = []
+	for type_name in registry:
+		if str(registry[type_name].get("category", "")) == "Terminals":
+			terminals.append(type_name)
+	var made := ModuleAuthor.collapse(patch, chosen, terminals, wand_picks.duplicate(true))
+	if not made.ok():
+		_say(made.error)
+		return
+	var opened := ModuleAuthor.expand(made.patch, made.instance_id)
+	if not opened.ok():
+		_say(opened.error)
+		return
+	_begin_edit()
+	patch = opened.patch
+	_synthesize_module_descriptors()
+	_set_wand(false)
+	await _rebuild_view()
+	_apply()
+	_commit_edit("make %s" % made.module_name)
+	_say("'%s' holds %d nodes. Close it to fold them in." % [made.module_name, chosen.size()])
+
+
+## Folds an open module shut. One edit, undoable like any other — which is the whole cost
+## of a peek, and cheap next to the machinery that would have made peeking free.
+func _close_module(module_name: String) -> void:
+	var shut := ModuleAuthor.close_module(patch, module_name)
+	if not shut.ok():
+		_say(shut.error)
+		return
+	_begin_edit()
+	patch = shut.patch
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("close %s" % module_name)
+	_say("'%s' is one node again" % module_name)
+
+
+## Opens a module instance so its parts are on the canvas.
+func _open_module(instance_id: String) -> void:
+	var opened := ModuleAuthor.expand(patch, instance_id)
+	if not opened.ok():
+		_say(opened.error)
+		return
+	_begin_edit()
+	patch = opened.patch
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("open %s" % opened.module_name)
+	_say("'%s' is open. Close it to fold it back in." % opened.module_name)
+
+
+## The frames to draw: every definition nothing points at, and the widgets of its parts.
+func _refresh_groups() -> void:
+	if graph_edit == null:
+		return
+	var instantiated := {}
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) == "module":
+			instantiated[str(node.get("module", ""))] = true
+	var frames := {}
+	for module_name in patch.get("modules", {}):
+		if instantiated.has(str(module_name)):
+			continue
+		var members: Array = []
+		var prefix := "%s." % str(module_name)
+		for node in patch.get("nodes", []):
+			if str(node["id"]).begins_with(prefix) and widgets.has(str(node["id"])):
+				members.append(String((widgets[str(node["id"])] as GraphNode).name))
+		if not members.is_empty():
+			frames[str(module_name)] = members
+	graph_edit.groups = frames
+
+
+# ---------------------------------------------------------------------------------
 # The wand
 #
 # The argument for it, and how a click reaches a knob at all, are in patch_graph.gd.
@@ -3738,8 +3849,6 @@ func _set_wand(active: bool) -> void:
 		graphrack.rebuild()
 	if wand_button != null and wand_button.button_pressed != active:
 		wand_button.button_pressed = active
-	if wand_confirm != null:
-		wand_confirm.visible = active
 	if not active:
 		# Put down, the picks go with it. Keeping them would mean a face being designed
 		# with nothing on screen saying so, and the next collapse quietly wearing choices
@@ -3827,10 +3936,6 @@ func _refresh_wand() -> void:
 		marks.append(mark)
 	wand_picks = kept
 	graph_edit.wand_marks = marks
-	if wand_confirm != null:
-		wand_confirm.text = "Make module" if marks.is_empty() \
-			else "Make module (%d)" % marks.size()
-		wand_confirm.disabled = _selected_ids().size() < 2
 
 
 ## Where a pick is drawn: a jack by slot index, a knob by the row that holds it. A folded

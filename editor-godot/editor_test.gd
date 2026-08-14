@@ -2392,6 +2392,45 @@ func _initialize() -> void:
 		"the surface it had is handed back, so it can be put on again (%d)"
 			% trip_open.surface.get("parameters", []).size())
 
+	# And shut again. Closing is not a second authoring decision: the name, the ports and
+	# the exports are already in the definition the open state left in the file, so this
+	# has to put the parts back inside without changing one declaration.
+	var shut = ModuleAuthor.close_module(trip_open.patch, trip_module.module_name)
+	check(shut.ok(), "the open module folds shut (%s)" % shut.error)
+	check(JSON.stringify(shut.patch["modules"][trip_module.module_name].get("inputs", []))
+			== JSON.stringify(trip_module.patch["modules"][trip_module.module_name]
+				.get("inputs", [])),
+		"with the ports it declared before, unchanged (%s)"
+			% JSON.stringify(shut.patch["modules"][trip_module.module_name].get("inputs", [])))
+	var shut_edges: Array = []
+	for connection in shut.patch["connections"]:
+		shut_edges.append("%s.%s>%s.%s" % [str(connection["from"]["node"]),
+			str(connection["from"]["port"]), str(connection["to"]["node"]),
+			str(connection["to"]["port"])])
+	var folded_edges: Array = []
+	for connection in trip_module.patch["connections"]:
+		folded_edges.append("%s.%s>%s.%s" % [str(connection["from"]["node"]),
+			str(connection["from"]["port"]), str(connection["to"]["node"]),
+			str(connection["to"]["port"])])
+	shut_edges.sort()
+	folded_edges.sort()
+	check(shut_edges == folded_edges,
+		"and the wiring it had before it was opened (%s)" % str(shut_edges))
+
+	# A knob turned while it was open comes back up as the instance's value. That is the
+	# whole point of opening one, and the easiest thing for a fold to drop.
+	var edited: Dictionary = trip_open.patch.duplicate(true)
+	for node in edited["nodes"]:
+		if str(node["id"]).ends_with(".amp"):
+			node["parameters"]["gain"] = 0.9
+	var reshut = ModuleAuthor.close_module(edited, trip_module.module_name)
+	var carried := 0.0
+	for node in reshut.patch["nodes"]:
+		if str(node.get("type", "")) == "module":
+			carried = float(node.get("parameters", {}).get("gain", 0.0))
+	check(is_equal_approx(carried, 0.9),
+		"a knob turned while it was open comes back changed (%.2f)" % carried)
+
 	# And the document does not move when the preference does. Positions belong to the
 	# patch; scaling them into the graph's world is a rendering decision, and a rendering
 	# decision that wrote itself back into the file would walk every node outward by 35%
@@ -3284,6 +3323,49 @@ func _initialize() -> void:
 	check(main.patch.get("modules", {}).has("part"),
 		"and undo puts the old name back (%s)"
 			% str(main.patch.get("modules", {}).keys()))
+
+	# ---- drawing a module, and shutting it again -------------------------------------
+	# The gesture end to end, through the editor rather than through ModuleAuthor: the
+	# rectangle names its members, the module is left open with a frame round its parts,
+	# and the frame's Close button folds it back to one node.
+	await main._load_example("First Synth")
+	for i in 8:
+		await process_frame
+	var drawn: Array = []
+	for id in ["lfo", "filter"]:
+		drawn.append(String((main.widgets[id] as GraphNode).name))
+	await main._on_region_drawn(drawn)
+	for i in 10:
+		await process_frame
+	check(main.patch.get("modules", {}).has("part"),
+		"the rectangle makes a module (%s)" % str(main.patch.get("modules", {}).keys()))
+	check(main.graph_edit.groups.has("part"),
+		"left open, with a frame round its parts (%s)"
+			% str(main.graph_edit.groups.keys()))
+	check(main.widgets.has("part.lfo") and main.widgets.has("part.filter"),
+		"which are on the canvas under its name (%s)" % str(main.widgets.keys()))
+	var open_instances := 0
+	for node in main.patch["nodes"]:
+		if str(node.get("type", "")) == "module":
+			open_instances += 1
+	check(open_instances == 0, "and nothing points at it while it is open (%d)"
+		% open_instances)
+
+	await main._close_module("part")
+	for i in 10:
+		await process_frame
+	check(main.widgets.has("part") and not main.widgets.has("part.lfo"),
+		"closing folds the parts back into one node (%s)" % str(main.widgets.keys()))
+	check(main.graph_edit.groups.is_empty(),
+		"and the frame goes with them (%s)" % str(main.graph_edit.groups.keys()))
+
+	await main._open_module("part")
+	for i in 10:
+		await process_frame
+	check(main.graph_edit.groups.has("part"), "opening it again brings the frame back")
+	await main._close_module("part")
+	for i in 10:
+		await process_frame
 
 	await main._load_example("First Synth")
 	for i in 6:

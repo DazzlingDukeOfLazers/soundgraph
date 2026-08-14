@@ -376,6 +376,171 @@ static func expand(patch: Dictionary, instance_id: String,
 	return result
 
 
+## Folds an open module shut again: the other direction of `expand`, and not a new
+## authoring decision.
+##
+## `collapse` is the wrong tool for this even though the shapes rhyme. Collapse invents a
+## name, works out a surface and produces a module that did not exist. Closing has all
+## three already — they are in the definition the open state left sitting in the file —
+## and its job is to put the parts back inside the thing they came out of without changing
+## a single declaration. Reusing collapse here would mean renaming the result back
+## afterwards and hoping its derived port names happened to match the declared ones, which
+## for an imported module they do not.
+##
+## Whatever was moved, retuned or rewired inside while it was open comes with. That is the
+## point of opening one.
+static func close_module(patch: Dictionary, module_name: String) -> Result:
+	var result := Result.new()
+	result.module_name = module_name
+	var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
+	if definition.is_empty():
+		result.error = "no definition called '%s'" % module_name
+		return result
+	var prefix := module_name + "."
+
+	var inside := {}
+	var inner_nodes: Array = []
+	for node in patch.get("nodes", []):
+		if not str(node["id"]).begins_with(prefix):
+			continue
+		inside[str(node["id"])] = true
+		var copy: Dictionary = node.duplicate(true)
+		copy["id"] = str(node["id"]).substr(prefix.length())
+		inner_nodes.append(copy)
+	if inner_nodes.is_empty():
+		result.error = "'%s' has no parts on the canvas to fold back in" % module_name
+		return result
+	result.instance_id = _unique_name(module_name,
+		patch.get("nodes", []).filter(func(n): return not inside.has(str(n["id"]))) \
+			.map(func(n): return str(n["id"])))
+
+	# Values that were turned while it was open become the instance's again, and the
+	# definition keeps whatever it had as its own default. An export whose knob was never
+	# set carries nothing, which is how it was before it was opened.
+	var instance_parameters := {}
+	var by_id := {}
+	for node in inner_nodes:
+		by_id[str(node["id"])] = node
+	for binding in definition.get("parameters", []):
+		var owner: Dictionary = by_id.get(str(binding["node"]), {})
+		var value: Variant = owner.get("parameters", {}).get(str(binding["parameter"]), null)
+		if value != null:
+			instance_parameters[str(binding["name"])] = value
+
+	# Where each declared port sits on the canvas right now, so a cable landing there can
+	# be re-aimed at the instance under the name the definition gave it.
+	var named := {}
+	for side in ["inputs", "outputs"]:
+		for binding in definition.get(side, []):
+			named["%s/%s.%s/%s" % [side, module_name, str(binding["node"]),
+				str(binding["port"])]] = str(binding["name"])
+
+	# The working copy is made before the loop that writes to it: declaring a port on
+	# demand appends to the definition's own array, and `get("inputs", [])` on a definition
+	# that has none hands back a fresh array nobody is holding.
+	var out: Dictionary = patch.duplicate(true)
+	var folded: Dictionary = (out["modules"] as Dictionary)[module_name]
+	for key in ["inputs", "outputs", "parameters"]:
+		if not folded.has(key):
+			folded[key] = []
+
+	var internal: Array = []
+	var outside: Array = []
+	for connection in patch.get("connections", []):
+		var from_in: bool = inside.has(str(connection["from"]["node"]))
+		var to_in: bool = inside.has(str(connection["to"]["node"]))
+		if from_in and to_in:
+			internal.append({
+				"from": {"node": str(connection["from"]["node"]).substr(prefix.length()),
+					"port": str(connection["from"]["port"])},
+				"to": {"node": str(connection["to"]["node"]).substr(prefix.length()),
+					"port": str(connection["to"]["port"])},
+			})
+			continue
+		if not from_in and not to_in:
+			outside.append(connection.duplicate(true))
+			continue
+		var copy: Dictionary = connection.duplicate(true)
+		if to_in:
+			var key := "inputs/%s/%s" % [str(connection["to"]["node"]),
+				str(connection["to"]["port"])]
+			# A cable wired to an inner port while the module was open, landing somewhere
+			# the surface never declared, needs a port to survive — the same rule collapse
+			# follows at a boundary, and for the same reason: something is plugged in.
+			if not named.has(key):
+				named[key] = _binding_name(folded["inputs"],
+					str(connection["to"]["node"]).substr(prefix.length()),
+					str(connection["to"]["port"]))
+			copy["to"] = {"node": result.instance_id, "port": named[key]}
+		else:
+			var key := "outputs/%s/%s" % [str(connection["from"]["node"]),
+				str(connection["from"]["port"])]
+			if not named.has(key):
+				named[key] = _binding_name(folded["outputs"],
+					str(connection["from"]["node"]).substr(prefix.length()),
+					str(connection["from"]["port"]))
+			copy["from"] = {"node": result.instance_id, "port": named[key]}
+		outside.append(copy)
+
+	folded["nodes"] = inner_nodes
+	folded["connections"] = internal
+
+	var new_nodes: Array = []
+	var placed := false
+	for node in patch.get("nodes", []):
+		if not inside.has(str(node["id"])):
+			new_nodes.append(node.duplicate(true))
+			continue
+		if placed:
+			continue
+		placed = true
+		var instance := {"id": result.instance_id, "type": "module", "module": module_name}
+		if not instance_parameters.is_empty():
+			instance["parameters"] = instance_parameters
+		if node.has("position"):
+			instance["position"] = node["position"].duplicate(true)
+		new_nodes.append(instance)
+	out["nodes"] = new_nodes
+	out["connections"] = outside
+
+	var exports := {}
+	for binding in definition.get("parameters", []):
+		exports["%s%s/%s" % [prefix, str(binding["node"]), str(binding["parameter"])]] = \
+			str(binding["name"])
+	for list_key in ["controls", "automation"]:
+		var kept: Array = []
+		for item in out.get(list_key, []):
+			var copy: Dictionary = item.duplicate(true)
+			var target: Dictionary = copy.get("target", {})
+			if inside.has(str(target.get("node", ""))):
+				var key := "%s/%s" % [str(target["node"]), str(target.get("parameter", ""))]
+				if not exports.has(key):
+					# Same argument as the port above: a control aimed at an inner knob is
+					# as strong a claim that the knob matters as a value set on it.
+					var inner := str(target["node"]).substr(prefix.length())
+					exports[key] = _export_for(folded["parameters"],
+						instance_parameters, inner, str(target["parameter"]))
+				copy["target"] = {"node": result.instance_id, "parameter": exports[key]}
+			kept.append(copy)
+		if out.has(list_key):
+			out[list_key] = kept
+
+	# A surface with nothing in it is written as nothing, not as an empty list. "This
+	# module declares no inputs" and "this module declares an empty list of inputs" are the
+	# same fact, and a document should have one spelling for one fact.
+	for key in ["inputs", "outputs", "parameters"]:
+		if (folded[key] as Array).is_empty():
+			folded.erase(key)
+	out["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
+	result.patch = out
+	result.surface = {
+		"inputs": folded.get("inputs", []).duplicate(true),
+		"outputs": folded.get("outputs", []).duplicate(true),
+		"parameters": folded.get("parameters", []).duplicate(true),
+	}
+	return result
+
+
 ## Adds a foreign patch to `patch` as a definition plus one instance. The foreign
 ## patch's terminals become the declared surface: an edge from its NoteInput is an
 ## input, an edge into its StereoOutput is an output.

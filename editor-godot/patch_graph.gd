@@ -732,6 +732,71 @@ var wand_marks: Array = []
 signal port_picked(widget_name: String, side: String, index: int)
 signal parameter_picked(widget_name: String, parameter: String)
 
+# ---------------------------------------------------------------------------------
+# Open modules, and the rectangle that makes one
+#
+# A module and the nodes it stands for are two notations for one graph, so a module you
+# are looking inside is not a drawing of something absent — it is the document in its
+# other notation, with a dashed frame around the parts saying which of them belong to
+# it. Everything inside is an ordinary node: it selects, it drags, its knobs turn.
+#
+# Making one is drawing the frame first. "Make module" arms a rubber band, and whatever
+# ends up wholly inside it is what the module is made of. Asking for a rectangle rather
+# than a selection is the difference between saying what a thing is and having said it
+# earlier by accident — a selection is whatever was last clicked, and this is a question
+# with a right answer at the moment it is asked.
+# ---------------------------------------------------------------------------------
+
+## Module name -> the GraphNode names of its parts on the canvas. Setting it arms the
+## input hook, because an open module has a close button and a close button needs clicks
+## whether or not any tool is up.
+var groups: Dictionary = {}:
+	set(value):
+		groups = value
+		set_process_input(wand or drawing or not groups.is_empty())
+		if _wand_overlay != null:
+			_wand_overlay.queue_redraw()
+## True while a rectangle is being drawn.
+var drawing := false
+
+signal region_drawn(ids: Array)
+signal group_closed(module_name: String)
+
+var _band_from := Vector2.ZERO
+var _band_to := Vector2.ZERO
+var _banding := false
+## Module name -> the local rectangle of its close button, refreshed by the overlay each
+## time it draws one. Hit-testing where something was actually drawn is the only version
+## of this that cannot drift from the picture.
+var _close_hits: Dictionary = {}
+
+
+## Arms or disarms the rubber band. The input hook is shared with the wand, so it is
+## installed while either wants it.
+func set_drawing(active: bool) -> void:
+	drawing = active
+	_banding = false
+	set_process_input(active or wand)
+	mouse_default_cursor_shape = Control.CURSOR_CROSS if active else Control.CURSOR_ARROW
+	if _wand_overlay != null:
+		_wand_overlay.queue_redraw()
+
+
+## The nodes wholly inside the band, in reading order. Wholly, not touching: a rectangle
+## that swallowed anything it grazed would make the gesture a matter of aim rather than of
+## intent, and the one node you did not mean is the one that ruins the module.
+func _nodes_within(band: Rect2) -> Array:
+	var found: Array = []
+	for child in get_children():
+		var node := child as GraphNode
+		if node == null or not node.visible:
+			continue
+		var scale: float = zoom if zoom > 0.0 else 1.0
+		var rect := Rect2(node.position_offset * scale - scroll_offset, node.size * scale)
+		if band.encloses(rect):
+			found.append(String(node.name))
+	return found
+
 var _overlay: CrossingOverlay
 var _glow: GlowOverlay
 var _titles: ScreenText
@@ -1141,11 +1206,15 @@ class WandOverlay extends Control:
 		z_index = 101
 
 	func _process(_delta: float) -> void:
-		if graph != null and graph.wand:
+		if graph != null and (graph.wand or graph.drawing or not graph.groups.is_empty()):
 			queue_redraw()
 
 	func _draw() -> void:
-		if graph == null or not graph.wand:
+		if graph == null:
+			return
+		_draw_groups()
+		_draw_band()
+		if not graph.wand:
 			return
 		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
 		# Dashed, and not in the accent. A selected node already wears a solid accent
@@ -1191,6 +1260,70 @@ class WandOverlay extends Control:
 				continue
 			_badge(_jack(node, str(mark.get("side", "left")), int(mark.get("index", 0))),
 				ordinal, scale)
+
+	## A dashed frame around the parts of an open module, with its name on it and a way to
+	## shut it again.
+	##
+	## Around the parts rather than behind them: the frame is drawn from the bounding box of
+	## whatever its members are at this instant, so dragging one of them moves the frame,
+	## and it can never be out of date with the thing it encloses. The alternative — a
+	## rectangle stored in the document — is a second copy of where the nodes are, and the
+	## copies disagree the first time somebody drags one.
+	func _draw_groups() -> void:
+		_close_hits_out.clear()
+		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		var font := Design.font(Design.WEIGHT_SEMIBOLD)
+		var size := Design.type(Design.SIZE_CONTROL)
+		var pad: float = float(Design.scale(Design.SPACE_M))
+
+		for module_name in graph.groups:
+			var box := Rect2()
+			var first := true
+			for widget_name in graph.groups[module_name]:
+				var node := graph.get_node_or_null(NodePath(str(widget_name))) as GraphNode
+				if node == null or not node.visible:
+					continue
+				var rect := Rect2(node.position_offset * scale - graph.scroll_offset,
+					node.size * scale)
+				box = rect if first else box.merge(rect)
+				first = false
+			if first:
+				continue
+			# Room at the top for the name and the button, which live on the frame rather
+			# than floating beside it — a label that is not attached to its rectangle is a
+			# label you have to work out the owner of.
+			var band := float(Design.scale(34.0)) * scale
+			box = box.grow(pad).grow_individual(0.0, band, 0.0, 0.0)
+
+			draw_rect(box, Color(Design.ACCENT, 0.05))
+			Design.dashed_rect(self, box, Color(Design.ACCENT, 0.85), 2.0)
+			draw_string(font, box.position + Vector2(pad, band * 0.7), str(module_name),
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
+
+			var label := "Close"
+			var measured := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
+			var button := Rect2(
+				Vector2(box.position.x + box.size.x - measured.x - pad * 2.0,
+					box.position.y + (band - measured.y - pad * 0.5) * 0.5),
+				measured + Vector2(pad, pad * 0.5) * 2.0)
+			draw_rect(button, Design.ACCENT)
+			draw_string(font, button.position + Vector2(pad, pad * 0.5 + measured.y * 0.8),
+				label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ON_ACCENT)
+			_close_hits_out[module_name] = button
+		graph._close_hits = _close_hits_out.duplicate()
+
+	var _close_hits_out: Dictionary = {}
+
+
+	## The rubber band, while one is being drawn. Dashed for the same reason a target is:
+	## it is a question, not a state.
+	func _draw_band() -> void:
+		if not graph.drawing or not graph._banding:
+			return
+		var band := Rect2(graph._band_from, Vector2.ZERO).expand(graph._band_to).abs()
+		draw_rect(band, Color(Design.ACCENT, 0.08))
+		Design.dashed_rect(self, band, Design.ACCENT, 2.0)
+
 
 	## What to do next, on the canvas, where the work is.
 	##
@@ -1279,7 +1412,7 @@ func set_wand(active: bool) -> void:
 	if wand == active:
 		return
 	wand = active
-	set_process_input(active)
+	set_process_input(active or drawing or not groups.is_empty())
 	if not active:
 		wand_marks.clear()
 	if _wand_overlay != null:
@@ -1291,13 +1424,49 @@ func set_wand(active: bool) -> void:
 ## wand does not want falls through untouched, so selecting, dragging and panning still
 ## work with it up.
 func _input(event: InputEvent) -> void:
-	if not wand or not is_visible_in_tree():
+	if not is_visible_in_tree() or not (wand or drawing or not groups.is_empty()):
 		return
+	var rect := get_global_rect()
+
+	# The rubber band owns the pointer while it is armed, so nothing below sees a press.
+	if drawing:
+		var press := event as InputEventMouseButton
+		if press != null and press.button_index == MOUSE_BUTTON_LEFT:
+			if press.pressed and rect.has_point(press.position):
+				_banding = true
+				_band_from = press.position - rect.position
+				_band_to = _band_from
+				get_viewport().set_input_as_handled()
+			elif _banding:
+				_banding = false
+				drawing = false
+				set_process_input(wand)
+				mouse_default_cursor_shape = Control.CURSOR_ARROW
+				region_drawn.emit(_nodes_within(Rect2(_band_from, Vector2.ZERO)
+					.expand(_band_to).abs()))
+				get_viewport().set_input_as_handled()
+			return
+		var drag := event as InputEventMouseMotion
+		if drag != null and _banding:
+			_band_to = drag.position - rect.position
+			if _wand_overlay != null:
+				_wand_overlay.queue_redraw()
+			get_viewport().set_input_as_handled()
+		return
+
 	var button := event as InputEventMouseButton
 	if button == null or button.button_index != MOUSE_BUTTON_LEFT or not button.pressed:
 		return
-	var rect := get_global_rect()
 	if not rect.has_point(button.position):
+		return
+
+	# A frame's close button, before anything on the canvas under it.
+	for module_name in _close_hits:
+		if (_close_hits[module_name] as Rect2).has_point(button.position - rect.position):
+			group_closed.emit(str(module_name))
+			get_viewport().set_input_as_handled()
+			return
+	if not wand:
 		return
 
 	# Jacks first. They sit on the node's edge and their hot zone overlaps the body, so
