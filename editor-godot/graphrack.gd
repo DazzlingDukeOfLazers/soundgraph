@@ -1097,6 +1097,270 @@ static func _chamfer(points: PackedVector2Array, radius: float) -> PackedVector2
 	return out
 
 
+# ---------------------------------------------------------------------------------
+# Rearranging a face
+#
+# The wand's other half. Before a module exists the wand says which knobs it wears;
+# once it does, dragging one of them says where it sits — and where its knobs sit is
+# the whole of what a `panel` records, so this is the only gesture in the editor that
+# writes one.
+#
+# Only a module can be rearranged. An ordinary node's face comes from the registry and
+# there is nowhere in the document to put an opinion about it, so dragging one is
+# refused out loud rather than quietly doing nothing.
+#
+# Rows are read off the knobs rather than out of the panel, which is what makes the
+# no-panel case work without a second rule for it: a module that has never been arranged
+# is rearranged from the arrangement somebody is looking at — the GridContainer's own
+# two-column wrap — and the first drag writes down what was already true plus the one
+# thing that changed. Reading the panel instead would have meant guessing that layout a
+# second time, in a different place, and hoping the two guesses agreed.
+# ---------------------------------------------------------------------------------
+
+## True while the wand is up: a knob on a module's face is a tile to be moved rather than
+## a control to be turned. Set by the editor, which owns the toggle.
+##
+## Repainting the knobs rather than rebuilding the rack, because raising the wand changes
+## how a knob is drawn and nothing at all about what is on the case. A rebuild would also
+## have thrown away every module's place and re-seeded it, which is a large price for an
+## outline.
+var wand := false:
+	set(value):
+		if wand == value:
+			return
+		wand = value
+		_carrying = {}
+		_carry_to = {}
+		for id in _knobs:
+			for knob_name in _knobs[id]:
+				var knob = _knobs[id][knob_name]
+				if knob != null and is_instance_valid(knob):
+					(knob as Control).queue_redraw()
+		if _cables != null:
+			_cables.queue_redraw()
+
+signal face_rearranged(node_id: String, rows: Array)
+signal rearrange_refused(reason: String)
+
+var _carrying: Dictionary = {}   # {"node", "parameter"} while a knob is being moved
+var _carry_to: Dictionary = {}   # the drop under the pointer: {"row", "index", "fresh", "caret"}
+
+
+## The rows a face is wearing now, as export names, read off the knobs' own geometry.
+##
+## Two knobs share a row when their centres are within half a knob's height of each
+## other — a tolerance taken from the knobs themselves rather than named as a constant,
+## so it survives the zoom and the three densities without being told about any of them.
+func face_rows(node_id: String) -> Array:
+	var knobs: Dictionary = _knobs.get(node_id, {})
+	var placed: Array = []
+	for knob_name in knobs:
+		var knob = knobs[knob_name]
+		if knob == null or not is_instance_valid(knob):
+			continue
+		var rect: Rect2 = (knob as Control).get_global_rect()
+		placed.append({"name": str(knob_name), "y": rect.position.y + rect.size.y * 0.5,
+			"x": rect.position.x, "h": rect.size.y})
+	placed.sort_custom(func(a, b):
+		if absf(float(a["y"]) - float(b["y"])) > float(a["h"]) * 0.5:
+			return float(a["y"]) < float(b["y"])
+		return float(a["x"]) < float(b["x"]))
+
+	var rows: Array = []
+	var current: Array = []
+	var line := 0.0
+	for entry: Dictionary in placed:
+		if not current.is_empty() \
+				and absf(float(entry["y"]) - line) > float(entry["h"]) * 0.5:
+			rows.append(current)
+			current = []
+		if current.is_empty():
+			line = float(entry["y"])
+		current.append(str(entry["name"]))
+	if not current.is_empty():
+		rows.append(current)
+	return rows
+
+
+## Where a viewport-space point would drop, and the caret that says so.
+##
+## A row's middle half means "into this row", and its top and bottom quarters mean "on a
+## new line above/below" — generous bands rather than the true gap between rows, which is
+## twelve pixels and would have made a new line a test of aim. The bottom quarter is not
+## handled here at all: it falls through to the next row's top quarter, which is the same
+## boundary approached from the other side, and off the end of the last row it becomes a
+## new final line.
+func drop_at(node_id: String, global_point: Vector2) -> Dictionary:
+	var knobs: Dictionary = _knobs.get(node_id, {})
+	var rows := face_rows(node_id)
+	if rows.is_empty():
+		return {}
+
+	var bands: Array = []
+	var left := INF
+	var right := -INF
+	for row: Array in rows:
+		var band := Rect2()
+		var first := true
+		for knob_name in row:
+			var knob = knobs.get(str(knob_name))
+			if knob == null or not is_instance_valid(knob):
+				continue
+			var rect: Rect2 = (knob as Control).get_global_rect()
+			band = rect if first else band.merge(rect)
+			first = false
+		if first:
+			return {}
+		bands.append(band)
+		left = minf(left, band.position.x)
+		right = maxf(right, band.position.x + band.size.x)
+
+	for index in bands.size():
+		var band: Rect2 = bands[index]
+		if global_point.y < band.position.y + band.size.y * 0.25:
+			return _fresh_drop(index, bands, left, right)
+		if global_point.y > band.position.y + band.size.y * 0.75:
+			continue
+		var at := 0
+		for knob_name in rows[index]:
+			var knob = knobs.get(str(knob_name))
+			if knob == null or not is_instance_valid(knob):
+				continue
+			var rect: Rect2 = (knob as Control).get_global_rect()
+			if global_point.x < rect.position.x + rect.size.x * 0.5:
+				break
+			at += 1
+		var edge := band.position.x + band.size.x
+		if at < rows[index].size():
+			var next = knobs.get(str(rows[index][at]))
+			if next != null and is_instance_valid(next):
+				edge = (next as Control).get_global_rect().position.x
+		var thickness: float = maxf(2.0, band.size.y * 0.06)
+		return {"row": index, "index": at, "fresh": false,
+			"caret": Rect2(edge - thickness * 0.5, band.position.y, thickness, band.size.y)}
+	return _fresh_drop(bands.size(), bands, left, right)
+
+
+func _fresh_drop(index: int, bands: Array, left: float, right: float) -> Dictionary:
+	var first: Rect2 = bands[0]
+	var last: Rect2 = bands[bands.size() - 1]
+	var thickness: float = maxf(2.0, first.size.y * 0.06)
+	var y: float
+	if index <= 0:
+		y = first.position.y - first.size.y * 0.12
+	elif index >= bands.size():
+		y = last.position.y + last.size.y * 1.12
+	else:
+		var above: Rect2 = bands[index - 1]
+		var below: Rect2 = bands[index]
+		y = ((above.position.y + above.size.y) + below.position.y) * 0.5
+	return {"row": index, "index": 0, "fresh": true,
+		"caret": Rect2(left, y - thickness * 0.5, right - left, thickness)}
+
+
+## Whether this node's face is the document's to arrange. Only a module has somewhere to
+## write the answer down; an ordinary node's face comes from the registry, which is not a
+## thing a patch may hold an opinion about.
+func rearrangeable(node_id: String) -> bool:
+	var module = _modules.get(node_id)
+	if module != null and is_instance_valid(module):
+		return str(module.type_name).begins_with("module:")
+	return _type_of(node_id).begins_with("module:")
+
+
+func begin_rearrange(node_id: String, parameter: String) -> bool:
+	if not rearrangeable(node_id):
+		rearrange_refused.emit(
+			"%s is not a module — only a module's own face can be rearranged" % node_id)
+		return false
+	_carrying = {"node": node_id, "parameter": parameter}
+	_carry_to = {}
+	return true
+
+
+func update_rearrange(global_point: Vector2) -> void:
+	if _carrying.is_empty():
+		return
+	_carry_to = drop_at(str(_carrying["node"]), global_point)
+	if _cables != null:
+		_cables.queue_redraw()
+
+
+## Reports the new rows, or nothing when the drop would leave the face as it was —
+## including a drop that never moved, which is what an ordinary click on a knob becomes
+## while the wand is up.
+func finish_rearrange() -> void:
+	if _carrying.is_empty():
+		return
+	var node_id := str(_carrying["node"])
+	var parameter := str(_carrying["parameter"])
+	var target := _carry_to
+	_carrying = {}
+	_carry_to = {}
+	if _cables != null:
+		_cables.queue_redraw()
+	if target.is_empty():
+		return
+	var rows := face_rows(node_id)
+	var moved := _moved(rows, parameter, target)
+	if moved == rows:
+		return
+	face_rearranged.emit(node_id, moved)
+
+
+## The knob being carried, as {"node", "parameter"}, or empty.
+func carrying() -> Dictionary:
+	return _carrying
+
+
+## The insertion caret in viewport space, or a zero rect.
+func carry_caret() -> Rect2:
+	return _carry_to.get("caret", Rect2())
+
+
+## `rows` with `name` taken out of wherever it was and put where `target` says.
+##
+## Static and total: given any rows and any target it returns rows, which is what lets the
+## suite check the arithmetic — off-by-one when moving a knob leftward past itself, an
+## emptied row, a fresh line at either end — without a mouse or a rack.
+static func _moved(rows: Array, name: String, target: Dictionary) -> Array:
+	var out: Array = []
+	for row: Array in rows:
+		out.append(row.duplicate())
+	var row_index := int(target.get("row", 0))
+	var index := int(target.get("index", 0))
+	if bool(target.get("fresh", false)):
+		row_index = clampi(row_index, 0, out.size())
+		out.insert(row_index, [])
+		index = 0
+
+	# Taken out before it is put back, and the target pulled left when it was sitting
+	# ahead of the gap on the same line. Without that, dragging a knob one place to the
+	# right lands it exactly where it started and the move looks broken.
+	for i in out.size():
+		var at: int = (out[i] as Array).find(name)
+		if at < 0:
+			continue
+		(out[i] as Array).remove_at(at)
+		if i == row_index and at < index:
+			index -= 1
+		break
+
+	if row_index < 0 or row_index >= out.size():
+		out.append([name])
+	else:
+		var row: Array = out[row_index]
+		row.insert(clampi(index, 0, row.size()), name)
+
+	# A row the move emptied goes. A face does not keep a blank line to show where
+	# something used to be.
+	var tidied: Array = []
+	for row: Array in out:
+		if not row.is_empty():
+			tidied.append(row)
+	return tidied
+
+
 class CableLayer extends Control:
 	var rack: Control
 
@@ -1197,6 +1461,19 @@ class CableLayer extends Control:
 			# A ring at the loose end, so it is obvious which end you are holding.
 			draw_circle(a, 5.0, colour)
 			draw_arc(b, 10.0, 0.0, TAU, 24, colour, 2.0, true)
+
+		# The caret a carried knob would drop into. Drawn here because this layer is
+		# already the one thing above the panels — a caret behind the module it is
+		# pointing into would be no caret at all.
+		#
+		# A bar rather than a ghost of the knob: what is in doubt during this drag is
+		# never what is being moved, it is where the gap is, and a gap is a line.
+		var caret: Rect2 = rack.carry_caret()
+		if caret.size.x > 0.0 and caret.size.y > 0.0:
+			var inverse := get_global_transform().affine_inverse()
+			var local := Rect2(inverse * caret.position,
+				caret.size * inverse.get_scale())
+			draw_rect(local, Design.ACCENT)
 
 
 # ---------------------------------------------------------------------------------
@@ -1683,6 +1960,7 @@ class Knob extends Control:
 	var _dragging := false
 	var _drag_origin := 0.0
 	var _drag_from := 0.0
+	var _moving := false               # being carried across the face; see the wand
 
 	func _ready() -> void:
 		mouse_default_cursor_shape = Control.CURSOR_VSIZE
@@ -1840,6 +2118,27 @@ class Knob extends Control:
 				nudge(1.0)
 				accept_event()
 				return
+		# With the wand up this knob is a tile, not a control: the drag moves it on the
+		# module's face instead of turning it. Checked before the value drag rather than
+		# alongside it, because the two gestures are the same gesture and only one of them
+		# can have it — and a knob that turned *and* moved would be a knob you could not
+		# put down without also having changed the sound.
+		if rack.wand and event is InputEventMouseButton \
+				and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_moving = rack.begin_rearrange(node_id, str(descriptor["name"]))
+				queue_redraw()
+			elif _moving:
+				_moving = false
+				rack.finish_rearrange()
+				queue_redraw()
+			accept_event()
+			return
+		if rack.wand and event is InputEventMouseMotion and _moving:
+			rack.update_rearrange(event.global_position)
+			accept_event()
+			return
+
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
 				# So the arrow keys go to the knob that was just touched, rather than to
@@ -1878,6 +2177,14 @@ class Knob extends Control:
 		if has_focus():
 			draw_rect(Rect2(Vector2.ONE, size - Vector2.ONE * 2.0), Design.FOCUS,
 				false, 2.0)
+
+		# With the wand up, a knob that can be moved says so, and the one in hand says so
+		# louder. Around the cell for the same reason focus is: the name travels with the
+		# dial, so the cell is the thing being carried.
+		if rack != null and rack.wand and rack.rearrangeable(node_id):
+			draw_rect(Rect2(Vector2.ONE, size - Vector2.ONE * 2.0),
+				Color(Design.ACCENT, 1.0 if _moving else 0.34), false,
+				2.0 if _moving else 1.5)
 
 		draw_circle(centre, GraphRack.knob_radius(), GraphRack.KNOB_BODY)
 		draw_circle(centre, GraphRack.knob_radius(), Color(0, 0, 0, 0.5), false, 1.0)

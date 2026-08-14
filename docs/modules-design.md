@@ -203,8 +203,18 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 > rest. Picking happens in `PatchGraph._input`, ahead of the GUI pass, which is the only
 > reason a knob can be picked at all — a knob is a Control and would otherwise swallow
 > its own press; anything the wand does not want falls straight through, so selecting,
-> dragging and panning are untouched with it up. Still to come: dragging a knob on a
-> module's face to rearrange it, which is what writes a `panel`.
+> dragging and panning are untouched with it up.
+>
+> The same toggle has a second half in the Graphrack tab, where the module exists and is
+> wearing that face: a knob becomes a tile, and dragging it writes `panel.rows`. This is
+> the only gesture in the editor that writes a panel. Rows are read off the knobs rather
+> than out of the panel, so a module that has never been arranged is rearranged from the
+> arrangement on screen — the GridContainer's own two-column wrap — and the first drag
+> writes down what was already true plus the one thing that changed. A row's middle half
+> means "into this row" and its top and bottom quarters mean "on a new line", which is
+> the only way to say that with a gesture that has no second button. Only a module can be
+> rearranged; an ordinary node's face comes from the registry and a patch has nowhere to
+> put an opinion about it.
 
 > **Stage 4 landed — the design is complete.** Both importers emit modules by
 > default: the DX7 bank is one operator definition and six instances per voice, the

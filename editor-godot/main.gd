@@ -653,6 +653,8 @@ func _build_ui() -> void:
 	# anyway — it is the only thing left that made it a picture of a patcher.
 	graphrack.connection_made.connect(_on_rack_connection_made)
 	graphrack.patch_refused.connect(func(reason: String) -> void: _say(reason))
+	graphrack.face_rearranged.connect(_on_face_rearranged)
+	graphrack.rearrange_refused.connect(func(reason: String) -> void: _say(reason))
 	# A plain Control between the scroll container and the rack. Containers reset their
 	# children's scale on every layout pass, so a rack parented straight to the scroller
 	# could reserve the room for a zoom but never actually draw at it. The holder takes
@@ -3923,10 +3925,19 @@ func _collapse_selection() -> void:
 # list honest as the canvas moves under it.
 # ---------------------------------------------------------------------------------
 
+## One toggle, two halves of one job — which half you get is whichever view you are in.
+##
+## In the Graph tab a module does not exist yet, so the wand picks what it will show. In
+## the Graphrack tab it does, wearing that face, so the wand moves the knobs around on it.
+## Both are "say what this module shows and where", and neither is available in the view
+## where it would be meaningless: the Graph tab draws no panel to rearrange, and a module's
+## insides are not on the rack to point at.
 func _set_wand(active: bool) -> void:
 	if graph_edit == null:
 		return
 	graph_edit.set_wand(active)
+	if graphrack != null:
+		graphrack.wand = active
 	if wand_button != null and wand_button.button_pressed != active:
 		wand_button.button_pressed = active
 	if wand_confirm != null:
@@ -3939,7 +3950,9 @@ func _set_wand(active: bool) -> void:
 		_refresh_wand()
 		return
 	_refresh_wand()
-	if _selected_ids().size() < 2:
+	if graphrack != null and graphrack.is_visible_in_tree():
+		_say("drag a knob on a module's face to move it; drop above or below a row for a new one")
+	elif _selected_ids().size() < 2:
 		_say("select the nodes the module is made of, then point at what it should show")
 	else:
 		_say("point at the jacks and knobs the module should show, in the order they go")
@@ -4037,6 +4050,43 @@ func _mark_for(widget: GraphNode, pick: Dictionary) -> Dictionary:
 			return {"widget": String(widget.name), "side":
 				"left" if kind == "input" else "right", "index": index}
 	return {}
+
+
+## Stores a face somebody just rearranged with their hands.
+##
+## Presentation only, and that is what makes it worth doing by dragging: the surface is
+## untouched, so no cable moves, no control loses its target and nothing about the sound
+## can change. The worst a bad arrangement costs is one Ctrl-Z.
+##
+## It lands on the *definition*, so every instance of that module wears it — which is the
+## right answer and worth saying out loud, because the thing being dragged is one instance
+## and the thing being edited is what all of them are.
+##
+## Any labels already on the panel are kept. Moving a knob is not renaming it, and the two
+## are separate fields precisely so that one gesture cannot quietly do the other.
+func _on_face_rearranged(node_id: String, rows: Array) -> void:
+	var module_name := ""
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			module_name = str(node.get("module", ""))
+			break
+	var definitions: Dictionary = patch.get("modules", {})
+	if module_name == "" or not definitions.has(module_name):
+		return
+	_begin_edit()
+	var definition: Dictionary = definitions[module_name]
+	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
+	panel["rows"] = rows
+	definition["panel"] = panel
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	if builder != null:
+		builder.patch = patch
+		builder.refresh()
+	_apply()
+	_commit_edit("rearrange %s" % module_name)
+	_say("%s's face is %d row%s now" % [module_name, rows.size(),
+		"" if rows.size() == 1 else "s"])
 
 
 func _parameter_row(parent: Node, parameter: String) -> Control:

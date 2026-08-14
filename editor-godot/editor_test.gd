@@ -107,6 +107,28 @@ func _wand_click(main, point: Vector2) -> void:
 	main.graph_edit._input(event)
 
 
+## Press, move, release on one knob of a module's face, in viewport coordinates — the
+## rearranging half of the wand, driven through the Control's own handler.
+func _knob_drag(main, node_id: String, parameter: String, to_global: Vector2) -> void:
+	var knob: Control = main.graphrack._knobs.get(node_id, {}).get(parameter)
+	if knob == null:
+		return
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = knob.size * 0.5
+	press.global_position = knob.get_global_rect().get_center()
+	knob._gui_input(press)
+	var motion := InputEventMouseMotion.new()
+	motion.global_position = to_global
+	knob._gui_input(motion)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.global_position = to_global
+	knob._gui_input(release)
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -3355,6 +3377,91 @@ func _initialize() -> void:
 		"which is the whole face: two picked, two owed to controls (%d, was 7 derived)"
 			% picked_names.size())
 
+	# ---- the wand's other half: dragging a knob on the face it made ------------------
+	# The arithmetic first, on its own, because every interesting case here is an
+	# off-by-one and none of them needs a rack to be wrong in.
+	var GraphRackScript := preload("res://graphrack.gd")
+	check(GraphRackScript._moved([["a", "b", "c"]], "a", {"row": 0, "index": 2}) \
+			== [["b", "a", "c"]],
+		"moving a knob rightward past itself lands where the caret was, not one short")
+	check(GraphRackScript._moved([["a"], ["b"]], "a", {"row": 1, "index": 1}) \
+			== [["b", "a"]],
+		"and a row the move emptied is gone rather than left blank")
+	check(GraphRackScript._moved([["a", "b"]], "b", {"row": 0, "fresh": true}) \
+			== [["b"], ["a"]],
+		"a fresh row at the top opens above everything")
+	check(GraphRackScript._moved([["a", "b"]], "a", {"row": 2, "fresh": true}) \
+			== [["b"], ["a"]],
+		"and one past the end opens below, whatever number it was given")
+
+	# Now on the real thing. 'part' wears the four knobs picked above and no panel, so
+	# the face is the GridContainer's own two-by-two — which is exactly the case that has
+	# to work without a panel to read, because it is every module's first drag.
+	main.show_view("Graphrack")
+	for i in 10:
+		await process_frame
+	main.graphrack.zoom = 1.0
+	main.graphrack._relayout()
+	for i in 4:
+		await process_frame
+
+	var instance := ""
+	for node in main.patch.get("nodes", []):
+		if str(node.get("module", "")) == "part":
+			instance = str(node["id"])
+	check(instance != "", "the module instance is on the rack (%s)" % instance)
+	check(main.graphrack.face_rows(instance) == [["cutoff", "rate"], ["resonance", "amount"]],
+		"its face reads two by two, off the knobs rather than out of a panel (%s)"
+			% str(main.graphrack.face_rows(instance)))
+	check(main.graphrack.rearrangeable(instance), "and it is a module, so it may be arranged")
+
+	main._set_wand(true)
+	check(main.graphrack.wand, "the wand reaches the rack too")
+
+	# rate, from the end of the top row to the front of the bottom one.
+	var resonance: Control = main.graphrack._knobs[instance]["resonance"]
+	var target := Vector2(resonance.get_global_rect().position.x + 2.0,
+		resonance.get_global_rect().get_center().y)
+	_knob_drag(main, instance, "rate", target)
+	for i in 8:
+		await process_frame
+
+	var face_now: Array = main.patch["modules"]["part"].get("panel", {}).get("rows", [])
+	check(face_now == [["cutoff"], ["rate", "resonance", "amount"]],
+		"dragging a knob writes the panel it landed in (%s)" % str(face_now))
+	check(main.graphrack.face_rows(instance) == face_now,
+		"and the face it rebuilt into is the one the file now says (%s)"
+			% str(main.graphrack.face_rows(instance)))
+	check(main.patch["modules"]["part"].get("parameters", []).size() == 4,
+		"the surface is untouched — an arrangement is presentation, not export (%d)"
+			% main.patch["modules"]["part"].get("parameters", []).size())
+
+	# Below the last row: a line of its own. The only gesture that says so.
+	var amount: Control = main.graphrack._knobs[instance]["amount"]
+	var below := Vector2(amount.get_global_rect().get_center().x,
+		amount.get_global_rect().position.y + amount.get_global_rect().size.y + 4.0)
+	_knob_drag(main, instance, "cutoff", below)
+	for i in 8:
+		await process_frame
+	check(main.patch["modules"]["part"].get("panel", {}).get("rows", []) \
+			== [["rate", "resonance", "amount"], ["cutoff"]],
+		"dropping past the last row opens a new one (%s)"
+			% str(main.patch["modules"]["part"].get("panel", {}).get("rows", [])))
+
+	# An arrangement is an edit like any other.
+	await main._undo()
+	for i in 8:
+		await process_frame
+	check(main.patch["modules"]["part"].get("panel", {}).get("rows", []) \
+			== [["cutoff"], ["rate", "resonance", "amount"]],
+		"and undo puts the face back the way it was (%s)"
+			% str(main.patch["modules"]["part"].get("panel", {}).get("rows", [])))
+
+	main._set_wand(false)
+	main.show_view("Graph")
+	for i in 6:
+		await process_frame
+
 	await main._load_example("First Synth")
 	for i in 6:
 		await process_frame
@@ -3743,7 +3850,7 @@ func _initialize() -> void:
 		if at.is_zero_approx():
 			on_origin += 1
 	check(seen_positions.size() == main.patch["nodes"].size(),
-		"and a patch with no layout is arranged on load, not stacked (%d distinct of %d)"
+		"and a patch with no layout is face_now on load, not stacked (%d distinct of %d)"
 			% [seen_positions.size(), main.patch["nodes"].size()])
 	check(on_origin <= 1, "with at most one node left on the origin")
 	# Fired the way the Fire button does it: these are gated by a NoteInput now, so a
