@@ -280,6 +280,67 @@ export names, module-typed node inside a definition, and an expansion-size bomb
    reproduces the original wiring.
 4. **DX7/OPL importers emit modules by default** once 1–2 are proven.
 
+## Proposed: `Input` and `Output` as primitives — the seam made of nodes
+
+Not built. Written down first because it moves where a module's edge *lives*, and that
+is a decision worth arguing about before there is code to argue with.
+
+Today a module's surface is a **list beside the graph**: `inputs` and `outputs` are
+binding objects in the definition, saying "the port called `gate` means `env.gate`
+inside." The list is derived at collapse and edited afterwards through a tool. That
+works, and two things about it keep costing:
+
+- **The seam is invisible.** Nothing on the canvas is the edge of the module. You find
+  out what a module exposes by opening a panel, or by collapsing it and looking at the
+  node that comes out. The one place the boundary is real — the wiring that crosses it
+  — is exactly where it is not drawn.
+- **The order is nobody's.** Port order is the order bindings landed in the list, which
+  is the order boundary connections were walked. That is why the wand had to invent a
+  click-order rule to say otherwise.
+
+The proposal is that a module's edge is made of ordinary nodes: an `Input` node inside a
+definition *is* an input, and an `Output` node *is* an output. Their order on the canvas
+is the port order. Their names are the port names. The keyboard plugs into an `Input`,
+which is the same thing a cable from outside plugs into, because now they are the same
+thing.
+
+This is what inlets and outlets do in Max and Pd, and terminals in Reaktor, and it is
+the convention for the same reason in all three: the boundary is the one part of a
+subpatch you need to see while you are inside it.
+
+**What it buys.** The seam is on screen and in the file in one place. `collapse` stops
+deriving a surface and starts *creating the nodes that are the surface* — no nomination
+argument, no panel needed to state an order, no "which of these did you mean". A module
+opened for editing shows its own edges, so the thing you are wiring to is drawn rather
+than remembered. And a patch and a module stop being different kinds of object: a patch
+with `Input` and `Output` nodes at the top level is already a module, which is what
+`from_patch` has been faking with terminals.
+
+**What it costs, and the decisions that go with it.**
+
+1. **Do they replace the binding lists, or coexist?** Replacing is the honest version
+   and it is a format change: every module in every example and both importer banks is
+   written the other way. Coexisting means two ways to say one thing, which is the
+   failure mode this document has avoided everywhere else. The migration is mechanical
+   — a definition's `inputs` list becomes `Input` nodes wired to what the bindings named
+   — and it should be done as a conversion in patch-io rather than by hand.
+2. **What are they made of at runtime?** A pass-through with a declared signal type,
+   almost certainly, so that expansion can splice them out entirely and the flat graph
+   is exactly what it is today. Expansion already erases the facade; this gives it two
+   more node types to erase.
+3. **What about the existing terminals?** `NoteInput`, `AudioInput` and `StereoOutput`
+   are the *patch's* edge — where the graph meets its host. `Input` and `Output` are a
+   *module's* edge. Those may be the same idea at two scales, in which case terminals
+   become `Input`/`Output` with a binding to the host, or they may not, in which case a
+   reader has to learn both. Worth settling before either is built, not after.
+4. **A module with no edges.** Today that is a definition with empty lists. Then it is a
+   definition with no `Input` nodes, which is the same fact and reads better.
+
+**What it does not change.** Exports stay a list: a knob is not a place on the boundary,
+it is a name for something inside, and there is nothing for it to be a node *of*. The
+panel stays presentation. Expansion stays the guarantee that every notation renders the
+same audio.
+
 ## Deferred, deliberately
 
 - **Cross-file module libraries** — reintroduces concern 2; if it ever comes, it
