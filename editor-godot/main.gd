@@ -78,6 +78,7 @@ static func snap_up(value: float, step: float) -> float:
 ## New scripts are preloaded rather than trusted to the class-name cache, which
 ## headless runs do not refresh.
 const ModuleAuthor := preload("res://module_author.gd")
+const Seams := preload("res://seams.gd")
 const PatchFace := preload("res://patch_face.gd")
 
 const EXAMPLE_GROUPS := {
@@ -2080,36 +2081,13 @@ func _rebuild_view() -> void:
 func _type_key(node: Dictionary) -> String:
 	if str(node.get("type", "")) == "module":
 		return "module:%s" % str(node.get("module", ""))
-	var seam := _seam_terminal(node)
+	var seam := Seams.terminal_for(node)
 	if seam != "":
 		return seam
 	return str(node.get("type", ""))
 
 
-## Which terminal a host-bound seam is, or "" when this node is not one.
-##
-## The editor renders a seam as the thing it becomes, because that is what it is: the
-## loader turns Input/note into a NoteInput before anything downstream sees the document,
-## and drawing it any other way would be the editor disagreeing with the file about what
-## is in the patch. No new registry entry, no synthesized descriptor — the terminal's own
-## entry already says everything true about this node's ports and parameters.
-##
-## The mapping is patch-io's, restated here because the editor parses documents itself
-## rather than through the loader. That is a second copy of one table and it is the reason
-## a seam bound to a host this editor does not know renders as nothing rather than badly:
-## see _seam_hosts.
-const SEAM_TERMINALS := {
-	"Input/note": "NoteInput",
-	"Input/audio": "AudioInput",
-	"Output/stereo": "StereoOutput",
-}
 
-
-func _seam_terminal(node: Dictionary) -> String:
-	var type_name := str(node.get("type", ""))
-	if type_name != "Input" and type_name != "Output":
-		return ""
-	return str(SEAM_TERMINALS.get("%s/%s" % [type_name, str(node.get("host", ""))], ""))
 
 
 ## Builds a registry-shaped descriptor for each module definition, so instances flow
@@ -3766,6 +3744,21 @@ func _arrange_selection() -> void:
 	await _arrange(selected)
 
 
+## The node types that may not live inside a module: the registry's own Terminals, plus
+## the two spellings of a seam.
+##
+## A seam bound to a host *is* a terminal — that is the whole of what the host binding
+## means — but its type is "Input", which no registry entry claims. Asking the registry
+## alone let a keyboard be collapsed into a module, which is the one thing the rule about
+## terminals exists to stop: two instances would both be listening to it.
+func _terminal_types() -> Array:
+	var terminals: Array = ["Input", "Output"]
+	for type_name in registry:
+		if str(registry[type_name].get("category", "")) == "Terminals":
+			terminals.append(type_name)
+	return terminals
+
+
 ## Wiring becomes notation: the selection turns into a definition plus one instance.
 ## The transform itself lives in ModuleAuthor and never touches the editor; this is
 ## the ceremony around it — the undo snapshot, the descriptor refresh, the rebuild.
@@ -3779,10 +3772,7 @@ func _collapse_selection() -> void:
 	if selected.size() < 2:
 		_say("select two or more nodes to collapse into a module")
 		return
-	var terminals: Array = []
-	for type_name in registry:
-		if str(registry[type_name].get("category", "")) == "Terminals":
-			terminals.append(type_name)
+	var terminals := _terminal_types()
 	var picked: Array = wand_picks.duplicate(true)
 	var result := ModuleAuthor.collapse(patch, selected, terminals, picked)
 	if not result.ok():
@@ -3833,10 +3823,7 @@ func _on_region_drawn(widget_names: Array) -> void:
 	if chosen.size() < 2:
 		_say("draw round two or more nodes — a module of one is the node you started with")
 		return
-	var terminals: Array = []
-	for type_name in registry:
-		if str(registry[type_name].get("category", "")) == "Terminals":
-			terminals.append(type_name)
+	var terminals := _terminal_types()
 	var made := ModuleAuthor.collapse(patch, chosen, terminals, wand_picks.duplicate(true))
 	if not made.ok():
 		_say(made.error)
@@ -4044,7 +4031,7 @@ func _parameter_descriptor(node_id: String, parameter: String) -> Dictionary:
 ## The node the instrument comes out of, or "" for a patch that has no output yet.
 func _output_node() -> String:
 	for node in patch.get("nodes", []):
-		if str(node.get("type", "")) == "StereoOutput":
+		if Seams.registry_key(node) == "StereoOutput":
 			return str(node["id"])
 	return ""
 
@@ -5213,10 +5200,7 @@ func _import_module_as_definition(text: String, module_name: String) -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		_say("that file is not a patch")
 		return
-	var terminals: Array = []
-	for type_name in registry:
-		if str(registry[type_name].get("category", "")) == "Terminals":
-			terminals.append(type_name)
+	var terminals := _terminal_types()
 	var result := ModuleAuthor.from_patch(patch, parsed, module_name, terminals)
 	if not result.ok():
 		_say(result.error)

@@ -14,7 +14,8 @@
   "nodes": [
     {
       "id": "note",
-      "type": "NoteInput",
+      "type": "Input",
+      "host": "note",
       "name": "Keyboard",
       "parameters": {
         "glide": 0,
@@ -95,7 +96,8 @@
     },
     {
       "id": "out",
-      "type": "StereoOutput",
+      "type": "Output",
+      "host": "stereo",
       "name": "Output",
       "parameters": {
         "level": 0.8,

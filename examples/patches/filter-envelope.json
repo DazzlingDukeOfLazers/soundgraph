@@ -103,8 +103,8 @@
         {
           "id": "filter",
           "parameters": {
-            "cutoff": 800.0,
-            "cutoff_sweep": 0.0,
+            "cutoff": 800,
+            "cutoff_sweep": 0,
             "mode": 0,
             "resonance": 0.6
           },
@@ -191,7 +191,8 @@
         "x": 0,
         "y": 0
       },
-      "type": "NoteInput"
+      "type": "Input",
+      "host": "note"
     },
     {
       "id": "osc",
@@ -209,8 +210,8 @@
       "module": "filter_env",
       "parameters": {
         "attack": 0.005,
-        "cutoff": 800.0,
-        "cutoff_sweep": 0.0,
+        "cutoff": 800,
+        "cutoff_sweep": 0,
         "decay": 0.35,
         "mode": 0,
         "release": 0.4,
@@ -233,7 +234,8 @@
         "x": 1680,
         "y": 0
       },
-      "type": "StereoOutput"
+      "type": "Output",
+      "host": "stereo"
     }
   ],
   "schema_version": 2

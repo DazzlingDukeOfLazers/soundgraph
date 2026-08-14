@@ -19,6 +19,7 @@ extends Control
 ## a container that had its own opinions. The rack draws its own panel and has none.
 
 const Layout := preload("res://layout.gd")
+const Seams := preload("res://seams.gd")
 
 signal parameter_changed(node_id: String, parameter: String, value: float)
 signal edit_started()
@@ -581,11 +582,10 @@ func _module_order() -> Array:
 func _type_of(node_id: String) -> String:
 	for node in patch.get("nodes", []):
 		if str(node["id"]) == node_id:
-			# Instances resolve to their synthesized descriptor key, so this view
-			# treats a module like any node without ever learning what one is.
-			if str(node["type"]) == "module":
-				return "module:%s" % str(node.get("module", ""))
-			return str(node["type"])
+			# Instances resolve to their synthesized descriptor key and seams to the
+			# terminal they are, so this view treats both like any node without ever
+			# learning what either one is.
+			return Seams.registry_key(node)
 	return ""
 
 

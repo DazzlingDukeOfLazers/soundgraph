@@ -32,28 +32,73 @@
       ],
       "connections": [
         {
-          "from": { "node": "env", "port": "out" },
-          "to": { "node": "amp", "port": "gain" }
+          "from": {
+            "node": "env",
+            "port": "out"
+          },
+          "to": {
+            "node": "amp",
+            "port": "gain"
+          }
         }
       ],
       "inputs": [
-        { "name": "gate", "node": "env", "port": "gate" },
-        { "name": "in", "node": "amp", "port": "in" }
+        {
+          "name": "gate",
+          "node": "env",
+          "port": "gate"
+        },
+        {
+          "name": "in",
+          "node": "amp",
+          "port": "in"
+        }
       ],
       "outputs": [
-        { "name": "out", "node": "amp", "port": "out" }
+        {
+          "name": "out",
+          "node": "amp",
+          "port": "out"
+        }
       ],
       "parameters": [
-        { "name": "attack", "node": "env", "parameter": "attack" },
-        { "name": "decay", "node": "env", "parameter": "decay" },
-        { "name": "sustain", "node": "env", "parameter": "sustain" },
-        { "name": "release", "node": "env", "parameter": "release" },
-        { "name": "gain", "node": "amp", "parameter": "gain" }
+        {
+          "name": "attack",
+          "node": "env",
+          "parameter": "attack"
+        },
+        {
+          "name": "decay",
+          "node": "env",
+          "parameter": "decay"
+        },
+        {
+          "name": "sustain",
+          "node": "env",
+          "parameter": "sustain"
+        },
+        {
+          "name": "release",
+          "node": "env",
+          "parameter": "release"
+        },
+        {
+          "name": "gain",
+          "node": "amp",
+          "parameter": "gain"
+        }
       ],
       "panel": {
         "rows": [
-          ["attack", "decay", "sustain", "release"],
-          ["gain"]
+          [
+            "attack",
+            "decay",
+            "sustain",
+            "release"
+          ],
+          [
+            "gain"
+          ]
         ],
         "labels": {
           "gain": "Level"
@@ -64,14 +109,23 @@
   "nodes": [
     {
       "id": "kb",
-      "type": "NoteInput",
-      "position": { "x": 0, "y": 200 }
+      "type": "Input",
+      "host": "note",
+      "position": {
+        "x": 0,
+        "y": 200
+      }
     },
     {
       "id": "osc",
       "type": "SawOscillator",
-      "parameters": { "frequency": 220 },
-      "position": { "x": 560, "y": 200 }
+      "parameters": {
+        "frequency": 220
+      },
+      "position": {
+        "x": 560,
+        "y": 200
+      }
     },
     {
       "id": "voice",
@@ -84,35 +138,75 @@
         "release": 0.35,
         "gain": 0.7
       },
-      "position": { "x": 1120, "y": 200 }
+      "position": {
+        "x": 1120,
+        "y": 200
+      }
     },
     {
       "id": "out",
-      "type": "StereoOutput",
-      "parameters": { "level": 0.8, "safety_limit": 1 },
-      "position": { "x": 1680, "y": 200 }
+      "type": "Output",
+      "host": "stereo",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      },
+      "position": {
+        "x": 1680,
+        "y": 200
+      }
     }
   ],
   "connections": [
     {
-      "from": { "node": "kb", "port": "frequency" },
-      "to": { "node": "osc", "port": "frequency" }
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
     },
     {
-      "from": { "node": "kb", "port": "gate" },
-      "to": { "node": "voice", "port": "gate" }
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "voice",
+        "port": "gate"
+      }
     },
     {
-      "from": { "node": "osc", "port": "out" },
-      "to": { "node": "voice", "port": "in" }
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "voice",
+        "port": "in"
+      }
     },
     {
-      "from": { "node": "voice", "port": "out" },
-      "to": { "node": "out", "port": "left" }
+      "from": {
+        "node": "voice",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
     },
     {
-      "from": { "node": "voice", "port": "out" },
-      "to": { "node": "out", "port": "right" }
+      "from": {
+        "node": "voice",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
     }
   ]
 }

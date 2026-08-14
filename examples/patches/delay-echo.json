@@ -15,7 +15,8 @@
   "nodes": [
     {
       "id": "input",
-      "type": "AudioInput",
+      "type": "Input",
+      "host": "audio",
       "name": "Live Input",
       "parameters": {
         "gain": 1
@@ -80,7 +81,8 @@
     },
     {
       "id": "out",
-      "type": "StereoOutput",
+      "type": "Output",
+      "host": "stereo",
       "name": "Output",
       "parameters": {
         "level": 0.8,
