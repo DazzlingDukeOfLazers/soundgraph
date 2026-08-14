@@ -1342,15 +1342,9 @@ class WandOverlay extends Control:
 	## screen without checking, four arrows had been unrenderable for weeks behind a system
 	## font fallback.
 	func _draw_hint(selected: int) -> void:
-		var picked: int = graph.wand_marks.size()
-		var text := ""
-		if selected < 2:
-			text = "Wand: select the nodes this module is made of, two or more."
-		elif picked == 0:
-			text = "Now click the jacks and knobs it should show, in the order they go."
-		else:
-			text = "%d picked. Click more, click one again to drop it, or Make module." \
-				% picked
+		var text := "Wand: click a knob to put it on the panel, again to take it off."
+		if selected == 0:
+			text = "Wand: select a node, then click a knob on it to put it on the panel."
 
 		var font := Design.font(Design.WEIGHT_MEDIUM)
 		var size := Design.type(Design.SIZE_CONTROL)

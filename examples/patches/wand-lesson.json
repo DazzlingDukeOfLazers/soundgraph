@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "author": "Mutant Factory",
+    "created": "2026-08-13",
+    "description": "Four nodes, for learning the wand on. Select osc and amp — not the keyboard, not the output, those are terminals — then raise the wand and click the amp's gain knob. Make module gives you one node with exactly one knob. Without the wand it would arrive with two, because collapse exports every knob anybody has set.",
+    "name": "Wand lesson",
+    "tags": [
+      "tutorial",
+      "module"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "note",
+      "type": "NoteInput",
+      "name": "Keyboard",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "name": "Oscillator",
+      "parameters": {
+        "frequency": 220
+      },
+      "position": {
+        "x": 560,
+        "y": 0
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "name": "Amplifier",
+      "parameters": {
+        "gain": 0.5
+      },
+      "position": {
+        "x": 1120,
+        "y": 0
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "name": "Output",
+      "parameters": {
+        "level": 0.8
+      },
+      "position": {
+        "x": 1680,
+        "y": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ]
+}

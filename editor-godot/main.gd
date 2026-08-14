@@ -78,6 +78,7 @@ static func snap_up(value: float, step: float) -> float:
 ## New scripts are preloaded rather than trusted to the class-name cache, which
 ## headless runs do not refresh.
 const ModuleAuthor := preload("res://module_author.gd")
+const PatchFace := preload("res://patch_face.gd")
 
 const EXAMPLE_GROUPS := {
 	"": "",
@@ -141,6 +142,8 @@ var graph_edit: GraphEdit
 var wand_picks: Array = []
 var wand_button: Button
 var wand_confirm: Button
+## The file's own face: the knobs somebody plays. See patch_face.gd.
+var patch_face: PatchFace
 var views: TabContainer
 var rack: Rack
 var graphrack: GraphRack
@@ -1553,6 +1556,13 @@ func _build_side_panel() -> Control:
 
 	var panel := side_panel_body
 
+	# The face, first and always. It is what the file is *for* — the graph underneath is
+	# how it is built — so it leads the panel rather than sitting under the diagnostics.
+	panel.add_child(_field("Panel"))
+	patch_face = PatchFace.new()
+	patch_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_child(patch_face)
+
 	# One quiet line, always in the same place. Valid is the normal state and should look
 	# like it — a green "No problems." carried as much visual authority as an actual error,
 	# so the panel read as urgent when nothing was wrong.
@@ -2043,6 +2053,7 @@ func _rebuild_view() -> void:
 		rack.registry = registry
 		rack.patch = patch
 		rack.rebuild()
+	_refresh_face()
 
 
 # ---------------------------------------------------------------------------------
@@ -3865,6 +3876,10 @@ func _set_wand(active: bool) -> void:
 		_say("wand up")
 
 
+## Ports are not knobs, and the file's face is made of knobs. `controls` targets a node
+## and a parameter and has no spelling for a jack — reasonably, since a panel is what
+## somebody turns and a jack is where a cable goes. Said out loud rather than ignored,
+## because a click that does nothing is indistinguishable from a tool that is broken.
 func _on_port_picked(widget_name: String, side: String, index: int) -> void:
 	var node_id: String = ids.get(widget_name, "")
 	if node_id == "":
@@ -3872,18 +3887,91 @@ func _on_port_picked(widget_name: String, side: String, index: int) -> void:
 	var ports := _port_list(node_id, "inputs" if side == "left" else "outputs")
 	if index < 0 or index >= ports.size():
 		return
-	_toggle_pick({
-		"kind": "input" if side == "left" else "output",
-		"node": node_id,
-		"port": str(ports[index]["name"]),
-	})
+	_say("%s.%s is a jack — the panel is made of knobs"
+		% [node_id, str(ports[index]["name"])])
 
 
 func _on_parameter_picked(widget_name: String, parameter: String) -> void:
 	var node_id: String = ids.get(widget_name, "")
 	if node_id == "" or parameter == "":
 		return
-	_toggle_pick({"kind": "parameter", "node": node_id, "parameter": parameter})
+	_toggle_control(node_id, parameter)
+
+
+## The wand's whole job now: put this knob on the file's face, or take it off.
+##
+## One document edit each way, undoable, and it touches nothing but `controls` — so a knob
+## can go on and come off again without the graph, the wiring or the sound noticing. That
+## is the property that makes the panel worth experimenting with: the worst a wrong face
+## costs is a Ctrl-Z.
+##
+## Appended rather than inserted, because the order knobs go on in is the order somebody
+## chose to put them there, and that is as good a statement of intent as any and better
+## than most.
+func _toggle_control(node_id: String, parameter: String) -> void:
+	var controls: Array = patch.get("controls", []).duplicate(true)
+	for index in controls.size():
+		var target: Dictionary = controls[index].get("target", {})
+		if str(target.get("node", "")) == node_id \
+				and str(target.get("parameter", "")) == parameter:
+			var gone: String = str(controls[index].get("label", parameter))
+			controls.remove_at(index)
+			_begin_edit()
+			if controls.is_empty():
+				patch.erase("controls")
+			else:
+				patch["controls"] = controls
+			_refresh_face()
+			_apply()
+			_commit_edit("take %s off the panel" % gone)
+			_say("'%s' is off the panel. Its value is still set; nothing else changed."
+				% gone)
+			return
+
+	var descriptor := _parameter_descriptor(node_id, parameter)
+	if descriptor.is_empty():
+		_say("%s has no parameter called %s" % [node_id, parameter])
+		return
+	var taken := {}
+	for control in controls:
+		taken[str(control.get("id", ""))] = true
+	var control_id := parameter
+	if taken.has(control_id):
+		control_id = "%s_%s" % [node_id, parameter]
+	var entry := {
+		"id": control_id,
+		"label": str(descriptor.get("name", parameter)).capitalize(),
+		"kind": "knob",
+		"target": {"node": node_id, "parameter": parameter},
+		"min": float(descriptor.get("min", 0.0)),
+		"max": float(descriptor.get("max", 1.0)),
+		"default": float(descriptor.get("default", 0.0)),
+		"scaling": str(descriptor.get("scaling", "linear")),
+	}
+	controls.append(entry)
+	_begin_edit()
+	patch["controls"] = controls
+	_refresh_face()
+	_apply()
+	_commit_edit("put %s on the panel" % entry["label"])
+	_say("'%s' is on the panel (%d knob%s)"
+		% [entry["label"], controls.size(), "" if controls.size() == 1 else "s"])
+
+
+func _parameter_descriptor(node_id: String, parameter: String) -> Dictionary:
+	for parameter_entry in registry.get(_node_type(node_id), {}).get("parameters", []):
+		if str(parameter_entry["name"]) == parameter:
+			return parameter_entry
+	return {}
+
+
+func _refresh_face() -> void:
+	if patch_face == null:
+		return
+	patch_face.patch = patch
+	patch_face.registry = registry
+	patch_face.rack = rack
+	patch_face.rebuild()
 
 
 ## Pointing at something already picked takes it back off. Without that the only repair
