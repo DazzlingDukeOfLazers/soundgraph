@@ -1148,22 +1148,30 @@ class WandOverlay extends Control:
 		if graph == null or not graph.wand:
 			return
 		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
-		var available := Color(Design.ACCENT, 0.34)
+		# Dashed, and not in the accent. A selected node already wears a solid accent
+		# border, so accent targets drawn inside it were a second green rectangle saying
+		# something different with the same voice — which is how the cue came to be
+		# invisible in a picture where it was, technically, present.
+		var available := Color(Design.INK_BRIGHT, 0.7)
 
 		# What can be picked. Only the selection, which is what makes the rule legible
 		# without a sentence: the wand reaches exactly as far as the module will.
+		var selected := 0
 		for child in graph.get_children():
 			var node := child as GraphNode
 			if node == null or not node.visible or not node.selected:
 				continue
+			selected += 1
 			for side in ["left", "right"]:
 				var count: int = node.get_input_port_count() if side == "left" \
 					else node.get_output_port_count()
 				for index in count:
-					draw_arc(_jack(node, side, index), Design.scale(9.0) * scale, 0.0, TAU, 20,
-						available, 1.5, true)
+					Design.dashed_circle(self, _jack(node, side, index),
+						Design.scale(9.0) * scale, available)
 			for row in _rows(node):
-				draw_rect(_local(row.get_global_rect()).grow(2.0), available, false, 1.5)
+				Design.dashed_rect(self, _local(row.get_global_rect()).grow(2.0), available)
+
+		_draw_hint(selected)
 
 		# What has been picked, wearing its ordinal.
 		for mark: Dictionary in graph.wand_marks:
@@ -1183,6 +1191,52 @@ class WandOverlay extends Control:
 				continue
 			_badge(_jack(node, str(mark.get("side", "left")), int(mark.get("index", 0))),
 				ordinal, scale)
+
+	## What to do next, on the canvas, where the work is.
+	##
+	## The toolbar's status line cannot carry this. It is a flexible gap between two button
+	## groups — a hundred and eighty pixels on a normal window — and a sentence long enough
+	## to teach a gesture is a sentence it will clip. That is exactly what it did: raising
+	## the wand printed "point at what it should show" and the strip showed the tail of it.
+	##
+	## It also answers the state that made the whole tool look broken. The targets only
+	## appear on selected nodes, so pressing Wand with nothing selected changed nothing at
+	## all anywhere on screen, which reads as a dead button rather than as a step missing.
+	## Now the empty case is the one that says the most.
+	##
+	## ASCII only, deliberately. Drawn text is invisible to the design suite's font-coverage
+	## check — it can only see Controls — and the last time this project put a glyph on
+	## screen without checking, four arrows had been unrenderable for weeks behind a system
+	## font fallback.
+	func _draw_hint(selected: int) -> void:
+		var picked: int = graph.wand_marks.size()
+		var text := ""
+		if selected < 2:
+			text = "Wand: select the nodes this module is made of, two or more."
+		elif picked == 0:
+			text = "Now click the jacks and knobs it should show, in the order they go."
+		else:
+			text = "%d picked. Click more, click one again to drop it, or Make module." \
+				% picked
+
+		var font := Design.font(Design.WEIGHT_MEDIUM)
+		var size := Design.type(Design.SIZE_CONTROL)
+		var measured := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
+		var pad: float = float(Design.scale(Design.SPACE_M))
+		var box := Rect2(Vector2.ZERO, measured + Vector2(pad, pad) * 2.0)
+		# Bottom centre, against the usable rectangle so it never comes to rest under the
+		# zoom cluster or the minimap. At the top it sat on the node somebody was about to
+		# click — which for a band that exists to help you click things is the worst place
+		# available. Work happens above the fold; the instruction goes below it.
+		var room: Rect2 = graph.usable_rect()
+		box.position = Vector2(room.position.x + (room.size.x - box.size.x) * 0.5,
+			room.position.y + room.size.y - box.size.y - float(Design.scale(Design.SPACE_M)))
+
+		draw_rect(box, Design.SURFACES[Design.Surface.RAISED])
+		draw_rect(box, Design.ACCENT, false, 1.5)
+		draw_string(font, box.position + Vector2(pad, pad + measured.y * 0.75), text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.INK_BRIGHT)
+
 
 	## A jack's centre, in this overlay's coordinates.
 	func _jack(node: GraphNode, side: String, index: int) -> Vector2:

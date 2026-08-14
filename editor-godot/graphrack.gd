@@ -2331,10 +2331,17 @@ class Knob extends Control:
 		# With the wand up, a knob that can be moved says so, and the one in hand says so
 		# louder. Around the cell for the same reason focus is: the name travels with the
 		# dial, so the cell is the thing being carried.
+		#
+		# Dashed while it is only a target, solid accent once it is in hand — the same
+		# grammar the graph view's targets use, and for the same reason. A selected module
+		# is already outlined in this rack's accent, so an accent box inside it was one
+		# more green rectangle rather than a different statement.
 		if rack != null and rack.wand and rack.rearrangeable(node_id):
-			draw_rect(Rect2(Vector2.ONE, size - Vector2.ONE * 2.0),
-				Color(Design.ACCENT, 1.0 if _moving else 0.34), false,
-				2.0 if _moving else 1.5)
+			var cell := Rect2(Vector2.ONE, size - Vector2.ONE * 2.0)
+			if _moving:
+				draw_rect(cell, Design.ACCENT, false, 2.0)
+			else:
+				Design.dashed_rect(self, cell, Color(Design.INK_BRIGHT, 0.7))
 
 		draw_circle(centre, GraphRack.knob_radius(), GraphRack.KNOB_BODY)
 		draw_circle(centre, GraphRack.knob_radius(), Color(0, 0, 0, 0.5), false, 1.0)

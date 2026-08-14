@@ -628,6 +628,68 @@ static func relative_luminance(colour: Color) -> float:
 ## WCAG contrast ratio, 1.0 (identical) to 21.0 (black on white).
 ## The quietest version of a colour that still reads against a surface.
 ##
+# ---------------------------------------------------------------------------------
+# Dashes
+#
+# A dashed outline means "this could be acted on"; a solid one means "this is". The
+# distinction earns its keep wherever a tool puts targets inside something already
+# outlined — the wand does exactly that, marking knobs and jacks on nodes that are
+# already wearing the accent border that says selected. Two solid accent rectangles,
+# one inside the other, is not two pieces of information.
+#
+# Dashes rather than a second colour, because the palettes only have one accent and
+# spending a signal-type colour (amber is triggers) on a UI state would be worse than
+# the ambiguity it fixed.
+# ---------------------------------------------------------------------------------
+
+## Length of one dash and of the gap after it, before UI scaling.
+const DASH := 7.0
+const DASH_GAP := 5.0
+
+
+## A dashed straight line from `from` to `to`.
+static func dashed_line(canvas: CanvasItem, from: Vector2, to: Vector2, colour: Color,
+		width: float = 1.5) -> void:
+	var span := from.distance_to(to)
+	if span <= 0.001:
+		return
+	var step := scale(DASH) + scale(DASH_GAP)
+	var along := (to - from) / span
+	var travelled := 0.0
+	while travelled < span:
+		var run: float = minf(float(scale(DASH)), span - travelled)
+		canvas.draw_line(from + along * travelled, from + along * (travelled + run),
+			colour, width, true)
+		travelled += step
+
+
+static func dashed_rect(canvas: CanvasItem, rect: Rect2, colour: Color,
+		width: float = 1.5) -> void:
+	var a := rect.position
+	var b := rect.position + Vector2(rect.size.x, 0.0)
+	var c := rect.position + rect.size
+	var d := rect.position + Vector2(0.0, rect.size.y)
+	for edge in [[a, b], [b, c], [c, d], [d, a]]:
+		dashed_line(canvas, edge[0], edge[1], colour, width)
+
+
+## A dashed ring. Segment count is derived from the circumference so the dashes stay the
+## same length whatever the radius — a ring drawn with a fixed segment count has long
+## dashes when it is large and a solid line when it is small, which is the one thing this
+## is here to avoid.
+static func dashed_circle(canvas: CanvasItem, centre: Vector2, radius: float,
+		colour: Color, width: float = 1.5) -> void:
+	if radius <= 0.5:
+		return
+	var step := scale(DASH) + scale(DASH_GAP)
+	var dashes: int = maxi(4, int(round(TAU * radius / maxf(step, 1.0))))
+	var arc := TAU / float(dashes)
+	var lit := arc * (float(scale(DASH)) / maxf(step, 1.0))
+	for index in dashes:
+		var start := arc * index
+		canvas.draw_arc(centre, radius, start, start + lit, 6, colour, width, true)
+
+
 ## For de-emphasis — a rack cable that has nothing to do with the selected module, and
 ## anything else that should fall behind without leaving. Mixes toward the surface rather
 ## than fading to transparent, which is not the same thing: transparency assumes what is

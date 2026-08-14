@@ -119,9 +119,14 @@ func _ready() -> void:
 	_status.add_theme_font_size_override("font_size",
 		Design.type(Design.SIZE_SECONDARY))
 	_status.add_theme_color_override("font_color", Design.INK_SECOND)
-	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	# Left, with an ellipsis, for the same reason the toolbar's status line is: right
+	# alignment plus clipping takes the overflow off the *front*, so "open this tab to
+	# load the sounds" would arrive as "load the sounds" — an instruction with its verb
+	# missing, and nothing on screen admitting anything was cut.
+	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_status.custom_minimum_size.x = Design.scale(220)
 	_status.clip_text = true
+	_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	strip.add_child(_status)
 
 	sounds = GameSounds.new()

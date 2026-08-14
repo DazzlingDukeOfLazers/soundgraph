@@ -64,6 +64,17 @@ func _collect_small_text(node: Node, found: Array) -> void:
 		_collect_small_text(child, found)
 
 
+## Every Label that will drop text it cannot fit, so the sweep below can check which end
+## it drops from.
+func _collect_trimming_labels(node: Node, found: Array) -> void:
+	var label := node as Label
+	if label != null and (label.clip_text
+			or label.text_overrun_behavior != TextServer.OVERRUN_NO_TRIMMING):
+		found.append(label)
+	for child in node.get_children():
+		_collect_trimming_labels(child, found)
+
+
 func _collect_buttons(node: Node, found: Array) -> void:
 	if node is BaseButton:
 		found.append(node)
@@ -2605,6 +2616,24 @@ func _initialize() -> void:
 	await process_frame
 	check(main.transport_dot.visible and main.document_label.visible,
 		"the narrowest bar still says what is running and what is open")
+
+	# ---- text that gets trimmed must be trimmed at the end ---------------------------
+	# The status line was right-aligned *and* clipping, which takes the overflow off the
+	# front: raising the wand printed "point at the jacks and knobs the module should
+	# show" and the strip read "ould show". A message truncated from the left has lost the
+	# half that says what happened, and there is no way to tell it was truncated at all.
+	#
+	# Swept over the whole editor rather than asserted on the one label, because the pair
+	# is easy to write again and reads as harmless every time.
+	var trimming: Array = []
+	_collect_trimming_labels(main, trimming)
+	var head_first: Array = []
+	for label: Label in trimming:
+		if label.horizontal_alignment == HORIZONTAL_ALIGNMENT_RIGHT:
+			head_first.append("%s '%s'" % [label.name, label.text.substr(0, 24)])
+	check(head_first.is_empty(),
+		"no label drops its first words instead of its last (%d of %d: %s)"
+			% [head_first.size(), trimming.size(), str(head_first)])
 	var kept: bool = main.toolbar_performance_group.visible
 	for button in main._primary_buttons:
 		if not (button as Button).is_visible_in_tree():

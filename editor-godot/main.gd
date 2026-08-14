@@ -1067,7 +1067,15 @@ func _build_toolbar() -> Control:
 	message_label = Label.new()
 	message_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	message_label.clip_text = true
-	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	# Aligned left and trimmed at the end, not aligned right and clipped at the start.
+	#
+	# Right alignment plus clip_text takes the overflow off the *front*, so every message
+	# too long for the gap lost its first words and kept its last: raising the wand printed
+	# "point at the jacks and knobs the module should show" and the strip read "ould show".
+	# A truncated message has to begin at the beginning — that is the half that says what
+	# happened — and an ellipsis has to admit there is more, which clipping never did.
+	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	message_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	message_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	message_label.add_theme_font_size_override("font_size",
 		Design.type(Design.SIZE_SECONDARY))
@@ -3740,12 +3748,12 @@ func _set_wand(active: bool) -> void:
 		_refresh_wand()
 		return
 	_refresh_wand()
+	# The Graph tab says the rest on the canvas, where there is room for it — see
+	# PatchGraph.WandOverlay._draw_hint. This line only has to say the wand is up.
 	if graphrack != null and graphrack.is_visible_in_tree():
-		_say("drag a knob on a module's face to move it; drop above or below a row for a new one")
-	elif _selected_ids().size() < 2:
-		_say("select the nodes the module is made of, then point at what it should show")
+		_say("wand up: drag a knob to move it, off the panel to take it off the face")
 	else:
-		_say("point at the jacks and knobs the module should show, in the order they go")
+		_say("wand up")
 
 
 func _on_port_picked(widget_name: String, side: String, index: int) -> void:
