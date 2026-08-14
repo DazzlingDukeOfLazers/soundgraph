@@ -1,10 +1,11 @@
 extends SceneTree
-## One-off: builds the filter+envelope combo the way the builder does, and saves it.
+## One-off: builds the filter+envelope combo and saves it as an example.
 ##
-## Driven through the real operations rather than by writing JSON — ModuleAuthor.collapse
-## for the factoring, PanelBuilder's own list and to_panel() for the face — so what comes
-## out is what somebody clicking through the tab would get, and if either path is broken
-## this refuses to produce a file rather than producing a plausible one.
+## The factoring goes through ModuleAuthor.collapse, the same call the Graph tab makes, so
+## the definition and its derived surface are what somebody selecting the pair would get —
+## and if that path breaks, this refuses to produce a file rather than producing a
+## plausible one. The face is written as a panel object, which is what the wand's drag
+## writes one knob at a time.
 
 const OUT := "res://../examples/patches/filter-envelope.json"
 const ModuleAuthor := preload("res://module_author.gd")
@@ -61,14 +62,23 @@ func _initialize() -> void:
 	main.patch = result.patch
 
 	# collapse names a fresh definition "part", and the instance after it, so both arrive
-	# as the same placeholder. The builder's rename moves the definition, every instance
-	# pointing at it, and any instance still going by the old name — which is this one.
-	# This used to be twenty lines of hand-editing here, with a comment saying the builder
-	# ought to grow a rename field. It has.
-	main.builder.patch = main.patch
-	main.builder.module_name = result.module_name
-	await main._on_module_renamed(result.module_name, "filter_env")
-	var definition: Dictionary = main.patch["modules"]["filter_env"]
+	# as the same placeholder. Renamed here by hand rather than through the editor: this
+	# generator owns the whole document at this point, and nothing else points at it yet.
+	var definition: Dictionary = main.patch["modules"][result.module_name]
+	main.patch["modules"].erase(result.module_name)
+	main.patch["modules"]["filter_env"] = definition
+	for node in main.patch["nodes"]:
+		if str(node.get("module", "")) == result.module_name:
+			node["module"] = "filter_env"
+		# The instance collapse made is named after the definition, so it carries the
+		# placeholder too — and a file where the one node is called "part" reads as
+		# unfinished whatever its module is called.
+		if str(node["id"]) == result.instance_id:
+			node["id"] = "filter_env"
+	for connection in main.patch.get("connections", []):
+		for end in ["from", "to"]:
+			if str(connection[end]["node"]) == result.instance_id:
+				connection[end]["node"] = "filter_env"
 
 	print("derived surface: %s" % str(definition.get("parameters", [])
 		.map(func(p): return str(p["name"]))))
@@ -76,51 +86,28 @@ func _initialize() -> void:
 		% [str(definition.get("inputs", []).map(func(p): return str(p["name"]))),
 			str(definition.get("outputs", []).map(func(p): return str(p["name"])))])
 
-	# Now the face, through the builder's own list rather than by writing a panel object.
-	main.show_view("Builder")
-	for i in 8:
-		await process_frame
-	var builder: PanelBuilder = main.builder
-	builder.patch = main.patch
-	builder.module_name = "filter_env"
-	builder.rebuild()
-	await process_frame
-
 	# Two rows: what the filter is doing, then what the envelope is doing to it. `mode`
 	# and `cutoff_sweep` come off the face and stay exported — a patch can still set them,
-	# they are simply not what somebody plays.
-	var face := {"cutoff": "Freq", "resonance": "Q"}
-	var wanted := ["cutoff", "resonance", "attack", "decay", "sustain", "release"]
-	var ordered: Array = []
-	for name in wanted:
-		for entry in builder._entries:
-			if str(entry["name"]) == name:
-				entry["on"] = true
-				entry["caption"] = str(face.get(name, ""))
-				entry["breaks"] = name == "cutoff" or name == "attack"
-				ordered.append(entry)
-	for entry in builder._entries:
-		if not ordered.has(entry):
-			entry["on"] = false
-	builder._entries = ordered + builder._entries.filter(
-		func(e): return not ordered.has(e))
-	builder._commit("face")
-	for i in 8:
-		await process_frame
-
-	var panel: Dictionary = main.patch["modules"]["filter_env"].get("panel", {})
-	print("panel rows: %s" % str(panel.get("rows", [])))
-	print("panel labels: %s" % str(panel.get("labels", {})))
-	if panel.get("rows", []).size() != 2:
-		printerr("the builder did not produce two rows; not writing a file")
-		quit(1)
-		return
+	# they are simply not what somebody plays. Written as a panel object directly, which
+	# is what the wand's drag writes one knob at a time.
+	var exported := {}
+	for binding in definition.get("parameters", []):
+		exported[str(binding["name"])] = true
+	var rows := [["cutoff", "resonance"], ["attack", "decay", "sustain", "release"]]
+	for row in rows:
+		for name in row:
+			if not exported.has(str(name)):
+				printerr("%s is not exported; not writing a file" % str(name))
+				quit(1)
+				return
+	definition["panel"] = {"rows": rows, "labels": {"cutoff": "Freq", "resonance": "Q"}}
+	print("panel rows: %s" % str(rows))
 
 	main.patch["metadata"] = {
 		"name": "Filter envelope",
 		"description": "A state-variable filter and an ADSR as one module: cutoff and "
 			+ "resonance on the top row, the envelope shaping them underneath. Built "
-			+ "through the Builder tab — collapse, then prune the face.",
+			+ "by collapsing the pair and then arranging the face.",
 		"tags": ["module", "panel"],
 	}
 	var file := FileAccess.open(OUT, FileAccess.WRITE)

@@ -192,6 +192,10 @@ const JACK_HOLE := Color(0.055, 0.06, 0.07)
 const KNOB_BODY := Color(0.235, 0.251, 0.290)
 const KNOB_TRACK := Color(1, 1, 1, 0.13)
 const SELECTED := Color(0.43, 0.91, 0.72)
+## How far down a ghost is turned. Faint enough to read as an offer and not as a control
+## somebody has disabled, solid enough that its name is still legible — which matters,
+## because the name is the whole of what you are choosing between.
+const OFFERED := Color(1.0, 1.0, 1.0, 0.45)
 
 # Category tints, deliberately muted.
 #
@@ -1120,10 +1124,8 @@ static func _chamfer(points: PackedVector2Array, radius: float) -> PackedVector2
 ## True while the wand is up: a knob on a module's face is a tile to be moved rather than
 ## a control to be turned. Set by the editor, which owns the toggle.
 ##
-## Repainting the knobs rather than rebuilding the rack, because raising the wand changes
-## how a knob is drawn and nothing at all about what is on the case. A rebuild would also
-## have thrown away every module's place and re-seeded it, which is a large price for an
-## outline.
+## Setting it repaints; growing the ghosts needs a rebuild, which the editor does after —
+## the flag has to be true before `build` runs or there is nothing to grow them from.
 var wand := false:
 	set(value):
 		if wand == value:
@@ -1139,8 +1141,9 @@ var wand := false:
 		if _cables != null:
 			_cables.queue_redraw()
 
-signal face_rearranged(node_id: String, rows: Array)
+signal face_rearranged(node_id: String, rows: Array, added: Dictionary)
 signal rearrange_refused(reason: String)
+signal port_declared(node_id: String, offer: Dictionary)
 
 var _carrying: Dictionary = {}   # {"node", "parameter"} while a knob is being moved
 var _carry_to: Dictionary = {}   # the drop under the pointer: {"row", "index", "fresh", "caret"}
@@ -1157,6 +1160,10 @@ func face_rows(node_id: String) -> Array:
 	for knob_name in knobs:
 		var knob = knobs[knob_name]
 		if knob == null or not is_instance_valid(knob):
+			continue
+		# Ghosts are what the face does *not* show, so they are not part of it. Skipping
+		# them here is what keeps an offer out of `panel.rows` until somebody drags it in.
+		if knob.ghost:
 			continue
 		var rect: Rect2 = (knob as Control).get_global_rect()
 		placed.append({"name": str(knob_name), "y": rect.position.y + rect.size.y * 0.5,
@@ -1195,6 +1202,15 @@ func drop_at(node_id: String, global_point: Vector2) -> Dictionary:
 	var rows := face_rows(node_id)
 	if rows.is_empty():
 		return {}
+
+	# Dragged off the module: taken off the face. Only the panel — the export stays, so
+	# nothing pointing at it breaks, which is the whole reason the two are separate fields.
+	# Removal has to be *out*, somewhere there is nothing to hit, or every rearrangement
+	# would pass through a gesture that also means "delete".
+	var module = _modules.get(node_id)
+	if module != null and is_instance_valid(module) \
+			and not (module as Control).get_global_rect().has_point(global_point):
+		return {"remove": true}
 
 	var bands: Array = []
 	var left := INF
@@ -1305,7 +1321,23 @@ func finish_rearrange() -> void:
 	var moved := _moved(rows, parameter, target)
 	if moved == rows:
 		return
-	face_rearranged.emit(node_id, moved)
+	# What was carried, when it was a ghost: the binding the document has to create before
+	# these rows can name it. The rack does not pick the export name — two inner nodes can
+	# both have a "gain" and only the definition knows which names are taken.
+	var added: Dictionary = {}
+	var carried = _knobs.get(node_id, {}).get(parameter)
+	if carried != null and is_instance_valid(carried) and carried.ghost \
+			and not (carried.offer as Dictionary).is_empty():
+		added = (carried.offer as Dictionary).duplicate()
+		added["key"] = parameter
+	face_rearranged.emit(node_id, moved, added)
+
+
+## A ghost jack was clicked: this inner port should become one of the module's own.
+func declare_port(node_id: String, offer: Dictionary) -> void:
+	if offer.is_empty() or not rearrangeable(node_id):
+		return
+	port_declared.emit(node_id, offer)
 
 
 ## The knob being carried, as {"node", "parameter"}, or empty.
@@ -1327,6 +1359,13 @@ static func _moved(rows: Array, name: String, target: Dictionary) -> Array:
 	var out: Array = []
 	for row: Array in rows:
 		out.append(row.duplicate())
+	if bool(target.get("remove", false)):
+		var kept: Array = []
+		for row: Array in out:
+			row.erase(name)
+			if not row.is_empty():
+				kept.append(row)
+		return kept
 	var row_index := int(target.get("row", 0))
 	var index := int(target.get("index", 0))
 	if bool(target.get("fresh", false)):
@@ -1527,8 +1566,14 @@ class RackModule extends Control:
 		body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		frame.add_child(body)
 
+		# Whether this face is currently offering what it does not show. See the ghosts
+		# below; hoisted because the input jacks are built before them and want the same
+		# answer.
+		var offering: bool = rack != null and rack.wand and rack.rearrangeable(node_id)
+		var port_offers: Array = descriptor.get("port_offers", []) if offering else []
+
 		_jacks.clear()
-		body.add_child(_jack_column(inputs, true))
+		body.add_child(_jack_column(inputs, true, port_offers))
 
 		# The knobs take the middle and sit in the middle of it. A GridContainer has no
 		# alignment of its own, so left to itself it packs against the input jacks and
@@ -1538,6 +1583,13 @@ class RackModule extends Control:
 		centre.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		body.add_child(centre)
+
+		# One column inside it, so the ghost row has somewhere to go that is neither a cell
+		# of the grid nor a row of the panel.
+		var column := VBoxContainer.new()
+		column.add_theme_constant_override("separation", Design.scale(KNOB_ROW_GAP))
+		column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		centre.add_child(column)
 
 		# A module carrying a panel says where its knobs go and how many are on a line, so
 		# its rows are laid out as rows. Everything else wraps into two columns the way it
@@ -1552,7 +1604,7 @@ class RackModule extends Control:
 			grid.add_theme_constant_override("h_separation", 0)
 			grid.add_theme_constant_override("v_separation", Design.scale(KNOB_ROW_GAP))
 			grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			centre.add_child(grid)
+			column.add_child(grid)
 			_grid = grid
 			for parameter: Dictionary in parameters:
 				knobs[str(parameter["name"])] = _add_knob(grid, node, parameter)
@@ -1560,7 +1612,7 @@ class RackModule extends Control:
 			var stack := VBoxContainer.new()
 			stack.add_theme_constant_override("separation", Design.scale(KNOB_ROW_GAP))
 			stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			centre.add_child(stack)
+			column.add_child(stack)
 			_grid = stack
 			for row: Array in panel_rows:
 				var line := HBoxContainer.new()
@@ -1571,7 +1623,48 @@ class RackModule extends Control:
 				for parameter: Dictionary in row:
 					knobs[str(parameter["name"])] = _add_knob(line, node, parameter)
 
-		body.add_child(_jack_column(outputs, false))
+		# The wand's ghosts: everything this face could show and does not, dimmed, in a row
+		# of its own under the real ones. Putting a knob on is then a drag from here to
+		# there — the same gesture as moving one, in the same place — rather than a trip to
+		# a list of every parameter in the definition.
+		#
+		# Two kinds, drawn alike because they behave alike: an export the panel leaves off,
+		# and an inner knob that is not exported at all. Dragging the first onto the face
+		# only writes the panel; dragging the second exports it on the way. The difference
+		# is the document's business, not the hand's.
+		if offering:
+			var on_face := {}
+			for row: Array in panel_rows:
+				for parameter: Dictionary in row:
+					on_face[str(parameter["name"])] = true
+			var offered: Array = []
+			if not panel_rows.is_empty():
+				for parameter: Dictionary in parameters:
+					if not on_face.has(str(parameter["name"])):
+						offered.append(parameter)
+			offered.append_array(descriptor.get("offers", []))
+			if not offered.is_empty():
+				var ghosts := HBoxContainer.new()
+				ghosts.add_theme_constant_override("separation", 0)
+				ghosts.alignment = BoxContainer.ALIGNMENT_CENTER
+				ghosts.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				column.add_child(ghosts)
+				for parameter: Dictionary in offered:
+					var ghost := _add_knob(ghosts, node, parameter)
+					ghost.ghost = true
+					ghost.offer = parameter.get("offer", {})
+					ghost.key = _offer_key(parameter)
+					# An offer, not a control: turned down as a whole so it reads as
+					# something that could be here rather than something that is. On the
+					# canvas item, because saying it once beats threading an alpha through
+					# nine draw calls and the two labels under them.
+					ghost.modulate = GraphRack.OFFERED
+					# An offer is keyed by where it comes from, not by the name it would
+					# take: two inner nodes can both have a "gain" and the export name is
+					# not settled until the document is asked to settle it.
+					knobs[_offer_key(parameter)] = ghost
+
+		body.add_child(_jack_column(outputs, false, port_offers))
 
 		# Whole HP, from what the contents actually measure. A module with more to say is
 		# wider, which is also true of the real thing — but "more to say" now includes a
@@ -1596,11 +1689,25 @@ class RackModule extends Control:
 		knob.descriptor = parameter
 		knob.set_value_silently(float(node.get("parameters", {})
 			.get(str(parameter["name"]), parameter["default"])))
+		knob.key = str(parameter["name"])
 		into.add_child(knob)
 		return knob
 
-	## One edge of the panel: its jacks, stacked, centred against the knobs.
-	func _jack_column(ports: Array, is_input: bool) -> Control:
+	## The key a ghost knob is filed under. An export the panel left off keeps its export
+	## name, since that name is already the document's; an inner knob nobody has exported
+	## is filed by where it comes from, because two inner nodes may both have a "gain" and
+	## the export name is not settled until the document settles it.
+	static func _offer_key(parameter: Dictionary) -> String:
+		var offer: Dictionary = parameter.get("offer", {})
+		if offer.is_empty():
+			return str(parameter["name"])
+		return "+%s/%s" % [str(offer["node"]), str(offer["parameter"])]
+
+
+	## One edge of the panel: its jacks, stacked, centred against the knobs. `offers` are
+	## the wand's ghosts — inner ports this module could expose and does not — drawn under
+	## the real ones and declared by a click.
+	func _jack_column(ports: Array, is_input: bool, offers: Array = []) -> Control:
 		var column := VBoxContainer.new()
 		column.alignment = BoxContainer.ALIGNMENT_CENTER
 		column.add_theme_constant_override("separation", 0)
@@ -1615,6 +1722,24 @@ class RackModule extends Control:
 			jack.is_input = is_input
 			column.add_child(jack)
 			_jacks.append(jack)
+		for port: Dictionary in offers:
+			var offer: Dictionary = port.get("offer", {})
+			if bool(offer.get("is_input", true)) != is_input:
+				continue
+			var jack := Jack.new()
+			jack.rack = rack
+			jack.node_id = node_id
+			# Named for the inner port it would expose, which is the name declaring it will
+			# give it — so what the ghost says is what appears.
+			jack.port_name = str(port["name"])
+			jack.type_name = str(port.get("type", ""))
+			jack.is_input = is_input
+			jack.ghost = true
+			jack.offer = offer
+			jack.modulate = GraphRack.OFFERED
+			column.add_child(jack)
+			# Deliberately not in `_jacks`: that list is what a cable end is dropped on, and
+			# a port that does not exist yet is not somewhere a cable may land.
 		return column
 
 	func port_type(port_name: String, is_input: bool) -> String:
@@ -1841,8 +1966,13 @@ class Jack extends Control:
 	var port_name := ""
 	var type_name := ""
 	var is_input := true
+	## A port this module could expose and does not, drawn while the wand is up. Clicking
+	## one declares it; see GraphRack.declare_port.
+	var ghost := false
+	var offer: Dictionary = {}
 
 	var _patching := false
+
 
 	func _ready() -> void:
 		# The full name, always, whatever the panel had room to print.
@@ -1862,6 +1992,15 @@ class Jack extends Control:
 	## other jack is.
 	func _gui_input(event: InputEvent) -> void:
 		var button := event as InputEventMouseButton
+		# A ghost is not somewhere a cable can go, so the press means the only other thing
+		# it could: declare this port. A click rather than a drag, because unlike a knob a
+		# jack has no arrangement to land in — a port is either on the face or it is not.
+		if ghost:
+			if button != null and button.button_index == MOUSE_BUTTON_LEFT \
+					and button.pressed:
+				rack.declare_port(node_id, offer)
+				accept_event()
+			return
 		if button != null and button.button_index == MOUSE_BUTTON_LEFT:
 			if button.pressed:
 				_patching = true
@@ -1961,6 +2100,16 @@ class Knob extends Control:
 	var _drag_origin := 0.0
 	var _drag_from := 0.0
 	var _moving := false               # being carried across the face; see the wand
+	## A knob this face could show and does not — either an export the panel leaves off or
+	## an inner knob nobody has exported. Drawn dimmed while the wand is up; dragging it
+	## into a row is what puts it on.
+	var ghost := false
+	var offer: Dictionary = {}
+	## What this knob is filed under in the rack's table — its export name when it has one,
+	## and for a ghost the place it comes from, since the name it would take is not settled
+	## until the document settles it. Deliberately not `descriptor.name`: two inner nodes
+	## may both have a "mode", and a drag has to be able to say which one is in hand.
+	var key := ""
 
 	func _ready() -> void:
 		mouse_default_cursor_shape = Control.CURSOR_VSIZE
@@ -2126,7 +2275,8 @@ class Knob extends Control:
 		if rack.wand and event is InputEventMouseButton \
 				and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				_moving = rack.begin_rearrange(node_id, str(descriptor["name"]))
+				_moving = rack.begin_rearrange(node_id,
+					key if key != "" else str(descriptor["name"]))
 				queue_redraw()
 			elif _moving:
 				_moving = false

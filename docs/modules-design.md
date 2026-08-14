@@ -215,6 +215,23 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 > the only way to say that with a gesture that has no second button. Only a module can be
 > rearranged; an ordinary node's face comes from the registry and a patch has nowhere to
 > put an opinion about it.
+>
+> And after the fact, the same drag edits the surface a module already has. Everything a
+> face could show and does not is drawn on it as a ghost — an export the panel leaves off,
+> and every inner knob nobody exported — so putting one on is a drag from there to here
+> rather than a trip to a list. An unexported one is exported on the way in, because "put
+> this knob on the module" is one thought; the export name is chosen by the document,
+> which is the only party that knows what is already taken. Dragging a knob *off* the
+> module takes it off the face and leaves it exported, so nothing pointing at it breaks —
+> the reversible edit cannot do the destructive one by accident. Undeclared inner ports
+> are ghost jacks; a click declares one, since a port is on the face or it is not and
+> there is no arrangement for it to land in.
+>
+> Only the additive directions are reachable. Declaring a port is safe — nothing can be
+> plugged into a port that did not exist — while *un*declaring one strands whatever is
+> plugged in, and un-exporting a knob strands the controls and automation aimed at it.
+> Those are edits worth a considered surface rather than a click, and they do not have one
+> since the Builder tab went. Renaming a module went with it too.
 
 > **Stage 4 landed — the design is complete.** Both importers emit modules by
 > default: the DX7 bank is one operator definition and six instances per voice, the

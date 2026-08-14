@@ -144,7 +144,6 @@ var wand_confirm: Button
 var views: TabContainer
 var rack: Rack
 var graphrack: GraphRack
-var builder: PanelBuilder
 var sandbox: Sandbox
 var outline: Outline
 var keyboard: Keyboard
@@ -649,12 +648,13 @@ func _build_ui() -> void:
 	graphrack.node_selected.connect(_on_rack_node_selected)
 	# Jacks take the mouse now, so the case has to do something with a cable dragged
 	# between two of them or the gesture would be swallowed here while working next door
-	# in the builder. Patching the document from the rack is where this view is going
-	# anyway — it is the only thing left that made it a picture of a patcher.
+	# Patching the document from the rack, which is the only thing that made this view a
+	# picture of a patcher rather than a picture of a rack.
 	graphrack.connection_made.connect(_on_rack_connection_made)
 	graphrack.patch_refused.connect(func(reason: String) -> void: _say(reason))
 	graphrack.face_rearranged.connect(_on_face_rearranged)
 	graphrack.rearrange_refused.connect(func(reason: String) -> void: _say(reason))
+	graphrack.port_declared.connect(_on_port_declared)
 	# A plain Control between the scroll container and the rack. Containers reset their
 	# children's scale on every layout pass, so a rack parented straight to the scroller
 	# could reserve the room for a zoom but never actually draw at it. The holder takes
@@ -669,22 +669,6 @@ func _build_ui() -> void:
 	# replacing so that it could be compared against them; it leads now, and they stay
 	# where they are for as long as the comparison is still worth making.
 	views.move_child(graphrack_column, 0)
-
-	# Where a composite gets a face. See panel_builder.gd: collapsing already works, and
-	# what it cannot do is make the result smaller than its parts, which is the reason
-	# anybody collapses anything.
-	builder = PanelBuilder.new()
-	builder.name = "Builder"
-	builder.registry = registry
-	builder.type_colours = TYPE_COLOURS
-	builder.ink = INK
-	builder.ink_dim = INK_DIM
-	builder.surface_edited.connect(_on_surface_edited)
-	builder.wired.connect(_on_definition_wired)
-	builder.module_renamed.connect(_on_module_renamed)
-	builder.ports_edited.connect(_on_ports_edited)
-	builder.refused.connect(func(reason: String) -> void: _say(reason))
-	views.add_child(builder)
 
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
 	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
@@ -726,9 +710,6 @@ func _build_ui() -> void:
 	views.tab_changed.connect(func(_index: int) -> void:
 		rack.rebuild()
 		graphrack.rebuild()
-		if builder != null and builder.is_visible_in_tree():
-			builder.patch = patch
-			builder.rebuild()
 		if sandbox != null and sandbox.is_visible_in_tree():
 			sandbox.ensure_sounds_loaded())
 	split.add_child(views)
@@ -2027,12 +2008,6 @@ func _rebuild_view() -> void:
 		rack.registry = registry
 		rack.patch = patch
 		rack.rebuild()
-	# Given the document but not repopulated: the builder's list is the thing being
-	# edited, and rebuilding it here would take the caption field out from under a cursor
-	# that is still in it. It repopulates when the tab is opened or the module changes.
-	if builder != null:
-		builder.registry = registry
-		builder.patch = patch
 
 
 # ---------------------------------------------------------------------------------
@@ -2110,7 +2085,67 @@ func _synthesize_module_descriptors() -> void:
 		var panel_rows := _panel_rows(definition, parameters)
 		if not panel_rows.is_empty():
 			descriptor["panel_rows"] = panel_rows
+		descriptor["offers"] = _parameter_offers(definition)
+		descriptor["port_offers"] = _port_offers(definition)
 		registry["module:%s" % module_name] = descriptor
+
+
+## Every inner knob this module could show and does not: the surface it has not got.
+##
+## The wand draws these as ghosts on the face, so putting one on is a drag rather than a
+## trip to a list of every parameter in the definition. Descriptor-shaped like the real
+## ones, plus the binding it would need, because the thing that draws a knob should not
+## have to care which kind it is holding.
+func _parameter_offers(definition: Dictionary) -> Array:
+	var taken := {}
+	for binding in definition.get("parameters", []):
+		taken["%s/%s" % [str(binding["node"]), str(binding["parameter"])]] = true
+	var offers: Array = []
+	for node in definition.get("nodes", []):
+		var inner_type: Dictionary = registry.get(str(node.get("type", "")), {})
+		for parameter in inner_type.get("parameters", []):
+			var key := "%s/%s" % [str(node["id"]), str(parameter["name"])]
+			if taken.has(key):
+				continue
+			var cloned: Dictionary = (parameter as Dictionary).duplicate()
+			var authored: Variant = node.get("parameters", {}).get(parameter["name"], null)
+			if authored != null:
+				cloned["default"] = authored
+			cloned["offer"] = {"node": str(node["id"]),
+				"parameter": str(parameter["name"])}
+			offers.append(cloned)
+	return offers
+
+
+## Every inner port this module could expose and does not.
+##
+## An input already fed from inside is left out: it has a source, and offering to give it
+## a second one is offering to sum two things nobody asked to sum. Outputs are always
+## offered — an inner output feeding another inner node can perfectly well also leave the
+## module, which is what fan-out is.
+func _port_offers(definition: Dictionary) -> Array:
+	var fed := {}
+	for connection in definition.get("connections", []):
+		fed["%s/%s" % [str(connection["to"]["node"]), str(connection["to"]["port"])]] = true
+	var declared := {}
+	for side in ["inputs", "outputs"]:
+		for binding in definition.get(side, []):
+			declared["%s/%s" % [str(binding["node"]), str(binding["port"])]] = true
+	var offers: Array = []
+	for node in definition.get("nodes", []):
+		var inner_type: Dictionary = registry.get(str(node.get("type", "")), {})
+		for side in ["inputs", "outputs"]:
+			for port in inner_type.get(side, []):
+				var key := "%s/%s" % [str(node["id"]), str(port["name"])]
+				if declared.has(key):
+					continue
+				if side == "inputs" and fed.has(key):
+					continue
+				var cloned: Dictionary = (port as Dictionary).duplicate()
+				cloned["offer"] = {"node": str(node["id"]), "port": str(port["name"]),
+					"is_input": side == "inputs"}
+				offers.append(cloned)
+	return offers
 
 
 ## The knobs a module's face shows, row by row, resolved against its exports.
@@ -2151,307 +2186,6 @@ func _panel_rows(definition: Dictionary, parameters: Array) -> Array:
 		if not resolved.is_empty():
 			out.append(resolved)
 	return out
-
-
-## Stores a face the builder just drew onto its definition.
-##
-## An ordinary document edit, undoable like any other, and the only thing it may touch is
-## `panel`. Nothing about the surface, the inner nodes or the wiring is reachable from
-## here — which is what makes an experiment with the layout free: the worst outcome is a
-## module that looks wrong, and one Ctrl-Z away from looking how it did.
-func _on_surface_edited(edited_module: String, parameters: Array, panel: Dictionary,
-		label: String) -> void:
-	var definitions: Dictionary = patch.get("modules", {})
-	if not definitions.has(edited_module):
-		return
-	_begin_edit()
-	var definition: Dictionary = definitions[edited_module]
-
-	# The surface, which unlike the panel is not presentation: an export is what a patch
-	# can set, a control can drive and automation can reach. Un-exporting one takes those
-	# away, so anything still pointing at it goes rather than being left to fail
-	# validation — the same rule undeclaring a port follows.
-	var exported := {}
-	for binding in parameters:
-		exported[str(binding["name"])] = true
-	if parameters.is_empty():
-		definition.erase("parameters")
-	else:
-		definition["parameters"] = parameters
-	var instances := {}
-	for node in patch.get("nodes", []):
-		if str(node.get("module", "")) == edited_module:
-			instances[str(node["id"])] = true
-			# A value set on an instance for a knob that is no longer exported is not an
-			# error, but it is a lie: nothing reads it, and saving it would suggest
-			# something does.
-			var values: Dictionary = node.get("parameters", {})
-			for value_name in values.keys():
-				if not exported.has(str(value_name)):
-					values.erase(value_name)
-	var dropped := 0
-	for list_key in ["controls", "automation"]:
-		var kept_targets: Array = []
-		for item in patch.get(list_key, []):
-			var target: Dictionary = item.get("target", {})
-			if instances.has(str(target.get("node", ""))) \
-					and not exported.has(str(target.get("parameter", ""))):
-				dropped += 1
-				continue
-			kept_targets.append(item)
-		if patch.has(list_key):
-			patch[list_key] = kept_targets
-	# An empty panel is stored as no panel at all, not as an empty object. "Every export,
-	# in declared order" and "a panel that happens to say nothing" are the same face, and
-	# a document should have one spelling for one meaning.
-	if panel.is_empty():
-		definition.erase("panel")
-	else:
-		definition["panel"] = panel
-	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	if builder != null:
-		builder.patch = patch
-		builder.refresh()
-	_apply()
-	_commit_edit(label)
-	if dropped > 0:
-		_say("%s — and %d control%s that had nothing left to drive"
-			% [label, dropped, "" if dropped == 1 else "s"])
-
-
-## Runs a cable between two of a definition's own nodes.
-##
-## This is the operation that makes the builder able to start from nothing: a definition's
-## declared surface is *derived from its wiring*, so a cable here does not merely connect
-## two primitives — it is also how ports appear and disappear on every instance of the
-## module. Wiring an ADSR's out into an Amp's gain is what turns two nodes into one thing
-## with a face.
-##
-## Several cables may land on one input and they sum, which is what happens in the Graph
-## tab and what ModuleAuthor already assumes — its port bindings deduplicate precisely so
-## that "two sources feeding one inner port" survives expansion unchanged. Patching the
-## same pair twice is the one case refused, because that is a slip rather than a mix.
-func _on_definition_wired(edited_module: String, from_node: String, from_port: String,
-		to_node: String, to_port: String) -> void:
-	var definition: Dictionary = patch.get("modules", {}).get(edited_module, {})
-	if definition.is_empty():
-		return
-	if not definition.has("connections"):
-		definition["connections"] = []
-	for connection in definition["connections"]:
-		if str(connection["from"]["node"]) == from_node \
-				and str(connection["from"]["port"]) == from_port \
-				and str(connection["to"]["node"]) == to_node \
-				and str(connection["to"]["port"]) == to_port:
-			_say("%s.%s already feeds %s.%s" % [from_node, from_port, to_node, to_port])
-			return
-	_begin_edit()
-	definition["connections"].append({
-		"from": {"node": from_node, "port": from_port},
-		"to": {"node": to_node, "port": to_port},
-	})
-	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	builder.patch = patch
-	builder.rebuild()
-	_apply()
-	_commit_edit("wire %s.%s to %s.%s" % [from_node, from_port, to_node, to_port])
-
-
-## Stores the declared ports the builder just drew.
-##
-## Unlike a panel, this is surface and not presentation: a port is the only way the
-## outside reaches in, so undeclaring one is a real edit that can strand a cable. Any
-## connection landing on a port that no longer exists is removed here rather than left to
-## fail validation — a document that cannot be loaded is a worse way to learn that a
-## checkbox mattered.
-func _on_ports_edited(edited_module: String, inputs: Array, outputs: Array,
-		label: String) -> void:
-	var definition: Dictionary = patch.get("modules", {}).get(edited_module, {})
-	if definition.is_empty():
-		return
-	_begin_edit()
-	if inputs.is_empty():
-		definition.erase("inputs")
-	else:
-		definition["inputs"] = inputs
-	if outputs.is_empty():
-		definition.erase("outputs")
-	else:
-		definition["outputs"] = outputs
-
-	var still_there := {}
-	for binding in inputs + outputs:
-		still_there[str(binding["name"])] = true
-	var instances := {}
-	for node in patch.get("nodes", []):
-		if str(node.get("module", "")) == edited_module:
-			instances[str(node["id"])] = true
-	var kept: Array = []
-	var stranded := 0
-	for connection in patch.get("connections", []):
-		var from_gone: bool = instances.has(str(connection["from"]["node"])) \
-			and not still_there.has(str(connection["from"]["port"]))
-		var to_gone: bool = instances.has(str(connection["to"]["node"])) \
-			and not still_there.has(str(connection["to"]["port"]))
-		if from_gone or to_gone:
-			stranded += 1
-			continue
-		kept.append(connection)
-	patch["connections"] = kept
-
-	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	builder.patch = patch
-	builder.rebuild()
-	_apply()
-	_commit_edit(label)
-	if stranded > 0:
-		_say("%s — and %d cable%s that had nowhere to land"
-			% [label, stranded, "" if stranded == 1 else "s"])
-
-
-## An empty definition and one instance of it, ready to be built into.
-##
-## Named "combo" rather than collapse's "part", so where a module came from is legible
-## from its default name until somebody renames it — which the field beside the picker is
-## now there for.
-func _start_definition() -> void:
-	if not patch.has("modules"):
-		patch["modules"] = {}
-	var base := "combo"
-	var module_name := base
-	var counter := 1
-	while patch["modules"].has(module_name):
-		counter += 1
-		module_name = "%s%d" % [base, counter]
-	patch["modules"][module_name] = {"nodes": [], "connections": []}
-
-	var taken := {}
-	for node in patch.get("nodes", []):
-		taken[str(node["id"])] = true
-	var instance_id := module_name
-	counter = 1
-	while taken.has(instance_id):
-		counter += 1
-		instance_id = "%s%d" % [module_name, counter]
-	# Placed clear of what is already there, so it is findable rather than under
-	# something. The rack seeds its own position; this is for the graph.
-	var rightmost := 0.0
-	for node in patch.get("nodes", []):
-		rightmost = maxf(rightmost, float(node.get("position", {}).get("x", 0.0)))
-	patch["nodes"].append({
-		"id": instance_id,
-		"type": "module",
-		"module": module_name,
-		"position": {"x": rightmost + COLUMN_PITCH, "y": 0.0},
-	})
-	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
-	builder.module_name = module_name
-
-
-## What a module may be called: letters, digits, underscore and hyphen.
-##
-## Narrower than the schema, which puts no pattern on a definition's key at all, and
-## narrower than a node id, which also permits `.` and `:`. Both of those matter after
-## expansion — the dot is the separator between an instance and the node inside it — so a
-## module called `a.b` would produce ids nobody could read back. A name is refused here
-## rather than allowed and regretted at load.
-const MODULE_NAME_ALLOWED := "^[A-Za-z0-9_-]+$"
-
-
-## Renames a definition, and any instance still going by its old name.
-##
-## The instance rule is the whole reason this exists. ModuleAuthor.collapse names a fresh
-## definition "part" and then names the instance after it, so both arrive called the same
-## placeholder and the running order reads `part.filter`. Renaming the definition alone
-## would fix the half nobody sees and leave the half everything prints. An instance the
-## author has already named something else is left alone — that name was a decision, and
-## this is not the place to overrule it.
-func _on_module_renamed(old_name: String, new_name: String) -> void:
-	var definitions: Dictionary = patch.get("modules", {})
-	if not definitions.has(old_name):
-		return
-	if not RegEx.create_from_string(MODULE_NAME_ALLOWED).search(new_name):
-		_say("a module name may hold letters, digits, _ and - and nothing else")
-		builder.rebuild()
-		return
-	if definitions.has(new_name):
-		_say("this patch already has a module called '%s'" % new_name)
-		builder.rebuild()
-		return
-	# An instance may only take the new name if nothing else in the document has it.
-	var taken := {}
-	for node in patch.get("nodes", []):
-		taken[str(node["id"])] = true
-	var rename_instances: bool = not taken.has(new_name)
-
-	_begin_edit()
-	# Rebuilt in order rather than erased and re-added, because a definition that jumped
-	# to the end of the file every time it was renamed would make a one-word change look
-	# like a rewrite in the diff.
-	var renamed_modules := {}
-	for key in definitions:
-		if str(key) == old_name:
-			renamed_modules[new_name] = definitions[key]
-		else:
-			renamed_modules[key] = definitions[key]
-	patch["modules"] = renamed_modules
-
-	var moved := {}
-	for node in patch.get("nodes", []):
-		if str(node.get("module", "")) == old_name:
-			node["module"] = new_name
-		if rename_instances and str(node["id"]) == old_name \
-				and str(node.get("type", "")) == "module":
-			moved[old_name] = new_name
-			node["id"] = new_name
-	# Everything that refers to an instance by id follows it. Miss one of these and the
-	# patch is quietly broken in a way that only shows up as a cable that stopped
-	# existing — see the connection, control and automation lists in patch.schema.json.
-	if not moved.is_empty():
-		for connection in patch.get("connections", []):
-			if moved.has(str(connection["from"]["node"])):
-				connection["from"]["node"] = moved[str(connection["from"]["node"])]
-			if moved.has(str(connection["to"]["node"])):
-				connection["to"]["node"] = moved[str(connection["to"]["node"])]
-		for control in patch.get("controls", []):
-			var control_target: Dictionary = control.get("target", {})
-			if moved.has(str(control_target.get("node", ""))):
-				control_target["node"] = moved[str(control_target["node"])]
-		for lane in patch.get("automation", []):
-			var lane_target: Dictionary = lane.get("target", {})
-			if moved.has(str(lane_target.get("node", ""))):
-				lane_target["node"] = moved[str(lane_target["node"])]
-		# Arrangement hints are keyed by id too, and a stale place is a module that jumps
-		# back to the seed the next time the patch is opened.
-		var arrangement: Dictionary = patch.get(GraphRack.ARRANGEMENT_KEY, {})
-		var hints: Dictionary = arrangement.get(GraphRack.PLACES_KEY, {})
-		for id in moved:
-			if hints.has(id):
-				hints[moved[id]] = hints[id]
-				hints.erase(id)
-		# And the rack order, which is a list of ids rather than a map of them.
-		var order: Array = arrangement.get(GraphRack.ORDER_KEY, [])
-		for index in order.size():
-			if moved.has(str(order[index])):
-				order[index] = moved[str(order[index])]
-
-	builder.module_name = new_name
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	builder.patch = patch
-	builder.rebuild()
-	_apply()
-	_commit_edit("rename %s to %s" % [old_name, new_name])
-	if rename_instances:
-		_say("renamed '%s' to '%s', and the instance with it" % [old_name, new_name])
-	else:
-		_say("renamed '%s' to '%s'" % [old_name, new_name])
 
 
 ## A module's name as a person would write it: "dx7_operator" is a DX7 Operator.
@@ -3723,11 +3457,6 @@ func _add_from_search(type_name: String) -> void:
 
 
 func _add_node(type_name: String, at_position: Vector2) -> String:
-	# On the builder, "add a node" means add it to the module being built. It used to mean
-	# what it means everywhere else — append to the document — which on that tab put the
-	# node somewhere the tab does not show, and read as a button that did nothing.
-	if builder != null and builder.is_visible_in_tree():
-		return await _add_node_to_definition(type_name)
 	_begin_edit()
 	var descriptor: Dictionary = registry.get(type_name, {})
 	var base: String = type_name.to_snake_case()
@@ -3757,78 +3486,6 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 	await _rebuild_view()
 	_apply()
 	_commit_edit("add %s" % registry.get(type_name, {}).get("display_name", type_name))
-	return node_id
-
-
-## Adds a primitive to the definition the builder is editing.
-##
-## Editing a definition edits every instance of it — that is what a definition is, and
-## the undo model is document-snapshot-based, so it costs nothing new. What it does mean
-## is that the new node is unwired: a definition's surface is derived from its wiring, so
-## a primitive dropped in on its own changes no port and no export until it is connected.
-##
-## Two types are refused rather than added. A module inside a module is not supported (see
-## docs/modules-design.md), and a terminal is the edge of a finished patch — a NoteInput
-## inside a subcircuit is the thing the declared `note` input exists to replace.
-func _add_node_to_definition(type_name: String) -> String:
-	if type_name.begins_with("module:"):
-		_say("modules may not contain modules yet — see docs/modules-design.md")
-		return ""
-	if str(registry.get(type_name, {}).get("category", "")) == "Terminals":
-		_say("%s is a terminal; a module is a subcircuit, not a finished patch"
-			% registry.get(type_name, {}).get("display_name", type_name))
-		return ""
-
-	_begin_edit()
-	# Nothing to put it in yet? Then this is the first node of a new module, and making
-	# one is what the author just asked for.
-	#
-	# Without this the tab could only ever edit a module that already existed, and the
-	# only thing that makes one is collapsing a selection over in the Graph — so "open the
-	# builder and start adding" put nodes in the document, where this view does not show
-	# them, and looked like a button that did nothing.
-	#
-	# An instance goes down with the definition, because the palette deliberately does not
-	# offer module types: a definition with nothing pointing at it would be a thing you
-	# had built and could not place.
-	if builder.module_name == "":
-		_start_definition()
-	var definition: Dictionary = patch.get("modules", {}).get(builder.module_name, {})
-	if definition.is_empty():
-		return ""
-
-	# Unique within the definition, not the document: inner ids live in their own
-	# namespace and only meet the document's after expansion puts a dot between them.
-	var existing := {}
-	for node in definition.get("nodes", []):
-		existing[str(node["id"])] = true
-	var base: String = type_name.to_snake_case()
-	var node_id := base
-	var suffix := 1
-	while existing.has(node_id):
-		suffix += 1
-		node_id = "%s%d" % [base, suffix]
-
-	var parameters := {}
-	for parameter in registry.get(type_name, {}).get("parameters", []):
-		parameters[parameter["name"]] = parameter["default"]
-	if not definition.has("nodes"):
-		definition["nodes"] = []
-	definition["nodes"].append({
-		"id": node_id,
-		"type": type_name,
-		"parameters": parameters,
-	})
-	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	builder.patch = patch
-	builder.rebuild()
-	_apply()
-	_commit_edit("add %s to %s" % [registry.get(type_name, {})
-		.get("display_name", type_name), builder.module_name])
-	_say("added %s inside '%s' — wire it up and its ports become the module's"
-		% [node_id, builder.module_name])
 	return node_id
 
 
@@ -3938,6 +3595,9 @@ func _set_wand(active: bool) -> void:
 	graph_edit.set_wand(active)
 	if graphrack != null:
 		graphrack.wand = active
+		# Rebuilt, because raising the wand grows a ghost on every module face and putting
+		# it down takes them away — and a ghost is a Control, not a coat of paint.
+		graphrack.rebuild()
 	if wand_button != null and wand_button.button_pressed != active:
 		wand_button.button_pressed = active
 	if wand_confirm != null:
@@ -4064,29 +3724,107 @@ func _mark_for(widget: GraphNode, pick: Dictionary) -> Dictionary:
 ##
 ## Any labels already on the panel are kept. Moving a knob is not renaming it, and the two
 ## are separate fields precisely so that one gesture cannot quietly do the other.
-func _on_face_rearranged(node_id: String, rows: Array) -> void:
-	var module_name := ""
-	for node in patch.get("nodes", []):
-		if str(node["id"]) == node_id:
-			module_name = str(node.get("module", ""))
-			break
+func _on_face_rearranged(node_id: String, rows: Array, added: Dictionary = {}) -> void:
+	var module_name := _module_of(node_id)
 	var definitions: Dictionary = patch.get("modules", {})
 	if module_name == "" or not definitions.has(module_name):
 		return
 	_begin_edit()
 	var definition: Dictionary = definitions[module_name]
+
+	# A ghost dragged onto the face was never exported, so it becomes an export on the way
+	# in — one edit, because "put this knob on the module" is one thought. The rack names
+	# it by where it came from; the export name is chosen here, where what is already taken
+	# is known, and swapped into the rows so the panel names the binding and not the ghost.
+	var gained := ""
+	if not added.is_empty():
+		var surface: Array = definition.get("parameters", []).duplicate(true)
+		gained = _free_export_name(surface, str(added["node"]), str(added["parameter"]))
+		surface.append({"name": gained, "node": str(added["node"]),
+			"parameter": str(added["parameter"])})
+		definition["parameters"] = surface
+		var renamed: Array = []
+		for row: Array in rows:
+			renamed.append(row.map(func(n): return gained if str(n) == str(added["key"]) \
+				else str(n)))
+		rows = renamed
+
 	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
 	panel["rows"] = rows
 	definition["panel"] = panel
 	_synthesize_module_descriptors()
 	await _rebuild_view()
-	if builder != null:
-		builder.patch = patch
-		builder.refresh()
 	_apply()
 	_commit_edit("rearrange %s" % module_name)
-	_say("%s's face is %d row%s now" % [module_name, rows.size(),
-		"" if rows.size() == 1 else "s"])
+	if gained != "":
+		_say("'%s' is on %s's face, and exported so a patch can reach it"
+			% [gained, module_name])
+	else:
+		_say("%s's face is %d row%s now" % [module_name, rows.size(),
+			"" if rows.size() == 1 else "s"])
+
+
+## The module a node is an instance of, or "".
+func _module_of(node_id: String) -> String:
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			return str(node.get("module", ""))
+	return ""
+
+
+## An export name not already spoken for. Same shape as ModuleAuthor's: the inner
+## parameter's own name where it is free, qualified by its node where it is not.
+func _free_export_name(surface: Array, node_id: String, parameter: String) -> String:
+	var taken := {}
+	for binding in surface:
+		taken[str(binding["name"])] = true
+	if not taken.has(parameter):
+		return parameter
+	var qualified := "%s_%s" % [node_id, parameter]
+	if not taken.has(qualified):
+		return qualified
+	var counter := 2
+	while taken.has("%s-%d" % [qualified, counter]):
+		counter += 1
+	return "%s-%d" % [qualified, counter]
+
+
+## A ghost jack was clicked: the inner port becomes one of the module's own.
+##
+## The additive half of what the Builder's port list did, and the only half the wand
+## offers — declaring a port is safe, since nothing can yet be plugged into a port that
+## did not exist, while *un*declaring one strands whatever is plugged into it. That is an
+## edit worth a considered surface rather than a click, and it does not have one yet.
+func _on_port_declared(node_id: String, offer: Dictionary) -> void:
+	var module_name := _module_of(node_id)
+	var definitions: Dictionary = patch.get("modules", {})
+	if module_name == "" or not definitions.has(module_name):
+		return
+	var definition: Dictionary = definitions[module_name]
+	var side := "inputs" if bool(offer.get("is_input", true)) else "outputs"
+	var bindings: Array = definition.get(side, []).duplicate(true)
+	for binding in bindings:
+		if str(binding["node"]) == str(offer["node"]) \
+				and str(binding["port"]) == str(offer["port"]):
+			_say("%s.%s is already a port of %s"
+				% [str(offer["node"]), str(offer["port"]), module_name])
+			return
+	var taken := {}
+	for binding in bindings:
+		taken[str(binding["name"])] = true
+	var port_name := str(offer["port"])
+	if taken.has(port_name):
+		port_name = "%s_%s" % [str(offer["node"]), str(offer["port"])]
+	_begin_edit()
+	bindings.append({"name": port_name, "node": str(offer["node"]),
+		"port": str(offer["port"])})
+	definition[side] = bindings
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("declare %s on %s" % [port_name, module_name])
+	_say("%s is %s's %s now" % [port_name, module_name,
+		"input" if side == "inputs" else "output"])
 
 
 func _parameter_row(parent: Node, parameter: String) -> Control:
@@ -4302,7 +4040,6 @@ func _undo() -> void:
 	undo_redo.undo()
 	_say("undid %s" % label)
 	_refresh_undo_buttons()
-	_refresh_builder()
 
 
 func _redo() -> void:
@@ -4311,24 +4048,6 @@ func _redo() -> void:
 	undo_redo.redo()
 	_say("redid %s" % undo_redo.get_current_action_name())
 	_refresh_undo_buttons()
-	_refresh_builder()
-
-
-## Points the builder back at the document after it has been swapped underneath.
-##
-## Undo restores a whole snapshot, so the module the builder was editing may not be in the
-## document any more — and it went on holding the name, the entries and the port list of
-## something that no longer existed. The other views are rebuilt from the document by the
-## undo action itself; this one is not, because its list is normally the thing being
-## edited and rebuilding it mid-edit takes the field out from under the cursor. An undo is
-## the exception: nothing the author typed survives it anyway.
-func _refresh_builder() -> void:
-	if builder == null:
-		return
-	builder.patch = patch
-	if not patch.get("modules", {}).has(builder.module_name):
-		builder.module_name = ""
-	builder.rebuild()
 
 
 func _refresh_undo_buttons() -> void:

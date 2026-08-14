@@ -1274,464 +1274,10 @@ func _initialize() -> void:
 		check(str(right._name_text()) == "Snap",
 			"the knob shows the caption (%s)" % str(right._name_text()))
 
-	# ---- and the builder is where that face gets drawn -------------------------------
-	main.show_view("Builder")
-	for _settle in 6:
-		await process_frame
-	var builder: PanelBuilder = main.builder
-	check(builder != null and builder.module_name == "envamp",
-		"the builder opens on the patch's module (%s)"
-			% ("missing" if builder == null else builder.module_name))
-
-	# Every export is listed, on the panel or not — an export the panel never mentioned
-	# has to be visible here, or adding one to a definition would silently lose it.
-	var listed := []
-	var offered_unexported := []
-	for entry: Dictionary in builder._entries:
-		if bool(entry["exported"]):
-			listed.append(str(entry["name"]))
-		else:
-			offered_unexported.append("%s.%s" % [str(entry["node"]),
-				str(entry["parameter"])])
-	check(listed.size() == 3, "every export is on the list (%s)" % str(listed))
-	# And every inner knob that is *not* exported is offered rather than hidden — the
-	# ADSR has decay and sustain that this definition never exported.
-	check(offered_unexported.has("env.decay") and offered_unexported.has("env.sustain"),
-		"and every inner knob that is not exported yet is offered (%s)"
-			% str(offered_unexported))
-	var off_the_face := []
-	for entry: Dictionary in builder._entries:
-		if bool(entry["exported"]) and not bool(entry["on"]):
-			off_the_face.append(str(entry["name"]))
-	check(off_the_face == ["gain"],
-		"with the exported one the panel leaves out shown as off (%s)"
-			% str(off_the_face))
-
-	# What it reads back is what it was given. The round trip through the list must be
-	# the identity, or opening this tab would quietly redraw a face nobody touched.
-	var read_back: Dictionary = builder.to_panel()
-	check(str(read_back.get("rows", [])) == '[["release", "attack"]]',
-		"reading the panel back gives the panel (%s)" % str(read_back.get("rows", [])))
-	check(str(read_back.get("labels", {}).get("attack", "")) == "Snap",
-		"captions and all (%s)" % str(read_back.get("labels", {})))
-
-	# Turning "release" off is one document edit that touches the panel and nothing else.
-	var was_surface: int = main.registry["module:envamp"]["parameters"].size()
-	builder._entries[0]["on"] = false
-	builder._commit("hide release")
-	for _settle in 6:
-		await process_frame
-	var after: Array = main.patch["modules"]["envamp"]["panel"]["rows"]
-	check(str(after) == '[["attack"]]',
-		"turning a knob off takes it off the face (%s)" % str(after))
-	check(main.registry["module:envamp"]["parameters"].size() == was_surface,
-		"and leaves the surface exactly as wide (%d of %d)"
-			% [main.registry["module:envamp"]["parameters"].size(), was_surface])
-	check(main.patch["modules"]["envamp"]["parameters"].size() == 3,
-		"the definition still exports all three (%d)"
-			% main.patch["modules"]["envamp"]["parameters"].size())
-
-	# The preview is a real instance built by the real code, so it moved with it.
-	var preview_knobs: Dictionary = builder._preview._knobs.get("envamp", {})
-	check(preview_knobs.size() == 1,
-		"the preview wears the face being drawn (%d knob)" % preview_knobs.size())
-	# And so did the case behind it — the same document, so the same face everywhere.
-	check(main.graphrack._knobs.get("voice", {}).size() == 1,
-		"and so does the module in the rack (%d)"
-			% main.graphrack._knobs.get("voice", {}).size())
-
-	# An ordinary edit, so it undoes like one — back to the document as written, unresolved
-	# "ghost" row and all. Undo restores a snapshot; it does not re-normalise what it
-	# restores, which is what makes it safe to undo past an edit made by a tool that
-	# understood the file better than the file's author did.
-	main._undo()
-	for _settle in 6:
-		await process_frame
-	check(str(main.patch["modules"]["envamp"]["panel"]["rows"])
-			== '[["release", "attack"], ["ghost"]]',
-		"and undo puts the knob back, exactly as the document had it (%s)"
-			% str(main.patch["modules"]["envamp"]["panel"]["rows"]))
-
-	# The left half shows the primitives, wired as the definition has them.
-	check(builder._inner._modules.size() == 2,
-		"the builder shows what is inside (%d modules)" % builder._inner._modules.size())
-
-	# ---- and adding a node on this tab means adding it to the module ------------------
-	# It used to mean what it means everywhere else — append to the document — which put
-	# the node on a tab that does not show the document, and read as a button doing
-	# nothing at all.
-	var document_was: int = main.patch["nodes"].size()
-	var added: String = await main._add_node("SineOscillator", Vector2(0, 0))
-	for _settle in 6:
-		await process_frame
-	var inside: Array = main.patch["modules"]["envamp"]["nodes"]
-	check(added != "" and inside.size() == 3,
-		"a node added on the builder lands inside the module (%d)" % inside.size())
-	check(main.patch["nodes"].size() == document_was,
-		"and not in the document around it (%d, was %d)"
-			% [main.patch["nodes"].size(), document_was])
-	check(builder._inner._modules.size() == 3,
-		"the builder shows it straight away (%d)" % builder._inner._modules.size())
-	# Unwired, so it changed nothing about what the module offers: a definition's surface
-	# is derived from its wiring, and this primitive is not connected to anything yet.
-	check(main.registry["module:envamp"]["parameters"].size() == 3,
-		"an unwired primitive exports nothing yet (%d)"
-			% main.registry["module:envamp"]["parameters"].size())
-
-	# The two types a definition may not hold are refused rather than added.
-	var refused: String = await main._add_node("NoteInput", Vector2(0, 0))
-	await process_frame
-	check(refused == "" and main.patch["modules"]["envamp"]["nodes"].size() == 3,
-		"a terminal is refused — a module is a subcircuit, not a finished patch (%d)"
-			% main.patch["modules"]["envamp"]["nodes"].size())
-	var nested: String = await main._add_node("module:envamp", Vector2(0, 0))
-	await process_frame
-	check(nested == "" and main.patch["modules"]["envamp"]["nodes"].size() == 3,
-		"and so is a module inside a module (%d)"
-			% main.patch["modules"]["envamp"]["nodes"].size())
-
-	# ---- and the module can be given a name ------------------------------------------
-	# Collapse calls every fresh definition "part" and then names the instance after it,
-	# so both arrive as the same placeholder and the running order reads "part.env".
-	# Renaming the definition alone would fix the half nobody sees.
-	builder._name_field.text = "shaper"
-	builder._submit_name()
-	for _settle in 6:
-		await process_frame
-	check(main.patch["modules"].has("shaper") and not main.patch["modules"].has("envamp"),
-		"renaming moves the definition (%s)" % str(main.patch["modules"].keys()))
-	var instance_types := []
-	for node in main.patch["nodes"]:
-		if str(node.get("type", "")) == "module":
-			instance_types.append(str(node["module"]))
-	check(instance_types == ["shaper"],
-		"and every instance points at the new name (%s)" % str(instance_types))
-	check(main.registry.has("module:shaper") and not main.registry.has("module:envamp"),
-		"and the descriptor follows it")
-	# The instance here is called "voice", which somebody chose — so it keeps its name.
-	var still_voice := false
-	for node in main.patch["nodes"]:
-		if str(node["id"]) == "voice":
-			still_voice = true
-	check(still_voice,
-		"an instance the author named is left alone — that name was a decision")
-
-	# The names it must refuse, each for its own reason.
-	builder._name_field.text = "shaper.two"
-	builder._submit_name()
-	await process_frame
-	check(main.patch["modules"].has("shaper"),
-		"a name with a dot is refused — that is the separator expansion uses (%s)"
-			% str(main.patch["modules"].keys()))
-	builder._name_field.text = ""
-	builder._submit_name()
-	await process_frame
-	check(main.patch["modules"].has("shaper"), "and an empty name is not a rename")
-
-	main._undo()
-	for _settle in 6:
-		await process_frame
-	check(main.patch.get("modules", {}).has("envamp"),
-		"and undo puts the old name back (%s)"
-			% str(main.patch.get("modules", {}).keys()))
-	builder.patch = main.patch
-	builder.rebuild()
-	await process_frame
-
-	# ---- and its jacks patch, which is what makes the tab able to start from nothing ---
-	# A definition's declared surface is derived from its wiring, so a cable run here is
-	# not only a connection: it is how ports appear on every instance of the module.
-	var wire_from: GraphRack.Jack = null
-	var wire_to: GraphRack.Jack = null
-	for module_id in builder._inner._modules:
-		var each = builder._inner._modules[module_id]
-		for jack: GraphRack.Jack in each._jacks:
-			if module_id == added and not jack.is_input and wire_from == null:
-				wire_from = jack
-			elif module_id == "amp" and jack.is_input and wire_to == null:
-				wire_to = jack
-	check(wire_from != null and wire_to != null,
-		"the new primitive and the amp both have jacks to patch between")
-	if wire_from != null and wire_to != null:
-		var wires_was: int = main.patch["modules"]["envamp"]["connections"].size()
-
-		# Let go over nothing. Reaching for a jack and missing is the most ordinary thing
-		# that happens with a patch lead, so it cancels rather than complains.
-		builder._inner.begin_patch(wire_from,
-			builder._inner._modules[added].jack_position(wire_from.port_name, false))
-		builder._inner.finish_patch(Vector2(-4000, -4000))
-		await process_frame
-		check(main.patch["modules"]["envamp"]["connections"].size() == wires_was,
-			"a cable dropped on nothing is a cancel, not a cable (%d)"
-				% main.patch["modules"]["envamp"]["connections"].size())
-
-		# Output to output is refused, and says why rather than doing nothing.
-		var other_out: GraphRack.Jack = null
-		for jack: GraphRack.Jack in builder._inner._modules["amp"]._jacks:
-			if not jack.is_input:
-				other_out = jack
-		if other_out != null:
-			builder._inner.begin_patch(wire_from,
-				builder._inner._modules[added].jack_position(wire_from.port_name, false))
-			builder._inner.finish_patch(
-				builder._inner._modules["amp"].jack_position(other_out.port_name, false))
-			await process_frame
-			check(main.patch["modules"]["envamp"]["connections"].size() == wires_was,
-				"two outputs do not make a cable (%d)"
-					% main.patch["modules"]["envamp"]["connections"].size())
-
-		# And the real thing: out into in.
-		builder._inner.begin_patch(wire_from,
-			builder._inner._modules[added].jack_position(wire_from.port_name, false))
-		builder._inner.finish_patch(
-			builder._inner._modules["amp"].jack_position(wire_to.port_name, true))
-		for _settle in 6:
-			await process_frame
-		var wires: Array = main.patch["modules"]["envamp"]["connections"]
-		check(wires.size() == wires_was + 1,
-			"dragging one jack onto another runs a cable (%d, was %d)"
-				% [wires.size(), wires_was])
-		if wires.size() == wires_was + 1:
-			var made: Dictionary = wires[wires.size() - 1]
-			check(str(made["from"]["node"]) == added
-					and str(made["to"]["node"]) == "amp",
-				"from the output end to the input end, whichever was grabbed first (%s → %s)"
-					% [str(made["from"]["node"]), str(made["to"]["node"])])
-		# The cable is in the definition, so it is in every instance — and the module's
-		# own view of itself moved with it.
-		check(builder._inner.cable_endpoints().size() == wires.size(),
-			"and the builder draws it (%d)" % builder._inner.cable_endpoints().size())
-
-	# Read through get() from here on. An earlier check failing changes how far these
-	# undos travel, and indexing a document that no longer has a `modules` key throws —
-	# which in this harness aborts _initialize before it can quit() and turns one honest
-	# failure into a hung run that reports nothing at all.
-	var envamp := func() -> Dictionary:
-		return main.patch.get("modules", {}).get("envamp", {})
-
-	main._undo()
-	for _settle in 6:
-		await process_frame
-	check(envamp.call().get("connections", []).size() == 1,
-		"undo pulls the cable back out (%d)"
-			% envamp.call().get("connections", []).size())
-
-	main._undo()
-	for _settle in 6:
-		await process_frame
-	check(envamp.call().get("nodes", []).size() == 2,
-		"and undo again takes the added primitive back out (%d)"
-			% envamp.call().get("nodes", []).size())
-
-	# ---- and an instance carrying the definition's name goes with it -----------------
-	# The shape collapse produces, and the whole reason rename exists: definition and
-	# instance both called the same placeholder. Set up by hand here because the builder
-	# has no way to rename an instance on its own — which is the point.
-	for node in main.patch["nodes"]:
-		if str(node["id"]) == "voice":
-			node["id"] = "envamp"
-	for connection in main.patch["connections"]:
-		if str(connection["from"]["node"]) == "voice":
-			connection["from"]["node"] = "envamp"
-		if str(connection["to"]["node"]) == "voice":
-			connection["to"]["node"] = "envamp"
-	main._synthesize_module_descriptors()
-	await main._rebuild_view()
-	builder.patch = main.patch
-	builder.rebuild()
-	await process_frame
-
-	builder._name_field.text = "combo"
-	builder._submit_name()
-	for _settle in 6:
-		await process_frame
-	var instance_ids := []
-	for node in main.patch["nodes"]:
-		if str(node.get("type", "")) == "module":
-			instance_ids.append(str(node["id"]))
-	check(instance_ids == ["combo"],
-		"an instance still wearing the placeholder is renamed too (%s)"
-			% str(instance_ids))
-	var orphaned := []
-	var live_ids := {}
-	for node in main.patch["nodes"]:
-		live_ids[str(node["id"])] = true
-	for connection in main.patch["connections"]:
-		for end in ["from", "to"]:
-			if not live_ids.has(str(connection[end]["node"])):
-				orphaned.append(str(connection[end]["node"]))
-	check(orphaned.is_empty(),
-		"and no cable is left pointing at a node that no longer exists (%s)"
-			% ("none" if orphaned.is_empty() else str(orphaned)))
-
-	main.patch = before_panels
-	main._synthesize_module_descriptors()
-	await main._rebuild_view()
-	main.show_view("Builder")
-	for _settle in 4:
-		await process_frame
-	builder.rebuild()
-	await process_frame
-	check(builder.module_name == "" or not builder._entries.is_empty(),
-		"and it copes with a document that has no modules at all")
-
-	# ---- and on a patch with no modules, adding a node starts one --------------------
-	# Without this the tab could only edit a module that already existed, and the only
-	# thing that makes one is collapsing a selection over in the Graph. Adding a node here
-	# put it in the document, where this view does not show it, so the button looked dead.
-	check(builder.module_name == "",
-		"the restored document has no module to edit (%s)" % builder.module_name)
-	var document_nodes: int = main.patch["nodes"].size()
-	var first_inside: String = await main._add_node("SineOscillator", Vector2(0, 0))
-	for _settle in 6:
-		await process_frame
-	check(main.patch.get("modules", {}).size() == 1,
-		"adding a node with nothing to put it in starts a module (%s)"
-			% str(main.patch.get("modules", {}).keys()))
-	var started_name: String = builder.module_name
-	var inside_new: Array = main.patch.get("modules", {}).get(started_name, {}) \
-		.get("nodes", [])
-	check(first_inside != "" and inside_new.size() == 1,
-		"and the node goes inside it, not beside it (%d)" % inside_new.size())
-	# An instance comes with it, because the palette does not offer module types — a
-	# definition with nothing pointing at it would be a thing you built and could not use.
-	var placed_instance := false
-	for node in main.patch["nodes"]:
-		if str(node.get("module", "")) == started_name:
-			placed_instance = true
-	check(placed_instance and main.patch["nodes"].size() == document_nodes + 1,
-		"and one instance is placed with it (%d nodes, was %d)"
-			% [main.patch["nodes"].size(), document_nodes])
-	check(int(main.patch.get("schema_version", 1)) == 2,
-		"and the document says it holds modules now (v%d)"
-			% int(main.patch.get("schema_version", 1)))
-
-	main._undo()
-	for _settle in 6:
-		await process_frame
-	check(main.patch.get("modules", {}).is_empty()
-			and main.patch["nodes"].size() == document_nodes,
-		"and one undo takes the module and its instance back out (%d modules, %d nodes)"
-			% [main.patch.get("modules", {}).size(), main.patch["nodes"].size()])
-
-	# ---- and its ports are declared, not derived -------------------------------------
-	# collapse reads a module's surface off the boundary connections it is factoring out.
-	# A module built here was never in the graph, so there is no boundary to read and the
-	# instance arrived with no ports at all — a box nothing could be plugged into.
-	await main._add_node("ADSR", Vector2(0, 0))
-	await main._add_node("Gain", Vector2(0, 0))
-	for _settle in 6:
-		await process_frame
-	var built: String = builder.module_name
-	main._on_definition_wired(built, "adsr", "out", "gain", "gain")
-	for _settle in 6:
-		await process_frame
-
-	var offered := []
-	for entry: Dictionary in builder._ports:
-		offered.append("%s.%s" % [str(entry["node"]), str(entry["port"])])
-	check(not offered.has("gain.gain"),
-		"a port already fed from inside is not offered — it has a source (%s)"
-			% str(offered))
-	check(offered.has("adsr.gate") and offered.has("gain.in")
-			and offered.has("gain.out"),
-		"and every free port is (%s)" % str(offered))
-
-	for entry: Dictionary in builder._ports:
-		if str(entry["node"]) + "." + str(entry["port"]) in \
-				["adsr.gate", "gain.in", "gain.out"]:
-			entry["on"] = true
-	builder._commit_ports("declare")
-	for _settle in 8:
-		await process_frame
-	var built_descriptor: Dictionary = main.registry.get("module:%s" % built, {})
-	check(built_descriptor.get("inputs", []).size() == 2
-			and built_descriptor.get("outputs", []).size() == 1,
-		"declaring puts them on the instance (%d in, %d out)"
-			% [built_descriptor.get("inputs", []).size(),
-				built_descriptor.get("outputs", []).size()])
-
-	# A cable onto one of them, and then the port taken away underneath it. The document
-	# must not be left describing a connection to somewhere that no longer exists.
-	var built_instance := ""
-	for node in main.patch["nodes"]:
-		if str(node.get("module", "")) == built:
-			built_instance = str(node["id"])
-	main.patch["connections"].append({
-		"from": {"node": built_instance, "port": "out"},
-		"to": {"node": "out", "port": "left"}})
-	var wired_count: int = main.patch["connections"].size()
-	for entry: Dictionary in builder._ports:
-		if str(entry["node"]) == "gain" and str(entry["port"]) == "out":
-			entry["on"] = false
-	builder._commit_ports("undeclare")
-	for _settle in 8:
-		await process_frame
-	check(main.patch["connections"].size() == wired_count - 1,
-		"and undeclaring one takes the cable that was on it (%d, was %d)"
-			% [main.patch["connections"].size(), wired_count])
-	var to_nowhere := []
-	for connection in main.patch["connections"]:
-		if str(connection["from"]["node"]) == built_instance \
-				and str(connection["from"]["port"]) == "out":
-			to_nowhere.append("out")
-	check(to_nowhere.is_empty(),
-		"leaving nothing pointing at a port the module no longer has (%s)"
-			% str(to_nowhere))
-
-	# ---- and its knobs are exported, not derived -------------------------------------
-	# The other half of the same gap: collapse takes its exports from the values an author
-	# had already set, and nothing added in this tab has been set, so a module built here
-	# arrived with no knobs at all.
-	var built_exports: int = main.registry.get("module:%s" % built, {}) \
-		.get("parameters", []).size()
-	check(built_exports == 0,
-		"a module built from nothing starts with no knobs (%d)" % built_exports)
-	var offered_knobs := []
-	for entry: Dictionary in builder._entries:
-		offered_knobs.append("%s.%s" % [str(entry["node"]), str(entry["parameter"])])
-	check(offered_knobs.has("adsr.attack") and offered_knobs.has("gain.gain"),
-		"but every inner knob is offered (%s)" % str(offered_knobs))
-
-	for entry: Dictionary in builder._entries:
-		if str(entry["node"]) == "adsr" and str(entry["parameter"]) == "attack":
-			entry["exported"] = true
-			entry["on"] = true
-	builder._commit("export attack")
-	for _settle in 8:
-		await process_frame
-	var built_surface: Array = main.patch["modules"][built].get("parameters", [])
-	check(built_surface.size() == 1 and str(built_surface[0]["node"]) == "adsr",
-		"exporting one puts it on the surface (%s)" % str(built_surface))
-	check(main.registry.get("module:%s" % built, {}).get("parameters", []).size() == 1,
-		"and the instance grows a knob (%d)"
-			% main.registry.get("module:%s" % built, {}).get("parameters", []).size())
-	var built_rows: Array = main.patch["modules"][built].get("panel", {}).get("rows", [])
-	check(str(built_rows) == '[["attack"]]',
-		"and it lands on the face, because a knob nobody can see is not why you exported"
-			+ " it (%s)" % str(built_rows))
-
-	# Un-exporting is surface again, not presentation: an instance value for a knob that
-	# is no longer exported would be a number nothing reads.
-	for node in main.patch["nodes"]:
-		if str(node.get("module", "")) == built:
-			node["parameters"] = {"attack": 0.25}
-	for entry: Dictionary in builder._entries:
-		if str(entry["node"]) == "adsr" and str(entry["parameter"]) == "attack":
-			entry["exported"] = false
-	builder._commit("unexport attack")
-	for _settle in 8:
-		await process_frame
-	var leftover := {}
-	for node in main.patch["nodes"]:
-		if str(node.get("module", "")) == built:
-			leftover = node.get("parameters", {})
-	check(leftover.is_empty(),
-		"and un-exporting takes the value an instance had set for it (%s)"
-			% str(leftover))
-
 	main.show_view("Graph")
-	await process_frame
+	await main._load_example("First Synth")
+	for _settle in 6:
+		await process_frame
 
 	# ---- the rack fits its content ---------------------------------------------------
 	# Module height was a flat 404 for everything, so a Gain with one knob got the same
@@ -3416,6 +2962,10 @@ func _initialize() -> void:
 	check(main.graphrack.rearrangeable(instance), "and it is a module, so it may be arranged")
 
 	main._set_wand(true)
+	# Frames, because raising the wand rebuilds the rack to grow the ghosts and a control
+	# that has not been laid out yet has no rectangle to drag anything into.
+	for i in 8:
+		await process_frame
 	check(main.graphrack.wand, "the wand reaches the rack too")
 
 	# rate, from the end of the top row to the front of the bottom one.
@@ -3456,6 +3006,102 @@ func _initialize() -> void:
 			== [["cutoff"], ["rate", "resonance", "amount"]],
 		"and undo puts the face back the way it was (%s)"
 			% str(main.patch["modules"]["part"].get("panel", {}).get("rows", [])))
+
+	# ---- and after the fact: the surface a module already has ------------------------
+	# The half that replaces the Builder. 'part' was collapsed with two knobs picked and
+	# two owed to controls, so its definition holds three inner knobs nobody exported and
+	# several inner ports nobody declared — all of them offered on the face as ghosts,
+	# which is what makes putting one on a drag rather than a trip to a list.
+	var offers: Array = main.registry["module:part"].get("offers", [])
+	var offer_names: Array = offers.map(func(o): return str(o["offer"]["parameter"]))
+	offer_names.sort()
+	check(offer_names == ["cutoff_sweep", "mode", "offset", "shape"],
+		"the face offers every inner knob nobody exported (%s)" % str(offer_names))
+	var port_offers: Array = main.registry["module:part"].get("port_offers", [])
+	var port_names: Array = []
+	for entry: Dictionary in port_offers:
+		port_names.append("%s.%s"
+			% [str(entry["offer"]["node"]), str(entry["offer"]["port"])])
+	check(not port_names.has("filter.in"),
+		"but not a port already declared (%s)" % str(port_names))
+	check(not port_names.has("filter.cutoff_mod"),
+		"nor an inner input already fed from inside, which would be an unasked-for sum (%s)"
+			% str(port_names))
+	check(port_names.has("lfo.rate"),
+		"and it does offer an inner input nothing feeds (%s)" % str(port_names))
+
+	var ghost_key := "+filter/mode"
+	check(main.graphrack._knobs[instance].has(ghost_key),
+		"the ghost is on the face, keyed by where it comes from (%s)"
+			% str(main.graphrack._knobs[instance].keys()))
+	var cutoff_knob: Control = main.graphrack._knobs[instance]["cutoff"]
+	_knob_drag(main, instance, ghost_key,
+		Vector2(cutoff_knob.get_global_rect().position.x + 2.0,
+			cutoff_knob.get_global_rect().get_center().y))
+	for i in 10:
+		await process_frame
+
+	var part_surface: Array = []
+	for binding: Dictionary in main.patch["modules"]["part"].get("parameters", []):
+		part_surface.append(str(binding["name"]))
+	check(part_surface.size() == 5 and part_surface.has("mode"),
+		"dragging a ghost on exports it, because putting a knob on a module is one thought (%s)"
+			% str(part_surface))
+	# Landed where the caret was, and named by the binding rather than by the ghost. The
+	# row it went into is whichever one holds cutoff, asserted by neighbour rather than by
+	# index: which row that is depends on the drags above, and this check is about the drop.
+	var ghost_landed := false
+	for row: Array in main.patch["modules"]["part"]["panel"]["rows"]:
+		var at: int = row.find("mode")
+		if at >= 0 and at + 1 < row.size() and str(row[at + 1]) == "cutoff":
+			ghost_landed = true
+	check(ghost_landed, "and the panel names the binding, not the ghost (%s)"
+		% str(main.patch["modules"]["part"]["panel"]["rows"]))
+
+	# Dragged off the module: off the face, still exported. The two are separate fields so
+	# that the reversible edit cannot do the destructive one by accident.
+	_knob_drag(main, instance, "cutoff", Vector2(4.0, 4.0))
+	for i in 10:
+		await process_frame
+	var after_rows: Array = main.patch["modules"]["part"]["panel"]["rows"]
+	var flat: Array = []
+	for row in after_rows:
+		flat.append_array(row)
+	check(not flat.has("cutoff"), "dragging a knob off the module takes it off the face (%s)"
+		% str(after_rows))
+	var still_exported := false
+	for binding: Dictionary in main.patch["modules"]["part"].get("parameters", []):
+		if str(binding["name"]) == "cutoff":
+			still_exported = true
+	check(still_exported, "and leaves it exported, so nothing pointing at it breaks")
+
+	# A ghost jack is a click, not a drag: a port is on the face or it is not, and there
+	# is no arrangement for it to land in.
+	var before_ports: int = main.patch["modules"]["part"].get("inputs", []).size()
+	var ghost_jack: Control = null
+	for jack in main.graphrack._modules[instance].find_children("", "Control", true, false):
+		if jack.get("ghost") == true and jack.get("offer") != null \
+				and str((jack.offer as Dictionary).get("port", "")) == "rate":
+			ghost_jack = jack
+	check(ghost_jack != null, "the undeclared inner port is drawn as a ghost jack")
+	if ghost_jack != null:
+		var tap := InputEventMouseButton.new()
+		tap.button_index = MOUSE_BUTTON_LEFT
+		tap.pressed = true
+		tap.global_position = ghost_jack.get_global_rect().get_center()
+		ghost_jack._gui_input(tap)
+		for i in 10:
+			await process_frame
+	var port_bindings: Array = []
+	for binding: Dictionary in main.patch["modules"]["part"].get("inputs", []):
+		port_bindings.append(str(binding["name"]))
+	check(port_bindings.size() == before_ports + 1 and port_bindings.has("rate"),
+		"clicking it declares the port (%s)" % str(port_bindings))
+	var on_instance := false
+	for port: Dictionary in main.registry["module:part"]["inputs"]:
+		if str(port["name"]) == "rate":
+			on_instance = true
+	check(on_instance, "and the instance grows a jack for it")
 
 	main._set_wand(false)
 	main.show_view("Graph")

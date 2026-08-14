@@ -52,7 +52,7 @@
     }
   ],
   "metadata": {
-    "description": "A state-variable filter and an ADSR as one module: cutoff and resonance on the top row, the envelope shaping them underneath. Built through the Builder tab — collapse, then prune the face.",
+    "description": "A state-variable filter and an ADSR as one module: cutoff and resonance on the top row, the envelope shaping them underneath. Built by collapsing the pair and then arranging the face.",
     "name": "Filter envelope",
     "tags": [
       "module",
@@ -188,8 +188,8 @@
     {
       "id": "kb",
       "position": {
-        "x": 0.0,
-        "y": 0.0
+        "x": 0,
+        "y": 0
       },
       "type": "NoteInput"
     },
@@ -199,8 +199,8 @@
         "frequency": 110
       },
       "position": {
-        "x": 400.0,
-        "y": 0.0
+        "x": 560,
+        "y": 0
       },
       "type": "SawOscillator"
     },
@@ -218,8 +218,8 @@
         "sustain": 0.25
       },
       "position": {
-        "x": 560.0,
-        "y": 360.0
+        "x": 560,
+        "y": 360
       },
       "type": "module"
     },
@@ -230,8 +230,8 @@
         "safety_limit": 1
       },
       "position": {
-        "x": 1600.0,
-        "y": 0.0
+        "x": 1680,
+        "y": 0
       },
       "type": "StereoOutput"
     }
