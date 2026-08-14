@@ -183,6 +183,11 @@ var view_popup: PopupMenu
 var keyboard_bar: Control
 var keyboard_dock: PanelContainer
 var keyboard_toggle: Button
+## The instrument's own volume and mute; see _build_keyboard_bar.
+var master_knob
+var master_mute: Button
+var master_label: Label
+var muted := false
 var keyboard_expanded := true
 ## What is open, shown so "which patch am I looking at" is never a guess.
 var document_label: Label
@@ -2055,6 +2060,7 @@ func _rebuild_view() -> void:
 		rack.patch = patch
 		rack.rebuild()
 	_refresh_face()
+	_refresh_master()
 
 
 # ---------------------------------------------------------------------------------
@@ -3360,6 +3366,44 @@ func _build_keyboard_bar() -> Control:
 		_set_keyboard_expanded(not keyboard_expanded))
 	bar.add_child(_defocus(keyboard_toggle))
 
+	# Master volume and mute, on the instrument rather than in the chrome.
+	#
+	# The volume knob is not a new idea either: it drives the output node's own `level`,
+	# the same parameter the panel's Master knob drives when a patch has put one there.
+	# What it adds is that the instrument has a volume control whether or not somebody
+	# thought to put one on the panel, which is true of every instrument anybody has ever
+	# played and was not true of this one.
+	#
+	# Mute is the exception that does not touch the document. Muting is a thing you do to
+	# a room, not to a patch — it should not make the file unsaved, it should not be
+	# undoable, and it must not be saved and handed to somebody else silent. So it sets
+	# the engine's parameter directly and leaves `level` where it was.
+	master_mute = Button.new()
+	master_mute.toggle_mode = true
+	master_mute.text = "Mute"
+	master_mute.tooltip_text = "Silence the output without changing the patch. Nothing " 		+ "about the file changes and the level stays where you left it."
+	master_mute.toggled.connect(func(pressed: bool) -> void: _set_muted(pressed))
+	bar.add_child(_defocus(master_mute))
+
+	master_knob = Rack.Knob.new()
+	master_knob.rack = rack
+	master_knob.compact = true
+	# A stand-in descriptor before the tree sees it: Knob reads its name and its doc in
+	# _ready to build a tooltip, so it cannot be added holding nothing. _refresh_master
+	# replaces this with the output node's real one as soon as a patch is open.
+	master_knob.descriptor = {"name": "level", "min": 0.0, "max": 1.2, "default": 0.8,
+		"scaling": "linear", "unit": "", "doc": "Master output level."}
+	master_knob.visible = false
+	bar.add_child(master_knob)
+
+	master_label = Label.new()
+	master_label.text = "Volume"
+	master_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	master_label.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	master_label.add_theme_color_override("font_color", Design.INK_SECOND)
+	bar.add_child(master_label)
+
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(gap)
@@ -3968,6 +4012,56 @@ func _parameter_descriptor(node_id: String, parameter: String) -> Dictionary:
 	return {}
 
 
+## The node the instrument comes out of, or "" for a patch that has no output yet.
+func _output_node() -> String:
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) == "StereoOutput":
+			return str(node["id"])
+	return ""
+
+
+## Points the volume knob at whatever this patch calls its output, and hides the pair
+## when there is nothing to turn down. A knob wired to nothing is worse than no knob.
+func _refresh_master() -> void:
+	if master_knob == null:
+		return
+	var node_id := _output_node()
+	var descriptor := _parameter_descriptor(node_id, "level") if node_id != "" else {}
+	var present := node_id != "" and not descriptor.is_empty()
+	master_knob.visible = present
+	master_mute.visible = present
+	master_label.visible = present
+	if not present:
+		return
+	master_knob.node_id = node_id
+	master_knob.descriptor = descriptor
+	master_knob.set_value_silently(_value_of(node_id, "level",
+		float(descriptor.get("default", 0.8))))
+	# Re-asserted after every apply, because loading the patch into the engine puts the
+	# stored level back — a mute that quietly lifted the first time anybody moved a node
+	# would be a mute nobody could trust.
+	if muted and engine != null and engine.is_loaded():
+		engine.set_parameter(node_id, "level", 0.0)
+
+
+func _value_of(node_id: String, parameter: String, fallback: float) -> float:
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			return float(node.get("parameters", {}).get(parameter, fallback))
+	return fallback
+
+
+## Mute, which is the one control here that is not an edit. See _build_keyboard_bar.
+func _set_muted(quiet: bool) -> void:
+	muted = quiet
+	var node_id := _output_node()
+	if node_id == "" or engine == null or not engine.is_loaded():
+		return
+	engine.set_parameter(node_id, "level",
+		0.0 if quiet else _value_of(node_id, "level", 0.8))
+	_say("output muted" if quiet else "output back on")
+
+
 func _refresh_face() -> void:
 	if patch_face == null:
 		return
@@ -4493,6 +4587,12 @@ func _apply() -> void:
 
 	if typeof(report) == TYPE_DICTIONARY and report["ok"]:
 		engine.load_patch(text, 48000.0)
+		# Loading puts the stored level back, so a mute has to be re-asserted or it lifts
+		# the first time anybody moves a node.
+		if muted:
+			var muted_output := _output_node()
+			if muted_output != "":
+				engine.set_parameter(muted_output, "level", 0.0)
 		# The sweep list names ports by node and index, so it has to be rebuilt whenever
 		# the graph is — otherwise the glow keeps lighting ports that no longer exist.
 		_rebuild_level_targets()

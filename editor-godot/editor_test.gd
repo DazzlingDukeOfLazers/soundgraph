@@ -3526,7 +3526,36 @@ func _initialize() -> void:
 	for child in main.keyboard_bar.get_children():
 		if child is Button:
 			buttons += 1
-	check(buttons == 5, "with five buttons on it: collapse, two octave, two width (%d)"
+	# ---- the instrument has a volume and a mute -------------------------------------
+	# The knob drives the output node's own level, so it is an edit like turning any other
+	# knob. Mute is the one control here that is not: muting is a thing you do to a room,
+	# not to a patch, so it must not make the file unsaved and must not be saved silent.
+	check(main.master_knob != null and main.master_knob.visible,
+		"the keyboard carries a volume knob when the patch has an output")
+	check(main.master_knob.node_id == "out",
+		"pointed at the output node (%s)" % main.master_knob.node_id)
+	var level_before := 0.0
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == "out":
+			level_before = float(node.get("parameters", {}).get("level", 0.0))
+	var dirty_before: bool = main.unsaved
+	main._set_muted(true)
+	await process_frame
+	var level_after := 0.0
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == "out":
+			level_after = float(node.get("parameters", {}).get("level", 0.0))
+	check(is_equal_approx(level_before, level_after),
+		"muting leaves the level where it was (%.2f)" % level_after)
+	check(main.unsaved == dirty_before,
+		"and does not make the file unsaved, because it is not a change to the file")
+	check(main.muted, "while the instrument is muted")
+	main._set_muted(false)
+	await process_frame
+	check(not main.muted, "and unmuting puts it back")
+
+	check(buttons == 6,
+		"with six buttons on it: collapse, mute, two octave, two width (%d)"
 		% buttons)
 
 	# The dock. The keyboard was the brightest, heaviest thing on screen and the eye
