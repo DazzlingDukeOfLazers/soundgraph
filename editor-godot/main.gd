@@ -1629,7 +1629,7 @@ func _refresh_context() -> void:
 func _node_type(node_id: String) -> String:
 	for node in patch.get("nodes", []):
 		if str(node["id"]) == node_id:
-			return str(node["type"])
+			return _type_key(node)
 	return ""
 
 
@@ -2080,7 +2080,36 @@ func _rebuild_view() -> void:
 func _type_key(node: Dictionary) -> String:
 	if str(node.get("type", "")) == "module":
 		return "module:%s" % str(node.get("module", ""))
+	var seam := _seam_terminal(node)
+	if seam != "":
+		return seam
 	return str(node.get("type", ""))
+
+
+## Which terminal a host-bound seam is, or "" when this node is not one.
+##
+## The editor renders a seam as the thing it becomes, because that is what it is: the
+## loader turns Input/note into a NoteInput before anything downstream sees the document,
+## and drawing it any other way would be the editor disagreeing with the file about what
+## is in the patch. No new registry entry, no synthesized descriptor — the terminal's own
+## entry already says everything true about this node's ports and parameters.
+##
+## The mapping is patch-io's, restated here because the editor parses documents itself
+## rather than through the loader. That is a second copy of one table and it is the reason
+## a seam bound to a host this editor does not know renders as nothing rather than badly:
+## see _seam_hosts.
+const SEAM_TERMINALS := {
+	"Input/note": "NoteInput",
+	"Input/audio": "AudioInput",
+	"Output/stereo": "StereoOutput",
+}
+
+
+func _seam_terminal(node: Dictionary) -> String:
+	var type_name := str(node.get("type", ""))
+	if type_name != "Input" and type_name != "Output":
+		return ""
+	return str(SEAM_TERMINALS.get("%s/%s" % [type_name, str(node.get("host", ""))], ""))
 
 
 ## Builds a registry-shaped descriptor for each module definition, so instances flow
