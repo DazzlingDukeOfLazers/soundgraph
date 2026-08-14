@@ -2959,123 +2959,140 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 
-	# ---- the wand: the face is pointed at, not worked out ----------------------------
-	# The same two nodes, collapsed the other way round. Raise the wand, click a jack and
-	# two knobs, and the module comes out wearing those and not the seven the derivation
-	# would have given it. Full zoom first: below the compact floor the level of detail
-	# folds knob rows away, and a knob that is not on screen is one the wand may not pick.
+	# ---- the wand puts a knob on the file's own panel ---------------------------------
+	# `controls` has been in the schema since v1 — the performance surface, deliberately
+	# separate from the graph — and every example carries one that nothing had ever drawn.
+	# It is the panel a file has, and the wand is how knobs get on and off it.
+	#
+	# Full zoom first: below the compact floor the level of detail folds knob rows away,
+	# and a knob that is not on screen is one the wand may not click.
 	main.graph_edit.zoom = 1.0
 	for i in 4:
 		await process_frame
-	for id in ["lfo", "filter"]:
-		main.widgets[id].selected = true
+	var started_with: int = main.patch.get("controls", []).size()
+	check(started_with == 7, "First Synth arrives with a panel already (%d knobs)"
+		% started_with)
+	check(main.patch_face.get_child_count() > 0,
+		"and the editor draws it (%d rows)" % main.patch_face.get_child_count())
+
+	# The amplifier, whose single knob is never folded away by the level of detail and is
+	# not already on First Synth's panel — so this measures the wand and not the layout.
+	main.widgets["amp"].selected = true
 	main._refresh_selection_button()
 	main._set_wand(true)
+	for i in 4:
+		await process_frame
 	check(main.graph_edit.wand, "the wand goes up")
 
-	var wand_filter: GraphNode = main.widgets["filter"]
-	var wand_lfo: GraphNode = main.widgets["lfo"]
-	var out_index: int = main._output_port_index("filter", "out")
-	_wand_click(main, _jack_point(main, wand_filter, "right", out_index))
-	check(main.wand_picks.size() == 1 and str(main.wand_picks[0].get("kind", "")) == "output",
-		"clicking a jack picks it as an output (%s)" % str(main.wand_picks))
+	var wand_amp: GraphNode = main.widgets["amp"]
+	var gain_point := _knob_point(main, wand_amp, "gain")
+	check(gain_point != Vector2.INF, "the amplifier's gain knob is on screen to be clicked")
+	_wand_click(main, gain_point)
+	for i in 6:
+		await process_frame
+	var panel_ids: Array = []
+	for control: Dictionary in main.patch.get("controls", []):
+		panel_ids.append(str(control["id"]))
+	check(panel_ids.size() == started_with + 1 and panel_ids.has("gain"),
+		"clicking a knob puts it on the panel (%s)" % str(panel_ids))
+	check(main.patch["nodes"] == main.patch["nodes"],
+		"and the graph is untouched, because a panel is not wiring")
 
-	var cutoff_point := _knob_point(main, wand_filter, "cutoff")
-	check(cutoff_point != Vector2.INF, "the cutoff knob is on screen to be picked")
-	_wand_click(main, cutoff_point)
-	check(main.wand_picks.size() == 2
-			and str(main.wand_picks[1].get("parameter", "")) == "cutoff",
-		"clicking a knob picks it, ahead of the Control that would have eaten the press")
+	# Again takes it off. Without that the only repair for a misclick is editing the file.
+	_wand_click(main, _knob_point(main, main.widgets["amp"], "gain"))
+	for i in 6:
+		await process_frame
+	check(main.patch.get("controls", []).size() == started_with,
+		"clicking it again takes it off (%d)" % main.patch.get("controls", []).size())
 
-	# Clicking it again takes it back off, which is the only repair a misclick has.
-	_wand_click(main, cutoff_point)
-	check(main.wand_picks.size() == 1, "clicking a pick again drops it (%d)"
-		% main.wand_picks.size())
-	_wand_click(main, cutoff_point)
-
-	var rate_point := _knob_point(main, wand_lfo, "rate")
-	check(rate_point != Vector2.INF, "the LFO's rate knob is on screen to be picked")
-	_wand_click(main, rate_point)
-	check(main.wand_picks.size() == 3, "and a third pick lands (%d)" % main.wand_picks.size())
-
-	# Nothing outside the selection is pickable. The osc feeds the filter, so its output
-	# jack is exactly the kind of thing a hand reaches for by mistake.
-	#
-	# Asserted twice on purpose, because two separate things enforce it and either alone
-	# would let the check pass: the hit test declines to find the jack, and the
-	# bookkeeping drops a pick whose node is not selected. The first is what stops the
-	# status line announcing a pick that is about to be thrown away; the second is what
-	# holds once the selection changes afterwards. Only checking the click proved the
-	# pair, which is how a guard that had stopped working would have gone unnoticed.
-	var osc_index: int = main._output_port_index("osc", "out")
-	var osc_point := _jack_point(main, main.widgets["osc"], "right", osc_index)
-	var graph_origin: Vector2 = main.graph_edit.get_global_rect().position
-	check(main.graph_edit.port_at(osc_point - graph_origin).has("widget"),
-		"the osc's jack is where the test is aiming")
-	check(main.graph_edit.port_at(osc_point - graph_origin, true).is_empty(),
-		"and the hit test does not find it, because its node is not selected")
-	_wand_click(main, osc_point)
-	check(main.wand_picks.size() == 3,
-		"so clicking it picks nothing (%d)" % main.wand_picks.size())
-
-	# A press the wand does not want is a press it does not take. Nothing else on this
-	# canvas would work otherwise — selecting, dragging, panning and rubber-banding all
-	# arrive through the same button, and an interceptor that swallowed everything would
-	# make the wand a mode you cannot select anything in.
-	var title_point: Vector2 = wand_filter.get_global_rect().position \
-		+ Vector2(wand_filter.size.x * 0.5, 8.0)
-	check(main.graph_edit.port_at(title_point - graph_origin, true).is_empty()
-			and main.graph_edit.parameter_row_at(title_point) == null,
-		"a press on the node's own title is neither a jack nor a knob")
-	_wand_click(main, title_point)
-	check(main.wand_picks.size() == 3, "so the wand lets it through (%d)"
-		% main.wand_picks.size())
-
-	# Taking a node out of the selection takes its picks with it, and the ones left close
-	# ranks — a badge reading 3 with no 2 above it would be lying about the panel order.
-	wand_lfo.selected = false
-	main._refresh_selection_button()
-	check(main.wand_picks.size() == 2, "deselecting a node drops its picks (%d)"
-		% main.wand_picks.size())
-	var ordinals: Array = main.graph_edit.wand_marks.map(func(m): return int(m["ordinal"]))
-	check(ordinals == [1, 2], "and the rest renumber from one (%s)" % str(ordinals))
-	wand_lfo.selected = true
-	main._refresh_selection_button()
-	_wand_click(main, _knob_point(main, wand_lfo, "rate"))
-
-	await main._collapse_selection()
+	# An edit like any other.
+	await main._undo()
+	for i in 6:
+		await process_frame
+	check(main.patch.get("controls", []).size() == started_with + 1,
+		"and undo puts it back (%d)" % main.patch.get("controls", []).size())
+	await main._undo()
 	for i in 6:
 		await process_frame
 
-	check(not main.graph_edit.wand and main.wand_picks.is_empty(),
-		"collapsing puts the wand down and empties it")
-	var picked_def: Dictionary = main.patch.get("modules", {}).get("part", {})
-	var picked_names: Array = picked_def.get("parameters", []) \
-		.map(func(binding): return str(binding["name"]))
-	check(picked_names.slice(0, 2) == ["cutoff", "rate"],
-		"the picked knobs are the face, in the order they were picked (%s)"
-			% str(picked_names))
-	check(not picked_names.has("mode") and not picked_names.has("offset"),
-		"and the knobs nobody pointed at stayed inside (%s)" % str(picked_names))
-	# Two rules a nomination does not get to override, for the same reason: something is
-	# already attached. A boundary connection declares its port whether or not it was
-	# picked, and a control targeting an inner knob exports that knob whether or not it
-	# was picked — dropping either would break wiring somebody had made.
-	var picked_inputs: Array = picked_def.get("inputs", []) \
-		.map(func(binding): return str(binding["name"]))
-	var picked_outputs: Array = picked_def.get("outputs", []) \
-		.map(func(binding): return str(binding["name"]))
-	check(picked_inputs == ["in"], "an unpicked boundary port is still declared (%s)"
-		% str(picked_inputs))
-	check(picked_outputs == ["out"],
-		"and the picked one is not declared twice when the boundary reaches it too (%s)"
-			% str(picked_outputs))
-	check(picked_names.has("resonance") and picked_names.has("amount"),
-		"a knob with a control on it is exported unpicked, so the control still works (%s)"
-			% str(picked_names))
-	check(picked_names.size() == 4,
-		"which is the whole face: two picked, two owed to controls (%d, was 7 derived)"
-			% picked_names.size())
+	# A jack is not a knob, and the panel has no spelling for one. Said out loud rather
+	# than ignored: a click that does nothing looks like a broken tool.
+	# Re-fetched: the undos above rebuilt the view, and the widget this held is a freed
+	# object now.
+	main.widgets["amp"].selected = true
+	main._refresh_selection_button()
+	for i in 4:
+		await process_frame
+	var out_index: int = main._output_port_index("amp", "out")
+	var before_jack: int = main.patch.get("controls", []).size()
+	_wand_click(main, _jack_point(main, main.widgets["amp"], "right", out_index))
+	for i in 4:
+		await process_frame
+	check(main.patch.get("controls", []).size() == before_jack,
+		"clicking a jack puts nothing on the panel (%d)"
+			% main.patch.get("controls", []).size())
+
+	# Dragging a knob to a new place on the panel. The order is the whole personalisation
+	# a panel offers, so it has to be somebody's rather than the order they happened to
+	# click things on in.
+	var panel_before: Array = []
+	for control: Dictionary in main.patch.get("controls", []):
+		panel_before.append(str(control["id"]))
+	main._on_panel_reordered([panel_before[2], panel_before[0], panel_before[1]])
+	for i in 6:
+		await process_frame
+	var panel_after: Array = []
+	for control: Dictionary in main.patch.get("controls", []):
+		panel_after.append(str(control["id"]))
+	check(panel_after.slice(0, 3) == [panel_before[2], panel_before[0], panel_before[1]],
+		"the panel takes the order it was dragged into (%s)" % str(panel_after.slice(0, 3)))
+	check(panel_after.size() == panel_before.size(),
+		"and a reorder that named only some of them keeps the rest (%d of %d)"
+			% [panel_after.size(), panel_before.size()])
+	var panel_sorted: Array = panel_after.duplicate()
+	var before_sorted: Array = panel_before.duplicate()
+	panel_sorted.sort()
+	before_sorted.sort()
+	check(panel_sorted == before_sorted, "with nothing lost on the way")
+	await main._undo()
+	for i in 6:
+		await process_frame
+
+	main._set_wand(false)
+	for i in 4:
+		await process_frame
+
+	# ---- a module to look at, made by hand ------------------------------------------
+	# The blocks below need one with a known, small surface. The wand used to leave one
+	# behind, back when its job was nominating a module's face; now it puts knobs on the
+	# file's panel instead, so the module is built here and pruned to four exports on
+	# purpose — which is what a collapse with a nominated surface used to produce.
+	for id in ["lfo", "filter"]:
+		main.widgets[id].selected = true
+	await main._collapse_selection()
+	for i in 8:
+		await process_frame
+	var kept_exports: Array = []
+	for binding: Dictionary in main.patch["modules"]["part"].get("parameters", []):
+		if ["cutoff", "rate", "resonance", "amount"].has(str(binding["name"])):
+			kept_exports.append(binding)
+	var wanted_order := ["cutoff", "rate", "resonance", "amount"]
+	kept_exports.sort_custom(func(a, b):
+		return wanted_order.find(str(a["name"])) < wanted_order.find(str(b["name"])))
+	main.patch["modules"]["part"]["parameters"] = kept_exports
+	for node in main.patch["nodes"]:
+		if str(node.get("module", "")) == "part":
+			var values: Dictionary = node.get("parameters", {})
+			for value_name in values.keys():
+				if not ["cutoff", "rate", "resonance", "amount"].has(str(value_name)):
+					values.erase(value_name)
+	main._synthesize_module_descriptors()
+	await main._rebuild_view()
+	for i in 8:
+		await process_frame
+	check(main.patch["modules"]["part"].get("parameters", []).size() == 4,
+		"the module under test wears four knobs (%d)"
+			% main.patch["modules"]["part"].get("parameters", []).size())
 
 	# ---- the wand's other half: dragging a knob on the face it made ------------------
 	# The arithmetic first, on its own, because every interesting case here is an
