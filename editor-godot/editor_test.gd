@@ -3108,6 +3108,68 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 
+	# ---- and the module can be given a name ------------------------------------------
+	# Collapse calls every fresh definition "part" and then names the instance after it,
+	# so both arrive as the same placeholder and the running order reads "part.filter".
+	# Renaming the definition alone would fix the half nobody sees. The field is on the
+	# instance in the inspector, because the instance is the thing on screen.
+	main._focus_node(instance)
+	for i in 4:
+		await process_frame
+	var name_field: LineEdit = null
+	for child in main.context_panel.get_children():
+		if child is LineEdit:
+			name_field = child
+	check(name_field != null and name_field.text == "part",
+		"a module instance offers its name in the inspector (%s)"
+			% ("missing" if name_field == null else name_field.text))
+
+	name_field.text_submitted.emit("shaper")
+	for i in 8:
+		await process_frame
+	check(main.patch["modules"].has("shaper") and not main.patch["modules"].has("part"),
+		"renaming moves the definition (%s)" % str(main.patch["modules"].keys()))
+	var pointing: Array = []
+	for node in main.patch["nodes"]:
+		if str(node.get("type", "")) == "module":
+			pointing.append("%s:%s" % [str(node["id"]), str(node["module"])])
+	check(pointing == ["shaper:shaper"],
+		"and the instance goes with it, since it was only ever called after it (%s)"
+			% str(pointing))
+	check(main.registry.has("module:shaper") and not main.registry.has("module:part"),
+		"and the descriptor follows")
+	var wired := 0
+	for connection in main.patch.get("connections", []):
+		for end in ["from", "to"]:
+			if str(connection[end]["node"]) == "shaper":
+				wired += 1
+	check(wired == 2, "and every cable follows the instance's new id (%d)" % wired)
+
+	# The names it must refuse, each for its own reason.
+	for child in main.context_panel.get_children():
+		if child is LineEdit:
+			name_field = child
+	name_field.text_submitted.emit("shaper.two")
+	for i in 4:
+		await process_frame
+	check(main.patch["modules"].has("shaper"),
+		"a name with a dot is refused — that is the separator expansion uses (%s)"
+			% str(main.patch["modules"].keys()))
+	for child in main.context_panel.get_children():
+		if child is LineEdit:
+			name_field = child
+	name_field.text_submitted.emit("")
+	for i in 4:
+		await process_frame
+	check(main.patch["modules"].has("shaper"), "and an empty name is not a rename")
+
+	await main._undo()
+	for i in 8:
+		await process_frame
+	check(main.patch.get("modules", {}).has("part"),
+		"and undo puts the old name back (%s)"
+			% str(main.patch.get("modules", {}).keys()))
+
 	await main._load_example("First Synth")
 	for i in 6:
 		await process_frame
