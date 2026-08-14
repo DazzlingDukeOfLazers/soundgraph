@@ -324,10 +324,37 @@ with `Input` and `Output` nodes at the top level is already a module, which is w
    failure mode this document has avoided everywhere else. The migration is mechanical
    — a definition's `inputs` list becomes `Input` nodes wired to what the bindings named
    — and it should be done as a conversion in patch-io rather than by hand.
-2. **What are they made of at runtime?** A pass-through with a declared signal type,
-   almost certainly, so that expansion can splice them out entirely and the flat graph
-   is exactly what it is today. Expansion already erases the facade; this gives it two
-   more node types to erase.
+2. **What are they made of at runtime — settled: nothing.** They are notation, exactly
+   like `type: "module"`, and dsp-core never learns either one.
+
+   Checked against the code rather than assumed. `expand_modules` in
+   `patch-io/src/patch_io.cpp` already performs the splice this needs: a connection
+   arriving at `instance.gate` is rewritten to `expanded_id(instance, declared->node)`
+   and `declared->port`, so the outside cable lands directly on the inner node's real
+   port and the binding is consumed at load. A seam node replaces that binding, and
+   expansion does the identical thing — find the `Input` named `gate`, find what it
+   feeds, aim the outside cable there. The seam is gone before `Graph::build` runs.
+
+   Fan-out needs no special case: one `Input` feeding three inner nodes is three
+   rewritten connections, which is what a declared port already does. A seam feeding
+   nothing is a declared port that goes nowhere, which an unused binding can be today.
+
+   So the whole change lives in patch-io and the editor, and the invariant this document
+   opens with — *"dsp-core never learns"* — holds without being defended. The only real
+   nodes involved stay the ones that already exist: a **host-bound** seam converts on
+   load into `NoteInput`, `AudioInput` or `StereoOutput`, which are and remain ordinary
+   dsp-core nodes.
+
+   That conversion is also what settles the shape problem. A dsp-core node's ports are
+   fixed at compile time, so one `Input` type cannot have four ports bound to `note` and
+   one bound to nothing. It does not have to: the four-port case *becomes* `NoteInput`
+   during load, and the one-port case is spliced out. Neither ever needs a node whose
+   shape depends on a parameter.
+
+   The rule that falls out, and it is a good one: **a seam at the top level must carry a
+   host binding, and a seam inside a module may not.** Top-level seams convert to
+   terminals; module seams are spliced by expansion; nothing else is legal and nothing
+   else is needed.
 3. **The existing terminals — settled: same idea at two scales.** `NoteInput`,
    `AudioInput` and `StereoOutput` become `Input` and `Output` carrying a **host
    binding**: a seam whose other side is the machine rather than another patch. There is
