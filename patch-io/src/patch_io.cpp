@@ -82,6 +82,38 @@ json::Value write_control_target(const ControlTarget& target) {
 }
 
 // One node entry, shared between the top-level nodes array and module definitions —
+// ---------------------------------------------------------------------------------
+// Seams
+//
+// "Input" and "Output" are a graph's edges, and like "module" they are notation: no
+// dsp-core node is ever built for one. See docs/modules-design.md.
+//
+// A seam inside a definition is a module's own port, spliced out by expansion exactly as
+// a declared binding is. A seam at the top level carries a host binding — the other side
+// of it is the machine rather than another patch — and becomes the terminal that already
+// speaks to that host. One idea at two scales, which is why there is one spelling.
+// ---------------------------------------------------------------------------------
+
+bool is_seam(const std::string& type) {
+    return type == "Input" || type == "Output";
+}
+
+// What a host-bound seam turns into. Empty when the pairing is not one this runtime
+// knows — an "Output" bound to the keyboard, say, which is a sentence rather than a
+// patch.
+std::string terminal_for(const std::string& type, const std::string& host) {
+    if (type == "Input" && host == "note") {
+        return "NoteInput";
+    }
+    if (type == "Input" && host == "audio") {
+        return "AudioInput";
+    }
+    if (type == "Output" && host == "stereo") {
+        return "StereoOutput";
+    }
+    return {};
+}
+
 // a definition's nodes are ordinary nodes, and two readers would drift.
 bool read_node(const json::Value& entry,
                std::size_t index,
@@ -119,6 +151,17 @@ bool read_node(const json::Value& entry,
             return false;
         }
         node.module = module->as_string();
+    }
+
+    if (is_seam(node.type)) {
+        // Kept verbatim, valid or not. Whether a host binding belongs here at all is a
+        // question about where this node sits, and the parser does not know yet — a node
+        // is parsed before anyone has said whether it is a patch's own or a module's.
+        if (const json::Value* host = entry.find("host")) {
+            if (host->is_string()) {
+                node.host = host->as_string();
+            }
+        }
     }
 
     if (const json::Value* name = entry.find("name")) {
@@ -227,6 +270,91 @@ std::string expanded_id(const std::string& instance, const std::string& inner) {
 // authored moves into the authored_* vectors for write_patch. Returns false (with
 // diagnostics) on any structural violation; the rules are docs/modules-design.md's,
 // one check each.
+// Turns the patch's own seams into the terminals that speak to the machine, and holds
+// both halves of the scope rule.
+//
+// The rule is one sentence in two directions: a seam at the top level must carry a host
+// binding, and a seam inside a module may not. Top-level seams convert here; module seams
+// are spliced by expansion; there is no third case. This is the same protection the old
+// "a module is a subcircuit, not a finished patch" refusal gave — a module must not reach
+// past its own edge and grab the keyboard, or two instances would both be listening to
+// the same one — said as a sentence about scope rather than a list of forbidden types.
+//
+// Only the flattened view is converted. The authored view keeps the seam spelling, so a
+// file written with seams is handed back with seams: this loader has no business quietly
+// rewriting somebody's document into the older way of saying the same thing.
+// The authored document is what write_patch reproduces, so it is taken once, before
+// anything rewrites anything. Both flattening passes call this and only the first one
+// does the work — a second snapshot would capture the first pass's output and hand the
+// author back a file they did not write.
+void snapshot_authored(GraphDescription& description) {
+    if (description.authored_taken) {
+        return;
+    }
+    description.authored_taken = true;
+    description.authored_nodes = description.nodes;
+    description.authored_connections = description.connections;
+    description.authored_controls = description.controls;
+    description.authored_automation = description.automation;
+    description.authored_schema_version = description.schema_version;
+}
+
+bool resolve_seams(GraphDescription& description, std::vector<Diagnostic>& diagnostics) {
+    bool ok = true;
+    for (const ModuleDescription& definition : description.modules) {
+        for (const NodeDescription& inner : definition.nodes) {
+            if (is_seam(inner.type) && !inner.host.empty()) {
+                diagnostics.push_back(error(
+                    "module_seam_bound_to_host",
+                    "Seam '" + inner.id + "' inside module '" + definition.name +
+                        "' is bound to host '" + inner.host + "'.",
+                    "A module's seams are its ports. Binding one to the machine would "
+                    "mean every instance of the module shared that one keyboard or "
+                    "output, which is not what having two of something means."));
+                ok = false;
+            }
+        }
+    }
+
+    bool any_seam = false;
+    for (const NodeDescription& node : description.nodes) {
+        if (is_seam(node.type)) {
+            any_seam = true;
+        }
+    }
+    if (any_seam) {
+        snapshot_authored(description);
+    }
+
+    for (NodeDescription& node : description.nodes) {
+        if (!is_seam(node.type)) {
+            continue;
+        }
+        if (node.host.empty()) {
+            diagnostics.push_back(error(
+                "top_level_seam_needs_host",
+                "Seam '" + node.id + "' is at the top level of the patch but names no host.",
+                "A seam here is where the graph meets the machine, so it needs to say "
+                "which part of it: \"host\": \"note\", \"audio\" or \"stereo\"."));
+            ok = false;
+            continue;
+        }
+        const std::string terminal = terminal_for(node.type, node.host);
+        if (terminal.empty()) {
+            diagnostics.push_back(error(
+                "unknown_seam_host",
+                "Seam '" + node.id + "' of type \"" + node.type + "\" is bound to host '" +
+                    node.host + "', which this runtime does not have.",
+                "Inputs may be bound to \"note\" or \"audio\", outputs to \"stereo\"."));
+            ok = false;
+            continue;
+        }
+        node.type = terminal;
+        node.host.clear();
+    }
+    return ok;
+}
+
 bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diagnostics) {
     bool any_instance = false;
     for (const NodeDescription& node : description.nodes) {
@@ -237,6 +365,7 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
     if (description.modules.empty() && !any_instance) {
         return true;  // a version-1 document, untouched
     }
+
 
     if (description.schema_version < kSchemaVersionModules) {
         diagnostics.push_back(error(
@@ -327,12 +456,7 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
         }
     }
 
-    // The authored document is what write_patch will reproduce.
-    description.authored_nodes = description.nodes;
-    description.authored_connections = description.connections;
-    description.authored_controls = description.controls;
-    description.authored_automation = description.automation;
-    description.authored_schema_version = description.schema_version;
+    snapshot_authored(description);
 
     // ---- nodes -----------------------------------------------------------------------
     std::vector<NodeDescription> flat_nodes;
@@ -814,6 +938,9 @@ bool parse_patch(const std::string& text,
     // Last, once controls and automation exist to remap: instances become plain
     // nodes, the authored document moves aside for write_patch, and the engine gets
     // the version-1 view it always got.
+    if (ok && !resolve_seams(out, diagnostics)) {
+        ok = false;
+    }
     if (ok && !expand_modules(out, diagnostics)) {
         ok = false;
     }
@@ -846,6 +973,9 @@ json::Value write_node_entry(const NodeDescription& node) {
     entry.set("type", json::Value(node.type));
     if (!node.module.empty()) {
         entry.set("module", json::Value(node.module));
+    }
+    if (!node.host.empty()) {
+        entry.set("host", json::Value(node.host));
     }
     if (!node.name.empty()) {
         entry.set("name", json::Value(node.name));
@@ -900,17 +1030,27 @@ json::Value write_module_binding(const std::string& name, const std::string& nod
 }  // namespace
 
 std::string write_patch(const GraphDescription& description, bool pretty) {
-    // Flattening is for the engine, never for the file: a modular document writes its
-    // authored form back, definitions and instances intact.
+    // Flattening is for the engine, never for the file: a document that was flattened on
+    // load writes its authored form back, definitions and instances and seams intact.
+    //
+    // The test is whether a snapshot was taken, not whether there are modules. Seams are
+    // flattened too, and a patch can have them with no module in sight — asking about
+    // modules handed such a file back rewritten into terminals, which is exactly the
+    // quiet rewriting this branch exists to prevent. It is also the more honest question:
+    // "is `nodes` still what the author wrote" is what the caller actually wants to know.
+    const bool reproduce_authored = description.authored_taken;
+    // Two things still ask the narrower question, and should: the version floor and the
+    // "modules" section itself are about modules, not about whether anything was
+    // flattened. A seam-only patch is a version-1 document and writes no modules section.
     const bool modular = description.has_modules();
     const std::vector<NodeDescription>& nodes_out =
-        modular ? description.authored_nodes : description.nodes;
+        reproduce_authored ? description.authored_nodes : description.nodes;
     const std::vector<ConnectionDescription>& connections_out =
-        modular ? description.authored_connections : description.connections;
+        reproduce_authored ? description.authored_connections : description.connections;
     const std::vector<ControlDescription>& controls_out =
-        modular ? description.authored_controls : description.controls;
+        reproduce_authored ? description.authored_controls : description.controls;
     const std::vector<AutomationLane>& automation_out =
-        modular ? description.authored_automation : description.automation;
+        reproduce_authored ? description.authored_automation : description.automation;
 
     json::Value root = json::Value::make_object();
     root.set("schema_version", json::Value(modular

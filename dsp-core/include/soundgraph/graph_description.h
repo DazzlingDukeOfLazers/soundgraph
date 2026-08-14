@@ -26,6 +26,11 @@ struct NodeDescription {
     std::string id;      // stable identity; connections refer to this
     std::string type;    // registry type name, or "module" for an instance
     std::string module;  // when type == "module": which definition this instantiates
+    // When type is "Input" or "Output": which side of the machine this seam is on.
+    // Empty means a module's own edge — a port, spliced out by expansion. Set means the
+    // patch's edge, and the seam becomes the terminal that already speaks to that host.
+    // See docs/modules-design.md, "the seam made of nodes".
+    std::string host;
     std::string name;    // cosmetic label
     std::vector<ParameterValue> parameters;
 
@@ -174,6 +179,7 @@ struct GraphDescription {
     // actually said, which is all write_patch ever writes. Flattening is for the
     // engine, never for the file.
     std::vector<ModuleDescription> modules;
+    bool authored_taken = false;
     std::vector<NodeDescription> authored_nodes;
     std::vector<ConnectionDescription> authored_connections;
     std::vector<ControlDescription> authored_controls;

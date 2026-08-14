@@ -663,3 +663,162 @@ TEST(modules_refuse_the_documented_abuses) {
 }
 
 TEST_MAIN("patch io tests")
+
+// ---------------------------------------------------------------------------------
+// Seams
+//
+// "Input" and "Output" are a graph's edges written as nodes. Like modules they are
+// notation: no dsp-core node is ever built for one, and a host-bound seam becomes the
+// terminal that already speaks to that host. See docs/modules-design.md.
+// ---------------------------------------------------------------------------------
+
+namespace {
+
+std::string seam_patch() {
+    return R"({
+      "schema_version": 1,
+      "nodes": [
+        { "id": "kb",  "type": "Input",  "host": "note" },
+        { "id": "osc", "type": "SawOscillator", "parameters": { "frequency": 220 } },
+        { "id": "out", "type": "Output", "host": "stereo" }
+      ],
+      "connections": [
+        { "from": { "node": "kb",  "port": "frequency" }, "to": { "node": "osc", "port": "frequency" } },
+        { "from": { "node": "osc", "port": "out" },       "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+}
+
+}  // namespace
+
+TEST(a_host_bound_seam_is_the_terminal_it_names) {
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(seam_patch(), description, diagnostics));
+
+    // The engine gets what it always got. Nothing downstream of the loader — not the
+    // scheduler, not the golden manifest, not the firmware — learns the word "seam".
+    const soundgraph::NodeDescription* keyboard = description.find_node("kb");
+    const soundgraph::NodeDescription* output = description.find_node("out");
+    CHECK(keyboard != nullptr && keyboard->type == "NoteInput");
+    CHECK(output != nullptr && output->type == "StereoOutput");
+    CHECK(keyboard->host.empty());  // consumed, not carried into the flat view
+
+    // And the cables are untouched: a seam keeps its id and its ports, so converting it
+    // is a rename rather than a rewiring.
+    CHECK(description.connections.size() == 2);
+    CHECK(description.connections[0].from_node == "kb");
+    CHECK(description.connections[0].from_port == "frequency");
+}
+
+TEST(a_seam_is_handed_back_as_a_seam) {
+    // The loader must not quietly rewrite somebody's document into the older way of
+    // saying the same thing. The authored view keeps the spelling it was given.
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(seam_patch(), description, diagnostics));
+
+    const std::string written = soundgraph::write_patch(description);
+    CHECK(written.find("\"Input\"") != std::string::npos);
+    CHECK(written.find("\"host\": \"note\"") != std::string::npos);
+    CHECK(written.find("NoteInput") == std::string::npos);
+
+    GraphDescription again;
+    std::vector<Diagnostic> again_diagnostics;
+    CHECK(soundgraph::parse_patch(written, again, again_diagnostics));
+    CHECK(soundgraph::write_patch(again) == written);  // stable from then on
+}
+
+TEST(seams_hold_the_scope_rule_in_both_directions) {
+    auto refuses = [](const std::string& text, const std::string& code) {
+        GraphDescription description;
+        std::vector<Diagnostic> diagnostics;
+        const bool ok = soundgraph::parse_patch(text, description, diagnostics);
+        return !ok && has_code(diagnostics, code);
+    };
+
+    // Exact substrings, asserted present before they are used. A find() that quietly
+    // returns npos hands string::replace a position it refuses, and the suite dies with
+    // a fastfail rather than a failed check — which is how this test first "passed".
+    auto swap = [](std::string text, const std::string& from, const std::string& to) {
+        const std::size_t at = text.find(from);
+        CHECK(at != std::string::npos);
+        return text.replace(at, from.size(), to);
+    };
+
+    // A seam at the top level is where the graph meets the machine, so it has to say
+    // which part of it.
+    CHECK(refuses(swap(seam_patch(), ",  \"host\": \"note\"", ""),
+                  "top_level_seam_needs_host"));
+
+    // A host this runtime does not have is refused rather than ignored: a patch that
+    // silently loses its keyboard is worse than one that will not open.
+    CHECK(refuses(swap(seam_patch(), "\"host\": \"note\"", "\"host\": \"trumpet\""),
+                  "unknown_seam_host"));
+
+    // And the other direction. A module's seams are its ports; binding one to the
+    // machine would mean every instance shared that one keyboard, which is not what
+    // having two of something means.
+    const std::string inside = R"({
+      "schema_version": 2,
+      "modules": {
+        "voice": {
+          "nodes": [
+            { "id": "gate", "type": "Input", "host": "note" },
+            { "id": "env",  "type": "ADSR" }
+          ],
+          "connections": [],
+          "outputs": [ { "name": "out", "node": "env", "port": "out" } ]
+        }
+      },
+      "nodes": [
+        { "id": "v",   "type": "module", "module": "voice" },
+        { "id": "out", "type": "Output", "host": "stereo" }
+      ],
+      "connections": [
+        { "from": { "node": "v", "port": "out" }, "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+    CHECK(refuses(inside, "module_seam_bound_to_host"));
+}
+
+TEST(the_two_spellings_flatten_to_the_same_graph) {
+    // The claim the whole seam idea rests on, held where it is cheapest and sharpest.
+    // Rendering both and comparing bytes says they sound the same; comparing the
+    // flattened views says *why*, and cannot be flaky about it. The audio identity was
+    // confirmed once by hand with sg-render on first-synth.json — 192044 bytes, cmp
+    // clean — and this is the check that keeps it true.
+    const std::string terminals = R"({
+      "schema_version": 1,
+      "nodes": [
+        { "id": "kb",  "type": "NoteInput" },
+        { "id": "osc", "type": "SawOscillator", "parameters": { "frequency": 220 } },
+        { "id": "out", "type": "StereoOutput" }
+      ],
+      "connections": [
+        { "from": { "node": "kb",  "port": "frequency" }, "to": { "node": "osc", "port": "frequency" } },
+        { "from": { "node": "osc", "port": "out" },       "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+
+    GraphDescription old_way;
+    GraphDescription new_way;
+    std::vector<Diagnostic> old_diagnostics;
+    std::vector<Diagnostic> new_diagnostics;
+    CHECK(soundgraph::parse_patch(terminals, old_way, old_diagnostics));
+    CHECK(soundgraph::parse_patch(seam_patch(), new_way, new_diagnostics));
+
+    CHECK(old_way.nodes.size() == new_way.nodes.size());
+    for (std::size_t i = 0; i < old_way.nodes.size(); ++i) {
+        CHECK(old_way.nodes[i].id == new_way.nodes[i].id);
+        CHECK(old_way.nodes[i].type == new_way.nodes[i].type);
+        CHECK(old_way.nodes[i].parameters.size() == new_way.nodes[i].parameters.size());
+    }
+    CHECK(old_way.connections.size() == new_way.connections.size());
+    for (std::size_t i = 0; i < old_way.connections.size(); ++i) {
+        CHECK(old_way.connections[i].from_node == new_way.connections[i].from_node);
+        CHECK(old_way.connections[i].from_port == new_way.connections[i].from_port);
+        CHECK(old_way.connections[i].to_node == new_way.connections[i].to_node);
+        CHECK(old_way.connections[i].to_port == new_way.connections[i].to_port);
+    }
+}

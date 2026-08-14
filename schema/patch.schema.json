@@ -166,6 +166,15 @@
           "description": "When type is \"module\": the name of the definition this node instantiates. The instance exposes only the module's declared inputs, outputs and parameters.",
           "type": "string",
           "minLength": 1
+        },
+        "host": {
+          "description": "Only on a seam \u2014 a node of type \"Input\" or \"Output\". Names the side of the machine this edge meets: \"note\" or \"audio\" for an input, \"stereo\" for an output. A seam at the top level of a patch must carry one, because that is where the graph meets its host; a seam inside a module must not, because a module's seams are its ports and binding one to the machine would mean every instance shared that one keyboard. Host-bound seams become the matching terminal node when the patch is loaded, so nothing downstream of the loader learns the word.",
+          "type": "string",
+          "enum": [
+            "note",
+            "audio",
+            "stereo"
+          ]
         }
       }
     },
@@ -453,7 +462,7 @@
       }
     },
     "module_panel": {
-      "description": "The face an instance wears. Presentation only, like arrangement: it never changes what a patch sounds like and never changes the declared surface. An exported parameter left off the panel is still exported, still settable per instance, and still a legal control or automation target — it simply has no knob. Omit the whole object to get every export in declared order.",
+      "description": "The face an instance wears. Presentation only, like arrangement: it never changes what a patch sounds like and never changes the declared surface. An exported parameter left off the panel is still exported, still settable per instance, and still a legal control or automation target \u2014 it simply has no knob. Omit the whole object to get every export in declared order.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
