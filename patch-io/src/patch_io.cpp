@@ -355,6 +355,59 @@ bool resolve_seams(GraphDescription& description, std::vector<Diagnostic>& diagn
     return ok;
 }
 
+const NodeDescription* inner_node(const ModuleDescription& definition,
+                                  const std::string& node_id) {
+    for (const NodeDescription& inner : definition.nodes) {
+        if (inner.id == node_id) {
+            return &inner;
+        }
+    }
+    return nullptr;
+}
+
+// A seam's port name: what the author called the node, falling back to its id. Names are
+// what a patch plugs into, so they are worth having readable without renaming ids that
+// connections already refer to.
+std::string seam_port_name(const NodeDescription& node) {
+    return node.name.empty() ? node.id : node.name;
+}
+
+// Every place inside a definition that one of its ports reaches, whether the port was
+// declared as a binding or drawn as a seam.
+//
+// A list rather than a single endpoint, because a seam fans out: one Input feeding three
+// inner nodes is one port and three places, and the outside cable has to arrive at all of
+// them. A declared binding is the same idea with exactly one element, which is why both
+// go through here.
+bool port_endpoints(const ModuleDescription& definition,
+                    const std::string& port,
+                    bool is_output,
+                    std::vector<std::pair<std::string, std::string>>& out) {
+    const std::string wanted_type = is_output ? "Output" : "Input";
+    for (const NodeDescription& inner : definition.nodes) {
+        if (inner.type != wanted_type || seam_port_name(inner) != port) {
+            continue;
+        }
+        for (const ConnectionDescription& wire : definition.connections) {
+            if (is_output && wire.to_node == inner.id) {
+                out.emplace_back(wire.from_node, wire.from_port);
+            } else if (!is_output && wire.from_node == inner.id) {
+                out.emplace_back(wire.to_node, wire.to_port);
+            }
+        }
+        // A seam wired to nothing is a port that goes nowhere, which is legal and quiet:
+        // an unused declared binding has always been able to be exactly this.
+        return true;
+    }
+    const ModulePortDescription* declared =
+        is_output ? definition.find_output(port) : definition.find_input(port);
+    if (declared == nullptr) {
+        return false;
+    }
+    out.emplace_back(declared->node, declared->port);
+    return true;
+}
+
 bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diagnostics) {
     bool any_instance = false;
     for (const NodeDescription& node : description.nodes) {
@@ -485,6 +538,11 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
             }
         }
         for (const NodeDescription& inner : definition->nodes) {
+            // A seam is the edge, not a thing on it. Expansion aims the outside cable at
+            // what the seam feeds, so the seam itself has nothing left to be.
+            if (is_seam(inner.type)) {
+                continue;
+            }
             NodeDescription expanded = inner;
             expanded.id = expanded_id(node.id, inner.id);
             expanded.has_position = false;
@@ -530,19 +588,23 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
     }
 
     // ---- connections ------------------------------------------------------------------
+    // Where one end of an outside cable actually lands, as a list.
+    //
+    // It was a single endpoint, and could be while every port was a declared binding —
+    // one port, one place. A seam fans out, so one end of one cable can be several ends
+    // of several, and the caller emits the cross product.
+    using Endpoint = std::pair<std::string, std::string>;
     auto resolve = [&description, &diagnostics](
                        const std::string& node_id, const std::string& port,
-                       bool is_from, std::string& out_node, std::string& out_port) {
+                       bool is_from, std::vector<Endpoint>& out) {
         const NodeDescription* node = description.find_node(node_id);
         if (node == nullptr || node->type != "module") {
-            out_node = node_id;
-            out_port = port;
+            out.emplace_back(node_id, port);
             return true;
         }
         const ModuleDescription* definition = description.find_module(node->module);
-        const ModulePortDescription* declared =
-            is_from ? definition->find_output(port) : definition->find_input(port);
-        if (declared == nullptr) {
+        std::vector<Endpoint> inside;
+        if (!port_endpoints(*definition, port, is_from, inside)) {
             diagnostics.push_back(error(
                 "undeclared_module_port",
                 "Connection uses port '" + port + "' on instance '" + node_id +
@@ -551,8 +613,9 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
                 "The declared surface is the only surface."));
             return false;
         }
-        out_node = expanded_id(node_id, declared->node);
-        out_port = declared->port;
+        for (const Endpoint& end : inside) {
+            out.emplace_back(expanded_id(node_id, end.first), end.second);
+        }
         return true;
     };
 
@@ -563,6 +626,15 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
         }
         const ModuleDescription* definition = description.find_module(node.module);
         for (const ConnectionDescription& inner : definition->connections) {
+            const NodeDescription* from_inner = inner_node(*definition, inner.from_node);
+            const NodeDescription* to_inner = inner_node(*definition, inner.to_node);
+            // The wire from a seam to what it feeds is not a wire in the flat graph; it
+            // is the instruction for where the outside cable lands. Consumed here, put
+            // back by the resolve below.
+            if ((from_inner != nullptr && is_seam(from_inner->type)) ||
+                (to_inner != nullptr && is_seam(to_inner->type))) {
+                continue;
+            }
             ConnectionDescription expanded = inner;
             expanded.from_node = expanded_id(node.id, inner.from_node);
             expanded.to_node = expanded_id(node.id, inner.to_node);
@@ -571,14 +643,26 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
         }
     }
     for (const ConnectionDescription& connection : description.connections) {
-        ConnectionDescription expanded = connection;
-        if (!resolve(connection.from_node, connection.from_port, true,
-                     expanded.from_node, expanded.from_port) ||
-            !resolve(connection.to_node, connection.to_port, false,
-                     expanded.to_node, expanded.to_port)) {
+        std::vector<Endpoint> sources;
+        std::vector<Endpoint> sinks;
+        if (!resolve(connection.from_node, connection.from_port, true, sources) ||
+            !resolve(connection.to_node, connection.to_port, false, sinks)) {
             return false;
         }
-        flat_connections.push_back(std::move(expanded));
+        // A cable into a port that fans out to three inner nodes is three cables; a cable
+        // out of a port fed by two inner sources is two, which sums at the far end
+        // exactly as two cables into one input have always summed. A port wired to
+        // nothing inside drops the cable, which is what "goes nowhere" means.
+        for (const Endpoint& source : sources) {
+            for (const Endpoint& sink : sinks) {
+                ConnectionDescription expanded = connection;
+                expanded.from_node = source.first;
+                expanded.from_port = source.second;
+                expanded.to_node = sink.first;
+                expanded.to_port = sink.second;
+                flat_connections.push_back(std::move(expanded));
+            }
+        }
     }
 
     // ---- controls and automation reach through the facade ------------------------------

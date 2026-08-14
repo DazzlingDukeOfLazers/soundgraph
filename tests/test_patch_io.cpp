@@ -822,3 +822,124 @@ TEST(the_two_spellings_flatten_to_the_same_graph) {
         CHECK(old_way.connections[i].to_port == new_way.connections[i].to_port);
     }
 }
+
+TEST(a_module_can_draw_its_ports_as_seams) {
+    // The same module twice: once with a declared binding, once with a seam. Both
+    // flatten to the same graph, which is what makes seams a spelling and not a feature.
+    const std::string by_binding_text = R"({
+      "schema_version": 2,
+      "modules": {
+        "voice": {
+          "nodes": [
+            { "id": "env", "type": "ADSR" },
+            { "id": "amp", "type": "Gain" }
+          ],
+          "connections": [
+            { "from": { "node": "env", "port": "out" }, "to": { "node": "amp", "port": "gain" } }
+          ],
+          "inputs":  [ { "name": "gate", "node": "env", "port": "gate" } ],
+          "outputs": [ { "name": "out",  "node": "amp", "port": "out" } ]
+        }
+      },
+      "nodes": [
+        { "id": "kb",  "type": "NoteInput" },
+        { "id": "v",   "type": "module", "module": "voice" },
+        { "id": "out", "type": "StereoOutput" }
+      ],
+      "connections": [
+        { "from": { "node": "kb", "port": "gate" }, "to": { "node": "v", "port": "gate" } },
+        { "from": { "node": "v", "port": "out" },   "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+
+    const std::string by_seam_text = R"({
+      "schema_version": 2,
+      "modules": {
+        "voice": {
+          "nodes": [
+            { "id": "gate", "type": "Input" },
+            { "id": "env",  "type": "ADSR" },
+            { "id": "amp",  "type": "Gain" }
+          ],
+          "connections": [
+            { "from": { "node": "gate", "port": "out" }, "to": { "node": "env", "port": "gate" } },
+            { "from": { "node": "env",  "port": "out" }, "to": { "node": "amp", "port": "gain" } }
+          ],
+          "outputs": [ { "name": "out", "node": "amp", "port": "out" } ]
+        }
+      },
+      "nodes": [
+        { "id": "kb",  "type": "NoteInput" },
+        { "id": "v",   "type": "module", "module": "voice" },
+        { "id": "out", "type": "StereoOutput" }
+      ],
+      "connections": [
+        { "from": { "node": "kb", "port": "gate" }, "to": { "node": "v", "port": "gate" } },
+        { "from": { "node": "v", "port": "out" },   "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+
+    GraphDescription by_binding;
+    GraphDescription by_seam;
+    std::vector<Diagnostic> binding_diagnostics;
+    std::vector<Diagnostic> seam_diagnostics;
+    CHECK(soundgraph::parse_patch(by_binding_text, by_binding, binding_diagnostics));
+    CHECK(soundgraph::parse_patch(by_seam_text, by_seam, seam_diagnostics));
+
+    // No node is built for the seam, and the outside cable lands where it pointed.
+    CHECK(by_binding.nodes.size() == by_seam.nodes.size());
+    CHECK(by_seam.find_node("v.gate") == nullptr);
+    CHECK(by_seam.find_node("v.env") != nullptr);
+    CHECK(by_binding.connections.size() == by_seam.connections.size());
+    bool landed = false;
+    for (const auto& wire : by_seam.connections) {
+        if (wire.from_node == "kb" && wire.to_node == "v.env" && wire.to_port == "gate") {
+            landed = true;
+        }
+    }
+    CHECK(landed);
+}
+
+TEST(a_seam_fans_out_to_everything_it_feeds) {
+    // One port, three places. A declared binding could never say this — it names exactly
+    // one (node, port) — so this is the case seams add rather than restate.
+    const std::string text = R"({
+      "schema_version": 2,
+      "modules": {
+        "pair": {
+          "nodes": [
+            { "id": "gate", "type": "Input" },
+            { "id": "a", "type": "ADSR" },
+            { "id": "b", "type": "ADSR" }
+          ],
+          "connections": [
+            { "from": { "node": "gate", "port": "out" }, "to": { "node": "a", "port": "gate" } },
+            { "from": { "node": "gate", "port": "out" }, "to": { "node": "b", "port": "gate" } }
+          ],
+          "outputs": [ { "name": "out", "node": "a", "port": "out" } ]
+        }
+      },
+      "nodes": [
+        { "id": "kb", "type": "NoteInput" },
+        { "id": "p",  "type": "module", "module": "pair" },
+        { "id": "out", "type": "StereoOutput" }
+      ],
+      "connections": [
+        { "from": { "node": "kb", "port": "gate" }, "to": { "node": "p", "port": "gate" } },
+        { "from": { "node": "p", "port": "out" },   "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+
+    int from_keyboard = 0;
+    for (const auto& wire : description.connections) {
+        if (wire.from_node == "kb" && wire.from_port == "gate") {
+            ++from_keyboard;
+        }
+    }
+    CHECK(from_keyboard == 2);  // one cable in, both envelopes gated
+    CHECK(description.find_node("p.gate") == nullptr);
+}
