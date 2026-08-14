@@ -328,11 +328,36 @@ with `Input` and `Output` nodes at the top level is already a module, which is w
    almost certainly, so that expansion can splice them out entirely and the flat graph
    is exactly what it is today. Expansion already erases the facade; this gives it two
    more node types to erase.
-3. **What about the existing terminals?** `NoteInput`, `AudioInput` and `StereoOutput`
-   are the *patch's* edge — where the graph meets its host. `Input` and `Output` are a
-   *module's* edge. Those may be the same idea at two scales, in which case terminals
-   become `Input`/`Output` with a binding to the host, or they may not, in which case a
-   reader has to learn both. Worth settling before either is built, not after.
+3. **The existing terminals — settled: same idea at two scales.** `NoteInput`,
+   `AudioInput` and `StereoOutput` become `Input` and `Output` carrying a **host
+   binding**: a seam whose other side is the machine rather than another patch. There is
+   one concept, and a reader learns it once.
+
+   This is worth more than the tidiness. It ends the rule that terminals may not live
+   inside a module — the rule behind *"`note` is a terminal; a module is a subcircuit,
+   not a finished patch"*. That refusal was never about terminals being a different kind
+   of thing; it was about a module reaching past its own edge to grab the keyboard
+   directly, so two instances would both be listening to the same one. With one concept
+   the refusal is stated where it belongs: **a seam inside a module may not carry a host
+   binding.** Same protection, and now it reads as a sentence about scope rather than a
+   list of forbidden types.
+
+   It also makes `from_patch` stop pretending. Importing a foreign patch as a definition
+   works today by treating its terminals as though they were ports — which is exactly
+   what they now are, minus the binding. Import becomes: drop the host bindings. That is
+   the whole operation.
+
+   **What a host binding provides is a shape, not a signal.** `Input{host: note}` carries
+   the four the keyboard has — frequency, gate, velocity, trigger — because the host is a
+   fixed thing with a known shape, and a keyboard is one device rather than four. A seam
+   with no host binding is a single port, named by its node, because a module port is
+   whatever somebody chose to call it and "in what order" only means anything per port.
+   That asymmetry is real and worth stating out loud rather than discovering.
+
+   The migration is then a rename plus a binding, not a restructure: every `NoteInput` in
+   every example and both importer banks becomes an `Input` bound to `note`, with the
+   same id, the same ports and the same cables. patch-io does it on load, so old files
+   keep working and nothing has to be rewritten by hand.
 4. **A module with no edges.** Today that is a definition with empty lists. Then it is a
    definition with no `Input` nodes, which is the same fact and reads better.
 
