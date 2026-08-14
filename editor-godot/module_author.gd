@@ -236,10 +236,19 @@ static func collapse(patch: Dictionary, selected: Array, terminal_types: Array,
 ## come back at the positions the definition kept for them — collapse copied those verbatim
 ## out of the document, so opening a module puts its parts where they were.
 ##
-## The definition goes when this was its last instance. Leaving it would be a definition
-## nothing points at, which is a thing the file has no use for and a reader has to work
-## out. `Result.surface` carries what it declared so a caller can put it back.
-static func expand(patch: Dictionary, instance_id: String) -> Result:
+## The definition stays, even when this was its last instance, and that is the whole of
+## how an open module is written down: a definition nothing points at, plus nodes named
+## after it. Nothing else has to be remembered anywhere — not in the editor, not in a new
+## corner of the file — so an open module survives being saved and reopened, and closing it
+## again finds its ports, its exports and its face exactly where it left them.
+##
+## `keep_definition` false is the other operation, for a caller that means "take this apart
+## and stop calling it a thing". Nothing does yet; the argument is here so that when
+## something does, it does not have to be told twice.
+##
+## `Result.surface` carries what was declared either way.
+static func expand(patch: Dictionary, instance_id: String,
+		keep_definition: bool = true) -> Result:
 	var result := Result.new()
 	var instance := {}
 	for node in patch.get("nodes", []):
@@ -352,15 +361,16 @@ static func expand(patch: Dictionary, instance_id: String) -> Result:
 		"parameters": definition.get("parameters", []).duplicate(true),
 		"panel": (definition.get("panel", {}) as Dictionary).duplicate(true),
 	}
-	var still_used := false
-	for node in out["nodes"]:
-		if str(node.get("module", "")) == result.module_name:
-			still_used = true
-	if not still_used:
-		(out["modules"] as Dictionary).erase(result.module_name)
-		if (out["modules"] as Dictionary).is_empty():
-			out.erase("modules")
-			out["schema_version"] = 1
+	if not keep_definition:
+		var still_used := false
+		for node in out["nodes"]:
+			if str(node.get("module", "")) == result.module_name:
+				still_used = true
+		if not still_used:
+			(out["modules"] as Dictionary).erase(result.module_name)
+			if (out["modules"] as Dictionary).is_empty():
+				out.erase("modules")
+				out["schema_version"] = 1
 	result.patch = out
 	result.members = freed.map(func(n): return str(n["id"]))
 	return result

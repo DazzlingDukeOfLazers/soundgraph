@@ -2337,9 +2337,20 @@ func _initialize() -> void:
 	check(trip_open.ok(), "and the instance opens again (%s)" % trip_open.error)
 	check(trip_open.members == ["%s.env" % trip_module.instance_id, "%s.amp" % trip_module.instance_id],
 		"its parts come back under the instance's name (%s)" % str(trip_open.members))
-	check(not trip_open.patch.has("modules"),
-		"and the definition goes with its last instance (%s)"
+	check(trip_open.patch.get("modules", {}).has(trip_module.module_name),
+		"the definition stays behind, which is how an open module is written down (%s)"
 			% str(trip_open.patch.get("modules", {}).keys()))
+	var instances := 0
+	for node in trip_open.patch["nodes"]:
+		if str(node.get("type", "")) == "module":
+			instances += 1
+	check(instances == 0,
+		"with nothing pointing at it — a definition and no instance is the open state (%d)"
+			% instances)
+	var taken_apart = ModuleAuthor.expand(trip_module.patch, trip_module.instance_id, false)
+	check(not taken_apart.patch.has("modules"),
+		"and the other operation, taking one apart for good, drops it (%s)"
+			% str(taken_apart.patch.get("modules", {}).keys()))
 
 	# Every cable back where it was, under the new ids. Compared as a set of endpoints
 	# rather than as a list, because the order they come out in is not a promise.
