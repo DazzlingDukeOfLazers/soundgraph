@@ -1,4 +1,5 @@
 extends RefCounted
+const Seams := preload("res://seams.gd")
 ## Turns wiring into notation: the authoring half of docs/modules-design.md, stage 3.
 ##
 ## Two entry points, one builder. `collapse()` takes a selection inside the current
@@ -182,14 +183,23 @@ static func collapse(patch: Dictionary, selected: Array, terminal_types: Array,
 	out["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
 	if not out.has("modules"):
 		out["modules"] = {}
+	# The surface, drawn rather than listed.
+	#
+	# A port used to be an entry in `inputs` saying "gate means env.gate inside". It is now
+	# an Input node inside the definition, wired to env.gate — the same fact, in the place
+	# the fact is about. Nothing downstream changes: patch-io resolves a port by looking
+	# for a seam of that name before it looks in a list, and expansion splices the seam out
+	# exactly as it consumed the binding.
+	#
+	# What it buys is that the boundary is visible from inside. Opening a module now shows
+	# its own edges, which is the one part of a subcircuit you need to see while you are
+	# wiring in it, and the order they sit in is the port order — so nothing else has to
+	# carry that.
 	var definition := {
 		"nodes": inner_nodes,
 		"connections": internal,
 	}
-	if not inputs.is_empty():
-		definition["inputs"] = inputs
-	if not outputs.is_empty():
-		definition["outputs"] = outputs
+	_draw_ports(definition, inputs, outputs)
 	if not exported.is_empty():
 		definition["parameters"] = exported
 	out["modules"][result.module_name] = definition
@@ -221,6 +231,44 @@ static func collapse(patch: Dictionary, selected: Array, terminal_types: Array,
 		out["automation"] = remapped_automation
 	result.patch = out
 	return result
+
+
+## Turns derived port bindings into the seam nodes that are those ports.
+##
+## Ids are the port names, because that is what patch-io reads a seam's port name from and
+## a second field saying the same thing is a second field to disagree with. Where a port
+## name collides with an inner node the seam is qualified instead — a module with a port
+## called "gate" and a node called "gate" is not far-fetched, and two nodes with one id is
+## a document nothing can load.
+static func _draw_ports(definition: Dictionary, inputs: Array, outputs: Array) -> void:
+	var nodes: Array = definition["nodes"]
+	var connections: Array = definition["connections"]
+	var taken := {}
+	for node in nodes:
+		taken[str(node["id"])] = true
+
+	for side in [[inputs, "Input"], [outputs, "Output"]]:
+		for binding: Dictionary in side[0]:
+			var seam_id := str(binding["name"])
+			if taken.has(seam_id):
+				seam_id = _unique_name("%s_port" % str(binding["name"]), taken.keys())
+			taken[seam_id] = true
+			var seam := {"id": seam_id, "type": str(side[1])}
+			# The name carries the port's name when the id could not, so what a patch
+			# plugs into is still what the author asked for.
+			if seam_id != str(binding["name"]):
+				seam["name"] = str(binding["name"])
+			nodes.append(seam)
+			if str(side[1]) == "Input":
+				connections.append({
+					"from": {"node": seam_id, "port": "out"},
+					"to": {"node": str(binding["node"]), "port": str(binding["port"])},
+				})
+			else:
+				connections.append({
+					"from": {"node": str(binding["node"]), "port": str(binding["port"])},
+					"to": {"node": seam_id, "port": "in"},
+				})
 
 
 ## Puts an instance's insides back on the canvas: the exact inverse of `collapse`.
@@ -276,8 +324,16 @@ static func expand(patch: Dictionary, instance_id: String,
 	for binding in definition.get("parameters", []):
 		by_export[str(binding["name"])] = binding
 
+	# Seams do not come back. A module's seam is its edge, and once the module is open
+	# there is no edge — it is the top level, where the scope rule says a seam must carry a
+	# host binding. Freeing them would produce a document the loader refuses, which is a
+	# strong hint that it would not have meant anything either. So they are spliced exactly
+	# as expansion splices them, and drawn again by close_module from the ports it works
+	# out. The names survive because those ports keep them.
 	var freed: Array = []
 	for node in definition.get("nodes", []):
+		if Seams.is_port_seam(node):
+			continue
 		var copy: Dictionary = node.duplicate(true)
 		copy["id"] = inner_id.call(str(node["id"]))
 		freed.append(copy)
@@ -298,12 +354,19 @@ static func expand(patch: Dictionary, instance_id: String,
 	# Where each declared port actually lands, so the cables outside can be re-aimed at it.
 	var ports := {}
 	for side in ["inputs", "outputs"]:
-		for binding in definition.get(side, []):
+		for binding in Seams.declared_ports(definition, side == "outputs"):
 			ports["%s/%s" % [side, str(binding["name"])]] = {
 				"node": inner_id.call(str(binding["node"])), "port": str(binding["port"])}
 
+	var seam_ids := {}
+	for node in definition.get("nodes", []):
+		if Seams.is_port_seam(node):
+			seam_ids[str(node["id"])] = true
 	var connections: Array = []
 	for connection in definition.get("connections", []):
+		# The wire from a seam to what it feeds is the splice instruction, not a wire.
+		if seam_ids.has(str(connection["from"]["node"])) 				or seam_ids.has(str(connection["to"]["node"])):
+			continue
 		connections.append({
 			"from": {"node": inner_id.call(str(connection["from"]["node"])),
 				"port": str(connection["from"]["port"])},
@@ -431,7 +494,7 @@ static func close_module(patch: Dictionary, module_name: String) -> Result:
 	# be re-aimed at the instance under the name the definition gave it.
 	var named := {}
 	for side in ["inputs", "outputs"]:
-		for binding in definition.get(side, []):
+		for binding in Seams.declared_ports(definition, side == "outputs"):
 			named["%s/%s.%s/%s" % [side, module_name, str(binding["node"]),
 				str(binding["port"])]] = str(binding["name"])
 
@@ -484,6 +547,14 @@ static func close_module(patch: Dictionary, module_name: String) -> Result:
 
 	folded["nodes"] = inner_nodes
 	folded["connections"] = internal
+	# Ports drawn again, from the names this fold worked out. The seams went when the
+	# module was opened; this is where they come back, and going through the same helper
+	# collapse uses is what keeps a module folded twice identical to one folded once.
+	_draw_ports(folded, folded.get("inputs", []), folded.get("outputs", []))
+	# Emptied rather than erased: the tidy-up below turns an empty surface into no key at
+	# all, and reaching for a key this line had just removed is how the first attempt died.
+	folded["inputs"] = []
+	folded["outputs"] = []
 
 	var new_nodes: Array = []
 	var placed := false

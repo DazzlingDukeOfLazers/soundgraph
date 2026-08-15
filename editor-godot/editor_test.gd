@@ -3,6 +3,7 @@ extends SceneTree
 ## The authoring transforms, reached directly so a collapse can be checked without going
 ## through a menu. main.gd preloads the same file.
 const ModuleAuthor := preload("res://module_author.gd")
+const Seams := preload("res://seams.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -2288,9 +2289,11 @@ func _initialize() -> void:
 
 	# The wiring still decides what must exist. gate and out cross the boundary and were
 	# not nominated; dropping them would drop cables somebody had wired.
-	var picked_in: Array = picked_definition.get("inputs", []) \
+	# Through the shared reader, because a port is drawn as a seam now rather than listed:
+	# asking the definition for an "inputs" key would be asking what it used to answer.
+	var picked_in: Array = Seams.declared_ports(picked_definition, false) \
 		.map(func(p): return str(p["name"]))
-	var picked_out: Array = picked_definition.get("outputs", []) \
+	var picked_out: Array = Seams.declared_ports(picked_definition, true) \
 		.map(func(p): return str(p["name"]))
 	check(picked_in == ["gate"] and picked_out == ["out"],
 		"a boundary connection still declares its port even when unnominated (%s, %s)"
@@ -2899,9 +2902,19 @@ func _initialize() -> void:
 	var part_def: Dictionary = main.patch["modules"]["part"]
 	check(part_def.get("parameters", []).size() == 7,
 		"every authored knob was exported (%d)" % part_def.get("parameters", []).size())
-	check(part_def.get("inputs", []).size() == 1 and part_def.get("outputs", []).size() == 1,
-		"the boundary became the ports (%d in, %d out)"
-			% [part_def.get("inputs", []).size(), part_def.get("outputs", []).size()])
+	# Drawn as seams inside the definition now, not listed beside it — so this asks the
+	# reader, and also that the seams are really there as nodes, which is the difference
+	# between the two spellings and the whole reason for the change.
+	var part_in: Array = Seams.declared_ports(part_def, false)
+	var part_out: Array = Seams.declared_ports(part_def, true)
+	check(part_in.size() == 1 and part_out.size() == 1,
+		"the boundary became the ports (%d in, %d out)" % [part_in.size(), part_out.size()])
+	var part_seams := 0
+	for inner: Dictionary in part_def.get("nodes", []):
+		if Seams.is_port_seam(inner):
+			part_seams += 1
+	check(part_seams == 2 and not part_def.has("inputs") and not part_def.has("outputs"),
+		"and they are nodes inside it rather than a list beside it (%d seams)" % part_seams)
 
 	var collapsed_text: String = main.engine.format_patch(JSON.stringify(main.patch))
 	check(collapsed_text.contains("\"modules\""), "the saved document carries the definition")

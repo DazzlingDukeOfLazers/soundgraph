@@ -2112,10 +2112,10 @@ func _synthesize_module_descriptors() -> void:
 					return cloned
 			return {"name": binding["name"], "type": "control", "doc": ""}
 		var inputs: Array = []
-		for binding in definition.get("inputs", []):
+		for binding in Seams.declared_ports(definition, false):
 			inputs.append(port_entry.call(binding, "inputs"))
 		var outputs: Array = []
-		for binding in definition.get("outputs", []):
+		for binding in Seams.declared_ports(definition, true):
 			outputs.append(port_entry.call(binding, "outputs"))
 		var parameters: Array = []
 		for binding in definition.get("parameters", []):
