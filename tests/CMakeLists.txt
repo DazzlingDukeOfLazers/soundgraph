@@ -49,6 +49,21 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/game-sounds.mjs --check)
 endif()
 
+# The schema is the format written down for anybody outside this repository, and nothing
+# compared it to anything. It could have required a field no patch carried, or forbidden
+# one every patch had, and the only symptom would have been somebody else's tool being
+# right and ours being wrong. `host` went into it by hand and no check would have caught a
+# mistake.
+#
+# The checker is dependency-free — there is no package.json here and adding one to
+# validate a single file would be a larger commitment than the check is worth — and it
+# refuses to run if the schema grows a keyword it does not implement, so it cannot quietly
+# become narrower than it looks. That guard fired on its first run.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME patches_match_the_schema
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/schema-check.mjs)
+endif()
+
 # The FM library is generated from the vendored Freedoom instruments by the same
 # pattern: tools/opl2-import.mjs is the recipe, the committed patches are its output,
 # and this notices when they stop agreeing.
