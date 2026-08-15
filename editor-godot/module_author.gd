@@ -503,9 +503,21 @@ static func close_module(patch: Dictionary, module_name: String) -> Result:
 	# that has none hands back a fresh array nobody is holding.
 	var out: Dictionary = patch.duplicate(true)
 	var folded: Dictionary = (out["modules"] as Dictionary)[module_name]
-	for key in ["inputs", "outputs", "parameters"]:
-		if not folded.has(key):
-			folded[key] = []
+	if not folded.has("parameters"):
+		folded["parameters"] = []
+	# Both spellings in, one spelling out.
+	#
+	# A port may be a binding in `inputs` or a port node drawn inside the definition, and
+	# `named` above reads both through Seams.declared_ports. What redraws them below reads
+	# only the binding lists — so seeding those lists from the same place is what stops the
+	# two halves disagreeing. They did: a module whose ports were drawn as seams had them
+	# named on the outside cables and declared nowhere, because `folded["nodes"]` is
+	# replaced with what came back off the canvas a few lines down and the seams went with
+	# the old array. The result was a document naming ports the definition did not have,
+	# which the loader refuses — and which _apply reports and then quietly declines to load,
+	# so the editor went on drawing a patch the engine had stopped following.
+	folded["inputs"] = Seams.declared_ports(folded, false)
+	folded["outputs"] = Seams.declared_ports(folded, true)
 
 	var internal: Array = []
 	var outside: Array = []

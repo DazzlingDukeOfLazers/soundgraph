@@ -117,6 +117,24 @@ func _has_node(patch: Dictionary, node_id: String) -> bool:
 	return false
 
 
+## Asserts the document still loads.
+##
+## The check that was missing. _apply validates, shows the diagnostics and then quietly
+## declines to load when the patch is broken — which is right, but it means a structural
+## edit could leave the engine playing whatever was valid last while the editor drew
+## something else, and nothing in this suite would say so.
+func check_loads(main, what: String) -> void:
+	var report: Variant = JSON.parse_string(
+		main.engine.validate_patch(JSON.stringify(main.patch, "  ")))
+	var ok: bool = typeof(report) == TYPE_DICTIONARY and bool(report["ok"])
+	var why := ""
+	if not ok and typeof(report) == TYPE_DICTIONARY:
+		for problem in report["diagnostics"]:
+			if str(problem.get("severity", "")) == "error" and why == "":
+				why = str(problem.get("message", ""))
+	check(ok, "%s leaves a patch that loads%s" % [what, "" if ok else " — " + why])
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -3398,6 +3416,7 @@ func _initialize() -> void:
 		await process_frame
 	check(main.patch.get("modules", {}).has("part"),
 		"the rectangle makes a module (%s)" % str(main.patch.get("modules", {}).keys()))
+	check_loads(main, "drawing a module")
 	check(main.graph_edit.groups.has("part"),
 		"left open, with a frame round its parts (%s)"
 			% str(main.graph_edit.groups.keys()))
@@ -3415,6 +3434,7 @@ func _initialize() -> void:
 		await process_frame
 	check(main.widgets.has("part") and not main.widgets.has("part.lfo"),
 		"closing folds the parts back into one node (%s)" % str(main.widgets.keys()))
+	check_loads(main, "closing it")
 	check(main.graph_edit.groups.is_empty(),
 		"and the frame goes with them (%s)" % str(main.graph_edit.groups.keys()))
 
@@ -3422,6 +3442,23 @@ func _initialize() -> void:
 	for i in 10:
 		await process_frame
 	check(main.graph_edit.groups.has("part"), "opening it again brings the frame back")
+	check_loads(main, "opening it again")
+
+	# The invariance the reload guard rests on, testable at last. Expansion and collapse are
+	# the same graph said two ways, so a toggle cannot change the sound — and _apply only
+	# skips engine.load_patch when the two fingerprints match exactly.
+	var flat_open: String = main.engine.flatten_patch(JSON.stringify(main.patch, "  "))
+	check(flat_open != "", "an open module fingerprints (%d bytes)" % flat_open.length())
+	await main._close_module("part")
+	for i in 10:
+		await process_frame
+	check(main.engine.flatten_patch(JSON.stringify(main.patch, "  ")) == flat_open,
+		"closing a module leaves the flattened graph identical")
+	await main._open_module("part")
+	for i in 10:
+		await process_frame
+	check(main.engine.flatten_patch(JSON.stringify(main.patch, "  ")) == flat_open,
+		"and opening it again returns to the same one")
 
 	# ---- editing a module from the inside --------------------------------------------
 	# The argument for opening a module on the canvas rather than in a view of its own:
@@ -3448,7 +3485,9 @@ func _initialize() -> void:
 		"and the frame grows to hold it (%d)"
 			% (main.graph_edit.groups.get("part", []) as Array).size())
 
-	var outside_id: String = await main._add_node("Gain",
+	# An oscillator rather than a Gain: it needs nothing connected to it, so the patch it
+	# is dropped into stays loadable and this section keeps testing what it says it does.
+	var outside_id: String = await main._add_node("SawOscillator",
 		open_frame.position - Vector2(600.0, 600.0))
 	for i in 8:
 		await process_frame
@@ -3462,6 +3501,13 @@ func _initialize() -> void:
 		"both inner nodes have the ports to join (%d, %d)" % [inner_from, inner_to])
 	main._on_connection_request(main.widgets[inside_id].name, inner_from,
 		main.widgets["part.filter"].name, inner_to)
+	for i in 6:
+		await process_frame
+	# And something into it, or the added node is a Gain with nothing to amplify — which
+	# the loader is right to refuse and which would make this section a test of the test.
+	main._on_connection_request(main.widgets["part.lfo"].name,
+		main._output_port_index("part.lfo", "out"),
+		main.widgets[inside_id].name, main._input_port_index(inside_id, "in"))
 	for i in 8:
 		await process_frame
 	var wired_inside := false
@@ -3494,6 +3540,7 @@ func _initialize() -> void:
 		if str(node["id"]).begins_with("part."):
 			left_at_top = true
 	check(not left_at_top, "with nothing of it left at the top level")
+	check_loads(main, "closing it over a node added inside")
 	check(main.patch.has("nodes") and _has_node(main.patch, outside_id),
 		"and the node added outside untouched (%s)" % outside_id)
 
@@ -3502,14 +3549,14 @@ func _initialize() -> void:
 	main._focus_node("part")
 	for i in 6:
 		await process_frame
-	# This module has nothing leaving it, which is legal and used to make it unreachable:
-	# the inspector emptied its whole selection when a node had no output to scope, so the
-	# node had no name, no rename field and no way to be opened. Selection and scope are two
-	# facts now, and only the second is missing here.
+	# Selecting a module names it. This used to check the harder half — that a node with
+	# *no* output to scope is still the selected node, since the inspector used to empty its
+	# whole selection in that case and leave the module with no name, no rename field and no
+	# way to be opened. Fixing #66 took the subject away: the module declares its ports now,
+	# so it has one to listen to. The branch is still there and still right; what is gone is
+	# a node in this suite that reaches it.
 	check(str(main.inspecting.get("node", "")) == "part",
-		"a node with nothing leaving it is still the selected node (%s)" % str(main.inspecting))
-	check(not main.inspecting.has("port"),
-		"with no port to listen to, which is a different sentence")
+		"selecting the module makes it the selected node (%s)" % str(main.inspecting))
 
 	var open_again: Button = null
 	for child in main.context_panel.get_children():
