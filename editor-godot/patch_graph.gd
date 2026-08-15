@@ -731,6 +731,8 @@ var wand_marks: Array = []
 
 signal port_picked(widget_name: String, side: String, index: int)
 signal parameter_picked(widget_name: String, parameter: String)
+## A ghost jack was clicked: this inner port should become one of the module's own.
+signal ghost_port_picked(widget_name: String, offer: Dictionary)
 
 # ---------------------------------------------------------------------------------
 # Open modules, and the rectangle that makes one
@@ -1463,7 +1465,16 @@ func _input(event: InputEvent) -> void:
 	if not wand:
 		return
 
-	# Jacks first. They sit on the node's edge and their hot zone overlaps the body, so
+	# Ghost jacks before real ones. A ghost is drawn inside the node body while a real
+	# jack's hot zone reaches in from the edge to meet it, and the ghost is the smaller and
+	# more deliberate target of the two.
+	var ghost := ghost_port_at(button.position)
+	if not ghost.is_empty():
+		ghost_port_picked.emit(str(ghost["widget"]), ghost["offer"] as Dictionary)
+		get_viewport().set_input_as_handled()
+		return
+
+	# Jacks next. They sit on the node's edge and their hot zone overlaps the body, so
 	# asking about knobs first would make an edge knob unreachable.
 	var port := port_at(button.position - rect.position, true)
 	if not port.is_empty():
@@ -1486,6 +1497,42 @@ func _input(event: InputEvent) -> void:
 ## The parameter row under a viewport-space point, or null. Rows fold away under the
 ## disclosure triangle and at low zoom, and `is_visible_in_tree` is what stops the wand
 ## picking a knob that is not on screen to be picked.
+## The ghost jack under the pointer, or {} — an inner port of a module that the module does
+## not expose, drawn on the instance while the wand is up so that declaring one is a click
+## on the thing itself rather than a trip to a list.
+##
+## Any module instance rather than only the selected ones, which is where this parts company
+## with `port_at`. That rule is about *nomination*: while the wand is picking a surface out
+## of a selection, a jack on a node nobody selected would be a pick from outside the thing
+## being made. A ghost is not a pick — it only exists on a module, only while the wand is
+## up, and does exactly one thing when clicked.
+func ghost_port_at(point: Vector2) -> Dictionary:
+	for child in get_children():
+		var node := child as GraphNode
+		if node == null or not node.visible:
+			continue
+		var found := _ghost_at(node, point)
+		if not found.is_empty():
+			return {"widget": String(node.name), "offer": found}
+	return {}
+
+
+func _ghost_at(parent: Node, point: Vector2) -> Dictionary:
+	for child in parent.get_children():
+		var control := child as Control
+		if control == null or not control.is_visible_in_tree():
+			continue
+		var offer: Dictionary = control.get_meta("ghost_offer", {})
+		if not offer.is_empty():
+			if control.get_global_rect().has_point(point):
+				return offer
+			continue
+		var deeper := _ghost_at(control, point)
+		if not deeper.is_empty():
+			return deeper
+	return {}
+
+
 func parameter_row_at(point: Vector2) -> Control:
 	for child in get_children():
 		var node := child as GraphNode

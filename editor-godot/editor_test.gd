@@ -3048,9 +3048,62 @@ func _initialize() -> void:
 			offered_again = true
 	check(offered_again, "so it comes back as a ghost, ready to be put on again")
 
+	# ---- ghost jacks: declaring a port by clicking it --------------------------------
+	# A port is on the face or it is not, and there is no arrangement for it to land in, so
+	# this is a click rather than a drag. The ghosts are rows on the instance itself: the
+	# thing you are adding a port to is the thing you click.
+	var ghost_row: Control = null
+	for child in main.widgets[instance].get_children():
+		var row := child as Control
+		if row != null and not (row.get_meta("ghost_offer", {}) as Dictionary).is_empty():
+			ghost_row = row
+			break
+	check(ghost_row != null, "an undeclared inner port is drawn as a ghost jack on the node")
+
+	if ghost_row != null:
+		var ghost_offer: Dictionary = ghost_row.get_meta("ghost_offer")
+		var found: Dictionary = main.graph_edit.ghost_port_at(ghost_row.get_global_rect().get_center())
+		check(not found.is_empty()
+				and str((found["offer"] as Dictionary)["port"]) == str(ghost_offer["port"]),
+			"and the pointer finds it where it is drawn (%s)" % str(found.get("offer", {})))
+
+		var before_ports: int = main.patch["modules"]["part"].get(
+			"inputs" if bool(ghost_offer.get("is_input", true)) else "outputs", []).size()
+		main._on_ghost_port_picked(String(main.widgets[instance].name), ghost_offer)
+		for i in 10:
+			await process_frame
+
+		var side := "inputs" if bool(ghost_offer.get("is_input", true)) else "outputs"
+		var declared: Array = []
+		for binding: Dictionary in main.patch["modules"]["part"].get(side, []):
+			declared.append(str(binding["name"]))
+		check(declared.size() == before_ports + 1 and declared.has(str(ghost_offer["port"])),
+			"clicking it declares the port (%s)" % str(declared))
+
+		var on_instance := false
+		for port: Dictionary in main.registry["module:part"].get(side, []):
+			if str(port["name"]) == str(ghost_offer["port"]):
+				on_instance = true
+		check(on_instance, "and the instance grows a jack for it")
+
+		# And it stops being an offer, because it is not one any more.
+		var still_offered := false
+		for offer: Dictionary in main.registry["module:part"].get("port_offers", []):
+			var binding: Dictionary = offer.get("offer", {})
+			if str(binding.get("node", "")) == str(ghost_offer["node"]) \
+					and str(binding.get("port", "")) == str(ghost_offer["port"]):
+				still_offered = true
+		check(not still_offered, "and is no longer offered, since it is already a port")
+
 	main._set_wand(false)
-	for i in 6:
+	for i in 8:
 		await process_frame
+	var ghosts_after := false
+	for child in main.widgets[instance].get_children():
+		var row := child as Control
+		if row != null and not (row.get_meta("ghost_offer", {}) as Dictionary).is_empty():
+			ghosts_after = true
+	check(not ghosts_after, "putting the wand down takes the ghosts away")
 
 	# ---- and the module can be given a name ------------------------------------------
 	# Collapse calls every fresh definition "part" and then names the instance after it,

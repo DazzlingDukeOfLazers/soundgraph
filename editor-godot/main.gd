@@ -602,6 +602,7 @@ func _build_ui() -> void:
 	graph_edit.port_hovered.connect(_on_port_hovered)
 	graph_edit.port_picked.connect(_on_port_picked)
 	graph_edit.parameter_picked.connect(_on_parameter_picked)
+	graph_edit.ghost_port_picked.connect(_on_ghost_port_picked)
 	graph_edit.region_drawn.connect(_on_region_drawn)
 	graph_edit.group_closed.connect(func(name: String) -> void: _close_module(name))
 	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
@@ -2651,11 +2652,60 @@ func _create_widget(node: Dictionary) -> void:
 		if has_output:
 			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
 
+	_add_ghost_ports(widget, descriptor)
 	_add_disclosure(widget, folded)
 
 	graph_edit.add_child(widget)
 	widgets[node["id"]] = widget
 	ids[widget.name] = node["id"]
+
+
+## The wand's ghost jacks: inner ports this module could expose and does not.
+##
+## Rows of their own, appended after every real port row and carrying no slot. That is not
+## a style choice — GraphEdit binds a slot to the index of a visible child, so a row with a
+## slot inserted anywhere but the end renumbers the slots below it and the cables reattach
+## to the wrong ports. Appending slotless rows leaves every existing slot index alone, which
+## is what makes it safe to grow and shrink these as the wand goes up and down.
+##
+## Drawn faint, with the port's own icon, so a ghost reads as an offer rather than as a jack
+## that has stopped working. The metadata is what PatchGraph.ghost_port_at looks for.
+func _add_ghost_ports(widget: GraphNode, descriptor: Dictionary) -> void:
+	if wand_button == null or not wand_button.button_pressed:
+		return
+	var offers: Array = descriptor.get("port_offers", [])
+	if offers.is_empty():
+		return
+	for offer: Dictionary in offers:
+		var binding: Dictionary = offer.get("offer", {})
+		if binding.is_empty():
+			continue
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", Design.scale(Design.SPACE_S))
+		line.alignment = BoxContainer.ALIGNMENT_CENTER
+		line.set_meta("row", "ghost")
+		line.set_meta("has_slot", false)
+		line.set_meta("ghost_offer", binding)
+		line.modulate = Color(1.0, 1.0, 1.0, 0.45)
+
+		var icon := TextureRect.new()
+		icon.texture = _port_icon(str(offer.get("type", "control")))
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		line.add_child(icon)
+
+		var label := Label.new()
+		# Where it comes from, not just what it is called. Two inner nodes may both have a
+		# "gain", and the name this port would end up with is the document's to choose.
+		label.text = "%s.%s" % [str(binding.get("node", "")), str(binding.get("port", ""))]
+		label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+		label.add_theme_color_override("font_color", Design.INK_SECOND)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		line.add_child(label)
+
+		line.tooltip_text = "Click to make %s.%s a port of this module" \
+			% [str(binding.get("node", "")), str(binding.get("port", ""))]
+		widget.add_child(line)
 
 
 ## GraphNode draws its title as a plain Label in the titlebar, with no theme entry of its
@@ -4010,6 +4060,18 @@ func _refresh_groups() -> void:
 ## Both are "say what this module shows and where", and neither is available in the view
 ## where it would be meaningless: the Graph tab draws no panel to rearrange, and a module's
 ## insides are not on the rack to point at.
+## Whether raising the wand would draw anything new on the canvas: a module instance with
+## an inner port it does not expose.
+func _has_ghost_ports() -> bool:
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) != "module":
+			continue
+		var descriptor: Dictionary = registry.get(_type_key(node), {})
+		if not (descriptor.get("port_offers", []) as Array).is_empty():
+			return true
+	return false
+
+
 func _set_wand(active: bool) -> void:
 	if graph_edit == null:
 		return
@@ -4022,6 +4084,14 @@ func _set_wand(active: bool) -> void:
 		module_face.wand = active
 	if wand_button != null and wand_button.button_pressed != active:
 		wand_button.button_pressed = active
+	# The nodes too, but only when it would change one. Raising the wand grows a ghost jack
+	# on every module for each inner port it does not expose, and a ghost is a row of
+	# Controls rather than a coat of paint — so that costs a rebuild. A patch with no module
+	# to grow one on pays nothing, which matters because the wand goes up and down far more
+	# often than a rebuild is cheap.
+	if _has_ghost_ports():
+		await _rebuild_view()
+		_apply()
 	if not active:
 		# Put down, the picks go with it. Keeping them would mean a face being designed
 		# with nothing on screen saying so, and the next collapse quietly wearing choices
@@ -4509,6 +4579,49 @@ func _mark_for(widget: GraphNode, pick: Dictionary) -> Dictionary:
 			return {"widget": String(widget.name), "side":
 				"left" if kind == "input" else "right", "index": index}
 	return {}
+
+
+## A ghost jack was clicked: the inner port becomes one of the module's own.
+##
+## The additive half of what the Builder's port list did, and the only half the wand offers
+## — declaring a port is safe, since nothing can yet be plugged into a port that did not
+## exist, while *un*declaring one strands whatever is plugged into it. That is an edit worth
+## a considered surface rather than a click, and it does not have one yet. See task #61.
+func _on_ghost_port_picked(widget_name: String, offer: Dictionary) -> void:
+	var node_id: String = ids.get(widget_name, "")
+	if node_id == "" or offer.is_empty():
+		return
+	var module_name := _module_of(node_id)
+	var definitions: Dictionary = patch.get("modules", {})
+	if module_name == "" or not definitions.has(module_name):
+		return
+	var definition: Dictionary = definitions[module_name]
+	var side := "inputs" if bool(offer.get("is_input", true)) else "outputs"
+	var bindings: Array = definition.get(side, []).duplicate(true)
+	for binding in bindings:
+		if str(binding["node"]) == str(offer["node"]) \
+				and str(binding["port"]) == str(offer["port"]):
+			_say("%s.%s is already a port of %s"
+				% [str(offer["node"]), str(offer["port"]), module_name])
+			return
+	var taken := {}
+	for binding in bindings:
+		taken[str(binding["name"])] = true
+	# The inner port's own name where it is free, qualified by its node where it is not —
+	# the same rule the export names follow, for the same reason.
+	var port_name := str(offer["port"])
+	if taken.has(port_name):
+		port_name = "%s_%s" % [str(offer["node"]), str(offer["port"])]
+	_begin_edit()
+	bindings.append({"name": port_name, "node": str(offer["node"]),
+		"port": str(offer["port"])})
+	definition[side] = bindings
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("declare %s on %s" % [port_name, module_name])
+	_say("%s is %s's %s now" % [port_name, module_name,
+		"input" if side == "inputs" else "output"])
 
 
 ## A knob was dragged into a new place on a module's face.
