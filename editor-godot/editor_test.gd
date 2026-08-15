@@ -120,6 +120,13 @@ func _wand_click(main, point: Vector2) -> void:
 	main.graph_edit._input(event)
 
 
+func _has_node(patch: Dictionary, node_id: String) -> bool:
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			return true
+	return false
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -3381,9 +3388,111 @@ func _initialize() -> void:
 	for i in 10:
 		await process_frame
 	check(main.graph_edit.groups.has("part"), "opening it again brings the frame back")
+
+	# ---- editing a module from the inside --------------------------------------------
+	# The argument for opening a module on the canvas rather than in a view of its own:
+	# once it is open its parts are ordinary nodes, so adding one and wiring it are the
+	# ordinary gestures. Nothing has to learn a second way of doing either.
+	#
+	# Membership is the id prefix, which is also how ModuleAuthor.close_module decides what
+	# to fold in — so joining a module *is* being named after it, and the open_frame only has to
+	# say where the boundary is.
+	var open_frame: Rect2 = main.graph_edit.group_box("part")
+	check(open_frame.size.x > 0.0, "the frame has a rectangle (%s)" % str(open_frame))
+	check(main.graph_edit.group_at(open_frame.get_center()) == "part",
+		"which answers to a point inside it (%s)"
+			% main.graph_edit.group_at(open_frame.get_center()))
+	check(main.graph_edit.group_at(open_frame.position - Vector2(400.0, 400.0)) == "",
+		"and not to one outside")
+
+	var inside_id: String = await main._add_node("Gain", open_frame.get_center())
+	for i in 8:
+		await process_frame
+	check(inside_id.begins_with("part."),
+		"a node added inside the frame is named into the module (%s)" % inside_id)
+	check(main.graph_edit.groups.get("part", []).size() == 3,
+		"and the frame grows to hold it (%d)"
+			% (main.graph_edit.groups.get("part", []) as Array).size())
+
+	var outside_id: String = await main._add_node("Gain",
+		open_frame.position - Vector2(600.0, 600.0))
+	for i in 8:
+		await process_frame
+	check(not outside_id.begins_with("part."),
+		"one added outside it stays outside (%s)" % outside_id)
+
+	# Wiring two inner nodes, through the canvas's own connection path.
+	var inner_from: int = main._output_port_index(inside_id, "out")
+	var inner_to: int = main._input_port_index("part.filter", "in")
+	check(inner_from >= 0 and inner_to >= 0,
+		"both inner nodes have the ports to join (%d, %d)" % [inner_from, inner_to])
+	main._on_connection_request(main.widgets[inside_id].name, inner_from,
+		main.widgets["part.filter"].name, inner_to)
+	for i in 8:
+		await process_frame
+	var wired_inside := false
+	for connection in main.patch.get("connections", []):
+		if str(connection["from"]["node"]) == inside_id \
+				and str(connection["to"]["node"]) == "part.filter":
+			wired_inside = true
+	check(wired_inside, "wiring two of its parts is an ordinary cable")
+
+	# And closing folds both the node and the cable into the shut_definition, where they become
+	# the module's own — which is the claim that makes this editing the module rather than
+	# editing the patch near it.
 	await main._close_module("part")
 	for i in 10:
 		await process_frame
+	var shut_definition: Dictionary = main.patch["modules"]["part"]
+	var inner_ids: Array = []
+	for inner in shut_definition.get("nodes", []):
+		inner_ids.append(str(inner["id"]))
+	var inner_name := inside_id.substr("part.".length())
+	check(inner_ids.has(inner_name),
+		"the node added inside becomes one of the module's own (%s)" % str(inner_ids))
+	var folded_wire := false
+	for wire in shut_definition.get("connections", []):
+		if str(wire["from"]["node"]) == inner_name and str(wire["to"]["node"]) == "filter":
+			folded_wire = true
+	check(folded_wire, "and so does the cable between them")
+	var left_at_top := false
+	for node in main.patch["nodes"]:
+		if str(node["id"]).begins_with("part."):
+			left_at_top = true
+	check(not left_at_top, "with nothing of it left at the top level")
+	check(main.patch.has("nodes") and _has_node(main.patch, outside_id),
+		"and the node added outside untouched (%s)" % outside_id)
+
+	# The other half of the toggle. The open_frame carries the Close; a shut module is one node
+	# with nowhere to put the opposite, so it is in the inspector beside the name.
+	main._focus_node("part")
+	for i in 6:
+		await process_frame
+	# This module has nothing leaving it, which is legal and used to make it unreachable:
+	# the inspector emptied its whole selection when a node had no output to scope, so the
+	# node had no name, no rename field and no way to be opened. Selection and scope are two
+	# facts now, and only the second is missing here.
+	check(str(main.inspecting.get("node", "")) == "part",
+		"a node with nothing leaving it is still the selected node (%s)" % str(main.inspecting))
+	check(not main.inspecting.has("port"),
+		"with no port to listen to, which is a different sentence")
+
+	var open_again: Button = null
+	for child in main.context_panel.get_children():
+		var button := child as Button
+		if button != null and str(button.text).begins_with("Open"):
+			open_again = button
+	check(open_again != null, "a shut module offers to open again, from the inspector")
+	if open_again != null:
+		open_again.pressed.emit()
+		for i in 10:
+			await process_frame
+		check(main.graph_edit.groups.has("part"),
+			"and pressing it opens the module (%s)" % str(main.graph_edit.groups.keys()))
+		await main._close_module("part")
+		for i in 10:
+			await process_frame
+
 
 	await main._load_example("First Synth")
 	for i in 6:

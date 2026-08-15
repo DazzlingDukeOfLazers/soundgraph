@@ -1651,6 +1651,17 @@ func _fill_node_context(node_id: String) -> void:
 		field.text_submitted.connect(func(text: String) -> void:
 			_on_module_renamed(module_name, text.strip_edges()))
 		context_panel.add_child(field)
+
+		# The other half of the toggle. The frame round an open module carries its Close;
+		# a shut one is a single node with nowhere to put the opposite, so it goes here,
+		# beside the name — the two things you can do to a module as a whole.
+		var open_button := Button.new()
+		open_button.text = "Open on the canvas"
+		open_button.tooltip_text = "Put %s's parts on the canvas, inside a frame. " \
+			% module_name + "Closing the frame folds them back in."
+		open_button.pressed.connect(func() -> void: _open_module(node_id))
+		context_panel.add_child(_defocus(open_button))
+
 		_fill_module_contract(module_name)
 
 	# Every output, with a click to point the scope at it — "what is this node putting out"
@@ -2189,7 +2200,9 @@ func _rebuild_level_targets() -> void:
 func _update_scope() -> void:
 	if scope == null:
 		return
-	if inspecting.is_empty():
+	# No node, or a node with no port to listen to: the master output, which is the honest
+	# answer to "what am I hearing" when nothing narrower has been asked for.
+	if not inspecting.has("port"):
 		scope.show_samples(engine.get_scope(1024), "master output")
 		return
 	var signal_samples: PackedFloat32Array = engine.get_port_signal(
@@ -3619,16 +3632,24 @@ func _without_target(entries: Array, node_id: String) -> Array:
 
 func _on_node_selected(node: Node) -> void:
 	var node_id: String = ids.get(node.name, "")
-	var outputs := _port_list(node_id, "outputs")
-	if node_id == "" or outputs.is_empty():
-		# Still a selection change, even though there is no port to inspect. Returning
+	if node_id == "":
+		# Still a selection change, even though there is nothing behind it. Returning
 		# without saying so left the panel describing whatever was selected before — which
 		# was invisible while the panel was only ever the file's own face, and is not now
 		# that it can be a module's.
 		inspecting = {}
 		_refresh_context()
 		return
-	inspecting = {"node": node_id, "port": outputs[0]["name"]}
+	# The node always; the port only when there is one to scope.
+	#
+	# These were one thing, and emptying the pair when a node had no outputs meant a node
+	# with nothing to listen to also had no name, no rename field and no way to be opened —
+	# the inspector showed the whole graph instead, as though nothing were selected. A
+	# module that only consumes is unusual but perfectly legal, and it was unreachable.
+	var outputs := _port_list(node_id, "outputs")
+	inspecting = {"node": node_id}
+	if not outputs.is_empty():
+		inspecting["port"] = outputs[0]["name"]
 	_refresh_context()
 	_light_signal_path(node_id)
 
@@ -4107,6 +4128,16 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 	# "note" and "stereo" are what the cables coming out of them are about. "input2" would
 	# be two guesses away from meaning anything.
 	var base: String = (host if host != "" else written).to_snake_case()
+
+	# Inside an open module's frame, the node is part of that module.
+	#
+	# Membership is the id prefix — ModuleAuthor.close_module folds in exactly the nodes
+	# called "<module>.something" — so joining a module *is* being named after it. That is
+	# the whole reason an open module needs no extra state: what belongs to it is written in
+	# the document, in the same place a reader would look.
+	var joining: String = graph_edit.group_at(at_position) if graph_edit != null else ""
+	if joining != "":
+		base = "%s.%s" % [joining, base]
 	var suffix := 1
 	var node_id := base
 	var existing := {}

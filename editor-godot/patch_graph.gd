@@ -759,6 +759,45 @@ var groups: Dictionary = {}:
 		if _wand_overlay != null:
 			_wand_overlay.queue_redraw()
 ## True while a rectangle is being drawn.
+## The rectangle an open module's frame occupies, in the graph's own coordinates — the ones
+## node positions are in, not the ones the screen is in.
+##
+## Here rather than inside _draw_groups because two things need it and they must agree: the
+## frame that gets drawn, and the question "is this point inside that module", which decides
+## whether a node dropped there joins it. Two copies of this arithmetic would disagree at
+## the edge, and the edge is exactly where somebody aims when they mean "just inside".
+##
+## Zero-size when the module has nothing on the canvas, which is how a caller says "not a
+## frame" without a second return value.
+func group_box(module_name: String) -> Rect2:
+	if not groups.has(module_name):
+		return Rect2()
+	var box := Rect2()
+	var first := true
+	for widget_name in groups[module_name]:
+		var node := get_node_or_null(NodePath(str(widget_name))) as GraphNode
+		if node == null or not node.visible:
+			continue
+		var rect := Rect2(node.position_offset, node.size)
+		box = rect if first else box.merge(rect)
+		first = false
+	if first:
+		return Rect2()
+	# Room at the top for the name and the button, which live on the frame rather than
+	# floating beside it — a label not attached to its rectangle is a label you have to work
+	# out the owner of.
+	return box.grow(float(Design.scale(Design.SPACE_M))) \
+		.grow_individual(0.0, float(Design.scale(34.0)), 0.0, 0.0)
+
+
+## Which open module a point in graph coordinates falls inside, or "".
+func group_at(point: Vector2) -> String:
+	for module_name in groups:
+		if group_box(str(module_name)).has_point(point):
+			return str(module_name)
+	return ""
+
+
 var drawing := false
 
 signal region_drawn(ids: Array)
@@ -1279,23 +1318,12 @@ class WandOverlay extends Control:
 		var pad: float = float(Design.scale(Design.SPACE_M))
 
 		for module_name in graph.groups:
-			var box := Rect2()
-			var first := true
-			for widget_name in graph.groups[module_name]:
-				var node := graph.get_node_or_null(NodePath(str(widget_name))) as GraphNode
-				if node == null or not node.visible:
-					continue
-				var rect := Rect2(node.position_offset * scale - graph.scroll_offset,
-					node.size * scale)
-				box = rect if first else box.merge(rect)
-				first = false
-			if first:
+			var frame: Rect2 = graph.group_box(str(module_name))
+			if frame.size.x <= 0.0:
 				continue
-			# Room at the top for the name and the button, which live on the frame rather
-			# than floating beside it — a label that is not attached to its rectangle is a
-			# label you have to work out the owner of.
+			var box := Rect2(frame.position * scale - graph.scroll_offset,
+				frame.size * scale)
 			var band := float(Design.scale(34.0)) * scale
-			box = box.grow(pad).grow_individual(0.0, band, 0.0, 0.0)
 
 			draw_rect(box, Color(Design.ACCENT, 0.05))
 			Design.dashed_rect(self, box, Color(Design.ACCENT, 0.85), 2.0)
