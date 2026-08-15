@@ -205,18 +205,20 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 > its own press; anything the wand does not want falls straight through, so selecting,
 > dragging and panning are untouched with it up.
 >
-> **Removed with the Graphrack tab.** Everything from here to the end of this block
-> described gestures on a rack panel — the second half of the wand — and the rack panel is
-> gone. It is kept as written because it is the specification the panel builder in the
-> Graph tab is being built to, not a record of what the editor does today. Task #65 tracks
-> the rebuild and names the commit each piece is recoverable from.
+> **Rebuilt in the Graph tab, after the Graphrack went.** These gestures were on a rack
+> panel; they are on the sub-panel builder now — the right-hand panel, which shows the
+> selected module's face and the file's own when nothing else is selected.
 >
-> The same toggle had a second half in the Graphrack tab, where the module exists and is
-> wearing that face: a knob becomes a tile, and dragging it writes `panel.rows`. This is
-> the only gesture in the editor that writes a panel. Rows are read off the knobs rather
-> than out of the panel, so a module that has never been arranged is rearranged from the
-> arrangement on screen — the GridContainer's own two-column wrap — and the first drag
-> writes down what was already true plus the one thing that changed. A row's middle half
+> The same toggle has a second half on that panel, where the module is wearing the face it
+> declares: a knob becomes a tile, and dragging it writes `panel.rows`. This is the only
+> gesture in the editor that writes a panel. A module that has never been arranged is
+> rearranged from the wrap already on screen, so the first drag writes down what was
+> already true plus the one thing that changed — but where those rows *come from* is no
+> longer a question of geometry. GraphRack had to infer them by sorting knobs by y with a
+> tolerance taken off the knob height, because its face was a GridContainer that wrapped on
+> its own and nobody had written the rows down. Here the rows are the input: they come from
+> the descriptor, which comes from `panel.rows`. Screen and file are one array and cannot
+> drift, and the geometry only has to answer where a drop landed. A row's middle half
 > means "into this row" and its top and bottom quarters mean "on a new line", which is
 > the only way to say that with a gesture that has no second button. Only a module can be
 > rearranged; an ordinary node's face comes from the registry and a patch has nowhere to
@@ -231,13 +233,19 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 > module takes it off the face and leaves it exported, so nothing pointing at it breaks —
 > the reversible edit cannot do the destructive one by accident. Undeclared inner ports
 > are ghost jacks; a click declares one, since a port is on the face or it is not and
-> there is no arrangement for it to land in.
+> there is no arrangement for it to land in. Those are on the *node* in the canvas rather
+> than on the panel, for that same reason: the panel arranges knobs, and a jack has nothing
+> to arrange. They are slotless rows appended after the real ones, because GraphEdit binds a
+> slot to the index of a visible child and a slot inserted anywhere but the end renumbers
+> every slot below it.
 >
 > Only the additive directions are reachable. Declaring a port is safe — nothing can be
 > plugged into a port that did not exist — while *un*declaring one strands whatever is
 > plugged in, and un-exporting a knob strands the controls and automation aimed at it.
 > Those are edits worth a considered surface rather than a click, and they do not have one
-> since the Builder tab went. Renaming a module went with it too.
+> since the Builder tab went — see task #61. Renaming a module went with it too and came
+> back on its own: the field is on the instance in the inspector, because the instance is
+> the thing on screen.
 
 > **Stage 4 landed — the design is complete.** Both importers emit modules by
 > default: the DX7 bank is one operator definition and six instances per voice, the

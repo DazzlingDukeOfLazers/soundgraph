@@ -2579,12 +2579,32 @@ func _create_widget(node: Dictionary) -> void:
 	#
 	# Rows are max(ports, knob lines) rather than the sum. Surplus ports keep a short
 	# jack-only row; surplus knob lines get a row with no slot on it.
+	# The knob grid, as rows.
+	#
+	# A module with a panel wears the face its panel describes: those knobs, in those rows,
+	# under those captions. Everything else it exports is still exported and still settable
+	# — the surface is the contract and the panel is presentation — it is simply not on the
+	# front, which is the entire point of having said so. Anything without a panel wraps
+	# its whole surface PARAMETERS_PER_LINE to a line, as it always did.
 	var parameters: Array = descriptor.get("parameters", [])
+	var grid: Array = descriptor.get("panel_rows", []).duplicate()
+	var shown := 0
+	if grid.is_empty():
+		var line: Array = []
+		for parameter: Dictionary in parameters:
+			line.append(parameter)
+			if line.size() == PARAMETERS_PER_LINE:
+				grid.append(line)
+				line = []
+		if not line.is_empty():
+			grid.append(line)
+	for row_of: Array in grid:
+		shown += row_of.size()
 	var port_rows: int = maxi(inputs.size(), outputs.size())
-	var cell_lines: int = int(ceil(float(parameters.size()) / float(PARAMETERS_PER_LINE)))
+	var cell_lines: int = grid.size()
 	# Progressive complexity, counted in lines: a node shows its common case and says how
 	# much it is holding back rather than hiding it silently.
-	var always_visible: int = 1 if parameters.size() > 3 else cell_lines
+	var always_visible: int = 1 if shown > 3 else cell_lines
 	var folded: Array[Control] = []
 
 	for row in maxi(port_rows, cell_lines):
@@ -2613,10 +2633,9 @@ func _create_widget(node: Dictionary) -> void:
 		cells.alignment = BoxContainer.ALIGNMENT_CENTER
 		cells.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cells.set_meta("cells", true)
-		for column in PARAMETERS_PER_LINE:
-			var index: int = row * PARAMETERS_PER_LINE + column
-			if index < parameters.size():
-				cells.add_child(_build_parameter_row(node, parameters[index]))
+		if row < grid.size():
+			for parameter: Dictionary in grid[row]:
+				cells.add_child(_build_parameter_row(node, parameter))
 		line.add_child(cells)
 		line.set_meta("cells_box", cells)
 
@@ -2973,7 +2992,11 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# stacked on the words somebody reads *every time* they reach for a knob. Parameter
 	# names are operating text; the unit is the metadata here, and it is already smaller.
 	var label := Label.new()
-	label.text = name
+	# The caption when a panel gave it one, the binding's own name otherwise. `name` is
+	# what the knob writes back through and is never touched by a caption — the two are
+	# separate fields precisely so that naming a knob cannot rewire it.
+	label.text = str(parameter.get("display_name", "")) \
+		if str(parameter.get("display_name", "")) != "" else name
 	label.clip_text = true
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.tooltip_text = str(parameter.get("doc", ""))

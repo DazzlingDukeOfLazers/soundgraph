@@ -1049,11 +1049,59 @@ func _initialize() -> void:
 	check(surface_names.has("gain"),
 		"a knob left off the panel is still exported (%s)" % str(surface_names))
 
-	# What the panel does *not* touch is checked above; what it draws was checked on the
-	# graphrack's module faces, and goes with it. The panel builder in the Graph tab is
-	# where that claim comes back — see the note in docs/modules-design.md.
-
+	# And the node in the graph wears it. This is the claim the graphrack's module faces
+	# used to hold: a panelled module shows the knobs its panel names, in its rows, under
+	# its captions — and is only as tall as those, rather than as tall as everything it
+	# exports. Read off the built node rather than off the descriptor, because a descriptor
+	# that says two and a node that draws three is exactly the failure worth catching.
 	main.show_view("Graph")
+	for _settle in 6:
+		await process_frame
+	var faced_id := ""
+	for node in main.patch.get("nodes", []):
+		if str(node.get("module", "")) == "envamp":
+			faced_id = str(node["id"])
+	check(faced_id != "" and main.widgets.has(faced_id),
+		"the panelled module is a node in the graph (%s)" % faced_id)
+	if main.widgets.has(faced_id):
+		var drawn: Array = []
+		var walk := func(parent: Node, into: Array, recurse: Callable) -> void:
+			for child in parent.get_children():
+				var control := child as Control
+				if control == null:
+					continue
+				if str(control.get_meta("cell", "")) == "parameter":
+					into.append(str(control.get_meta("parameter_name", "")))
+				else:
+					recurse.call(control, into, recurse)
+		walk.call(main.widgets[faced_id], drawn, walk)
+		check(drawn == ["release", "attack"],
+			"and draws the knobs the panel named, in its order (%s)" % str(drawn))
+		check(not drawn.has("gain"),
+			"leaving off the one it did not, though it is still exported (%s)" % str(drawn))
+
+		# The caption is on the label; the binding is on the row. A panel that renamed the
+		# binding would have rewired the knob, which is the whole reason they are two
+		# fields — so this checks they disagree, on purpose.
+		var captions: Array = []
+		var caption_walk := func(parent: Node, into: Array, recurse: Callable) -> void:
+			for child in parent.get_children():
+				var control := child as Control
+				if control == null:
+					continue
+				if str(control.get_meta("cell", "")) == "parameter":
+					for inner in control.get_children():
+						var label := inner as Label
+						if label != null:
+							into.append(label.text)
+							break
+				else:
+					recurse.call(control, into, recurse)
+		caption_walk.call(main.widgets[faced_id], captions, caption_walk)
+		check(captions.has("Snap"),
+			"under the panel's caption rather than the binding's name (%s)" % str(captions))
+
+	await main._load_example("First Synth")
 	await main._load_example("First Synth")
 	for _settle in 6:
 		await process_frame
