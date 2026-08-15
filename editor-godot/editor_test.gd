@@ -84,12 +84,10 @@ func _collect_buttons(node: Node, found: Array) -> void:
 		_collect_buttons(child, found)
 
 
-# ---- the wand, clicked rather than called ----------------------------------------
-# The picks could be pushed straight into main._toggle_pick, and that would test the
-# bookkeeping and none of the part most likely to break. What makes a knob pickable at
-# all is that PatchGraph takes the press in `_input`, ahead of the GUI pass, before the
-# Control under the pointer can swallow it — so the clicks below go in as real mouse
-# events at real screen positions and are hit-tested the way a hand's would be.
+# ---- clicking the canvas, rather than calling into it -----------------------------
+# What makes a ghost jack clickable at all is that PatchGraph takes the press in
+# `_input`, ahead of the GUI pass, before the Control under the pointer can swallow
+# it — so the points below are worked out the way a hand's would be hit-tested.
 
 ## The viewport point a jack sits at: the same arithmetic the hit test uses, which is
 ## fair here because a wrong constant in it moves the drawn jack and the hot zone
@@ -110,14 +108,6 @@ func _knob_point(main, widget: GraphNode, parameter: String) -> Vector2:
 	if row == null or not row.is_visible_in_tree():
 		return Vector2.INF
 	return row.get_global_rect().get_center()
-
-
-func _wand_click(main, point: Vector2) -> void:
-	var event := InputEventMouseButton.new()
-	event.button_index = MOUSE_BUTTON_LEFT
-	event.pressed = true
-	event.position = point
-	main.graph_edit._input(event)
 
 
 func _has_node(patch: Dictionary, node_id: String) -> bool:
@@ -2871,13 +2861,11 @@ func _initialize() -> void:
 		for i in 6:
 			await process_frame
 
-	# ---- the wand puts a knob on the file's own panel ---------------------------------
+	# ---- the file's own panel, as the document carries it ----------------------------
 	# `controls` has been in the schema since v1 — the performance surface, deliberately
 	# separate from the graph — and every example carries one that nothing had ever drawn.
-	# It is the panel a file has, and the wand is how knobs get on and off it.
-	#
-	# Full zoom first: below the compact floor the level of detail folds knob rows away,
-	# and a knob that is not on screen is one the wand may not click.
+	# Putting knobs on and taking them off is the panel's own gesture now, checked above;
+	# what is left here is that the file arrives with one and that it is drawn.
 	main.graph_edit.zoom = 1.0
 	for i in 4:
 		await process_frame
@@ -2886,63 +2874,6 @@ func _initialize() -> void:
 		% started_with)
 	check(main.patch_face.get_child_count() > 0,
 		"and the editor draws it (%d rows)" % main.patch_face.get_child_count())
-
-	# The amplifier, whose single knob is never folded away by the level of detail and is
-	# not already on First Synth's panel — so this measures the wand and not the layout.
-	main.widgets["amp"].selected = true
-	main._refresh_selection_button()
-	main._set_wand(true)
-	for i in 4:
-		await process_frame
-	check(main.graph_edit.wand, "the wand goes up")
-
-	var wand_amp: GraphNode = main.widgets["amp"]
-	var gain_point := _knob_point(main, wand_amp, "gain")
-	check(gain_point != Vector2.INF, "the amplifier's gain knob is on screen to be clicked")
-	_wand_click(main, gain_point)
-	for i in 6:
-		await process_frame
-	var panel_ids: Array = []
-	for control: Dictionary in main.patch.get("controls", []):
-		panel_ids.append(str(control["id"]))
-	check(panel_ids.size() == started_with + 1 and panel_ids.has("gain"),
-		"clicking a knob puts it on the panel (%s)" % str(panel_ids))
-	check(main.patch["nodes"] == main.patch["nodes"],
-		"and the graph is untouched, because a panel is not wiring")
-
-	# Again takes it off. Without that the only repair for a misclick is editing the file.
-	_wand_click(main, _knob_point(main, main.widgets["amp"], "gain"))
-	for i in 6:
-		await process_frame
-	check(main.patch.get("controls", []).size() == started_with,
-		"clicking it again takes it off (%d)" % main.patch.get("controls", []).size())
-
-	# An edit like any other.
-	await main._undo()
-	for i in 6:
-		await process_frame
-	check(main.patch.get("controls", []).size() == started_with + 1,
-		"and undo puts it back (%d)" % main.patch.get("controls", []).size())
-	await main._undo()
-	for i in 6:
-		await process_frame
-
-	# A jack is not a knob, and the panel has no spelling for one. Said out loud rather
-	# than ignored: a click that does nothing looks like a broken tool.
-	# Re-fetched: the undos above rebuilt the view, and the widget this held is a freed
-	# object now.
-	main.widgets["amp"].selected = true
-	main._refresh_selection_button()
-	for i in 4:
-		await process_frame
-	var out_index: int = main._output_port_index("amp", "out")
-	var before_jack: int = main.patch.get("controls", []).size()
-	_wand_click(main, _jack_point(main, main.widgets["amp"], "right", out_index))
-	for i in 4:
-		await process_frame
-	check(main.patch.get("controls", []).size() == before_jack,
-		"clicking a jack puts nothing on the panel (%d)"
-			% main.patch.get("controls", []).size())
 
 	# Dragging a knob to a new place on the panel. The order is the whole personalisation
 	# a panel offers, so it has to be somebody's rather than the order they happened to
@@ -2970,9 +2901,6 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 
-	main._set_wand(false)
-	for i in 4:
-		await process_frame
 
 	# ---- a module to look at, made by hand ------------------------------------------
 	# The blocks below need one with a known, small surface. The wand used to leave one
@@ -3065,7 +2993,6 @@ func _initialize() -> void:
 		"and the panel says so rather than keeping the last module's face")
 
 	main._focus_node(instance)
-	main._set_wand(true)
 	for i in 8:
 		await process_frame
 
@@ -3187,7 +3114,7 @@ func _initialize() -> void:
 	var ghost_row: Control = null
 	for child in main.widgets[instance].get_children():
 		var row := child as Control
-		if row != null and not (row.get_meta("ghost_offer", {}) as Dictionary).is_empty():
+		if row != null and row.visible 				and not (row.get_meta("ghost_offer", {}) as Dictionary).is_empty():
 			ghost_row = row
 			break
 	check(ghost_row != null, "an undeclared inner port is drawn as a ghost jack on the node")
@@ -3227,15 +3154,18 @@ func _initialize() -> void:
 				still_offered = true
 		check(not still_offered, "and is no longer offered, since it is already a port")
 
-	main._set_wand(false)
+	# And selecting something else takes them away. There is no mode to put down; the
+	# selection is what says which module is being worked on, so it is also what says when
+	# nothing is.
+	main._focus_node(main._output_node())
 	for i in 8:
 		await process_frame
 	var ghosts_after := false
 	for child in main.widgets[instance].get_children():
 		var row := child as Control
-		if row != null and not (row.get_meta("ghost_offer", {}) as Dictionary).is_empty():
+		if row != null and row.visible 				and not (row.get_meta("ghost_offer", {}) as Dictionary).is_empty():
 			ghosts_after = true
-	check(not ghosts_after, "putting the wand down takes the ghosts away")
+	check(not ghosts_after, "selecting away from the module takes its ghosts away")
 
 	# ---- taking something off a module's contract ------------------------------------
 	# The half of surface editing the wand cannot offer. Declaring a port is safe — nothing

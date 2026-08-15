@@ -142,9 +142,7 @@ var graph_edit: GraphEdit
 ## ids rather than against widgets, because a rebuild throws every widget away and renames
 ## the ones it makes — picks that survive a rebuild are the whole reason this is not just
 ## a list of Controls.
-var wand_picks: Array = []
-var wand_button: Button
-var wand_confirm: Button
+var make_module_button: Button
 ## The file's own face: the knobs somebody plays. See patch_face.gd.
 var patch_face: PatchFace
 ## And one module's, when a module instance is what is selected. See module_face.gd.
@@ -600,8 +598,6 @@ func _build_ui() -> void:
 	# rather than one per pixel of mouse movement.
 	graph_edit.detail_changed.connect(_apply_detail)
 	graph_edit.port_hovered.connect(_on_port_hovered)
-	graph_edit.port_picked.connect(_on_port_picked)
-	graph_edit.parameter_picked.connect(_on_parameter_picked)
 	graph_edit.ghost_port_picked.connect(_on_ghost_port_picked)
 	graph_edit.region_drawn.connect(_on_region_drawn)
 	graph_edit.group_closed.connect(func(name: String) -> void: _close_module(name))
@@ -889,30 +885,14 @@ func _build_toolbar() -> Control:
 			_collapse_selection())
 	graph_group.add_child(_defocus(arrange_menu))
 
-	# The wand, and the verb it exists to feed.
-	#
-	# Collapse is in the Arrange menu because it is a rearrangement of the document; the
-	# wand is out here because it is a gesture, and a gesture buried in a menu is a gesture
-	# nobody finds. Its confirm button appears beside it only while it is up — a permanently
-	# greyed "Make module" would be the fourteenth control on this bar earning nothing.
-	wand_button = Button.new()
-	wand_button.toggle_mode = true
-	wand_button.text = "Wand"
-	wand_button.tooltip_text = "Point at the jacks and knobs the module should show, in " \
-		+ "the order they should appear. Only the selected nodes can be picked, because " \
-		+ "only they are going inside. Pick nothing and the module works out its own face."
-	wand_button.toggled.connect(func(pressed: bool) -> void: _set_wand(pressed))
-	graph_group.add_child(_defocus(wand_button))
-
-	# Its own gesture now, and always available: draw a rectangle round some nodes and
-	# what is inside it becomes a module, opened, with its name on the frame. It used to
-	# be the wand's confirm button and appeared only while the wand was up, which made the
-	# verb this whole feature exists for conditional on a tool being raised.
-	wand_confirm = Button.new()
-	wand_confirm.text = "Make module"
-	wand_confirm.tooltip_text = "Draw a rectangle round some nodes. What is wholly inside it becomes a module, left open so you can see and arrange its parts."
-	wand_confirm.pressed.connect(func() -> void: _begin_module_region())
-	graph_group.add_child(_defocus(wand_confirm))
+	# Collapse is in the Arrange menu because it is a rearrangement of the document;
+	# this is out here because it is a gesture, and a gesture buried in a menu is a
+	# gesture nobody finds.
+	make_module_button = Button.new()
+	make_module_button.text = "Make module"
+	make_module_button.tooltip_text = "Draw a rectangle round some nodes. What is wholly inside it becomes a module, left open so you can see and arrange its parts."
+	make_module_button.pressed.connect(func() -> void: _begin_module_region())
+	graph_group.add_child(_defocus(make_module_button))
 
 	# Fit comes out of that menu and sits beside it, spelled out.
 	#
@@ -1534,9 +1514,11 @@ func _build_side_panel() -> Control:
 
 ## Fills the contextual region: the graph when nothing is selected, otherwise the node.
 func _refresh_context() -> void:
-	# Which face the panel shows follows the selection, so it is settled here rather than
-	# by each of the half-dozen paths that can change what is selected.
+	# Which face the panel shows, and which module offers its ghost jacks, both follow the
+	# selection — settled here rather than by each of the half-dozen paths that can change
+	# what is selected.
 	_refresh_face()
+	_refresh_ghost_ports()
 	if context_panel == null:
 		return
 	for child in context_panel.get_children():
@@ -2267,10 +2249,6 @@ func _rebuild_view() -> void:
 	# re-applied to the widgets that were not there when it was announced.
 	_apply_detail(graph_edit.detail)
 
-	# Every widget in the marks is now a freed object, and the rows the wand was pointing
-	# at went with them. Re-resolving here is what keeps the overlay from drawing against
-	# a dangling Control on the frame after a rebuild.
-	_refresh_wand()
 	_refresh_groups()
 
 	# The rack reads the same document, so it is rebuilt from the same place rather than
@@ -2964,7 +2942,7 @@ func _create_widget(node: Dictionary) -> void:
 		if has_output:
 			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
 
-	_add_ghost_ports(widget, descriptor)
+	_add_ghost_ports(widget, str(node["id"]), descriptor)
 	_add_disclosure(widget, folded)
 
 	graph_edit.add_child(widget)
@@ -2972,7 +2950,19 @@ func _create_widget(node: Dictionary) -> void:
 	ids[widget.name] = node["id"]
 
 
-## The wand's ghost jacks: inner ports this module could expose and does not.
+## Shows the selected module's ghost jacks and hides everyone else's. There is no mode to
+## put down, so the selection is what says which module is being worked on — and therefore
+## also what says when none is.
+func _refresh_ghost_ports() -> void:
+	var selected := str(inspecting.get("node", ""))
+	for node_id in widgets:
+		for child in (widgets[node_id] as GraphNode).get_children():
+			var row := child as Control
+			if row != null and not (row.get_meta("ghost_offer", {}) as Dictionary).is_empty():
+				row.visible = str(node_id) == selected
+
+
+## Ghost jacks: inner ports this module could expose and does not.
 ##
 ## Rows of their own, appended after every real port row and carrying no slot. That is not
 ## a style choice — GraphEdit binds a slot to the index of a visible child, so a row with a
@@ -2982,9 +2972,14 @@ func _create_widget(node: Dictionary) -> void:
 ##
 ## Drawn faint, with the port's own icon, so a ghost reads as an offer rather than as a jack
 ## that has stopped working. The metadata is what PatchGraph.ghost_port_at looks for.
-func _add_ghost_ports(widget: GraphNode, descriptor: Dictionary) -> void:
-	if wand_button == null or not wand_button.button_pressed:
-		return
+func _add_ghost_ports(widget: GraphNode, node_id: String, descriptor: Dictionary) -> void:
+	# Built for every module, shown for the selected one.
+	#
+	# Built always, because growing and freeing rows on every selection change would mean a
+	# graph rebuild each time somebody clicks a node. Hidden rather than absent, because a
+	# row of faint text on every composite in the patch is a lot of furniture for an offer.
+	# Hiding is safe where inserting is not: these carry no slot and sit after every row
+	# that does, so GraphEdit has no index to renumber either way.
 	var offers: Array = descriptor.get("port_offers", [])
 	if offers.is_empty():
 		return
@@ -2999,6 +2994,7 @@ func _add_ghost_ports(widget: GraphNode, descriptor: Dictionary) -> void:
 		line.set_meta("has_slot", false)
 		line.set_meta("ghost_offer", binding)
 		line.modulate = Color(1.0, 1.0, 1.0, 0.45)
+		line.visible = str(inspecting.get("node", "")) == node_id
 
 		var icon := TextureRect.new()
 		icon.texture = _port_icon(str(offer.get("type", "control")))
@@ -4196,7 +4192,6 @@ func _refresh_selection_button() -> void:
 	if arrange_popup != null:
 		arrange_popup.set_item_disabled(1, _selected_ids().size() < 2)
 		arrange_popup.set_item_disabled(2, _selected_ids().size() < 2)
-	_refresh_wand()
 
 
 func _selected_ids() -> Array:
@@ -4257,7 +4252,7 @@ func _collapse_selection() -> void:
 		_say("select two or more nodes to collapse into a module")
 		return
 	var terminals := _terminal_types()
-	var picked: Array = wand_picks.duplicate(true)
+	var picked: Array = []
 	var result := ModuleAuthor.collapse(patch, selected, terminals, picked)
 	if not result.ok():
 		_say(result.error)
@@ -4265,7 +4260,6 @@ func _collapse_selection() -> void:
 	_begin_edit()
 	patch = result.patch
 	_synthesize_module_descriptors()
-	_set_wand(false)
 	await _rebuild_view()
 	_apply()
 	_commit_edit("collapse into %s" % result.module_name)
@@ -4308,7 +4302,7 @@ func _on_region_drawn(widget_names: Array) -> void:
 		_say("draw round two or more nodes — a module of one is the node you started with")
 		return
 	var terminals := _terminal_types()
-	var made := ModuleAuthor.collapse(patch, chosen, terminals, wand_picks.duplicate(true))
+	var made := ModuleAuthor.collapse(patch, chosen, terminals, [])
 	if not made.ok():
 		_say(made.error)
 		return
@@ -4319,7 +4313,6 @@ func _on_region_drawn(widget_names: Array) -> void:
 	_begin_edit()
 	patch = opened.patch
 	_synthesize_module_descriptors()
-	_set_wand(false)
 	await _rebuild_view()
 	_apply()
 	_commit_edit("make %s" % made.module_name)
@@ -4379,86 +4372,7 @@ func _refresh_groups() -> void:
 	graph_edit.groups = frames
 
 
-# ---------------------------------------------------------------------------------
-# The wand
-#
-# The argument for it, and how a click reaches a knob at all, are in patch_graph.gd.
-# This half is the bookkeeping: what has been picked, in what order, and keeping that
-# list honest as the canvas moves under it.
-# ---------------------------------------------------------------------------------
-
-## One toggle, two halves of one job — which half you get is whichever view you are in.
-##
-## In the Graph tab a module does not exist yet, so the wand picks what it will show. In
-## the Graphrack tab it does, wearing that face, so the wand moves the knobs around on it.
-## Both are "say what this module shows and where", and neither is available in the view
-## where it would be meaningless: the Graph tab draws no panel to rearrange, and a module's
-## insides are not on the rack to point at.
-## Whether raising the wand would draw anything new on the canvas: a module instance with
-## an inner port it does not expose.
-func _has_ghost_ports() -> bool:
-	for node in patch.get("nodes", []):
-		if str(node.get("type", "")) != "module":
-			continue
-		var descriptor: Dictionary = registry.get(_type_key(node), {})
-		if not (descriptor.get("port_offers", []) as Array).is_empty():
-			return true
-	return false
-
-
-func _set_wand(active: bool) -> void:
-	if graph_edit == null:
-		return
-	graph_edit.set_wand(active)
-	# The panels are not told. They are builders, and a builder that has to be switched on
-	# is a builder somebody has to be told about: both of them drag and both of them offer
-	# what they are not showing, all the time. The wand is down to its canvas half.
-	if wand_button != null and wand_button.button_pressed != active:
-		wand_button.button_pressed = active
-	# The nodes too, but only when it would change one. Raising the wand grows a ghost jack
-	# on every module for each inner port it does not expose, and a ghost is a row of
-	# Controls rather than a coat of paint — so that costs a rebuild. A patch with no module
-	# to grow one on pays nothing, which matters because the wand goes up and down far more
-	# often than a rebuild is cheap.
-	if _has_ghost_ports():
-		await _rebuild_view()
-		_apply()
-	if not active:
-		# Put down, the picks go with it. Keeping them would mean a face being designed
-		# with nothing on screen saying so, and the next collapse quietly wearing choices
-		# made some minutes ago.
-		wand_picks.clear()
-		_refresh_wand()
-		return
-	_refresh_wand()
-	# The Graph tab says the rest on the canvas, where there is room for it — see
-	# PatchGraph.WandOverlay._draw_hint. This line only has to say the wand is up.
-	_say("wand up")
-
-
-## Ports are not knobs, and the file's face is made of knobs. `controls` targets a node
-## and a parameter and has no spelling for a jack — reasonably, since a panel is what
-## somebody turns and a jack is where a cable goes. Said out loud rather than ignored,
-## because a click that does nothing is indistinguishable from a tool that is broken.
-func _on_port_picked(widget_name: String, side: String, index: int) -> void:
-	var node_id: String = ids.get(widget_name, "")
-	if node_id == "":
-		return
-	var ports := _port_list(node_id, "inputs" if side == "left" else "outputs")
-	if index < 0 or index >= ports.size():
-		return
-	_say("%s.%s is a jack — the panel is made of knobs"
-		% [node_id, str(ports[index]["name"])])
-
-
-func _on_parameter_picked(widget_name: String, parameter: String) -> void:
-	var node_id: String = ids.get(widget_name, "")
-	if node_id == "" or parameter == "":
-		return
-	_toggle_control(node_id, parameter)
-
-
-## The wand's whole job now: put this knob on the file's face, or take it off.
+## Put this knob on the file's face, or take it off.
 ##
 ## One document edit each way, undoable, and it touches nothing but `controls` — so a knob
 ## can go on and come off again without the graph, the wiring or the sound noticing. That
@@ -4846,75 +4760,6 @@ func _on_panel_reordered(control_ids: Array) -> void:
 	_refresh_face()
 	_commit_edit("rearrange the panel")
 	_say("panel rearranged")
-
-
-## Pointing at something already picked takes it back off. Without that the only repair
-## for a misclick is building the whole face again from the start, and a gesture whose
-## mistakes cannot be undone is one people stop making.
-func _toggle_pick(pick: Dictionary) -> void:
-	var key := _pick_key(pick)
-	for index in wand_picks.size():
-		if _pick_key(wand_picks[index]) == key:
-			wand_picks.remove_at(index)
-			_refresh_wand()
-			_say("dropped %s — %d left on the face" % [_pick_label(pick), wand_picks.size()])
-			return
-	wand_picks.append(pick)
-	_refresh_wand()
-	_say("%d. %s" % [wand_picks.size(), _pick_label(pick)])
-
-
-func _pick_key(pick: Dictionary) -> String:
-	return "%s/%s/%s" % [str(pick.get("kind", "")), str(pick.get("node", "")),
-		str(pick.get("port", pick.get("parameter", "")))]
-
-
-func _pick_label(pick: Dictionary) -> String:
-	return "%s.%s" % [str(pick.get("node", "")),
-		str(pick.get("port", pick.get("parameter", "")))]
-
-
-## Resolves the picks against what is on the canvas now, and drops the ones that have
-## stopped meaning anything — a node deleted, or one taken back out of the selection.
-##
-## Dropping rather than dimming, because collapse ignores a nomination from outside the
-## selection: a badge left numbered on a deselected node would be promising a knob that
-## is not going to be there. Ordinals are assigned here, after the drop, so the numbers
-## on screen are always 1..n with nothing missing out of the middle.
-func _refresh_wand() -> void:
-	if graph_edit == null:
-		return
-	var kept: Array = []
-	var marks: Array = []
-	for pick: Dictionary in wand_picks:
-		var widget: GraphNode = widgets.get(str(pick.get("node", "")))
-		if widget == null or not is_instance_valid(widget) or not widget.selected:
-			continue
-		var mark := _mark_for(widget, pick)
-		if mark.is_empty():
-			continue
-		kept.append(pick)
-		mark["ordinal"] = kept.size()
-		marks.append(mark)
-	wand_picks = kept
-	graph_edit.wand_marks = marks
-
-
-## Where a pick is drawn: a jack by slot index, a knob by the row that holds it. A folded
-## row still resolves — the disclosure triangle hides a knob, it does not un-pick it — and
-## the overlay is what declines to draw a badge nobody could see.
-func _mark_for(widget: GraphNode, pick: Dictionary) -> Dictionary:
-	var kind := str(pick.get("kind", ""))
-	var node_id := str(pick.get("node", ""))
-	if kind == "parameter":
-		var row := _parameter_row(widget, str(pick.get("parameter", "")))
-		return {} if row == null else {"row": row}
-	var ports := _port_list(node_id, "inputs" if kind == "input" else "outputs")
-	for index in ports.size():
-		if str(ports[index]["name"]) == str(pick.get("port", "")):
-			return {"widget": String(widget.name), "side":
-				"left" if kind == "input" else "right", "index": index}
-	return {}
 
 
 ## A ghost jack was clicked: the inner port becomes one of the module's own.

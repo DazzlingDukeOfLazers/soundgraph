@@ -699,38 +699,22 @@ var hovered_cable: Dictionary = {}
 signal port_hovered(widget_name: String, side: String, index: int)
 
 # ---------------------------------------------------------------------------------
-# The wand
+# Clicking through to what a node is holding
 #
-# A module declares a surface — the ports a patch can plug into, the knobs it can turn.
-# Collapse used to derive that surface from the wiring, which is a fair guess and a poor
-# substitute for being told: "every parameter that was set becomes a knob" is the rule
-# that makes a collapsed module arrive wearing thirty of them. The wand is being told.
-# Click the jacks and knobs that should show, in the order they should show in, and
-# ModuleAuthor.collapse takes the list verbatim.
+# A ghost jack is drawn inside a module's body, and a knob is a real Control that swallows
+# its own clicks — so by the time GraphEdit hears about a press on one it is far too late.
+# `_input` runs before the GUI pass, which is the only reason a click can reach either of
+# them, and anything not wanted here falls straight through: selecting, dragging and
+# panning are untouched.
 #
-# It has to happen *before* the collapse, because that is the only moment the parts are
-# still on the canvas. Afterwards the instance wears one face and its insides are not
-# there to point at.
-#
-# Only selected nodes are pickable, which is also the whole explanation of collapse
-# ignoring a nomination from outside the selection: the selection says what goes inside
-# the module and the wand says what shows on it, so a knob that is not going inside has
-# no face to appear on. Better that there is nothing there to click than a sentence
-# explaining why the click did nothing.
-#
-# Picking is done from `_input` rather than `_gui_input`, which is the only reason this
-# needs no shields over the knobs. A knob is a real Control and swallows its own clicks,
-# so by the time GraphEdit hears about a press on one it is far too late — but `_input`
-# runs *before* the GUI pass, so the wand gets first refusal and hands back anything it
-# does not want. Selecting, dragging and panning are untouched while it is up.
-## True while the wand is picking. Set through `set_wand` so the input hook follows it.
-var wand := false
-## The picks, resolved for drawing: {"widget", "side", "index", "ordinal"} for a jack,
-## {"row": Control, "ordinal": int} for a knob. Written by the editor, read by the overlay.
-var wand_marks: Array = []
+# This used to be the wand's hook, and the wand's job was nomination — telling collapse
+# which jacks and knobs a new module should show, in what order. That job went when the
+# panels learned to do it after the fact: a module's face is edited on the sub-panel
+# builder and the file's on its own panel, both by dragging what is offered onto what is
+# shown. Nominating up front was answering the question at the one moment the answer was
+# hardest to see.
+# ---------------------------------------------------------------------------------
 
-signal port_picked(widget_name: String, side: String, index: int)
-signal parameter_picked(widget_name: String, parameter: String)
 ## A ghost jack was clicked: this inner port should become one of the module's own.
 signal ghost_port_picked(widget_name: String, offer: Dictionary)
 
@@ -755,7 +739,6 @@ signal ghost_port_picked(widget_name: String, offer: Dictionary)
 var groups: Dictionary = {}:
 	set(value):
 		groups = value
-		set_process_input(wand or drawing or not groups.is_empty())
 		if _wand_overlay != null:
 			_wand_overlay.queue_redraw()
 ## True while a rectangle is being drawn.
@@ -817,7 +800,6 @@ var _close_hits: Dictionary = {}
 func set_drawing(active: bool) -> void:
 	drawing = active
 	_banding = false
-	set_process_input(active or wand)
 	mouse_default_cursor_shape = Control.CURSOR_CROSS if active else Control.CURSOR_ARROW
 	if _wand_overlay != null:
 		_wand_overlay.queue_redraw()
@@ -861,7 +843,11 @@ func _ready() -> void:
 	_wand_overlay = WandOverlay.new()
 	_wand_overlay.graph = self
 	add_child(_wand_overlay)
-	set_process_input(false)
+	# Always listening. There is no mode to arm: the two things this hook is for — the
+	# rubber band while one is being drawn, and a ghost jack on a selected module — are
+	# states of the document rather than of a tool, and _input returns at once when
+	# neither is on screen.
+	set_process_input(true)
 	begin_node_move.connect(func() -> void: _grid_target = 1.0)
 	end_node_move.connect(func() -> void: _grid_target = 0.0)
 	set_process(true)
@@ -1224,30 +1210,20 @@ class GlowOverlay extends Control:
 						Color(colour.r, colour.g, colour.b, MAX_ALPHA * level * ring[1]))
 
 
-## What the wand can reach, and what it has already taken.
-##
-## Two jobs, one canvas item, because they answer one question between them: everything
-## the wand could touch is outlined, and everything it has touched wears the number it
-## was given. The numbers are the point — declared order is click order and a module's
-## face is drawn in declared order, so the badges are a live preview of the panel, not
-## decoration on a selection.
+## The canvas furniture that is not a node: the frame round an open module, and the
+## rubber band while one is being drawn.
 class WandOverlay extends Control:
 	var graph = null
-
-	## Big enough to hold two digits and still read at half zoom. A module with more than
-	## ninety-nine things on its face has a problem this badge is not going to fix.
-	const BADGE_RADIUS := 11.0
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		# Above the nodes, for the same reason the glow is: a badge behind the panel it
-		# belongs to is a badge nobody sees. See GlowOverlay for why this is z_index and
-		# not a reorder.
+		# Above the nodes: a frame drawn behind the panels it encloses is a frame nobody
+		# sees. See GlowOverlay for why this is z_index and not a reorder.
 		z_index = 101
 
 	func _process(_delta: float) -> void:
-		if graph != null and (graph.wand or graph.drawing or not graph.groups.is_empty()):
+		if graph != null and (graph.drawing or not graph.groups.is_empty()):
 			queue_redraw()
 
 	func _draw() -> void:
@@ -1255,52 +1231,6 @@ class WandOverlay extends Control:
 			return
 		_draw_groups()
 		_draw_band()
-		if not graph.wand:
-			return
-		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
-		# Dashed, and not in the accent. A selected node already wears a solid accent
-		# border, so accent targets drawn inside it were a second green rectangle saying
-		# something different with the same voice — which is how the cue came to be
-		# invisible in a picture where it was, technically, present.
-		var available := Color(Design.INK_BRIGHT, 0.7)
-
-		# What can be picked. Only the selection, which is what makes the rule legible
-		# without a sentence: the wand reaches exactly as far as the module will.
-		var selected := 0
-		for child in graph.get_children():
-			var node := child as GraphNode
-			if node == null or not node.visible or not node.selected:
-				continue
-			selected += 1
-			for side in ["left", "right"]:
-				var count: int = node.get_input_port_count() if side == "left" \
-					else node.get_output_port_count()
-				for index in count:
-					Design.dashed_circle(self, _jack(node, side, index),
-						Design.scale(9.0) * scale, available)
-			for row in _rows(node):
-				Design.dashed_rect(self, _local(row.get_global_rect()).grow(2.0), available)
-
-		_draw_hint(selected)
-
-		# What has been picked, wearing its ordinal.
-		for mark: Dictionary in graph.wand_marks:
-			var ordinal := int(mark.get("ordinal", 0))
-			if mark.has("row"):
-				if not is_instance_valid(mark["row"]):
-					continue
-				var row := mark["row"] as Control
-				if row == null or not row.is_visible_in_tree():
-					continue
-				var rect := _local(row.get_global_rect())
-				draw_rect(rect.grow(2.0), Design.ACCENT, false, 2.0)
-				_badge(rect.position + Vector2(rect.size.x, 0.0), ordinal, scale)
-				continue
-			var node := graph.get_node_or_null(NodePath(str(mark.get("widget", "")))) as GraphNode
-			if node == null:
-				continue
-			_badge(_jack(node, str(mark.get("side", "left")), int(mark.get("index", 0))),
-				ordinal, scale)
 
 	## A dashed frame around the parts of an open module, with its name on it and a way to
 	## shut it again.
@@ -1355,100 +1285,18 @@ class WandOverlay extends Control:
 		Design.dashed_rect(self, band, Design.ACCENT, 2.0)
 
 
-	## What to do next, on the canvas, where the work is.
-	##
-	## The toolbar's status line cannot carry this. It is a flexible gap between two button
-	## groups — a hundred and eighty pixels on a normal window — and a sentence long enough
-	## to teach a gesture is a sentence it will clip. That is exactly what it did: raising
-	## the wand printed "point at what it should show" and the strip showed the tail of it.
-	##
-	## It also answers the state that made the whole tool look broken. The targets only
-	## appear on selected nodes, so pressing Wand with nothing selected changed nothing at
-	## all anywhere on screen, which reads as a dead button rather than as a step missing.
-	## Now the empty case is the one that says the most.
-	##
-	## ASCII only, deliberately. Drawn text is invisible to the design suite's font-coverage
-	## check — it can only see Controls — and the last time this project put a glyph on
-	## screen without checking, four arrows had been unrenderable for weeks behind a system
-	## font fallback.
-	func _draw_hint(selected: int) -> void:
-		var text := "Wand: click a knob to put it on the panel, again to take it off."
-		if selected == 0:
-			text = "Wand: select a node, then click a knob on it to put it on the panel."
-
-		var font := Design.font(Design.WEIGHT_MEDIUM)
-		var size := Design.type(Design.SIZE_CONTROL)
-		var measured := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
-		var pad: float = float(Design.scale(Design.SPACE_M))
-		var box := Rect2(Vector2.ZERO, measured + Vector2(pad, pad) * 2.0)
-		# Bottom centre, against the usable rectangle so it never comes to rest under the
-		# zoom cluster or the minimap. At the top it sat on the node somebody was about to
-		# click — which for a band that exists to help you click things is the worst place
-		# available. Work happens above the fold; the instruction goes below it.
-		var room: Rect2 = graph.usable_rect()
-		box.position = Vector2(room.position.x + (room.size.x - box.size.x) * 0.5,
-			room.position.y + room.size.y - box.size.y - float(Design.scale(Design.SPACE_M)))
-
-		draw_rect(box, Design.SURFACES[Design.Surface.RAISED])
-		draw_rect(box, Design.ACCENT, false, 1.5)
-		draw_string(font, box.position + Vector2(pad, pad + measured.y * 0.75), text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.INK_BRIGHT)
-
-
-	## A jack's centre, in this overlay's coordinates.
-	func _jack(node: GraphNode, side: String, index: int) -> Vector2:
-		var spot: Vector2 = node.get_input_port_position(index) if side == "left" \
-			else node.get_output_port_position(index)
-		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
-		return (node.position_offset + spot) * scale - graph.scroll_offset
-
-	## Global rects come from the nodes, which live under GraphEdit's own transform; this
-	## overlay does not. Converting is cheaper than assuming they agree.
 	func _local(rect: Rect2) -> Rect2:
 		var inverse := get_global_transform().affine_inverse()
 		return Rect2(inverse * rect.position, rect.size * inverse.get_scale())
 
-	func _rows(node: Node, found: Array = []) -> Array:
-		for child in node.get_children():
-			var control := child as Control
-			if control == null or not control.is_visible_in_tree():
-				continue
-			if control.get_meta("cell", "") == "parameter":
-				found.append(control)
-				continue
-			_rows(control, found)
-		return found
-
-	func _badge(centre: Vector2, ordinal: int, scale: float) -> void:
-		var radius: float = Design.scale(BADGE_RADIUS) * scale
-		draw_circle(centre, radius, Design.ACCENT)
-		var font := Design.font(Design.WEIGHT_SEMIBOLD)
-		var size: int = maxi(int(radius * 1.2), 8)
-		var text := str(ordinal)
-		var measured := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1.0, size)
-		draw_string(font, centre + Vector2(-measured.x * 0.5, measured.y * 0.34), text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ON_ACCENT)
 
 
-## Sets whether the wand is picking. The input hook is installed and removed with it, so
-## nothing at all is intercepted when the wand is down.
-func set_wand(active: bool) -> void:
-	if wand == active:
-		return
-	wand = active
-	set_process_input(active or drawing or not groups.is_empty())
-	if not active:
-		wand_marks.clear()
-	if _wand_overlay != null:
-		_wand_overlay.queue_redraw()
-
-
-## First refusal on a click, ahead of the GUI pass — which is what lets a knob be picked
-## at all, since a knob is a Control and would otherwise eat its own press. Anything the
-## wand does not want falls through untouched, so selecting, dragging and panning still
-## work with it up.
+## First refusal on a click, ahead of the GUI pass — which is what lets a ghost jack be
+## clicked at all, since it sits inside a node and the node would otherwise take the press.
+## Anything not wanted here falls through untouched, so selecting, dragging and panning are
+## as they were.
 func _input(event: InputEvent) -> void:
-	if not is_visible_in_tree() or not (wand or drawing or not groups.is_empty()):
+	if not is_visible_in_tree():
 		return
 	var rect := get_global_rect()
 
@@ -1464,7 +1312,6 @@ func _input(event: InputEvent) -> void:
 			elif _banding:
 				_banding = false
 				drawing = false
-				set_process_input(wand)
 				mouse_default_cursor_shape = Control.CURSOR_ARROW
 				region_drawn.emit(_nodes_within(Rect2(_band_from, Vector2.ZERO)
 					.expand(_band_to).abs()))
@@ -1490,36 +1337,15 @@ func _input(event: InputEvent) -> void:
 			group_closed.emit(str(module_name))
 			get_viewport().set_input_as_handled()
 			return
-	if not wand:
-		return
 
-	# Ghost jacks before real ones. A ghost is drawn inside the node body while a real
-	# jack's hot zone reaches in from the edge to meet it, and the ghost is the smaller and
-	# more deliberate target of the two.
+	# A ghost jack: an inner port the module does not expose, drawn on the instance while
+	# it is selected. Tested before the node gets the press because a ghost is inside the
+	# node body, and the node would otherwise swallow it.
 	var ghost := ghost_port_at(button.position)
 	if not ghost.is_empty():
 		ghost_port_picked.emit(str(ghost["widget"]), ghost["offer"] as Dictionary)
 		get_viewport().set_input_as_handled()
 		return
-
-	# Jacks next. They sit on the node's edge and their hot zone overlaps the body, so
-	# asking about knobs first would make an edge knob unreachable.
-	var port := port_at(button.position - rect.position, true)
-	if not port.is_empty():
-		port_picked.emit(str(port["widget"]), str(port["side"]), int(port["index"]))
-		get_viewport().set_input_as_handled()
-		return
-
-	var row := parameter_row_at(button.position)
-	if row == null:
-		return
-	var holder: Node = row
-	while holder != null and not (holder is GraphNode):
-		holder = holder.get_parent()
-	if holder == null:
-		return
-	parameter_picked.emit(String(holder.name), str(row.get_meta("parameter_name", "")))
-	get_viewport().set_input_as_handled()
 
 
 ## The parameter row under a viewport-space point, or null. Rows fold away under the
