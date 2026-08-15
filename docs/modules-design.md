@@ -205,7 +205,13 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 > its own press; anything the wand does not want falls straight through, so selecting,
 > dragging and panning are untouched with it up.
 >
-> The same toggle has a second half in the Graphrack tab, where the module exists and is
+> **Removed with the Graphrack tab.** Everything from here to the end of this block
+> described gestures on a rack panel — the second half of the wand — and the rack panel is
+> gone. It is kept as written because it is the specification the panel builder in the
+> Graph tab is being built to, not a record of what the editor does today. Task #65 tracks
+> the rebuild and names the commit each piece is recoverable from.
+>
+> The same toggle had a second half in the Graphrack tab, where the module exists and is
 > wearing that face: a knob becomes a tile, and dragging it writes `panel.rows`. This is
 > the only gesture in the editor that writes a panel. Rows are read off the knobs rather
 > than out of the panel, so a module that has never been arranged is rearranged from the

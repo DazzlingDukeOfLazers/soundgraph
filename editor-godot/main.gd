@@ -148,7 +148,6 @@ var wand_confirm: Button
 var patch_face: PatchFace
 var views: TabContainer
 var rack: Rack
-var graphrack: GraphRack
 var sandbox: Sandbox
 var outline: Outline
 var keyboard: Keyboard
@@ -634,60 +633,6 @@ func _build_ui() -> void:
 	rack_scroll.add_child(rack)
 	views.add_child(rack_scroll)
 
-	# Where the patcher goes next, in a tab of its own so it can be looked at.
-	#
-	# A copy of the rack today and nothing more — see graphrack.gd. It sits beside the
-	# original rather than replacing the Graph tab because the departure is a thing to
-	# steer by eye, and a replacement you cannot compare against is not a comparison. The
-	# GraphEdit view it is aimed at is preserved at the `graph-refactor` tag.
-	var graphrack_column := VBoxContainer.new()
-	graphrack_column.name = "Graphrack"
-	graphrack_column.add_theme_constant_override("separation", 0)
-	views.add_child(graphrack_column)
-
-	var graphrack_scroll := ScrollContainer.new()
-	graphrack_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# Auto, not disabled. Zoomed in, the case is wider than the window and a rack you
-	# cannot pan sideways is a rack with its right-hand modules amputated.
-	graphrack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	graphrack = GraphRack.new()
-	graphrack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	graphrack.type_colours = TYPE_COLOURS
-	graphrack.read_port = func(node_id: String, port: String) -> PackedFloat32Array:
-		if engine == null or not engine.is_loaded():
-			return PackedFloat32Array()
-		var source := _engine_signal_source(node_id, port)
-		return engine.get_port_signal(source[0], source[1])
-	graphrack.ink = INK
-	graphrack.ink_dim = INK_DIM
-	graphrack.parameter_changed.connect(_on_rack_parameter_changed)
-	graphrack.edit_started.connect(func() -> void: _begin_edit())
-	graphrack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
-	graphrack.node_selected.connect(_on_rack_node_selected)
-	# Jacks take the mouse now, so the case has to do something with a cable dragged
-	# between two of them or the gesture would be swallowed here while working next door
-	# Patching the document from the rack, which is the only thing that made this view a
-	# picture of a patcher rather than a picture of a rack.
-	graphrack.connection_made.connect(_on_rack_connection_made)
-	graphrack.patch_refused.connect(func(reason: String) -> void: _say(reason))
-	graphrack.face_rearranged.connect(_on_face_rearranged)
-	graphrack.rearrange_refused.connect(func(reason: String) -> void: _say(reason))
-	graphrack.port_declared.connect(_on_port_declared)
-	# A plain Control between the scroll container and the rack. Containers reset their
-	# children's scale on every layout pass, so a rack parented straight to the scroller
-	# could reserve the room for a zoom but never actually draw at it. The holder takes
-	# the scaled size; the rack inside it keeps its own transform.
-	var graphrack_holder := Control.new()
-	graphrack_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	graphrack_holder.add_child(graphrack)
-	graphrack_scroll.add_child(graphrack_holder)
-	graphrack_column.add_child(_build_graphrack_zoom_bar())
-	graphrack_column.add_child(graphrack_scroll)
-	# Leftmost, and the one the editor opens on. It was added after the views it is
-	# replacing so that it could be compared against them; it leads now, and they stay
-	# where they are for as long as the comparison is still worth making.
-	views.move_child(graphrack_column, 0)
-
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
 	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
 	# rebuild, is the argument for shipping instructions rather than recordings.
@@ -727,7 +672,6 @@ func _build_ui() -> void:
 	# is first shown — before that it has no size to flow modules into.
 	views.tab_changed.connect(func(_index: int) -> void:
 		rack.rebuild()
-		graphrack.rebuild()
 		if sandbox != null and sandbox.is_visible_in_tree():
 			sandbox.ensure_sounds_loaded())
 	split.add_child(views)
@@ -1278,8 +1222,6 @@ func _on_view_menu(id: int) -> void:
 			view_popup.set_item_checked(view_popup.get_item_index(40 + entry),
 				entry == Rack.density)
 		rack.rebuild()
-		GraphRack.density = Rack.density
-		graphrack.rebuild()
 		_say("rack: %s" % Rack.DENSITY_NAMES[Rack.density])
 		return
 	if id >= 30:
@@ -1339,8 +1281,6 @@ func _use_ui_scale(index: int) -> void:
 	_refresh_keyboard_range()
 	if rack != null:
 		rack.rebuild()
-	if graphrack != null:
-		graphrack.rebuild()
 	if outline != null:
 		outline.refresh()
 	_say("size: %s" % Design.SCALE_NAMES[Design.ui_scale])
@@ -1388,9 +1328,6 @@ func _use_palette(index: int) -> void:
 	if rack != null:
 		rack.type_colours = TYPE_COLOURS
 		rack.rebuild()
-	if graphrack != null:
-		graphrack.type_colours = TYPE_COLOURS
-		graphrack.rebuild()
 	_say("theme: %s" % Design.PALETTE_NAMES[index])
 
 
@@ -1404,57 +1341,6 @@ func _all_notes_off() -> void:
 		keyboard.set_held_notes(held_notes)
 
 
-## The graphrack's zoom strip.
-##
-## A strip above the case rather than a panel floating over it. The graph's zoom control
-## was an overlay pinned to the top-left of the canvas, and in every screenshot taken of
-## that view it is sitting on top of a node's port labels — a control for looking at the
-## patch, placed so that it covers the patch. There is room for a 30px strip.
-func _build_graphrack_zoom_bar() -> Control:
-	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", Design.scale(Design.SPACE_XS))
-	bar.alignment = BoxContainer.ALIGNMENT_END
-
-	var readout := Label.new()
-	readout.text = "100%"
-	readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	# Held open at the width of the widest reading, so stepping through the ladder does
-	# not shuffle the buttons beside it left and right.
-	readout.custom_minimum_size.x = Design.scale(48)
-	readout.add_theme_font_override("font", Design.numeric_font())
-	readout.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-	readout.add_theme_color_override("font_color", Design.INK_SECOND)
-	bar.add_child(readout)
-
-	var out_button := Button.new()
-	out_button.text = "−"
-	out_button.tooltip_text = "Zoom out"
-	out_button.pressed.connect(func() -> void: graphrack.step_zoom(false))
-	bar.add_child(_defocus(out_button))
-
-	var reset := Button.new()
-	reset.text = "1"
-	reset.tooltip_text = "Actual size"
-	reset.pressed.connect(func() -> void: graphrack.zoom = 1.0)
-	bar.add_child(_defocus(reset))
-
-	var in_button := Button.new()
-	in_button.text = "+"
-	in_button.tooltip_text = "Zoom in"
-	in_button.pressed.connect(func() -> void: graphrack.step_zoom(true))
-	bar.add_child(_defocus(in_button))
-
-	var fit := Button.new()
-	fit.text = "Fit"
-	fit.tooltip_text = "Fit the whole case on screen"
-	fit.pressed.connect(func() -> void: graphrack.zoom_to_fit())
-	bar.add_child(_defocus(fit))
-
-	graphrack.zoom_changed.connect(func(value: float) -> void:
-		readout.text = "%d%%" % int(roundf(value * 100.0))
-		_say("graphrack: %d%%" % int(roundf(value * 100.0))))
-	return bar
 
 
 ## Selects a view by its tab title.
@@ -1921,8 +1807,6 @@ func _process(_delta: float) -> void:
 	_update_port_levels(_delta)
 	if rack != null and rack.is_visible_in_tree():
 		rack.refresh_displays()
-	if graphrack != null and graphrack.is_visible_in_tree():
-		graphrack.refresh_displays()
 	if message_label != null and message_label.text != "" \
 			and Time.get_ticks_msec() > _message_clears_at:
 		message_label.text = ""
@@ -2076,10 +1960,6 @@ func _rebuild_view() -> void:
 
 	# The rack reads the same document, so it is rebuilt from the same place rather than
 	# kept in step by hand.
-	if graphrack != null:
-		graphrack.registry = registry
-		graphrack.patch = patch
-		graphrack.rebuild()
 	if rack != null:
 		rack.registry = registry
 		rack.patch = patch
@@ -2474,16 +2354,10 @@ func _on_module_renamed(old_name: String, new_name: String) -> void:
 			var lane_target: Dictionary = lane.get("target", {})
 			if moved.has(str(lane_target.get("node", ""))):
 				lane_target["node"] = moved[str(lane_target["node"])]
-		# Arrangement hints are keyed by id too, and a stale place is a module that jumps
-		# back to the seed the next time the patch is opened.
-		var arrangement: Dictionary = patch.get(GraphRack.ARRANGEMENT_KEY, {})
-		var hints: Dictionary = arrangement.get(GraphRack.PLACES_KEY, {})
-		for id in moved:
-			if hints.has(id):
-				hints[moved[id]] = hints[id]
-				hints.erase(id)
-		# And the rack order, which is a list of ids rather than a map of them.
-		var order: Array = arrangement.get(GraphRack.ORDER_KEY, [])
+		# The rack order is keyed by id too, and a stale entry is a module that jumps back
+		# to where the layering would have put it the next time the patch is opened.
+		var arrangement: Dictionary = patch.get(Rack.ARRANGEMENT_KEY, {})
+		var order: Array = arrangement.get(Rack.ORDER_KEY, [])
 		for index in order.size():
 			if moved.has(str(order[index])):
 				order[index] = moved[str(order[index])]
@@ -3306,31 +3180,6 @@ func _on_connection_request(from_node: StringName, from_port: int, to_node: Stri
 	_commit_edit("connect")
 
 
-## The same edit as _on_connection_request, arriving from a rack instead of a GraphEdit.
-##
-## By port name rather than by index, because that is what a rack has: a jack knows what
-## it is called and never learned its position in a slot list. The two paths agree on
-## everything that matters — several cables into one input sum, an exact duplicate is a
-## slip and is refused.
-func _on_rack_connection_made(from_node: String, from_port: String,
-		to_node: String, to_port: String) -> void:
-	for connection in patch.get("connections", []):
-		if str(connection["from"]["node"]) == from_node \
-				and str(connection["from"]["port"]) == from_port \
-				and str(connection["to"]["node"]) == to_node \
-				and str(connection["to"]["port"]) == to_port:
-			_say("%s.%s already feeds %s.%s" % [from_node, from_port, to_node, to_port])
-			return
-	_begin_edit()
-	patch["connections"].append({
-		"from": {"node": from_node, "port": from_port},
-		"to": {"node": to_node, "port": to_port},
-	})
-	await _rebuild_view()
-	_apply()
-	_commit_edit("connect")
-
-
 func _on_disconnection_request(from_node: StringName, from_port: int, to_node: StringName,
 		to_port: int) -> void:
 	var from_id: String = ids.get(from_node, "")
@@ -4141,11 +3990,6 @@ func _set_wand(active: bool) -> void:
 	graph_edit.set_wand(active)
 	if patch_face != null:
 		patch_face.wand = active
-	if graphrack != null:
-		graphrack.wand = active
-		# Rebuilt, because raising the wand grows a ghost on every module face and putting
-		# it down takes them away — and a ghost is a Control, not a coat of paint.
-		graphrack.rebuild()
 	if wand_button != null and wand_button.button_pressed != active:
 		wand_button.button_pressed = active
 	if not active:
@@ -4158,10 +4002,7 @@ func _set_wand(active: bool) -> void:
 	_refresh_wand()
 	# The Graph tab says the rest on the canvas, where there is room for it — see
 	# PatchGraph.WandOverlay._draw_hint. This line only has to say the wand is up.
-	if graphrack != null and graphrack.is_visible_in_tree():
-		_say("wand up: drag a knob to move it, off the panel to take it off the face")
-	else:
-		_say("wand up")
+	_say("wand up")
 
 
 ## Ports are not knobs, and the file's face is made of knobs. `controls` targets a node
@@ -4620,119 +4461,12 @@ func _mark_for(widget: GraphNode, pick: Dictionary) -> Dictionary:
 	return {}
 
 
-## Stores a face somebody just rearranged with their hands.
-##
-## Presentation only, and that is what makes it worth doing by dragging: the surface is
-## untouched, so no cable moves, no control loses its target and nothing about the sound
-## can change. The worst a bad arrangement costs is one Ctrl-Z.
-##
-## It lands on the *definition*, so every instance of that module wears it — which is the
-## right answer and worth saying out loud, because the thing being dragged is one instance
-## and the thing being edited is what all of them are.
-##
-## Any labels already on the panel are kept. Moving a knob is not renaming it, and the two
-## are separate fields precisely so that one gesture cannot quietly do the other.
-func _on_face_rearranged(node_id: String, rows: Array, added: Dictionary = {}) -> void:
-	var module_name := _module_of(node_id)
-	var definitions: Dictionary = patch.get("modules", {})
-	if module_name == "" or not definitions.has(module_name):
-		return
-	_begin_edit()
-	var definition: Dictionary = definitions[module_name]
-
-	# A ghost dragged onto the face was never exported, so it becomes an export on the way
-	# in — one edit, because "put this knob on the module" is one thought. The rack names
-	# it by where it came from; the export name is chosen here, where what is already taken
-	# is known, and swapped into the rows so the panel names the binding and not the ghost.
-	var gained := ""
-	if not added.is_empty():
-		var surface: Array = definition.get("parameters", []).duplicate(true)
-		gained = _free_export_name(surface, str(added["node"]), str(added["parameter"]))
-		surface.append({"name": gained, "node": str(added["node"]),
-			"parameter": str(added["parameter"])})
-		definition["parameters"] = surface
-		var renamed: Array = []
-		for row: Array in rows:
-			renamed.append(row.map(func(n): return gained if str(n) == str(added["key"]) \
-				else str(n)))
-		rows = renamed
-
-	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
-	panel["rows"] = rows
-	definition["panel"] = panel
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	_apply()
-	_commit_edit("rearrange %s" % module_name)
-	if gained != "":
-		_say("'%s' is on %s's face, and exported so a patch can reach it"
-			% [gained, module_name])
-	else:
-		_say("%s's face is %d row%s now" % [module_name, rows.size(),
-			"" if rows.size() == 1 else "s"])
-
-
 ## The module a node is an instance of, or "".
 func _module_of(node_id: String) -> String:
 	for node in patch.get("nodes", []):
 		if str(node["id"]) == node_id:
 			return str(node.get("module", ""))
 	return ""
-
-
-## An export name not already spoken for. Same shape as ModuleAuthor's: the inner
-## parameter's own name where it is free, qualified by its node where it is not.
-func _free_export_name(surface: Array, node_id: String, parameter: String) -> String:
-	var taken := {}
-	for binding in surface:
-		taken[str(binding["name"])] = true
-	if not taken.has(parameter):
-		return parameter
-	var qualified := "%s_%s" % [node_id, parameter]
-	if not taken.has(qualified):
-		return qualified
-	var counter := 2
-	while taken.has("%s-%d" % [qualified, counter]):
-		counter += 1
-	return "%s-%d" % [qualified, counter]
-
-
-## A ghost jack was clicked: the inner port becomes one of the module's own.
-##
-## The additive half of what the Builder's port list did, and the only half the wand
-## offers — declaring a port is safe, since nothing can yet be plugged into a port that
-## did not exist, while *un*declaring one strands whatever is plugged into it. That is an
-## edit worth a considered surface rather than a click, and it does not have one yet.
-func _on_port_declared(node_id: String, offer: Dictionary) -> void:
-	var module_name := _module_of(node_id)
-	var definitions: Dictionary = patch.get("modules", {})
-	if module_name == "" or not definitions.has(module_name):
-		return
-	var definition: Dictionary = definitions[module_name]
-	var side := "inputs" if bool(offer.get("is_input", true)) else "outputs"
-	var bindings: Array = definition.get(side, []).duplicate(true)
-	for binding in bindings:
-		if str(binding["node"]) == str(offer["node"]) \
-				and str(binding["port"]) == str(offer["port"]):
-			_say("%s.%s is already a port of %s"
-				% [str(offer["node"]), str(offer["port"]), module_name])
-			return
-	var taken := {}
-	for binding in bindings:
-		taken[str(binding["name"])] = true
-	var port_name := str(offer["port"])
-	if taken.has(port_name):
-		port_name = "%s_%s" % [str(offer["node"]), str(offer["port"])]
-	_begin_edit()
-	bindings.append({"name": port_name, "node": str(offer["node"]),
-		"port": str(offer["port"])})
-	definition[side] = bindings
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	_apply()
-	_commit_edit("declare %s on %s" % [port_name, module_name])
-	_say("%s is %s's %s now" % [port_name, module_name,
-		"input" if side == "inputs" else "output"])
 
 
 func _parameter_row(parent: Node, parameter: String) -> Control:

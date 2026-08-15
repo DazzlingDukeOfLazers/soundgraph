@@ -158,7 +158,7 @@ class Cables extends Control:
 			var held_to: Vector2 = inverse * (live[1] as Vector2)
 			var held: Color = live[2]
 			var slack: float = clampf(absf(held_to.x - held_from.x) * 0.30, 46.0, 260.0)
-			var curve := GraphRack.catenary(held_from, held_to, slack)
+			var curve := Rack.catenary(held_from, held_to, slack)
 			draw_polyline(curve, Color(0, 0, 0, 0.45), 7.0, true)
 			draw_polyline(curve, held, 4.0, true)
 			draw_circle(held_from, 5.0, held)
@@ -174,7 +174,7 @@ class Cables extends Control:
 			var b: Vector2 = inverse * (run[1] as Vector2)
 			var colour: Color = run[2]
 			var sag: float = clampf(absf(b.x - a.x) * 0.30, 46.0, 260.0)
-			var points := GraphRack.catenary(a, b, sag)
+			var points := Rack.catenary(a, b, sag)
 			var clipped := _inside(points, Rect2(inverse * window.position, window.size))
 			for run_points: PackedVector2Array in clipped:
 				if run_points.size() < 2:
