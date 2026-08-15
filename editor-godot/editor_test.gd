@@ -3153,6 +3153,133 @@ func _initialize() -> void:
 			ghosts_after = true
 	check(not ghosts_after, "putting the wand down takes the ghosts away")
 
+	# ---- taking something off a module's contract ------------------------------------
+	# The half of surface editing the wand cannot offer. Declaring a port is safe — nothing
+	# can be plugged into one that did not exist — so it is a click. Taking one away strands
+	# whatever was in it, so it is a list with a count and a confirmation, and the document
+	# has to come out the other side loadable rather than merely smaller.
+	main._focus_node(instance)
+	for i in 6:
+		await process_frame
+
+	var take_off_buttons := func() -> int:
+		var found := 0
+		for child in main.context_panel.get_children():
+			var row := child as HBoxContainer
+			if row == null:
+				continue
+			for inner in row.get_children():
+				if inner is Button and str((inner as Button).text) == "×":
+					found += 1
+		return found
+	check(take_off_buttons.call() > 0,
+		"the inspector offers a way to take each port and knob back off (%d)"
+			% take_off_buttons.call())
+
+	# Un-exporting: the export goes, and so does everything reaching through it.
+	main.patch["controls"] = [{
+		"id": "played", "label": "Played", "kind": "knob",
+		"target": {"node": instance, "parameter": "resonance"},
+		"min": 0.0, "max": 1.0, "default": 0.5, "scaling": "linear",
+	}]
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == instance:
+			node["parameters"]["resonance"] = 0.42
+	main._synthesize_module_descriptors()
+	await main._rebuild_view()
+	for i in 6:
+		await process_frame
+	check(main._controls_driving("part", "resonance") == 1,
+		"a control aimed at an export is counted before anything is clicked (%d)"
+			% main._controls_driving("part", "resonance"))
+
+	var exports_before: int = main.patch["modules"]["part"].get("parameters", []).size()
+	main._unexport_knob("part", "resonance")
+	for i in 10:
+		await process_frame
+	var export_names: Array = []
+	for binding: Dictionary in main.patch["modules"]["part"].get("parameters", []):
+		export_names.append(str(binding["name"]))
+	check(not export_names.has("resonance") and export_names.size() == exports_before - 1,
+		"un-exporting takes the knob off the surface (%s)" % str(export_names))
+	check(main.patch.get("controls", []).is_empty(),
+		"and the control driving it goes rather than being left to fail loading")
+	var stale_value := false
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == instance \
+				and (node.get("parameters", {}) as Dictionary).has("resonance"):
+			stale_value = true
+	check(not stale_value,
+		"and the value the instance had set through it goes too — nothing reads it now")
+	var still_on_face := false
+	for row: Array in main.patch["modules"]["part"].get("panel", {}).get("rows", []):
+		if row.has("resonance"):
+			still_on_face = true
+	check(not still_on_face, "and it is off the panel, which named it by that export")
+
+	# Un-declaring a port: the port goes, and the cables in it go with it.
+	var a_port := ""
+	var port_cables := 0
+	for connection in main.patch.get("connections", []):
+		if a_port != "" or str(connection["to"]["node"]) != instance:
+			continue
+		for binding: Dictionary in Seams.declared_ports(
+				main.patch["modules"]["part"], false):
+			if str(binding["name"]) == str(connection["to"]["port"]):
+				a_port = str(binding["name"])
+	if a_port != "":
+		port_cables = main._cables_into("part", a_port)
+	check(a_port != "" and port_cables > 0,
+		"a declared port of the module has something plugged into it (%s, %d)"
+			% [a_port, port_cables])
+
+	var connections_before: int = main.patch["connections"].size()
+	if a_port != "":
+		main._undeclare_port("part", false, a_port)
+		for i in 10:
+			await process_frame
+		var port_names: Array = []
+		for binding: Dictionary in Seams.declared_ports(
+				main.patch["modules"]["part"], false):
+			port_names.append(str(binding["name"]))
+		check(not port_names.has(a_port),
+			"un-declaring takes the port off the module (%s)" % str(port_names))
+		check(main.patch["connections"].size() == connections_before - port_cables,
+			"and exactly the cables that were in it (%d of %d)"
+				% [port_cables, connections_before])
+
+		# The claim the whole reconciliation exists for: what is left must still load. A
+		# connection naming a port the module has not got is a document the loader refuses,
+		# and this edit is the one that can produce one.
+		var dangling := 0
+		for connection in main.patch.get("connections", []):
+			for end in ["from", "to"]:
+				var at: Dictionary = connection[end]
+				if str(at["node"]) != instance:
+					continue
+				var found := false
+				for port: Dictionary in main.registry["module:part"].get(
+						"inputs" if end == "to" else "outputs", []):
+					if str(port["name"]) == str(at["port"]):
+						found = true
+				if not found:
+					dangling += 1
+		check(dangling == 0,
+			"leaving no cable naming a port the module has not got (%d)" % dangling)
+
+		# And it is one undo, not several.
+		main._undo()
+		for i in 10:
+			await process_frame
+		var port_after_undo: Array = []
+		for binding: Dictionary in Seams.declared_ports(
+				main.patch["modules"]["part"], false):
+			port_after_undo.append(str(binding["name"]))
+		check(port_after_undo.has(a_port), "undo puts the port back (%s)" % str(port_after_undo))
+		check(main.patch["connections"].size() == connections_before,
+			"with the cables that were in it (%d of %d)"
+				% [main.patch["connections"].size(), connections_before])
+
 	# ---- and the module can be given a name ------------------------------------------
 	# Collapse calls every fresh definition "part" and then names the instance after it,
 	# so both arrive as the same placeholder and the running order reads "part.filter".

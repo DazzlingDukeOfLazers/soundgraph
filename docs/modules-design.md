@@ -239,13 +239,27 @@ export names, module-typed node inside a definition, and an expansion-size bomb
 > slot to the index of a visible child and a slot inserted anywhere but the end renumbers
 > every slot below it.
 >
-> Only the additive directions are reachable. Declaring a port is safe — nothing can be
-> plugged into a port that did not exist — while *un*declaring one strands whatever is
-> plugged in, and un-exporting a knob strands the controls and automation aimed at it.
-> Those are edits worth a considered surface rather than a click, and they do not have one
-> since the Builder tab went — see task #61. Renaming a module went with it too and came
-> back on its own: the field is on the instance in the inspector, because the instance is
-> the thing on screen.
+> The two directions get different surfaces, and the asymmetry is the point. Declaring a
+> port is safe — nothing can be plugged into one that did not exist — so it is a click, and
+> the wand's ghosts are that click. *Un*declaring one strands whatever is plugged in, and
+> un-exporting a knob strands the controls and automation aimed at it, so those are a list
+> with a confirmation: the inspector shows a module's ports and its exported knobs, each
+> already carrying the number of things depending on it, and taking one off asks first and
+> names what goes with it. A count somebody only meets in the confirmation is a count they
+> meet after deciding.
+>
+> The dependants are removed in the same edit rather than left behind. A cable naming a port
+> the module has not got is a document the loader refuses — rightly — so the choice is
+> between reconciling here, where it can be counted and undone in one step, and writing a
+> file somebody has to repair by hand.
+>
+> The port list is built through `Seams.declared_ports`, so both spellings appear: a port
+> may be a binding in `inputs`/`outputs` or a port node drawn inside the definition, and it
+> is usually the second. Taking a drawn one off removes the node and the inner wires that
+> ran to it, since the node *is* the port.
+>
+> Renaming a module also went with the Builder and came back on its own: the field is on
+> the instance in the inspector, because the instance is the thing on screen.
 
 > **Stage 4 landed — the design is complete.** Both importers emit modules by
 > default: the DX7 bank is one operator definition and six instances per voice, the

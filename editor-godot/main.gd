@@ -1651,6 +1651,7 @@ func _fill_node_context(node_id: String) -> void:
 		field.text_submitted.connect(func(text: String) -> void:
 			_on_module_renamed(module_name, text.strip_edges()))
 		context_panel.add_child(field)
+		_fill_module_contract(module_name)
 
 	# Every output, with a click to point the scope at it — "what is this node putting out"
 	# answered in one click rather than by hunting for the right port on the node itself.
@@ -1659,6 +1660,284 @@ func _fill_node_context(node_id: String) -> void:
 		context_panel.add_child(_field("Outputs"))
 		for port in outputs:
 			context_panel.add_child(_port_row(node_id, port))
+
+
+## What a module promises the patches that use it: its ports and its exported knobs.
+##
+## Listed here, in the inspector, and each with a way to take it back — which is the half of
+## surface editing the wand cannot offer. Declaring a port or exporting a knob is safe: a
+## cable cannot already be plugged into a port that did not exist, so a click is enough and
+## the wand's ghosts are that click. Taking one away is the opposite. A port strands every
+## cable in it; an export strands every control and automation lane aimed at it, and every
+## value an instance had set through it.
+##
+## So it is a list with a confirmation rather than a click, and the confirmation says what
+## breaks *before* it happens, counted from the document rather than described in general.
+## "Remove this port" and "remove this port and the two cables in it" are different offers,
+## and only one of them can be accepted honestly.
+func _fill_module_contract(module_name: String) -> void:
+	var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
+	if definition.is_empty():
+		return
+
+	# Through Seams.declared_ports, so both spellings appear. A module's port may be a
+	# binding in `inputs`/`outputs` or a port node drawn inside the definition, and most of
+	# them are the second — a list that showed only the binding list would omit the ports
+	# nearly every module actually has, which is worse than having no list.
+	for is_output in [false, true]:
+		var ports: Array = Seams.declared_ports(definition, is_output)
+		if ports.is_empty():
+			continue
+		context_panel.add_child(_field("Module outputs" if is_output else "Module inputs"))
+		for port: Dictionary in ports:
+			context_panel.add_child(_contract_row(
+				str(port["name"]),
+				"%s.%s" % [str(port["node"]), str(port["port"])],
+				_cables_into(module_name, str(port["name"])),
+				"cable",
+				func(): _undeclare_port(module_name, is_output, str(port["name"]))))
+
+	var exports: Array = definition.get("parameters", [])
+	if exports.is_empty():
+		return
+	context_panel.add_child(_field("Knobs"))
+	for binding: Dictionary in exports:
+		context_panel.add_child(_contract_row(
+			str(binding["name"]),
+			"%s.%s" % [str(binding["node"]), str(binding["parameter"])],
+			_controls_driving(module_name, str(binding["name"])),
+			"control",
+			func(): _unexport_knob(module_name, str(binding["name"]))))
+
+
+## One line of the contract: what it is called, what it reaches, and a way to take it off.
+func _contract_row(shown: String, inner: String, depends: int, noun: String,
+		remove: Callable) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Design.scale(Design.SPACE_S))
+
+	var name_label := Label.new()
+	name_label.text = shown
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# What it actually reaches, under the name the module gave it — the same pairing the
+	# file's own panel draws, so "which inner thing is this" never needs the file open.
+	name_label.tooltip_text = inner
+	name_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
+	row.add_child(name_label)
+
+	if depends > 0:
+		# The count, before anything is clicked. A number that only appears in the
+		# confirmation is a number somebody meets after deciding.
+		var uses := Label.new()
+		uses.text = "%d %s%s" % [depends, noun, "" if depends == 1 else "s"]
+		uses.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+		uses.add_theme_color_override("font_color", Design.INK_SECOND)
+		row.add_child(uses)
+
+	var take_off := Button.new()
+	take_off.text = "×"
+	take_off.tooltip_text = "Take %s off the module" % shown
+	take_off.pressed.connect(func() -> void:
+		if depends == 0:
+			remove.call()
+			return
+		_confirm("Take %s off %s?" % [shown, noun],
+			"%d %s%s point%s at it and will be removed too. Undo puts everything back."
+				% [depends, noun, "" if depends == 1 else "s",
+					"s" if depends == 1 else ""],
+			remove))
+	row.add_child(_defocus(take_off))
+	return row
+
+
+## How many cables are plugged into this port, across every instance of the module.
+func _cables_into(module_name: String, port_name: String) -> int:
+	var instances := _instances_of(module_name)
+	var count := 0
+	for connection in patch.get("connections", []):
+		for end in ["from", "to"]:
+			var side: Dictionary = connection[end]
+			if instances.has(str(side["node"])) and str(side["port"]) == port_name:
+				count += 1
+	return count
+
+
+## How many controls and automation lanes are aimed at this export.
+func _controls_driving(module_name: String, export_name: String) -> int:
+	var instances := _instances_of(module_name)
+	var count := 0
+	for list_key in ["controls", "automation"]:
+		for item in patch.get(list_key, []):
+			var target: Dictionary = item.get("target", {})
+			if instances.has(str(target.get("node", ""))) \
+					and str(target.get("parameter", "")) == export_name:
+				count += 1
+	return count
+
+
+func _instances_of(module_name: String) -> Dictionary:
+	var instances := {}
+	for node in patch.get("nodes", []):
+		if str(node.get("module", "")) == module_name:
+			instances[str(node["id"])] = true
+	return instances
+
+
+## Asks before doing something that cannot be undone by doing it again.
+##
+## One dialog, rebuilt each time rather than kept: it is shown from a panel that is itself
+## rebuilt on every selection change, and a dialog outliving the button that opened it is a
+## dialog acting on a module nobody is looking at any more.
+func _confirm(title: String, body: String, then: Callable) -> void:
+	var dialog := ConfirmationDialog.new()
+	dialog.title = title
+	dialog.dialog_text = body
+	dialog.ok_button_text = "Remove"
+	dialog.confirmed.connect(func() -> void:
+		then.call()
+		dialog.queue_free())
+	dialog.canceled.connect(func() -> void: dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+## Takes a port off a module, and every cable that was plugged into it.
+##
+## The cables go rather than being left behind. A connection naming a port the module no
+## longer has is a document that will not load — the loader is right to refuse it — so the
+## choice is between removing them here, where it can be counted and undone in one step, and
+## writing a file that has to be repaired by hand.
+func _undeclare_port(module_name: String, is_output: bool, port_name: String) -> void:
+	var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
+	if definition.is_empty():
+		return
+	_begin_edit()
+
+	# Both spellings, because a port has two. A seam drawn inside the definition *is* the
+	# port, so taking the port away means taking the node away — and the inner wires that
+	# ran to it, which would otherwise name a node the definition no longer has.
+	var seam_id := ""
+	for inner in definition.get("nodes", []):
+		if not Seams.is_port_seam(inner):
+			continue
+		if str(inner.get("type", "")) != ("Output" if is_output else "Input"):
+			continue
+		var named := str(inner.get("name", ""))
+		if named == "":
+			named = str(inner["id"])
+		if named == port_name:
+			seam_id = str(inner["id"])
+	if seam_id != "":
+		var kept_inner: Array = []
+		for inner in definition.get("nodes", []):
+			if str(inner["id"]) != seam_id:
+				kept_inner.append(inner)
+		definition["nodes"] = kept_inner
+		var kept_wires: Array = []
+		for wire in definition.get("connections", []):
+			if str(wire["from"]["node"]) != seam_id and str(wire["to"]["node"]) != seam_id:
+				kept_wires.append(wire)
+		definition["connections"] = kept_wires
+
+	var side := "outputs" if is_output else "inputs"
+	var kept_bindings: Array = []
+	for binding in definition.get(side, []):
+		if str(binding["name"]) != port_name:
+			kept_bindings.append(binding)
+	if kept_bindings.is_empty():
+		definition.erase(side)
+	else:
+		definition[side] = kept_bindings
+
+	var instances := _instances_of(module_name)
+	var kept: Array = []
+	var stranded := 0
+	for connection in patch.get("connections", []):
+		var gone := false
+		for end in ["from", "to"]:
+			var at: Dictionary = connection[end]
+			if instances.has(str(at["node"])) and str(at["port"]) == port_name:
+				gone = true
+		if gone:
+			stranded += 1
+			continue
+		kept.append(connection)
+	patch["connections"] = kept
+
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_refresh_context()
+	_commit_edit("take %s off %s" % [port_name, module_name])
+	_say("%s is no longer a port of %s%s" % [port_name, module_name,
+		"" if stranded == 0 else " — and %d cable%s had nowhere to land"
+			% [stranded, "" if stranded == 1 else "s"]])
+
+
+## Takes a knob off a module's surface, with everything that was reaching through it.
+##
+## Unlike the panel, the surface is not presentation: an export is what a patch can set, a
+## control can drive and automation can reach. So this drops the panel row too, the controls
+## and lanes aimed at it, and any value an instance had set through it — a value nothing
+## reads is not an error but it is a lie, and saving it would suggest something does.
+func _unexport_knob(module_name: String, export_name: String) -> void:
+	var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
+	if definition.is_empty():
+		return
+	_begin_edit()
+	var kept_exports: Array = []
+	for binding in definition.get("parameters", []):
+		if str(binding["name"]) != export_name:
+			kept_exports.append(binding)
+	if kept_exports.is_empty():
+		definition.erase("parameters")
+	else:
+		definition["parameters"] = kept_exports
+
+	var panel: Dictionary = definition.get("panel", {})
+	if panel.has("rows"):
+		var rows := ModuleFace.moved(panel["rows"], export_name, {"remove": true})
+		if rows.is_empty():
+			panel.erase("rows")
+		else:
+			panel["rows"] = rows
+	if panel.has("labels"):
+		(panel["labels"] as Dictionary).erase(export_name)
+		if (panel["labels"] as Dictionary).is_empty():
+			panel.erase("labels")
+	if panel.is_empty():
+		definition.erase("panel")
+
+	var instances := _instances_of(module_name)
+	for node in patch.get("nodes", []):
+		if instances.has(str(node["id"])):
+			(node.get("parameters", {}) as Dictionary).erase(export_name)
+
+	var dropped := 0
+	for list_key in ["controls", "automation"]:
+		if not patch.has(list_key):
+			continue
+		var kept_targets: Array = []
+		for item in patch[list_key]:
+			var target: Dictionary = item.get("target", {})
+			if instances.has(str(target.get("node", ""))) \
+					and str(target.get("parameter", "")) == export_name:
+				dropped += 1
+				continue
+			kept_targets.append(item)
+		patch[list_key] = kept_targets
+
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_refresh_face()
+	_refresh_context()
+	_commit_edit("take %s off %s's surface" % [export_name, module_name])
+	_say("%s is no longer exported by %s%s" % [export_name, module_name,
+		"" if dropped == 0 else " — and %d control%s had nothing left to drive"
+			% [dropped, "" if dropped == 1 else "s"]])
 
 
 ## A clickable stage in the execution order.
