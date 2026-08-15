@@ -9,6 +9,8 @@ extends VBoxContainer
 ##
 ## The gestures are the ones the Graphrack tab had, rebuilt here. Drag a knob to move it
 ## within the face; drag it off the panel to take it off; drag a ghost on to put it there.
+## No mode to arm first: this panel is a builder, and a builder that has to be switched on
+## is a builder somebody has to be told about.
 ## What changed in the rebuild is where the rows come from. GraphRack inferred them from
 ## where the knobs had ended up on screen — sorting by y with a tolerance taken off the knob
 ## height — because its face was a GridContainer that wrapped on its own and nobody had
@@ -45,14 +47,6 @@ signal removed(export_name: String)
 
 ## Somebody tried to arrange a face that is not a module's.
 signal refused(reason: String)
-
-var wand := false:
-	set(value):
-		wand = value
-		_carrying = -1
-		_target = {}
-		set_process_input(value)
-		rebuild()
 
 ## [{control, key, ghost, offer, row, index}] in the order they are drawn, real cells first.
 var _cells: Array = []
@@ -135,7 +129,7 @@ static func offer_key(parameter: Dictionary) -> String:
 ## up at all, since a knob is a Control and would otherwise eat it. Same trick as
 ## PatchFace._input and PatchGraph._input, for the same reason.
 func _input(event: InputEvent) -> void:
-	if not wand or not is_visible_in_tree() or _cells.is_empty():
+	if not is_visible_in_tree() or _cells.is_empty():
 		return
 	var button := event as InputEventMouseButton
 	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
@@ -256,7 +250,7 @@ func _line_rects() -> Array:
 
 
 func _draw() -> void:
-	if not wand or _cells.is_empty():
+	if _cells.is_empty():
 		return
 	var inverse := get_global_transform().affine_inverse()
 	for index in _cells.size():
@@ -387,9 +381,6 @@ func rebuild() -> void:
 		hint.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 		hint.add_theme_color_override("font_color", Design.INK_SECOND)
 		add_child(hint)
-
-	if not wand:
-		return
 
 	# Everything this face could show and does not: exports the panel left off, and every
 	# inner knob nobody exported. Under the face rather than in it, because they are not on

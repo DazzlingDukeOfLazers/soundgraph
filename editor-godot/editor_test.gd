@@ -2794,6 +2794,83 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 
+	# ---- the file's panel is a builder, with no mode to raise -------------------------
+	# The panel offers what the selected node has and it has not: the same offer a module's
+	# face makes, at the file's scale. That is the point of it — the wand asked you to arm a
+	# tool and then point at a knob on the canvas; this asks you to select the node you were
+	# going to point at anyway.
+	main.graph_edit.zoom = 1.0
+	main._focus_node("amp")
+	for i in 6:
+		await process_frame
+	check(str(main.patch_face.offer_node) == "amp",
+		"the panel offers the selected node's knobs (%s)" % str(main.patch_face.offer_node))
+	var offered_keys: Array = []
+	for index in main.patch_face._offers:
+		offered_keys.append("%s.%s" % [str(main.patch_face._offers[index]["node"]),
+			str(main.patch_face._offers[index]["parameter"])])
+	check(offered_keys.has("amp.gain"),
+		"including one it is not already showing (%s)" % str(offered_keys))
+	var on_panel_already := false
+	for index in main.patch_face._targets:
+		if str(main.patch_face._targets[index]["node"]) == "amp" \
+				and str(main.patch_face._targets[index]["parameter"]) == "gain":
+			on_panel_already = true
+	check(not on_panel_already, "and not offering what is already on the panel")
+
+	# Dragging an offer onto the panel puts it there, with no tool raised first.
+	var face_before: int = main.patch.get("controls", []).size()
+	var offer_index := -1
+	for index in main.patch_face._offers:
+		if str(main.patch_face._offers[index]["parameter"]) == "gain":
+			offer_index = int(index)
+	check(offer_index >= 0, "the offer can be picked up (%d)" % offer_index)
+	main.patch_face._finish(offer_index, 0)
+	for i in 8:
+		await process_frame
+	check(main.patch.get("controls", []).size() == face_before + 1,
+		"dragging it onto the panel puts it on (%d, was %d)"
+			% [main.patch.get("controls", []).size(), face_before])
+	var went_on := false
+	for control in main.patch.get("controls", []):
+		var target: Dictionary = control.get("target", {})
+		if str(target.get("node", "")) == "amp" and str(target.get("parameter", "")) == "gain":
+			went_on = true
+	check(went_on, "pointing at the knob it was dragged from")
+
+	# And off again, which is a drop outside the panel rather than a second click.
+	var panel_cell := -1
+	for index in main.patch_face._targets:
+		if str(main.patch_face._targets[index]["node"]) == "amp" \
+				and str(main.patch_face._targets[index]["parameter"]) == "gain":
+			panel_cell = int(index)
+	check(panel_cell >= 0, "it is a cell on the panel now (%d)" % panel_cell)
+	main.patch_face._finish(panel_cell, -1)
+	for i in 8:
+		await process_frame
+	check(main.patch.get("controls", []).size() == face_before,
+		"and dragging it off takes it back off (%d)"
+			% main.patch.get("controls", []).size())
+
+	# Reordering, with nothing raised. This used to need the wand up.
+	var was_order: Array = []
+	for control in main.patch.get("controls", []):
+		was_order.append(str(control.get("id", "")))
+	if was_order.size() >= 2:
+		var rotated: Array = was_order.duplicate()
+		rotated.push_back(rotated.pop_front())
+		main._on_panel_reordered(rotated)
+		for i in 6:
+			await process_frame
+		var now_order: Array = []
+		for control in main.patch.get("controls", []):
+			now_order.append(str(control.get("id", "")))
+		check(now_order == rotated,
+			"the panel reorders without a mode to raise (%s)" % str(now_order))
+		main._on_panel_reordered(was_order)
+		for i in 6:
+			await process_frame
+
 	# ---- the wand puts a knob on the file's own panel ---------------------------------
 	# `controls` has been in the schema since v1 — the performance surface, deliberately
 	# separate from the graph — and every example carries one that nothing had ever drawn.

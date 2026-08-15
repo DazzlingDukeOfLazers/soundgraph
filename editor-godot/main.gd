@@ -1481,6 +1481,7 @@ func _build_side_panel() -> Control:
 	patch_face = PatchFace.new()
 	patch_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	patch_face.reordered.connect(_on_panel_reordered)
+	patch_face.offered.connect(_toggle_control)
 	panel.add_child(patch_face)
 
 	module_face = ModuleFace.new()
@@ -4409,12 +4410,9 @@ func _set_wand(active: bool) -> void:
 	if graph_edit == null:
 		return
 	graph_edit.set_wand(active)
-	if patch_face != null:
-		patch_face.wand = active
-	if module_face != null:
-		# Raising the wand grows a ghost for everything the face does not show, and putting
-		# it down takes them away — so this is a rebuild, not a repaint.
-		module_face.wand = active
+	# The panels are not told. They are builders, and a builder that has to be switched on
+	# is a builder somebody has to be told about: both of them drag and both of them offer
+	# what they are not showing, all the time. The wand is down to its canvas half.
 	if wand_button != null and wand_button.button_pressed != active:
 		wand_button.button_pressed = active
 	# The nodes too, but only when it would change one. Raising the wand grows a ghost jack
@@ -4799,6 +4797,11 @@ func _refresh_face() -> void:
 	if patch_face == null:
 		return
 	var showing := ""
+	if patch_face != null:
+		# What the file's panel offers follows the selection, which is the whole gesture:
+		# select a node, the knobs of its that are not on the panel appear under it, drag
+		# one up. The same offer a module's face makes, at the file's scale.
+		patch_face.offer_node = str(inspecting.get("node", ""))
 	if module_face != null:
 		module_face.patch = patch
 		module_face.registry = registry

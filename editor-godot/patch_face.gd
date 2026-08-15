@@ -25,6 +25,10 @@ const Rack := preload("res://rack.gd")
 ## column of one is a list.
 const PER_LINE := 2
 
+## How far down an offer is turned: enough to read as something available rather than as
+## something already on the panel. The same value the module's face uses.
+const OFFERED := Color(1.0, 1.0, 1.0, 0.45)
+
 var patch: Dictionary = {}
 var registry: Dictionary = {}
 var rack: Control = null
@@ -32,19 +36,26 @@ var rack: Control = null
 ## The panel's own order, after somebody dragged a knob to a new place in it.
 signal reordered(control_ids: Array)
 
-## True while the wand is up. A knob on this panel is a control to be turned, until then —
-## the same bargain the rack strikes, and for the same reason: a knob that moved *and*
-## turned would be one you could not put down without also having changed the sound.
-var wand := false:
+## The node whose knobs are offered under the panel, or "" for none. Set from the selection:
+## the offers are what *that* node could put on the face and has not, so choosing a node is
+## how you choose what to add.
+var offer_node := "":
 	set(value):
-		wand = value
+		offer_node = value
 		_carrying = -1
 		_target = -1
-		set_process_input(value)
-		queue_redraw()
 
-var _cells: Array = []          # Control per control, in panel order
-var _ids: Array = []            # the control ids, same order
+## A knob was dragged onto the panel from the offers, or off the panel altogether. Both go
+## through main._toggle_control, which is a toggle: the panel is the one place a control is
+## listed, so putting one on and taking it off are the same edit run twice.
+signal offered(node_id: String, parameter: String)
+
+var _cells: Array = []          # Control per cell, panel first then the offers
+var _ids: Array = []            # the control ids, panel cells only
+## {cell index: {"node", "parameter"}} for the offers, and for the panel's own cells, so a
+## drag either way knows what it is holding without asking the document again.
+var _offers: Dictionary = {}
+var _targets: Dictionary = {}
 var _carrying := -1
 var _target := -1
 
@@ -53,7 +64,7 @@ var _target := -1
 ## picked up at all, since a knob is a Control and would otherwise eat it. See
 ## PatchGraph._input, which does the same thing for the same reason.
 func _input(event: InputEvent) -> void:
-	if not wand or not is_visible_in_tree() or _cells.is_empty():
+	if not is_visible_in_tree() or _cells.is_empty():
 		return
 	var button := event as InputEventMouseButton
 	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
@@ -69,18 +80,42 @@ func _input(event: InputEvent) -> void:
 			_target = -1
 			queue_redraw()
 			get_viewport().set_input_as_handled()
-			if to >= 0 and to != from:
-				var moved: Array = _ids.duplicate()
-				var name: String = moved[from]
-				moved.remove_at(from)
-				moved.insert(clampi(to if to < from else to - 1, 0, moved.size()), name)
-				reordered.emit(moved)
+			_finish(from, to)
 		return
 	var motion := event as InputEventMouseMotion
 	if motion != null and _carrying >= 0:
-		_target = _gap_at(motion.global_position)
+		_target = _gap_at(motion.global_position) \
+			if get_global_rect().has_point(motion.global_position) else -1
 		queue_redraw()
 		get_viewport().set_input_as_handled()
+
+
+## What a finished drag meant. Kept apart from _input so the suite can drive it with two
+## indices rather than three synthetic events.
+func _finish(from: int, to: int) -> void:
+	if from < 0 or from >= _cells.size():
+		return
+	var offer: Dictionary = _offers.get(from, {})
+	if not offer.is_empty():
+		# From the offers onto the panel. Anywhere on it: an offer has no place on the face
+		# yet, so "where" is not a question it can answer, and the panel's own order is what
+		# a later drag is for.
+		if to >= 0:
+			offered.emit(str(offer["node"]), str(offer["parameter"]))
+		return
+	if to < 0:
+		# Off the panel: the same toggle, run the other way.
+		var target: Dictionary = _targets.get(from, {})
+		if not target.is_empty():
+			offered.emit(str(target["node"]), str(target["parameter"]))
+		return
+	if to == from:
+		return
+	var moved: Array = _ids.duplicate()
+	var name: String = moved[from]
+	moved.remove_at(from)
+	moved.insert(clampi(to if to < from else to - 1, 0, moved.size()), name)
+	reordered.emit(moved)
 
 
 func _cell_at(point: Vector2) -> int:
@@ -95,8 +130,8 @@ func _cell_at(point: Vector2) -> int:
 ## has to mean either before or after it and there is no way to say which.
 func _gap_at(point: Vector2) -> int:
 	var gap := 0
-	for cell: Control in _cells:
-		var rect: Rect2 = cell.get_global_rect()
+	for index in _ids.size():
+		var rect: Rect2 = (_cells[index] as Control).get_global_rect()
 		if point.y > rect.position.y + rect.size.y or (point.y > rect.position.y
 				and point.x > rect.position.x + rect.size.x * 0.5):
 			gap += 1
@@ -104,7 +139,7 @@ func _gap_at(point: Vector2) -> int:
 
 
 func _draw() -> void:
-	if not wand or _cells.is_empty():
+	if _cells.is_empty():
 		return
 	var inverse := get_global_transform().affine_inverse()
 	for index in _cells.size():
@@ -151,25 +186,30 @@ func rebuild() -> void:
 		child.queue_free()
 	_cells.clear()
 	_ids.clear()
+	_offers.clear()
+	_targets.clear()
 
 	var controls: Array = patch.get("controls", [])
 	if controls.is_empty():
 		# An empty panel says what it is for. A blank column is indistinguishable from a
 		# broken one, and this is the state every new patch starts in.
 		var hint := Label.new()
-		hint.text = "No knobs on the face yet. Raise the wand and click one in the graph."
+		hint.text = "No knobs on the face yet. Select a node and drag one of its knobs up here."
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		hint.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 		hint.add_theme_color_override("font_color", Design.INK_SECOND)
 		add_child(hint)
-		return
 
 	var line: HBoxContainer = null
+	var on_panel := {}
 	for index in controls.size():
 		var control: Dictionary = controls[index]
-		var descriptor := _descriptor_for(control.get("target", {}))
+		var target: Dictionary = control.get("target", {})
+		var descriptor := _descriptor_for(target)
 		if descriptor.is_empty():
 			continue
+		on_panel["%s.%s" % [str(target.get("node", "")),
+			str(target.get("parameter", ""))]] = true
 		if line == null or line.get_child_count() >= PER_LINE:
 			line = HBoxContainer.new()
 			line.add_theme_constant_override("separation", Design.SPACE_M)
@@ -177,8 +217,57 @@ func rebuild() -> void:
 			add_child(line)
 		var cell := _cell(control, descriptor)
 		line.add_child(cell)
+		_targets[_cells.size()] = {"node": str(target.get("node", "")),
+			"parameter": str(target.get("parameter", ""))}
 		_cells.append(cell)
 		_ids.append(str(control.get("id", "")))
+
+	# What the selected node could put on the panel and has not.
+	#
+	# The same offer the module's face makes, at the file's scale — and the reason there is
+	# no tool to raise. The wand asked you to arm a mode and then point at a knob on the
+	# canvas; this asks you to select the node you were going to point at anyway, and shows
+	# what it has. Only the selection, because every parameter in a large patch is hundreds
+	# of knobs and a panel of offers nobody can read is not an offer.
+	if offer_node == "":
+		return
+	var spare: Array = []
+	for parameter: Dictionary in registry.get(_type_of(offer_node), {}).get("parameters", []):
+		if not on_panel.has("%s.%s" % [offer_node, str(parameter["name"])]):
+			spare.append(parameter)
+	if spare.is_empty():
+		return
+
+	var caption := Label.new()
+	caption.text = "%s — not on the panel" % offer_node
+	caption.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+	caption.add_theme_color_override("font_color", Design.INK_SECOND)
+	add_child(caption)
+
+	var offer_line: HBoxContainer = null
+	for parameter: Dictionary in spare:
+		if offer_line == null or offer_line.get_child_count() >= PER_LINE:
+			offer_line = HBoxContainer.new()
+			offer_line.add_theme_constant_override("separation", Design.SPACE_M)
+			offer_line.alignment = BoxContainer.ALIGNMENT_CENTER
+			add_child(offer_line)
+		var ghost := _cell({"target": {"node": offer_node,
+			"parameter": str(parameter["name"])}}, parameter)
+		ghost.modulate = OFFERED
+		offer_line.add_child(ghost)
+		_offers[_cells.size()] = {"node": offer_node, "parameter": str(parameter["name"])}
+		_cells.append(ghost)
+
+
+## The registry key of a node in this patch — a module's synthesized entry or its plain
+## type. Same rule as _descriptor_for, which is where it came from.
+func _type_of(node_id: String) -> String:
+	for node in patch.get("nodes", []):
+		if str(node["id"]) != node_id:
+			continue
+		return "module:%s" % str(node.get("module", "")) \
+			if str(node.get("type", "")) == "module" else str(node.get("type", ""))
+	return ""
 
 
 ## One knob and its name. The name is the control's label when it has one, since that is
