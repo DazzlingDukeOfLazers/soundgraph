@@ -3689,10 +3689,13 @@ func _initialize() -> void:
 	for node in main.patch["nodes"]:
 		if str(node["id"]).begins_with("coin" + ModuleImport.SEPARATOR):
 			coin_nodes += 1
-			if str(node["type"]) == "NoteInput":
+			# Both spellings. Asking only about "NoteInput" made this check pass the
+			# moment the corpus started saying Input/note — it was true, and true for
+			# a reason that had nothing to do with what it was testing.
+			if str(node["type"]) == "NoteInput" or str(node.get("host", "")) == "note":
 				coin_has_trigger = true
 	check(coin_nodes > 0 and not coin_has_trigger,
-		"a game sound imported as a module leaves its NoteInput behind")
+		"a game sound imported as a module leaves its keyboard behind")
 
 	var gate_driven := false
 	for connection in main.patch["connections"]:

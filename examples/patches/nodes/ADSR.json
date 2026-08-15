@@ -11,7 +11,8 @@
   "nodes": [
     {
       "id": "kb",
-      "type": "NoteInput",
+      "type": "Input",
+      "host": "note",
       "position": {
         "x": 0,
         "y": 360
@@ -55,7 +56,8 @@
     },
     {
       "id": "out",
-      "type": "StereoOutput",
+      "type": "Output",
+      "host": "stereo",
       "position": {
         "x": 1680,
         "y": 0

@@ -34,7 +34,8 @@
     },
     {
       "id": "trigger",
-      "type": "NoteInput",
+      "type": "Input",
+      "host": "note",
       "position": {"x": 560, "y": 360},
       "parameters": {
         "transpose": 8.16158
@@ -70,7 +71,8 @@
     },
     {
       "id": "out",
-      "type": "StereoOutput",
+      "type": "Output",
+      "host": "stereo",
       "position": {"x": 2240, "y": 0},
       "parameters": {
         "level": 1,

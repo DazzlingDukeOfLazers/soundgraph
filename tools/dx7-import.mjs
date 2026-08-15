@@ -434,7 +434,7 @@ function buildPatch(voice, bankName, voiceIndex) {
     return parts.join(' ');
   };
 
-  const nodes = [{ id: 'note', type: 'NoteInput', name: 'Keyboard',
+  const nodes = [{ id: 'note', type: 'Input', host: 'note', name: 'Keyboard',
     parameters: voice.transpose !== 0 ? { transpose: voice.transpose } : {} }];
   const connections = [];
   const wire = (fromNode, fromPort, toNode, toPort) => connections.push({
@@ -731,7 +731,7 @@ function buildPatch(voice, bankName, voiceIndex) {
       mix = addId;
     }
   });
-  nodes.push({ id: 'out', type: 'StereoOutput', parameters: {
+  nodes.push({ id: 'out', type: 'Output', host: 'stereo', parameters: {
     level: Number((0.8 / Math.max(1, carrierAmpSum)).toFixed(4)) } });
   wire(mix, 'out', 'out', 'left');
   wire(mix, 'out', 'out', 'right');

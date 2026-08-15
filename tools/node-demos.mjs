@@ -43,17 +43,24 @@ const LANE = 360;
 
 const node = (id, type, parameters = {}, column = 0, lane = 0) =>
   ({ id, type, parameters, column, lane });
+// A graph's edge, written as a node. The demos are keyed by registry type — the entry
+// showing NoteInput is still called NoteInput — but the node inside the patch is spelled
+// the way the corpus spells it, because a demo that teaches an older spelling teaches the
+// older spelling. See docs/modules-design.md.
+const seam = (id, type, host, parameters = {}, column = 0, lane = 0) =>
+  ({ id, type, host, parameters, column, lane });
 const wire = (fromNode, fromPort, toNode, toPort) =>
   ({ from: { node: fromNode, port: fromPort }, to: { node: toNode, port: toPort } });
 
 // The parts nearly every demo shares: a keyboard, an envelope so a keypress is a note
 // rather than a drone, and an output. Kept in one place so the demos differ only where
 // they are meant to — the node being shown.
-const keyboard = (column = 0, lane = 1) => node('kb', 'NoteInput', {}, column, lane);
+const keyboard = (column = 0, lane = 1) => seam('kb', 'Input', 'note', {}, column, lane);
 const envelope = (column, lane = 1) =>
   node('env', 'AhdEnvelope', { attack: 0.005, hold: 0.15, decay: 0.35 }, column, lane);
 const amp = (column) => node('amp', 'Gain', { gain: 0.7 }, column, 0);
-const out = (column) => node('out', 'StereoOutput', { level: 0.8, safety_limit: 1 }, column, 0);
+const out = (column) =>
+  seam('out', 'Output', 'stereo', { level: 0.8, safety_limit: 1 }, column, 0);
 
 /** Wires an envelope to an amplifier and the amplifier to the output. */
 const tail = (source, sourcePort = 'out') => [
@@ -110,7 +117,7 @@ const DEMOS = {
       nodes: [
         // Spelled out rather than defaulted, because this is the demo *of* the keyboard:
         // a parameter left implicit is a parameter with no control to drag.
-        node('kb', 'NoteInput', { glide: 0, transpose: 0 }, 0, 0),
+        seam('kb', 'Input', 'note', { glide: 0, transpose: 0 }, 0, 0),
         node('osc', 'SawOscillator', {}, 1, 0),
         // Velocity into the amplifier is the whole reason a keyboard has it.
         node('vel', 'Multiply', {}, 2, 1),
@@ -138,7 +145,7 @@ const DEMOS = {
       + 'it stays silent — that is the node waiting, not the patch being broken.',
     build: () => ({
       nodes: [
-        node('demo', 'AudioInput', { gain: 1 }, 0, 0),
+        seam('demo', 'Input', 'audio', { gain: 1 }, 0, 0),
         node('filter', 'StateVariableFilter', { cutoff: 2000, resonance: 0.2 }, 1, 0),
         out(2),
       ],
@@ -161,7 +168,7 @@ const DEMOS = {
         node('mix', 'Mixer', { level1: 1.6, level2: 1.6 }, 2, 0),
         envelope(2, 2),
         amp(3),
-        node('demo', 'StereoOutput', { level: 1.4, safety_limit: 1 }, 4, 0),
+        seam('demo', 'Output', 'stereo', { level: 1.4, safety_limit: 1 }, 4, 0),
       ],
       connections: [
         wire('kb', 'frequency', 'osc1', 'frequency'),
@@ -546,6 +553,7 @@ function render(type, demo) {
     nodes: nodes.map((n) => ({
       id: n.id,
       type: n.type,
+      ...(n.host ? { host: n.host } : {}),
       position: { x: n.column * COLUMN, y: n.lane * LANE },
       ...(Object.keys(n.parameters).length > 0 ? { parameters: n.parameters } : {}),
     })),

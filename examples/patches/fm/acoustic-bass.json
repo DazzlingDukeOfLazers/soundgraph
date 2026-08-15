@@ -136,7 +136,8 @@
   "nodes": [
     {
       "id": "note",
-      "type": "NoteInput",
+      "type": "Input",
+      "host": "note",
       "name": "Keyboard",
       "parameters": {}
     },
@@ -168,7 +169,8 @@
     },
     {
       "id": "out",
-      "type": "StereoOutput",
+      "type": "Output",
+      "host": "stereo",
       "parameters": {
         "level": 0.8
       }

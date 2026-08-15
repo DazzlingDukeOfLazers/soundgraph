@@ -11,7 +11,8 @@
   "nodes": [
     {
       "id": "demo",
-      "type": "AudioInput",
+      "type": "Input",
+      "host": "audio",
       "position": {
         "x": 0,
         "y": 0
@@ -34,7 +35,8 @@
     },
     {
       "id": "out",
-      "type": "StereoOutput",
+      "type": "Output",
+      "host": "stereo",
       "position": {
         "x": 1120,
         "y": 0

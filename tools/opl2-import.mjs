@@ -187,7 +187,7 @@ function buildPatch(voice, sourceFile) {
     feedbackCycles(voice.feedback) * attenuation(voice.modulator.totalLevel);
 
   const nodes = [
-    { id: 'note', type: 'NoteInput', name: 'Keyboard', parameters: {} },
+    { id: 'note', type: 'Input', host: 'note', name: 'Keyboard', parameters: {} },
     // An additive voice has two operators that are both heard; an FM one has a
     // modulator that is only felt. Naming them for the job they do in *this* voice
     // beats naming them for their slot on the chip.
@@ -206,7 +206,7 @@ function buildPatch(voice, sourceFile) {
     { id: 'car_vca', type: 'Multiply', parameters: {} },
     // Additive voices are two full operators summed, so they get half the headroom —
     // the drawbar organ clipped at exactly 1.0 before this, which is how it was found.
-    { id: 'out', type: 'StereoOutput',
+    { id: 'out', type: 'Output', host: 'stereo',
       parameters: { level: voice.additive ? 0.4 : 0.8 } },
   ];
 

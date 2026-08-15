@@ -1,5 +1,6 @@
 class_name ModuleImport
 extends RefCounted
+const Seams := preload("res://seams.gd")
 ## Adds an existing patch into the one being edited, as a module.
 ##
 ## There is no sub-graph in the patch format and there deliberately is not going to be one:
@@ -49,9 +50,14 @@ class Result extends RefCounted:
 
 ## Terminals belong to a finished patch, not to a module. Which ones those are comes from
 ## the registry's own category rather than a list here, so a terminal added to the core
-## later is handled without this file changing.
-static func _is_terminal(type_name: String, registry: Dictionary) -> bool:
-	return str(registry.get(type_name, {}).get("category", "")) == "Terminals"
+## needs no edit. A seam carrying a host binding is one too — that is the whole of what
+## the binding means — and it has no registry entry of its own, so it is asked about
+## first. Missing this let an imported game sound keep the keyboard that was driving it,
+## and the module arrived with its gate already held down by somebody else's patch.
+static func _is_terminal_node(node: Dictionary, registry: Dictionary) -> bool:
+	if Seams.terminal_for(node) != "":
+		return true
+	return str(registry.get(str(node.get("type", "")), {}).get("category", "")) == "Terminals"
 
 
 ## Merges `source` into `target`, in place. `prefix` namespaces the imported ids.
@@ -77,7 +83,7 @@ static func merge(target: Dictionary, source: Dictionary, prefix: String,
 	var skipped := {}
 	for node in source.get("nodes", []):
 		var type_name := str(node.get("type", ""))
-		if _is_terminal(type_name, registry):
+		if _is_terminal_node(node, registry):
 			skipped[str(node["id"])] = true
 			result.terminals_dropped.append("%s '%s'" % [type_name, str(node["id"])])
 

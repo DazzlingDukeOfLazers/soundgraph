@@ -66,6 +66,11 @@ struct Node {
     std::vector<std::pair<std::string, double>> parameters;
     int column = 0;
     int lane = 0;
+    // A seam's host binding, empty for an ordinary node — see docs/modules-design.md.
+    // Last in the struct on purpose: every other node here is built by aggregate
+    // initialisation, and a new member anywhere earlier would silently reinterpret the
+    // arguments of all of them.
+    std::string host;
 };
 
 struct Connection {
@@ -489,8 +494,10 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     // pitch of its own — true, and the transpose is what keeps it: playing the patch at C4
     // is the file exactly as rendered, and every other key is that same sound moved. A
     // coin an octave down is a bigger coin, which is worth having and costs nothing.
-    nodes.push_back({"trigger", "NoteInput",
-                     {{"transpose", transpose_semitones(p)}}, column - 2, 1});
+    Node keyboard{"trigger", "Input",
+                  {{"transpose", transpose_semitones(p)}}, column - 2, 1};
+    keyboard.host = "note";
+    nodes.push_back(keyboard);
     connections.push_back({"trigger", "frequency", pitch_head, "frequency"});
     nodes.push_back({"envelope",
                      "AhdEnvelope",
@@ -523,8 +530,10 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
             connections.push_back({restart_from, restart_port, "arpeggio", "gate"});
     }
 
-    nodes.push_back({"out", "StereoOutput", {{"level", 1.0}, {"safety_limit", 0.0}},
-                     column++, 0});
+    Node output{"out", "Output", {{"level", 1.0}, {"safety_limit", 0.0}},
+                     column++, 0};
+    output.host = "stereo";
+    nodes.push_back(output);
     connections.push_back({"amp", "out", "out", "left"});
     connections.push_back({"amp", "out", "out", "right"});
 
@@ -541,6 +550,9 @@ std::string to_patch(const sfxr_reference::Params& p, const std::string& name) {
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         json += "    {\n      \"id\": \"" + nodes[i].id + "\",\n";
         json += "      \"type\": \"" + nodes[i].type + "\",\n";
+        if (!nodes[i].host.empty()) {
+        json += "      \"host\": \"" + nodes[i].host + "\",\n";
+        }
         // A rough placement, not a considered one. The editor's layout engine will do
         // better and is welcome to; the point is that a file with no coordinates opens as
         // a heap in anything that has no layout engine at all.
