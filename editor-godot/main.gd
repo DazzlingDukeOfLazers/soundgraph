@@ -79,6 +79,7 @@ static func snap_up(value: float, step: float) -> float:
 ## headless runs do not refresh.
 const ModuleAuthor := preload("res://module_author.gd")
 const Seams := preload("res://seams.gd")
+const SeamDock := preload("res://seam_dock.gd")
 const PatchFace := preload("res://patch_face.gd")
 
 const EXAMPLE_GROUPS := {
@@ -189,6 +190,10 @@ var master_knob
 var master_mute: Button
 var master_label: Label
 var muted := false
+## The patch's own edges, drawn on the instrument. See seam_dock.gd.
+var note_jacks
+var output_jacks
+var seam_cables
 var keyboard_expanded := true
 ## What is open, shown so "which patch am I looking at" is never a guess.
 var document_label: Label
@@ -731,6 +736,15 @@ func _build_ui() -> void:
 	# Under the tabs rather than inside one: the graph and the rack are two views of the
 	# same running patch, and the thing that plays it belongs to neither.
 	root.add_child(_build_keyboard_dock())
+
+	# Last, and top-level: the cables between the dock and the graph need one canvas that
+	# covers both, and root is the only place both exist. Top-level so the column that
+	# lays out the toolbar, the views and the dock does not try to give it a row of its
+	# own — see Container, which skips a child that has opted out of being laid out.
+	seam_cables = SeamDock.Cables.new()
+	seam_cables.set_as_top_level(true)
+	root.add_child(seam_cables)
+
 	_set_keyboard_expanded(true)
 	_refresh_keyboard_range()
 	_build_search_popup()
@@ -1894,6 +1908,9 @@ func _exit_tree() -> void:
 
 
 func _process(_delta: float) -> void:
+	# Before the early return: the dock's cables have to follow the graph as it scrolls,
+	# zooms and has nodes dragged under them, and none of that waits for an engine.
+	_refresh_seam_cables()
 	if engine == null or playback == null:
 		return
 	if engine.is_loaded():
@@ -2062,6 +2079,7 @@ func _rebuild_view() -> void:
 		rack.rebuild()
 	_refresh_face()
 	_refresh_master()
+	_refresh_seam_dock()
 
 
 # ---------------------------------------------------------------------------------
@@ -2490,6 +2508,13 @@ func _graph_scale() -> float:
 
 
 func _create_widget(node: Dictionary) -> void:
+	# A seam bound to a host belongs to the instrument, not to the graph: its jacks are on
+	# the keyboard dock and its cables run from there. Skipped here rather than hidden, so
+	# nothing has a widget it must remember not to draw. Connections touching it are
+	# already dropped by _rebuild_view, which skips any cable whose endpoints have no
+	# widget — seam_cables is what draws them instead.
+	if Seams.terminal_for(node) != "":
+		return
 	var type_name: String = _type_key(node)
 	var descriptor: Dictionary = registry.get(type_name, {})
 
@@ -3414,9 +3439,23 @@ func _build_keyboard_bar() -> Control:
 	master_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	bar.add_child(master_label)
 
+	# The keyboard's own jacks, on the keyboard. This is where the cables into the patch
+	# come from — see seam_dock.gd for why they cannot be drawn by GraphEdit.
+	note_jacks = SeamDock.Jacks.new()
+	note_jacks.type_colours = TYPE_COLOURS
+	note_jacks.ink = INK
+	bar.add_child(note_jacks)
+
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(gap)
+
+	# And the output's, at the far end: signal leaves the instrument on the right, the
+	# same direction it travels through every graph and rack in this application.
+	output_jacks = SeamDock.Jacks.new()
+	output_jacks.type_colours = TYPE_COLOURS
+	output_jacks.ink = INK
+	bar.add_child(output_jacks)
 
 	var range_label := Label.new()
 	range_label.name = "KeyboardRange"
@@ -4029,6 +4068,93 @@ func _parameter_descriptor(node_id: String, parameter: String) -> Dictionary:
 		if str(parameter_entry["name"]) == parameter:
 			return parameter_entry
 	return {}
+
+
+## The dock's jacks, and the cables from them into the graph.
+##
+## Rebuilt from the document each time it changes, and the cable geometry refreshed every
+## frame the graph is visible, because both ends move: the graph scrolls and zooms under
+## one, and the dock's own layout shifts the other whenever the window resizes.
+func _refresh_seam_dock() -> void:
+	if note_jacks == null:
+		return
+	var inputs: Array = []
+	var outputs: Array = []
+	for node in patch.get("nodes", []):
+		var terminal := Seams.terminal_for(node)
+		if terminal == "":
+			continue
+		var descriptor: Dictionary = registry.get(terminal, {})
+		# An Input seam hands signal *to* the patch, so what the dock shows is its
+		# outputs; an Output seam takes signal, so its inputs. The dock is the far side
+		# of the machine, and a jack there faces the other way round from the node's.
+		var side: String = "outputs" if str(node.get("type", "")) == "Input" else "inputs"
+		for port in descriptor.get(side, []):
+			var socket := {"node": str(node["id"]), "port": str(port["name"]),
+				"type": str(port.get("type", ""))}
+			if side == "outputs":
+				inputs.append(socket)
+			else:
+				outputs.append(socket)
+	note_jacks.ports = inputs
+	output_jacks.ports = outputs
+	note_jacks.update_minimum_size()
+	output_jacks.update_minimum_size()
+	note_jacks.queue_redraw()
+	output_jacks.queue_redraw()
+	_refresh_seam_cables()
+
+
+## Where each dock cable runs, in viewport space.
+func _refresh_seam_cables() -> void:
+	if seam_cables == null or graph_edit == null:
+		return
+	seam_cables.size = get_viewport().get_visible_rect().size
+	seam_cables.position = Vector2.ZERO
+	var runs: Array = []
+	if graph_edit.is_visible_in_tree():
+		var rect: Rect2 = graph_edit.get_global_rect()
+		seam_cables.window = rect
+		var scale: float = graph_edit.zoom if graph_edit.zoom > 0.0 else 1.0
+		for connection in patch.get("connections", []):
+			for end in [["from", "to"], ["to", "from"]]:
+				var dock_end: Dictionary = connection[end[0]]
+				var graph_end: Dictionary = connection[end[1]]
+				var socket = _dock_socket(str(dock_end["node"]), str(dock_end["port"]))
+				if socket == null:
+					continue
+				var widget: GraphNode = widgets.get(str(graph_end["node"]))
+				if widget == null:
+					break
+				var is_input: bool = end[1] == "to"
+				var index := _input_port_index(str(graph_end["node"]), str(graph_end["port"])) 					if is_input else _output_port_index(str(graph_end["node"]),
+						str(graph_end["port"]))
+				if index < 0:
+					break
+				var spot: Vector2 = widget.get_input_port_position(index) if is_input 					else widget.get_output_port_position(index)
+				var landing: Vector2 = rect.position 					+ (widget.position_offset + spot) * scale - graph_edit.scroll_offset
+				var ports := _port_list(str(graph_end["node"]),
+					"inputs" if is_input else "outputs")
+				var colour: Color = INK
+				if index < ports.size():
+					colour = TYPE_COLOURS.get(str(ports[index].get("type", "")), INK)
+				runs.append([socket, landing, colour])
+				break
+	else:
+		seam_cables.window = Rect2()
+	seam_cables.runs = runs
+	seam_cables.queue_redraw()
+
+
+## The dock socket for a node and port, or null when that node is not on the dock.
+func _dock_socket(node_id: String, port: String):
+	for jacks in [note_jacks, output_jacks]:
+		if jacks == null:
+			continue
+		for socket: Dictionary in jacks.ports:
+			if str(socket["node"]) == node_id and str(socket["port"]) == port:
+				return jacks.socket_centre(port)
+	return null
 
 
 ## The node the instrument comes out of, or "" for a patch that has no output yet.
