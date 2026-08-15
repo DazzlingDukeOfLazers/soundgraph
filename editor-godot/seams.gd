@@ -28,12 +28,25 @@ static func terminal_for(node: Dictionary) -> String:
 
 
 ## The registry key a node should be looked up under: a module's synthesized descriptor,
-## a seam's terminal, or the type it plainly is.
+## a seam's own, or the type it plainly is.
+##
+## A seam has a descriptor of its own rather than borrowing the terminal's, because it is
+## not the terminal: it carries the same signals *plus* the jack the machine plugs into.
+## That extra jack is the whole point of drawing a port — it is where "and this is how you
+## test it" attaches, and inside a module it is where the parent patch attaches.
 static func registry_key(node: Dictionary) -> String:
 	if str(node.get("type", "")) == "module":
 		return "module:%s" % str(node.get("module", ""))
-	var seam := terminal_for(node)
-	return seam if seam != "" else str(node.get("type", ""))
+	var type_name := str(node.get("type", ""))
+	if type_name == "Input" or type_name == "Output":
+		return "seam:%s/%s" % [type_name, str(node.get("host", ""))]
+	return type_name
+
+
+## The name of the jack a host plugs into. One name, both directions: on an Input it is an
+## inlet the machine drives, on an Output an outlet the machine listens to, and calling
+## them the same thing is what makes "the host side" a phrase somebody can learn once.
+const HOST_PORT := "host"
 
 
 ## A definition's declared ports, in the order a reader meets them.

@@ -222,10 +222,7 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 
-	# Five, not seven: a patch's own edges are drawn on the keyboard dock rather than as
-	# nodes in the middle of the graph, so the keyboard and the output have no widget here.
-	check(main.widgets.size() == 5,
-		"a widget exists for every node the canvas draws (%d)" % main.widgets.size())
+	check(main.widgets.size() == 7, "a widget exists for every node")
 	var filter_widget: GraphNode = main.widgets.get("filter")
 	check(filter_widget != null, "the filter node has a widget")
 	if filter_widget != null:
@@ -527,14 +524,7 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	check(main.patch["nodes"].size() == original_nodes, "undo removes the added node")
-	# Counted against what the canvas draws rather than against the document: the two
-	# seams are on the keyboard dock, so widgets is smaller than nodes by however many
-	# edges this patch has, and always was going to be once they moved.
-	var on_canvas := 0
-	for node in main.patch["nodes"]:
-		if Seams.terminal_for(node) == "":
-			on_canvas += 1
-	check(main.widgets.size() == on_canvas, "and the view follows the document")
+	check(main.widgets.size() == original_nodes, "and the view follows the document")
 
 	main._redo()
 	await process_frame
@@ -622,8 +612,13 @@ func _initialize() -> void:
 	var order: Array = main.rack._module_order()
 	var output_index := -1
 	for i in order.size():
-		if main.rack._type_of(order[i]) == "StereoOutput":
-			output_index = i
+		# Asked of the node rather than of a type name: the output is a seam now, and its
+		# registry key says so. What the ordering is being held to is unchanged — the node
+		# the sound leaves through comes last — and the rack works that out from the
+		# wiring, which is why this kept being true while the spelling changed under it.
+		for node in main.patch["nodes"]:
+			if str(node["id"]) == str(order[i]) 					and Seams.terminal_for(node) == "StereoOutput":
+				output_index = i
 	check(output_index == order.size() - 1,
 		"and orders them by signal flow, with the output last")
 
@@ -1564,9 +1559,7 @@ func _initialize() -> void:
 	# Centring a node must put the whole node inside that area, not merely somewhere on
 	# the canvas. This is the check for the reported symptom: a node coming to rest under
 	# a permanent panel with its output disappearing beneath it.
-	# Nodes the canvas draws. The keyboard and the output are on the dock now and have no
-	# widget to centre — _focus_node is right to do nothing for them.
-	for target in ["amp", "osc", "filter"]:
+	for target in ["amp", "out", "note"]:
 		main._focus_node(target)
 		await process_frame
 		var widget: GraphNode = main.widgets[target]
@@ -1611,10 +1604,9 @@ func _initialize() -> void:
 
 	# Fit is a request to see the whole graph. Once you can, there is nothing further to
 	# satisfy, so it does not go on magnifying a small patch to fill the window.
-	# Any single node will do; the amplifier is one the canvas still draws.
-	var lonely: GraphNode = main.widgets["amp"]
+	var lonely: GraphNode = main.widgets["out"]
 	for id in main.widgets:
-		if id != "amp":
+		if id != "out":
 			(main.widgets[id] as GraphNode).visible = false
 	main.graph_edit.fit_graph()
 	await process_frame
@@ -1798,18 +1790,10 @@ func _initialize() -> void:
 	# frequency output sits at a steady 440-odd hertz forever; if that lit up, every
 	# control port in every graph would be permanently on and the glow would carry no
 	# information at all. This is the check that stopped exactly that shipping.
-	# The keyboard is on the dock now, so its frequency output has no port on the canvas
-	# to light up and the sweep does not visit it at all. What is checked here is that
-	# absence, which is weaker than what this used to check: the rule that a steady value
-	# is not activity no longer has a canvas port carrying a steady value to prove it on.
-	# It will again when the dock's own jacks glow — until then this guards that no glow
-	# is attributed to a node the canvas is not drawing.
-	var keyboard_glow := 0.0
-	for entry in main._level_targets:
-		if str(entry["node"]) == "note":
-			keyboard_glow = 1.0
-	check(keyboard_glow == 0.0,
-		"a port that is not on the canvas is not swept for glow")
+	var note_widget: String = String(main.widgets["note"].name)
+	var pitch_glow: float = main.graph_edit.port_levels.get(note_widget, {}).get(0, 0.0)
+	check(pitch_glow < 0.1,
+		"a steady pitch is not activity and does not glow (%.3f)" % pitch_glow)
 
 	# Reduced motion is not a preference that gets ignored. Nothing here depends on
 	# animation to be usable, so the switch turns it off rather than slowing it down.
@@ -2686,11 +2670,7 @@ func _initialize() -> void:
 			for chip in (child as HFlowContainer).get_children():
 				if chip is Button:
 					chips += 1
-	# One chip per node, including the two on the dock: the run order is the order the
-	# engine works in, and a patch's edges are part of that whether or not the canvas
-	# draws them. Pressing a dock chip centres nothing, which is honest — there is
-	# nothing on the canvas to centre — but it should eventually take you to the jack.
-	check(chips == main.patch["nodes"].size(),
+	check(chips == main.widgets.size(),
 		"and every stage of the run order is a control you can press (%d of %d)"
 			% [chips, main.widgets.size()])
 
@@ -2823,8 +2803,7 @@ func _initialize() -> void:
 	await main._load_example("DX7: algo-01")
 	for i in 8:
 		await process_frame
-	# Fifteen authored nodes, two of them the patch's own edges, which the dock draws.
-	check(main.widgets.size() == 13,
+	check(main.widgets.size() == 15,
 		"the editor shows the authored graph, not the expansion (%d widgets)"
 			% main.widgets.size())
 	check(main.widgets.has("op1") and not main.widgets.has("op1.osc"),

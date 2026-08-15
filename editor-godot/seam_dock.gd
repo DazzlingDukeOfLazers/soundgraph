@@ -42,7 +42,7 @@ class Jacks extends Control:
 		var width := 0.0
 		var tallest := 0.0
 		for port: Dictionary in ports:
-			var measured := font.get_string_size(str(port["port"]),
+			var measured := font.get_string_size(str(port.get("label", port["port"])),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
 			width += maxf(measured.x, Design.scale(SOCKET) * 2.0) \
 				+ Design.scale(Design.SPACE_M)
@@ -56,7 +56,7 @@ class Jacks extends Control:
 		var size := _size()
 		var x := 0.0
 		for i in ports.size():
-			var measured := font.get_string_size(str(ports[i]["port"]),
+			var measured := font.get_string_size(str(ports[i].get("label", ports[i]["port"])),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
 			var cell: float = maxf(measured.x, Design.scale(SOCKET) * 2.0)
 			if i == index:
@@ -64,10 +64,12 @@ class Jacks extends Control:
 			x += cell + Design.scale(Design.SPACE_M)
 		return Vector2.ZERO
 
-	## The same point in viewport space, which is what draws a cable to it.
-	func socket_centre(port_name: String) -> Variant:
+	## The same point in viewport space, which is what draws a cable to it. Matched on the
+	## node as well as the port: every device jack is called "host", so the port name alone
+	## would find whichever was listed first.
+	func socket_centre(port_name: String, node_id: String) -> Variant:
 		for i in ports.size():
-			if str(ports[i]["port"]) == port_name:
+			if str(ports[i]["port"]) == port_name and str(ports[i]["node"]) == node_id:
 				return get_global_transform() * _slot(i)
 		return null
 
@@ -81,7 +83,7 @@ class Jacks extends Control:
 			# like a jack wherever it turns up.
 			draw_circle(at, Design.scale(SOCKET), Color(0.055, 0.06, 0.07))
 			draw_arc(at, Design.scale(SOCKET), 0.0, TAU, 24, colour, 2.0, true)
-			var text := str(ports[i]["port"])
+			var text := str(ports[i].get("label", ports[i]["port"]))
 			var measured := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
 			draw_string(font, Vector2(at.x - measured.x * 0.5,
 				at.y + Design.scale(SOCKET) + Design.scale(LABEL_GAP)

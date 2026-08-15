@@ -2096,16 +2096,63 @@ func _rebuild_view() -> void:
 # ---------------------------------------------------------------------------------
 
 ## The registry key a node's descriptor lives under.
+## Which registry entry draws this node. One line, because there is one answer and it
+## lives in seams.gd — this had its own copy of the rule and went on returning the
+## terminal after that rule changed, which is what a second copy is for.
 func _type_key(node: Dictionary) -> String:
-	if str(node.get("type", "")) == "module":
-		return "module:%s" % str(node.get("module", ""))
-	var seam := Seams.terminal_for(node)
-	if seam != "":
-		return seam
-	return str(node.get("type", ""))
+	return Seams.registry_key(node)
 
 
 
+
+
+## A descriptor for each seam the patch uses: what the terminal carries, plus the jack the
+## machine plugs into.
+##
+## Synthesized rather than added to dsp-core's registry, for the same reason a module's is:
+## dsp-core has never heard of a seam and this design is that it never has to. The editor
+## is where a seam is a thing you look at, so the editor is where it gets a face.
+##
+## The host jack goes first, so it is the top row of the node — the edge of the patch is
+## drawn at the edge of the node, and a reader looking for "where does the keyboard go"
+## finds it without counting.
+func _synthesize_seam_descriptors() -> void:
+	for key in registry.keys().filter(func(k): return str(k).begins_with("seam:")):
+		registry.erase(key)
+	for node in patch.get("nodes", []):
+		var type_name := str(node.get("type", ""))
+		if type_name != "Input" and type_name != "Output":
+			continue
+		var key := Seams.registry_key(node)
+		if registry.has(key):
+			continue
+		var terminal := Seams.terminal_for(node)
+		var carried: Dictionary = registry.get(terminal, {})
+		var host := str(node.get("host", ""))
+		var inputs: Array = []
+		var outputs: Array = []
+		if type_name == "Input":
+			# What the machine hands in, and what the patch takes from it.
+			inputs.append({"name": Seams.HOST_PORT, "type": "control",
+				"doc": "Where %s plugs in. Unconnected inside a module: the patch using it "
+					% (host if host != "" else "the machine")
+					+ "drives this from outside."})
+			outputs = carried.get("outputs", []).duplicate(true)
+		else:
+			inputs = carried.get("inputs", []).duplicate(true)
+			outputs.append({"name": Seams.HOST_PORT, "type": "audio",
+				"doc": "Where %s listens. Unconnected inside a module: whatever uses it "
+					% (host if host != "" else "the machine")
+					+ "takes the signal from here."})
+		registry[key] = {
+			"name": key,
+			"display_name": "%s port" % type_name,
+			"category": "Terminals",
+			"summary": "A seam: where this graph meets what is outside it.",
+			"inputs": inputs,
+			"outputs": outputs,
+			"parameters": carried.get("parameters", []).duplicate(true),
+		}
 
 
 ## Builds a registry-shaped descriptor for each module definition, so instances flow
@@ -2113,6 +2160,7 @@ func _type_key(node: Dictionary) -> String:
 ## come from the inner nodes' own registry entries — the facade renames, it does not
 ## invent.
 func _synthesize_module_descriptors() -> void:
+	_synthesize_seam_descriptors()
 	for key in registry.keys().filter(func(k): return str(k).begins_with("module:")):
 		registry.erase(key)
 	for module_name in patch.get("modules", {}):
@@ -2508,13 +2556,6 @@ func _graph_scale() -> float:
 
 
 func _create_widget(node: Dictionary) -> void:
-	# A seam bound to a host belongs to the instrument, not to the graph: its jacks are on
-	# the keyboard dock and its cables run from there. Skipped here rather than hidden, so
-	# nothing has a widget it must remember not to draw. Connections touching it are
-	# already dropped by _rebuild_view, which skips any cable whose endpoints have no
-	# widget — seam_cables is what draws them instead.
-	if Seams.terminal_for(node) != "":
-		return
 	var type_name: String = _type_key(node)
 	var descriptor: Dictionary = registry.get(type_name, {})
 
@@ -4078,26 +4119,26 @@ func _parameter_descriptor(node_id: String, parameter: String) -> Dictionary:
 func _refresh_seam_dock() -> void:
 	if note_jacks == null:
 		return
-	var inputs: Array = []
-	var outputs: Array = []
+	# One jack per device, not per signal. The keyboard is a thing you plug in, and it
+	# arrives at a port whole — which is also why an Input port carries whatever its host
+	# carries rather than one signal at a time.
+	var driving: Array = []
+	var listening: Array = []
 	for node in patch.get("nodes", []):
-		var terminal := Seams.terminal_for(node)
-		if terminal == "":
+		var host := str(node.get("host", ""))
+		if host == "":
 			continue
-		var descriptor: Dictionary = registry.get(terminal, {})
-		# An Input seam hands signal *to* the patch, so what the dock shows is its
-		# outputs; an Output seam takes signal, so its inputs. The dock is the far side
-		# of the machine, and a jack there faces the other way round from the node's.
-		var side: String = "outputs" if str(node.get("type", "")) == "Input" else "inputs"
-		for port in descriptor.get(side, []):
-			var socket := {"node": str(node["id"]), "port": str(port["name"]),
-				"type": str(port.get("type", ""))}
-			if side == "outputs":
-				inputs.append(socket)
-			else:
-				outputs.append(socket)
-	note_jacks.ports = inputs
-	output_jacks.ports = outputs
+		var socket := {"node": str(node["id"]), "port": Seams.HOST_PORT, "host": host}
+		if str(node.get("type", "")) == "Input":
+			socket["label"] = "Keyboard" if host == "note" else "Audio in"
+			socket["type"] = "note" if host == "note" else "audio"
+			driving.append(socket)
+		else:
+			socket["label"] = "Speakers"
+			socket["type"] = "audio"
+			listening.append(socket)
+	note_jacks.ports = driving
+	output_jacks.ports = listening
 	note_jacks.update_minimum_size()
 	output_jacks.update_minimum_size()
 	note_jacks.queue_redraw()
@@ -4105,7 +4146,12 @@ func _refresh_seam_dock() -> void:
 	_refresh_seam_cables()
 
 
-## Where each dock cable runs, in viewport space.
+## Where each dock cable runs, in viewport space: from the device's jack to the host side
+## of the port it drives.
+##
+## Not through `connections` — the cable is not in the document. Which port a device drives
+## is the port's own host binding, so the cable is drawn from that rather than stored, and
+## there is nothing to keep in step.
 func _refresh_seam_cables() -> void:
 	if seam_cables == null or graph_edit == null:
 		return
@@ -4116,51 +4162,34 @@ func _refresh_seam_cables() -> void:
 		var rect: Rect2 = graph_edit.get_global_rect()
 		seam_cables.window = rect
 		var scale: float = graph_edit.zoom if graph_edit.zoom > 0.0 else 1.0
-		for connection in patch.get("connections", []):
-			for end in [["from", "to"], ["to", "from"]]:
-				var dock_end: Dictionary = connection[end[0]]
-				var graph_end: Dictionary = connection[end[1]]
-				var socket = _dock_socket(str(dock_end["node"]), str(dock_end["port"]))
-				if socket == null:
+		for jacks in [note_jacks, output_jacks]:
+			if jacks == null:
+				continue
+			for socket: Dictionary in jacks.ports:
+				var from = jacks.socket_centre(str(socket["port"]), str(socket["node"]))
+				var widget: GraphNode = widgets.get(str(socket["node"]))
+				if from == null or widget == null:
 					continue
-				var widget: GraphNode = widgets.get(str(graph_end["node"]))
-				if widget == null:
-					break
-				var is_input: bool = end[1] == "to"
-				var index := _input_port_index(str(graph_end["node"]), str(graph_end["port"])) 					if is_input else _output_port_index(str(graph_end["node"]),
-						str(graph_end["port"]))
+				var driven: bool = str(socket["type"]) != "audio" 					or jacks == note_jacks
+				var index := _input_port_index(str(socket["node"]), Seams.HOST_PORT) 					if driven else _output_port_index(str(socket["node"]), Seams.HOST_PORT)
 				if index < 0:
-					break
-				var spot: Vector2 = widget.get_input_port_position(index) if is_input 					else widget.get_output_port_position(index)
+					continue
+				var spot: Vector2 = widget.get_input_port_position(index) if driven 					else widget.get_output_port_position(index)
 				var landing: Vector2 = rect.position 					+ (widget.position_offset + spot) * scale - graph_edit.scroll_offset
-				var ports := _port_list(str(graph_end["node"]),
-					"inputs" if is_input else "outputs")
-				var colour: Color = INK
-				if index < ports.size():
-					colour = TYPE_COLOURS.get(str(ports[index].get("type", "")), INK)
-				runs.append([socket, landing, colour])
-				break
+				runs.append([from, landing,
+					TYPE_COLOURS.get(str(socket["type"]), INK)])
 	else:
 		seam_cables.window = Rect2()
 	seam_cables.runs = runs
 	seam_cables.queue_redraw()
 
 
-## The dock socket for a node and port, or null when that node is not on the dock.
-func _dock_socket(node_id: String, port: String):
-	for jacks in [note_jacks, output_jacks]:
-		if jacks == null:
-			continue
-		for socket: Dictionary in jacks.ports:
-			if str(socket["node"]) == node_id and str(socket["port"]) == port:
-				return jacks.socket_centre(port)
-	return null
-
-
 ## The node the instrument comes out of, or "" for a patch that has no output yet.
 func _output_node() -> String:
 	for node in patch.get("nodes", []):
-		if Seams.registry_key(node) == "StereoOutput":
+		# The seam's own key, or the terminal's for a patch written the older way: what
+		# this wants to know is which node the sound leaves through.
+		if Seams.terminal_for(node) == "StereoOutput" 				or str(node.get("type", "")) == "StereoOutput":
 			return str(node["id"])
 	return ""
 
