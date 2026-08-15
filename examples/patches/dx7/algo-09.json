@@ -42,6 +42,30 @@
           "id": "fbscale",
           "type": "Multiply",
           "parameters": {}
+        },
+        {
+          "id": "note",
+          "type": "Input"
+        },
+        {
+          "id": "gate",
+          "type": "Input"
+        },
+        {
+          "id": "pm",
+          "type": "Input"
+        },
+        {
+          "id": "fm",
+          "type": "Input"
+        },
+        {
+          "id": "fb_mod",
+          "type": "Input"
+        },
+        {
+          "id": "out",
+          "type": "Output"
         }
       ],
       "connections": [
@@ -94,40 +118,66 @@
             "node": "osc",
             "port": "feedback"
           }
-        }
-      ],
-      "inputs": [
-        {
-          "name": "note",
-          "node": "pitch",
-          "port": "a"
         },
         {
-          "name": "gate",
-          "node": "env",
-          "port": "gate"
+          "from": {
+            "node": "note",
+            "port": "out"
+          },
+          "to": {
+            "node": "pitch",
+            "port": "a"
+          }
         },
         {
-          "name": "pm",
-          "node": "osc",
-          "port": "pm"
+          "from": {
+            "node": "gate",
+            "port": "out"
+          },
+          "to": {
+            "node": "env",
+            "port": "gate"
+          }
         },
         {
-          "name": "fm",
-          "node": "osc",
-          "port": "fm"
+          "from": {
+            "node": "pm",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "pm"
+          }
         },
         {
-          "name": "fb_mod",
-          "node": "fbscale",
-          "port": "b"
-        }
-      ],
-      "outputs": [
+          "from": {
+            "node": "fm",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "fm"
+          }
+        },
         {
-          "name": "out",
-          "node": "vca",
-          "port": "out"
+          "from": {
+            "node": "fb_mod",
+            "port": "out"
+          },
+          "to": {
+            "node": "fbscale",
+            "port": "b"
+          }
+        },
+        {
+          "from": {
+            "node": "vca",
+            "port": "out"
+          },
+          "to": {
+            "node": "out",
+            "port": "in"
+          }
         }
       ],
       "parameters": [

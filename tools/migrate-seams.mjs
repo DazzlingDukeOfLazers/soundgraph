@@ -21,13 +21,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// The one table, and it is patch-io's — see terminal_for() in patch-io/src/patch_io.cpp.
-// Kept the other way round here because this tool goes the other way.
-const SEAM_FOR = {
-  NoteInput: ["Input", "note"],
-  AudioInput: ["Input", "audio"],
-  StereoOutput: ["Output", "stereo"],
-};
+import { SEAM_FOR } from "./seams.mjs";
 
 // Turns a document's terminals into seams. Returns null when there was nothing to do,
 // so a caller can tell "already migrated" from "changed".

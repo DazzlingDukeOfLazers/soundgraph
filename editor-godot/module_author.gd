@@ -419,8 +419,8 @@ static func expand(patch: Dictionary, instance_id: String,
 			out[list_key] = kept
 
 	result.surface = {
-		"inputs": definition.get("inputs", []).duplicate(true),
-		"outputs": definition.get("outputs", []).duplicate(true),
+		"inputs": Seams.declared_ports(definition, false),
+		"outputs": Seams.declared_ports(definition, true),
 		"parameters": definition.get("parameters", []).duplicate(true),
 		"panel": (definition.get("panel", {}) as Dictionary).duplicate(true),
 	}
@@ -605,8 +605,8 @@ static func close_module(patch: Dictionary, module_name: String) -> Result:
 	out["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
 	result.patch = out
 	result.surface = {
-		"inputs": folded.get("inputs", []).duplicate(true),
-		"outputs": folded.get("outputs", []).duplicate(true),
+		"inputs": Seams.declared_ports(folded, false),
+		"outputs": Seams.declared_ports(folded, true),
 		"parameters": folded.get("parameters", []).duplicate(true),
 	}
 	return result

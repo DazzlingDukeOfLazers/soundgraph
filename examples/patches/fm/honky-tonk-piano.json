@@ -36,6 +36,22 @@
           "id": "vca",
           "type": "Multiply",
           "parameters": {}
+        },
+        {
+          "id": "note",
+          "type": "Input"
+        },
+        {
+          "id": "gate",
+          "type": "Input"
+        },
+        {
+          "id": "pm",
+          "type": "Input"
+        },
+        {
+          "id": "out",
+          "type": "Output"
         }
       ],
       "connections": [
@@ -68,30 +84,46 @@
             "node": "vca",
             "port": "b"
           }
-        }
-      ],
-      "inputs": [
-        {
-          "name": "note",
-          "node": "pitch",
-          "port": "a"
         },
         {
-          "name": "gate",
-          "node": "env",
-          "port": "gate"
+          "from": {
+            "node": "note",
+            "port": "out"
+          },
+          "to": {
+            "node": "pitch",
+            "port": "a"
+          }
         },
         {
-          "name": "pm",
-          "node": "osc",
-          "port": "pm"
-        }
-      ],
-      "outputs": [
+          "from": {
+            "node": "gate",
+            "port": "out"
+          },
+          "to": {
+            "node": "env",
+            "port": "gate"
+          }
+        },
         {
-          "name": "out",
-          "node": "vca",
-          "port": "out"
+          "from": {
+            "node": "pm",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "pm"
+          }
+        },
+        {
+          "from": {
+            "node": "vca",
+            "port": "out"
+          },
+          "to": {
+            "node": "out",
+            "port": "in"
+          }
         }
       ],
       "parameters": [

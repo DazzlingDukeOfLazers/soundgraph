@@ -45,6 +45,7 @@
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { drawDefinitionPorts } from './seams.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Overridable so verification tools (dx7-index-check.mjs) can run the same import
@@ -791,7 +792,7 @@ const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 // back into capitals for display.
 const OPERATOR_MODULE_NAME = 'dx7_operator';
 
-const OPERATOR_MODULE = {
+const OPERATOR_MODULE = drawDefinitionPorts({
   description: 'One DX7 operator: pitch ratio, sine, envelope, VCA.',
   nodes: [
     { id: 'pitch', type: 'Multiply', parameters: { factor: 1 } },
@@ -831,7 +832,7 @@ const OPERATOR_MODULE = {
     { name: 'sustain', node: 'env', parameter: 'sustain' },
     { name: 'release', node: 'env', parameter: 'release' },
   ],
-};
+});
 
 function modularize(flat) {
   const byId = new Map(flat.nodes.map((n) => [n.id, n]));

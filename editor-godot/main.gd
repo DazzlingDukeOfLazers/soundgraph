@@ -2464,9 +2464,12 @@ func _engine_signal_source(node_id: String, port: String) -> Array:
 		if node["id"] != node_id or str(node.get("type", "")) != "module":
 			continue
 		var definition: Dictionary = patch.get("modules", {}).get(str(node["module"]), {})
-		for binding in definition.get("outputs", []):
-			if binding["name"] == port:
-				return ["%s.%s" % [node_id, binding["node"]], binding["port"]]
+		# Through the shared reader: a module's outputs are drawn as seams now, and a
+		# glow that stopped following one would leave every instance port dark with
+		# nothing on screen saying why.
+		for binding in Seams.declared_ports(definition, true):
+			if str(binding["name"]) == port:
+				return ["%s.%s" % [node_id, str(binding["node"])], str(binding["port"])]
 	return [node_id, port]
 
 

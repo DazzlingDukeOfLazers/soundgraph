@@ -280,10 +280,14 @@ export names, module-typed node inside a definition, and an expansion-size bomb
    reproduces the original wiring.
 4. **DX7/OPL importers emit modules by default** once 1–2 are proven.
 
-## Proposed: `Input` and `Output` as primitives — the seam made of nodes
+## `Input` and `Output` — the seam made of nodes
 
-Not built. Written down first because it moves where a module's edge *lives*, and that
-is a decision worth arguing about before there is code to argue with.
+**Built.** Written down first because it moves where a module's edge *lives*, and that was
+a decision worth arguing about before there was code to argue with. The argument below
+stands as it was made; what follows it is what the four decisions were settled to, and all
+four are now in the loader, the editor and every generator. Both spellings load — a patch
+written the old way opens unchanged — but nothing in this repository writes the old way
+any more.
 
 Today a module's surface is a **list beside the graph**: `inputs` and `outputs` are
 binding objects in the definition, saying "the port called `gate` means `env.gate`
