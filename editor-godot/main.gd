@@ -81,6 +81,7 @@ const ModuleAuthor := preload("res://module_author.gd")
 const Seams := preload("res://seams.gd")
 const SeamDock := preload("res://seam_dock.gd")
 const PatchFace := preload("res://patch_face.gd")
+const ModuleFace := preload("res://module_face.gd")
 
 const EXAMPLE_GROUPS := {
 	"": "",
@@ -146,6 +147,9 @@ var wand_button: Button
 var wand_confirm: Button
 ## The file's own face: the knobs somebody plays. See patch_face.gd.
 var patch_face: PatchFace
+## And one module's, when a module instance is what is selected. See module_face.gd.
+var module_face: ModuleFace
+var face_heading: Label
 var views: TabContainer
 var rack: Rack
 var sandbox: Sandbox
@@ -1466,11 +1470,25 @@ func _build_side_panel() -> Control:
 
 	# The face, first and always. It is what the file is *for* — the graph underneath is
 	# how it is built — so it leads the panel rather than sitting under the diagnostics.
-	panel.add_child(_field("Panel"))
+	#
+	# Two of them, one at a time. Which you get is which you are looking at: select a module
+	# instance and this is that module's face, select anything else and it is the file's.
+	# One column rather than two, because they are the same kind of thing and a person is
+	# only ever arranging one of them.
+	face_heading = _field("Panel")
+	panel.add_child(face_heading)
 	patch_face = PatchFace.new()
 	patch_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	patch_face.reordered.connect(_on_panel_reordered)
 	panel.add_child(patch_face)
+
+	module_face = ModuleFace.new()
+	module_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	module_face.rearranged.connect(_on_face_rearranged)
+	module_face.removed.connect(_on_face_knob_removed)
+	module_face.refused.connect(func(reason: String) -> void: _say(reason))
+	module_face.visible = false
+	panel.add_child(module_face)
 
 	# One quiet line, always in the same place. Valid is the normal state and should look
 	# like it — a green "No problems." carried as much visual authority as an actual error,
@@ -1514,6 +1532,9 @@ func _build_side_panel() -> Control:
 
 ## Fills the contextual region: the graph when nothing is selected, otherwise the node.
 func _refresh_context() -> void:
+	# Which face the panel shows follows the selection, so it is settled here rather than
+	# by each of the half-dozen paths that can change what is selected.
+	_refresh_face()
 	if context_panel == null:
 		return
 	for child in context_panel.get_children():
@@ -3248,7 +3269,12 @@ func _on_node_selected(node: Node) -> void:
 	var node_id: String = ids.get(node.name, "")
 	var outputs := _port_list(node_id, "outputs")
 	if node_id == "" or outputs.is_empty():
+		# Still a selection change, even though there is no port to inspect. Returning
+		# without saying so left the panel describing whatever was selected before — which
+		# was invisible while the panel was only ever the file's own face, and is not now
+		# that it can be a module's.
 		inspecting = {}
+		_refresh_context()
 		return
 	inspecting = {"node": node_id, "port": outputs[0]["name"]}
 	_refresh_context()
@@ -3990,6 +4016,10 @@ func _set_wand(active: bool) -> void:
 	graph_edit.set_wand(active)
 	if patch_face != null:
 		patch_face.wand = active
+	if module_face != null:
+		# Raising the wand grows a ghost for everything the face does not show, and putting
+		# it down takes them away — so this is a rebuild, not a repaint.
+		module_face.wand = active
 	if wand_button != null and wand_button.button_pressed != active:
 		wand_button.button_pressed = active
 	if not active:
@@ -4356,13 +4386,33 @@ func _set_muted(quiet: bool) -> void:
 	_say("output muted" if quiet else "output back on")
 
 
+## The panel shows one face: the selected module's, or the file's.
+##
+## Which is decided here rather than by the two controls, so exactly one of them is ever
+## visible and neither has to know the other exists. The heading changes with it, because a
+## panel labelled "Panel" that is sometimes the file's and sometimes a module's is a panel
+## you have to click something to identify.
 func _refresh_face() -> void:
 	if patch_face == null:
 		return
-	patch_face.patch = patch
-	patch_face.registry = registry
-	patch_face.rack = rack
-	patch_face.rebuild()
+	var showing := ""
+	if module_face != null:
+		module_face.patch = patch
+		module_face.registry = registry
+		module_face.rack = rack
+		module_face.node_id = str(inspecting.get("node", ""))
+		showing = module_face.module_name()
+		module_face.visible = showing != ""
+		if module_face.visible:
+			module_face.rebuild()
+	patch_face.visible = showing == ""
+	if patch_face.visible:
+		patch_face.patch = patch
+		patch_face.registry = registry
+		patch_face.rack = rack
+		patch_face.rebuild()
+	if face_heading != null:
+		face_heading.text = "Panel" if showing == "" else "Panel · %s" % showing
 
 
 ## The panel, in the order somebody dragged it into.
@@ -4459,6 +4509,102 @@ func _mark_for(widget: GraphNode, pick: Dictionary) -> Dictionary:
 			return {"widget": String(widget.name), "side":
 				"left" if kind == "input" else "right", "index": index}
 	return {}
+
+
+## A knob was dragged into a new place on a module's face.
+##
+## It lands on the *definition*, so every instance of that module wears it — which is the
+## right answer and worth saying out loud, because the thing being dragged is one instance
+## and the thing being edited is what all of them are.
+##
+## Any labels already on the panel are kept. Moving a knob is not renaming it, and the two
+## are separate fields precisely so that one gesture cannot quietly do the other.
+func _on_face_rearranged(rows: Array, added: Dictionary = {}) -> void:
+	var node_id := str(inspecting.get("node", ""))
+	var module_name := _module_of(node_id)
+	var definitions: Dictionary = patch.get("modules", {})
+	if module_name == "" or not definitions.has(module_name):
+		return
+	_begin_edit()
+	var definition: Dictionary = definitions[module_name]
+
+	# A ghost dragged onto the face was never exported, so it becomes an export on the way
+	# in — one edit, because "put this knob on the module" is one thought. The face names it
+	# by where it came from; the export name is chosen here, where what is already taken is
+	# known, and swapped into the rows so the panel names the binding and not the ghost.
+	var gained := ""
+	if not added.is_empty() and str(added.get("node", "")) != "":
+		var surface: Array = definition.get("parameters", []).duplicate(true)
+		gained = _free_export_name(surface, str(added["node"]), str(added["parameter"]))
+		surface.append({"name": gained, "node": str(added["node"]),
+			"parameter": str(added["parameter"])})
+		definition["parameters"] = surface
+		var renamed: Array = []
+		for row: Array in rows:
+			renamed.append(row.map(func(n): return gained if str(n) == str(added["key"]) \
+				else str(n)))
+		rows = renamed
+
+	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
+	panel["rows"] = rows
+	definition["panel"] = panel
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("rearrange %s" % module_name)
+	if gained != "":
+		_say("'%s' is on %s's face, and exported so a patch can reach it"
+			% [gained, module_name])
+	else:
+		_say("%s's face is %d row%s now" % [module_name, rows.size(),
+			"" if rows.size() == 1 else "s"])
+
+
+## A knob was dragged off a module's face.
+##
+## Off the face, still exported. The panel is presentation and the surface is the contract:
+## a control or an automation lane pointing at that export goes on working, and the module
+## goes on being able to do what it could do. Taking the *export* away is the destructive
+## edit, and it is not this gesture — see task #61.
+func _on_face_knob_removed(export_name: String) -> void:
+	var node_id := str(inspecting.get("node", ""))
+	var module_name := _module_of(node_id)
+	var definitions: Dictionary = patch.get("modules", {})
+	if module_name == "" or not definitions.has(module_name):
+		return
+	var definition: Dictionary = definitions[module_name]
+	# From the rows the face is actually showing, which for a module that has never been
+	# arranged is the wrap on screen rather than an empty panel. Taking a knob off a face
+	# nobody has arranged has to write down the rest of it or the removal would read as
+	# "clear the panel".
+	var rows: Array = ModuleFace.moved(module_face.face_rows(), export_name,
+		{"remove": true})
+	_begin_edit()
+	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
+	panel["rows"] = rows
+	definition["panel"] = panel
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("take %s off %s's face" % [export_name, module_name])
+	_say("'%s' is off %s's face, and still exported" % [export_name, module_name])
+
+
+## An export name not already spoken for. Same shape as ModuleAuthor's: the inner
+## parameter's own name where it is free, qualified by its node where it is not.
+func _free_export_name(surface: Array, node_id: String, parameter: String) -> String:
+	var taken := {}
+	for binding in surface:
+		taken[str(binding["name"])] = true
+	if not taken.has(parameter):
+		return parameter
+	var qualified := "%s_%s" % [node_id, parameter]
+	if not taken.has(qualified):
+		return qualified
+	var counter := 2
+	while taken.has("%s-%d" % [qualified, counter]):
+		counter += 1
+	return "%s-%d" % [qualified, counter]
 
 
 ## The module a node is an instance of, or "".

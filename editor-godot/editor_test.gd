@@ -4,6 +4,7 @@ extends SceneTree
 ## through a menu. main.gd preloads the same file.
 const ModuleAuthor := preload("res://module_author.gd")
 const Seams := preload("res://seams.gd")
+const ModuleFace := preload("res://module_face.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -2873,18 +2874,181 @@ func _initialize() -> void:
 		"the module under test wears four knobs (%d)"
 			% main.patch["modules"]["part"].get("parameters", []).size())
 
-	# ---- what the graphrack took with it ---------------------------------------------
-	# Dragging a knob around a module's face, dropping one off it, and clicking a ghost
-	# jack to declare a port were all gestures on a rack panel, and the rack panel is gone.
-	# The document operations behind them went with it — see task #65. The instance is still
-	# found here because the checks below are about naming it, not about its face.
+	# ---- the sub-panel builder: arranging a module's face -----------------------------
+	# The arithmetic first, on its own, because every interesting case here is an off-by-one
+	# and none of them needs a panel to be wrong in.
+	check(ModuleFace.moved([["a", "b", "c"]], "a", {"row": 0, "index": 2}) == [["b", "a", "c"]],
+		"moving a knob rightward past itself lands where the caret was, not one short")
+	check(ModuleFace.moved([["a"], ["b"]], "a", {"row": 1, "index": 1}) == [["b", "a"]],
+		"and a row the move emptied is gone rather than left blank")
+	check(ModuleFace.moved([["a", "b"]], "b", {"row": 0, "fresh": true}) == [["b"], ["a"]],
+		"a fresh row at the top opens above everything")
+	check(ModuleFace.moved([["a", "b"]], "a", {"row": 2, "fresh": true}) == [["b"], ["a"]],
+		"and one past the end opens below, whatever number it was given")
+	check(ModuleFace.moved([["a", "b"]], "a", {"remove": true}) == [["b"]],
+		"and taking one off leaves the rest of the row")
+
 	var instance := ""
 	for node in main.patch.get("nodes", []):
 		if str(node.get("module", "")) == "part":
 			instance = str(node["id"])
 	check(instance != "", "the module instance is in the patch (%s)" % instance)
 
+	# The panel shows one face, and which one follows the selection. This is the whole
+	# reason the builder is here rather than in a tab of its own: the thing being arranged
+	# and the graph it came out of are on screen together.
 	main.show_view("Graph")
+	main._focus_node(instance)
+	for i in 6:
+		await process_frame
+	check(main.module_face.visible and not main.patch_face.visible,
+		"selecting a module instance puts its face on the panel")
+	check(main.face_heading.text == "Panel · part",
+		"and the heading says whose it is (%s)" % main.face_heading.text)
+	check(main.module_face.face_rows() == [["cutoff", "rate"], ["resonance", "amount"]],
+		"a module nobody has arranged reads as the wrap already on screen (%s)"
+			% str(main.module_face.face_rows()))
+
+	# Selecting something that is not a module gives the file's own face back.
+	main._focus_node(main._output_node())
+	for i in 4:
+		await process_frame
+	check(main.patch_face.visible and not main.module_face.visible,
+		"and selecting something that is not a module gives the file's own face back")
+	check(main.face_heading.text == "Panel", "under its own name (%s)" % main.face_heading.text)
+
+	# And so does a selection with nothing behind it, which is the branch of
+	# _on_node_selected that used to return without telling the panel anything at all: it
+	# emptied `inspecting` and left the panel describing whatever had been selected before.
+	# Invisible while the panel was only ever the file's face; not invisible now.
+	main._focus_node(instance)
+	for i in 4:
+		await process_frame
+	check(main.module_face.visible, "a module's face is up again")
+	main._on_node_selected(main.graph_edit)  # a node the id map has never heard of
+	for i in 4:
+		await process_frame
+	check(main.inspecting.is_empty(), "selecting an untracked node inspects nothing")
+	check(main.patch_face.visible and not main.module_face.visible,
+		"and the panel says so rather than keeping the last module's face")
+
+	main._focus_node(instance)
+	main._set_wand(true)
+	for i in 8:
+		await process_frame
+
+	# Ghosts: everything the face could show and does not. Here that is every inner knob
+	# nobody exported, since all four exports are on the face.
+	var ghost_keys: Array = []
+	for cell: Dictionary in main.module_face._cells:
+		if bool(cell["ghost"]):
+			ghost_keys.append(str(cell["key"]))
+	check(ghost_keys.size() > 0, "the wand grows a ghost for what the face leaves off (%d)"
+		% ghost_keys.size())
+	var filed_by_origin := true
+	for key in ghost_keys:
+		if not str(key).begins_with("+"):
+			filed_by_origin = false
+	check(filed_by_origin,
+		"an unexported one is filed by where it comes from, not by a name it has not got (%s)"
+			% str(ghost_keys))
+
+	# A real drag, through the same two functions the mouse goes through: which cell was
+	# grabbed, and where the drop landed.
+	var seat := func(key: String) -> Rect2:
+		for cell: Dictionary in main.module_face._cells:
+			if str(cell["key"]) == key:
+				return (cell["control"] as Control).get_global_rect()
+		return Rect2()
+
+	var resonance_seat: Rect2 = seat.call("resonance")
+	var from_index: int = main.module_face._cell_at(seat.call("rate").get_center())
+	check(from_index >= 0, "a knob on the face can be picked up (%d)" % from_index)
+	var landing: Dictionary = main.module_face.drop_at(
+		Vector2(resonance_seat.position.x + 2.0, resonance_seat.get_center().y))
+	check(not bool(landing.get("fresh", false)) and int(landing.get("row", -1)) == 1,
+		"the middle of a row means into that row (%s)" % str(landing))
+	main.module_face._finish(from_index, landing)
+	for i in 8:
+		await process_frame
+
+	var face_now: Array = main.patch["modules"]["part"].get("panel", {}).get("rows", [])
+	check(face_now == [["cutoff"], ["rate", "resonance", "amount"]],
+		"dragging a knob writes the panel it landed in (%s)" % str(face_now))
+	check(main.module_face.face_rows() == face_now,
+		"and the face it rebuilt into is the one the file now says (%s)"
+			% str(main.module_face.face_rows()))
+	check(main.patch["modules"]["part"].get("parameters", []).size() == 4,
+		"the surface is untouched — an arrangement is presentation, not export (%d)"
+			% main.patch["modules"]["part"].get("parameters", []).size())
+
+	# Below the last row: a line of its own. The only gesture that says so.
+	var last_seat: Rect2 = seat.call("amount")
+	var below: Dictionary = main.module_face.drop_at(Vector2(last_seat.get_center().x,
+		last_seat.position.y + last_seat.size.y - 2.0))
+	check(bool(below.get("fresh", false)),
+		"the bottom of a row means a line of its own (%s)" % str(below))
+	main.module_face._finish(main.module_face._cell_at(seat.call("cutoff").get_center()), below)
+	for i in 8:
+		await process_frame
+	check(main.patch["modules"]["part"].get("panel", {}).get("rows", [])
+			== [["rate", "resonance", "amount"], ["cutoff"]],
+		"dropping past the last row opens a new one (%s)"
+			% str(main.patch["modules"]["part"].get("panel", {}).get("rows", [])))
+
+	# A ghost dragged on is exported on the way in, because "put this knob on the module"
+	# is one thought and an unexported knob on a face would be a knob wired to nothing.
+	var before_surface: int = main.patch["modules"]["part"].get("parameters", []).size()
+	var a_ghost := ""
+	for cell: Dictionary in main.module_face._cells:
+		if bool(cell["ghost"]) and a_ghost == "":
+			a_ghost = str(cell["key"])
+	var ghost_index: int = main.module_face._cell_at(seat.call(a_ghost).get_center())
+	check(ghost_index >= 0, "a ghost can be picked up too (%s)" % a_ghost)
+	var onto: Rect2 = seat.call("rate")
+	main.module_face._finish(ghost_index,
+		main.module_face.drop_at(Vector2(onto.position.x + 2.0, onto.get_center().y)))
+	for i in 10:
+		await process_frame
+	check(main.patch["modules"]["part"].get("parameters", []).size() == before_surface + 1,
+		"dragging a ghost on exports it (%d, was %d)"
+			% [main.patch["modules"]["part"].get("parameters", []).size(), before_surface])
+	var flat_rows: Array = []
+	for row: Array in main.patch["modules"]["part"].get("panel", {}).get("rows", []):
+		flat_rows.append_array(row)
+	var named_by_export := true
+	for entry in flat_rows:
+		if str(entry).begins_with("+"):
+			named_by_export = false
+	check(named_by_export,
+		"and the panel names the binding, not the ghost it was dragged from (%s)"
+			% str(flat_rows))
+	check(flat_rows.size() == before_surface + 1,
+		"with the new knob on the face (%s)" % str(flat_rows))
+
+	# Off the panel: off the face, still exported. The reversible edit must not be able to
+	# do the destructive one by accident.
+	var surface_before_removal: int = main.patch["modules"]["part"].get("parameters", []).size()
+	var off: Dictionary = main.module_face.drop_at(Vector2(-500.0, -500.0))
+	check(bool(off.get("remove", false)), "a drop outside the panel means off it (%s)" % str(off))
+	main.module_face._finish(main.module_face._cell_at(seat.call("cutoff").get_center()), off)
+	for i in 10:
+		await process_frame
+	var after_removal: Array = []
+	for row: Array in main.patch["modules"]["part"].get("panel", {}).get("rows", []):
+		after_removal.append_array(row)
+	check(not after_removal.has("cutoff"),
+		"dragging a knob off the panel takes it off the face (%s)" % str(after_removal))
+	check(main.patch["modules"]["part"].get("parameters", []).size() == surface_before_removal,
+		"and leaves it exported, so nothing pointing at it breaks (%d)"
+			% main.patch["modules"]["part"].get("parameters", []).size())
+	var offered_again := false
+	for cell: Dictionary in main.module_face._cells:
+		if bool(cell["ghost"]) and str(cell["key"]) == "cutoff":
+			offered_again = true
+	check(offered_again, "so it comes back as a ghost, ready to be put on again")
+
+	main._set_wand(false)
 	for i in 6:
 		await process_frame
 
