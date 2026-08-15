@@ -206,6 +206,28 @@ func _initialize() -> void:
 	check(main.engine.search_nodes("definitely not a node").size() == 0,
 		"search rejects nonsense instead of guessing")
 
+	# ---- the palette offers ports, and offers them once -------------------------------
+	# A port is how a patch says where its edges are, so it has to be addable rather than
+	# only inheritable. The core still knows the older spelling — NoteInput and the rest —
+	# and a search for "midi keyboard" still ranks it first; what the palette offers for
+	# that ranking is the port, because two ways to say one thing in the one place people
+	# go to learn the vocabulary is where the confusion would start.
+	var offered: PackedStringArray = main._addable(PackedStringArray(main.registry.keys()))
+	for wanted in ["seam:Input/note", "seam:Input/audio", "seam:Output/stereo"]:
+		check(offered.has(wanted), "the palette offers %s" % wanted)
+	for older in ["NoteInput", "AudioInput", "StereoOutput"]:
+		check(not offered.has(older),
+			"and not %s, which is the same thing said the older way" % older)
+	check(main._addable(main.engine.search_nodes("midi keyboard"))[0] == "seam:Input/note",
+		"a search that ranks the terminal offers the port")
+	var not_a_type := ""
+	for key in offered:
+		if str(key).begins_with("module:") or str(key).contains("/@"):
+			not_a_type = str(key)
+	check(not_a_type == "",
+		"and nothing in it is a shape rather than a type (%s)"
+		% (not_a_type if not_a_type != "" else "none of %d" % offered.size()))
+
 	# ---- the graph view is generated from that vocabulary -----------------------------
 	var file := FileAccess.open("res://examples/first-synth.json", FileAccess.READ)
 	if file == null:
@@ -519,6 +541,26 @@ func _initialize() -> void:
 	await process_frame
 	check(main.patch["nodes"].size() == original_nodes + 1, "adding a node grows the patch")
 	check(main.undo_redo.has_undo(), "and it is undoable")
+
+	# A port added from the palette is written the way the document says it, as a type and
+	# a binding — the "seam:Input/note" key is the editor's filing, not the file's.
+	var port_id: String = await main._add_node("seam:Input/note", Vector2(2000, 200))
+	await process_frame
+	var added_port := {}
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == port_id:
+			added_port = node
+	check(str(added_port.get("type", "")) == "Input",
+		"a port added from the palette is written as an Input (%s)" % added_port.get("type", ""))
+	# This patch already has a keyboard, and two nodes claiming one machine would leave the
+	# loader picking the first. So the second arrives unplugged, which is now a state that
+	# means something: it is a port, waiting for somebody to drag the jack over.
+	check(str(added_port.get("host", "")) == "",
+		"unplugged, because the one keyboard is already spoken for")
+	check(main._output_port_index(port_id, port_id) >= 0,
+		"and it has a port to wire, named after itself (%s)" % port_id)
+	main._undo()
+	await process_frame
 
 	main._undo()
 	await process_frame

@@ -2160,10 +2160,25 @@ func _far_port_type(node_id: String, port: String, arriving: bool) -> String:
 	return "control"
 
 
+## The ports this runtime has a machine for, one per host, offered by the palette whether
+## or not the open patch uses them. A palette that lists only what you already have is a
+## list, not a palette — and a port is how you say where your patch's edges are, which is
+## something you decide while building it rather than something you inherit.
+const DEVICE_SEAMS := [
+	{"type": "Input", "host": "note", "device": "the keyboard"},
+	{"type": "Input", "host": "audio", "device": "an audio input"},
+	{"type": "Output", "host": "stereo", "device": "the speakers"},
+]
+
+
 func _synthesize_seam_descriptors() -> void:
 	for key in registry.keys().filter(func(k): return str(k).begins_with("seam:")):
 		registry.erase(key)
-	for node in patch.get("nodes", []):
+	# The machine's own ports first, then whatever the patch turned out to have. Order
+	# matters only in that a patch node must not overwrite a device entry with a narrower
+	# one: both describe `seam:Input/note`, and the device's description is the one that
+	# reads properly in a palette.
+	for node in DEVICE_SEAMS + patch.get("nodes", []):
 		var type_name := str(node.get("type", ""))
 		if type_name != "Input" and type_name != "Output":
 			continue
@@ -2178,8 +2193,18 @@ func _synthesize_seam_descriptors() -> void:
 		# its outlets the moment you unplugged the keyboard would drop four cables with it,
 		# and unplugging is meant to be a thing you can undo by plugging back in.
 		if host == "":
-			carried = {"inputs": _wired_ports(str(node["id"]), false),
-				"outputs": _wired_ports(str(node["id"]), true)}
+			var node_id := str(node.get("id", ""))
+			carried = {"inputs": _wired_ports(node_id, false),
+				"outputs": _wired_ports(node_id, true)}
+			# A port with no host and no cables yet is a single port named after itself —
+			# which is exactly what a module's port is, and for the same reason: with no
+			# host to ask, the only thing it can carry is whatever somebody plugs into it.
+			# Without this a freshly added port would have nothing to connect to and could
+			# never acquire the wiring it takes its shape from.
+			var side := "inputs" if type_name == "Output" else "outputs"
+			if (carried[side] as Array).is_empty():
+				carried[side] = [{"name": str(node.get("name", node_id)),
+					"type": "control"}]
 		var inputs: Array = []
 		var outputs: Array = []
 		if type_name == "Input":
@@ -2195,11 +2220,21 @@ func _synthesize_seam_descriptors() -> void:
 				"doc": "Where %s listens. Unconnected inside a module: whatever uses it "
 					% (host if host != "" else "the machine")
 					+ "takes the signal from here."})
+		# Named for what plugs into it. "Input port" three times over would make the palette
+		# a guessing game, and which host it is carries the whole difference.
+		var shown := "%s port" % type_name
+		var summary := "A seam: where this graph meets what is outside it."
+		var device := str(node.get("device", ""))
+		if host != "":
+			shown = "%s port · %s" % [type_name, host]
+		if device != "":
+			summary = "An edge of the patch: where it meets %s. " % device \
+				+ "Plug the machine into it to hear the patch from here."
 		registry[key] = {
 			"name": key,
-			"display_name": "%s port" % type_name,
+			"display_name": shown,
 			"category": "Terminals",
-			"summary": "A seam: where this graph meets what is outside it.",
+			"summary": summary,
 			"inputs": inputs,
 			"outputs": outputs,
 			"parameters": carried.get("parameters", []).duplicate(true),
@@ -3706,6 +3741,33 @@ func _build_search_popup() -> void:
 	add_child(search_popup)
 
 
+## What the palette may offer, out of everything the registry knows.
+##
+## Three things are in the registry that are not things you add. A module instance is made
+## by collapsing a selection, not by picking a type. A per-node port shape (`seam:Input/@x`)
+## describes a port that already exists. And the bare terminals — NoteInput, AudioInput,
+## StereoOutput — are the older spelling of the port primitives: still loaded, still
+## rendered, but offering both would put two ways to say the same thing side by side in the
+## one place a person goes to learn the vocabulary.
+##
+## The terminal a search turns up is translated rather than dropped, so looking for
+## "keyboard" still lands on something: the core ranks NoteInput, and what you get offered
+## is the Input port bound to it.
+func _addable(names: PackedStringArray) -> PackedStringArray:
+	var out := PackedStringArray()
+	var seen := {}
+	for name in names:
+		var key := str(name)
+		for device: Dictionary in DEVICE_SEAMS:
+			if key == Seams.TERMINALS.get("%s/%s" % [device["type"], device["host"]], ""):
+				key = "seam:%s/%s" % [device["type"], device["host"]]
+		if key.begins_with("module:") or key.contains("/@") or seen.has(key):
+			continue
+		seen[key] = true
+		out.append(key)
+	return out
+
+
 func _build_result_row(type_name: String) -> Control:
 	var descriptor: Dictionary = registry.get(type_name, {})
 
@@ -3763,11 +3825,9 @@ func _on_search_changed(query: String) -> void:
 
 	# The ranking is the core's, so "make quieter" finds the same node here, in the
 	# browser, and on the command line.
-	# Synthesized module descriptors are not addable types; the palette lists the core's
-	# vocabulary only.
 	var names: PackedStringArray = engine.search_nodes(query) if query.strip_edges() != "" \
-		else PackedStringArray(registry.keys().filter(
-			func(k): return not str(k).begins_with("module:")))
+		else PackedStringArray(registry.keys())
+	names = _addable(names)
 
 	_search_top_result = names[0] if names.size() > 0 else ""
 	for type_name in names:
@@ -3805,7 +3865,21 @@ func _add_from_search(type_name: String) -> void:
 func _add_node(type_name: String, at_position: Vector2) -> String:
 	_begin_edit()
 	var descriptor: Dictionary = registry.get(type_name, {})
-	var base: String = type_name.to_snake_case()
+
+	# A seam is filed under a key that says which host it is — "seam:Input/note" — because
+	# that is what decides its shape. The document says it the other way round, as a type
+	# and a binding, and the document is the version a person reads.
+	var written := type_name
+	var host := ""
+	if type_name.begins_with("seam:"):
+		var parts := type_name.substr(5).split("/")
+		written = parts[0]
+		host = parts[1] if parts.size() > 1 else ""
+
+	# Named for the host rather than for the type: a patch usually has one of each, and
+	# "note" and "stereo" are what the cables coming out of them are about. "input2" would
+	# be two guesses away from meaning anything.
+	var base: String = (host if host != "" else written).to_snake_case()
 	var suffix := 1
 	var node_id := base
 	var existing := {}
@@ -3820,15 +3894,26 @@ func _add_node(type_name: String, at_position: Vector2) -> String:
 	for parameter in descriptor.get("parameters", []):
 		parameters[parameter["name"]] = parameter["default"]
 
-	patch["nodes"].append({
+	var added := {
 		"id": node_id,
-		"type": type_name,
+		"type": written,
 		"parameters": parameters,
 		"position": {
 			"x": snappedf(at_position.x, GRID),
 			"y": snappedf(at_position.y, GRID),
 		},
-	})
+	}
+	if host != "":
+		# One host, one port: adding a second keyboard input would leave two nodes claiming
+		# the same machine and the loader taking the first. The new one arrives unplugged,
+		# which is a state that now means something — drag the jack over when you want it.
+		for node in patch.get("nodes", []):
+			if str(node.get("host", "")) == host:
+				host = ""
+				break
+	if host != "":
+		added["host"] = host
+	patch["nodes"].append(added)
 	await _rebuild_view()
 	_apply()
 	_commit_edit("add %s" % registry.get(type_name, {}).get("display_name", type_name))
