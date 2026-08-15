@@ -4326,11 +4326,12 @@ func _close_module(module_name: String) -> void:
 	if not shut.ok():
 		_say(shut.error)
 		return
+	var was: String = engine.flatten_patch(JSON.stringify(patch, "  "))
 	_begin_edit()
 	patch = shut.patch
 	_synthesize_module_descriptors()
 	await _rebuild_view()
-	_apply()
+	_apply(was)
 	_commit_edit("close %s" % module_name)
 	_say("'%s' is one node again" % module_name)
 
@@ -4341,11 +4342,13 @@ func _open_module(instance_id: String) -> void:
 	if not opened.ok():
 		_say(opened.error)
 		return
+	# Taken before the document changes, so _apply can check the claim rather than take it.
+	var was: String = engine.flatten_patch(JSON.stringify(patch, "  "))
 	_begin_edit()
 	patch = opened.patch
 	_synthesize_module_descriptors()
 	await _rebuild_view()
-	_apply()
+	_apply(was)
 	_commit_edit("open %s" % opened.module_name)
 	_say("'%s' is open. Close it to fold it back in." % opened.module_name)
 
@@ -5202,11 +5205,33 @@ func _capture_positions() -> void:
 
 
 ## Serialises, validates and reloads. Called for structural edits only.
-func _apply() -> void:
+## Applies the document to the engine, unless the engine would build the same graph twice.
+##
+## `same_sound` is the caller saying "this edit was notation" — opening a module, closing
+## one — and it is checked rather than believed. The engine flattens both documents and the
+## two fingerprints are compared; only an exact match skips the reload. A reload empties
+## every delay line and retriggers every oscillator, so peeking inside a reverb while it
+## rings used to cut the tail, and there was never any reason for it: expansion and collapse
+## are the same graph said two ways, which is the claim the whole modules design rests on
+## and which ctest verifies byte-identically across a hundred and sixty patches.
+##
+## Diagnostics still run either way. Skipping the reload must not skip finding out that the
+## document is broken.
+func _apply(same_sound_as: String = "") -> void:
 	if suppress_reload:
 		return
 	_capture_positions()
 	var text := JSON.stringify(patch, "  ")
+
+	if same_sound_as != "":
+		var now: String = engine.flatten_patch(text)
+		if now != "" and now == same_sound_as:
+			var quiet: Variant = JSON.parse_string(engine.validate_patch(text))
+			_show_diagnostics(quiet["diagnostics"] if typeof(quiet) == TYPE_DICTIONARY else [])
+			_rebuild_level_targets()
+			_show_info()
+			_refresh_status()
+			return
 
 	var report: Variant = JSON.parse_string(engine.validate_patch(text))
 	var diagnostics: Array = report["diagnostics"] if typeof(report) == TYPE_DICTIONARY else []

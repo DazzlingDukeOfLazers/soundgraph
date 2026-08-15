@@ -3360,6 +3360,33 @@ func _initialize() -> void:
 	# The gesture end to end, through the editor rather than through ModuleAuthor: the
 	# rectangle names its members, the module is left open with a frame round its parts,
 	# and the frame's Close button folds it back to one node.
+	# ---- the engine can say whether two documents are the same graph -----------------
+	# A reload empties every delay line and retriggers every oscillator, so an edit that
+	# cannot change the sound should not cause one. flatten_patch answers that: it parses a
+	# document — expanding modules and seams on the way, because that is what parsing does —
+	# and fingerprints the flat graph the engine would build. Equal fingerprints, equal
+	# sound.
+	var flat_first: String = main.engine.flatten_patch(JSON.stringify(main.patch, "  "))
+	check(flat_first != "", "the engine fingerprints the flattened graph (%d bytes)"
+		% flat_first.length())
+	check(main.engine.flatten_patch(JSON.stringify(main.patch, "  ")) == flat_first,
+		"and gives the same answer twice for the same document")
+
+	# It has to be able to say no, or skipping a reload would be a promise nothing could
+	# break. One hertz moves it.
+	var nudged: Dictionary = main.patch.duplicate(true)
+	for node in nudged["nodes"]:
+		if str(node.get("type", "")) == "SawOscillator":
+			node["parameters"]["frequency"] = float(
+				node.get("parameters", {}).get("frequency", 220.0)) + 1.0
+	check(main.engine.flatten_patch(JSON.stringify(nudged, "  ")) != flat_first,
+		"and a knob turned by one hertz moves it")
+
+	# A document that will not parse fingerprints as nothing, which _apply treats as
+	# "reload" rather than as "no change" — the empty string must never match a real one.
+	check(main.engine.flatten_patch("{ not json") == "",
+		"a document that will not parse has no fingerprint")
+
 	await main._load_example("First Synth")
 	for i in 8:
 		await process_frame

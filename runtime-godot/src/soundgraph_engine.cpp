@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 #include "soundgraph/patch_io.h"
 
@@ -35,6 +36,8 @@ void SoundGraphEngine::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_registry_json"), &SoundGraphEngine::get_registry_json);
     ClassDB::bind_method(D_METHOD("search_nodes", "query"), &SoundGraphEngine::search_nodes);
     ClassDB::bind_method(D_METHOD("validate_patch", "patch_json"), &SoundGraphEngine::validate_patch);
+    ClassDB::bind_method(D_METHOD("flatten_patch", "patch_json"),
+                         &SoundGraphEngine::flatten_patch);
     ClassDB::bind_method(D_METHOD("format_patch", "patch_json"), &SoundGraphEngine::format_patch);
 
     ClassDB::bind_method(D_METHOD("load_patch", "patch_json", "sample_rate"),
@@ -76,6 +79,55 @@ PackedStringArray SoundGraphEngine::search_nodes(const String& query) const {
     }
     return results;
 }
+
+// Modules and seams are notation: expansion happens during parse, so `description` here
+// is already the flat graph the engine would build. Serialising it is therefore a
+// fingerprint of the *sound*, not of the file — which is exactly what a caller needs to
+// ask "would reloading change anything".
+//
+// Sorted, because the flat order is an implementation detail of expansion and two
+// documents that differ only in it are the same graph. Parameters are printed at full
+// precision: a value that survives a round trip must compare equal, and a rounded one
+// would make a reload look necessary when it is not.
+String SoundGraphEngine::flatten_patch(const String& patch_json) const {
+    soundgraph::GraphDescription description;
+    std::vector<soundgraph::Diagnostic> diagnostics;
+    if (!soundgraph::parse_patch(to_utf8(patch_json), description, diagnostics)) {
+        return String();
+    }
+
+    std::vector<std::string> lines;
+    lines.reserve(description.nodes.size() + description.connections.size());
+    for (const soundgraph::NodeDescription& node : description.nodes) {
+        std::string line = "n " + node.id + " " + node.type;
+        std::vector<std::string> settings;
+        settings.reserve(node.parameters.size());
+        for (const soundgraph::ParameterValue& parameter : node.parameters) {
+            std::ostringstream value;
+            value.precision(17);
+            value << parameter.name << "=" << parameter.value;
+            settings.push_back(value.str());
+        }
+        std::sort(settings.begin(), settings.end());
+        for (const std::string& setting : settings) {
+            line += " " + setting;
+        }
+        lines.push_back(line);
+    }
+    for (const soundgraph::ConnectionDescription& wire : description.connections) {
+        lines.push_back("c " + wire.from_node + "." + wire.from_port + " -> " +
+                        wire.to_node + "." + wire.to_port);
+    }
+    std::sort(lines.begin(), lines.end());
+
+    std::string out;
+    for (const std::string& line : lines) {
+        out += line;
+        out += "\n";
+    }
+    return String::utf8(out.c_str());
+}
+
 
 String SoundGraphEngine::validate_patch(const String& patch_json) const {
     soundgraph::GraphDescription description;

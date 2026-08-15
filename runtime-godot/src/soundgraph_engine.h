@@ -47,6 +47,12 @@ public:
     // {"ok": bool, "diagnostics": [...]}. Cheap enough to call on every edit.
     godot::String validate_patch(const godot::String& patch_json) const;
 
+    /// A fingerprint of the graph this patch flattens to: every node, its type and its
+    /// parameter values, and every connection, in a fixed order. Two documents with the
+    /// same fingerprint build the same engine graph, so an edit that leaves it unchanged
+    /// need not reload. Empty when the patch will not parse.
+    godot::String flatten_patch(const godot::String& patch_json) const;
+
     // Re-writes a patch through the core's own serialiser, which is what every saved
     // patch should go through. Godot's JSON.stringify sorts keys alphabetically and
     // renders every number as a float — so a saved patch would arrive with
