@@ -729,7 +729,40 @@ TEST(a_seam_is_handed_back_as_a_seam) {
     CHECK(soundgraph::write_patch(again) == written);  // stable from then on
 }
 
-TEST(seams_hold_the_scope_rule_in_both_directions) {
+TEST(an_unbound_top_level_seam_is_a_socket_with_nothing_in_it) {
+    // Not an error. A port at the top level with no host is one the machine is not
+    // driving at the moment — a patch mid-build, or a patch meant to be used as a module,
+    // which declares its ports precisely so that a parent can drive them later.
+    const std::string binding = ",  \"host\": \"note\"";
+    std::string text = seam_patch();
+    const std::size_t at = text.find(binding);
+    CHECK(at != std::string::npos);
+    text = text.replace(at, binding.size(), "");
+
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+
+    // Spliced, like a module's port: there is no dsp-core node for an empty socket.
+    CHECK(description.find_node("kb") == nullptr);
+    CHECK(description.find_node("osc") != nullptr);
+    CHECK(description.find_node("out") != nullptr);
+
+    // And the cable it fed goes with it, or the graph would name a node it does not have.
+    // The oscillator keeps its parameter value and simply has nothing driving it, which
+    // is what an unplugged input does on any instrument.
+    CHECK(description.connections.size() == 1);
+    CHECK(description.connections[0].from_node == "osc");
+
+    // The document is handed back the way it was written. Splicing is what the engine
+    // sees, not an edit to somebody's file: the socket is still there to plug into.
+    const std::string written = soundgraph::write_patch(description);
+    CHECK(written.find("\"kb\"") != std::string::npos);
+    CHECK(written.find("\"host\": \"note\"") == std::string::npos);
+    CHECK(written.find("\"host\": \"stereo\"") != std::string::npos);  // the bound one stays
+}
+
+TEST(seams_hold_the_scope_rule) {
     auto refuses = [](const std::string& text, const std::string& code) {
         GraphDescription description;
         std::vector<Diagnostic> diagnostics;
@@ -745,11 +778,6 @@ TEST(seams_hold_the_scope_rule_in_both_directions) {
         CHECK(at != std::string::npos);
         return text.replace(at, from.size(), to);
     };
-
-    // A seam at the top level is where the graph meets the machine, so it has to say
-    // which part of it.
-    CHECK(refuses(swap(seam_patch(), ",  \"host\": \"note\"", ""),
-                  "top_level_seam_needs_host"));
 
     // A host this runtime does not have is refused rather than ignored: a patch that
     // silently loses its keyboard is worse than one that will not open.

@@ -3598,6 +3598,69 @@ func _initialize() -> void:
 	check(main.held_notes.is_empty(), "collapsing the dock lets go of what was held")
 	main._set_keyboard_expanded(true)
 
+	# ---- the machine plugs into the ports, and can be unplugged ----------------------
+	# Which port a device drives is the port's own host binding, so dragging a dock jack is
+	# not a cable edit — it moves that binding. Dropping it nowhere takes the binding off
+	# altogether, which patch-io answers by splicing the port out: an input nothing drives
+	# is silent, the way an unplugged input is on any instrument.
+	check(main.graph_edit.is_visible_in_tree(),
+		"the graph is the visible view, so a drop can land on a port")
+	var keyboard_jack := {}
+	for socket in main.note_jacks.ports:
+		if str(socket["host"]) == "note":
+			keyboard_jack = socket
+	check(not keyboard_jack.is_empty(), "the dock has a keyboard jack")
+	var note_port := str(keyboard_jack.get("node", ""))
+	check(note_port != "" and main.widgets.has(note_port),
+		"plugged into a port on the canvas (%s)" % note_port)
+
+	# What must survive the unplug: the port's shape. Its outlets come from its host while
+	# it has one and from its own cables when it does not, so pulling the keyboard out must
+	# not take four cables with it.
+	var outlets_before: int = main._output_port_index(note_port, "frequency")
+	var cables_before: int = main.patch["connections"].size()
+	check(outlets_before >= 0, "and the port has a frequency outlet (slot %d)" % outlets_before)
+
+	main._on_jack_grabbed(keyboard_jack)
+	check(not main.dragging_jack.is_empty(), "picking the jack up puts it in hand")
+	check(main._live_cable().size() == 3, "and a cable follows the cursor")
+	main._drop_jack(Vector2(-200.0, -200.0))  # nowhere
+	# The rebuild is a coroutine and finishes on its own frames; the document changes at
+	# once, the widgets a few frames later.
+	for _i in 6:
+		await process_frame
+
+	var unplugged_host := ""
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == note_port:
+			unplugged_host = str(node.get("host", ""))
+	check(unplugged_host == "", "dropping it off the graph unplugs the port")
+	check(main.patch["connections"].size() == cables_before,
+		"without dropping a single cable (%d)" % main.patch["connections"].size())
+	check(main._output_port_index(note_port, "frequency") >= 0,
+		"the port keeps its outlets, taking their shape from its own wiring")
+	var still_there := false
+	for socket in main.note_jacks.ports:
+		if str(socket["host"]) == "note":
+			still_there = str(socket["node"]) == ""
+	check(still_there,
+		"and the jack stays on the dock, plugged into nothing — a keyboard you cannot "
+		+ "plug back in is not unplugged, it is gone")
+
+	# Plugged back in by dropping on the port. Not on its host jack: that is seven pixels
+	# across and this is a drag across the window.
+	var replug := {"node": "", "port": Seams.HOST_PORT, "host": "note",
+		"type": "note", "label": "Keyboard"}
+	main._on_jack_grabbed(replug)
+	main._drop_jack(main.widgets[note_port].get_global_rect().get_center())
+	await process_frame
+	await process_frame
+	var replugged_host := ""
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == note_port:
+			replugged_host = str(node.get("host", ""))
+	check(replugged_host == "note", "and dropping it on the port plugs it back in")
+
 	# ---- the panic control ------------------------------------------------------
 	main.keyboard.note_pressed.emit(60)
 	main.keyboard.note_pressed.emit(64)

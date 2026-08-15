@@ -5,6 +5,7 @@
 #include <sstream>
 #endif
 
+#include <algorithm>
 #include <cstring>
 
 #include "json.h"
@@ -273,12 +274,16 @@ std::string expanded_id(const std::string& instance, const std::string& inner) {
 // Turns the patch's own seams into the terminals that speak to the machine, and holds
 // both halves of the scope rule.
 //
-// The rule is one sentence in two directions: a seam at the top level must carry a host
-// binding, and a seam inside a module may not. Top-level seams convert here; module seams
-// are spliced by expansion; there is no third case. This is the same protection the old
-// "a module is a subcircuit, not a finished patch" refusal gave — a module must not reach
-// past its own edge and grab the keyboard, or two instances would both be listening to
-// the same one — said as a sentence about scope rather than a list of forbidden types.
+// The rule is about one direction only: a seam inside a module may not carry a host
+// binding. This is the same protection the old "a module is a subcircuit, not a finished
+// patch" refusal gave — a module must not reach past its own edge and grab the keyboard,
+// or two instances would both be listening to the same one — said as a sentence about
+// scope rather than a list of forbidden types.
+//
+// The other direction is not a rule, it is a state. A top-level seam that names a host
+// converts here into the terminal that speaks to it; one that names none is spliced, like
+// a module's port, and the patch loads with that input unfed. See the splice below for
+// why that is the right answer rather than a refusal.
 //
 // Only the flattened view is converted. The authored view keeps the seam spelling, so a
 // file written with seams is handed back with seams: this loader has no business quietly
@@ -326,17 +331,25 @@ bool resolve_seams(GraphDescription& description, std::vector<Diagnostic>& diagn
         snapshot_authored(description);
     }
 
+    // A top-level seam with no host is a port nothing is driving at the moment, and that
+    // is a legal thing for a patch to say. It is the state of a patch being built, with
+    // the keyboard unplugged from one of its inputs; it is the state of every patch meant
+    // to be usable as a module, which declares ports precisely so that some parent can
+    // drive them later. Refusing it would mean the editor could write files this loader
+    // will not open, and nothing else in this project works that way.
+    //
+    // It splices rather than converts, exactly as a module's port does. There is no
+    // dsp-core node for an empty socket, and what the seam fed simply has no source now:
+    // silence, which is what an unplugged input sounds like on any instrument. The cables
+    // go with it, because a connection from a node that is not in the graph is a dangling
+    // reference the validator would reject, and rightly.
+    std::vector<std::string> unplugged;
     for (NodeDescription& node : description.nodes) {
         if (!is_seam(node.type)) {
             continue;
         }
         if (node.host.empty()) {
-            diagnostics.push_back(error(
-                "top_level_seam_needs_host",
-                "Seam '" + node.id + "' is at the top level of the patch but names no host.",
-                "A seam here is where the graph meets the machine, so it needs to say "
-                "which part of it: \"host\": \"note\", \"audio\" or \"stereo\"."));
-            ok = false;
+            unplugged.push_back(node.id);
             continue;
         }
         const std::string terminal = terminal_for(node.type, node.host);
@@ -351,6 +364,22 @@ bool resolve_seams(GraphDescription& description, std::vector<Diagnostic>& diagn
         }
         node.type = terminal;
         node.host.clear();
+    }
+
+    if (!unplugged.empty()) {
+        const auto gone = [&unplugged](const std::string& id) {
+            return std::find(unplugged.begin(), unplugged.end(), id) != unplugged.end();
+        };
+        description.nodes.erase(
+            std::remove_if(description.nodes.begin(), description.nodes.end(),
+                           [&gone](const NodeDescription& node) { return gone(node.id); }),
+            description.nodes.end());
+        description.connections.erase(
+            std::remove_if(description.connections.begin(), description.connections.end(),
+                           [&gone](const ConnectionDescription& wire) {
+                               return gone(wire.from_node) || gone(wire.to_node);
+                           }),
+            description.connections.end());
     }
     return ok;
 }

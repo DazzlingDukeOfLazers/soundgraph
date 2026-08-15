@@ -39,7 +39,15 @@ static func registry_key(node: Dictionary) -> String:
 		return "module:%s" % str(node.get("module", ""))
 	var type_name := str(node.get("type", ""))
 	if type_name == "Input" or type_name == "Output":
-		return "seam:%s/%s" % [type_name, str(node.get("host", ""))]
+		var host := str(node.get("host", ""))
+		# A bound port's shape comes from its host: every Input bound to `note` carries the
+		# four the keyboard has, so they share one entry. An unbound one has no host to ask,
+		# and its shape is whatever it is wired as — which is its own business, so it gets
+		# its own key. That is also what keeps unplugging non-destructive: pulling the
+		# keyboard out changes which entry the port uses, not how many outlets it has.
+		if host == "":
+			return "seam:%s/@%s" % [type_name, str(node.get("id", ""))]
+		return "seam:%s/%s" % [type_name, host]
 	return type_name
 
 

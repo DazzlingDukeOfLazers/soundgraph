@@ -194,6 +194,8 @@ var muted := false
 var note_jacks
 var output_jacks
 var seam_cables
+## The device jack currently in the user's hand, or {} — see _on_jack_grabbed.
+var dragging_jack := {}
 var keyboard_expanded := true
 ## What is open, shown so "which patch am I looking at" is never a guess.
 var document_label: Label
@@ -2023,6 +2025,11 @@ func _slot_type(signal_type: String) -> int:
 
 
 func _rebuild_view() -> void:
+	# The synthesized descriptors are read from the document, so they are stale the moment
+	# it changes. Every caller that edited modules or seams used to remember to rebuild
+	# them and every new caller had to be told; doing it here means the widgets are built
+	# against the document in front of them, which is the only version that was ever right.
+	_synthesize_module_descriptors()
 	graph_edit.clear_connections()
 	for child in graph_edit.get_children():
 		if child is GraphNode:
@@ -2116,6 +2123,43 @@ func _type_key(node: Dictionary) -> String:
 ## The host jack goes first, so it is the top row of the node — the edge of the patch is
 ## drawn at the edge of the node, and a reader looking for "where does the keyboard go"
 ## finds it without counting.
+## The ports a node is actually wired through, in the order the cables appear, as registry
+## port entries. The signal type is taken from the far end, which is the only place that
+## knows: a seam carries whatever is plugged into it.
+func _wired_ports(node_id: String, leaving: bool) -> Array:
+	var seen := {}
+	var ports: Array = []
+	for wire in patch.get("connections", []):
+		var near: Dictionary = wire["from"] if leaving else wire["to"]
+		var far: Dictionary = wire["to"] if leaving else wire["from"]
+		if str(near["node"]) != node_id:
+			continue
+		var port_name := str(near["port"])
+		if seen.has(port_name):
+			continue
+		seen[port_name] = true
+		ports.append({"name": port_name,
+			"type": _far_port_type(str(far["node"]), str(far["port"]), leaving)})
+	return ports
+
+
+## The signal type at the other end of a cable. From the document rather than the widgets:
+## this runs while the descriptors are being built, which is before any widget exists.
+##
+## Falls back to "control", the type that draws plainly and connects to anything, when the
+## far end is a node this editor has no descriptor for.
+func _far_port_type(node_id: String, port: String, arriving: bool) -> String:
+	for node in patch.get("nodes", []):
+		if str(node["id"]) != node_id:
+			continue
+		var descriptor: Dictionary = registry.get(_type_key(node), {})
+		for entry in descriptor.get("inputs" if arriving else "outputs", []):
+			if str(entry["name"]) == port:
+				return str(entry.get("type", "control"))
+		return "control"
+	return "control"
+
+
 func _synthesize_seam_descriptors() -> void:
 	for key in registry.keys().filter(func(k): return str(k).begins_with("seam:")):
 		registry.erase(key)
@@ -2129,6 +2173,13 @@ func _synthesize_seam_descriptors() -> void:
 		var terminal := Seams.terminal_for(node)
 		var carried: Dictionary = registry.get(terminal, {})
 		var host := str(node.get("host", ""))
+		# An unbound port has no host to take its shape from, so it takes it from its
+		# cables: whatever names they use, it has. Nothing else would do — a port that lost
+		# its outlets the moment you unplugged the keyboard would drop four cables with it,
+		# and unplugging is meant to be a thing you can undo by plugging back in.
+		if host == "":
+			carried = {"inputs": _wired_ports(str(node["id"]), false),
+				"outputs": _wired_ports(str(node["id"]), true)}
 		var inputs: Array = []
 		var outputs: Array = []
 		if type_name == "Input":
@@ -3485,6 +3536,9 @@ func _build_keyboard_bar() -> Control:
 	note_jacks = SeamDock.Jacks.new()
 	note_jacks.type_colours = TYPE_COLOURS
 	note_jacks.ink = INK
+	note_jacks.jack_grabbed.connect(_on_jack_grabbed)
+	note_jacks.tooltip_text = "Drag a jack onto an Input port to drive it, " \
+		+ "or off the graph to unplug it."
 	bar.add_child(note_jacks)
 
 	var gap := Control.new()
@@ -3496,6 +3550,9 @@ func _build_keyboard_bar() -> Control:
 	output_jacks = SeamDock.Jacks.new()
 	output_jacks.type_colours = TYPE_COLOURS
 	output_jacks.ink = INK
+	output_jacks.jack_grabbed.connect(_on_jack_grabbed)
+	output_jacks.tooltip_text = "Drag onto an Output port to listen to it, " \
+		+ "or off the graph to unplug it."
 	bar.add_child(output_jacks)
 
 	var range_label := Label.new()
@@ -4122,21 +4179,40 @@ func _refresh_seam_dock() -> void:
 	# One jack per device, not per signal. The keyboard is a thing you plug in, and it
 	# arrives at a port whole — which is also why an Input port carries whatever its host
 	# carries rather than one signal at a time.
+	#
+	# Per device rather than per binding, which is the difference that makes the jacks
+	# draggable. A jack drawn only where a binding exists would vanish the moment you
+	# unplugged it, leaving nothing to plug back in; the keyboard is on the machine whether
+	# or not this patch is listening to it. So the row is the devices, and each one says
+	# which port it currently drives, or "" for none.
+	var has_input := false
+	var has_output := false
+	var plugged := {}
+	for node in patch.get("nodes", []):
+		var type_name := str(node.get("type", ""))
+		if type_name != "Input" and type_name != "Output":
+			continue
+		has_input = has_input or type_name == "Input"
+		has_output = has_output or type_name == "Output"
+		var host := str(node.get("host", ""))
+		if host != "" and not plugged.has(host):
+			plugged[host] = str(node["id"])
 	var driving: Array = []
 	var listening: Array = []
-	for node in patch.get("nodes", []):
-		var host := str(node.get("host", ""))
-		if host == "":
+	# "Audio in" appears only where it is used. A keyboard is worth a permanent socket
+	# because every patch with an input might want one; an audio input is a thing you have
+	# deliberately built for, and an empty jack for it on every patch is furniture.
+	for device: Array in [["note", "Keyboard", "note", has_input],
+			["audio", "Audio in", "audio", plugged.has("audio")],
+			["stereo", "Speakers", "audio", has_output]]:
+		if not bool(device[3]):
 			continue
-		var socket := {"node": str(node["id"]), "port": Seams.HOST_PORT, "host": host}
-		if str(node.get("type", "")) == "Input":
-			socket["label"] = "Keyboard" if host == "note" else "Audio in"
-			socket["type"] = "note" if host == "note" else "audio"
-			driving.append(socket)
-		else:
-			socket["label"] = "Speakers"
-			socket["type"] = "audio"
+		var socket := {"node": str(plugged.get(device[0], "")), "port": Seams.HOST_PORT,
+			"host": str(device[0]), "label": str(device[1]), "type": str(device[2])}
+		if str(device[0]) == "stereo":
 			listening.append(socket)
+		else:
+			driving.append(socket)
 	note_jacks.ports = driving
 	output_jacks.ports = listening
 	note_jacks.update_minimum_size()
@@ -4166,6 +4242,10 @@ func _refresh_seam_cables() -> void:
 			if jacks == null:
 				continue
 			for socket: Dictionary in jacks.ports:
+				# A device plugged into nothing has no cable, and its jack stays on the
+				# dock waiting to be plugged into something.
+				if str(socket["node"]) == "":
+					continue
 				var from = jacks.socket_centre(str(socket["port"]), str(socket["node"]))
 				var widget: GraphNode = widgets.get(str(socket["node"]))
 				if from == null or widget == null:
@@ -4181,7 +4261,121 @@ func _refresh_seam_cables() -> void:
 	else:
 		seam_cables.window = Rect2()
 	seam_cables.runs = runs
+	seam_cables.live = _live_cable()
 	seam_cables.queue_redraw()
+
+
+## ---------------------------------------------------------------------------------
+## Plugging the machine in
+##
+## Which port a device drives is the port's own host binding, so dragging a jack is not a
+## cable edit — it is moving that binding from one port to another, or off every port. The
+## second is why patch-io lets a top-level port be unbound: a keyboard you cannot unplug is
+## a keyboard soldered on, and the gesture would only ever be a swap.
+## ---------------------------------------------------------------------------------
+
+## The release that ends a jack drag, wherever it happens.
+##
+## Here rather than on the Jacks control, because the mouse leaves that control the instant
+## the drag begins and Godot delivers the button-up to whatever is under the cursor. `_input`
+## sees it first, which is the same trick the wand uses on knobs.
+func _input(event: InputEvent) -> void:
+	if dragging_jack.is_empty():
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT \
+		and not event.pressed:
+		_drop_jack((event as InputEventMouseButton).position)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed \
+		and (event as InputEventKey).keycode == KEY_ESCAPE:
+		# Put it back. A drag you can't call off is a drag you hesitate to start.
+		var was := dragging_jack
+		dragging_jack = {}
+		for jacks in [note_jacks, output_jacks]:
+			if jacks != null:
+				jacks.release()
+		_refresh_seam_cables()
+		if not was.is_empty():
+			get_viewport().set_input_as_handled()
+
+
+## The dock jack the user picked up. Nothing is written yet: a press is a question about
+## where this is going, and the answer arrives on release.
+func _on_jack_grabbed(socket: Dictionary) -> void:
+	dragging_jack = socket
+	_refresh_seam_cables()
+
+
+## The port node under a point that would take this host, or "" for none.
+##
+## The whole node rather than its host jack alone. A jack is seven pixels across and this
+## is a drag across the window; asking somebody to land on the socket exactly would make a
+## gesture out of a test of aim. There is one host jack per port, so the node is unambiguous.
+func _port_under(point: Vector2, host: String) -> String:
+	if graph_edit == null or not graph_edit.is_visible_in_tree():
+		return ""
+	if not graph_edit.get_global_rect().has_point(point):
+		return ""
+	var wanted := "Output" if host == "stereo" else "Input"
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) != wanted:
+			continue
+		var widget: GraphNode = widgets.get(str(node["id"]))
+		if widget != null and widget.get_global_rect().has_point(point):
+			return str(node["id"])
+	return ""
+
+
+## The cable in the user's hand: from its device's jack to the cursor, in the signal's own
+## colour over a port that will take it and grey elsewhere, so "will this land" is answered
+## while the mouse is still down rather than after it comes up.
+func _live_cable() -> Array:
+	if dragging_jack.is_empty() or seam_cables == null:
+		return []
+	var jacks = output_jacks if str(dragging_jack["host"]) == "stereo" else note_jacks
+	if jacks == null:
+		return []
+	var from = jacks.socket_centre(Seams.HOST_PORT, str(dragging_jack["node"]))
+	if from == null:
+		return []
+	var cursor := get_viewport().get_mouse_position()
+	var landing := _port_under(cursor, str(dragging_jack["host"]))
+	var colour: Color = TYPE_COLOURS.get(str(dragging_jack["type"]), INK) if landing != "" \
+		else Color(INK, 0.30)
+	return [from, cursor, colour]
+
+
+## Moves a device's binding to the port it was dropped on, or off every port when it was
+## dropped nowhere.
+func _drop_jack(point: Vector2) -> void:
+	var socket := dragging_jack
+	dragging_jack = {}
+	for jacks in [note_jacks, output_jacks]:
+		if jacks != null:
+			jacks.release()
+	if socket.is_empty():
+		return
+	var host := str(socket["host"])
+	var landing := _port_under(point, host)
+	if landing == str(socket["node"]):
+		_refresh_seam_cables()
+		return  # back where it started, which is not an edit
+
+	_begin_edit()
+	for node in patch.get("nodes", []):
+		var type_name := str(node.get("type", ""))
+		if type_name != "Input" and type_name != "Output":
+			continue
+		if str(node["id"]) == landing:
+			# One host per port. Plugging the keyboard into a port that was taking audio
+			# unplugs the audio, the way one socket takes one plug.
+			node["host"] = host
+		elif str(node.get("host", "")) == host:
+			node.erase("host")
+	_commit_edit("Plug in %s" % str(socket.get("label", host)))
+	# The graph itself changed shape — a port that was a terminal is now a socket, or the
+	# other way round — so this is a rebuild rather than a repaint.
+	_rebuild_and_apply()
 
 
 ## The node the instrument comes out of, or "" for a patch that has no output yet.

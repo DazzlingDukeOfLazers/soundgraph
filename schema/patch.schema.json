@@ -168,7 +168,7 @@
           "minLength": 1
         },
         "host": {
-          "description": "Only on a seam \u2014 a node of type \"Input\" or \"Output\". Names the side of the machine this edge meets: \"note\" or \"audio\" for an input, \"stereo\" for an output. A seam at the top level of a patch must carry one, because that is where the graph meets its host; a seam inside a module must not, because a module's seams are its ports and binding one to the machine would mean every instance shared that one keyboard. Host-bound seams become the matching terminal node when the patch is loaded, so nothing downstream of the loader learns the word.",
+          "description": "Only on a seam \u2014 a node of type \"Input\" or \"Output\". Names the side of the machine this edge meets: \"note\" or \"audio\" for an input, \"stereo\" for an output. A seam inside a module must not carry one, because a module's seams are its ports and binding one to the machine would mean every instance shared that one keyboard. A seam at the top level may or may not: with a host it is where the graph meets its machine, and becomes the matching terminal node when the patch is loaded; without one it is a socket nothing is currently plugged into, and is spliced out at load, so whatever it fed goes silent. Nothing downstream of the loader learns the word either way.",
           "type": "string",
           "enum": [
             "note",

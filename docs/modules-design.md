@@ -355,10 +355,25 @@ with `Input` and `Output` nodes at the top level is already a module, which is w
    during load, and the one-port case is spliced out. Neither ever needs a node whose
    shape depends on a parameter.
 
-   The rule that falls out, and it is a good one: **a seam at the top level must carry a
-   host binding, and a seam inside a module may not.** Top-level seams convert to
-   terminals; module seams are spliced by expansion; nothing else is legal and nothing
-   else is needed.
+   The rule that falls out, and it is a good one: **a seam inside a module may not carry
+   a host binding.** A module's ports are its own; one reaching past its edge for the
+   keyboard would mean two instances sharing one.
+
+   *Revised once the dock existed.* The first version of this rule had a second half —
+   *a seam at the top level **must** carry a host binding* — and it was wrong, for a
+   reason that only showed up when the keyboard became a thing you plug in rather than a
+   node you draw. If every top-level port must be bound, then unplugging one is illegal,
+   and the gesture of moving the keyboard from one input to another can only ever be a
+   swap between two already-bound ports. That is not a gesture anybody wants.
+
+   So: **an unbound top-level seam is a port nothing is currently driving**, and it is
+   spliced exactly as a module's port is. What it fed has no source and goes silent,
+   which is what an unplugged input sounds like on any instrument. Three things
+   recommend this over the refusal. It is strictly backward-compatible — every patch that
+   loaded before still loads. It keeps the editor unable to write a file the loader
+   rejects, which is an invariant this project holds everywhere. And it makes "this patch
+   is usable as a module" a visible state rather than a claim: a patch with unbound ports
+   *is* one, and looks like one.
 3. **The existing terminals — settled: same idea at two scales.** `NoteInput`,
    `AudioInput` and `StereoOutput` become `Input` and `Output` carrying a **host
    binding**: a seam whose other side is the machine rather than another patch. There is

@@ -18,14 +18,47 @@ extends RefCounted
 class Jacks extends Control:
 	const SOCKET := 7.0
 	const LABEL_GAP := 4.0
+	## How far from a socket's centre still counts as grabbing it. Larger than the socket,
+	## because the socket is drawn at the size a jack looks right at rather than the size a
+	## mouse can reliably hit, and missing by two pixels should not mean nothing happened.
+	const GRAB := 14.0
 
-	## {"node": id, "port": name, "type": signal type} per socket, in port order.
+	## A device jack was picked up. The editor takes it from there: it owns the document,
+	## and where this cable may land is a question about the patch, not about the dock.
+	signal jack_grabbed(socket: Dictionary)
+
+	## {"node": id, "port": name, "type": signal type} per socket, in port order. `node` is
+	## "" for a device that is on the machine but plugged into nothing.
 	var ports: Array = []
 	var type_colours: Dictionary = {}
 	var ink := Color.WHITE
+	## The socket currently in the user's hand, drawn open so it is obvious which one left.
+	var lifted := -1
 
 	func _ready() -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# PASS rather than IGNORE: the jacks have to be grabbable now, and STOP would make
+		# the whole row a wall the keyboard's own buttons sit behind.
+		mouse_filter = Control.MOUSE_FILTER_PASS
+
+	func _gui_input(event: InputEvent) -> void:
+		if not (event is InputEventMouseButton) or event.button_index != MOUSE_BUTTON_LEFT \
+			or not event.pressed:
+			return
+		var at := (event as InputEventMouseButton).position
+		for i in ports.size():
+			if at.distance_to(_slot(i)) <= Design.scale(GRAB):
+				lifted = i
+				queue_redraw()
+				jack_grabbed.emit(ports[i])
+				accept_event()
+				return
+
+	## Called by the editor when the drag ends, whatever became of it.
+	func release() -> void:
+		if lifted < 0:
+			return
+		lifted = -1
+		queue_redraw()
 
 	func _font() -> Font:
 		return Design.font(Design.WEIGHT_MEDIUM)
@@ -79,16 +112,22 @@ class Jacks extends Control:
 		for i in ports.size():
 			var at := _slot(i)
 			var colour: Color = type_colours.get(str(ports[i].get("type", "")), ink)
+			# A device plugged into nothing, or one currently in the user's hand, is drawn
+			# faint: the ring says the machine has this jack, and the colour says a live
+			# signal is running through it. Those are different claims and look different.
+			var live: bool = str(ports[i].get("node", "")) != "" and i != lifted
 			# A ring and a dark centre, the same socket the rack draws, so a jack looks
 			# like a jack wherever it turns up.
 			draw_circle(at, Design.scale(SOCKET), Color(0.055, 0.06, 0.07))
-			draw_arc(at, Design.scale(SOCKET), 0.0, TAU, 24, colour, 2.0, true)
+			draw_arc(at, Design.scale(SOCKET), 0.0, TAU, 24,
+				colour if live else Color(colour, 0.35), 2.0, true)
 			var text := str(ports[i].get("label", ports[i]["port"]))
 			var measured := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
 			draw_string(font, Vector2(at.x - measured.x * 0.5,
 				at.y + Design.scale(SOCKET) + Design.scale(LABEL_GAP)
 					+ measured.y * 0.8),
-				text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, ink)
+				text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size,
+				ink if live else Color(ink, 0.45))
 
 
 ## The cables between the dock's sockets and the graph.
@@ -102,15 +141,30 @@ class Cables extends Control:
 	var runs: Array = []
 	## The rectangle cables are allowed inside, in viewport space.
 	var window := Rect2()
+	## The cable in the user's hand, if any: [from, to, Color], and unclipped. A cable
+	## being dragged has to be visible everywhere the cursor can go, including over the
+	## dock it came from — the clip exists to stop a *settled* cable painting over the
+	## chrome, and there is no settled cable here yet.
+	var live: Array = []
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		z_index = 90
 
 	func _draw() -> void:
+		var inverse := get_global_transform().affine_inverse()
+		if not live.is_empty():
+			var held_from: Vector2 = inverse * (live[0] as Vector2)
+			var held_to: Vector2 = inverse * (live[1] as Vector2)
+			var held: Color = live[2]
+			var slack: float = clampf(absf(held_to.x - held_from.x) * 0.30, 46.0, 260.0)
+			var curve := GraphRack.catenary(held_from, held_to, slack)
+			draw_polyline(curve, Color(0, 0, 0, 0.45), 7.0, true)
+			draw_polyline(curve, held, 4.0, true)
+			draw_circle(held_from, 5.0, held)
+			draw_circle(held_to, 5.0, held)
 		if runs.is_empty() or window.size.x <= 0.0:
 			return
-		var inverse := get_global_transform().affine_inverse()
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		# The clip is the graph's viewport, so the cable appears to run behind everything
 		# else rather than over it.
