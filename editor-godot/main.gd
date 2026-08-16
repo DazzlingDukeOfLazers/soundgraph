@@ -4387,6 +4387,14 @@ func _refresh_groups() -> void:
 ## than most.
 func _toggle_control(node_id: String, parameter: String) -> void:
 	var controls: Array = patch.get("controls", []).duplicate(true)
+	# The default becomes theirs the moment they touch it.
+	#
+	# A file with no `controls` shows every knob it has — see PatchFace.derived. Adding one
+	# knob to that would replace sixty with one, which is not what anybody putting a knob on
+	# a panel means. So the first deliberate edit writes down what was already on screen and
+	# adds to it; from then on the panel is the file's own and this never fires again.
+	if controls.is_empty():
+		controls = PatchFace.default_controls(patch, registry)
 	for index in controls.size():
 		var target: Dictionary = controls[index].get("target", {})
 		if str(target.get("node", "")) == node_id \

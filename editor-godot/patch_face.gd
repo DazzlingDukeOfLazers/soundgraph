@@ -20,6 +20,7 @@ extends VBoxContainer
 ## showing one parameter cannot drift apart about what it is set to.
 
 const Rack := preload("res://rack.gd")
+const Seams := preload("res://seams.gd")
 
 ## How many knobs to a line before wrapping. A performance panel is read across, and a
 ## column of one is a list.
@@ -32,6 +33,19 @@ const OFFERED := Color(1.0, 1.0, 1.0, 0.45)
 var patch: Dictionary = {}
 var registry: Dictionary = {}
 var rack: Control = null
+
+## True while the panel is showing the default rather than the file's own.
+##
+## A file with no `controls` used to get one line of hint and nothing else — which is most
+## of them, since only the hand-written examples carry a panel. A DX7 patch is fifteen nodes
+## and sixty-odd knobs and the panel said "no knobs on the face yet", which is true about the
+## document and useless about the instrument.
+##
+## So the default is every knob the patch has, grouped by the node it belongs to. It is a
+## view, not an edit: nothing is written until somebody puts a knob on deliberately, and at
+## that moment main seeds `controls` from this same list so the default becomes theirs
+## rather than being replaced by the one thing they just added.
+var derived := false
 
 ## The panel's own order, after somebody dragged a knob to a new place in it.
 signal reordered(control_ids: Array)
@@ -180,6 +194,28 @@ func _descriptor_for(target: Dictionary) -> Dictionary:
 	return {}
 
 
+## Every knob in the patch, in document order, as control entries. A module instance
+## contributes its exported surface; a plain node its own parameters — which is the same
+## rule the inspector and the node bodies follow, so the panel shows what the graph shows.
+static func default_controls(patch: Dictionary, registry: Dictionary) -> Array:
+	var out: Array = []
+	for node in patch.get("nodes", []):
+		# Ports are not knobs. They appear on the panel, but as the strip below rather than
+		# as something to turn.
+		if Seams.is_port_seam(node) or str(node.get("type", "")) in ["Input", "Output"]:
+			continue
+		var key: String = "module:%s" % str(node.get("module", "")) \
+			if str(node.get("type", "")) == "module" else str(node.get("type", ""))
+		for parameter in registry.get(key, {}).get("parameters", []):
+			out.append({
+				"id": "%s.%s" % [str(node["id"]), str(parameter["name"])],
+				"label": str(parameter.get("display_name", parameter["name"])),
+				"kind": "knob",
+				"target": {"node": str(node["id"]), "parameter": str(parameter["name"])},
+			})
+	return out
+
+
 func rebuild() -> void:
 	for child in get_children():
 		remove_child(child)
@@ -190,11 +226,21 @@ func rebuild() -> void:
 	_targets.clear()
 
 	var controls: Array = patch.get("controls", [])
+	derived = controls.is_empty()
+	if derived:
+		controls = default_controls(patch, registry)
+		if not controls.is_empty():
+			var note := Label.new()
+			note.text = "Every knob in the patch. Drag one on to start a panel of your own."
+			note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			note.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+			note.add_theme_color_override("font_color", Design.INK_SECOND)
+			add_child(note)
 	if controls.is_empty():
-		# An empty panel says what it is for. A blank column is indistinguishable from a
-		# broken one, and this is the state every new patch starts in.
+		# A blank column is indistinguishable from a broken one, and this is the state a
+		# patch with nothing to turn is genuinely in.
 		var hint := Label.new()
-		hint.text = "No knobs on the face yet. Select a node and drag one of its knobs up here."
+		hint.text = "Nothing to turn in this patch yet."
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		hint.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 		hint.add_theme_color_override("font_color", Design.INK_SECOND)
@@ -220,7 +266,13 @@ func rebuild() -> void:
 		_targets[_cells.size()] = {"node": str(target.get("node", "")),
 			"parameter": str(target.get("parameter", ""))}
 		_cells.append(cell)
-		_ids.append(str(control.get("id", "")))
+		# Only a panel the file actually has can be rearranged or taken from. The default
+		# is a picture of what is there; dragging within it would be dragging within a
+		# derivation, and the honest first gesture is putting a knob on.
+		if not derived:
+			_ids.append(str(control.get("id", "")))
+
+	_add_ports()
 
 	# What the selected node could put on the panel and has not.
 	#
@@ -257,6 +309,54 @@ func rebuild() -> void:
 		offer_line.add_child(ghost)
 		_offers[_cells.size()] = {"node": offer_node, "parameter": str(parameter["name"])}
 		_cells.append(ghost)
+
+
+## Where this file meets the machine: its ports, in the order the document lists them.
+##
+## On the panel because the panel is the file\'s face, and a face has its sockets on it —
+## "what do I plug in, and where does it come out" is the other half of "what do I turn".
+## Read-only here: a port is moved by dragging its jack on the keyboard, which is the
+## gesture that already exists for it.
+func _add_ports() -> void:
+	var seams: Array = []
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) in ["Input", "Output"]:
+			seams.append(node)
+	if seams.is_empty():
+		return
+
+	var caption := Label.new()
+	caption.text = "Ports"
+	caption.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	caption.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+	caption.add_theme_color_override("font_color", Design.INK_SECOND)
+	add_child(caption)
+
+	for node: Dictionary in seams:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", Design.SPACE_S)
+
+		var name_label := Label.new()
+		var shown := str(node.get("name", ""))
+		if shown == "":
+			shown = str(node["id"])
+		name_label.text = shown
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.clip_text = true
+		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		name_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
+		row.add_child(name_label)
+
+		var where := Label.new()
+		var host := str(node.get("host", ""))
+		# What is plugged into it, or that nothing is — which is a state that means
+		# something now: a port nothing drives is one this patch offers to whatever uses it.
+		where.text = host if host != "" else "not plugged in"
+		where.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+		where.add_theme_color_override("font_color",
+			Design.INK_SECOND if host != "" else Design.INK_DISABLED)
+		row.add_child(where)
+		add_child(row)
 
 
 ## The registry key of a node in this patch — a module's synthesized entry or its plain

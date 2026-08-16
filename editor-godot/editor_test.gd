@@ -5,6 +5,7 @@ extends SceneTree
 const ModuleAuthor := preload("res://module_author.gd")
 const Seams := preload("res://seams.gd")
 const ModuleFace := preload("res://module_face.gd")
+const PatchFace := preload("res://patch_face.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -2878,6 +2879,77 @@ func _initialize() -> void:
 		main._on_panel_reordered(was_order)
 		for i in 6:
 			await process_frame
+
+	# ---- a file with no panel of its own still has a face ----------------------------
+	# Only the hand-written examples carry `controls`. Everything imported — the whole DX7
+	# and OPL2 banks — carried none, so the panel said "no knobs on the face yet", which is
+	# true about the document and useless about the instrument.
+	var dx7 := FileAccess.open("res://examples/dx7/algo-01.json", FileAccess.READ)
+	if dx7 != null:
+		var parsed: Variant = JSON.parse_string(dx7.get_as_text())
+		dx7.close()
+		if typeof(parsed) == TYPE_DICTIONARY:
+			check((parsed as Dictionary).get("controls", []).is_empty(),
+				"a DX7 patch carries no panel of its own")
+			main.patch = parsed as Dictionary
+			main._synthesize_module_descriptors()
+			await main._rebuild_view()
+			for i in 8:
+				await process_frame
+			check(main.patch_face.derived,
+				"so the panel shows the default instead")
+			var defaults: Array = PatchFace.default_controls(main.patch, main.registry)
+			check(defaults.size() > 20,
+				"which is every knob the patch has (%d)" % defaults.size())
+			var reaches := {}
+			for control: Dictionary in defaults:
+				reaches[str(control["target"]["node"])] = true
+			check(reaches.size() > 1,
+				"across every node that has one (%d nodes)" % reaches.size())
+			var names_a_port := false
+			for control: Dictionary in defaults:
+				for node in main.patch["nodes"]:
+					if str(node["id"]) == str(control["target"]["node"]) \
+							and str(node.get("type", "")) in ["Input", "Output"]:
+						names_a_port = true
+			check(not names_a_port,
+				"and no ports among them, because a port is not a knob")
+
+			# The ports are on the panel, as a strip rather than as knobs: "what do I plug
+			# in" is the other half of "what do I turn".
+			var port_names: Array = []
+			for child in main.patch_face.get_children():
+				var row := child as HBoxContainer
+				if row == null:
+					continue
+				for inner in row.get_children():
+					var label := inner as Label
+					if label != null and port_names.size() < 40:
+						port_names.append(str(label.text))
+			var expected: Array = []
+			for node in main.patch["nodes"]:
+				if str(node.get("type", "")) in ["Input", "Output"]:
+					expected.append(str(node.get("name", node["id"])))
+			check(expected.size() > 0, "the patch has ports (%s)" % str(expected))
+			for port_name in expected:
+				check(port_names.has(port_name),
+					"the panel names port %s (%s)" % [port_name, str(port_names)])
+
+			# Touching the default writes it down rather than replacing it.
+			var before_default: int = defaults.size()
+			main._toggle_control(str(defaults[0]["target"]["node"]),
+				str(defaults[0]["target"]["parameter"]))
+			for i in 8:
+				await process_frame
+			check(main.patch.get("controls", []).size() == before_default - 1,
+				"taking a knob off the default keeps the rest (%d of %d)"
+					% [main.patch.get("controls", []).size(), before_default])
+			check(not main.patch_face.derived,
+				"and the panel is the file's own from then on")
+
+	await main._load_example("First Synth")
+	for i in 8:
+		await process_frame
 
 	# ---- the file's own panel, as the document carries it ----------------------------
 	# `controls` has been in the schema since v1 — the performance surface, deliberately
