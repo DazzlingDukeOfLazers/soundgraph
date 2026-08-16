@@ -1456,23 +1456,32 @@ class Fader extends Knob:
 
 	const THUMB := Vector2(15.0, 6.0)
 
+	func _ready() -> void:
+		super()
+		# The number lives here now that it is not printed under the letter. An
+		# envelope is read as a shape and set by ear; the exact seconds are something
+		# you ask for, not something you need on screen four times per operator.
+		tooltip_text = "%s\n%s" % [str(descriptor["name"]), _value_text()]
+
 	func _get_minimum_size() -> Vector2:
 		# Narrow on purpose: four of these sit in the width of two knob cells. The
-		# height is a floor, not a size — the row that places a slider stretches it
+		# height is a floor, not a size — the row that places a fader stretches it
 		# into whatever the block has left.
+		#
+		# Short on purpose too. This used to reserve 84px of travel plus a caption plus
+		# a printed value, which is most of a module — two operators could not share a
+		# slot because their envelopes would not both fit. A fader is read as a height
+		# against its three neighbours, and four of them say the same shape at half the
+		# size.
 		return Vector2(Design.scale(26),
-			Design.scale(84) + float(Design.type(Design.SIZE_SECONDARY))
-				+ float(Design.type(Design.SIZE_NUMERIC)))
+			Design.scale(40) + float(Design.type(Design.SIZE_SECONDARY)))
 
 	func _draw() -> void:
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
 		var label_size := Design.type(Design.SIZE_SECONDARY)
-		var value_font: Font = Design.numeric_font()
-		var value_size := Design.type(Design.SIZE_NUMERIC)
-		var value_baseline := size.y - Rack.KNOB_PAD * 0.5
-		var label_baseline := value_baseline - float(value_size) - 4.0
-		var track_top := Rack.KNOB_PAD
-		var track_bottom := label_baseline - float(label_size) - 8.0
+		var label_baseline := size.y - Rack.KNOB_PAD * 0.4
+		var track_top := Rack.KNOB_PAD * 0.5
+		var track_bottom := label_baseline - float(label_size) - 6.0
 		if track_bottom <= track_top:
 			return
 		var x := size.x * 0.5
@@ -1493,10 +1502,6 @@ class Fader extends Knob:
 		if label_font != null and label != "":
 			draw_string(label_font, Vector2(0.0, label_baseline), label,
 				HORIZONTAL_ALIGNMENT_CENTER, size.x, label_size, rack.ink_dim)
-		if value_font != null:
-			draw_string(value_font, Vector2(0.0, value_baseline),
-				Rack.elided(value_font, _value_text(), value_size, size.x),
-				HORIZONTAL_ALIGNMENT_CENTER, size.x, value_size, rack.ink)
 
 
 ## Trims text to the room there is, with an ellipsis to say it was trimmed.

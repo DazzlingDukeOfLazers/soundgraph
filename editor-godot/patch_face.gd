@@ -26,6 +26,10 @@ const Seams := preload("res://seams.gd")
 ## as rack modules in rebuild(); this only shapes the ghost strip under them.
 const PER_LINE := 2
 
+## How many groups stack in one slot of the rail. A slot is the rack's module height,
+## so at two a group gets half a module — which is what shrinking the faders bought.
+const PER_SLOT := 2
+
 ## The four parameters that make an envelope, and the letter each wears on the panel.
 ##
 ## When a node carries all four they are drawn as a row of vertical sliders instead of
@@ -308,25 +312,43 @@ func rebuild() -> void:
 		# tallest occupant; measured that way the busiest node always fits one bank and
 		# nothing ever spills. The panel does the opposite trade: the height never moves,
 		# and a node too busy for one bank pays in width.
-		var panel_height: float = float(Design.scale(Rack.DEFAULT_HEIGHT))
+		var slot_height: float = float(Design.scale(Rack.DEFAULT_HEIGHT))
+		# Two blocks to a slot, stacked. A slot is the rack's module height and a group
+		# is half of one — six operators read as three columns of two rather than a row
+		# of six, which is a third of the walking to see the whole voice. It is the
+		# faders that pay for it: shorter travel and no printed value, so an envelope
+		# fits in half a module.
+		var panel_height: float = (slot_height
+			- float(Design.SPACE_S) * float(PER_SLOT - 1)) / float(PER_SLOT)
 
 		var scroller := ScrollContainer.new()
 		scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 		scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		scroller.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		# Room for the row plus the scrollbar under it, so the bar never eats a knob.
-		scroller.custom_minimum_size.y = panel_height + Design.scale(14)
+		scroller.custom_minimum_size.y = slot_height + Design.scale(14)
 		add_child(scroller)
 
 		var rail := HBoxContainer.new()
 		rail.add_theme_constant_override("separation", Design.SPACE_M)
 		scroller.add_child(rail)
 
-		for run: Dictionary in runs:
+		var slot: VBoxContainer = null
+		for run_index in runs.size():
+			var run: Dictionary = runs[run_index]
+			# A new column every PER_SLOT groups. Filled top to bottom before moving
+			# right, so reading order down a column then along the rail is the order
+			# the panel lists them in.
+			if run_index % PER_SLOT == 0:
+				slot = VBoxContainer.new()
+				slot.add_theme_constant_override("separation", Design.SPACE_S)
+				slot.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+				rail.add_child(slot)
+
 			var block := VBoxContainer.new()
 			block.add_theme_constant_override("separation", 0)
 			block.custom_minimum_size.y = panel_height
-			rail.add_child(block)
+			slot.add_child(block)
 			# The group frame, dotted. A grouping is a fact about belonging, not an
 			# affordance — dashed already means "this could be acted on" and solid means
 			# "this is", so the frame gets its own register rather than borrowing one
@@ -430,13 +452,15 @@ func rebuild() -> void:
 					banks.add_child(bank)
 				bank.add_child(cells[cell_index])
 
-			# The sliders sit under the knobs at the same width — one module edge, not
-			# two ragged ones — whichever of the two rows is naturally wider. Height-wise
-			# they take *half* of what the block has left, split with an empty spacer of
-			# equal stretch: a fader the full height of the module dwarfed the knobs it
-			# sits under, and an envelope is read as proportions, which survive halving
-			# untouched. A ratio rather than a constant, so it keeps meaning the same
-			# thing at every UI scale and whatever the heading and the banks measure.
+			# The faders sit under the knobs at the same width — one module edge, not two
+			# ragged ones — whichever of the two rows is naturally wider, and they take
+			# the height the block has left.
+			#
+			# All of it, now. There used to be an empty spacer here holding the envelope
+			# to half the block, because a fader the full height of a rack module dwarfed
+			# the knobs above it. Halving the block itself does that job better: the
+			# faders are the same size they were, and the room the spacer was holding
+			# open goes to the operator stacked underneath instead of to nothing.
 			if not slider_cells.is_empty():
 				var envelope := HBoxContainer.new()
 				envelope.add_theme_constant_override("separation", Design.SPACE_S)
@@ -453,10 +477,6 @@ func rebuild() -> void:
 				if span > 0.0:
 					envelope.custom_minimum_size.x = span
 					banks.custom_minimum_size.x = span
-				var spare := Control.new()
-				spare.size_flags_vertical = Control.SIZE_EXPAND_FILL
-				spare.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				block.add_child(spare)
 
 	_add_ports()
 
@@ -595,20 +615,15 @@ func _cell(control: Dictionary, descriptor: Dictionary) -> Control:
 	caption.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
 	caption.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
 	caption.add_theme_color_override("font_color", Design.INK_NORMAL)
-	# What it actually drives, quietly, under the name somebody gave it. A panel whose
-	# captions have been renamed is a panel you cannot trace back to the graph without it.
+	# What it actually drives, in the tooltip rather than under the knob. It used to be a
+	# printed line — "op3.feedback" beneath every caption — which is a third of a cell's
+	# height spent restating what the block already says: the dotted frame names the
+	# group, so a knob inside it labelled "fb" needs no "op3." in front. The tooltip
+	# keeps the panel traceable back to the graph after a caption is renamed, which is
+	# the one job that line genuinely had.
 	caption.tooltip_text = "%s.%s" % [str(target.get("node", "")),
 		str(target.get("parameter", ""))]
 	cell.add_child(caption)
-
-	var wiring := Label.new()
-	wiring.text = "%s.%s" % [str(target.get("node", "")), str(target.get("parameter", ""))]
-	wiring.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	wiring.clip_text = true
-	wiring.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	wiring.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-	wiring.add_theme_color_override("font_color", Design.INK_SECOND)
-	cell.add_child(wiring)
 	return cell
 
 

@@ -2984,9 +2984,14 @@ func _initialize() -> void:
 							face_scroller = child as ScrollContainer
 							face_rail = inner as HBoxContainer
 			check(face_rail != null, "the knobs sit on one horizontal rail")
+			# Slots along the rail, blocks stacked inside each slot.
+			var face_slots: Array = []
 			var face_blocks: Array = []
 			if face_rail != null:
-				face_blocks = face_rail.get_children()
+				face_slots = face_rail.get_children()
+				for one_slot in face_slots:
+					for one in (one_slot as Node).get_children():
+						face_blocks.append(one)
 			check(face_blocks.size() > 1,
 				"grouped into blocks along it (%d)" % face_blocks.size())
 
@@ -3008,11 +3013,29 @@ func _initialize() -> void:
 				"with every knob in a block (%d of %d)"
 					% [block_counted, main.patch_face._cells.size()])
 
-			# Every block is the same height, and it is the rack's default module height —
-			# not measured from this patch, because measuring raises the rail to fit the
-			# busiest node and then nothing ever spills. The rail is the promise; width is
-			# where a busy node spends its knobs.
-			var rack_height: float = float(Design.scale(RackView.DEFAULT_HEIGHT))
+			# Every block is the same height, and two of them stack inside one rack
+			# module — not a height measured from this patch, because measuring raises
+			# the rail to fit the busiest node and then nothing ever spills. The rail is
+			# the promise; width is where a busy node spends its knobs.
+			#
+			# Written as the literal 2 rather than as PatchFace.PER_SLOT: a test that
+			# reads the constant it is checking agrees with any value the constant takes,
+			# which is how the first version of this passed while stacked one deep.
+			var slot_height: float = float(Design.scale(RackView.DEFAULT_HEIGHT))
+			var rack_height: float = (slot_height - float(Design.SPACE_S)) / 2.0
+
+			# Six operators are three columns of two, not a row of six — a third of the
+			# walking to see a whole voice.
+			var stacked_deepest := 0
+			for one_slot in face_slots:
+				stacked_deepest = maxi(stacked_deepest,
+					(one_slot as Node).get_child_count())
+			check(stacked_deepest == 2,
+				"two groups stack in one slot (%d deep across %d slots)"
+					% [stacked_deepest, face_slots.size()])
+			check(rack_height * 2.0 <= slot_height,
+				"and a stacked pair fits one rack module (2 x %.0f in %.0f)"
+					% [rack_height, slot_height])
 			var ragged := ""
 			for one_block in face_blocks:
 				if absf((one_block as Control).custom_minimum_size.y - rack_height) > 0.5 \
@@ -3089,30 +3112,48 @@ func _initialize() -> void:
 			check(width_off == "",
 				"each envelope is exactly as wide as the knobs above it (%s)" % width_off)
 
-			# And half the height it could take: the envelope splits the block's leftover
-			# room evenly with an empty spacer below it. Full-height faders dwarfed the
-			# knobs; an envelope is proportions, and proportions survive halving.
-			var half_off := ""
+			# The envelope fills what the block has left rather than reserving a share of
+			# it. The spacer that used to hold it to half the block is gone: halving the
+			# block does that job, and the room now goes to the operator stacked below
+			# instead of to nothing.
+			var unfilled := ""
 			for one_block in face_blocks:
 				var row_envelope: Control = null
-				var spare: Control = null
 				for inner in (one_block as Node).get_children():
 					if inner is HBoxContainer and (inner as Node).get_child_count() > 0 \
 							and (inner as Node).get_child(0) is RackView.Fader:
 						row_envelope = inner as Control
-					elif row_envelope != null and inner is Control \
-							and (inner as Node).get_child_count() == 0:
-						spare = inner as Control
 				if row_envelope == null:
 					continue
-				if spare == null and half_off == "":
-					half_off = "no spacer under the envelope"
-				elif spare != null and half_off == "" \
-						and absf(row_envelope.size.y - spare.size.y) > 2.0:
-					half_off = "envelope %.0fpx against %.0fpx spare" \
-						% [row_envelope.size.y, spare.size.y]
-			check(half_off == "",
-				"the envelope takes half the block's free height (%s)" % half_off)
+				var bottom: float = row_envelope.position.y + row_envelope.size.y
+				if absf(bottom - (one_block as Control).size.y) > 2.0 and unfilled == "":
+					unfilled = "envelope ends at %.0f of %.0f" \
+						% [bottom, (one_block as Control).size.y]
+			check(unfilled == "",
+				"the envelope fills the rest of its block (%s)" % unfilled)
+
+			# The faders wear their letter and nothing else. A printed value under each
+			# one is four numbers per operator nobody reads while playing — the number
+			# is in the tooltip, and an envelope is set by ear against its neighbours.
+			var fader_lines := 0
+			for cell in main.patch_face._cells:
+				var fader := cell as RackView.Fader
+				if fader != null and fader.tooltip_text.contains("\n"):
+					fader_lines += 1
+			check(fader_lines > 0,
+				"a fader keeps its number in the tooltip (%d of them)" % fader_lines)
+
+			# And a knob wears its label, not "op3.feedback" under it. The dotted frame
+			# already says which operator this is; repeating it under every knob was a
+			# third of the cell spent restating the block's own heading.
+			var printed_wiring := ""
+			for cell in main.patch_face._cells:
+				for inner in (cell as Node).get_children():
+					var text := inner as Label
+					if text != null and text.text.contains(".") and printed_wiring == "":
+						printed_wiring = text.text
+			check(printed_wiring == "",
+				"and a knob prints its label alone, not its wiring (%s)" % printed_wiring)
 
 			# And a slider is the control it replaced, not a picture of one: a nudge
 			# travels the same path as a knob's and lands in the document.
@@ -3185,19 +3226,27 @@ func _initialize() -> void:
 			for inner in (child as ScrollContainer).get_children():
 				if inner is HBoxContainer:
 					grouped_rail = inner as HBoxContainer
-	var grouped_names: Array = []
+	# Down each slot, then along the rail — the order the panel lists them in.
+	var grouped_blocks: Array = []
 	if grouped_rail != null:
-		for one_block in grouped_rail.get_children():
-			var block_heading := (one_block as Node).get_child(0) as Label
-			if block_heading != null:
-				grouped_names.append(block_heading.text)
+		for one_slot in grouped_rail.get_children():
+			for one_block in (one_slot as Node).get_children():
+				grouped_blocks.append(one_block)
+	var grouped_names: Array = []
+	for one_block in grouped_blocks:
+		var block_heading := (one_block as Node).get_child(0) as Label
+		if block_heading != null:
+			grouped_names.append(block_heading.text)
 	check(grouped_names == ["op1", "op2", "op3", "op4", "op5", "op6"],
 		"the panel is six operator groups (%s)" % str(grouped_names))
+	check(grouped_rail != null and grouped_rail.get_child_count() == 3,
+		"in three stacked slots (%d)"
+			% (0 if grouped_rail == null else grouped_rail.get_child_count()))
 
 	var op1_grid: GridContainer = null
 	var op1_envelope: HBoxContainer = null
-	if grouped_rail != null and grouped_rail.get_child_count() > 0:
-		for inner in grouped_rail.get_child(0).get_children():
+	if not grouped_blocks.is_empty():
+		for inner in (grouped_blocks[0] as Node).get_children():
 			var row := inner as HBoxContainer
 			if row == null:
 				continue
@@ -3247,23 +3296,24 @@ func _initialize() -> void:
 			for inner in (child as ScrollContainer).get_children():
 				if not (inner is HBoxContainer):
 					continue
-				for one_block in (inner as HBoxContainer).get_children():
-					for part in (one_block as Node).get_children():
-						var bank_row := part as HBoxContainer
-						if bank_row == null:
-							continue
-						# Banks are grids; an envelope row holds faders. Counting
-						# whatever HBox has the most children scored a row of four
-						# sliders as four banks of nothing.
-						var grids := 0
-						var held := 0
-						for bank in bank_row.get_children():
-							if bank is GridContainer:
-								grids += 1
-								held += (bank as Node).get_child_count()
-						if grids > spill_banks:
-							spill_banks = grids
-							spill_knobs = held
+				for one_slot in (inner as HBoxContainer).get_children():
+					for one_block in (one_slot as Node).get_children():
+						for part in (one_block as Node).get_children():
+							var bank_row := part as HBoxContainer
+							if bank_row == null:
+								continue
+							# Banks are grids; an envelope row holds faders. Counting
+							# whatever HBox has the most children scored a row of four
+							# sliders as four banks of nothing.
+							var grids := 0
+							var held := 0
+							for bank in bank_row.get_children():
+								if bank is GridContainer:
+									grids += 1
+									held += (bank as Node).get_child_count()
+							if grids > spill_banks:
+								spill_banks = grids
+								spill_knobs = held
 	check(spill_knobs == 12,
 		"the authored panel carries all twelve knobs (%d)" % spill_knobs)
 	check(spill_banks > 1,
