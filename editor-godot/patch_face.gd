@@ -35,6 +35,14 @@ const PER_SLOT := 2
 ## these blocks are half that tall, so the same 40px would be a third of the panel.
 const BAND := 22
 
+## Inputs that take a signal as *modulation* rather than as sound to be passed on.
+##
+## The one thing that separates a carrier from a modulator: both reach the output in the
+## end, so plain reachability calls everything a carrier. What distinguishes them is
+## whether the path gets there through one of these — an operator whose output only ever
+## arrives at a `pm` input is felt, never heard.
+const MODULATION_PORTS := ["pm", "fm", "fb_mod"]
+
 ## The four parameters that make an envelope, and the letter each wears on the panel.
 ##
 ## When a node carries all four they are drawn as a row of vertical sliders instead of
@@ -313,6 +321,9 @@ func rebuild() -> void:
 		(runs.back()["controls"] as Array).append({"control": control,
 			"descriptor": descriptor})
 
+	# Which nodes are heard rather than felt, worked out once for the whole panel.
+	var audible := _heard_nodes()
+
 	if not runs.is_empty():
 		# The rail takes the room the panel has, up to a rack module and never below what
 		# two stacked blocks need. It was a flat Rack.DEFAULT_HEIGHT, which is the right
@@ -358,10 +369,24 @@ func rebuild() -> void:
 			block.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			slot.add_child(block)
 
+			# Heard or felt. A carrier's sound reaches the ear; a modulator's only ever
+			# bends another operator, and the difference is the single most useful thing
+			# to know about an FM voice — which of these six am I actually listening to.
+			#
+			# Said in colour rather than in a word, because the word was the problem: the
+			# level knob used to be labelled "index" on modulators, which is Chowning's
+			# term for the maths and not a name the DX7 ever uses. Both are "level" now,
+			# as Yamaha has it, and the role moved to the plate where it belongs.
+			var heard := false
+			for entry: Dictionary in run["controls"]:
+				if audible.has(str((entry["control"] as Dictionary)
+						.get("target", {}).get("node", ""))):
+					heard = true
+
 			# The title band, as a rack module wears it: the name in caps on the plate,
-			# over the category stripe. Only worth saying when there is more than one
-			# block; a panel of one group is a panel about one thing and the heading
-			# would be repeating the file name back.
+			# over the stripe. Only worth saying when there is more than one block; a
+			# panel of one group is a panel about one thing and the heading would be
+			# repeating the file name back.
 			var heading := Label.new()
 			heading.text = str(run["key"]).to_upper()
 			heading.visible = runs.size() > 1
@@ -369,11 +394,17 @@ func rebuild() -> void:
 			heading.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
 			heading.add_theme_font_size_override("font_size",
 				Design.type(Design.SIZE_SECONDARY))
-			heading.add_theme_color_override("font_color", Design.INK_BRIGHT)
+			heading.add_theme_color_override("font_color",
+				Design.INK_BRIGHT if heard else Design.INK_SECOND)
 			heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			heading.clip_text = true
 			heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			# In words too, on demand. A colour is a code somebody has to be taught;
+			# the tooltip teaches it, once, wherever the question is being asked.
+			heading.tooltip_text = "heard — its sound reaches the output" if heard \
+				else "felt — it modulates another part, and is not heard directly"
+			heading.mouse_filter = Control.MOUSE_FILTER_STOP
 			block.add_child(heading)
 
 			# And the plate under it. A panel block and a rack module are the same object
@@ -382,9 +413,11 @@ func rebuild() -> void:
 			# other. This replaces the dotted frame: a grouping drawn as a module edge is
 			# a stronger statement than a grouping drawn as a hint, and it is the true
 			# one, since these really are the modules the rack view shows.
-			var tint: Color = Rack.category_tint(str(registry.get(
-				_type_of(str(run["controls"][0]["control"]["target"]["node"])), {})
-				.get("category", "")))
+			# The stripe carries the role rather than the node's category, which on a
+			# panel of six identical operators says the same word six times. Audio for
+			# heard, control for felt — the same two colours the cables use for the same
+			# two ideas, so the panel and the graph teach one vocabulary between them.
+			var tint: Color = Design.AUDIO if heard else Design.CONTROL
 			block.draw.connect(func() -> void:
 				var plate := Rect2(Vector2.ZERO, block.size)
 				Rack.draw_plate(block, plate,
@@ -553,6 +586,36 @@ func rebuild() -> void:
 		offer_line.add_child(ghost)
 		_offers[_cells.size()] = {"node": offer_node, "parameter": str(parameter["name"])}
 		_cells.append(ghost)
+
+
+## The nodes whose sound is heard rather than felt — carriers, in FM terms.
+##
+## Walked backwards from the outputs, refusing to step back through a modulation input.
+## Everything in an FM voice reaches the output eventually, so "reaches the output" calls
+## all six operators carriers; what makes OP3 a carrier and OP6 a modulator is that OP6's
+## only road out runs through OP5's `pm`.
+##
+## Derived from the wiring rather than declared in the document, so it stays true when
+## somebody rewires the patch — a carrier is not a property the file asserts, it is a
+## thing the cables make so.
+func _heard_nodes() -> Dictionary:
+	var reached := {}
+	var frontier: Array = []
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) == "Output":
+			frontier.append(str(node["id"]))
+	while not frontier.is_empty():
+		var at: String = frontier.pop_back()
+		if reached.has(at):
+			continue
+		reached[at] = true
+		for wire in patch.get("connections", []):
+			if str(wire.get("to", {}).get("node", "")) != at:
+				continue
+			if str(wire.get("to", {}).get("port", "")) in MODULATION_PORTS:
+				continue
+			frontier.append(str(wire.get("from", {}).get("node", "")))
+	return reached
 
 
 ## The least a block can be and still hold what a block holds: a heading, one row of

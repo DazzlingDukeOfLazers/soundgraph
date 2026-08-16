@@ -3269,8 +3269,12 @@ func _initialize() -> void:
 		var block_heading := (one_block as Node).get_child(0) as Label
 		if block_heading != null:
 			grouped_names.append(block_heading.text)
-	check(grouped_names == ["OP1", "OP2", "OP3", "OP4", "OP5", "OP6"],
-		"the panel is six operator groups (%s)" % str(grouped_names))
+	# Ordered by signal flow, deepest modulator first, ending at the carrier it feeds:
+	# OP6→OP5→OP4→OP3 is one chain of algorithm 1 and OP2→OP1 the other. Numeric order
+	# put the carrier of one chain beside a modulator of the other and left the reader
+	# to reconstruct the algorithm from node ids.
+	check(grouped_names == ["OP6", "OP5", "OP4", "OP3", "OP2", "OP1"],
+		"the panel is six operator groups in signal order (%s)" % str(grouped_names))
 
 	# Titled with what the file calls itself, not with the word "Panel". The metadata
 	# name beats the path: an imported DX7 voice carries the name the synth shipped it
@@ -3310,9 +3314,13 @@ func _initialize() -> void:
 				for part in row.get_children():
 					if part is GridContainer:
 						op1_grid = part as GridContainer
+	# The first block is OP6 now: three knobs, because algorithm 1 puts the voice's one
+	# feedback loop there. The other five have two — a knob that does nothing on five
+	# panels out of six was saying every operator has feedback, and none of them do
+	# except the one the algorithm designates.
 	check(op1_grid != null and op1_grid.columns == 3
 			and op1_grid.get_child_count() == 3,
-		"an operator's knobs are one row of three (%s)"
+		"the feedback operator's knobs are one row of three (%s)"
 			% ("none" if op1_grid == null else "%d across %d cols"
 				% [op1_grid.get_child_count(), op1_grid.columns]))
 	var op1_reaches := {}
@@ -3320,8 +3328,47 @@ func _initialize() -> void:
 		if op1_grid != null \
 				and (main.patch_face._cells[index] as Node).get_parent() == op1_grid:
 			op1_reaches[str(main.patch_face._targets[index]["node"])] = true
-	check(op1_reaches.has("op1") and op1_reaches.has("op1_level"),
+	check(op1_reaches.has("op6") and op1_reaches.has("op6_index_5"),
 		"and reach both the operator and its gain node (%s)" % str(op1_reaches.keys()))
+
+	# One fb knob on the panel, on the operator the algorithm designates.
+	var feedback_knobs: Array = []
+	for index in main.patch_face._targets:
+		if str(main.patch_face._targets[index]["parameter"]) == "feedback":
+			feedback_knobs.append(str(main.patch_face._targets[index]["node"]))
+	check(feedback_knobs == ["op6"],
+		"and feedback appears once, where the algorithm puts it (%s)"
+			% str(feedback_knobs))
+
+	# The gain knob is "level" on all six, as Yamaha names it — the wire format calls
+	# the byte OPERATOR OUTPUT LEVEL and the DX7 gives carriers and modulators the same
+	# word. "index" was ours, borrowed from Chowning's modulation index: true of the
+	# maths, absent from the manual, and a second name for one parameter.
+	var gain_labels := {}
+	for control: Dictionary in main.patch.get("controls", []):
+		if str(control.get("target", {}).get("parameter", "")) == "gain":
+			gain_labels[str(control.get("label", ""))] = true
+	check(gain_labels.keys() == ["level"],
+		"every operator's output knob is called level (%s)" % str(gain_labels.keys()))
+
+	# Heard or felt, from the wiring rather than from a claim in the file: OP3 and OP1
+	# reach the output, the rest only ever arrive at somebody's pm input.
+	var audible: Dictionary = main.patch_face._heard_nodes()
+	var heard_ops: Array = []
+	for op in ["op1", "op2", "op3", "op4", "op5", "op6"]:
+		if audible.has(op):
+			heard_ops.append(op)
+	check(heard_ops == ["op1", "op3"],
+		"two of the six operators are heard directly (%s)" % str(heard_ops))
+	# And the panel says so: the carriers' titles are lit, the modulators' are not.
+	var band_lit := {}
+	for one_block in grouped_blocks:
+		var plate_band := (one_block as Node).get_child(0) as Label
+		if plate_band != null:
+			band_lit[plate_band.text] = plate_band.get_theme_color("font_color") == Design.INK_BRIGHT
+	check(band_lit.get("OP3", false) and band_lit.get("OP1", false)
+			and not band_lit.get("OP6", true) and not band_lit.get("OP2", true),
+		"and the panel lights the ones you hear (%s)" % str(band_lit))
 	check(op1_envelope != null and op1_envelope.get_child_count() == 4,
 		"with the envelope faders under them")
 

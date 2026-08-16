@@ -918,19 +918,57 @@ function modularize(flat) {
   // grouping down in the schema's `group` field rather than leaving the panel to
   // guess. The envelope rides along as sliders; the editor draws attack/decay/
   // sustain/release as a fader row whenever all four are present.
+  // Read the finished graph back for the panel's order: which operators modulate
+  // which is written in the gain nodes the loop above emitted, so the panel is
+  // ordered by the wiring rather than by a topology passed alongside it — one source
+  // for the shape of the voice, and it is the one the editor will also read.
+  const modulates = [];
+  const carriers = [];
+  for (const node of nodes) {
+    if (node.type !== 'Gain') continue;
+    const drives = /^op(\d)_index_(\d)$/.exec(node.id);
+    if (drives) modulates.push([drives[1], drives[2]]);
+    const heard = /^op(\d)_level$/.exec(node.id);
+    if (heard) carriers.push(heard[1]);
+  }
+
+  // Signal flow, deepest modulator first, ending at the carrier it feeds: OP6 OP5
+  // OP4 OP3, then OP2 OP1. Numeric order put the carrier of one chain next to a
+  // modulator of another and left you to reconstruct the algorithm from the ids.
+  // Post-order, and `seen` is set before recursing so a feedback loop terminates.
+  const order = [];
+  const seen = new Set();
+  const walk = (op) => {
+    if (seen.has(op)) return;
+    seen.add(op);
+    for (const [from, to] of modulates) if (to === op) walk(from);
+    order.push(op);
+  };
+  for (const carrier of carriers) walk(carrier);
+  for (const op of [...clusters].sort()) walk(op);   // anything the chains missed
+
   const controls = [];
-  for (const op of [...clusters].sort()) {
+  for (const op of order) {
     const group = `op${op}`;
+    const instance = nodes.find((n) => n.id === group);
     controls.push({ id: `${group}_ratio`, label: 'ratio', kind: 'knob', group,
       target: { node: group, parameter: 'ratio' } });
-    controls.push({ id: `${group}_feedback`, label: 'fb', kind: 'knob', group,
-      target: { node: group, parameter: 'feedback' } });
+    // Feedback is one loop per voice on the operator the algorithm designates, not a
+    // knob every operator has. Five inert fb knobs per panel said the opposite.
+    if (instance !== undefined && instance.parameters.feedback !== undefined) {
+      controls.push({ id: `${group}_feedback`, label: 'fb', kind: 'knob', group,
+        target: { node: group, parameter: 'feedback' } });
+    }
     for (const node of nodes) {
       if (node.type !== 'Gain') continue;
-      const level = node.id === `${group}_level`;
-      const index = new RegExp(`^${group}_index_\\d$`).test(node.id);
-      if (!level && !index) continue;
-      controls.push({ id: `${node.id}_gain`, label: level ? 'level' : 'index',
+      if (node.id !== `${group}_level`
+          && !new RegExp(`^${group}_index_\\d$`).test(node.id)) continue;
+      // "level" for both, because that is what Yamaha calls it: the wire format
+      // field is OPERATOR OUTPUT LEVEL and the DX7 gives all six the same name.
+      // "index" was ours, borrowed from Chowning's modulation index — true of the
+      // maths, absent from the manual, and a second word for one parameter. Which
+      // operators are heard is shown on the panel instead of spelled in a label.
+      controls.push({ id: `${node.id}_gain`, label: 'level',
         kind: 'knob', group, target: { node: node.id, parameter: 'gain' } });
     }
     for (const envelope of ['attack', 'decay', 'sustain', 'release']) {
