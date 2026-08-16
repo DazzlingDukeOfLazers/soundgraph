@@ -529,12 +529,22 @@ func _draw() -> void:
 
 
 func _draw_rail(rect: Rect2) -> void:
-	draw_rect(rect, RAIL_COLOUR)
-	draw_line(rect.position, rect.position + Vector2(rect.size.x, 0.0), RAIL_EDGE, 1.0)
+	Rack.draw_rail(self, rect)
+
+
+## One mounting rail: the strip, its lit edge, and the threaded holes along it.
+##
+## Shared, like the plate and the socket, because the file's panel is a case too — the
+## rack draws rails between rows and the panel draws them above and below its own, and a
+## rail that looked different in the two places would be saying they were different rails.
+static func draw_rail(canvas: CanvasItem, rect: Rect2) -> void:
+	canvas.draw_rect(rect, RAIL_COLOUR)
+	canvas.draw_line(rect.position, rect.position + Vector2(rect.size.x, 0.0),
+		RAIL_EDGE, 1.0)
 	# The threaded strip along a rail, suggested rather than drawn to scale.
 	var slot := rect.position + Vector2(14.0, rect.size.y * 0.5)
 	while slot.x < rect.end.x - 8.0:
-		draw_circle(slot, 1.6, Color(1, 1, 1, 0.06))
+		canvas.draw_circle(slot, 1.6, Color(1, 1, 1, 0.06))
 		slot.x += 24.0
 
 

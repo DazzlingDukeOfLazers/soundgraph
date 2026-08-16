@@ -4786,14 +4786,14 @@ func _refresh_face() -> void:
 		patch_face.patch = patch
 		patch_face.registry = registry
 		patch_face.rack = rack
+		patch_face.title = _instrument_name()
 		patch_face.rebuild()
 	if face_heading != null:
-		# Whose face this is. A module's own name when a module is selected; otherwise
-		# the instrument's — the panel is a rack case, and a case wears the name of the
-		# thing it holds. "Panel" said only that a panel is a panel; "ALGO 01" says
-		# which of two hundred DX7 voices is under your hands.
-		face_heading.text = showing if showing != "" else _instrument_name()
-		face_heading.visible = face_heading.text != ""
+		# Whose face this is — but only when it is a module's. The file's own name is on
+		# the case now, printed on the thing it names rather than floating above it, so a
+		# heading here as well would be the same word twice in adjacent rows.
+		face_heading.text = showing
+		face_heading.visible = showing != ""
 
 
 ## What this file calls itself, for the top of its panel.

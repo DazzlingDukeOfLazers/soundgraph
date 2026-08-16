@@ -63,6 +63,11 @@ var patch: Dictionary = {}
 var registry: Dictionary = {}
 var rack: Control = null
 
+## What the case wears: the instrument's name, from main. On the case rather than above
+## it because a name floating over a set of plates says less than a name *on* the thing
+## the plates are mounted in.
+var title := ""
+
 ## True while the panel is showing the default rather than the file's own.
 ##
 ## A file with no `controls` used to get one line of hint and nothing else — which is most
@@ -103,6 +108,8 @@ var _carrying := -1
 var _target := -1
 ## The rail's scroller, kept so _fit_rail can size it once the tree has a size.
 var _rail: ScrollContainer = null
+## The case it is mounted in, so the fit can measure the name band and rails around it.
+var _case: Control = null
 ## How many rows the rail ended up with, so the fit asks for the height it will use.
 var _rail_rows := 1
 
@@ -413,8 +420,53 @@ func rebuild() -> void:
 		scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 		scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		scroller.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		add_child(scroller)
+		scroller.name = "Rack"
+
+		# The case around the whole thing: the instrument's name on it, and its modules
+		# mounted inside. The rack row was a set of plates lying on the panel with the
+		# file's name floating above them; a case says the obvious thing those plates
+		# have in common, which is that they are one instrument and not six.
+		#
+		# The rails are the rack's own, drawn above and below the row the way they are
+		# drawn between rows over there — a case is where modules are mounted, and the
+		# rail is what they mount to.
+		var case := VBoxContainer.new()
+		case.name = "Case"
+		case.add_theme_constant_override("separation", 0)
+		add_child(case)
+
+		var badge := Label.new()
+		badge.name = "Name"
+		badge.text = title.to_upper()
+		badge.visible = title != ""
+		badge.custom_minimum_size.y = Design.scale(BAND)
+		badge.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+		badge.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
+		badge.add_theme_color_override("font_color", Design.INK_BRIGHT)
+		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		badge.clip_text = true
+		badge.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		case.add_child(badge)
+
+		var rail_height := float(Design.scale(Rack.RAIL))
+		var top_rail := Control.new()
+		top_rail.custom_minimum_size.y = rail_height
+		top_rail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		case.add_child(top_rail)
+		case.add_child(scroller)
+		var foot_rail := Control.new()
+		foot_rail.custom_minimum_size.y = rail_height
+		foot_rail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		case.add_child(foot_rail)
+
+		case.draw.connect(func() -> void:
+			case.draw_rect(Rect2(Vector2.ZERO, case.size), Rack.PANEL_LOW.darkened(0.35))
+			case.draw_rect(Rect2(Vector2.ZERO, case.size), Rack.PANEL_EDGE, false, 1.0)
+			Rack.draw_rail(case, Rect2(top_rail.position, top_rail.size))
+			Rack.draw_rail(case, Rect2(foot_rail.position, foot_rail.size)))
 		_rail = scroller
+		_case = case
 
 		# The rail: rows of modules on the left, and whatever stands full height at the
 		# end of the signal on the right.
@@ -922,11 +974,20 @@ func _fit_rail() -> void:
 		if content != null:
 			elsewhere = maxf(content.size.y - size.y, 0.0)
 		# And what this control holds besides the rail — the ports strip, the offers.
+		# Everything in the panel that is not the rail itself — including the case's own
+		# name band and rails, which sit between the two and would otherwise be counted
+		# as part of neither. Measuring the case as a whole would count the rail twice,
+		# since the rail is inside it.
 		var mine: float = 0.0
 		for child in get_children():
 			var part := child as Control
-			if part != null and part != _rail and part.visible:
+			if part != null and part != _case and part.visible:
 				mine += part.get_combined_minimum_size().y + float(Design.SPACE_S)
+		if _case != null:
+			for child in _case.get_children():
+				var part := child as Control
+				if part != null and part != _rail and part.visible:
+					mine += part.get_combined_minimum_size().y
 		wanted = rail_height(viewport.size.y, elsewhere + mine + bar, least, wanted)
 
 	# Only when it moves. Writing the same minimum back invalidates the layout, which

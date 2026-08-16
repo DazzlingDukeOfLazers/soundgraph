@@ -3046,12 +3046,10 @@ func _initialize() -> void:
 			# By name, not by class. Every reader here used to identify a part by its
 			# type, so each part added since broke a walker that had been right the day
 			# before — a ports plate is a VBoxContainer too.
-			var face_rail: VBoxContainer = null
-			var face_scroller: ScrollContainer = null
-			for child in main.patch_face.get_children():
-				if child is ScrollContainer:
-					face_scroller = child as ScrollContainer
-					face_rail = (child as Node).get_node_or_null("Rail/Rows")
+			var face_scroller := main.patch_face.get_node_or_null(
+				"Case/Rack") as ScrollContainer
+			var face_rail := main.patch_face.get_node_or_null(
+				"Case/Rack/Rail/Rows") as VBoxContainer
 			check(face_rail != null, "the knobs sit on a rail of rows")
 			# Rows down the rail, blocks along each row: read left to right, then down.
 			var face_slots: Array = []
@@ -3276,11 +3274,8 @@ func _initialize() -> void:
 			var port_names: Array = []
 			var in_side := -1.0
 			var out_side := -1.0
-			for child in main.patch_face.get_children():
-				if not (child is ScrollContainer):
-					continue
-				for which in ["Rail/PortsIn", "Rail/PortsOut"]:
-					var plate := (child as Node).get_node_or_null(which) as Control
+			for which in ["Case/Rack/Rail/PortsIn", "Case/Rack/Rail/PortsOut"]:
+					var plate := main.patch_face.get_node_or_null(which) as Control
 					if plate == null:
 						continue
 					if which.ends_with("In"):
@@ -3330,12 +3325,10 @@ func _initialize() -> void:
 	var grouped_mix: HBoxContainer = null
 	var ports_in: Control = null
 	var ports_out: Control = null
-	for child in main.patch_face.get_children():
-		if child is ScrollContainer:
-			grouped_rail = (child as Node).get_node_or_null("Rail/Rows")
-			grouped_mix = (child as Node).get_node_or_null("Rail/Mix")
-			ports_in = (child as Node).get_node_or_null("Rail/PortsIn")
-			ports_out = (child as Node).get_node_or_null("Rail/PortsOut")
+	grouped_rail = main.patch_face.get_node_or_null("Case/Rack/Rail/Rows")
+	grouped_mix = main.patch_face.get_node_or_null("Case/Rack/Rail/Mix")
+	ports_in = main.patch_face.get_node_or_null("Case/Rack/Rail/PortsIn")
+	ports_out = main.patch_face.get_node_or_null("Case/Rack/Rail/PortsOut")
 	# Down each slot, then along the rail — the order the panel lists them in.
 	var grouped_blocks: Array = []
 	var grouped_rows: Array = []
@@ -3365,8 +3358,31 @@ func _initialize() -> void:
 	# Titled with what the file calls itself, not with the word "Panel". The metadata
 	# name beats the path: an imported DX7 voice carries the name the synth shipped it
 	# with, which is worth more than where it happens to be saved.
-	check(main.face_heading.visible and main.face_heading.text == "ALGO 01",
-		"under the instrument's own name (%s)" % main.face_heading.text)
+	# The name is on the case now, printed on the thing it names rather than floating in
+	# a row above it — which is also why the heading above the panel is empty here.
+	var case_badge := main.patch_face.get_node_or_null("Case/Name") as Label
+	check(case_badge != null and case_badge.visible and case_badge.text == "ALGO 01",
+		"the case wears the instrument's name (%s)"
+			% ("none" if case_badge == null else case_badge.text))
+	check(not main.face_heading.visible,
+		"and nothing repeats it above (%s)" % main.face_heading.text)
+
+	# And the case encloses the rack it names: name band, rail, modules, rail. Six plates
+	# lying on a panel with a name floating over them are six things; inside a case with
+	# the name on it they are one instrument.
+	var the_case := main.patch_face.get_node_or_null("Case") as Control
+	var the_rack := main.patch_face.get_node_or_null("Case/Rack") as Control
+	check(the_case != null and the_rack != null, "the rack is mounted in a case")
+	if the_case != null and the_rack != null:
+		check(the_case.draw.get_connections().size() > 0,
+			"which paints itself — rails above and below what it holds")
+		check(the_case.get_global_rect().encloses(the_rack.get_global_rect()),
+			"and encloses it (%s around %s)"
+				% [str(the_case.get_global_rect()), str(the_rack.get_global_rect())])
+		check(case_badge != null
+				and case_badge.get_global_rect().end.y
+					<= the_rack.get_global_rect().position.y + 1.0,
+			"with the name above the modules, on the case")
 
 	# Each block is a rack module, drawn by the rack's own plate function rather than
 	# merely resembling one: it paints itself, and its name sits in a title band.
@@ -3815,13 +3831,10 @@ func _initialize() -> void:
 		await process_frame
 	var spill_banks := 0
 	var spill_knobs := 0
-	for child in main.patch_face.get_children():
-		if child is ScrollContainer:
-			for inner in (child as ScrollContainer).get_children():
-				if not (inner is HBoxContainer):
-					continue
-				var spill_rows: Node = (inner as Node).get_node_or_null("Rows")
-				if spill_rows != null:
+	var spill_rows: Node = main.patch_face.get_node_or_null("Case/Rack/Rail/Rows")
+	if spill_rows != null:
+			if true:
+				if true:
 					for one_row in spill_rows.get_children():
 						for one_block in (one_row as Node).get_children():
 							for part in (one_block as Node).get_children():
@@ -3965,10 +3978,10 @@ func _initialize() -> void:
 		"and selecting something that is not a module gives the file's own face back")
 	# Titled with the instrument rather than with the word "Panel", which named the
 	# obvious in the best row on screen. The module's name gave way to the file's.
-	check(main.face_heading.text != "" and main.face_heading.text != "part"
-			and not main.face_heading.text.begins_with("Panel"),
-		"under the file's own name instead of the module's (%s)"
-			% main.face_heading.text)
+	var synth_badge := main.patch_face.get_node_or_null("Case/Name") as Label
+	check(synth_badge != null and synth_badge.text != "" and synth_badge.text != "PART",
+		"the case wears the file's name, not the module's (%s)"
+			% ("none" if synth_badge == null else synth_badge.text))
 
 	# And so does a selection with nothing behind it, which is the branch of
 	# _on_node_selected that used to return without telling the panel anything at all: it
