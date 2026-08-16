@@ -182,6 +182,16 @@ func _drag_fader(fader, from_y: float, to_y: float, fine: bool = false) -> void:
 	fader._gui_input(release)
 
 
+## One notch of the wheel over a control, through its own input.
+func _wheel(control, up: bool, coarse: bool = false) -> void:
+	var notch := InputEventMouseButton.new()
+	notch.button_index = MOUSE_BUTTON_WHEEL_UP if up else MOUSE_BUTTON_WHEEL_DOWN
+	notch.pressed = true
+	notch.shift_pressed = coarse
+	notch.position = control.size * 0.5
+	control._gui_input(notch)
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -1753,6 +1763,18 @@ func _initialize() -> void:
 			after_nudge = float(node["parameters"]["cutoff"])
 	check(after_nudge > before_nudge,
 		"and an arrow key moves it (%.1f to %.1f)" % [before_nudge, after_nudge])
+
+	# And so does the wheel, in the same step. The graph's fields and the panel's knobs
+	# are different controls with the same two constants; a wheel that stepped one of
+	# them and scrolled past the other would be two vocabularies for one idea.
+	keyed_field.position_now = 0.5
+	_wheel(keyed_field, true)
+	check(absf(keyed_field.position_now - (0.5 + keyed_field.KEY_STEP)) < 0.001,
+		"a notch of the wheel moves a graph field too (%.3f)" % keyed_field.position_now)
+	_wheel(keyed_field, false, true)
+	check(absf(keyed_field.position_now
+			- (0.5 + keyed_field.KEY_STEP - keyed_field.KEY_COARSE)) < 0.001,
+		"and Shift makes it coarse there as well (%.3f)" % keyed_field.position_now)
 
 	# A hundred presses crosses any parameter, whatever its range — a fixed step that
 	# suits 0..1 is useless on 20..20000 and the other way round.
@@ -3681,6 +3703,23 @@ func _initialize() -> void:
 		_drag_fader(pull, track.y, track.x, true)
 		check(absf(pull._position - 0.25) < 0.05,
 			"with Shift a quarter as far, as everywhere else (%.2f)" % pull._position)
+
+		# And the wheel steps it, one notch at a time, without focus and without the
+		# panel behind it scrolling away underneath.
+		pull.set_value_silently(pull._to_value(0.5))
+		var before_wheel: float = pull._position
+		_wheel(pull, true)
+		check(absf(pull._position - (before_wheel + pull.KEY_STEP)) < 0.001,
+			"a notch of the wheel is one small step (%.3f from %.3f)"
+				% [pull._position, before_wheel])
+		_wheel(pull, false)
+		_wheel(pull, false)
+		check(absf(pull._position - (before_wheel - pull.KEY_STEP)) < 0.001,
+			"and it steps back down again (%.3f)" % pull._position)
+		_wheel(pull, true, true)
+		check(absf(pull._position - (before_wheel - pull.KEY_STEP + pull.KEY_COARSE))
+				< 0.001,
+			"with Shift a coarse one, as on the arrow keys (%.3f)" % pull._position)
 		await main._undo()
 		for i in 6:
 			await process_frame

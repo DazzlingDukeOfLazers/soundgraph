@@ -151,6 +151,17 @@ func _gui_input(event: InputEvent) -> void:
 			return
 
 	var button := event as InputEventMouseButton
+	if button != null and button.pressed \
+			and button.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		# One notch, one step, the same step an arrow key takes — a wheel is a discrete
+		# gesture like a key press rather than a continuous one like a drag, so it borrows
+		# the keyboard's numbers rather than the drag's. Accepted whether or not the field
+		# has focus: the pointer is over it, which is the whole of what a wheel means.
+		var notch: float = KEY_COARSE if button.shift_pressed else KEY_STEP
+		nudge(notch if button.button_index == MOUSE_BUTTON_WHEEL_UP else -notch)
+		accept_event()
+		return
+
 	if button != null and button.pressed:
 		if button.button_index == MOUSE_BUTTON_LEFT and button.double_click:
 			_begin_typing()

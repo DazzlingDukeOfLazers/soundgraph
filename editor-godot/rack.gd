@@ -1350,6 +1350,22 @@ class Knob extends Control:
 				nudge(1.0)
 				accept_event()
 				return
+		# The wheel, one notch to a step. A wheel is a discrete gesture like a key press
+		# rather than a continuous one like a drag, so it takes the keyboard's step rather
+		# than the drag's distance — and Shift means coarse here, as it does on the arrow
+		# keys, rather than fine as it does on a drag. That split is the gesture's, not
+		# this control's: stepping asks "how big a step" and dragging asks "how far to
+		# travel", and Shift answers each in the direction that gesture needs.
+		#
+		# No focus required: the pointer is over the control, which is the whole of what a
+		# wheel means. Accepted either way, so the panel behind it does not scroll while
+		# somebody is setting a value.
+		if event is InputEventMouseButton and event.pressed \
+				and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			var notch: float = KEY_COARSE if event.shift_pressed else KEY_STEP
+			nudge(notch if event.button_index == MOUSE_BUTTON_WHEEL_UP else -notch)
+			accept_event()
+			return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
 				# So the arrow keys go to the knob that was just touched, rather than to
