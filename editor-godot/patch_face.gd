@@ -421,7 +421,10 @@ func rebuild() -> void:
 			mix_line.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			rail.add_child(mix_line)
 			for run: Dictionary in mixes:
-				placed.append({"run": run, "line": mix_line})
+				# Stacked rather than side by side: this is a channel strip, and a strip
+				# reads down. It is also signal order — the mix's own level, then the
+				# port's — which is the same direction the rows to its left run in.
+				placed.append({"run": run, "line": mix_line, "strip": true})
 
 		for seat: Dictionary in placed:
 			# A gap where one chain ends and the next begins on the same row: room
@@ -565,16 +568,26 @@ func rebuild() -> void:
 				reserved = (slider_cells[0] as Control).get_combined_minimum_size().y \
 					+ float(Design.SPACE_S)
 			# Three to a row where the rack fits two: the operator's own knobs and its
-			# level make three, and a row is how they read as one instrument.
+			# level make three, and a row is how they read as one instrument. One to a
+			# row in a strip, where the knobs are stages of a signal rather than
+			# settings of one thing, and reading down is reading in order.
+			var across: int = 1 if seat.get("strip", false) else 3
 			var room: float = panel_height - heading.get_combined_minimum_size().y \
 				- reserved
 			var pitch: float = cell_height + float(Design.SPACE_S)
 			var deep: int = maxi(1, int(floorf((room + float(Design.SPACE_S)) / pitch)))
+			# A strip keeps everything in one bank however tall that makes it: it is a
+			# column of stages, and spilling stage three into a second column beside
+			# stage one would break the only thing the ordering says. The block it sits
+			# in is the full height of the rail rather than `panel_height`, so there is
+			# more room here than the spill arithmetic above knows about.
+			var per_bank: int = cells.size() if seat.get("strip", false) \
+				else maxi(deep * across, 1)
 			var bank: GridContainer = null
 			for cell_index in cells.size():
-				if cell_index % (deep * 3) == 0:
+				if cell_index % maxi(per_bank, 1) == 0:
 					bank = GridContainer.new()
-					bank.columns = 3
+					bank.columns = across
 					bank.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 					bank.add_theme_constant_override("h_separation", Design.SPACE_S)
 					bank.add_theme_constant_override("v_separation", Design.SPACE_S)

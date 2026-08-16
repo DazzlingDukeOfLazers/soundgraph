@@ -2677,12 +2677,13 @@ func _initialize() -> void:
 
 	# ---- modules, stage 2: an instance is one node wearing its declared surface -------
 	# Since stage 4 the importer emits this notation by default: one operator
-	# definition, six instances. The engine sees 33 flattened nodes; the editor must
-	# see 15 authored ones.
+	# definition, six instances. The engine sees the flattened nodes; the editor must
+	# see 16 authored ones — fifteen, plus the Gain that gives the carrier sum a level
+	# of its own rather than leaving it a joint with no control on it.
 	await main._load_example("DX7: algo-01")
 	for i in 8:
 		await process_frame
-	check(main.widgets.size() == 15,
+	check(main.widgets.size() == 16,
 		"the editor shows the authored graph, not the expansion (%d widgets)"
 			% main.widgets.size())
 	check(main.widgets.has("op1") and not main.widgets.has("op1.osc"),
@@ -3341,18 +3342,34 @@ func _initialize() -> void:
 	check(grouped_mix != null, "the mix panel stands at the end of the rail")
 	var mix_names: Array = []
 	var mix_targets: Array = []
+	var mix_cells: Array = []
 	if grouped_mix != null:
 		for one_block in grouped_mix.get_children():
 			var mix_band := (one_block as Node).get_child(0) as Label
 			if mix_band != null:
 				mix_names.append(mix_band.text)
+			for part in (one_block as Node).get_children():
+				for bank in (part as Node).get_children():
+					if bank is GridContainer:
+						mix_cells.append(bank)
 	for index in main.patch_face._targets:
 		var aimed: Dictionary = main.patch_face._targets[index]
-		if str(aimed["node"]) == "out":
-			mix_targets.append(str(aimed["parameter"]))
+		if str(aimed["node"]) in ["mix", "out"]:
+			mix_targets.append("%s.%s" % [str(aimed["node"]),
+				str(aimed["parameter"])])
 	check(mix_names == ["MIX"], "under its own name (%s)" % str(mix_names))
-	check(mix_targets == ["level"],
-		"holding the master level (%s)" % str(mix_targets))
+
+	# Two knobs, in signal order: the mix's own level, then the port's. The sum used to
+	# be a bare Add — a node with no parameter, so no knob, so nothing on the panel at
+	# the one place the whole voice comes together. Every other stage of the graph has a
+	# level; the joint where they meet had none, which made it a joint and not a stage.
+	check(mix_targets == ["mix.gain", "out.level"],
+		"holding the mix's own level and then the port's (%s)" % str(mix_targets))
+	# Stacked, not side by side: a channel strip reads down, and down is signal order.
+	var strip_columns: Array = []
+	for bank in mix_cells:
+		strip_columns.append((bank as GridContainer).columns)
+	check(strip_columns == [1], "stacked as a strip (%s)" % str(strip_columns))
 	if grouped_mix != null and grouped_rail != null:
 		check(grouped_mix.get_global_rect().position.x
 				>= grouped_rail.get_global_rect().end.x - 1.0,

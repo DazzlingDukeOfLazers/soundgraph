@@ -732,6 +732,16 @@ function buildPatch(voice, bankName, voiceIndex) {
       mix = addId;
     }
   });
+  // The mix's own level, between the carrier sum and the port.
+  //
+  // The sum was an Add and nothing else: a node with no parameter, so no knob, so
+  // nothing on the panel where the voice comes together. Every other stage of this
+  // graph has a level — each operator has one, the port has one — and the one place
+  // they all meet had none, which made it a joint rather than a stage. Unity by
+  // default, so the sound is bit-identical to before: multiplying by 1.0 is exact.
+  nodes.push({ id: 'mix', type: 'Gain', name: 'Mix', parameters: {} });
+  wire(mix, 'out', 'mix', 'in');
+  mix = 'mix';
   nodes.push({ id: 'out', type: 'Output', host: 'stereo', parameters: {
     level: Number((0.8 / Math.max(1, carrierAmpSum)).toFixed(4)) } });
   wire(mix, 'out', 'out', 'left');
@@ -979,10 +989,12 @@ function modularize(flat) {
     }
   }
 
-  // Where the carriers meet: the voice's master level, at the end of the signal the
-  // rows above it describe. Its own group, so the panel can stand it apart from the
-  // operators — it belongs to the instrument rather than to any one of them.
-  controls.push({ id: 'mix_level', label: 'out', kind: 'knob', group: 'mix',
+  // Where the carriers meet, in signal order: the mix's level, then the port's. Its own
+  // group, so the panel can stand it apart from the operators — it belongs to the
+  // instrument rather than to any one of them.
+  controls.push({ id: 'mix_gain', label: 'level', kind: 'knob', group: 'mix',
+    target: { node: 'mix', parameter: 'gain' } });
+  controls.push({ id: 'mix_out', label: 'out', kind: 'knob', group: 'mix',
     target: { node: 'out', parameter: 'level' } });
 
   return {

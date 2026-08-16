@@ -370,6 +370,12 @@
       "parameters": {}
     },
     {
+      "id": "mix",
+      "type": "Gain",
+      "name": "Mix",
+      "parameters": {}
+    },
+    {
       "id": "out",
       "type": "Output",
       "host": "stereo",
@@ -655,13 +661,23 @@
         "port": "out"
       },
       "to": {
+        "node": "mix",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
         "node": "out",
         "port": "left"
       }
     },
     {
       "from": {
-        "node": "carrier_sum_2",
+        "node": "mix",
         "port": "out"
       },
       "to": {
@@ -1078,7 +1094,17 @@
       }
     },
     {
-      "id": "mix_level",
+      "id": "mix_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "mix",
+      "target": {
+        "node": "mix",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "mix_out",
       "label": "out",
       "kind": "knob",
       "group": "mix",
