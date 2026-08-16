@@ -413,8 +413,12 @@ func rebuild() -> void:
 				bank.add_child(cells[cell_index])
 
 			# The sliders sit under the knobs at exactly the knobs' width, so the block
-			# stays as wide as its widest bank and the envelope stretches into whatever
-			# height the block has left — tall sliders being the point of the trade.
+			# stays as wide as its widest bank. Height-wise they take *half* of what the
+			# block has left, split with an empty spacer of equal stretch — a fader the
+			# full height of the module dwarfed the knobs it sits under, and an envelope
+			# is read as proportions, which survive halving untouched. A ratio rather
+			# than a constant, so it keeps meaning the same thing at every UI scale and
+			# whatever the heading and the banks happen to measure.
 			if not slider_cells.is_empty():
 				var envelope := HBoxContainer.new()
 				envelope.add_theme_constant_override("separation", Design.SPACE_S)
@@ -425,6 +429,10 @@ func rebuild() -> void:
 				for slide in slider_cells:
 					envelope.add_child(slide)
 				block.add_child(envelope)
+				var spare := Control.new()
+				spare.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				spare.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				block.add_child(spare)
 
 	_add_ports()
 

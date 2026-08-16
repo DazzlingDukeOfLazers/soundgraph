@@ -3079,6 +3079,31 @@ func _initialize() -> void:
 			check(width_off == "",
 				"each envelope is exactly as wide as the knobs above it (%s)" % width_off)
 
+			# And half the height it could take: the envelope splits the block's leftover
+			# room evenly with an empty spacer below it. Full-height faders dwarfed the
+			# knobs; an envelope is proportions, and proportions survive halving.
+			var half_off := ""
+			for one_block in face_blocks:
+				var row_envelope: Control = null
+				var spare: Control = null
+				for inner in (one_block as Node).get_children():
+					if inner is HBoxContainer and (inner as Node).get_child_count() > 0 \
+							and (inner as Node).get_child(0) is RackView.Fader:
+						row_envelope = inner as Control
+					elif row_envelope != null and inner is Control \
+							and (inner as Node).get_child_count() == 0:
+						spare = inner as Control
+				if row_envelope == null:
+					continue
+				if spare == null and half_off == "":
+					half_off = "no spacer under the envelope"
+				elif spare != null and half_off == "" \
+						and absf(row_envelope.size.y - spare.size.y) > 2.0:
+					half_off = "envelope %.0fpx against %.0fpx spare" \
+						% [row_envelope.size.y, spare.size.y]
+			check(half_off == "",
+				"the envelope takes half the block's free height (%s)" % half_off)
+
 			# And a slider is the control it replaced, not a picture of one: a nudge
 			# travels the same path as a knob's and lands in the document.
 			if live_slider != null:
