@@ -26,6 +26,14 @@ const Seams := preload("res://seams.gd")
 ## as rack modules in rebuild(); this only shapes the ghost strip under them.
 const PER_LINE := 2
 
+## The four parameters that make an envelope, and the letter each wears on the panel.
+##
+## When a node carries all four they are drawn as a row of vertical sliders instead of
+## knobs, because an envelope reads as heights side by side — the sliders *are* the
+## shape of the sound, which four dials never quite manage. All four or none: a node
+## with only a `decay` has a decay knob, not a one-slider envelope.
+const ENVELOPE := {"attack": "A", "decay": "D", "sustain": "S", "release": "R"}
+
 ## How far down an offer is turned: enough to read as something available rather than as
 ## something already on the panel. The same value the module's face uses.
 const OFFERED := Color(1.0, 1.0, 1.0, 0.45)
@@ -161,7 +169,11 @@ func _draw() -> void:
 		var local := Rect2(inverse * rect.position, rect.size)
 		if index == _carrying:
 			draw_rect(local, Design.ACCENT, false, 2.0)
-		else:
+		elif _offers.has(index):
+			# Only the ghosts keep the dashed outline. Dashed means "this could be acted
+			# on", which is exactly what an offer is — but on every panel cell it was
+			# forty rectangles of chrome saying the same thing, and the dotted group
+			# frames now carry the panel's structure instead.
 			Design.dashed_rect(self, local, Color(Design.INK_BRIGHT, 0.7))
 	if _carrying < 0 or _target < 0:
 		return
@@ -305,6 +317,13 @@ func rebuild() -> void:
 			block.add_theme_constant_override("separation", 0)
 			block.custom_minimum_size.y = panel_height
 			rail.add_child(block)
+			# The group frame, dotted. A grouping is a fact about belonging, not an
+			# affordance — dashed already means "this could be acted on" and solid means
+			# "this is", so the frame gets its own register rather than borrowing one
+			# that makes a promise.
+			block.draw.connect(func() -> void:
+				Design.dotted_rect(block, Rect2(Vector2.ZERO, block.size).grow(-1.0),
+					Color(Design.INK_SECOND, 0.5)))
 
 			# The title band. Only worth saying when there is more than one block; a panel
 			# of one group is a panel about one thing and the heading would be repeating
@@ -320,23 +339,47 @@ func rebuild() -> void:
 			heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			block.add_child(heading)
 
-			var banks := HBoxContainer.new()
-			banks.add_theme_constant_override("separation", Design.SPACE_M)
-			block.add_child(banks)
+			# All four envelope parameters or none — see ENVELOPE.
+			var enveloped := true
+			for wanted in ENVELOPE:
+				var found := false
+				for entry: Dictionary in run["controls"]:
+					if str((entry["control"] as Dictionary)
+							.get("target", {}).get("parameter", "")) == str(wanted):
+						found = true
+				if not found:
+					enveloped = false
 
 			# Build the cells first, because how many fit in a bank depends on how tall
 			# they actually are — the caption and the wiring line under each knob grow
 			# with the reader's type size, and a capacity guessed from constants would be
-			# wrong at exactly the sizes it matters.
+			# wrong at exactly the sizes it matters. Built in document order whatever
+			# they are, so _cells keeps the order the file states.
 			var cells: Array = []
+			var slider_cells: Array = []
 			var cell_height := 1.0
 			for entry: Dictionary in run["controls"]:
-				var cell := _cell(entry["control"], entry["descriptor"])
-				cells.append(cell)
-				cell_height = maxf(cell_height, cell.get_combined_minimum_size().y)
+				var parameter := str((entry["control"] as Dictionary)
+					.get("target", {}).get("parameter", ""))
+				var cell: Control
+				if enveloped and ENVELOPE.has(parameter):
+					var slide := Rack.Fader.new()
+					slide.rack = rack
+					slide.node_id = str(run["node"])
+					slide.descriptor = entry["descriptor"]
+					slide.label = str(ENVELOPE[parameter])
+					slide.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+					slide.size_flags_vertical = Control.SIZE_EXPAND_FILL
+					slide.set_value_silently(float(_value_of(str(run["node"]),
+						parameter, float(entry["descriptor"].get("default", 0.0)))))
+					slider_cells.append(slide)
+					cell = slide
+				else:
+					cell = _cell(entry["control"], entry["descriptor"])
+					cells.append(cell)
+					cell_height = maxf(cell_height, cell.get_combined_minimum_size().y)
 				_targets[_cells.size()] = {"node": str(run["node"]),
-					"parameter": str((entry["control"] as Dictionary)
-						.get("target", {}).get("parameter", ""))}
+					"parameter": parameter}
 				_cells.append(cell)
 				# Only a panel the file actually has can be rearranged or taken from. The
 				# default is a picture of what is there; dragging within it would be
@@ -345,7 +388,18 @@ func rebuild() -> void:
 				if not derived:
 					_ids.append(str((entry["control"] as Dictionary).get("id", "")))
 
-			var room: float = panel_height - heading.get_combined_minimum_size().y
+			var banks := HBoxContainer.new()
+			banks.add_theme_constant_override("separation", Design.SPACE_M)
+			block.add_child(banks)
+
+			# The envelope reserves its floor before the banks divide what is left, or a
+			# busy node's knobs would push the sliders out of the block's fixed height.
+			var reserved := 0.0
+			if not slider_cells.is_empty():
+				reserved = (slider_cells[0] as Control).get_combined_minimum_size().y \
+					+ float(Design.SPACE_S)
+			var room: float = panel_height - heading.get_combined_minimum_size().y \
+				- reserved
 			var pitch: float = cell_height + float(Design.SPACE_S)
 			var rows: int = maxi(1, int(floorf((room + float(Design.SPACE_S)) / pitch)))
 			var bank: GridContainer = null
@@ -357,6 +411,20 @@ func rebuild() -> void:
 					bank.add_theme_constant_override("v_separation", Design.SPACE_S)
 					banks.add_child(bank)
 				bank.add_child(cells[cell_index])
+
+			# The sliders sit under the knobs at exactly the knobs' width, so the block
+			# stays as wide as its widest bank and the envelope stretches into whatever
+			# height the block has left — tall sliders being the point of the trade.
+			if not slider_cells.is_empty():
+				var envelope := HBoxContainer.new()
+				envelope.add_theme_constant_override("separation", Design.SPACE_S)
+				envelope.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				var span: float = banks.get_combined_minimum_size().x
+				if span > 0.0:
+					envelope.custom_minimum_size.x = span
+				for slide in slider_cells:
+					envelope.add_child(slide)
+				block.add_child(envelope)
 
 	_add_ports()
 

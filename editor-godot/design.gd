@@ -673,6 +673,42 @@ static func dashed_rect(canvas: CanvasItem, rect: Rect2, colour: Color,
 		dashed_line(canvas, edge[0], edge[1], colour, width)
 
 
+## Length of one dot and of the gap after it, before UI scaling.
+##
+## Dots are a third register, under the two above: a dashed outline says "this could be
+## acted on" and a solid one says "this is", but a *grouping* is neither — it is a fact
+## about belonging, not an affordance, and drawing it in either existing register would
+## promise something it does not do. The panel's module frames are the first customer.
+const DOT := 1.5
+const DOT_GAP := 4.5
+
+
+## A dotted straight line from `from` to `to`.
+static func dotted_line(canvas: CanvasItem, from: Vector2, to: Vector2, colour: Color,
+		width: float = 1.5) -> void:
+	var span := from.distance_to(to)
+	if span <= 0.001:
+		return
+	var step := scale(DOT) + scale(DOT_GAP)
+	var along := (to - from) / span
+	var travelled := 0.0
+	while travelled < span:
+		var run: float = minf(float(scale(DOT)), span - travelled)
+		canvas.draw_line(from + along * travelled, from + along * (travelled + run),
+			colour, width, true)
+		travelled += step
+
+
+static func dotted_rect(canvas: CanvasItem, rect: Rect2, colour: Color,
+		width: float = 1.5) -> void:
+	var a := rect.position
+	var b := rect.position + Vector2(rect.size.x, 0.0)
+	var c := rect.position + rect.size
+	var d := rect.position + Vector2(0.0, rect.size.y)
+	for edge in [[a, b], [b, c], [c, d], [d, a]]:
+		dotted_line(canvas, edge[0], edge[1], colour, width)
+
+
 ## A dashed ring. Segment count is derived from the circumference so the dashes stay the
 ## same length whatever the radius — a ring drawn with a fixed segment count has long
 ## dashes when it is large and a solid line when it is small, which is the one thing this

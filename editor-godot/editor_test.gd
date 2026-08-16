@@ -3040,6 +3040,67 @@ func _initialize() -> void:
 			check(too_tall == "",
 				"no bank outgrows the block's height (%s)" % too_tall)
 
+			# The envelope is a row of sliders, not four more knobs. A node carrying all
+			# of attack/decay/sustain/release gets them as vertical sliders labelled
+			# A D S R under its remaining knobs, at exactly the knobs' width — heights
+			# side by side are the shape of the sound, which dials never quite manage.
+			var envelope_rows := 0
+			var slider_letters: Array = []
+			var width_off := ""
+			var live_slider: Control = null
+			for one_block in face_blocks:
+				var block_banks: HBoxContainer = null
+				var block_envelope: HBoxContainer = null
+				for inner in (one_block as Node).get_children():
+					var row := inner as HBoxContainer
+					if row == null:
+						continue
+					if row.get_child_count() > 0 and row.get_child(0) is RackView.Fader:
+						block_envelope = row
+					else:
+						block_banks = row
+				if block_envelope == null:
+					continue
+				envelope_rows += 1
+				if slider_letters.is_empty():
+					for slide in block_envelope.get_children():
+						slider_letters.append(str((slide as RackView.Fader).label))
+					live_slider = block_envelope.get_child(0)
+				if block_banks != null and width_off == "" \
+						and absf(block_envelope.get_combined_minimum_size().x
+							- block_banks.get_combined_minimum_size().x) > 0.5:
+					width_off = "%.0fpx under %.0fpx of knobs" % [
+						block_envelope.get_combined_minimum_size().x,
+						block_banks.get_combined_minimum_size().x]
+			check(envelope_rows == 6,
+				"every operator wears its envelope as sliders (%d of 6)" % envelope_rows)
+			check(slider_letters == ["A", "D", "S", "R"],
+				"labelled A D S R (%s)" % str(slider_letters))
+			check(width_off == "",
+				"each envelope is exactly as wide as the knobs above it (%s)" % width_off)
+
+			# And a slider is the control it replaced, not a picture of one: a nudge
+			# travels the same path as a knob's and lands in the document.
+			if live_slider != null:
+				var slid := live_slider as RackView.Fader
+				var op_id: String = slid.node_id
+				var op_parameter: String = str(slid.descriptor["name"])
+				var before_slide: float = slid.value()
+				slid.nudge(0.25 if slid._position < 0.5 else -0.25)
+				for i in 6:
+					await process_frame
+				var written: float = before_slide
+				for node in main.patch["nodes"]:
+					if str(node["id"]) == op_id:
+						written = float(node.get("parameters", {}).get(op_parameter,
+							before_slide))
+				check(not is_equal_approx(written, before_slide),
+					"a slider writes through to the patch (%s.%s %.3f from %.3f)"
+						% [op_id, op_parameter, written, before_slide])
+				await main._undo()
+				for i in 4:
+					await process_frame
+
 			# The ports are on the panel, as a strip rather than as knobs: "what do I plug
 			# in" is the other half of "what do I turn".
 			var port_names: Array = []
@@ -3073,11 +3134,21 @@ func _initialize() -> void:
 				"and the panel is the file's own from then on")
 
 	# ---- a busy node pays in width, not height ---------------------------------------
-	# The filter_env module exports eight knobs — more than one two-wide bank at the
-	# default height holds — so its block must grow rightwards: a second bank on the same
-	# panel, a wide module rather than a tall one. This is the case the fixed height
-	# exists for; DX7 operators are exactly one bank and never exercise it.
+	# More knobs than one two-wide bank at the default height holds must grow the block
+	# rightwards: a second bank on the same panel, a wide module rather than a tall one.
+	# No example is busy enough on its own any more — the envelopes siphon four knobs
+	# each into sliders — so the fixture is authored: a panel that lists twelve knobs on
+	# one node, which an authored `controls` list is perfectly entitled to do.
 	await main._load_example("Filter Envelope")
+	for i in 8:
+		await process_frame
+	var wide: Array = []
+	for repeat in 3:
+		for wide_parameter in ["cutoff", "resonance", "mode", "cutoff_sweep"]:
+			wide.append({"id": "k%d_%s" % [repeat, wide_parameter], "kind": "knob",
+				"target": {"node": "filter_env", "parameter": wide_parameter}})
+	main.patch["controls"] = wide
+	await main._rebuild_view()
 	for i in 8:
 		await process_frame
 	var spill_banks := 0
@@ -3092,13 +3163,20 @@ func _initialize() -> void:
 						var bank_row := part as HBoxContainer
 						if bank_row == null:
 							continue
-						if bank_row.get_child_count() > spill_banks:
-							spill_banks = bank_row.get_child_count()
-							spill_knobs = 0
-							for bank in bank_row.get_children():
-								spill_knobs += (bank as Node).get_child_count()
-	check(spill_knobs == 8,
-		"the filter_env block carries all eight knobs (%d)" % spill_knobs)
+						# Banks are grids; an envelope row holds faders. Counting
+						# whatever HBox has the most children scored a row of four
+						# sliders as four banks of nothing.
+						var grids := 0
+						var held := 0
+						for bank in bank_row.get_children():
+							if bank is GridContainer:
+								grids += 1
+								held += (bank as Node).get_child_count()
+						if grids > spill_banks:
+							spill_banks = grids
+							spill_knobs = held
+	check(spill_knobs == 12,
+		"the authored panel carries all twelve knobs (%d)" % spill_knobs)
 	check(spill_banks > 1,
 		"and spills into extra banks sideways (%d banks)" % spill_banks)
 

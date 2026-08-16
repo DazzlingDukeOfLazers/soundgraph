@@ -1431,6 +1431,65 @@ class Knob extends Control:
 			HORIZONTAL_ALIGNMENT_CENTER, room, value_size, rack.ink)
 
 
+## A vertical fader: the same control as Knob wearing a different picture.
+##
+## Envelopes read as heights side by side — four sliders labelled A D S R *are* the
+## envelope's shape, which four dials never quite manage. Everything that makes a knob a
+## knob is inherited: the descriptor's scaling, the write path through the rack's edit
+## signals, the keyboard, the drag (up is more, Shift is fine). Only the drawing and the
+## footprint differ, which is exactly the relationship Knob already has with its own
+## compact mode.
+class Fader extends Knob:
+	## The letter on the panel. The full parameter name stays in the tooltip, where the
+	## knobs already keep theirs — "A" is readable at a glance precisely because it is
+	## not trying to say "attack".
+	var label := ""
+
+	const THUMB := Vector2(15.0, 6.0)
+
+	func _get_minimum_size() -> Vector2:
+		# Narrow on purpose: four of these sit in the width of two knob cells. The
+		# height is a floor, not a size — the row that places a slider stretches it
+		# into whatever the block has left.
+		return Vector2(Design.scale(26),
+			Design.scale(84) + float(Design.type(Design.SIZE_SECONDARY))
+				+ float(Design.type(Design.SIZE_NUMERIC)))
+
+	func _draw() -> void:
+		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
+		var label_size := Design.type(Design.SIZE_SECONDARY)
+		var value_font: Font = Design.numeric_font()
+		var value_size := Design.type(Design.SIZE_NUMERIC)
+		var value_baseline := size.y - Rack.KNOB_PAD * 0.5
+		var label_baseline := value_baseline - float(value_size) - 4.0
+		var track_top := Rack.KNOB_PAD
+		var track_bottom := label_baseline - float(label_size) - 8.0
+		if track_bottom <= track_top:
+			return
+		var x := size.x * 0.5
+		var at_y := track_bottom - (track_bottom - track_top) * _position
+
+		draw_line(Vector2(x, track_top), Vector2(x, track_bottom),
+			Rack.KNOB_TRACK, 3.0, true)
+		# Filled from the bottom, the way a level reads.
+		draw_line(Vector2(x, track_bottom), Vector2(x, at_y), Rack.SELECTED, 3.0, true)
+		var thumb := Rect2(Vector2(x, at_y) - THUMB * 0.5, THUMB)
+		draw_rect(thumb, Rack.KNOB_BODY)
+		draw_rect(thumb, Color(0, 0, 0, 0.5), false, 1.0)
+
+		if has_focus():
+			draw_rect(Rect2(Vector2.ONE, size - Vector2.ONE * 2.0), Design.FOCUS,
+				false, 2.0)
+
+		if label_font != null and label != "":
+			draw_string(label_font, Vector2(0.0, label_baseline), label,
+				HORIZONTAL_ALIGNMENT_CENTER, size.x, label_size, rack.ink_dim)
+		if value_font != null:
+			draw_string(value_font, Vector2(0.0, value_baseline),
+				Rack.elided(value_font, _value_text(), value_size, size.x),
+				HORIZONTAL_ALIGNMENT_CENTER, size.x, value_size, rack.ink)
+
+
 ## Trims text to the room there is, with an ellipsis to say it was trimmed.
 ##
 ## An ellipsis rather than a hard cut, because "cutoff_mo" and "cutoff_mod" are two
