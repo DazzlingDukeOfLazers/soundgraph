@@ -62,7 +62,13 @@ const MODULE_MIN_HEIGHT := 190.0
 ## was that they matched a constant — so a patch of two-knob oscillators reserved the
 ## same 404px as a patch with a six-parameter filter in it, and spent the difference
 ## on nothing.
-static var module_height := 404.0
+## The height a rack module has before any patch has been measured — and the height the
+## file's panel holds its blocks to. The rack recomputes module_height from the busiest
+## module because a rail must fit its tallest occupant; the panel keeps the default and
+## spends *width* instead, spilling a busy node into another bank of knobs sideways.
+const DEFAULT_HEIGHT := 404.0
+
+static var module_height := DEFAULT_HEIGHT
 
 
 ## The height a module needs for its own content, before the density band.

@@ -22,8 +22,8 @@ extends VBoxContainer
 const Rack := preload("res://rack.gd")
 const Seams := preload("res://seams.gd")
 
-## How many *offers* to a line before wrapping. The knob blocks themselves size to the
-## panel's width in _fit_blocks; this only shapes the ghost strip under them.
+## How many *offers* to a line before wrapping. The knob blocks themselves are laid out
+## as rack modules in rebuild(); this only shapes the ghost strip under them.
 const PER_LINE := 2
 
 ## How far down an offer is turned: enough to read as something available rather than as
@@ -246,37 +246,27 @@ func rebuild() -> void:
 		hint.add_theme_color_override("font_color", Design.INK_SECOND)
 		add_child(hint)
 
-	# Grouped, then flowed.
+	# A rack row, not a column.
 	#
-	# Forty-three knobs in one column is a column nobody reads to the bottom of. They go in
-	# blocks instead — one per node — and the blocks flow across whatever width the panel
-	# has, wrapping to a new line when they run out of room. Widen the panel and you get
-	# more blocks side by side; it fills horizontally rather than growing down.
+	# Forty-three knobs stacked downwards is a list nobody reads to the bottom of. So the
+	# panel is shaped like the thing it names: a row of modules on one rail, every block the
+	# same height the rack view would give this patch, read sideways the way a hardware case
+	# is. One block per node, knobs two across inside it exactly as the rack draws them, and
+	# a node with more knobs than one bank holds grows *rightwards* — another two-wide bank
+	# on the same panel, a wide module rather than a tall one.
 	#
-	# A block is one knob high, the way a rack panel is: a node's knobs read left to right
-	# in one strip under its name, and the panel grows sideways rather than downwards. It is
-	# a preference and not a promise — a block narrower than its knobs wraps rather than
-	# running off the edge, since the panel does not scroll sideways and the alternative to
-	# wrapping is knobs that are simply not drawn. At rack width nothing wraps.
+	# The row overflows horizontally and scrolls, because that is what a rack does: a case
+	# with more modules than the desk is walked along, not folded. Height is the one thing
+	# that never moves — the rail is the promise.
 	#
-	# A block is never split *across blocks*. The knobs of one node belong together, and half
-	# of an operator at the end of one line with the rest at the start of the next is worse
-	# than either a short line or a long panel. That is the whole reason this is a flow of
-	# blocks rather than a flow of knobs.
+	# A block is never split. The knobs of one node belong together, and half an operator in
+	# one place with the rest somewhere else is worse than a longer row.
 	#
 	# Blocks are runs of the same target node *in the order the panel already had*, never a
 	# regrouping. A file's own `controls` is an ordered statement of intent and reordering it
 	# to tidy the layout would be the panel overruling the author.
-	var flow := HFlowContainer.new()
-	flow.add_theme_constant_override("h_separation", Design.SPACE_M)
-	flow.add_theme_constant_override("v_separation", Design.SPACE_M)
-	flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	add_child(flow)
-
+	var runs: Array = []
 	var on_panel := {}
-	var block: VBoxContainer = null
-	var strip: GridContainer = null
-	var block_node := ""
 	for index in controls.size():
 		var control: Dictionary = controls[index]
 		var target: Dictionary = control.get("target", {})
@@ -285,17 +275,43 @@ func rebuild() -> void:
 			continue
 		var node_id := str(target.get("node", ""))
 		on_panel["%s.%s" % [node_id, str(target.get("parameter", ""))]] = true
+		if runs.is_empty() or str(runs.back()["node"]) != node_id:
+			runs.append({"node": node_id, "controls": []})
+		(runs.back()["controls"] as Array).append({"control": control,
+			"descriptor": descriptor})
 
-		if block == null or node_id != block_node:
-			block_node = node_id
-			block = VBoxContainer.new()
+	if not runs.is_empty():
+		# The rack's *default* height, on purpose not Rack.measure of this patch. The rack
+		# view raises its rail to fit the busiest module, because a rail must hold its
+		# tallest occupant; measured that way the busiest node always fits one bank and
+		# nothing ever spills. The panel does the opposite trade: the height never moves,
+		# and a node too busy for one bank pays in width.
+		var panel_height: float = float(Design.scale(Rack.DEFAULT_HEIGHT))
+
+		var scroller := ScrollContainer.new()
+		scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroller.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# Room for the row plus the scrollbar under it, so the bar never eats a knob.
+		scroller.custom_minimum_size.y = panel_height + Design.scale(14)
+		add_child(scroller)
+
+		var rail := HBoxContainer.new()
+		rail.add_theme_constant_override("separation", Design.SPACE_M)
+		scroller.add_child(rail)
+
+		for run: Dictionary in runs:
+			var block := VBoxContainer.new()
 			block.add_theme_constant_override("separation", 0)
-			flow.add_child(block)
-			# Which node these belong to. Only worth saying when there is more than one
-			# block; a panel of one group is a panel about one thing and the heading would
-			# be repeating the file name back.
+			block.custom_minimum_size.y = panel_height
+			rail.add_child(block)
+
+			# The title band. Only worth saying when there is more than one block; a panel
+			# of one group is a panel about one thing and the heading would be repeating
+			# the file name back.
 			var heading := Label.new()
-			heading.text = node_id
+			heading.text = str(run["node"])
+			heading.visible = runs.size() > 1
 			heading.add_theme_font_size_override("font_size",
 				Design.type(Design.SIZE_SECONDARY))
 			heading.add_theme_color_override("font_color", Design.INK_SECOND)
@@ -303,33 +319,44 @@ func rebuild() -> void:
 			heading.clip_text = true
 			heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			block.add_child(heading)
-			strip = GridContainer.new()
-			strip.columns = 1
-			strip.add_theme_constant_override("h_separation", Design.SPACE_M)
-			strip.add_theme_constant_override("v_separation", Design.SPACE_S)
-			block.add_child(strip)
 
-		var cell := _cell(control, descriptor)
-		strip.add_child(cell)
-		_targets[_cells.size()] = {"node": node_id,
-			"parameter": str(target.get("parameter", ""))}
-		_cells.append(cell)
-		# Only a panel the file actually has can be rearranged or taken from. The default
-		# is a picture of what is there; dragging within it would be dragging within a
-		# derivation, and the honest first gesture is putting a knob on.
-		if not derived:
-			_ids.append(str(control.get("id", "")))
+			var banks := HBoxContainer.new()
+			banks.add_theme_constant_override("separation", Design.SPACE_M)
+			block.add_child(banks)
 
-	# Now that the blocks exist, work out how wide each is allowed to be.
-	if not resized.is_connected(_fit_blocks):
-		resized.connect(_fit_blocks)
-	_fit_blocks()
+			# Build the cells first, because how many fit in a bank depends on how tall
+			# they actually are — the caption and the wiring line under each knob grow
+			# with the reader's type size, and a capacity guessed from constants would be
+			# wrong at exactly the sizes it matters.
+			var cells: Array = []
+			var cell_height := 1.0
+			for entry: Dictionary in run["controls"]:
+				var cell := _cell(entry["control"], entry["descriptor"])
+				cells.append(cell)
+				cell_height = maxf(cell_height, cell.get_combined_minimum_size().y)
+				_targets[_cells.size()] = {"node": str(run["node"]),
+					"parameter": str((entry["control"] as Dictionary)
+						.get("target", {}).get("parameter", ""))}
+				_cells.append(cell)
+				# Only a panel the file actually has can be rearranged or taken from. The
+				# default is a picture of what is there; dragging within it would be
+				# dragging within a derivation, and the honest first gesture is putting
+				# a knob on.
+				if not derived:
+					_ids.append(str((entry["control"] as Dictionary).get("id", "")))
 
-	# One block is one thing, and does not need labelling as such.
-	if flow.get_child_count() == 1:
-		var only: Node = flow.get_child(0)
-		if only.get_child_count() > 0 and only.get_child(0) is Label:
-			(only.get_child(0) as Label).visible = false
+			var room: float = panel_height - heading.get_combined_minimum_size().y
+			var pitch: float = cell_height + float(Design.SPACE_S)
+			var rows: int = maxi(1, int(floorf((room + float(Design.SPACE_S)) / pitch)))
+			var bank: GridContainer = null
+			for cell_index in cells.size():
+				if cell_index % (rows * 2) == 0:
+					bank = GridContainer.new()
+					bank.columns = 2
+					bank.add_theme_constant_override("h_separation", Design.SPACE_M)
+					bank.add_theme_constant_override("v_separation", Design.SPACE_S)
+					banks.add_child(bank)
+				bank.add_child(cells[cell_index])
 
 	_add_ports()
 
@@ -368,37 +395,6 @@ func rebuild() -> void:
 		offer_line.add_child(ghost)
 		_offers[_cells.size()] = {"node": offer_node, "parameter": str(parameter["name"])}
 		_cells.append(ghost)
-
-
-## How many knobs a block puts across, from the width the panel actually has.
-##
-## A block wants to be one knob high — a node's knobs in one strip, the way a rack panel
-## reads — and the outer flow wraps whole blocks when they stop fitting side by side. That
-## needs a block to *ask* for its full row: a container that can wrap by itself asks for one
-## knob and gets one knob, so nesting a flow inside the flow collapsed every block into a
-## column no matter how much room there was.
-##
-## So the row width is decided here instead, against a width somebody can see. One knob high
-## whenever the panel can hold the row, and a wrapped block when it cannot — the panel does
-## not scroll sideways, and the alternative to wrapping is knobs that are not drawn at all.
-## Re-run on resize, because dragging the divider is how the width gets chosen.
-func _fit_blocks() -> void:
-	var pitch: float = float(Design.scale(Rack.KNOB_CELL.x) + Design.SPACE_M)
-	var across: int = maxi(1, int(floorf((size.x + float(Design.SPACE_M)) / pitch)))
-	for child in get_children():
-		var flow := child as HFlowContainer
-		if flow == null:
-			continue
-		for grouped in flow.get_children():
-			for inner in (grouped as Node).get_children():
-				var grid := inner as GridContainer
-				if grid == null:
-					continue
-				var wanted: int = maxi(1, mini(grid.get_child_count(), across))
-				# Only when it changes: setting columns invalidates the minimum size, which
-				# is what resized reports, which is what called this.
-				if grid.columns != wanted:
-					grid.columns = wanted
 
 
 ## Where this file meets the machine: its ports, in the order the document lists them.

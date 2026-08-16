@@ -6,6 +6,7 @@ const ModuleAuthor := preload("res://module_author.gd")
 const Seams := preload("res://seams.gd")
 const ModuleFace := preload("res://module_face.gd")
 const PatchFace := preload("res://patch_face.gd")
+const RackView := preload("res://rack.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -2915,26 +2916,32 @@ func _initialize() -> void:
 			check(not names_a_port,
 				"and no ports among them, because a port is not a knob")
 
-			# Blocks, flowed. Forty-three knobs in one column is a column nobody reads
-			# to the bottom of, so they go in one block per node and the face_blocks wrap
-			# across whatever width the panel has.
-			var face_blocks: Array = []
+			# The panel is a rack row. One block per node, every block the height the rack
+			# view gives this patch, side by side on one rail that overflows horizontally
+			# and scrolls — a case with more modules than the desk is walked along, not
+			# folded downwards.
+			var face_rail: HBoxContainer = null
+			var face_scroller: ScrollContainer = null
 			for child in main.patch_face.get_children():
-				if child is HFlowContainer:
-					for one_block in child.get_children():
-						face_blocks.append(one_block)
-			check(face_blocks.size() > 1, "the knobs are grouped into blocks (%d)" % face_blocks.size())
+				if child is ScrollContainer:
+					for inner in (child as ScrollContainer).get_children():
+						if inner is HBoxContainer:
+							face_scroller = child as ScrollContainer
+							face_rail = inner as HBoxContainer
+			check(face_rail != null, "the knobs sit on one horizontal rail")
+			var face_blocks: Array = []
+			if face_rail != null:
+				face_blocks = face_rail.get_children()
+			check(face_blocks.size() > 1,
+				"grouped into blocks along it (%d)" % face_blocks.size())
 
 			# The load-bearing claim: a block holds one node's knobs and only that node's.
-			# A block split across a wrap would put half an operator on one line and the
-			# rest on the next, which is worse than either a short line or a long panel.
 			var block_mixed := ""
 			var block_counted := 0
 			for one_block in face_blocks:
 				var block_owners := {}
 				for cell in main.patch_face._cells:
-					if (cell as Node).get_parent() != null \
-							and (cell as Node).get_parent().get_parent() == one_block:
+					if (one_block as Node).is_ancestor_of(cell as Node):
 						block_counted += 1
 						for index in main.patch_face._targets:
 							if main.patch_face._cells[index] == cell:
@@ -2946,74 +2953,47 @@ func _initialize() -> void:
 				"with every knob in a block (%d of %d)"
 					% [block_counted, main.patch_face._cells.size()])
 
-			# It flows rather than stacking: given room, blocks sit side by side.
-			#
-			# Given room properly — a wider window and the panel dragged out into it. Setting
-			# the face's own size does nothing worth trusting, because it lives in a container
-			# that sizes it back on the next layout pass, and a test that measures a width it
-			# did not actually get is a test that proves the narrow case twice.
-			var was_window: Vector2i = main.get_window().size
-			var was_panel: int = main.side_panel_width
-			main.get_window().size = Vector2i(2400, 1000)
-			main.side_panel_width = 1400
-			main._fit_side_panel()
-			for i in 8:
-				await process_frame
-			check(main.patch_face.size.x > 900.0,
-				"the panel can be dragged out to rack width (%.0fpx)" % main.patch_face.size.x)
-			var first_line := 0
-			var line_top: float = -1.0
+			# Every block is the same height, and it is the rack's default module height —
+			# not measured from this patch, because measuring raises the rail to fit the
+			# busiest node and then nothing ever spills. The rail is the promise; width is
+			# where a busy node spends its knobs.
+			var rack_height: float = float(Design.scale(RackView.DEFAULT_HEIGHT))
+			var ragged := ""
 			for one_block in face_blocks:
-				var rect: Rect2 = (one_block as Control).get_global_rect()
-				if line_top < 0.0:
-					line_top = rect.position.y
-				if absf(rect.position.y - line_top) < 4.0:
-					first_line += 1
-			check(first_line > 1,
-				"and given the width, blocks sit side by side (%d on the first line)" % first_line)
+				if absf((one_block as Control).custom_minimum_size.y - rack_height) > 0.5 \
+						and ragged == "":
+					ragged = "%.0fpx against the rack's %.0fpx" \
+						% [(one_block as Control).custom_minimum_size.y, rack_height]
+			check(ragged == "",
+				"every block is the rack's module height (%s)" % ragged)
 
-			# And a block is one knob high — a rack panel, not a grid. A node's knobs read left
-			# to right in one strip and the panel spends width rather than height.
-			#
-			# Stated as "wraps only when it has to" rather than "never wraps", because the
-			# panel does not scroll sideways: a strip too wide for the room it has would have
-			# knobs that are simply not drawn, and wrapping is the honest fallback. So the
-			# guard is that every wrap is forced — any strip that stacked while its knobs
-			# would have fitted on one line is the old grid behaviour coming back.
-			var stacked := ""
+			# The row overflows horizontally rather than stacking: the rail is wider than
+			# the panel that shows it, and the thing between them scrolls sideways.
+			await process_frame
+			check(face_rail.size.x > main.patch_face.size.x,
+				"and the rail overflows the panel (%.0fpx in %.0fpx)"
+					% [face_rail.size.x, main.patch_face.size.x])
+			check(face_scroller != null and face_scroller.horizontal_scroll_mode
+					!= ScrollContainer.SCROLL_MODE_DISABLED,
+				"which scrolls horizontally to reach the rest")
+
+			# Inside a block the knobs run two across, as the rack draws them. No bank may
+			# be taller than the block that carries it, or the shared height was a lie.
+			var too_tall := ""
 			for one_block in face_blocks:
 				for inner in (one_block as Node).get_children():
-					# Whatever holds the knobs, not whichever class holds them today — a guard
-					# that only looks at flow containers passes by saying nothing the moment
-					# somebody puts the grid back.
-					var knob_strip := inner as Container
-					if knob_strip == null or knob_strip.get_child_count() < 2 \
-							or not main.patch_face._cells.has(knob_strip.get_child(0)):
+					var banks := inner as HBoxContainer
+					if banks == null:
 						continue
-					var strip_top: float = (knob_strip.get_child(0) as Control).position.y
-					var wrapped := false
-					var natural := float(knob_strip.get_theme_constant("h_separation")
-						* (knob_strip.get_child_count() - 1))
-					for cell in knob_strip.get_children():
-						natural += (cell as Control).get_combined_minimum_size().x
-						if absf((cell as Control).position.y - strip_top) > 4.0:
-							wrapped = true
-					# Measured against the panel, not against the strip. A strip is as wide as
-					# it asks to be, so asking whether it wrapped inside its own width is
-					# circular — a two-column grid always "had to" wrap, because it asked for
-					# two columns. The panel's width is the room that actually exists.
-					if wrapped and natural <= main.patch_face.size.x and stacked == "":
-						stacked = "%d knobs needing %.0fpx in a panel of %.0fpx" \
-							% [knob_strip.get_child_count(), natural, main.patch_face.size.x]
-			check(stacked == "",
-				"and a block only wraps when the panel forces it (%s)" % stacked)
-
-			# Put the window back the size the rest of the suite expects to find it.
-			main.get_window().size = was_window
-			main.side_panel_width = was_panel
-			main._fit_side_panel()
-			for i in 4:
-				await process_frame
+					for bank in banks.get_children():
+						if (bank as Control).get_combined_minimum_size().y \
+								> rack_height + 0.5 and too_tall == "":
+							too_tall = "a bank of %d knobs needs %.0fpx of %.0fpx" \
+								% [(bank as Node).get_child_count(),
+									(bank as Control).get_combined_minimum_size().y,
+									rack_height]
+			check(too_tall == "",
+				"no bank outgrows the block's height (%s)" % too_tall)
 
 			# The ports are on the panel, as a strip rather than as knobs: "what do I plug
 			# in" is the other half of "what do I turn".
@@ -3046,6 +3026,36 @@ func _initialize() -> void:
 					% [main.patch.get("controls", []).size(), before_default])
 			check(not main.patch_face.derived,
 				"and the panel is the file's own from then on")
+
+	# ---- a busy node pays in width, not height ---------------------------------------
+	# The filter_env module exports eight knobs — more than one two-wide bank at the
+	# default height holds — so its block must grow rightwards: a second bank on the same
+	# panel, a wide module rather than a tall one. This is the case the fixed height
+	# exists for; DX7 operators are exactly one bank and never exercise it.
+	await main._load_example("Filter Envelope")
+	for i in 8:
+		await process_frame
+	var spill_banks := 0
+	var spill_knobs := 0
+	for child in main.patch_face.get_children():
+		if child is ScrollContainer:
+			for inner in (child as ScrollContainer).get_children():
+				if not (inner is HBoxContainer):
+					continue
+				for one_block in (inner as HBoxContainer).get_children():
+					for part in (one_block as Node).get_children():
+						var bank_row := part as HBoxContainer
+						if bank_row == null:
+							continue
+						if bank_row.get_child_count() > spill_banks:
+							spill_banks = bank_row.get_child_count()
+							spill_knobs = 0
+							for bank in bank_row.get_children():
+								spill_knobs += (bank as Node).get_child_count()
+	check(spill_knobs == 8,
+		"the filter_env block carries all eight knobs (%d)" % spill_knobs)
+	check(spill_banks > 1,
+		"and spills into extra banks sideways (%d banks)" % spill_banks)
 
 	await main._load_example("First Synth")
 	for i in 8:
