@@ -239,6 +239,12 @@
         "label": {
           "type": "string"
         },
+        "group": {
+          "description": "Panel grouping. Controls sharing a group are drawn as one block on the performance surface, whatever nodes they target — an operator's own knobs and the gain node that sets its level belong together on the panel even though they are separate nodes in the graph. Absent means the control groups with others targeting the same node. Panel organization, never graph semantics.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
         "kind": {
           "type": "string",
           "enum": [

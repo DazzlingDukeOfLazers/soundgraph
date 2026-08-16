@@ -911,12 +911,41 @@ function modularize(flat) {
     connections.push(rewritten);
   }
 
+  // The performance surface: one panel group per operator, holding its own ratio and
+  // feedback AND the gain node that sets its level or modulation index — two nodes in
+  // the graph, one instrument on the panel. Only the importer knows which gain belongs
+  // to which operator (the graph says only where the cables go), so it writes the
+  // grouping down in the schema's `group` field rather than leaving the panel to
+  // guess. The envelope rides along as sliders; the editor draws attack/decay/
+  // sustain/release as a fader row whenever all four are present.
+  const controls = [];
+  for (const op of [...clusters].sort()) {
+    const group = `op${op}`;
+    controls.push({ id: `${group}_ratio`, label: 'ratio', kind: 'knob', group,
+      target: { node: group, parameter: 'ratio' } });
+    controls.push({ id: `${group}_feedback`, label: 'fb', kind: 'knob', group,
+      target: { node: group, parameter: 'feedback' } });
+    for (const node of nodes) {
+      if (node.type !== 'Gain') continue;
+      const level = node.id === `${group}_level`;
+      const index = new RegExp(`^${group}_index_\\d$`).test(node.id);
+      if (!level && !index) continue;
+      controls.push({ id: `${node.id}_gain`, label: level ? 'level' : 'index',
+        kind: 'knob', group, target: { node: node.id, parameter: 'gain' } });
+    }
+    for (const envelope of ['attack', 'decay', 'sustain', 'release']) {
+      controls.push({ id: `${group}_${envelope}`, kind: 'slider', group,
+        target: { node: group, parameter: envelope } });
+    }
+  }
+
   return {
     schema_version: 2,
     metadata: flat.metadata,
     modules: { [OPERATOR_MODULE_NAME]: OPERATOR_MODULE },
     nodes,
     connections,
+    controls,
   };
 }
 

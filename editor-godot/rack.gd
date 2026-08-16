@@ -1199,6 +1199,14 @@ class Knob extends Control:
 	## same keyboard, same signal path — one draws its own caption and one does not.
 	var compact := false
 
+	## Dial size, as a fraction of the rack's. The panel packs knobs three to a module
+	## where the rack fits two, and it gets the room by shrinking the dial rather than
+	## the text — a smaller circle is still a circle, but a smaller label is a squint.
+	var dial := 1.0
+
+	func _radius() -> float:
+		return Rack.knob_radius() * dial
+
 	var _position := 0.0               # 0..1 along the parameter's own scaling
 	var _dragging := false
 	var _drag_origin := 0.0
@@ -1250,8 +1258,8 @@ class Knob extends Control:
 		if compact:
 			# The dial and nothing else. Its own hit area still has to clear the rule
 			# every other control in this application obeys.
-			var dial := Rack.knob_radius() * 2.0 + 8.0
-			return Vector2(dial, maxf(dial, Design.scale(Design.HIT_TARGET)))
+			var across := _radius() * 2.0 + 8.0
+			return Vector2(across, maxf(across, Design.scale(Design.HIT_TARGET)))
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
 		var label_size := Design.type(Design.SIZE_SECONDARY)
 		var value_font: Font = Design.numeric_font()
@@ -1375,13 +1383,14 @@ class Knob extends Control:
 
 	func _draw() -> void:
 		var font: Font = get_theme_default_font()
+		var radius := _radius()
 		var centre := Vector2(size.x * 0.5,
-			size.y * 0.5 if compact else Rack.knob_radius() + 6.0)
+			size.y * 0.5 if compact else radius + 6.0)
 		var angle := START + SWEEP * _position
 
-		draw_arc(centre, Rack.knob_radius() + 5.0, START, START + SWEEP, 40,
+		draw_arc(centre, radius + 5.0, START, START + SWEEP, 40,
 			Rack.KNOB_TRACK, 3.0, true)
-		draw_arc(centre, Rack.knob_radius() + 5.0, START, angle, 40,
+		draw_arc(centre, radius + 5.0, START, angle, 40,
 			Rack.SELECTED, 3.0, true)
 
 		# Focus is drawn around the whole cell, not around the dial: the name and the
@@ -1391,13 +1400,13 @@ class Knob extends Control:
 			draw_rect(Rect2(Vector2.ONE, size - Vector2.ONE * 2.0), Design.FOCUS,
 				false, 2.0)
 
-		draw_circle(centre, Rack.knob_radius(), Rack.KNOB_BODY)
-		draw_circle(centre, Rack.knob_radius(), Color(0, 0, 0, 0.5), false, 1.0)
-		draw_circle(centre - Vector2(0, 1), Rack.knob_radius() - 5.0,
+		draw_circle(centre, radius, Rack.KNOB_BODY)
+		draw_circle(centre, radius, Color(0, 0, 0, 0.5), false, 1.0)
+		draw_circle(centre - Vector2(0, 1), radius - 5.0,
 			Rack.KNOB_BODY.lightened(0.10))
 		# The pointer, which is what actually tells you where the knob is set.
 		draw_line(centre + Vector2(cos(angle), sin(angle)) * 6.0,
-			centre + Vector2(cos(angle), sin(angle)) * (Rack.knob_radius() - 3.0),
+			centre + Vector2(cos(angle), sin(angle)) * (radius - 3.0),
 			rack.ink, 2.5, true)
 
 		# Compact draws the dial and stops: its name and its number belong to whatever

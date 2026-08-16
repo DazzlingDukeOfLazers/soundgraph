@@ -2930,20 +2930,23 @@ func _initialize() -> void:
 	# Only the hand-written examples carry `controls`. Everything imported — the whole DX7
 	# and OPL2 banks — carried none, so the panel said "no knobs on the face yet", which is
 	# true about the document and useless about the instrument.
-	var dx7 := FileAccess.open("res://examples/dx7/algo-01.json", FileAccess.READ)
+	# The DX7 bank ships grouped panels from the importer now, so the panel is stripped
+	# here to make the fixture this section is about: a file with no panel at all,
+	# which is the state every hand-started patch begins in and the whole OPL2 bank
+	# still lives in.
+	var dx7 := FileAccess.open("res://examples/dx7/algo-02.json", FileAccess.READ)
 	if dx7 != null:
 		var parsed: Variant = JSON.parse_string(dx7.get_as_text())
 		dx7.close()
 		if typeof(parsed) == TYPE_DICTIONARY:
-			check((parsed as Dictionary).get("controls", []).is_empty(),
-				"a DX7 patch carries no panel of its own")
+			(parsed as Dictionary).erase("controls")
 			main.patch = parsed as Dictionary
 			main._synthesize_module_descriptors()
 			await main._rebuild_view()
 			for i in 8:
 				await process_frame
 			check(main.patch_face.derived,
-				"so the panel shows the default instead")
+				"a file with no panel shows the default instead")
 			var defaults: Array = PatchFace.default_controls(main.patch, main.registry)
 			check(defaults.size() > 20,
 				"which is every knob the patch has (%d)" % defaults.size())
@@ -3157,6 +3160,60 @@ func _initialize() -> void:
 					% [main.patch.get("controls", []).size(), before_default])
 			check(not main.patch_face.derived,
 				"and the panel is the file's own from then on")
+
+	# ---- an authored panel groups across nodes ---------------------------------------
+	# algo-01 carries a hand-written `controls` list using the schema's `group` field:
+	# an operator's block holds its own ratio and feedback AND the gain node that sets
+	# its level — two nodes in the graph, one instrument on the panel. Only the author
+	# knows which gains belong to which operators; the graph does not say. Panel
+	# organization, never graph semantics.
+	await main._load_example("DX7: algo-01")
+	for i in 8:
+		await process_frame
+	check_loads(main, "an authored panel with groups")
+	check(not main.patch_face.derived, "algo-01 brings a panel of its own")
+	var grouped_rail: HBoxContainer = null
+	for child in main.patch_face.get_children():
+		if child is ScrollContainer:
+			for inner in (child as ScrollContainer).get_children():
+				if inner is HBoxContainer:
+					grouped_rail = inner as HBoxContainer
+	var grouped_names: Array = []
+	if grouped_rail != null:
+		for one_block in grouped_rail.get_children():
+			var block_heading := (one_block as Node).get_child(0) as Label
+			if block_heading != null:
+				grouped_names.append(block_heading.text)
+	check(grouped_names == ["op1", "op2", "op3", "op4", "op5", "op6"],
+		"the panel is six operator groups (%s)" % str(grouped_names))
+
+	var op1_grid: GridContainer = null
+	var op1_envelope: HBoxContainer = null
+	if grouped_rail != null and grouped_rail.get_child_count() > 0:
+		for inner in grouped_rail.get_child(0).get_children():
+			var row := inner as HBoxContainer
+			if row == null:
+				continue
+			if row.get_child_count() > 0 and row.get_child(0) is RackView.Fader:
+				op1_envelope = row
+			else:
+				for part in row.get_children():
+					if part is GridContainer:
+						op1_grid = part as GridContainer
+	check(op1_grid != null and op1_grid.columns == 3
+			and op1_grid.get_child_count() == 3,
+		"an operator's knobs are one row of three (%s)"
+			% ("none" if op1_grid == null else "%d across %d cols"
+				% [op1_grid.get_child_count(), op1_grid.columns]))
+	var op1_reaches := {}
+	for index in main.patch_face._targets:
+		if op1_grid != null \
+				and (main.patch_face._cells[index] as Node).get_parent() == op1_grid:
+			op1_reaches[str(main.patch_face._targets[index]["node"])] = true
+	check(op1_reaches.has("op1") and op1_reaches.has("op1_level"),
+		"and reach both the operator and its gain node (%s)" % str(op1_reaches.keys()))
+	check(op1_envelope != null and op1_envelope.get_child_count() == 4,
+		"with the envelope faders under them")
 
 	# ---- a busy node pays in width, not height ---------------------------------------
 	# More knobs than one two-wide bank at the default height holds must grow the block

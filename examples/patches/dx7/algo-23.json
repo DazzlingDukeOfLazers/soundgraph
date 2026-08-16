@@ -685,5 +685,413 @@
         "port": "right"
       }
     }
+  ],
+  "controls": [
+    {
+      "id": "op1_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op1_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op1_level_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op1",
+      "target": {
+        "node": "op1_level",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op1_attack",
+      "kind": "slider",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op1_decay",
+      "kind": "slider",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op1_sustain",
+      "kind": "slider",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op1_release",
+      "kind": "slider",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op2_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op2_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op2_level_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op2",
+      "target": {
+        "node": "op2_level",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op2_attack",
+      "kind": "slider",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op2_decay",
+      "kind": "slider",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op2_sustain",
+      "kind": "slider",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op2_release",
+      "kind": "slider",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op3_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op3_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op3_index_2_gain",
+      "label": "index",
+      "kind": "knob",
+      "group": "op3",
+      "target": {
+        "node": "op3_index_2",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op3_attack",
+      "kind": "slider",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op3_decay",
+      "kind": "slider",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op3_sustain",
+      "kind": "slider",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op3_release",
+      "kind": "slider",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op4_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op4_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op4_level_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op4",
+      "target": {
+        "node": "op4_level",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op4_attack",
+      "kind": "slider",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op4_decay",
+      "kind": "slider",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op4_sustain",
+      "kind": "slider",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op4_release",
+      "kind": "slider",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op5_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op5_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op5_level_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op5",
+      "target": {
+        "node": "op5_level",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op5_attack",
+      "kind": "slider",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op5_decay",
+      "kind": "slider",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op5_sustain",
+      "kind": "slider",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op5_release",
+      "kind": "slider",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op6_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op6_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op6_index_5_gain",
+      "label": "index",
+      "kind": "knob",
+      "group": "op6",
+      "target": {
+        "node": "op6_index_5",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op6_index_4_gain",
+      "label": "index",
+      "kind": "knob",
+      "group": "op6",
+      "target": {
+        "node": "op6_index_4",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op6_attack",
+      "kind": "slider",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op6_decay",
+      "kind": "slider",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op6_sustain",
+      "kind": "slider",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op6_release",
+      "kind": "slider",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "release"
+      }
+    }
   ]
 }

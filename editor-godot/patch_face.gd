@@ -274,9 +274,16 @@ func rebuild() -> void:
 	# A block is never split. The knobs of one node belong together, and half an operator in
 	# one place with the rest somewhere else is worse than a longer row.
 	#
-	# Blocks are runs of the same target node *in the order the panel already had*, never a
+	# Blocks are runs of the same group *in the order the panel already had*, never a
 	# regrouping. A file's own `controls` is an ordered statement of intent and reordering it
 	# to tidy the layout would be the panel overruling the author.
+	#
+	# The group is the control's own `group` field when it has one, and its target node
+	# otherwise. The field exists because the panel's blocks and the graph's nodes are not
+	# the same idea: an operator and the gain node that sets its level are two nodes in the
+	# graph and one instrument on the panel, and only the document's author knows which
+	# gains belong to which operators. Panel organization, never graph semantics — the
+	# schema says so in as many words.
 	var runs: Array = []
 	var on_panel := {}
 	for index in controls.size():
@@ -287,8 +294,11 @@ func rebuild() -> void:
 			continue
 		var node_id := str(target.get("node", ""))
 		on_panel["%s.%s" % [node_id, str(target.get("parameter", ""))]] = true
-		if runs.is_empty() or str(runs.back()["node"]) != node_id:
-			runs.append({"node": node_id, "controls": []})
+		var key: String = str(control.get("group", ""))
+		if key == "":
+			key = node_id
+		if runs.is_empty() or str(runs.back()["key"]) != key:
+			runs.append({"key": key, "controls": []})
 		(runs.back()["controls"] as Array).append({"control": control,
 			"descriptor": descriptor})
 
@@ -329,7 +339,7 @@ func rebuild() -> void:
 			# of one group is a panel about one thing and the heading would be repeating
 			# the file name back.
 			var heading := Label.new()
-			heading.text = str(run["node"])
+			heading.text = str(run["key"])
 			heading.visible = runs.size() > 1
 			heading.add_theme_font_size_override("font_size",
 				Design.type(Design.SIZE_SECONDARY))
@@ -359,18 +369,23 @@ func rebuild() -> void:
 			var slider_cells: Array = []
 			var cell_height := 1.0
 			for entry: Dictionary in run["controls"]:
+				# The entry's own target, not the run's: a grouped block spans nodes —
+				# that being the point of groups — so every cell wires to the node its
+				# control actually names.
+				var cell_node := str((entry["control"] as Dictionary)
+					.get("target", {}).get("node", ""))
 				var parameter := str((entry["control"] as Dictionary)
 					.get("target", {}).get("parameter", ""))
 				var cell: Control
 				if enveloped and ENVELOPE.has(parameter):
 					var slide := Rack.Fader.new()
 					slide.rack = rack
-					slide.node_id = str(run["node"])
+					slide.node_id = cell_node
 					slide.descriptor = entry["descriptor"]
 					slide.label = str(ENVELOPE[parameter])
 					slide.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 					slide.size_flags_vertical = Control.SIZE_EXPAND_FILL
-					slide.set_value_silently(float(_value_of(str(run["node"]),
+					slide.set_value_silently(float(_value_of(cell_node,
 						parameter, float(entry["descriptor"].get("default", 0.0)))))
 					slider_cells.append(slide)
 					cell = slide
@@ -378,7 +393,7 @@ func rebuild() -> void:
 					cell = _cell(entry["control"], entry["descriptor"])
 					cells.append(cell)
 					cell_height = maxf(cell_height, cell.get_combined_minimum_size().y)
-				_targets[_cells.size()] = {"node": str(run["node"]),
+				_targets[_cells.size()] = {"node": cell_node,
 					"parameter": parameter}
 				_cells.append(cell)
 				# Only a panel the file actually has can be rearranged or taken from. The
@@ -398,37 +413,46 @@ func rebuild() -> void:
 			if not slider_cells.is_empty():
 				reserved = (slider_cells[0] as Control).get_combined_minimum_size().y \
 					+ float(Design.SPACE_S)
+			# Three to a row where the rack fits two: the operator's own knobs and its
+			# level make three, and a row is how they read as one instrument.
 			var room: float = panel_height - heading.get_combined_minimum_size().y \
 				- reserved
 			var pitch: float = cell_height + float(Design.SPACE_S)
 			var rows: int = maxi(1, int(floorf((room + float(Design.SPACE_S)) / pitch)))
 			var bank: GridContainer = null
 			for cell_index in cells.size():
-				if cell_index % (rows * 2) == 0:
+				if cell_index % (rows * 3) == 0:
 					bank = GridContainer.new()
-					bank.columns = 2
-					bank.add_theme_constant_override("h_separation", Design.SPACE_M)
+					bank.columns = 3
+					bank.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+					bank.add_theme_constant_override("h_separation", Design.SPACE_S)
 					bank.add_theme_constant_override("v_separation", Design.SPACE_S)
 					banks.add_child(bank)
 				bank.add_child(cells[cell_index])
 
-			# The sliders sit under the knobs at exactly the knobs' width, so the block
-			# stays as wide as its widest bank. Height-wise they take *half* of what the
-			# block has left, split with an empty spacer of equal stretch — a fader the
-			# full height of the module dwarfed the knobs it sits under, and an envelope
-			# is read as proportions, which survive halving untouched. A ratio rather
-			# than a constant, so it keeps meaning the same thing at every UI scale and
-			# whatever the heading and the banks happen to measure.
+			# The sliders sit under the knobs at the same width — one module edge, not
+			# two ragged ones — whichever of the two rows is naturally wider. Height-wise
+			# they take *half* of what the block has left, split with an empty spacer of
+			# equal stretch: a fader the full height of the module dwarfed the knobs it
+			# sits under, and an envelope is read as proportions, which survive halving
+			# untouched. A ratio rather than a constant, so it keeps meaning the same
+			# thing at every UI scale and whatever the heading and the banks measure.
 			if not slider_cells.is_empty():
 				var envelope := HBoxContainer.new()
 				envelope.add_theme_constant_override("separation", Design.SPACE_S)
 				envelope.size_flags_vertical = Control.SIZE_EXPAND_FILL
-				var span: float = banks.get_combined_minimum_size().x
-				if span > 0.0:
-					envelope.custom_minimum_size.x = span
 				for slide in slider_cells:
 					envelope.add_child(slide)
+				# Into the tree before it is measured. An orphan control reports a
+				# minimum from default theme metrics, a few pixels shy of what it will
+				# ask once it inherits the real theme — and a width matched to a lie
+				# shows up as one ragged module edge.
 				block.add_child(envelope)
+				var span: float = maxf(banks.get_combined_minimum_size().x,
+					envelope.get_combined_minimum_size().x)
+				if span > 0.0:
+					envelope.custom_minimum_size.x = span
+					banks.custom_minimum_size.x = span
 				var spare := Control.new()
 				spare.size_flags_vertical = Control.SIZE_EXPAND_FILL
 				spare.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -540,17 +564,20 @@ func _cell(control: Dictionary, descriptor: Dictionary) -> Control:
 	cell.add_theme_constant_override("separation", 0)
 	cell.alignment = BoxContainer.ALIGNMENT_CENTER
 	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# One rack pitch, the same one the rack view uses. A flowed row gives each child the
-	# width it asks for, and a caption that clips to an ellipsis asks for almost nothing —
-	# without a floor the knobs would sit at whatever width their names happened to want,
-	# which is a row of knobs at a dozen different spacings. It is a floor and not a size:
-	# a knob that needs more at a large UI scale still gets it.
-	cell.custom_minimum_size.x = Design.scale(Rack.KNOB_CELL.x)
+	# Two-thirds of a rack pitch, so three knobs sit in the width the rack gives two —
+	# ratio, feedback and level are a row, and a row is how an operator reads as one
+	# instrument. It is a floor and not a size: a knob that needs more at a large UI
+	# scale still gets it, and every cell shares the floor so a row of knobs sits at one
+	# spacing rather than at whatever width each caption happened to want.
+	cell.custom_minimum_size.x = Design.scale(Rack.KNOB_CELL.x * 2.0 / 3.0)
 
 	var target: Dictionary = control.get("target", {})
 	var knob := Rack.Knob.new()
 	knob.rack = rack
 	knob.compact = true
+	# A smaller dial, not smaller text — a smaller circle is still a circle, but a
+	# smaller label is a squint. Sized so the dial clears its cell's two-thirds pitch.
+	knob.dial = 0.72
 	knob.node_id = str(target.get("node", ""))
 	knob.descriptor = descriptor
 	knob.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
