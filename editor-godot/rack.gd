@@ -1296,6 +1296,16 @@ class Knob extends Control:
 				return clampf(sqrt(maxf(0.0, (value - low) / (high - low))), 0.0, 1.0)
 		return clampf((value - low) / (high - low), 0.0, 1.0)
 
+	## How far the pointer travels to cross the whole range, in pixels.
+	##
+	## A fixed distance for a dial, because a dial has no visible travel to match: its
+	## pointer sweeps 270° whatever size the circle is drawn at, so there is no length on
+	## screen that a drag could honestly correspond to, and a constant that feels right is
+	## the best available answer. Shift multiplies it, here and in everything that
+	## overrides this, so fine adjustment is one gesture across the application.
+	func _drag_span() -> float:
+		return 160.0
+
 	## One step of the keyboard, as a fraction of the knob's travel. The same numbers the
 	## graph view's readout uses, because a reader who has learned that Left is a small
 	## step and Shift+Left a large one has learned it for the application, not for a
@@ -1355,8 +1365,8 @@ class Knob extends Control:
 			accept_event()
 		elif event is InputEventMouseMotion and _dragging:
 			var travel: float = _drag_origin - event.position.y
-			var span := 160.0 if not event.shift_pressed else 640.0
-			_position = clampf(_drag_from + travel / span, 0.0, 1.0)
+			var span: float = _drag_span() * (4.0 if event.shift_pressed else 1.0)
+			_position = clampf(_drag_from + travel / maxf(span, 1.0), 0.0, 1.0)
 			rack.parameter_changed.emit(node_id, str(descriptor["name"]), value())
 			queue_redraw()
 			accept_event()
@@ -1456,12 +1466,33 @@ class Fader extends Knob:
 		return Vector2(Design.scale(26),
 			Design.scale(26) + float(Design.type(Design.SIZE_SECONDARY)))
 
+	## Where the thumb may sit, as (top, bottom) in local coordinates.
+	##
+	## One definition, two readers: the drawing puts the thumb here and the drag measures
+	## its travel by it. Kept together because they are the same claim — that this strip
+	## of the control is the range — and a drawing whose thumb outran the pointer would be
+	## the plainest possible way to break a fader.
+	func _track() -> Vector2:
+		var foot := size.y - Rack.KNOB_PAD * 0.4 \
+			- float(Design.type(Design.SIZE_SECONDARY)) - 6.0
+		return Vector2(Rack.KNOB_PAD * 0.5, foot)
+
+	## The track's own length: on a fader the travel is visible, so the thumb follows the
+	## pointer rather than a distance chosen in the abstract. Drag from the foot of the
+	## track to its head and the value crosses its whole range, which is the one thing a
+	## fader promises by looking like one — and it means a tall panel gives fine control
+	## and a short one coarse, for the same reason a long fader does on a desk.
+	func _drag_span() -> float:
+		var track := _track()
+		return maxf(track.y - track.x, 1.0)
+
 	func _draw() -> void:
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
 		var label_size := Design.type(Design.SIZE_SECONDARY)
 		var label_baseline := size.y - Rack.KNOB_PAD * 0.4
-		var track_top := Rack.KNOB_PAD * 0.5
-		var track_bottom := label_baseline - float(label_size) - 6.0
+		var track := _track()
+		var track_top := track.x
+		var track_bottom := track.y
 		if track_bottom <= track_top:
 			return
 		var x := size.x * 0.5

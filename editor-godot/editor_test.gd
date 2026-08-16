@@ -160,6 +160,28 @@ func _drag_panel(main, from: Vector2, to: Vector2) -> void:
 	main.patch_face._input(release)
 
 
+## Drags a fader from one height to another through its own input, starting from rest at
+## the bottom so the result reads as an absolute position rather than a delta.
+func _drag_fader(fader, from_y: float, to_y: float, fine: bool = false) -> void:
+	fader.set_value_silently(fader._to_value(0.0))
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = Vector2(fader.size.x * 0.5, from_y)
+	fader._gui_input(press)
+
+	var move := InputEventMouseMotion.new()
+	move.position = Vector2(fader.size.x * 0.5, to_y)
+	move.shift_pressed = fine
+	fader._gui_input(move)
+
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = move.position
+	fader._gui_input(release)
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -3634,6 +3656,34 @@ func _initialize() -> void:
 			op2_left += 1
 	check(op2_left == 7,
 		"and pulling it leaves op2's seven controls alone (%d)" % op2_left)
+
+	# The thumb follows the pointer. A fader's travel is visible, so the drag distance is
+	# the track rather than the 160px a dial uses — a dial sweeps 270° whatever size it is
+	# drawn at, so no length on screen honestly corresponds to its range, while a fader's
+	# does. Dragged the length of its track, a fader crosses its whole range; half the
+	# track, half the range. That also means a tall panel gives fine control and a short
+	# one coarse, which is what a long fader does on a desk.
+	if op2_fader != null:
+		var pull := op2_fader as RackView.Fader
+		var track: Vector2 = pull._track()
+		var length: float = track.y - track.x
+		check(absf(pull._drag_span() - length) < 0.5,
+			"a fader's drag span is its track (%.0f of %.0f)"
+				% [pull._drag_span(), length])
+		_drag_fader(pull, track.y, track.x)
+		check(pull._position > 0.99,
+			"pulled from the foot of the track to its head, it reaches the top (%.2f)"
+				% pull._position)
+		_drag_fader(pull, track.y, track.x + length * 0.5)
+		check(absf(pull._position - 0.5) < 0.05,
+			"and half the track is half the range (%.2f)" % pull._position)
+		# Shift is fine adjustment everywhere, so it must still be four times the travel.
+		_drag_fader(pull, track.y, track.x, true)
+		check(absf(pull._position - 0.25) < 0.05,
+			"with Shift a quarter as far, as everywhere else (%.2f)" % pull._position)
+		await main._undo()
+		for i in 6:
+			await process_frame
 
 	# ---- a busy node pays in width, not height ---------------------------------------
 	# More knobs than one two-wide bank at the default height holds must grow the block
