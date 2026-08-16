@@ -160,7 +160,10 @@ var keyboard: Keyboard
 ## wants horizontal room more than almost anything else, so this is now a setting
 ## with a floor, a ceiling and a way to take it to nothing at all.
 const SIDE_PANEL_MIN := 280
-const SIDE_PANEL_MAX := 420
+# Wide enough to be a rack rather than a column. The face flows its knobs in blocks, so
+# the room it is given is the room it uses: at 340 a DX7 patch is a tall thin list, and
+# dragged out it becomes rows of operators side by side.
+const SIDE_PANEL_MAX := 1100
 const SIDE_PANEL_DEFAULT := 340
 ## The strip left behind when it is collapsed: just enough for the button that
 ## brings it back, because a panel with no way back is a panel you have lost.

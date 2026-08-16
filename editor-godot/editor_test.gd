@@ -2915,6 +2915,52 @@ func _initialize() -> void:
 			check(not names_a_port,
 				"and no ports among them, because a port is not a knob")
 
+			# Blocks, flowed. Forty-three knobs in one column is a column nobody reads
+			# to the bottom of, so they go in one block per node and the face_blocks wrap
+			# across whatever width the panel has.
+			var face_blocks: Array = []
+			for child in main.patch_face.get_children():
+				if child is HFlowContainer:
+					for one_block in child.get_children():
+						face_blocks.append(one_block)
+			check(face_blocks.size() > 1, "the knobs are grouped into blocks (%d)" % face_blocks.size())
+
+			# The load-bearing claim: a block holds one node's knobs and only that node's.
+			# A block split across a wrap would put half an operator on one line and the
+			# rest on the next, which is worse than either a short line or a long panel.
+			var block_mixed := ""
+			var block_counted := 0
+			for one_block in face_blocks:
+				var block_owners := {}
+				for cell in main.patch_face._cells:
+					if (cell as Node).get_parent() != null \
+							and (cell as Node).get_parent().get_parent() == one_block:
+						block_counted += 1
+						for index in main.patch_face._targets:
+							if main.patch_face._cells[index] == cell:
+								block_owners[str(main.patch_face._targets[index]["node"])] = true
+				if block_owners.size() > 1 and block_mixed == "":
+					block_mixed = str(block_owners.keys())
+			check(block_mixed == "", "and each block is one node's knobs (%s)" % block_mixed)
+			check(block_counted == main.patch_face._cells.size(),
+				"with every knob in a block (%d of %d)"
+					% [block_counted, main.patch_face._cells.size()])
+
+			# It flows rather than stacking: given room, blocks sit side by side.
+			main.patch_face.size.x = 1000.0
+			for i in 6:
+				await process_frame
+			var first_line := 0
+			var line_top: float = -1.0
+			for one_block in face_blocks:
+				var rect: Rect2 = (one_block as Control).get_global_rect()
+				if line_top < 0.0:
+					line_top = rect.position.y
+				if absf(rect.position.y - line_top) < 4.0:
+					first_line += 1
+			check(first_line > 1,
+				"and given the width, blocks sit side by side (%d on the first line)" % first_line)
+
 			# The ports are on the panel, as a strip rather than as knobs: "what do I plug
 			# in" is the other half of "what do I turn".
 			var port_names: Array = []

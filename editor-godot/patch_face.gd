@@ -246,24 +246,66 @@ func rebuild() -> void:
 		hint.add_theme_color_override("font_color", Design.INK_SECOND)
 		add_child(hint)
 
-	var line: HBoxContainer = null
+	# Grouped, then flowed.
+	#
+	# Forty-three knobs in one column is a column nobody reads to the bottom of. They go in
+	# blocks instead — one per node, wrapped two wide — and the blocks flow across whatever
+	# width the panel has, wrapping to a new line when they run out of room. Widen the panel
+	# and you get more blocks side by side; it fills horizontally rather than growing down.
+	#
+	# A block is never split. The knobs of one node belong together, and half of an operator
+	# at the bottom of one line with the rest at the top of the next is worse than either a
+	# short line or a long panel. That is the whole reason this is a flow of blocks rather
+	# than a flow of knobs.
+	#
+	# Blocks are runs of the same target node *in the order the panel already had*, never a
+	# regrouping. A file's own `controls` is an ordered statement of intent and reordering it
+	# to tidy the layout would be the panel overruling the author.
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", Design.SPACE_M)
+	flow.add_theme_constant_override("v_separation", Design.SPACE_M)
+	flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(flow)
+
 	var on_panel := {}
+	var block: VBoxContainer = null
+	var grid: GridContainer = null
+	var block_node := ""
 	for index in controls.size():
 		var control: Dictionary = controls[index]
 		var target: Dictionary = control.get("target", {})
 		var descriptor := _descriptor_for(target)
 		if descriptor.is_empty():
 			continue
-		on_panel["%s.%s" % [str(target.get("node", "")),
-			str(target.get("parameter", ""))]] = true
-		if line == null or line.get_child_count() >= PER_LINE:
-			line = HBoxContainer.new()
-			line.add_theme_constant_override("separation", Design.SPACE_M)
-			line.alignment = BoxContainer.ALIGNMENT_CENTER
-			add_child(line)
+		var node_id := str(target.get("node", ""))
+		on_panel["%s.%s" % [node_id, str(target.get("parameter", ""))]] = true
+
+		if block == null or node_id != block_node:
+			block_node = node_id
+			block = VBoxContainer.new()
+			block.add_theme_constant_override("separation", 0)
+			flow.add_child(block)
+			# Which node these belong to. Only worth saying when there is more than one
+			# block; a panel of one group is a panel about one thing and the heading would
+			# be repeating the file name back.
+			var heading := Label.new()
+			heading.text = node_id
+			heading.add_theme_font_size_override("font_size",
+				Design.type(Design.SIZE_SECONDARY))
+			heading.add_theme_color_override("font_color", Design.INK_SECOND)
+			heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			heading.clip_text = true
+			heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			block.add_child(heading)
+			grid = GridContainer.new()
+			grid.columns = PER_LINE
+			grid.add_theme_constant_override("h_separation", Design.SPACE_M)
+			grid.add_theme_constant_override("v_separation", Design.SPACE_S)
+			block.add_child(grid)
+
 		var cell := _cell(control, descriptor)
-		line.add_child(cell)
-		_targets[_cells.size()] = {"node": str(target.get("node", "")),
+		grid.add_child(cell)
+		_targets[_cells.size()] = {"node": node_id,
 			"parameter": str(target.get("parameter", ""))}
 		_cells.append(cell)
 		# Only a panel the file actually has can be rearranged or taken from. The default
@@ -271,6 +313,12 @@ func rebuild() -> void:
 		# derivation, and the honest first gesture is putting a knob on.
 		if not derived:
 			_ids.append(str(control.get("id", "")))
+
+	# One block is one thing, and does not need labelling as such.
+	if flow.get_child_count() == 1:
+		var only: Node = flow.get_child(0)
+		if only.get_child_count() > 0 and only.get_child(0) is Label:
+			(only.get_child(0) as Label).visible = false
 
 	_add_ports()
 
