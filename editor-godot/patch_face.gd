@@ -30,6 +30,11 @@ const PER_LINE := 2
 ## so at two a group gets half a module — which is what shrinking the faders bought.
 const PER_SLOT := 2
 
+## The title band on a block's plate, before UI scaling. Shorter than the rack's own
+## TITLE_BAND of 40: that band has to clear a full-height module's mounting rail, and
+## these blocks are half that tall, so the same 40px would be a third of the panel.
+const BAND := 22
+
 ## The four parameters that make an envelope, and the letter each wears on the panel.
 ##
 ## When a node carries all four they are drawn as a row of vertical sliders instead of
@@ -352,27 +357,41 @@ func rebuild() -> void:
 			block.custom_minimum_size.y = panel_height
 			block.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			slot.add_child(block)
-			# The group frame, dotted. A grouping is a fact about belonging, not an
-			# affordance — dashed already means "this could be acted on" and solid means
-			# "this is", so the frame gets its own register rather than borrowing one
-			# that makes a promise.
-			block.draw.connect(func() -> void:
-				Design.dotted_rect(block, Rect2(Vector2.ZERO, block.size).grow(-1.0),
-					Color(Design.INK_SECOND, 0.5)))
 
-			# The title band. Only worth saying when there is more than one block; a panel
-			# of one group is a panel about one thing and the heading would be repeating
-			# the file name back.
+			# The title band, as a rack module wears it: the name in caps on the plate,
+			# over the category stripe. Only worth saying when there is more than one
+			# block; a panel of one group is a panel about one thing and the heading
+			# would be repeating the file name back.
 			var heading := Label.new()
-			heading.text = str(run["key"])
+			heading.text = str(run["key"]).to_upper()
 			heading.visible = runs.size() > 1
+			heading.custom_minimum_size.y = Design.scale(BAND)
+			heading.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
 			heading.add_theme_font_size_override("font_size",
 				Design.type(Design.SIZE_SECONDARY))
-			heading.add_theme_color_override("font_color", Design.INK_SECOND)
+			heading.add_theme_color_override("font_color", Design.INK_BRIGHT)
 			heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			heading.clip_text = true
 			heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			block.add_child(heading)
+
+			# And the plate under it. A panel block and a rack module are the same object
+			# seen twice — one arranged by signal flow, one arranged by the player — so
+			# they are drawn by the same function rather than merely resembling each
+			# other. This replaces the dotted frame: a grouping drawn as a module edge is
+			# a stronger statement than a grouping drawn as a hint, and it is the true
+			# one, since these really are the modules the rack view shows.
+			var tint: Color = Rack.category_tint(str(registry.get(
+				_type_of(str(run["controls"][0]["control"]["target"]["node"])), {})
+				.get("category", "")))
+			block.draw.connect(func() -> void:
+				var plate := Rect2(Vector2.ZERO, block.size)
+				Rack.draw_plate(block, plate,
+					float(heading.size.y) if heading.visible else 0.0, tint)
+				# Top rail only: the envelope runs to the bottom edge, and a screw
+				# through a fader's letter is a collision, not a detail.
+				Rack.draw_screws(block, plate, float(Design.scale(3)), false))
 
 			# All four envelope parameters or none — see ENVELOPE.
 			var enveloped := true

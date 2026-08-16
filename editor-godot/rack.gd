@@ -1067,22 +1067,7 @@ class RackModule extends Control:
 		if font == null:
 			font = get_theme_default_font()
 		var tint: Color = Rack.category_tint(str(descriptor.get("category", "")))
-
-		# Panel, with a faint vertical gradient. Aluminium is not flat.
-		draw_rect(Rect2(Vector2.ZERO, size), Rack.PANEL)
-		var band := size.y / 8.0
-		for i in 8:
-			var shade: Color = Rack.PANEL.lerp(Rack.PANEL_LOW, i / 7.0)
-			draw_rect(Rect2(0.0, i * band, size.x, band + 1.0), shade)
-
-		draw_line(Vector2(0.5, 0.0), Vector2(0.5, size.y), Rack.PANEL_EDGE, 1.0)
-		draw_line(Vector2(size.x - 0.5, 0.0), Vector2(size.x - 0.5, size.y),
-			Color(0, 0, 0, 0.35), 1.0)
-
-		# Category stripe under the title, the module's only use of colour for identity —
-		# the title says the same thing in words.
-		draw_rect(Rect2(10.0, Rack.TITLE_BAND - 7.0, size.x - 20.0, 2.0),
-			Color(tint.r, tint.g, tint.b, 0.85))
+		Rack.draw_plate(self, Rect2(Vector2.ZERO, size), Rack.TITLE_BAND, tint)
 
 		if font != null:
 			var label := title.to_upper()
@@ -1093,12 +1078,7 @@ class RackModule extends Control:
 				HORIZONTAL_ALIGNMENT_LEFT, size.x - 12.0, 14, rack.ink)
 
 		_draw_analysis()
-
-		# Mounting screws, in the rail above and below.
-		for point in [Vector2(11.0, 9.0), Vector2(size.x - 11.0, 9.0),
-				Vector2(11.0, size.y - 9.0), Vector2(size.x - 11.0, size.y - 9.0)]:
-			draw_circle(point, 3.4, Rack.SCREW)
-			draw_circle(point, 3.4, Color(0, 0, 0, 0.5), false, 1.0)
+		Rack.draw_screws(self, Rect2(Vector2.ZERO, size))
 
 		if rack != null and rack.selected_id == node_id:
 			draw_rect(Rect2(Vector2.ZERO, size), Rack.SELECTED, false, 2.0)
@@ -1502,6 +1482,55 @@ class Fader extends Knob:
 		if label_font != null and label != "":
 			draw_string(label_font, Vector2(0.0, label_baseline), label,
 				HORIZONTAL_ALIGNMENT_CENTER, size.x, label_size, rack.ink_dim)
+
+
+## A module's aluminium: the plate, its edges, and the category stripe under the title.
+##
+## Shared between the rack view and the file's panel so the two cannot drift. A panel block
+## and a rack module are the same object seen twice — one arranged by signal flow, one
+## arranged by the player — and if they stopped looking alike, that would be a claim about
+## them being different things, which they are not.
+##
+## The title is left to the caller: the rack draws its own into the band, the panel gives
+## the band to a Label so it can clip and ellipsise like every other name in the inspector.
+static func draw_plate(canvas: CanvasItem, rect: Rect2, band: float,
+		tint: Color) -> void:
+	# Panel, with a faint vertical gradient. Aluminium is not flat.
+	canvas.draw_rect(rect, PANEL)
+	var step := rect.size.y / 8.0
+	for i in 8:
+		canvas.draw_rect(Rect2(rect.position.x, rect.position.y + i * step,
+			rect.size.x, step + 1.0), PANEL.lerp(PANEL_LOW, i / 7.0))
+
+	canvas.draw_line(Vector2(rect.position.x + 0.5, rect.position.y),
+		Vector2(rect.position.x + 0.5, rect.end.y), PANEL_EDGE, 1.0)
+	canvas.draw_line(Vector2(rect.end.x - 0.5, rect.position.y),
+		Vector2(rect.end.x - 0.5, rect.end.y), Color(0, 0, 0, 0.35), 1.0)
+
+	# Category stripe under the title, a module's only use of colour for identity — the
+	# title says the same thing in words.
+	if band > 0.0:
+		canvas.draw_rect(Rect2(rect.position.x + 10.0,
+			rect.position.y + band - 7.0, rect.size.x - 20.0, 2.0),
+			Color(tint.r, tint.g, tint.b, 0.85))
+
+
+## The mounting screws, in the rail above and below.
+##
+## `both_rails` off leaves the lower pair out, for a plate whose bottom rail is doing
+## something else — the panel's blocks run their envelope down to the edge, and a screw
+## through a fader's label is not a detail, it is a collision.
+static func draw_screws(canvas: CanvasItem, rect: Rect2, radius: float = 3.4,
+		both_rails: bool = true) -> void:
+	var inset := radius * 3.2
+	var points := [Vector2(rect.position.x + inset, rect.position.y + inset * 0.8),
+		Vector2(rect.end.x - inset, rect.position.y + inset * 0.8)]
+	if both_rails:
+		points.append(Vector2(rect.position.x + inset, rect.end.y - inset * 0.8))
+		points.append(Vector2(rect.end.x - inset, rect.end.y - inset * 0.8))
+	for point: Vector2 in points:
+		canvas.draw_circle(point, radius, SCREW)
+		canvas.draw_circle(point, radius, Color(0, 0, 0, 0.5), false, 1.0)
 
 
 ## Trims text to the room there is, with an ellipsis to say it was trimmed.

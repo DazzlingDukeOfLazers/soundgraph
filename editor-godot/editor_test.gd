@@ -3269,8 +3269,30 @@ func _initialize() -> void:
 		var block_heading := (one_block as Node).get_child(0) as Label
 		if block_heading != null:
 			grouped_names.append(block_heading.text)
-	check(grouped_names == ["op1", "op2", "op3", "op4", "op5", "op6"],
+	check(grouped_names == ["OP1", "OP2", "OP3", "OP4", "OP5", "OP6"],
 		"the panel is six operator groups (%s)" % str(grouped_names))
+
+	# Titled with what the file calls itself, not with the word "Panel". The metadata
+	# name beats the path: an imported DX7 voice carries the name the synth shipped it
+	# with, which is worth more than where it happens to be saved.
+	check(main.face_heading.visible and main.face_heading.text == "ALGO 01",
+		"under the instrument's own name (%s)" % main.face_heading.text)
+
+	# Each block is a rack module, drawn by the rack's own plate function rather than
+	# merely resembling one: it paints itself, and its name sits in a title band.
+	var plated := 0
+	for one_block in grouped_blocks:
+		if (one_block as Control).draw.get_connections().size() > 0:
+			plated += 1
+	check(plated == grouped_blocks.size(),
+		"every block paints a module plate (%d of %d)"
+			% [plated, grouped_blocks.size()])
+	var band_label: Label = null
+	if not grouped_blocks.is_empty():
+		band_label = (grouped_blocks[0] as Node).get_child(0) as Label
+	check(band_label != null and band_label.custom_minimum_size.y > 0.0,
+		"with its name in a title band (%.0fpx)"
+			% (0.0 if band_label == null else band_label.custom_minimum_size.y))
 	check(grouped_rail != null and grouped_rail.get_child_count() == 3,
 		"in three stacked slots (%d)"
 			% (0 if grouped_rail == null else grouped_rail.get_child_count()))
@@ -3469,10 +3491,12 @@ func _initialize() -> void:
 		await process_frame
 	check(main.patch_face.visible and not main.module_face.visible,
 		"and selecting something that is not a module gives the file's own face back")
-	# With no title at all: the file's own face is self-evidently the panel, and a label
-	# saying "Panel" above a rack of knobs named the obvious in the best row on screen.
-	check(not main.face_heading.visible,
-		"with no standing title above it (%s)" % main.face_heading.text)
+	# Titled with the instrument rather than with the word "Panel", which named the
+	# obvious in the best row on screen. The module's name gave way to the file's.
+	check(main.face_heading.text != "" and main.face_heading.text != "part"
+			and not main.face_heading.text.begins_with("Panel"),
+		"under the file's own name instead of the module's (%s)"
+			% main.face_heading.text)
 
 	# And so does a selection with nothing behind it, which is the branch of
 	# _on_node_selected that used to return without telling the panel anything at all: it

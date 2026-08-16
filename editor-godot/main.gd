@@ -4788,8 +4788,27 @@ func _refresh_face() -> void:
 		patch_face.rack = rack
 		patch_face.rebuild()
 	if face_heading != null:
-		face_heading.text = showing
-		face_heading.visible = showing != ""
+		# Whose face this is. A module's own name when a module is selected; otherwise
+		# the instrument's — the panel is a rack case, and a case wears the name of the
+		# thing it holds. "Panel" said only that a panel is a panel; "ALGO 01" says
+		# which of two hundred DX7 voices is under your hands.
+		face_heading.text = showing if showing != "" else _instrument_name()
+		face_heading.visible = face_heading.text != ""
+
+
+## What this file calls itself, for the top of its panel.
+##
+## The document's own metadata name first — that is the name the *patch* claims, and an
+## imported DX7 voice carries the name the synth shipped with ("ALGO 01"), which is worth
+## more than the path it happens to be saved at. The file name is the fallback, without
+## its extension: ".json" is a fact about storage, not about the instrument.
+func _instrument_name() -> String:
+	var named := str(patch.get("metadata", {}).get("name", "")).strip_edges()
+	if named != "":
+		return named
+	if document_name == "untitled":
+		return ""
+	return document_name.get_basename()
 
 
 ## The panel, in the order somebody dragged it into.
