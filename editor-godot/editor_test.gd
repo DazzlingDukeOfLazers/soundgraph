@@ -2975,26 +2975,23 @@ func _initialize() -> void:
 			# view gives this patch, side by side on one rail that overflows horizontally
 			# and scrolls — a case with more modules than the desk is walked along, not
 			# folded downwards.
-			var face_rail: HBoxContainer = null
+			var face_rail: VBoxContainer = null
 			var face_scroller: ScrollContainer = null
 			for child in main.patch_face.get_children():
 				if child is ScrollContainer:
 					for inner in (child as ScrollContainer).get_children():
-						if inner is HBoxContainer:
+						if inner is VBoxContainer:
 							face_scroller = child as ScrollContainer
-							face_rail = inner as HBoxContainer
-			check(face_rail != null, "the knobs sit on one horizontal rail")
-			# Slots along the rail, blocks stacked inside each slot.
+							face_rail = inner as VBoxContainer
+			check(face_rail != null, "the knobs sit on a rail of rows")
+			# Rows down the rail, blocks along each row: read left to right, then down.
 			var face_slots: Array = []
 			var face_blocks: Array = []
 			if face_rail != null:
 				face_slots = face_rail.get_children()
 				for one_slot in face_slots:
 					for one in (one_slot as Node).get_children():
-						# Blocks are boxes; a plain Control is the filler that keeps a
-						# half-empty slot's one group at a block's height.
-						if one is VBoxContainer:
-							face_blocks.append(one)
+						face_blocks.append(one)
 			check(face_blocks.size() > 1,
 				"grouped into blocks along it (%d)" % face_blocks.size())
 
@@ -3022,16 +3019,8 @@ func _initialize() -> void:
 			# Written as the literal 2 rather than as PatchFace.PER_SLOT: a test that
 			# reads the constant it is checking agrees with any value the constant takes,
 			# which is how the first version of this passed while stacked one deep.
-			var stacked_deepest := 0
-			for one_slot in face_slots:
-				var held := 0
-				for one in (one_slot as Node).get_children():
-					if one is VBoxContainer:
-						held += 1
-				stacked_deepest = maxi(stacked_deepest, held)
-			check(stacked_deepest == 2,
-				"two groups stack in one slot (%d deep across %d slots)"
-					% [stacked_deepest, face_slots.size()])
+			check(face_slots.size() == 2,
+				"the rail is two rows (%d)" % face_slots.size())
 
 			# Every block measures the same, whatever height the rail settled at — the
 			# two in a slot share it evenly rather than one taking what it likes.
@@ -3251,19 +3240,24 @@ func _initialize() -> void:
 		await process_frame
 	check_loads(main, "an authored panel with groups")
 	check(not main.patch_face.derived, "algo-01 brings a panel of its own")
-	var grouped_rail: HBoxContainer = null
+	var grouped_rail: VBoxContainer = null
 	for child in main.patch_face.get_children():
 		if child is ScrollContainer:
 			for inner in (child as ScrollContainer).get_children():
-				if inner is HBoxContainer:
-					grouped_rail = inner as HBoxContainer
+				if inner is VBoxContainer:
+					grouped_rail = inner as VBoxContainer
 	# Down each slot, then along the rail — the order the panel lists them in.
 	var grouped_blocks: Array = []
+	var grouped_rows: Array = []
 	if grouped_rail != null:
-		for one_slot in grouped_rail.get_children():
-			for one_block in (one_slot as Node).get_children():
-				if one_block is VBoxContainer:
-					grouped_blocks.append(one_block)
+		for one_row in grouped_rail.get_children():
+			var across_row: Array = []
+			for one_block in (one_row as Node).get_children():
+				grouped_blocks.append(one_block)
+				var row_band := (one_block as Node).get_child(0) as Label
+				if row_band != null:
+					across_row.append(row_band.text)
+			grouped_rows.append(across_row)
 	var grouped_names: Array = []
 	for one_block in grouped_blocks:
 		var block_heading := (one_block as Node).get_child(0) as Label
@@ -3297,9 +3291,11 @@ func _initialize() -> void:
 	check(band_label != null and band_label.custom_minimum_size.y > 0.0,
 		"with its name in a title band (%.0fpx)"
 			% (0.0 if band_label == null else band_label.custom_minimum_size.y))
-	check(grouped_rail != null and grouped_rail.get_child_count() == 3,
-		"in three stacked slots (%d)"
-			% (0 if grouped_rail == null else grouped_rail.get_child_count()))
+	# One row per chain: OP6 OP5 OP4 feed OP3, and OP2 feeds OP1. A row ends where its
+	# chain ends — at the operator you hear — so the top row is a whole chain rather
+	# than the first three groups of a column-major fill.
+	check(grouped_rows == [["OP6", "OP5", "OP4", "OP3"], ["OP2", "OP1"]],
+		"laid out a chain to a row (%s)" % str(grouped_rows))
 
 	var op1_grid: GridContainer = null
 	var op1_envelope: HBoxContainer = null
@@ -3395,10 +3391,10 @@ func _initialize() -> void:
 	for child in main.patch_face.get_children():
 		if child is ScrollContainer:
 			for inner in (child as ScrollContainer).get_children():
-				if not (inner is HBoxContainer):
+				if not (inner is VBoxContainer):
 					continue
-				for one_slot in (inner as HBoxContainer).get_children():
-					for one_block in (one_slot as Node).get_children():
+				for one_row in (inner as Node).get_children():
+					for one_block in (one_row as Node).get_children():
 						for part in (one_block as Node).get_children():
 							var bank_row := part as HBoxContainer
 							if bank_row == null:

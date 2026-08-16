@@ -99,6 +99,8 @@ var _carrying := -1
 var _target := -1
 ## The rail's scroller, kept so _fit_rail can size it once the tree has a size.
 var _rail: ScrollContainer = null
+## How many rows the rail ended up with, so the fit asks for the height it will use.
+var _rail_rows := 1
 
 
 ## First refusal on the press, ahead of the GUI pass — the only reason a knob can be
@@ -342,32 +344,39 @@ func rebuild() -> void:
 		add_child(scroller)
 		_rail = scroller
 
-		var rail := HBoxContainer.new()
-		rail.add_theme_constant_override("separation", Design.SPACE_M)
-		# So the slots inherit the scroller's height rather than collapsing to their
-		# own minimums — the whole rail stretches or shrinks as one.
+		# Rows of modules, read left to right and then down — the way a rack case with
+		# two rails reads, and the way the chains of an algorithm want to be read. It
+		# used to be columns filled top to bottom, which put OP6 above OP5 and started
+		# the next column at OP4: the reading order was right but the shape of the voice
+		# was cut across it.
+		var rail := VBoxContainer.new()
+		rail.add_theme_constant_override("separation", Design.SPACE_S)
+		# So the rows inherit the scroller's height rather than collapsing to their own
+		# minimums — the whole rail stretches or shrinks as one.
 		rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		scroller.add_child(rail)
 
-		var slot: VBoxContainer = null
-		for run_index in runs.size():
-			var run: Dictionary = runs[run_index]
-			# A new column every PER_SLOT groups. Filled top to bottom before moving
-			# right, so reading order down a column then along the rail is the order
-			# the panel lists them in.
-			if run_index % PER_SLOT == 0:
-				slot = VBoxContainer.new()
-				slot.add_theme_constant_override("separation", Design.SPACE_S)
-				rail.add_child(slot)
+		var rows := _rows_of(runs, audible)
+		_rail_rows = rows.size()
+		var placed: Array = []
+		for row: Array in rows:
+			var line := HBoxContainer.new()
+			line.add_theme_constant_override("separation", Design.SPACE_M)
+			line.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			rail.add_child(line)
+			for run_index: int in row:
+				placed.append({"run": runs[run_index], "line": line})
+
+		for seat: Dictionary in placed:
+			var run: Dictionary = seat["run"]
 
 			var block := VBoxContainer.new()
 			block.add_theme_constant_override("separation", 0)
-			# A floor, and an equal share of whatever the slot turns out to be: the two
-			# blocks in a slot always measure the same, whether the rail got its rack
-			# module or had to make do.
+			# A floor, and an equal share of whatever the row turns out to be: every
+			# block on the rail measures the same, whether it got its rack module or
+			# the rail had to make do.
 			block.custom_minimum_size.y = panel_height
-			block.size_flags_vertical = Control.SIZE_EXPAND_FILL
-			slot.add_child(block)
+			(seat["line"] as HBoxContainer).add_child(block)
 
 			# Heard or felt. A carrier's sound reaches the ear; a modulator's only ever
 			# bends another operator, and the difference is the single most useful thing
@@ -495,10 +504,10 @@ func rebuild() -> void:
 			var room: float = panel_height - heading.get_combined_minimum_size().y \
 				- reserved
 			var pitch: float = cell_height + float(Design.SPACE_S)
-			var rows: int = maxi(1, int(floorf((room + float(Design.SPACE_S)) / pitch)))
+			var deep: int = maxi(1, int(floorf((room + float(Design.SPACE_S)) / pitch)))
 			var bank: GridContainer = null
 			for cell_index in cells.size():
-				if cell_index % (rows * 3) == 0:
+				if cell_index % (deep * 3) == 0:
 					bank = GridContainer.new()
 					bank.columns = 3
 					bank.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -533,16 +542,9 @@ func rebuild() -> void:
 					envelope.custom_minimum_size.x = span
 					banks.custom_minimum_size.x = span
 
-		# An odd number of groups leaves the last slot half full, and the half stays
-		# empty rather than going to the group that happens to be last: blocks share a
-		# slot evenly or they are not the same kind of thing, and a lone double-height
-		# module in a rack of half-height ones reads as a mistake.
-		if slot != null:
-			while slot.get_child_count() < PER_SLOT:
-				var filler := Control.new()
-				filler.size_flags_vertical = Control.SIZE_EXPAND_FILL
-				filler.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				slot.add_child(filler)
+		# The filler that used to pad a half-empty column is gone with the columns. A
+		# short row is just a short row — it ends where its chain ends, which is a fact
+		# about the algorithm rather than a hole to be plugged.
 
 	_add_ports()
 
@@ -586,6 +588,56 @@ func rebuild() -> void:
 		offer_line.add_child(ghost)
 		_offers[_cells.size()] = {"node": offer_node, "parameter": str(parameter["name"])}
 		_cells.append(ghost)
+
+
+## The groups laid out in rows, as indices into `runs`.
+##
+## Rows break at chain boundaries, not every N groups. A chain of an FM algorithm ends at
+## the operator you hear — OP6 OP5 OP4 feed OP3, and OP3 is heard — and the panel is
+## already written in signal order, so a chain ends exactly at each heard group. That is
+## the whole rule: walk the order, close the row's current chain whenever a carrier goes
+## past. No new field in the document and nothing FM-specific in the code; a patch whose
+## groups are all heard has chains of one, and this degrades to plain row-major.
+##
+## Chains are never split across rows — the point is to see a chain whole — so a row can
+## run longer than its share, and the rail scrolls sideways when they do.
+static func rows_of_chains(chains: Array, rows: int) -> Array:
+	if chains.is_empty():
+		return []
+	var total := 0
+	for chain: Array in chains:
+		total += chain.size()
+	var lines: Array = []
+	var line: Array = []
+	var share: int = maxi(1, int(ceil(float(total) / float(maxi(rows, 1)))))
+	for chain: Array in chains:
+		line.append_array(chain)
+		# Full enough, and rows left to put the rest in.
+		if line.size() >= share and lines.size() < rows - 1:
+			lines.append(line)
+			line = []
+	if not line.is_empty():
+		lines.append(line)
+	return lines
+
+
+## The panel's rows: its groups cut into chains, then packed into at most PER_SLOT of them.
+func _rows_of(runs: Array, audible: Dictionary) -> Array:
+	var chains: Array = []
+	var chain: Array = []
+	for run_index in runs.size():
+		chain.append(run_index)
+		var heard := false
+		for entry: Dictionary in (runs[run_index]["controls"] as Array):
+			if audible.has(str((entry["control"] as Dictionary)
+					.get("target", {}).get("node", ""))):
+				heard = true
+		if heard:
+			chains.append(chain)
+			chain = []
+	if not chain.is_empty():
+		chains.append(chain)
+	return rows_of_chains(chains, mini(PER_SLOT, chains.size()))
 
 
 ## The nodes whose sound is heard rather than felt — carriers, in FM terms.
@@ -662,8 +714,11 @@ func _fit_rail() -> void:
 	if _rail == null or not is_instance_valid(_rail):
 		return
 	var bar: float = float(Design.scale(14))
-	var least: float = _least_block_height() * float(PER_SLOT) \
-		+ float(Design.SPACE_S) * float(PER_SLOT - 1)
+	# The height the rail will actually use, not always two blocks': a panel that came
+	# out as one row should not reserve room for a row it does not have.
+	var stacked: int = maxi(_rail_rows, 1)
+	var least: float = _least_block_height() * float(stacked) \
+		+ float(Design.SPACE_S) * float(stacked - 1)
 	var wanted: float = float(Design.scale(Rack.DEFAULT_HEIGHT))
 
 	var viewport: ScrollContainer = null
