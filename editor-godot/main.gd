@@ -1354,37 +1354,59 @@ func show_view(title: String) -> bool:
 
 ## Keeps the inspector at a fixed width against the right edge, whatever the window
 ## is doing, and gives everything else to the graph.
+##
+## With only the graph side set to expand, split_offset is measured from the *right*
+## edge: -offset is the panel's width, 0 puts the divider hard against it, and positive
+## values are meaningless. Measured, not read from a manual — a probe sweeping offsets
+## against this exact container is where the rule comes from. This function used to
+## write `size.x - wanted - graph_minimum`, a large positive number under that rule,
+## and pin the real width with custom_minimum_size instead; the layout looked right and
+## every drag started from a garbage baseline, which is why the divider had a dead zone
+## hundreds of pixels wide and only tracked the mouse through the minimum-size clamp
+## chasing it one event behind.
 func _fit_side_panel() -> void:
 	if split == null or views == null:
 		return
 	var wanted := side_panel_width if side_panel_open else SIDE_PANEL_COLLAPSED
-	var graph_minimum := views.get_combined_minimum_size().x
-	# Never wider than the room there is. A minimum size is a promise the container has
-	# to keep, so asking for 340 in a window with 200 left does not give a 340px panel —
-	# it gives a layout wider than the window, and everything past the edge simply is not
-	# drawn: the order chips ran off the right of the screen and the cost line lost its
-	# last words. The panel gives way before the window does, and the graph keeps a
-	# usable strip whatever happens.
+	# The narrowest a drag may make it. A floor, not the width: the offset is what holds
+	# the width open now, and a minimum equal to the current width is exactly the pin
+	# that made shrinking fight the mouse.
+	var narrowest := SIDE_PANEL_MIN if side_panel_open else SIDE_PANEL_COLLAPSED
+	# Never wider than the room there is. Asking for 340 in a window with 200 left does
+	# not give a 340px panel — it gives a layout wider than the window, and everything
+	# past the edge simply is not drawn: the order chips ran off the right of the screen
+	# and the cost line lost its last words. The panel gives way before the window does,
+	# and the graph keeps a usable strip whatever happens.
 	if split.size.x > 0.0:
+		var graph_minimum := views.get_combined_minimum_size().x
 		var room: float = split.size.x - minf(graph_minimum, split.size.x * 0.45)
 		wanted = int(clampf(float(wanted), float(SIDE_PANEL_COLLAPSED), maxf(room, 0.0)))
-	# The minimum size is what actually holds the width open; the split offset alone
-	# lets the container squeeze the panel narrower than asked, which clipped the scope
-	# and cut the ends off every readout in it.
+		narrowest = int(clampf(float(narrowest), float(SIDE_PANEL_COLLAPSED),
+			maxf(room, 0.0)))
 	if side_panel != null:
-		side_panel.custom_minimum_size.x = wanted
-	split.split_offset = int(split.size.x - wanted - graph_minimum)
+		side_panel.custom_minimum_size.x = narrowest
+	split.split_offset = -wanted
 
 
 ## Reads the width back off the divider after a drag, so dragging *is* the setting.
 ##
 ## A separate width control next to a draggable divider is two ways to say the same
-## thing, and they disagree the moment either is used.
-func _on_split_dragged(_offset: int) -> void:
-	if split == null or side_panel == null or not side_panel_open:
+## thing, and they disagree the moment either is used. The raw offset arrives here on
+## every motion; writing the clamped truth back through _fit_side_panel is stomped by
+## the next motion (the dragger works from its own press-time baseline) but sticks
+## after the last one — so the divider ends every drag on an honest offset, and the
+## next grab starts from where the divider actually is.
+func _on_split_dragged(offset: int) -> void:
+	if split == null or side_panel == null:
 		return
-	side_panel_width = clampi(int(split.size.x - split.split_offset
-		- views.get_combined_minimum_size().x), SIDE_PANEL_MIN, SIDE_PANEL_MAX)
+	if not side_panel_open:
+		# The divider is not a control while the panel is shut — there is nothing whose
+		# width it could honestly be setting. Put it back rather than leaving it
+		# wherever the drag dropped it, which is how a shut panel came back open at a
+		# width nobody chose.
+		_fit_side_panel()
+		return
+	side_panel_width = clampi(-offset, SIDE_PANEL_MIN, SIDE_PANEL_MAX)
 	_fit_side_panel()
 
 
@@ -1442,11 +1464,17 @@ func _build_side_panel() -> Control:
 	# The panel scrolls rather than growing past the bottom of the window. Its content
 	# is not a fixed list — the run order grows with the patch, the problem list with
 	# the mistakes — so on a short window the cost line and everything under it were
-	# simply off-screen with no way to reach them. Vertical only: a sideways scrollbar
-	# under a column of text is a sign that something is too wide, not a way to read it.
+	# simply off-screen with no way to reach them. No sideways scrollbar: one under a
+	# column of text is a sign that something is too wide, not a way to read it.
+	#
+	# SHOW_NEVER rather than DISABLED, and the difference is the divider. DISABLED makes
+	# the scroller *report* its content's width as its minimum, which the split has to
+	# honour — so whenever anything in the panel was wider than the panel, the divider
+	# silently stopped moving and the drag went dead in the hand. SHOW_NEVER keeps the
+	# bar away and lets content clip instead of taking the divider hostage.
 	var body_scroll := ScrollContainer.new()
 	body_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	inset.add_child(body_scroll)
 
 	side_panel_body = VBoxContainer.new()

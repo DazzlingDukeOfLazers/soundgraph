@@ -1347,16 +1347,61 @@ func _initialize() -> void:
 
 	# Dragging the divider is the width setting. A separate control next to a draggable
 	# divider is two ways to say one thing, and they disagree the moment either is used.
-	main.split.split_offset -= 400
-	main._on_split_dragged(main.split.split_offset)
+	#
+	# The offset the dragger works in is measured from the right edge: -offset is the
+	# panel's width. That is an empirical fact about this container (a probe swept it),
+	# and the invariant below is what keeps the divider honest — the code used to write
+	# a large positive offset and pin the width with a minimum size instead, which
+	# looked identical and gave every drag a dead zone hundreds of pixels wide, because
+	# the drag baseline is the offset as written, not the divider as drawn.
+	check(-main.split.split_offset == int(main.side_panel.size.x),
+		"the divider's offset is the panel's width (%d for %.0fpx)"
+			% [main.split.split_offset, main.side_panel.size.x])
+
+	# A drag lands where the mouse is: the dragger writes the raw offset and signals.
+	main.split.split_offset = -600
+	main._on_split_dragged(-600)
+	await process_frame
+	await process_frame
+	check(int(main.side_panel.size.x) == 600 and main.side_panel_width == 600,
+		"a drag to 600px gives exactly 600px (%.0f, setting %d)"
+			% [main.side_panel.size.x, main.side_panel_width])
+
+	# The panel's own minimum must not grow with its content, or a wide readout takes
+	# the divider hostage and the drag goes dead in the hand — which is what a disabled
+	# horizontal scroll mode did, by promoting content width into layout minimum.
+	check(main.side_panel.get_combined_minimum_size().x <= float(main.SIDE_PANEL_MIN),
+		"panel content cannot jam the divider (min %.0f)"
+			% main.side_panel.get_combined_minimum_size().x)
+
+	main.split.split_offset = -(main.SIDE_PANEL_MAX + 400)
+	main._on_split_dragged(-(main.SIDE_PANEL_MAX + 400))
 	await process_frame
 	check(main.side_panel_width <= main.SIDE_PANEL_MAX,
 		"dragging it wider stops at the maximum (%d)" % main.side_panel_width)
-	main.split.split_offset += 900
-	main._on_split_dragged(main.split.split_offset)
+	main.split.split_offset = -100
+	main._on_split_dragged(-100)
 	await process_frame
 	check(main.side_panel_width >= main.SIDE_PANEL_MIN,
 		"and dragging it narrower stops at the minimum (%d)" % main.side_panel_width)
+	check(-main.split.split_offset == main.side_panel_width,
+		"with the divider parked on the clamped width, not past it (%d)"
+			% main.split.split_offset)
+
+	# Dragging the divider while the panel is shut moves nothing it could honestly set;
+	# it snaps back rather than leaving the divider adrift.
+	main._set_side_panel_open(false)
+	await process_frame
+	main.split.split_offset = -700
+	main._on_split_dragged(-700)
+	await process_frame
+	check(-main.split.split_offset == main.SIDE_PANEL_COLLAPSED,
+		"a drag while the panel is shut snaps back (%d)" % main.split.split_offset)
+	main._set_side_panel_open(true)
+	await process_frame
+	main.side_panel_width = main.SIDE_PANEL_DEFAULT
+	main._fit_side_panel()
+	await process_frame
 
 	# Whatever the width, the graph viewport still has to be honest about it — this is the
 	# same rule as the minimap, one panel further out.
