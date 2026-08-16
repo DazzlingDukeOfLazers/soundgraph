@@ -1345,6 +1345,13 @@ func _initialize() -> void:
 	await process_frame
 	check(main.side_panel_body.visible, "and it comes back")
 
+	# The collapse control sits under the faces, not above them: the panel's top row is
+	# the most valuable space it has, and it goes to knobs rather than to a button that
+	# is pressed a few times an hour.
+	check(main.side_panel_toggle.get_global_rect().position.y
+			> main.patch_face.get_global_rect().position.y,
+		"the collapse control sits below the faces, not above them")
+
 	# Dragging the divider is the width setting. A separate control next to a draggable
 	# divider is two ways to say one thing, and they disagree the moment either is used.
 	#
@@ -3368,7 +3375,7 @@ func _initialize() -> void:
 		await process_frame
 	check(main.module_face.visible and not main.patch_face.visible,
 		"selecting a module instance puts its face on the panel")
-	check(main.face_heading.text == "Panel · part",
+	check(main.face_heading.visible and main.face_heading.text == "part",
 		"and the heading says whose it is (%s)" % main.face_heading.text)
 	check(main.module_face.face_rows() == [["cutoff", "rate"], ["resonance", "amount"]],
 		"a module nobody has arranged reads as the wrap already on screen (%s)"
@@ -3380,7 +3387,10 @@ func _initialize() -> void:
 		await process_frame
 	check(main.patch_face.visible and not main.module_face.visible,
 		"and selecting something that is not a module gives the file's own face back")
-	check(main.face_heading.text == "Panel", "under its own name (%s)" % main.face_heading.text)
+	# With no title at all: the file's own face is self-evidently the panel, and a label
+	# saying "Panel" above a rack of knobs named the obvious in the best row on screen.
+	check(not main.face_heading.visible,
+		"with no standing title above it (%s)" % main.face_heading.text)
 
 	# And so does a selection with nothing behind it, which is the branch of
 	# _on_node_selected that used to return without telling the panel anything at all: it

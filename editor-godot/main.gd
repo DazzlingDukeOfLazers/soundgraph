@@ -1441,8 +1441,20 @@ func _build_side_panel() -> Control:
 	side_panel.custom_minimum_size.x = SIDE_PANEL_COLLAPSED
 	side_panel.add_theme_constant_override("separation", Design.SPACE_S)
 
-	# The collapse control sits above everything and never moves, so the way back is
-	# in the same place whether the panel is open or shut.
+	# Padded, because the panel now sits against the window edge rather than inside a
+	# fixed-width column — the scope was running right off the side of the screen and
+	# every readout in it ended a pixel from the frame. The top margin is here now
+	# that nothing else sits above the faces.
+	var inset := MarginContainer.new()
+	inset.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for edge in ["left", "right", "top"]:
+		inset.add_theme_constant_override("margin_" + edge, Design.scale(Design.SPACE_M))
+	side_panel.add_child(inset)
+
+	# The collapse control sits *under* everything, and never moves: the faces lead the
+	# panel and used to pay a strip of the most valuable row on screen for a button that
+	# is pressed a few times an hour. Outside the body on purpose, so the way back is
+	# still on screen when the body is hidden.
 	var strip := HBoxContainer.new()
 	side_panel_toggle = Button.new()
 	side_panel_toggle.flat = true
@@ -1451,15 +1463,6 @@ func _build_side_panel() -> Control:
 		_set_side_panel_open(not side_panel_open))
 	strip.add_child(_defocus(side_panel_toggle))
 	side_panel.add_child(strip)
-
-	# Padded, because the panel now sits against the window edge rather than inside a
-	# fixed-width column — the scope was running right off the side of the screen and
-	# every readout in it ended a pixel from the frame.
-	var inset := MarginContainer.new()
-	inset.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	for edge in ["left", "right", "bottom"]:
-		inset.add_theme_constant_override("margin_" + edge, Design.scale(Design.SPACE_M))
-	side_panel.add_child(inset)
 
 	# The panel scrolls rather than growing past the bottom of the window. Its content
 	# is not a fixed list — the run order grows with the patch, the problem list with
@@ -1492,7 +1495,13 @@ func _build_side_panel() -> Control:
 	# instance and this is that module's face, select anything else and it is the file's.
 	# One column rather than two, because they are the same kind of thing and a person is
 	# only ever arranging one of them.
+	#
+	# No standing title. The file's own face is self-evidently the panel — a label saying
+	# "Panel" above a rack of knobs was a row of the best space on screen spent naming the
+	# obvious. The heading appears only when the face is a *module's*, where the name is
+	# load-bearing: without it there is nothing saying whose knobs these are.
 	face_heading = _field("Panel")
+	face_heading.visible = false
 	panel.add_child(face_heading)
 	patch_face = PatchFace.new()
 	patch_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -4779,7 +4788,8 @@ func _refresh_face() -> void:
 		patch_face.rack = rack
 		patch_face.rebuild()
 	if face_heading != null:
-		face_heading.text = "Panel" if showing == "" else "Panel · %s" % showing
+		face_heading.text = showing
+		face_heading.visible = showing != ""
 
 
 ## The panel, in the order somebody dragged it into.
