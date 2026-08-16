@@ -3507,7 +3507,10 @@ func _initialize() -> void:
 				>= 0,
 			"and a press on its name picks the knob up")
 
-	# A fader keeps its letter at the foot of the track: track plays, letter moves.
+	# A fader is played everywhere and picked up nowhere. Its letter sits at the foot of
+	# the track, which is exactly where a hand goes to pull the fader down — so a pickup
+	# zone there sits under the gesture it would interrupt, and twice it took an envelope
+	# control off the panel mid-adjustment. Four faders only mean anything together.
 	var slid: Control = null
 	for index in main.patch_face._targets:
 		if str(main.patch_face._targets[index]["parameter"]) == "attack" and slid == null:
@@ -3518,8 +3521,32 @@ func _initialize() -> void:
 	if slid != null:
 		var letter: Vector2 = Vector2(slid.get_global_rect().get_center().x,
 			slid.get_global_rect().end.y - 4.0)
-		check(main.patch_face._handle_at(letter) >= 0,
-			"and its letter is still the way to take it off")
+		check(main.patch_face._handle_at(letter) < 0,
+			"and so does dragging it by its letter")
+
+	# Nothing outside the panel is a press on the panel. The rail is wider than the
+	# window and scrolls, so a cell's rectangle can sit entirely off-screen and still
+	# answer a hit test — which is how a drag in the margin picked up a fader nobody
+	# could see. The op2 envelope was off the right-hand edge when it went missing.
+	# Aimed at a caption that genuinely lies past the edge, not at empty air: a point
+	# with no cell under it returns -1 whether the guard is there or not, and the first
+	# version of this check did exactly that and passed with the guard removed.
+	var hidden_caption: Label = null
+	for index in main.patch_face._targets:
+		var offscreen := main.patch_face._cells[index] as Control
+		for part in (offscreen as Node).get_children():
+			var caption := part as Label
+			var past_edge: bool = caption != null \
+				and caption.get_global_rect().position.x \
+					> main.patch_face.get_global_rect().end.x
+			if past_edge and hidden_caption == null:
+				hidden_caption = caption
+	check(hidden_caption != null,
+		"the rail runs past the panel, so there are cells off its edge")
+	if hidden_caption != null:
+		check(main.patch_face._handle_at(
+				hidden_caption.get_global_rect().get_center()) < 0,
+			"and a press past that edge picks up nothing, seen or not")
 
 	# The offers keep whole-cell drag: a ghost has no value to change, and being dragged
 	# is the only thing it is for. Staged rather than assumed — every knob in this patch
@@ -3584,6 +3611,29 @@ func _initialize() -> void:
 		await process_frame
 	check(main.patch.get("controls", []).size() == before_drag,
 		"undo puts it back (%d)" % main.patch.get("controls", []).size())
+
+	# The reported case, end to end: pull op2's attack fader and the envelope survives.
+	# It did not — the press landed on the letter, the drag left the panel, and the
+	# control came off the face, which left three of four and turned them back into
+	# knobs. "The panel expands into knobs" was the shape of a control going missing.
+	var op2_fader: Control = null
+	for index in main.patch_face._targets:
+		var aimed_at: Dictionary = main.patch_face._targets[index]
+		if str(aimed_at["node"]) == "op2" and str(aimed_at["parameter"]) == "attack":
+			op2_fader = main.patch_face._cells[index]
+	check(op2_fader != null, "op2's attack fader is on the panel to begin with")
+	if op2_fader != null:
+		var grip := Vector2(op2_fader.get_global_rect().get_center().x,
+			op2_fader.get_global_rect().end.y - 4.0)
+		_drag_panel(main, grip, grip + Vector2(120.0, -30.0))
+		for i in 8:
+			await process_frame
+	var op2_left := 0
+	for control: Dictionary in main.patch.get("controls", []):
+		if str(control.get("group", "")) == "op2":
+			op2_left += 1
+	check(op2_left == 7,
+		"and pulling it leaves op2's seven controls alone (%d)" % op2_left)
 
 	# ---- a busy node pays in width, not height ---------------------------------------
 	# More knobs than one two-wide bank at the default height holds must grow the block

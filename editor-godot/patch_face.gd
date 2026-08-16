@@ -189,18 +189,28 @@ func _cell_at(point: Vector2) -> int:
 ## An offer has no value to change, so the whole ghost is a handle: being dragged is the
 ## only thing it is for.
 func _handle_at(point: Vector2) -> int:
+	# Nothing outside the panel is a press on the panel. The rail is wider than the
+	# window and scrolls, so a cell's rectangle can sit entirely off-screen while still
+	# answering a hit test — which is how a drag in the margin picked up a fader nobody
+	# could see and dragged it off the face.
+	if not get_global_rect().has_point(point):
+		return -1
 	for index in _cells.size():
 		var cell := _cells[index] as Control
 		if not cell.get_global_rect().has_point(point):
 			continue
 		if _offers.has(index):
 			return index
-		var fader := cell as Rack.Fader
-		if fader != null:
-			# A fader draws its own letter rather than carrying a Label, so the handle is
-			# the band at the foot of the track where that letter sits.
-			var band := float(Design.type(Design.SIZE_SECONDARY)) + Rack.KNOB_PAD
-			return index if point.y >= cell.get_global_rect().end.y - band else -1
+		# A fader is played and never picked up. It has no caption to grab — its letter
+		# is drawn inside it, at the foot of the track, which is exactly where a hand
+		# goes to pull the fader down — so any pickup zone at all sits under the gesture
+		# it would interrupt. Twice now that has taken an envelope control off the panel
+		# while somebody was setting it, and the four of an envelope only mean anything
+		# together: lose one and the other three come back as knobs. The trade is that an
+		# envelope cannot be dragged off the face at all, which is the better mistake to
+		# be unable to make.
+		if cell is Rack.Fader:
+			return -1
 		for part in cell.get_children():
 			var caption := part as Label
 			if caption != null and caption.get_global_rect().has_point(point):
