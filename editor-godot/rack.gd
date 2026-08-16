@@ -1468,13 +1468,13 @@ class Fader extends Knob:
 		# height is a floor, not a size — the row that places a fader stretches it
 		# into whatever the block has left.
 		#
-		# Short on purpose too. This used to reserve 84px of travel plus a caption plus
-		# a printed value, which is most of a module — two operators could not share a
-		# slot because their envelopes would not both fit. A fader is read as a height
-		# against its three neighbours, and four of them say the same shape at half the
-		# size.
+		# Short on purpose too, and this is a floor rather than the size it will get:
+		# the envelope stretches into whatever the block has spare, so on a tall panel
+		# these are tall. What the floor decides is whether two operators fit on screen
+		# at all, which is the only reason it is this low — a fader is read as a height
+		# against its three neighbours, and four of them say the same shape small.
 		return Vector2(Design.scale(26),
-			Design.scale(40) + float(Design.type(Design.SIZE_SECONDARY)))
+			Design.scale(26) + float(Design.type(Design.SIZE_SECONDARY)))
 
 	func _draw() -> void:
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)

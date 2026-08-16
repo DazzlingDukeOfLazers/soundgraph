@@ -84,6 +84,8 @@ var _offers: Dictionary = {}
 var _targets: Dictionary = {}
 var _carrying := -1
 var _target := -1
+## The rail's scroller, kept so _fit_rail can size it once the tree has a size.
+var _rail: ScrollContainer = null
 
 
 ## First refusal on the press, ahead of the GUI pass — the only reason a knob can be
@@ -307,30 +309,28 @@ func rebuild() -> void:
 			"descriptor": descriptor})
 
 	if not runs.is_empty():
-		# The rack's *default* height, on purpose not Rack.measure of this patch. The rack
-		# view raises its rail to fit the busiest module, because a rail must hold its
-		# tallest occupant; measured that way the busiest node always fits one bank and
-		# nothing ever spills. The panel does the opposite trade: the height never moves,
-		# and a node too busy for one bank pays in width.
-		var slot_height: float = float(Design.scale(Rack.DEFAULT_HEIGHT))
-		# Two blocks to a slot, stacked. A slot is the rack's module height and a group
-		# is half of one — six operators read as three columns of two rather than a row
-		# of six, which is a third of the walking to see the whole voice. It is the
-		# faders that pay for it: shorter travel and no printed value, so an envelope
-		# fits in half a module.
-		var panel_height: float = (slot_height
-			- float(Design.SPACE_S) * float(PER_SLOT - 1)) / float(PER_SLOT)
+		# The rail takes the room the panel has, up to a rack module and never below what
+		# two stacked blocks need. It was a flat Rack.DEFAULT_HEIGHT, which is the right
+		# *preference* and a bad rule: 404px of rail plus the ports strip is taller than
+		# the inspector on an ordinary window, so the panel scrolled vertically and the
+		# second operator of every pair was below the fold — stacking them bought nothing.
+		#
+		# A rack module is still what it settles at when the room is there. See _fit_rail,
+		# which does the measuring once the tree has a size to measure.
+		var panel_height: float = _least_block_height()
 
 		var scroller := ScrollContainer.new()
 		scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 		scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		scroller.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		# Room for the row plus the scrollbar under it, so the bar never eats a knob.
-		scroller.custom_minimum_size.y = slot_height + Design.scale(14)
 		add_child(scroller)
+		_rail = scroller
 
 		var rail := HBoxContainer.new()
 		rail.add_theme_constant_override("separation", Design.SPACE_M)
+		# So the slots inherit the scroller's height rather than collapsing to their
+		# own minimums — the whole rail stretches or shrinks as one.
+		rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		scroller.add_child(rail)
 
 		var slot: VBoxContainer = null
@@ -342,12 +342,15 @@ func rebuild() -> void:
 			if run_index % PER_SLOT == 0:
 				slot = VBoxContainer.new()
 				slot.add_theme_constant_override("separation", Design.SPACE_S)
-				slot.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 				rail.add_child(slot)
 
 			var block := VBoxContainer.new()
 			block.add_theme_constant_override("separation", 0)
+			# A floor, and an equal share of whatever the slot turns out to be: the two
+			# blocks in a slot always measure the same, whether the rail got its rack
+			# module or had to make do.
 			block.custom_minimum_size.y = panel_height
+			block.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			slot.add_child(block)
 			# The group frame, dotted. A grouping is a fact about belonging, not an
 			# affordance — dashed already means "this could be acted on" and solid means
@@ -478,7 +481,23 @@ func rebuild() -> void:
 					envelope.custom_minimum_size.x = span
 					banks.custom_minimum_size.x = span
 
+		# An odd number of groups leaves the last slot half full, and the half stays
+		# empty rather than going to the group that happens to be last: blocks share a
+		# slot evenly or they are not the same kind of thing, and a lone double-height
+		# module in a rack of half-height ones reads as a mistake.
+		if slot != null:
+			while slot.get_child_count() < PER_SLOT:
+				var filler := Control.new()
+				filler.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				filler.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				slot.add_child(filler)
+
 	_add_ports()
+
+	# Now that everything else in the panel exists to be measured against.
+	if not resized.is_connected(_fit_rail):
+		resized.connect(_fit_rail)
+	_fit_rail()
 
 	# What the selected node could put on the panel and has not.
 	#
@@ -515,6 +534,82 @@ func rebuild() -> void:
 		offer_line.add_child(ghost)
 		_offers[_cells.size()] = {"node": offer_node, "parameter": str(parameter["name"])}
 		_cells.append(ghost)
+
+
+## The least a block can be and still hold what a block holds: a heading, one row of
+## knobs, and an envelope under it.
+##
+## Derived rather than declared, because every term grows with the reader's type size —
+## a constant that fits at COMFORTABLE is a clipped block at XL.
+func _least_block_height() -> float:
+	var probe := Rack.Fader.new()
+	probe.rack = rack
+	probe.descriptor = {"name": "probe", "min": 0.0, "max": 1.0}
+	var fader: float = probe.get_combined_minimum_size().y
+	probe.queue_free()
+	return float(Design.type(Design.SIZE_SECONDARY)) + 6.0 \
+		+ Design.scale(Design.HIT_TARGET) + float(Design.type(Design.SIZE_BODY)) + 6.0 \
+		+ fader + float(Design.SPACE_S)
+
+
+## The fitting rule itself, on numbers: what is left of `room` after `taken`, never above
+## a rack module and never below what two stacked blocks need.
+##
+## Pulled out as a static function so it can be checked at the sizes that matter. A
+## headless run keeps its root at 900px whatever the window is set to, so the short-window
+## case — the only one that can fail — cannot be staged in the tree, and a check that
+## cannot reach the failing case is not a check.
+static func rail_height(room: float, taken: float, least: float, natural: float) -> float:
+	if room <= 0.0:
+		return natural
+	return clampf(room - taken, least, natural)
+
+
+## Sizes the rail to the room the panel actually has.
+##
+## Two operators only "fit" if they fit *on screen* — a rail taller than the inspector
+## puts the second one below a scrollbar, which is the same as not stacking them. So the
+## rail asks for what is left after everything else in the panel, capped at a rack module
+## (taller than that is not a rack row any more) and floored at two blocks' minimum
+## (below that the knobs start clipping, and a scrollbar is the honest answer).
+##
+## The room is measured from the inspector's own viewport rather than from this control,
+## whose height is the thing being decided — asking it would be asking the question with
+## the answer. Re-run on resize, because the window is where the room comes from.
+func _fit_rail() -> void:
+	if _rail == null or not is_instance_valid(_rail):
+		return
+	var bar: float = float(Design.scale(14))
+	var least: float = _least_block_height() * float(PER_SLOT) \
+		+ float(Design.SPACE_S) * float(PER_SLOT - 1)
+	var wanted: float = float(Design.scale(Rack.DEFAULT_HEIGHT))
+
+	var viewport: ScrollContainer = null
+	var above: Node = get_parent()
+	while above != null:
+		if above is ScrollContainer:
+			viewport = above as ScrollContainer
+			break
+		above = above.get_parent()
+	if viewport != null and viewport.size.y > 0.0:
+		# What the rest of the inspector is using: the scrolled content's height less
+		# our own. Everything above and below the faces, without naming any of it.
+		var content := viewport.get_child(0) as Control
+		var elsewhere: float = 0.0
+		if content != null:
+			elsewhere = maxf(content.size.y - size.y, 0.0)
+		# And what this control holds besides the rail — the ports strip, the offers.
+		var mine: float = 0.0
+		for child in get_children():
+			var part := child as Control
+			if part != null and part != _rail and part.visible:
+				mine += part.get_combined_minimum_size().y + float(Design.SPACE_S)
+		wanted = rail_height(viewport.size.y, elsewhere + mine + bar, least, wanted)
+
+	# Only when it moves. Writing the same minimum back invalidates the layout, which
+	# is what called this, which would write it back again.
+	if absf(_rail.custom_minimum_size.y - (wanted + bar)) > 1.0:
+		_rail.custom_minimum_size.y = wanted + bar
 
 
 ## Where this file meets the machine: its ports, in the order the document lists them.

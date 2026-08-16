@@ -2991,7 +2991,10 @@ func _initialize() -> void:
 				face_slots = face_rail.get_children()
 				for one_slot in face_slots:
 					for one in (one_slot as Node).get_children():
-						face_blocks.append(one)
+						# Blocks are boxes; a plain Control is the filler that keeps a
+						# half-empty slot's one group at a block's height.
+						if one is VBoxContainer:
+							face_blocks.append(one)
 			check(face_blocks.size() > 1,
 				"grouped into blocks along it (%d)" % face_blocks.size())
 
@@ -3013,37 +3016,65 @@ func _initialize() -> void:
 				"with every knob in a block (%d of %d)"
 					% [block_counted, main.patch_face._cells.size()])
 
-			# Every block is the same height, and two of them stack inside one rack
-			# module — not a height measured from this patch, because measuring raises
-			# the rail to fit the busiest node and then nothing ever spills. The rail is
-			# the promise; width is where a busy node spends its knobs.
+			# Six operators are three columns of two, not a row of six — a third of the
+			# walking to see a whole voice.
 			#
 			# Written as the literal 2 rather than as PatchFace.PER_SLOT: a test that
 			# reads the constant it is checking agrees with any value the constant takes,
 			# which is how the first version of this passed while stacked one deep.
-			var slot_height: float = float(Design.scale(RackView.DEFAULT_HEIGHT))
-			var rack_height: float = (slot_height - float(Design.SPACE_S)) / 2.0
-
-			# Six operators are three columns of two, not a row of six — a third of the
-			# walking to see a whole voice.
 			var stacked_deepest := 0
 			for one_slot in face_slots:
-				stacked_deepest = maxi(stacked_deepest,
-					(one_slot as Node).get_child_count())
+				var held := 0
+				for one in (one_slot as Node).get_children():
+					if one is VBoxContainer:
+						held += 1
+				stacked_deepest = maxi(stacked_deepest, held)
 			check(stacked_deepest == 2,
 				"two groups stack in one slot (%d deep across %d slots)"
 					% [stacked_deepest, face_slots.size()])
-			check(rack_height * 2.0 <= slot_height,
-				"and a stacked pair fits one rack module (2 x %.0f in %.0f)"
-					% [rack_height, slot_height])
+
+			# Every block measures the same, whatever height the rail settled at — the
+			# two in a slot share it evenly rather than one taking what it likes.
+			var rack_height: float = (face_blocks[0] as Control).size.y
 			var ragged := ""
 			for one_block in face_blocks:
-				if absf((one_block as Control).custom_minimum_size.y - rack_height) > 0.5 \
+				if absf((one_block as Control).size.y - rack_height) > 1.5 \
 						and ragged == "":
-					ragged = "%.0fpx against the rack's %.0fpx" \
-						% [(one_block as Control).custom_minimum_size.y, rack_height]
-			check(ragged == "",
-				"every block is the rack's module height (%s)" % ragged)
+					ragged = "%.0fpx against %.0fpx" \
+						% [(one_block as Control).size.y, rack_height]
+			check(ragged == "", "and every block is the same height (%s)" % ragged)
+			check(rack_height * 2.0
+					<= float(Design.scale(RackView.DEFAULT_HEIGHT)) + 2.0,
+				"a stacked pair is at most one rack module (2 x %.0f in %.0f)"
+					% [rack_height, Design.scale(RackView.DEFAULT_HEIGHT)])
+
+			# Both operators of a pair have to be on screen at once, or stacking them
+			# bought nothing: a rail taller than the inspector's viewport puts the lower
+			# one under a scrollbar. So the rail takes the room there is rather than a
+			# flat rack module.
+			#
+			# Checked as arithmetic, not by shrinking the window. A headless root sits at
+			# 900px whatever the window is set to, so the short-window case — the only
+			# one that can fail — cannot be staged in the tree here. The first version of
+			# this check did shrink the window, reported "331 deep in 10040", and passed
+			# happily with the rail pinned back to a fixed height.
+			check(PatchFace.rail_height(1200.0, 400.0, 280.0, 404.0) == 404.0,
+				"given room, the rail settles at a rack module")
+			check(PatchFace.rail_height(700.0, 400.0, 280.0, 404.0) == 300.0,
+				"and short of it, takes the room there is")
+			check(PatchFace.rail_height(400.0, 300.0, 280.0, 404.0) == 280.0,
+				"down to two blocks, below which a scrollbar is the honest answer")
+			check(PatchFace.rail_height(0.0, 0.0, 280.0, 404.0) == 404.0,
+				"and before the tree has a size, a rack module")
+
+			# And in the tree, the rail obeys those bounds.
+			var railing: ScrollContainer = main.patch_face._rail
+			var bar: float = float(Design.scale(14))
+			check(railing != null
+					and railing.custom_minimum_size.y
+						<= float(Design.scale(RackView.DEFAULT_HEIGHT)) + bar + 1.0,
+				"the rail never asks for more than a rack module (%.0f)"
+					% (0.0 if railing == null else railing.custom_minimum_size.y))
 
 			# The row overflows horizontally rather than stacking: the rail is wider than
 			# the panel that shows it, and the thing between them scrolls sideways.
@@ -3231,7 +3262,8 @@ func _initialize() -> void:
 	if grouped_rail != null:
 		for one_slot in grouped_rail.get_children():
 			for one_block in (one_slot as Node).get_children():
-				grouped_blocks.append(one_block)
+				if one_block is VBoxContainer:
+					grouped_blocks.append(one_block)
 	var grouped_names: Array = []
 	for one_block in grouped_blocks:
 		var block_heading := (one_block as Node).get_child(0) as Label
