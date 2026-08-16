@@ -1016,19 +1016,38 @@ func _port_plate(seams: Array, title: String, tint: Color, height: float) -> Con
 			var port_name := str(port.get("name", ""))
 			if port_name == Seams.HOST_PORT:
 				continue
+			# The socket itself, drawn by the rack's own function — a port on the panel
+			# and a port on a module are the same socket seen twice. It faces the way it
+			# does on the module: a seam's outputs are what the patch takes, so they wear
+			# the filled pip an output has there, and an Output seam's inputs wear the
+			# ring. Same symbol, same side, wherever you meet it.
+			var lit: bool = wired.has(port_name)
+			var signal_name := str(port.get("signal", "control"))
+			var ink: Color = Design.signal_colour(signal_name) if lit \
+				else Design.INK_DISABLED
+			var facing := str(node.get("type", "")) == "Output"
+
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", Design.SPACE_S)
+			row.alignment = BoxContainer.ALIGNMENT_CENTER
+			var socket := Control.new()
+			var radius := float(Design.scale(7))
+			socket.custom_minimum_size = Vector2(radius * 2.0, radius * 2.0)
+			socket.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			socket.draw.connect(func() -> void:
+				Rack.draw_socket(socket, socket.size * 0.5, radius, facing, ink))
+			row.add_child(socket)
+
 			var line := Label.new()
 			line.text = port_name
-			line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			line.clip_text = true
 			line.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			line.add_theme_font_size_override("font_size",
 				Design.type(Design.SIZE_SECONDARY))
-			line.add_theme_color_override("font_color",
-				Design.signal_colour(str(port.get("signal", "control"))) \
-					if wired.has(port_name) else Design.INK_DISABLED)
-			line.tooltip_text = "%s — %s" % [str(port.get("signal", "control")),
-				"in use" if wired.has(port_name) else "free"]
-			inside.add_child(line)
+			line.add_theme_color_override("font_color", ink)
+			line.tooltip_text = "%s — %s" % [signal_name, "in use" if lit else "free"]
+			row.add_child(line)
+			inside.add_child(row)
 	return plate
 
 

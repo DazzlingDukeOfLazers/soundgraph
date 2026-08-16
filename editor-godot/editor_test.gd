@@ -3287,11 +3287,10 @@ func _initialize() -> void:
 						in_side = plate.get_global_rect().position.x
 					else:
 						out_side = plate.get_global_rect().position.x
-					for part in plate.get_children():
-						for inner in (part as Node).get_children():
-							var label := inner as Label
-							if label != null:
-								port_names.append(str(label.text))
+					# Recursively: a port line is a socket beside its name now, so the
+					# labels sit a level deeper than they did.
+					for label in plate.find_children("", "Label", true, false):
+						port_names.append(str((label as Label).text))
 			var expected: Array = []
 			for node in main.patch["nodes"]:
 				if str(node.get("type", "")) in ["Input", "Output"]:
@@ -3476,19 +3475,33 @@ func _initialize() -> void:
 	for plate in [ports_in, ports_out]:
 		if plate == null:
 			continue
-		for part in (plate as Node).get_children():
-			for inner in (part as Node).get_children():
-				var line := inner as Label
-				if line == null or line.tooltip_text == "":
-					continue
-				if line.get_theme_color("font_color") == Design.INK_DISABLED:
-					dim_ports.append(line.text)
-				else:
-					lit_ports.append(line.text)
+		for found in (plate as Node).find_children("", "Label", true, false):
+			var line := found as Label
+			if line.tooltip_text == "":
+				continue
+			if line.get_theme_color("font_color") == Design.INK_DISABLED:
+				dim_ports.append(line.text)
+			else:
+				lit_ports.append(line.text)
 	check(lit_ports == ["frequency", "gate", "left", "right"],
 		"the plates light the signals in use (%s)" % str(lit_ports))
 	check(dim_ports == ["velocity", "trigger"],
 		"and still show the ones going spare (%s)" % str(dim_ports))
+
+	# Each one wears the rack's own socket, drawn by the rack's own function: a port on
+	# the panel and a port on a module are the same socket seen twice, and drawing a
+	# lookalike here would be a second answer to a question already answered.
+	var sockets := 0
+	for plate in [ports_in, ports_out]:
+		if plate == null:
+			continue
+		for found in (plate as Node).find_children("", "HBoxContainer", true, false):
+			for part in (found as Node).get_children():
+				if not (part is Label) and (part as Control).draw \
+						.get_connections().size() > 0:
+					sockets += 1
+	check(sockets == 6,
+		"every port wears a socket (%d of 6)" % sockets)
 	if ports_in != null and ports_out != null and grouped_rail != null \
 			and grouped_mix != null:
 		check(ports_in.get_global_rect().end.x

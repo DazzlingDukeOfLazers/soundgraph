@@ -1130,16 +1130,8 @@ class Jack extends Control:
 
 	func _draw() -> void:
 		var centre := socket_centre()
-		var colour: Color = rack.type_colours.get(type_name, Color.WHITE)
-		# The nut, then the hole. An input and an output differ by the ring, not only by
-		# which edge they sit on.
-		draw_circle(centre, Rack.jack_radius(), Color(0.20, 0.21, 0.24))
-		draw_circle(centre, Rack.jack_radius(), Color(0, 0, 0, 0.55), false, 1.0)
-		draw_circle(centre, Rack.jack_radius() - 3.0, Rack.JACK_HOLE)
-		if is_input:
-			draw_circle(centre, Rack.jack_radius() - 1.5, colour, false, 2.0)
-		else:
-			draw_circle(centre, Rack.jack_radius() - 5.5, colour)
+		Rack.draw_socket(self, centre, Rack.jack_radius(), is_input,
+			rack.type_colours.get(type_name, Color.WHITE))
 
 		var font := _label_font()
 		if font == null:
@@ -1560,6 +1552,25 @@ static func draw_plate(canvas: CanvasItem, rect: Rect2, band: float,
 		canvas.draw_rect(Rect2(rect.position.x + 10.0,
 			rect.position.y + band - 7.0, rect.size.x - 20.0, 2.0),
 			Color(tint.r, tint.g, tint.b, 0.85))
+
+
+## One socket: the nut, the hole, and the ring or pip that says which way it faces.
+##
+## Shared with the file's panel for the same reason draw_plate is — a port on the panel
+## and a port on a rack module are the same socket seen twice, and if they stopped
+## looking alike that would be a claim about them being different things. An input and an
+## output differ by the marking rather than only by which edge they sit on, which is what
+## makes the symbol readable away from the module that gave it a side.
+static func draw_socket(canvas: CanvasItem, centre: Vector2, radius: float,
+		is_input: bool, colour: Color) -> void:
+	canvas.draw_circle(centre, radius, Color(0.20, 0.21, 0.24))
+	canvas.draw_circle(centre, radius, Color(0, 0, 0, 0.55), false, 1.0)
+	canvas.draw_circle(centre, radius - radius * 0.27, JACK_HOLE)
+	if is_input:
+		canvas.draw_circle(centre, radius - radius * 0.14, colour, false,
+			maxf(radius * 0.18, 1.0))
+	else:
+		canvas.draw_circle(centre, radius - radius * 0.5, colour)
 
 
 ## The mounting screws, in the rail above and below.
