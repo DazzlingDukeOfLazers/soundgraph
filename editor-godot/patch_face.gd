@@ -107,16 +107,22 @@ var _rail: ScrollContainer = null
 var _rail_rows := 1
 
 
-## First refusal on the press, ahead of the GUI pass — the only reason a knob can be
+## First refusal on the press, ahead of the GUI pass — the only reason a cell can be
 ## picked up at all, since a knob is a Control and would otherwise eat it. See
 ## PatchGraph._input, which does the same thing for the same reason.
+##
+## First refusal, not every refusal: see _handle_at. This used to claim every press on
+## every cell, which had two consequences and both were wrong. A knob on the panel could
+## not be turned — on the surface whose entire purpose is being played. And because a
+## release outside the panel means "take this off the face", trying to drag a fader to
+## shape an envelope *removed* it. That is what happened to OP4's attack.
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree() or _cells.is_empty():
 		return
 	var button := event as InputEventMouseButton
 	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
 		if button.pressed:
-			_carrying = _cell_at(button.global_position)
+			_carrying = _handle_at(button.global_position)
 			_target = _carrying
 			if _carrying >= 0:
 				get_viewport().set_input_as_handled()
@@ -169,6 +175,37 @@ func _cell_at(point: Vector2) -> int:
 	for index in _cells.size():
 		if (_cells[index] as Control).get_global_rect().has_point(point):
 			return index
+	return -1
+
+
+## The cell a press picks *up*, as against the cell a press plays.
+##
+## The name is the handle. Grab a control by its caption and it moves; grab it by the dial
+## or the track and it turns. The panel is the thing somebody plays, so playing gets the
+## larger target and the one you reach for without thinking, and rearranging gets the
+## deliberate one — which is also the right way round for damage, since a drag off the
+## panel takes the control off the face.
+##
+## An offer has no value to change, so the whole ghost is a handle: being dragged is the
+## only thing it is for.
+func _handle_at(point: Vector2) -> int:
+	for index in _cells.size():
+		var cell := _cells[index] as Control
+		if not cell.get_global_rect().has_point(point):
+			continue
+		if _offers.has(index):
+			return index
+		var fader := cell as Rack.Fader
+		if fader != null:
+			# A fader draws its own letter rather than carrying a Label, so the handle is
+			# the band at the foot of the track where that letter sits.
+			var band := float(Design.type(Design.SIZE_SECONDARY)) + Rack.KNOB_PAD
+			return index if point.y >= cell.get_global_rect().end.y - band else -1
+		for part in cell.get_children():
+			var caption := part as Label
+			if caption != null and caption.get_global_rect().has_point(point):
+				return index
+		return -1
 	return -1
 
 

@@ -137,6 +137,29 @@ func check_loads(main, what: String) -> void:
 	check(ok, "%s leaves a patch that loads%s" % [what, "" if ok else " — " + why])
 
 
+## Press, move, release — through the panel's own _input, so a check exercises the path
+## a hand takes rather than the rule that path is supposed to consult.
+func _drag_panel(main, from: Vector2, to: Vector2) -> void:
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = from
+	press.global_position = from
+	main.patch_face._input(press)
+
+	var move := InputEventMouseMotion.new()
+	move.position = to
+	move.global_position = to
+	main.patch_face._input(move)
+
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = to
+	release.global_position = to
+	main.patch_face._input(release)
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -3370,6 +3393,7 @@ func _initialize() -> void:
 	for bank in mix_cells:
 		strip_columns.append((bank as GridContainer).columns)
 	check(strip_columns == [1], "stacked as a strip (%s)" % str(strip_columns))
+
 	if grouped_mix != null and grouped_rail != null:
 		check(grouped_mix.get_global_rect().position.x
 				>= grouped_rail.get_global_rect().end.x - 1.0,
@@ -3455,6 +3479,111 @@ func _initialize() -> void:
 		"and the panel lights the ones you hear (%s)" % str(band_lit))
 	check(op1_envelope != null and op1_envelope.get_child_count() == 4,
 		"with the envelope faders under them")
+
+	# ---- the panel is played, and only rearranged on purpose ------------------------
+	# Every press on a cell used to be a pickup. Two consequences, both wrong: a knob on
+	# the panel could not be turned at all, and since a release outside the panel means
+	# "take this off the face", dragging a fader to shape an envelope removed it. That is
+	# how ALGO 01 lost OP4's attack.
+	#
+	# The name is the handle now. Aimed at the middle of a cell, the press belongs to the
+	# control; aimed at its caption, to the panel.
+	var played: Control = null
+	var played_caption: Label = null
+	for index in main.patch_face._targets:
+		if str(main.patch_face._targets[index]["parameter"]) == "ratio" \
+				and played == null:
+			played = main.patch_face._cells[index]
+			for part in (played as Node).get_children():
+				if part is Label and played_caption == null:
+					played_caption = part as Label
+	check(played != null and played_caption != null, "a knob on the panel to aim at")
+	if played != null and played_caption != null:
+		var dial: Vector2 = played.get_global_rect().position \
+			+ Vector2(played.size.x * 0.5, Design.scale(Design.HIT_TARGET) * 0.5)
+		check(main.patch_face._handle_at(dial) < 0,
+			"a press on the dial belongs to the knob, not to the panel")
+		check(main.patch_face._handle_at(played_caption.get_global_rect().get_center())
+				>= 0,
+			"and a press on its name picks the knob up")
+
+	# A fader keeps its letter at the foot of the track: track plays, letter moves.
+	var slid: Control = null
+	for index in main.patch_face._targets:
+		if str(main.patch_face._targets[index]["parameter"]) == "attack" and slid == null:
+			slid = main.patch_face._cells[index]
+	check(slid != null and main.patch_face._handle_at(
+			slid.get_global_rect().get_center()) < 0,
+		"dragging a fader's track shapes the envelope rather than removing it")
+	if slid != null:
+		var letter: Vector2 = Vector2(slid.get_global_rect().get_center().x,
+			slid.get_global_rect().end.y - 4.0)
+		check(main.patch_face._handle_at(letter) >= 0,
+			"and its letter is still the way to take it off")
+
+	# The offers keep whole-cell drag: a ghost has no value to change, and being dragged
+	# is the only thing it is for. Staged rather than assumed — every knob in this patch
+	# is already on the panel, so there are no offers until one is taken off, and a check
+	# made without staging one passes by counting nothing.
+	main._focus_node("mix")
+	for i in 6:
+		await process_frame
+	main._toggle_control("mix", "gain")
+	for i in 8:
+		await process_frame
+	check(main.patch_face._offers.size() > 0,
+		"taking a knob off offers it back (%d)" % main.patch_face._offers.size())
+	var ghost_handles := 0
+	for index in main.patch_face._offers:
+		if main.patch_face._handle_at(
+				(main.patch_face._cells[index] as Control).get_global_rect()
+					.get_center()) == index:
+			ghost_handles += 1
+	check(main.patch_face._offers.size() > 0
+			and ghost_handles == main.patch_face._offers.size(),
+		"and a whole ghost is a handle (%d of %d)"
+			% [ghost_handles, main.patch_face._offers.size()])
+	main._toggle_control("mix", "gain")
+	for i in 6:
+		await process_frame
+	check_loads(main, "putting the mix level back")
+
+	# And the press path itself, not just the rule it consults. The first version of
+	# these checks called _handle_at directly, so putting _input back to claiming every
+	# cell — the bug — sailed through all of them. Drive the events.
+	var away := Vector2(-400.0, -400.0)
+	var turn_target: Control = null
+	var turn_caption: Label = null
+	for index in main.patch_face._targets:
+		if str(main.patch_face._targets[index]["parameter"]) == "ratio" \
+				and turn_target == null:
+			turn_target = main.patch_face._cells[index]
+			for part in (turn_target as Node).get_children():
+				if part is Label and turn_caption == null:
+					turn_caption = part as Label
+	var before_drag: int = main.patch.get("controls", []).size()
+	if turn_target != null:
+		_drag_panel(main, turn_target.get_global_rect().position
+			+ Vector2(turn_target.size.x * 0.5,
+				Design.scale(Design.HIT_TARGET) * 0.5), away)
+		for i in 8:
+			await process_frame
+	check(main.patch.get("controls", []).size() == before_drag,
+		"a drag that started on the dial changes no knob's place (%d of %d)"
+			% [main.patch.get("controls", []).size(), before_drag])
+
+	if turn_caption != null:
+		_drag_panel(main, turn_caption.get_global_rect().get_center(), away)
+		for i in 8:
+			await process_frame
+	check(main.patch.get("controls", []).size() == before_drag - 1,
+		"and one that started on its name takes it off (%d of %d)"
+			% [main.patch.get("controls", []).size(), before_drag])
+	await main._undo()
+	for i in 6:
+		await process_frame
+	check(main.patch.get("controls", []).size() == before_drag,
+		"undo puts it back (%d)" % main.patch.get("controls", []).size())
 
 	# ---- a busy node pays in width, not height ---------------------------------------
 	# More knobs than one two-wide bank at the default height holds must grow the block
