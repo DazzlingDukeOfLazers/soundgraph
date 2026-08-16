@@ -43,6 +43,10 @@ const BAND := 22
 ## arrives at a `pm` input is felt, never heard.
 const MODULATION_PORTS := ["pm", "fm", "fb_mod"]
 
+## The gap between one module and the next, before UI scaling — enough to read as a
+## break, and enough to hold the arrow that says what drives what.
+const ARROW := 18
+
 ## The four parameters that make an envelope, and the letter each wears on the panel.
 ##
 ## When a node carries all four they are drawn as a row of vertical sliders instead of
@@ -218,9 +222,11 @@ func _descriptor_for(target: Dictionary) -> Dictionary:
 	for node in patch.get("nodes", []):
 		if str(node["id"]) != node_id:
 			continue
-		var type_key: String = "module:%s" % str(node.get("module", "")) \
-			if str(node.get("type", "")) == "module" else str(node.get("type", ""))
-		for parameter in registry.get(type_key, {}).get("parameters", []):
+		# Through Seams, not through a copy of its rule kept here. This asked the registry
+		# for "Output" and got nothing, because a bound port is filed under
+		# `seam:Output/stereo` — so the master level was invisible to the panel, and a
+		# control naming it was skipped without a word. The same mistake, third place.
+		for parameter in registry.get(Seams.registry_key(node), {}).get("parameters", []):
 			if str(parameter["name"]) == str(target.get("parameter", "")):
 				return parameter
 		return {}
@@ -326,7 +332,26 @@ func rebuild() -> void:
 	# Which nodes are heard rather than felt, worked out once for the whole panel.
 	var audible := _heard_nodes()
 
-	if not runs.is_empty():
+	# And which groups are the end of the signal rather than a step along it. A group
+	# that drives a port is not a stage of the instrument, it *is* where the instrument
+	# stops — so it stands apart from the rows instead of taking a place in one.
+	var mixes: Array = []
+	var staged: Array = []
+	for run: Dictionary in runs:
+		var terminal := false
+		for entry: Dictionary in (run["controls"] as Array):
+			for node in patch.get("nodes", []):
+				if str(node["id"]) == str((entry["control"] as Dictionary)
+						.get("target", {}).get("node", "")) \
+						and str(node.get("type", "")) in ["Input", "Output"]:
+					terminal = true
+		if terminal:
+			mixes.append(run)
+		else:
+			staged.append(run)
+	runs = staged
+
+	if not runs.is_empty() or not mixes.is_empty():
 		# The rail takes the room the panel has, up to a rack module and never below what
 		# two stacked blocks need. It was a flat Rack.DEFAULT_HEIGHT, which is the right
 		# *preference* and a bad rule: 404px of rail plus the ports strip is taller than
@@ -344,30 +369,70 @@ func rebuild() -> void:
 		add_child(scroller)
 		_rail = scroller
 
+		# The rail: rows of modules on the left, and whatever stands full height at the
+		# end of the signal on the right.
+		var rail := HBoxContainer.new()
+		rail.add_theme_constant_override("separation", 0)
+		rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroller.add_child(rail)
+
 		# Rows of modules, read left to right and then down — the way a rack case with
 		# two rails reads, and the way the chains of an algorithm want to be read. It
 		# used to be columns filled top to bottom, which put OP6 above OP5 and started
 		# the next column at OP4: the reading order was right but the shape of the voice
 		# was cut across it.
-		var rail := VBoxContainer.new()
-		rail.add_theme_constant_override("separation", Design.SPACE_S)
+		var rows_column := VBoxContainer.new()
+		rows_column.add_theme_constant_override("separation", Design.SPACE_S)
 		# So the rows inherit the scroller's height rather than collapsing to their own
 		# minimums — the whole rail stretches or shrinks as one.
-		rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		scroller.add_child(rail)
+		rows_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		rail.add_child(rows_column)
 
 		var rows := _rows_of(runs, audible)
 		_rail_rows = rows.size()
 		var placed: Array = []
 		for row: Array in rows:
 			var line := HBoxContainer.new()
-			line.add_theme_constant_override("separation", Design.SPACE_M)
+			line.add_theme_constant_override("separation", Design.SPACE_S)
 			line.size_flags_vertical = Control.SIZE_EXPAND_FILL
-			rail.add_child(line)
-			for run_index: int in row:
-				placed.append({"run": runs[run_index], "line": line})
+			# Right-justified, so the last column of every row lines up. A chain ends at
+			# the operator you hear, so that column is the carriers — and the thing they
+			# all feed sits immediately to its right. Signal runs to the edge and stops.
+			line.alignment = BoxContainer.ALIGNMENT_END
+			rows_column.add_child(line)
+			for chain_index in row.size():
+				var chain: Array = row[chain_index]
+				for step in chain.size():
+					placed.append({"run": runs[chain[step]], "line": line,
+						# An arrow after every block but the last of its chain: it says
+						# "this drives that", which is only true inside a chain. Between
+						# two chains sharing a row there is a gap and no claim.
+						"arrow": step < chain.size() - 1})
+				if chain_index < row.size() - 1:
+					placed.append({"gap": true, "line": line})
+
+		# What stands at the end of the signal, full height beside the rows rather than
+		# in one of them: where the chains meet, and the voice's master level. It belongs
+		# to the instrument rather than to either chain, and both rows point into it.
+		if not mixes.is_empty():
+			rail.add_child(_arrow())
+			var mix_line := HBoxContainer.new()
+			mix_line.add_theme_constant_override("separation", Design.SPACE_S)
+			mix_line.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			rail.add_child(mix_line)
+			for run: Dictionary in mixes:
+				placed.append({"run": run, "line": mix_line})
 
 		for seat: Dictionary in placed:
+			# A gap where one chain ends and the next begins on the same row: room
+			# enough to read as a break, and nothing drawn in it, because there is
+			# nothing to say.
+			if seat.get("gap", false):
+				var gap := Control.new()
+				gap.custom_minimum_size.x = Design.scale(ARROW)
+				gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				(seat["line"] as HBoxContainer).add_child(gap)
+				continue
 			var run: Dictionary = seat["run"]
 
 			var block := VBoxContainer.new()
@@ -542,6 +607,13 @@ func rebuild() -> void:
 					envelope.custom_minimum_size.x = span
 					banks.custom_minimum_size.x = span
 
+			# And the arrow to the next block in the chain, which is what the gap between
+			# modules is for. The panel says which operators there are and what each one
+			# is set to; the arrow says what drives what, which is the other half of an
+			# algorithm and the half you otherwise have to go and read the graph for.
+			if seat.get("arrow", false):
+				(seat["line"] as HBoxContainer).add_child(_arrow())
+
 		# The filler that used to pad a half-empty column is gone with the columns. A
 		# short row is just a short row — it ends where its chain ends, which is a fact
 		# about the algorithm rather than a hole to be plugged.
@@ -601,6 +673,9 @@ func rebuild() -> void:
 ##
 ## Chains are never split across rows — the point is to see a chain whole — so a row can
 ## run longer than its share, and the rail scrolls sideways when they do.
+## Returns rows of *chains*, not rows of groups: which groups sit together is one
+## question and where one chain stops and the next begins is another, and the arrows
+## between blocks depend on the second.
 static func rows_of_chains(chains: Array, rows: int) -> Array:
 	if chains.is_empty():
 		return []
@@ -609,13 +684,16 @@ static func rows_of_chains(chains: Array, rows: int) -> Array:
 		total += chain.size()
 	var lines: Array = []
 	var line: Array = []
+	var held := 0
 	var share: int = maxi(1, int(ceil(float(total) / float(maxi(rows, 1)))))
 	for chain: Array in chains:
-		line.append_array(chain)
+		line.append(chain)
+		held += chain.size()
 		# Full enough, and rows left to put the rest in.
-		if line.size() >= share and lines.size() < rows - 1:
+		if held >= share and lines.size() < rows - 1:
 			lines.append(line)
 			line = []
+			held = 0
 	if not line.is_empty():
 		lines.append(line)
 	return lines
@@ -638,6 +716,26 @@ func _rows_of(runs: Array, audible: Dictionary) -> Array:
 	if not chain.is_empty():
 		chains.append(chain)
 	return rows_of_chains(chains, mini(PER_SLOT, chains.size()))
+
+
+## A solid triangle pointing the way the signal goes.
+##
+## Right, always, because the panel is laid out left to right and an arrow that agreed
+## with the layout only sometimes would be worse than none. It sits in the gap between
+## two modules and means "this one drives that one" — the half of an algorithm that knob
+## values cannot tell you, and the half you would otherwise open the graph to read.
+func _arrow() -> Control:
+	var arrow := Control.new()
+	arrow.custom_minimum_size.x = Design.scale(ARROW)
+	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	arrow.draw.connect(func() -> void:
+		var middle := arrow.size * 0.5
+		var reach := float(Design.scale(5))
+		arrow.draw_colored_polygon([
+			middle + Vector2(reach, 0.0),
+			middle + Vector2(-reach, -reach),
+			middle + Vector2(-reach, reach)], Color(Design.INK_SECOND, 0.8)))
+	return arrow
 
 
 ## The nodes whose sound is heard rather than felt — carriers, in FM terms.
@@ -803,8 +901,7 @@ func _type_of(node_id: String) -> String:
 	for node in patch.get("nodes", []):
 		if str(node["id"]) != node_id:
 			continue
-		return "module:%s" % str(node.get("module", "")) \
-			if str(node.get("type", "")) == "module" else str(node.get("type", ""))
+		return Seams.registry_key(node)
 	return ""
 
 

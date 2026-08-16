@@ -774,6 +774,16 @@
       }
     },
     {
+      "id": "op5_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "feedback"
+      }
+    },
+    {
       "id": "op5_level_gain",
       "label": "level",
       "kind": "knob",
@@ -827,6 +837,16 @@
       "target": {
         "node": "op4",
         "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op4_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "feedback"
       }
     },
     {
@@ -886,6 +906,16 @@
       }
     },
     {
+      "id": "op3_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "feedback"
+      }
+    },
+    {
       "id": "op3_index_2_gain",
       "label": "level",
       "kind": "knob",
@@ -939,6 +969,16 @@
       "target": {
         "node": "op2",
         "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op2_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "feedback"
       }
     },
     {
@@ -998,6 +1038,16 @@
       }
     },
     {
+      "id": "op1_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "feedback"
+      }
+    },
+    {
       "id": "op1_level_gain",
       "label": "level",
       "kind": "knob",
@@ -1041,6 +1091,16 @@
       "target": {
         "node": "op1",
         "parameter": "release"
+      }
+    },
+    {
+      "id": "mix_level",
+      "label": "out",
+      "kind": "knob",
+      "group": "mix",
+      "target": {
+        "node": "out",
+        "parameter": "level"
       }
     }
   ]

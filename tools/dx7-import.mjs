@@ -950,15 +950,17 @@ function modularize(flat) {
   const controls = [];
   for (const op of order) {
     const group = `op${op}`;
-    const instance = nodes.find((n) => n.id === group);
     controls.push({ id: `${group}_ratio`, label: 'ratio', kind: 'knob', group,
       target: { node: group, parameter: 'ratio' } });
-    // Feedback is one loop per voice on the operator the algorithm designates, not a
-    // knob every operator has. Five inert fb knobs per panel said the opposite.
-    if (instance !== undefined && instance.parameters.feedback !== undefined) {
-      controls.push({ id: `${group}_feedback`, label: 'fb', kind: 'knob', group,
-        target: { node: group, parameter: 'feedback' } });
-    }
+    // Feedback on every operator, including the five the algorithm leaves at zero.
+    // Briefly these were omitted as inert, which confused two different things: the
+    // algorithm decides where feedback *starts*, not where it is possible. Every
+    // operator's oscillator has the input, turning one up is a real edit the graph
+    // supports, and departing from the algorithm is a thing people buy an FM synth to
+    // do. A knob reading zero says "not used here"; an absent knob says "not available",
+    // which would be false.
+    controls.push({ id: `${group}_feedback`, label: 'fb', kind: 'knob', group,
+      target: { node: group, parameter: 'feedback' } });
     for (const node of nodes) {
       if (node.type !== 'Gain') continue;
       if (node.id !== `${group}_level`
@@ -976,6 +978,12 @@ function modularize(flat) {
         target: { node: group, parameter: envelope } });
     }
   }
+
+  // Where the carriers meet: the voice's master level, at the end of the signal the
+  // rows above it describe. Its own group, so the panel can stand it apart from the
+  // operators — it belongs to the instrument rather than to any one of them.
+  controls.push({ id: 'mix_level', label: 'out', kind: 'knob', group: 'mix',
+    target: { node: 'out', parameter: 'level' } });
 
   return {
     schema_version: 2,

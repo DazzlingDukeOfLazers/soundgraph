@@ -2980,9 +2980,11 @@ func _initialize() -> void:
 			for child in main.patch_face.get_children():
 				if child is ScrollContainer:
 					for inner in (child as ScrollContainer).get_children():
-						if inner is VBoxContainer:
+						if inner is HBoxContainer:
 							face_scroller = child as ScrollContainer
-							face_rail = inner as VBoxContainer
+							for side in (inner as Node).get_children():
+								if side is VBoxContainer and face_rail == null:
+									face_rail = side as VBoxContainer
 			check(face_rail != null, "the knobs sit on a rail of rows")
 			# Rows down the rail, blocks along each row: read left to right, then down.
 			var face_slots: Array = []
@@ -2991,7 +2993,9 @@ func _initialize() -> void:
 				face_slots = face_rail.get_children()
 				for one_slot in face_slots:
 					for one in (one_slot as Node).get_children():
-						face_blocks.append(one)
+						# Arrows and gaps ride between the blocks; a block is a box.
+						if one is VBoxContainer:
+							face_blocks.append(one)
 			check(face_blocks.size() > 1,
 				"grouped into blocks along it (%d)" % face_blocks.size())
 
@@ -3241,11 +3245,17 @@ func _initialize() -> void:
 	check_loads(main, "an authored panel with groups")
 	check(not main.patch_face.derived, "algo-01 brings a panel of its own")
 	var grouped_rail: VBoxContainer = null
+	var grouped_mix: HBoxContainer = null
 	for child in main.patch_face.get_children():
 		if child is ScrollContainer:
 			for inner in (child as ScrollContainer).get_children():
-				if inner is VBoxContainer:
-					grouped_rail = inner as VBoxContainer
+				if not (inner is HBoxContainer):
+					continue
+				for side in (inner as Node).get_children():
+					if side is VBoxContainer and grouped_rail == null:
+						grouped_rail = side as VBoxContainer
+					elif side is HBoxContainer:
+						grouped_mix = side as HBoxContainer
 	# Down each slot, then along the rail — the order the panel lists them in.
 	var grouped_blocks: Array = []
 	var grouped_rows: Array = []
@@ -3253,6 +3263,8 @@ func _initialize() -> void:
 		for one_row in grouped_rail.get_children():
 			var across_row: Array = []
 			for one_block in (one_row as Node).get_children():
+				if not (one_block is VBoxContainer):
+					continue
 				grouped_blocks.append(one_block)
 				var row_band := (one_block as Node).get_child(0) as Label
 				if row_band != null:
@@ -3297,6 +3309,60 @@ func _initialize() -> void:
 	check(grouped_rows == [["OP6", "OP5", "OP4", "OP3"], ["OP2", "OP1"]],
 		"laid out a chain to a row (%s)" % str(grouped_rows))
 
+	# Right-justified, so the last column of both rows lines up. A chain ends at the
+	# operator you hear, so that column is the carriers — and what they feed sits
+	# immediately right of it.
+	var right_edges := {}
+	if grouped_rail != null:
+		for one_row in grouped_rail.get_children():
+			var far := 0.0
+			for one_block in (one_row as Node).get_children():
+				far = maxf(far, (one_block as Control).get_global_rect().end.x)
+			right_edges[far] = true
+	check(right_edges.size() == 1,
+		"both rows end on the same right edge (%s)" % str(right_edges.keys()))
+
+	# An arrow between operators in a chain, and none across the break between chains:
+	# it means "this drives that", which is only true inside a chain.
+	var arrows_per_row: Array = []
+	if grouped_rail != null:
+		for one_row in grouped_rail.get_children():
+			var arrows := 0
+			for part in (one_row as Node).get_children():
+				if not (part is VBoxContainer) \
+						and (part as Control).draw.get_connections().size() > 0:
+					arrows += 1
+			arrows_per_row.append(arrows)
+	check(arrows_per_row == [3, 1],
+		"with an arrow between each pair in a chain (%s)" % str(arrows_per_row))
+
+	# The mix stands full height at the end of the rail, outside both rows: it belongs to
+	# the instrument rather than to either chain, and holds the voice's master level.
+	check(grouped_mix != null, "the mix panel stands at the end of the rail")
+	var mix_names: Array = []
+	var mix_targets: Array = []
+	if grouped_mix != null:
+		for one_block in grouped_mix.get_children():
+			var mix_band := (one_block as Node).get_child(0) as Label
+			if mix_band != null:
+				mix_names.append(mix_band.text)
+	for index in main.patch_face._targets:
+		var aimed: Dictionary = main.patch_face._targets[index]
+		if str(aimed["node"]) == "out":
+			mix_targets.append(str(aimed["parameter"]))
+	check(mix_names == ["MIX"], "under its own name (%s)" % str(mix_names))
+	check(mix_targets == ["level"],
+		"holding the master level (%s)" % str(mix_targets))
+	if grouped_mix != null and grouped_rail != null:
+		check(grouped_mix.get_global_rect().position.x
+				>= grouped_rail.get_global_rect().end.x - 1.0,
+			"to the right of every operator (%.0f against %.0f)"
+				% [grouped_mix.get_global_rect().position.x,
+					grouped_rail.get_global_rect().end.x])
+		check(grouped_mix.size.y >= grouped_rail.size.y - 2.0,
+			"and the full height of them (%.0f of %.0f)"
+				% [grouped_mix.size.y, grouped_rail.size.y])
+
 	var op1_grid: GridContainer = null
 	var op1_envelope: HBoxContainer = null
 	if not grouped_blocks.is_empty():
@@ -3327,13 +3393,18 @@ func _initialize() -> void:
 	check(op1_reaches.has("op6") and op1_reaches.has("op6_index_5"),
 		"and reach both the operator and its gain node (%s)" % str(op1_reaches.keys()))
 
-	# One fb knob on the panel, on the operator the algorithm designates.
+	# Every operator carries a feedback knob, including the five the algorithm leaves at
+	# zero. The algorithm decides where feedback *starts*, not where it is possible: each
+	# operator's oscillator has the input, turning one up is an edit the graph supports,
+	# and departing from the algorithm is a thing people buy an FM synth to do. A knob
+	# reading zero says "not used here"; an absent knob would say "not available".
 	var feedback_knobs: Array = []
 	for index in main.patch_face._targets:
 		if str(main.patch_face._targets[index]["parameter"]) == "feedback":
 			feedback_knobs.append(str(main.patch_face._targets[index]["node"]))
-	check(feedback_knobs == ["op6"],
-		"and feedback appears once, where the algorithm puts it (%s)"
+	feedback_knobs.sort()
+	check(feedback_knobs == ["op1", "op2", "op3", "op4", "op5", "op6"],
+		"every operator can be given feedback, algorithm or not (%s)"
 			% str(feedback_knobs))
 
 	# The gain knob is "level" on all six, as Yamaha names it — the wire format calls
@@ -3391,26 +3462,27 @@ func _initialize() -> void:
 	for child in main.patch_face.get_children():
 		if child is ScrollContainer:
 			for inner in (child as ScrollContainer).get_children():
-				if not (inner is VBoxContainer):
+				if not (inner is HBoxContainer):
 					continue
-				for one_row in (inner as Node).get_children():
-					for one_block in (one_row as Node).get_children():
-						for part in (one_block as Node).get_children():
-							var bank_row := part as HBoxContainer
-							if bank_row == null:
-								continue
-							# Banks are grids; an envelope row holds faders. Counting
-							# whatever HBox has the most children scored a row of four
-							# sliders as four banks of nothing.
-							var grids := 0
-							var held := 0
-							for bank in bank_row.get_children():
-								if bank is GridContainer:
-									grids += 1
-									held += (bank as Node).get_child_count()
-							if grids > spill_banks:
-								spill_banks = grids
-								spill_knobs = held
+				for one_column in (inner as Node).get_children():
+					for one_row in (one_column as Node).get_children():
+						for one_block in (one_row as Node).get_children():
+							for part in (one_block as Node).get_children():
+								var bank_row := part as HBoxContainer
+								if bank_row == null:
+									continue
+								# Banks are grids; an envelope row holds faders. Counting
+								# whatever HBox has the most children scored a row of four
+								# sliders as four banks of nothing.
+								var grids := 0
+								var held := 0
+								for bank in bank_row.get_children():
+									if bank is GridContainer:
+										grids += 1
+										held += (bank as Node).get_child_count()
+								if grids > spill_banks:
+									spill_banks = grids
+									spill_knobs = held
 	check(spill_knobs == 12,
 		"the authored panel carries all twelve knobs (%d)" % spill_knobs)
 	check(spill_banks > 1,
