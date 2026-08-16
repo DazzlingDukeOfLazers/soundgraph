@@ -3466,6 +3466,29 @@ func _initialize() -> void:
 	# operators, into the mix, out there.
 	check(ports_in != null and ports_out != null,
 		"the rail is flanked by port plates")
+
+	# A socket is its signals, not just its name. The keyboard hands over four —
+	# frequency, gate, velocity, trigger — and this patch takes the first two. All four
+	# are listed, because the unused ones are the reason to come back to the plate: they
+	# are what else is already there. Lit when a cable is on them, dim when not.
+	var lit_ports: Array = []
+	var dim_ports: Array = []
+	for plate in [ports_in, ports_out]:
+		if plate == null:
+			continue
+		for part in (plate as Node).get_children():
+			for inner in (part as Node).get_children():
+				var line := inner as Label
+				if line == null or line.tooltip_text == "":
+					continue
+				if line.get_theme_color("font_color") == Design.INK_DISABLED:
+					dim_ports.append(line.text)
+				else:
+					lit_ports.append(line.text)
+	check(lit_ports == ["frequency", "gate", "left", "right"],
+		"the plates light the signals in use (%s)" % str(lit_ports))
+	check(dim_ports == ["velocity", "trigger"],
+		"and still show the ones going spare (%s)" % str(dim_ports))
 	if ports_in != null and ports_out != null and grouped_rail != null \
 			and grouped_mix != null:
 		check(ports_in.get_global_rect().end.x

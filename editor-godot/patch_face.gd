@@ -994,6 +994,41 @@ func _port_plate(seams: Array, title: String, tint: Color, height: float) -> Con
 		where.add_theme_color_override("font_color",
 			Design.INK_SECOND if host != "" else Design.INK_DISABLED)
 		inside.add_child(where)
+
+		# And the signals themselves, which is what a socket actually is. A keyboard is
+		# not one wire: it hands over frequency, gate, velocity and trigger, and this
+		# patch takes the first two. All four are listed rather than only the two in use,
+		# because the unused ones are the reason to come back to this plate — they are
+		# what else is already there, and a list of only what is wired could never tell
+		# you that. Lit in the signal's own colour when a cable is on them, dim when not:
+		# the difference between "this patch uses it" and "this port has it".
+		var wired := {}
+		for wire in patch.get("connections", []):
+			for end_of in [wire.get("from", {}), wire.get("to", {})]:
+				if str(end_of.get("node", "")) == str(node["id"]):
+					wired[str(end_of.get("port", ""))] = true
+		var descriptor: Dictionary = registry.get(Seams.registry_key(node), {})
+		# An Input hands signals to the patch and an Output takes them, so the side that
+		# faces the patch is the opposite one each time. The host jack is left out: the
+		# line above already says what is plugged into it.
+		for port: Dictionary in descriptor.get(
+				"outputs" if str(node.get("type", "")) == "Input" else "inputs", []):
+			var port_name := str(port.get("name", ""))
+			if port_name == Seams.HOST_PORT:
+				continue
+			var line := Label.new()
+			line.text = port_name
+			line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			line.clip_text = true
+			line.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			line.add_theme_font_size_override("font_size",
+				Design.type(Design.SIZE_SECONDARY))
+			line.add_theme_color_override("font_color",
+				Design.signal_colour(str(port.get("signal", "control"))) \
+					if wired.has(port_name) else Design.INK_DISABLED)
+			line.tooltip_text = "%s — %s" % [str(port.get("signal", "control")),
+				"in use" if wired.has(port_name) else "free"]
+			inside.add_child(line)
 	return plate
 
 
