@@ -3043,16 +3043,15 @@ func _initialize() -> void:
 			# view gives this patch, side by side on one rail that overflows horizontally
 			# and scrolls — a case with more modules than the desk is walked along, not
 			# folded downwards.
+			# By name, not by class. Every reader here used to identify a part by its
+			# type, so each part added since broke a walker that had been right the day
+			# before — a ports plate is a VBoxContainer too.
 			var face_rail: VBoxContainer = null
 			var face_scroller: ScrollContainer = null
 			for child in main.patch_face.get_children():
 				if child is ScrollContainer:
-					for inner in (child as ScrollContainer).get_children():
-						if inner is HBoxContainer:
-							face_scroller = child as ScrollContainer
-							for side in (inner as Node).get_children():
-								if side is VBoxContainer and face_rail == null:
-									face_rail = side as VBoxContainer
+					face_scroller = child as ScrollContainer
+					face_rail = (child as Node).get_node_or_null("Rail/Rows")
 			check(face_rail != null, "the knobs sit on a rail of rows")
 			# Rows down the rail, blocks along each row: read left to right, then down.
 			var face_slots: Array = []
@@ -3269,17 +3268,30 @@ func _initialize() -> void:
 				for i in 4:
 					await process_frame
 
-			# The ports are on the panel, as a strip rather than as knobs: "what do I plug
-			# in" is the other half of "what do I turn".
+			# The ports are on the panel, as plates at the ends of the rail their signals
+			# run towards: in at the left edge, out at the right. "What do I plug in, and
+			# where does it come out" is the other half of "what do I turn", and under
+			# the rack as a list it read as a footnote about the instrument's edges
+			# rather than a picture of them.
 			var port_names: Array = []
+			var in_side := -1.0
+			var out_side := -1.0
 			for child in main.patch_face.get_children():
-				var row := child as HBoxContainer
-				if row == null:
+				if not (child is ScrollContainer):
 					continue
-				for inner in row.get_children():
-					var label := inner as Label
-					if label != null and port_names.size() < 40:
-						port_names.append(str(label.text))
+				for which in ["Rail/PortsIn", "Rail/PortsOut"]:
+					var plate := (child as Node).get_node_or_null(which) as Control
+					if plate == null:
+						continue
+					if which.ends_with("In"):
+						in_side = plate.get_global_rect().position.x
+					else:
+						out_side = plate.get_global_rect().position.x
+					for part in plate.get_children():
+						for inner in (part as Node).get_children():
+							var label := inner as Label
+							if label != null:
+								port_names.append(str(label.text))
 			var expected: Array = []
 			for node in main.patch["nodes"]:
 				if str(node.get("type", "")) in ["Input", "Output"]:
@@ -3288,6 +3300,9 @@ func _initialize() -> void:
 			for port_name in expected:
 				check(port_names.has(port_name),
 					"the panel names port %s (%s)" % [port_name, str(port_names)])
+			check(in_side >= 0.0 and out_side > in_side,
+				"with the inputs left of the outputs (%.0f then %.0f)"
+					% [in_side, out_side])
 
 			# Touching the default writes it down rather than replacing it.
 			var before_default: int = defaults.size()
@@ -3314,16 +3329,14 @@ func _initialize() -> void:
 	check(not main.patch_face.derived, "algo-01 brings a panel of its own")
 	var grouped_rail: VBoxContainer = null
 	var grouped_mix: HBoxContainer = null
+	var ports_in: Control = null
+	var ports_out: Control = null
 	for child in main.patch_face.get_children():
 		if child is ScrollContainer:
-			for inner in (child as ScrollContainer).get_children():
-				if not (inner is HBoxContainer):
-					continue
-				for side in (inner as Node).get_children():
-					if side is VBoxContainer and grouped_rail == null:
-						grouped_rail = side as VBoxContainer
-					elif side is HBoxContainer:
-						grouped_mix = side as HBoxContainer
+			grouped_rail = (child as Node).get_node_or_null("Rail/Rows")
+			grouped_mix = (child as Node).get_node_or_null("Rail/Mix")
+			ports_in = (child as Node).get_node_or_null("Rail/PortsIn")
+			ports_out = (child as Node).get_node_or_null("Rail/PortsOut")
 	# Down each slot, then along the rail — the order the panel lists them in.
 	var grouped_blocks: Array = []
 	var grouped_rows: Array = []
@@ -3447,6 +3460,28 @@ func _initialize() -> void:
 		check(grouped_mix.size.y >= grouped_rail.size.y - 2.0,
 			"and the full height of them (%.0f of %.0f)"
 				% [grouped_mix.size.y, grouped_rail.size.y])
+
+	# The ports flank the whole rail: in at the left edge, out past everything else. The
+	# panel then reads in the order the signal runs — plug in here, through the
+	# operators, into the mix, out there.
+	check(ports_in != null and ports_out != null,
+		"the rail is flanked by port plates")
+	if ports_in != null and ports_out != null and grouped_rail != null \
+			and grouped_mix != null:
+		check(ports_in.get_global_rect().end.x
+				<= grouped_rail.get_global_rect().position.x + 1.0,
+			"the inputs stand before the first operator (%.0f of %.0f)"
+				% [ports_in.get_global_rect().end.x,
+					grouped_rail.get_global_rect().position.x])
+		check(ports_out.get_global_rect().position.x
+				>= grouped_mix.get_global_rect().end.x - 1.0,
+			"and the outputs after the mix (%.0f of %.0f)"
+				% [ports_out.get_global_rect().position.x,
+					grouped_mix.get_global_rect().end.x])
+		check(ports_in.size.y >= grouped_rail.size.y - 2.0
+				and ports_out.size.y >= grouped_rail.size.y - 2.0,
+			"both the full height of the rack (%.0f and %.0f of %.0f)"
+				% [ports_in.size.y, ports_out.size.y, grouped_rail.size.y])
 
 	var op1_grid: GridContainer = null
 	var op1_envelope: HBoxContainer = null
@@ -3749,8 +3784,9 @@ func _initialize() -> void:
 			for inner in (child as ScrollContainer).get_children():
 				if not (inner is HBoxContainer):
 					continue
-				for one_column in (inner as Node).get_children():
-					for one_row in (one_column as Node).get_children():
+				var spill_rows: Node = (inner as Node).get_node_or_null("Rows")
+				if spill_rows != null:
+					for one_row in spill_rows.get_children():
 						for one_block in (one_row as Node).get_children():
 							for part in (one_block as Node).get_children():
 								var bank_row := part as HBoxContainer

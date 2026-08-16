@@ -419,6 +419,7 @@ func rebuild() -> void:
 		# The rail: rows of modules on the left, and whatever stands full height at the
 		# end of the signal on the right.
 		var rail := HBoxContainer.new()
+		rail.name = "Rail"
 		rail.add_theme_constant_override("separation", 0)
 		rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		scroller.add_child(rail)
@@ -428,7 +429,29 @@ func rebuild() -> void:
 		# used to be columns filled top to bottom, which put OP6 above OP5 and started
 		# the next column at OP4: the reading order was right but the shape of the voice
 		# was cut across it.
+		# The ports, at the ends of the rail their signals run towards: in at the left
+		# edge, out at the right. Tinted the way the cables are — what arrives is notes
+		# and gates, what leaves is sound — so the plates say which direction they are
+		# without a word.
+		var inputs: Array = []
+		var outputs: Array = []
+		for node in patch.get("nodes", []):
+			if str(node.get("type", "")) == "Input":
+				inputs.append(node)
+			elif str(node.get("type", "")) == "Output":
+				outputs.append(node)
+		if not inputs.is_empty():
+			var in_plate := _port_plate(inputs, "IN", Design.CONTROL, panel_height)
+			in_plate.name = "PortsIn"
+			rail.add_child(in_plate)
+			rail.add_child(_arrow())
+
 		var rows_column := VBoxContainer.new()
+		# Named, like the plates and the mix line beside it. Everything that reads this
+		# tree used to identify a part by its class, which meant every part added since
+		# broke a reader that had been right the day before — the ports plate is a
+		# VBoxContainer too, and the first one on the rail is no longer the rows.
+		rows_column.name = "Rows"
 		rows_column.add_theme_constant_override("separation", Design.SPACE_S)
 		# So the rows inherit the scroller's height rather than collapsing to their own
 		# minimums — the whole rail stretches or shrinks as one.
@@ -464,6 +487,7 @@ func rebuild() -> void:
 		if not mixes.is_empty():
 			rail.add_child(_arrow())
 			var mix_line := HBoxContainer.new()
+			mix_line.name = "Mix"
 			mix_line.add_theme_constant_override("separation", Design.SPACE_S)
 			mix_line.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			rail.add_child(mix_line)
@@ -472,6 +496,12 @@ func rebuild() -> void:
 				# reads down. It is also signal order — the mix's own level, then the
 				# port's — which is the same direction the rows to its left run in.
 				placed.append({"run": run, "line": mix_line, "strip": true})
+
+		if not outputs.is_empty():
+			rail.add_child(_arrow())
+			var out_plate := _port_plate(outputs, "OUT", Design.AUDIO, panel_height)
+			out_plate.name = "PortsOut"
+			rail.add_child(out_plate)
 
 		for seat: Dictionary in placed:
 			# A gap where one chain ends and the next begins on the same row: room
@@ -677,8 +707,6 @@ func rebuild() -> void:
 		# The filler that used to pad a half-empty column is gone with the columns. A
 		# short row is just a short row — it ends where its chain ends, which is a fact
 		# about the algorithm rather than a hole to be plugged.
-
-	_add_ports()
 
 	# Now that everything else in the panel exists to be measured against.
 	if not resized.is_connected(_fit_rail):
@@ -907,52 +935,66 @@ func _fit_rail() -> void:
 		_rail.custom_minimum_size.y = wanted + bar
 
 
-## Where this file meets the machine: its ports, in the order the document lists them.
+## Where this file meets the machine: a plate of ports, standing at the end of the rail
+## that its signals run towards.
 ##
-## On the panel because the panel is the file\'s face, and a face has its sockets on it —
+## On the panel because the panel is the file's face, and a face has its sockets on it —
 ## "what do I plug in, and where does it come out" is the other half of "what do I turn".
+## Beside the rack rather than under it, because a port is where the signal starts or
+## stops, and the rail already reads left to right: in at the left edge, out at the right.
+## As a list beneath everything it was a footnote about the instrument's edges rather than
+## a picture of them.
+##
 ## Read-only here: a port is moved by dragging its jack on the keyboard, which is the
 ## gesture that already exists for it.
-func _add_ports() -> void:
-	var seams: Array = []
-	for node in patch.get("nodes", []):
-		if str(node.get("type", "")) in ["Input", "Output"]:
-			seams.append(node)
-	if seams.is_empty():
-		return
+func _port_plate(seams: Array, title: String, tint: Color, height: float) -> Control:
+	var plate := VBoxContainer.new()
+	plate.add_theme_constant_override("separation", 0)
+	plate.custom_minimum_size.y = height
 
-	var caption := Label.new()
-	caption.text = "Ports"
-	caption.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
-	caption.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-	caption.add_theme_color_override("font_color", Design.INK_SECOND)
-	add_child(caption)
+	var heading := Label.new()
+	heading.text = title
+	heading.custom_minimum_size.y = Design.scale(BAND)
+	heading.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	heading.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+	heading.add_theme_color_override("font_color", Design.INK_BRIGHT)
+	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	plate.add_child(heading)
+	plate.draw.connect(func() -> void:
+		var face := Rect2(Vector2.ZERO, plate.size)
+		Rack.draw_plate(plate, face, float(heading.size.y), tint)
+		Rack.draw_screws(plate, face, float(Design.scale(3)), false))
+
+	var inside := VBoxContainer.new()
+	inside.add_theme_constant_override("separation", Design.SPACE_S)
+	inside.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	plate.add_child(inside)
 
 	for node: Dictionary in seams:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", Design.SPACE_S)
-
 		var name_label := Label.new()
 		var shown := str(node.get("name", ""))
 		if shown == "":
 			shown = str(node["id"])
 		name_label.text = shown
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_label.clip_text = true
 		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		name_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
-		row.add_child(name_label)
+		name_label.add_theme_font_size_override("font_size",
+			Design.type(Design.SIZE_CONTROL))
+		inside.add_child(name_label)
 
 		var where := Label.new()
 		var host := str(node.get("host", ""))
 		# What is plugged into it, or that nothing is — which is a state that means
 		# something now: a port nothing drives is one this patch offers to whatever uses it.
 		where.text = host if host != "" else "not plugged in"
+		where.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		where.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 		where.add_theme_color_override("font_color",
 			Design.INK_SECOND if host != "" else Design.INK_DISABLED)
-		row.add_child(where)
-		add_child(row)
+		inside.add_child(where)
+	return plate
 
 
 ## The registry key of a node in this patch — a module's synthesized entry or its plain
