@@ -2947,9 +2947,20 @@ func _initialize() -> void:
 					% [block_counted, main.patch_face._cells.size()])
 
 			# It flows rather than stacking: given room, blocks sit side by side.
-			main.patch_face.size.x = 1000.0
-			for i in 6:
+			#
+			# Given room properly — a wider window and the panel dragged out into it. Setting
+			# the face's own size does nothing worth trusting, because it lives in a container
+			# that sizes it back on the next layout pass, and a test that measures a width it
+			# did not actually get is a test that proves the narrow case twice.
+			var was_window: Vector2i = main.get_window().size
+			var was_panel: int = main.side_panel_width
+			main.get_window().size = Vector2i(2400, 1000)
+			main.side_panel_width = 1400
+			main._fit_side_panel()
+			for i in 8:
 				await process_frame
+			check(main.patch_face.size.x > 900.0,
+				"the panel can be dragged out to rack width (%.0fpx)" % main.patch_face.size.x)
 			var first_line := 0
 			var line_top: float = -1.0
 			for one_block in face_blocks:
@@ -2960,6 +2971,49 @@ func _initialize() -> void:
 					first_line += 1
 			check(first_line > 1,
 				"and given the width, blocks sit side by side (%d on the first line)" % first_line)
+
+			# And a block is one knob high — a rack panel, not a grid. A node's knobs read left
+			# to right in one strip and the panel spends width rather than height.
+			#
+			# Stated as "wraps only when it has to" rather than "never wraps", because the
+			# panel does not scroll sideways: a strip too wide for the room it has would have
+			# knobs that are simply not drawn, and wrapping is the honest fallback. So the
+			# guard is that every wrap is forced — any strip that stacked while its knobs
+			# would have fitted on one line is the old grid behaviour coming back.
+			var stacked := ""
+			for one_block in face_blocks:
+				for inner in (one_block as Node).get_children():
+					# Whatever holds the knobs, not whichever class holds them today — a guard
+					# that only looks at flow containers passes by saying nothing the moment
+					# somebody puts the grid back.
+					var knob_strip := inner as Container
+					if knob_strip == null or knob_strip.get_child_count() < 2 \
+							or not main.patch_face._cells.has(knob_strip.get_child(0)):
+						continue
+					var strip_top: float = (knob_strip.get_child(0) as Control).position.y
+					var wrapped := false
+					var natural := float(knob_strip.get_theme_constant("h_separation")
+						* (knob_strip.get_child_count() - 1))
+					for cell in knob_strip.get_children():
+						natural += (cell as Control).get_combined_minimum_size().x
+						if absf((cell as Control).position.y - strip_top) > 4.0:
+							wrapped = true
+					# Measured against the panel, not against the strip. A strip is as wide as
+					# it asks to be, so asking whether it wrapped inside its own width is
+					# circular — a two-column grid always "had to" wrap, because it asked for
+					# two columns. The panel's width is the room that actually exists.
+					if wrapped and natural <= main.patch_face.size.x and stacked == "":
+						stacked = "%d knobs needing %.0fpx in a panel of %.0fpx" \
+							% [knob_strip.get_child_count(), natural, main.patch_face.size.x]
+			check(stacked == "",
+				"and a block only wraps when the panel forces it (%s)" % stacked)
+
+			# Put the window back the size the rest of the suite expects to find it.
+			main.get_window().size = was_window
+			main.side_panel_width = was_panel
+			main._fit_side_panel()
+			for i in 4:
+				await process_frame
 
 			# The ports are on the panel, as a strip rather than as knobs: "what do I plug
 			# in" is the other half of "what do I turn".

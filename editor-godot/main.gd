@@ -160,10 +160,15 @@ var keyboard: Keyboard
 ## wants horizontal room more than almost anything else, so this is now a setting
 ## with a floor, a ceiling and a way to take it to nothing at all.
 const SIDE_PANEL_MIN := 280
-# Wide enough to be a rack rather than a column. The face flows its knobs in blocks, so
-# the room it is given is the room it uses: at 340 a DX7 patch is a tall thin list, and
-# dragged out it becomes rows of operators side by side.
-const SIDE_PANEL_MAX := 1100
+# Wide enough to be a rack rather than a column. The face flows its knobs in blocks one
+# knob high, so the room it is given is the room it uses: at 340 a DX7 patch is a tall thin
+# list, and dragged out it becomes strips of operators side by side.
+#
+# The ceiling is high because the panel is the thing somebody plays and the graph is how it
+# was built — there are sessions where the face should have most of the window. It costs
+# nothing to allow: _fit_side_panel already refuses to take the graph below a usable strip,
+# so this is a limit on the setting rather than on the layout.
+const SIDE_PANEL_MAX := 1800
 const SIDE_PANEL_DEFAULT := 340
 ## The strip left behind when it is collapsed: just enough for the button that
 ## brings it back, because a panel with no way back is a panel you have lost.

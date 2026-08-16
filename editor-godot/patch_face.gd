@@ -22,8 +22,8 @@ extends VBoxContainer
 const Rack := preload("res://rack.gd")
 const Seams := preload("res://seams.gd")
 
-## How many knobs to a line before wrapping. A performance panel is read across, and a
-## column of one is a list.
+## How many *offers* to a line before wrapping. The knob blocks themselves size to the
+## panel's width in _fit_blocks; this only shapes the ghost strip under them.
 const PER_LINE := 2
 
 ## How far down an offer is turned: enough to read as something available rather than as
@@ -249,14 +249,20 @@ func rebuild() -> void:
 	# Grouped, then flowed.
 	#
 	# Forty-three knobs in one column is a column nobody reads to the bottom of. They go in
-	# blocks instead — one per node, wrapped two wide — and the blocks flow across whatever
-	# width the panel has, wrapping to a new line when they run out of room. Widen the panel
-	# and you get more blocks side by side; it fills horizontally rather than growing down.
+	# blocks instead — one per node — and the blocks flow across whatever width the panel
+	# has, wrapping to a new line when they run out of room. Widen the panel and you get
+	# more blocks side by side; it fills horizontally rather than growing down.
 	#
-	# A block is never split. The knobs of one node belong together, and half of an operator
-	# at the bottom of one line with the rest at the top of the next is worse than either a
-	# short line or a long panel. That is the whole reason this is a flow of blocks rather
-	# than a flow of knobs.
+	# A block is one knob high, the way a rack panel is: a node's knobs read left to right
+	# in one strip under its name, and the panel grows sideways rather than downwards. It is
+	# a preference and not a promise — a block narrower than its knobs wraps rather than
+	# running off the edge, since the panel does not scroll sideways and the alternative to
+	# wrapping is knobs that are simply not drawn. At rack width nothing wraps.
+	#
+	# A block is never split *across blocks*. The knobs of one node belong together, and half
+	# of an operator at the end of one line with the rest at the start of the next is worse
+	# than either a short line or a long panel. That is the whole reason this is a flow of
+	# blocks rather than a flow of knobs.
 	#
 	# Blocks are runs of the same target node *in the order the panel already had*, never a
 	# regrouping. A file's own `controls` is an ordered statement of intent and reordering it
@@ -269,7 +275,7 @@ func rebuild() -> void:
 
 	var on_panel := {}
 	var block: VBoxContainer = null
-	var grid: GridContainer = null
+	var strip: GridContainer = null
 	var block_node := ""
 	for index in controls.size():
 		var control: Dictionary = controls[index]
@@ -297,14 +303,14 @@ func rebuild() -> void:
 			heading.clip_text = true
 			heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			block.add_child(heading)
-			grid = GridContainer.new()
-			grid.columns = PER_LINE
-			grid.add_theme_constant_override("h_separation", Design.SPACE_M)
-			grid.add_theme_constant_override("v_separation", Design.SPACE_S)
-			block.add_child(grid)
+			strip = GridContainer.new()
+			strip.columns = 1
+			strip.add_theme_constant_override("h_separation", Design.SPACE_M)
+			strip.add_theme_constant_override("v_separation", Design.SPACE_S)
+			block.add_child(strip)
 
 		var cell := _cell(control, descriptor)
-		grid.add_child(cell)
+		strip.add_child(cell)
 		_targets[_cells.size()] = {"node": node_id,
 			"parameter": str(target.get("parameter", ""))}
 		_cells.append(cell)
@@ -313,6 +319,11 @@ func rebuild() -> void:
 		# derivation, and the honest first gesture is putting a knob on.
 		if not derived:
 			_ids.append(str(control.get("id", "")))
+
+	# Now that the blocks exist, work out how wide each is allowed to be.
+	if not resized.is_connected(_fit_blocks):
+		resized.connect(_fit_blocks)
+	_fit_blocks()
 
 	# One block is one thing, and does not need labelling as such.
 	if flow.get_child_count() == 1:
@@ -357,6 +368,37 @@ func rebuild() -> void:
 		offer_line.add_child(ghost)
 		_offers[_cells.size()] = {"node": offer_node, "parameter": str(parameter["name"])}
 		_cells.append(ghost)
+
+
+## How many knobs a block puts across, from the width the panel actually has.
+##
+## A block wants to be one knob high — a node's knobs in one strip, the way a rack panel
+## reads — and the outer flow wraps whole blocks when they stop fitting side by side. That
+## needs a block to *ask* for its full row: a container that can wrap by itself asks for one
+## knob and gets one knob, so nesting a flow inside the flow collapsed every block into a
+## column no matter how much room there was.
+##
+## So the row width is decided here instead, against a width somebody can see. One knob high
+## whenever the panel can hold the row, and a wrapped block when it cannot — the panel does
+## not scroll sideways, and the alternative to wrapping is knobs that are not drawn at all.
+## Re-run on resize, because dragging the divider is how the width gets chosen.
+func _fit_blocks() -> void:
+	var pitch: float = float(Design.scale(Rack.KNOB_CELL.x) + Design.SPACE_M)
+	var across: int = maxi(1, int(floorf((size.x + float(Design.SPACE_M)) / pitch)))
+	for child in get_children():
+		var flow := child as HFlowContainer
+		if flow == null:
+			continue
+		for grouped in flow.get_children():
+			for inner in (grouped as Node).get_children():
+				var grid := inner as GridContainer
+				if grid == null:
+					continue
+				var wanted: int = maxi(1, mini(grid.get_child_count(), across))
+				# Only when it changes: setting columns invalidates the minimum size, which
+				# is what resized reports, which is what called this.
+				if grid.columns != wanted:
+					grid.columns = wanted
 
 
 ## Where this file meets the machine: its ports, in the order the document lists them.
@@ -426,6 +468,12 @@ func _cell(control: Dictionary, descriptor: Dictionary) -> Control:
 	cell.add_theme_constant_override("separation", 0)
 	cell.alignment = BoxContainer.ALIGNMENT_CENTER
 	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# One rack pitch, the same one the rack view uses. A flowed row gives each child the
+	# width it asks for, and a caption that clips to an ellipsis asks for almost nothing —
+	# without a floor the knobs would sit at whatever width their names happened to want,
+	# which is a row of knobs at a dozen different spacings. It is a floor and not a size:
+	# a knob that needs more at a large UI scale still gets it.
+	cell.custom_minimum_size.x = Design.scale(Rack.KNOB_CELL.x)
 
 	var target: Dictionary = control.get("target", {})
 	var knob := Rack.Knob.new()
