@@ -4968,6 +4968,57 @@ func _initialize() -> void:
 			dangling += 1
 	check(dangling == 0, "and no cable is left pointing at a node that was left out")
 
+	# ---- importing a patch that is itself modular -------------------------------------
+	# A DX7 voice is six instances of one definition, and importing one into a plain patch
+	# left the document naming a definition that was not there and still declaring schema
+	# 1 while holding modules. Both are things the file says about itself that were false,
+	# and either one alone stops it loading.
+	await main._load_example("First Synth")
+	for i in 8:
+		await process_frame
+	check(int(main.patch.get("schema_version", 1)) == 1,
+		"First Synth is a schema 1 document (%s)" % str(main.patch.get("schema_version")))
+	var voice := FileAccess.open("res://examples/dx7/algo-01.json", FileAccess.READ)
+	var voice_text := voice.get_as_text()
+	voice.close()
+	main._import_module(voice_text, "dx7_algo_01")
+	for i in 8:
+		await process_frame
+	check(int(main.patch.get("schema_version", 1)) == 2,
+		"importing modules raises it to 2 (%s)" % str(main.patch.get("schema_version")))
+	check((main.patch.get("modules", {}) as Dictionary).has("dx7_operator"),
+		"and brings the definition its nodes are instances of (%s)"
+			% str((main.patch.get("modules", {}) as Dictionary).keys()))
+
+	# Whatever else is wrong with a half-wired import — the terminals are dropped on
+	# purpose, so the operators' gates arrive unconnected and the graph says so — nothing
+	# should be wrong with what the document *claims*.
+	var lied := ""
+	var voice_report: Variant = JSON.parse_string(
+		main.engine.validate_patch(JSON.stringify(main.patch, "  ")))
+	if typeof(voice_report) == TYPE_DICTIONARY:
+		for problem in voice_report["diagnostics"]:
+			var text := str(problem.get("message", ""))
+			if text.contains("schema_version") or text.contains("unknown module") \
+					or text.contains("undeclared module"):
+				lied = text
+	check(lied == "", "with nothing left untrue about the file itself (%s)" % lied)
+
+	# And the definition is shared rather than copied: two DX7 voices in one document
+	# should mean one dx7_operator, not two under different names.
+	main._import_module(voice_text, "dx7_algo_01")
+	for i in 8:
+		await process_frame
+	var operator_definitions := 0
+	for name in (main.patch.get("modules", {}) as Dictionary):
+		if str(name).contains("dx7_operator"):
+			operator_definitions += 1
+	check(operator_definitions == 1,
+		"a second voice reuses the one definition (%d)" % operator_definitions)
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+
 	main._load_example("First Synth")
 	await process_frame
 

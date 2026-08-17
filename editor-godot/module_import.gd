@@ -104,12 +104,40 @@ static func merge(target: Dictionary, source: Dictionary, prefix: String,
 	if not target.has("connections"):
 		target["connections"] = []
 
+	# The definitions the imported nodes are instances *of*, which used to be left behind.
+	# Copying a node that says `"module": "dx7_operator"` into a document with no such
+	# definition produces a patch that names something that is not there — the import
+	# looked as though it had worked and the graph would not load.
+	#
+	# A name already taken by an identical definition is reused: importing two DX7 voices
+	# should give one dx7_operator, not two copies under different names. A name taken by
+	# a *different* definition is renamed under the same prefix the nodes get, and the
+	# instances follow it, because silently merging two unrelated definitions with one
+	# name would change what the host patch already does.
+	var renamed := {}
+	var source_modules: Dictionary = source.get("modules", {})
+	if not source_modules.is_empty():
+		if not target.has("modules"):
+			target["modules"] = {}
+		var target_modules: Dictionary = target["modules"]
+		for name in source_modules:
+			var definition: Dictionary = source_modules[name]
+			var wanted := str(name)
+			if target_modules.has(wanted):
+				if JSON.stringify(target_modules[wanted]) == JSON.stringify(definition):
+					continue
+				wanted = "%s%s%s" % [unique_prefix, SEPARATOR, str(name)]
+				renamed[str(name)] = wanted
+			target_modules[wanted] = definition.duplicate(true)
+
 	for node in source.get("nodes", []):
 		var old_id := str(node["id"])
 		if skipped.has(old_id):
 			continue
 		var copy: Dictionary = node.duplicate(true)
 		copy["id"] = "%s%s%s" % [unique_prefix, SEPARATOR, old_id]
+		if renamed.has(str(node.get("module", ""))):
+			copy["module"] = renamed[str(node.get("module", ""))]
 		var position: Dictionary = node.get("position", {})
 		copy["position"] = {
 			"x": float(position.get("x", 0.0)) - origin.x + at.x,
@@ -128,6 +156,14 @@ static func merge(target: Dictionary, source: Dictionary, prefix: String,
 		copy["from"]["node"] = "%s%s%s" % [unique_prefix, SEPARATOR, from_id]
 		copy["to"]["node"] = "%s%s%s" % [unique_prefix, SEPARATOR, to_id]
 		target["connections"].append(copy)
+
+	# A document that uses modules says so, whatever route they arrived by. Schema 2 is
+	# what makes a runtime that predates modules refuse the file loudly instead of
+	# misreading it, so a v1 document that has just acquired some is lying about itself —
+	# and this patch would not load at all until it was told the truth. The authoring
+	# side has raised the version since modules existed; the import side never did.
+	if not (target.get("modules", {}) as Dictionary).is_empty():
+		target["schema_version"] = maxi(int(target.get("schema_version", 1)), 2)
 
 	if result.nodes_added.is_empty():
 		result.error = "that patch has nothing in it but terminals"
