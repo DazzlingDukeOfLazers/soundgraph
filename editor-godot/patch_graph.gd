@@ -185,7 +185,24 @@ const PORT_TARGET_MIN := 24
 
 signal detail_changed(level: int)
 
+## How the level of detail is chosen. ADAPTIVE is the map: the drawing changes with
+## the zoom so the words that survive stay readable. ONE_TO_ONE is the photograph:
+## the full module — controls, text, all of it — at every zoom, scaled as geometry.
+## Nothing is pinned and nothing is swapped; far out the text is small because the
+## module is far away, which is the honest reading of "1:1".
+enum DetailMode { ADAPTIVE, ONE_TO_ONE }
+
+var detail_mode: int = DetailMode.ADAPTIVE
+
 var detail: int = Detail.FULL
+
+
+func set_detail_mode(mode: int) -> void:
+	if mode == detail_mode:
+		return
+	detail_mode = mode
+	_update_detail()
+	queue_redraw()
 
 var _hotzone_zoom := -1.0
 var _grid_emphasis := 0.0
@@ -779,7 +796,8 @@ class CrossingOverlay extends Control:
 ## Cheap summary of everything the crossing marks depend on.
 func _view_fingerprint() -> String:
 	var parts := PackedStringArray()
-	parts.append("%.2f,%.1f,%.1f" % [zoom, scroll_offset.x, scroll_offset.y])
+	parts.append("%.2f,%.1f,%.1f,%d" % [zoom, scroll_offset.x, scroll_offset.y,
+		detail_mode])
 	parts.append(str(connections.size()))
 	parts.append(str(waypoints.size()))
 	for child in get_children():
@@ -1321,6 +1339,13 @@ func _update_hit_targets() -> void:
 
 
 func _update_detail() -> void:
+	# 1:1 holds FULL at every zoom: the whole point of the mode is that the drawing
+	# never changes, only the distance to it.
+	if detail_mode == DetailMode.ONE_TO_ONE:
+		if detail != Detail.FULL:
+			detail = Detail.FULL
+			detail_changed.emit(Detail.FULL)
+		return
 	var plain := level_for(zoom)
 	var level := detail
 	if plain > detail:
@@ -1925,6 +1950,22 @@ class ScreenText extends Control:
 
 	func _draw() -> void:
 		if graph == null:
+			return
+		# In 1:1 the compensation stands down: the words belong to their modules again,
+		# at whatever size the zoom leaves them. The alphas are put back here because
+		# this class is what turned them off — leaving that to chance kept every label
+		# invisible that happened to be compensated when the mode flipped.
+		if graph.detail_mode == graph.DetailMode.ONE_TO_ONE:
+			for child in graph.get_children():
+				var node := child as GraphNode
+				if node == null:
+					continue
+				var title: Label = node.get_meta("title_label") \
+					if node.has_meta("title_label") else null
+				if title != null:
+					title.self_modulate.a = 1.0
+				for marked in _marked(node):
+					marked.self_modulate.a = 1.0
 			return
 		for child in graph.get_children():
 			var node := child as GraphNode

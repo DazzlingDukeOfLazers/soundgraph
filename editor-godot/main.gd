@@ -623,6 +623,9 @@ func _build_ui() -> void:
 	# Node drags and cable drags bracket their own undo entries, so a drag is one step
 	# rather than one per pixel of mouse movement.
 	graph_edit.detail_changed.connect(_apply_detail)
+	# The stored choice, through the same setter the menu uses. ADAPTIVE is the
+	# default and the setter refuses a no-op, so a fresh install changes nothing.
+	graph_edit.set_detail_mode(int(Settings.fetch("graph_detail_mode", 0)))
 	graph_edit.port_hovered.connect(_on_port_hovered)
 	graph_edit.ghost_port_picked.connect(_on_ghost_port_picked)
 	graph_edit.region_drawn.connect(_on_region_drawn)
@@ -1070,6 +1073,15 @@ func _build_toolbar() -> Control:
 		view_popup.add_radio_check_item(CASE_LABELS[index], 10 + index)
 	view_popup.set_item_checked(3, true)
 	view_popup.add_separator()
+	# The two readings of a zoomed-out graph. Adaptive is the map: the drawing
+	# simplifies as you leave so the surviving words stay readable. 1:1 is the
+	# photograph: the full module — controls, text, everything — at every zoom,
+	# smaller only because it is farther away.
+	view_popup.add_radio_check_item("Detail: adaptive", 70)
+	view_popup.add_radio_check_item("Detail: 1:1", 71)
+	view_popup.set_item_checked(view_popup.get_item_index(
+		70 + int(Settings.fetch("graph_detail_mode", 0))), true)
+	view_popup.add_separator()
 	# An accessibility switch that only exists as a hope is not one. Everything that
 	# moves on its own in this editor is off behind this: the signal glow and the grid
 	# fade, both of which say something the interface also says without moving.
@@ -1289,6 +1301,16 @@ func _on_file_menu(id: int) -> void:
 
 
 func _on_view_menu(id: int) -> void:
+	if id >= 70:
+		var mode: int = id - 70
+		graph_edit.set_detail_mode(mode)
+		Settings.store("graph_detail_mode", mode)
+		for entry in 2:
+			view_popup.set_item_checked(view_popup.get_item_index(70 + entry),
+				entry == mode)
+		_say("detail: %s" % ("1:1" if mode == PatchGraph.DetailMode.ONE_TO_ONE \
+			else "adaptive"))
+		return
 	if id >= 50:
 		_use_ui_scale(id - 50)
 		return

@@ -231,6 +231,11 @@ func _device_peak(main) -> float:
 	return peak
 
 
+## Whether a View-menu item is checked, found by id rather than by index.
+func view_item_checked(main, id: int) -> bool:
+	return main.view_popup.is_item_checked(main.view_popup.get_item_index(id))
+
+
 ## Press, move, release on the graph canvas.
 func _drag_graph(main, from: Vector2, to: Vector2) -> void:
 	var press := InputEventMouseButton.new()
@@ -2181,6 +2186,48 @@ func _initialize() -> void:
 	# which is why that mistake presents as a hung headless run rather than as a
 	# failure. Re-taken here rather than debugged again later.
 	node_widget = main.widgets["filter"]
+
+	# ---- 1:1 mode: the photograph -----------------------------------------------------
+	# The other reading of a zoomed-out graph: the full module — controls, text,
+	# everything — at every zoom, smaller only because it is farther away. Chosen
+	# through the View menu the way a hand chooses it, and remembered.
+	main.view_popup.id_pressed.emit(71)
+	for i in 3:
+		await process_frame
+	main.graph_edit.zoom = 0.30
+	main.graph_edit._update_detail()
+	for i in 3:
+		await process_frame
+	check(main.graph_edit.detail == main.PatchGraph.Detail.FULL,
+		"1:1 holds full detail at 30%% (level %d)" % main.graph_edit.detail)
+	var one_to_one_controls := 0
+	for id in main.widgets:
+		for row in _parameter_cells(main.widgets[id]):
+			for part in row.get_children():
+				if (part is Rack.Knob or part is HSlider or part is OptionButton) \
+						and (part as Control).is_visible_in_tree():
+					one_to_one_controls += 1
+	check(one_to_one_controls > 0,
+		"with the controls still on the nodes (%d showing)" % one_to_one_controls)
+	check(int(Settings.fetch("graph_detail_mode", 0)) == 1,
+		"and the choice is remembered")
+	check(view_item_checked(main, 71) and not view_item_checked(main, 70),
+		"and the menu says so")
+	# Back to adaptive at the same zoom: the map resumes, and 30%% is topology. The
+	# switch itself must apply it — the mode setter runs the same update the wheel
+	# polls, so nothing waits for the next zoom event.
+	main.view_popup.id_pressed.emit(70)
+	for i in 3:
+		await process_frame
+	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
+		"adaptive at the same zoom simplifies again (level %d)" % main.graph_edit.detail)
+	check(int(Settings.fetch("graph_detail_mode", 0)) == 0,
+		"and the preference follows")
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	for i in 3:
+		await process_frame
 
 	# ---- the nodes do not sit on top of each other, at any size preference -----------
 	# Reported as a text bug — "out" printed over the next node's "in" at XL and 63% —
