@@ -4512,6 +4512,69 @@ func _initialize() -> void:
 		"and its knobs reach the parts directly (%s.%s)"
 			% [opened_target[0], opened_target[1]])
 
+	# ---- each container turns independently -------------------------------------------
+	# The open frame carries its own FACE control, and flipping it turns only that
+	# container: its parts hidden, its cables off the canvas, its face mounted where
+	# they stood — while the rest of the wiring stays live around it.
+	for i in 6:
+		await process_frame
+	check(main.graph_edit._flip_hits.has("part"),
+		"the open frame carries a FACE control (%s)"
+			% str(main.graph_edit._flip_hits.keys()))
+	# Membership, not a name substring: the widgets' sanitized names need not contain
+	# the module's — which is how the first count quietly included the members it was
+	# meant to exclude.
+	var part_members: Array = main.graph_edit.groups.get("part", [])
+	var others_before := 0
+	for child in main.graph_edit.get_children():
+		if child is GraphNode and (child as GraphNode).visible \
+				and not part_members.has(String((child as GraphNode).name)):
+			others_before += 1
+	main.graph_edit.group_flip_toggled.emit("part")
+	for i in 8:
+		await process_frame
+	check(main.flipped_modules.has("part"), "flipping turns that container")
+	var part_shown := 0
+	var others_after := 0
+	for child in main.graph_edit.get_children():
+		if not (child is GraphNode) or not (child as GraphNode).visible:
+			continue
+		if main.graph_edit.groups.get("part", []).has(String((child as GraphNode).name)):
+			part_shown += 1
+		else:
+			others_after += 1
+	check(part_shown == 0, "its parts are put away (%d showing)" % part_shown)
+	check(others_after == others_before,
+		"and everything outside it stays on view (%d of %d)"
+			% [others_after, others_before])
+	var part_cables := 0
+	for wire in main.graph_edit.get_connection_list():
+		for widget_name in main.graph_edit.groups.get("part", []):
+			if String(wire["from_node"]) == str(widget_name) \
+					or String(wire["to_node"]) == str(widget_name):
+				part_cables += 1
+	check(part_cables == 0,
+		"with no cable left running into the turned container (%d)" % part_cables)
+	var part_mount: Control = main.module_mounts.get("part", null)
+	check(part_mount != null and part_mount.visible
+			and (part_mount as ModuleFace).opened_module == "part",
+		"and its face stands where the parts stood")
+	check(main.graph_edit.flip_frames.has("part")
+			and main.graph_edit._flip_hits.has("part"),
+		"wearing a band with the way back on it")
+
+	main.graph_edit.group_flip_toggled.emit("part")
+	for i in 10:
+		await process_frame
+	var part_back := 0
+	for child in main.graph_edit.get_children():
+		if child is GraphNode and (child as GraphNode).visible \
+				and main.graph_edit.groups.get("part", []) \
+					.has(String((child as GraphNode).name)):
+			part_back += 1
+	check(not main.flipped_modules.has("part") and part_back > 0,
+		"WIRES brings the parts back (%d)" % part_back)
+
 	# ---- editing a module from the inside --------------------------------------------
 	# The argument for opening a module on the canvas rather than in a view of its own:
 	# once it is open its parts are ordinary nodes, so adding one and wiring it are the

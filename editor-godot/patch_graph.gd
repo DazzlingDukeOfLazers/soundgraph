@@ -998,8 +998,15 @@ var face_up := false:
 	set(value):
 		face_up = value
 		queue_redraw()
-## Called every frame while the face is up, so the mount follows the camera.
+## Called every frame while any face is up, so the mounts follow the camera.
 signal face_needs_placing
+## An open module's FACE/WIRES control was clicked: turn that one container.
+signal group_flip_toggled(module_name: String)
+## Frames of turned-over open modules, in graph coordinates: name -> Rect2. Set by main
+## when it mounts a face, because the members' own rectangles are hidden with the
+## members and can no longer say where the container stands.
+var flip_frames: Dictionary = {}
+var _flip_hits: Dictionary = {}
 ## The case is about to move, so an undo step can be opened before anything shifts.
 signal case_move_started
 ## The case finished moving, so the document should be told where its nodes are now.
@@ -1038,9 +1045,10 @@ func _case_band_rect() -> Rect2:
 
 
 func _draw_case() -> void:
+	if face_up or not flip_frames.is_empty():
+		face_needs_placing.emit()
 	# The mounted face draws its own case; two cases in one spot is one too many.
 	if face_up:
-		face_needs_placing.emit()
 		return
 	if case_title == "":
 		return
@@ -1436,7 +1444,8 @@ class WandOverlay extends Control:
 		z_index = 101
 
 	func _process(_delta: float) -> void:
-		if graph != null and (graph.drawing or not graph.groups.is_empty()):
+		if graph != null and (graph.drawing or not graph.groups.is_empty()
+				or not graph.flip_frames.is_empty()):
 			queue_redraw()
 
 	func _draw() -> void:
@@ -1455,6 +1464,7 @@ class WandOverlay extends Control:
 	## copies disagree the first time somebody drags one.
 	func _draw_groups() -> void:
 		_close_hits_out.clear()
+		_flip_hits_out.clear()
 		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
 		var font := Design.font(Design.WEIGHT_SEMIBOLD)
 		var size := Design.type(Design.SIZE_CONTROL)
@@ -1483,9 +1493,51 @@ class WandOverlay extends Control:
 			draw_string(font, button.position + Vector2(pad, pad * 0.5 + measured.y * 0.8),
 				label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ON_ACCENT)
 			_close_hits_out[module_name] = button
+
+			# This container's own flip, beside Close: each case turns independently,
+			# and the control for turning a thing lives on the thing.
+			var face_text := "FACE"
+			var face_measured := font.get_string_size(face_text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
+			var face_chip := Rect2(
+				Vector2(button.position.x - face_measured.x - pad * 3.0,
+					button.position.y),
+				face_measured + Vector2(pad, pad * 0.5) * 2.0)
+			draw_rect(face_chip, Color(Design.ACCENT, 0.16))
+			draw_rect(face_chip, Color(Design.ACCENT, 0.55), false, 1.0)
+			draw_string(font,
+				face_chip.position + Vector2(pad, pad * 0.5 + face_measured.y * 0.8),
+				face_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
+			_flip_hits_out[module_name] = face_chip
+
+		# Turned containers: the members are hidden, so the band is drawn from the frame
+		# main recorded when it mounted the face. Name and the way back, nothing else —
+		# Close would fold a module whose parts are not even on view.
+		for module_name in graph.flip_frames:
+			var frame: Rect2 = graph.flip_frames[module_name]
+			var strip := Rect2(frame.position * scale - graph.scroll_offset,
+				Vector2(frame.size.x * scale, float(Design.scale(26.0)) * scale))
+			draw_rect(strip, Color(Design.ACCENT, 0.10))
+			draw_string(font, strip.position + Vector2(pad, strip.size.y * 0.72),
+				str(module_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
+			var wires_text := "WIRES"
+			var wires_measured := font.get_string_size(wires_text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
+			var wires_chip := Rect2(
+				Vector2(strip.end.x - wires_measured.x - pad * 2.0,
+					strip.position.y + (strip.size.y - wires_measured.y - pad * 0.5) * 0.5),
+				wires_measured + Vector2(pad, pad * 0.5) * 2.0)
+			draw_rect(wires_chip, Design.ACCENT)
+			draw_string(font,
+				wires_chip.position + Vector2(pad, pad * 0.5 + wires_measured.y * 0.8),
+				wires_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ON_ACCENT)
+			_flip_hits_out[module_name] = wires_chip
+
 		graph._close_hits = _close_hits_out.duplicate()
+		graph._flip_hits = _flip_hits_out.duplicate()
 
 	var _close_hits_out: Dictionary = {}
+	var _flip_hits_out: Dictionary = {}
 
 
 	## The rubber band, while one is being drawn. Dashed for the same reason a target is:
@@ -1548,6 +1600,14 @@ func _input(event: InputEvent) -> void:
 	for module_name in _close_hits:
 		if (_close_hits[module_name] as Rect2).has_point(button.position - rect.position):
 			group_closed.emit(str(module_name))
+			get_viewport().set_input_as_handled()
+			return
+
+	# A frame's FACE control, or a turned container's WIRES — one dictionary, since a
+	# container has exactly one of the two at a time.
+	for module_name in _flip_hits:
+		if (_flip_hits[module_name] as Rect2).has_point(button.position - rect.position):
+			group_flip_toggled.emit(str(module_name))
 			get_viewport().set_input_as_handled()
 			return
 

@@ -147,6 +147,10 @@ var make_module_button: Button
 ## Same class as the side panel's face — one face, two mountings.
 var big_face: PatchFace
 var wires_button: Button
+## Which open modules are turned over, and the ModuleFace mounted for each. Session
+## state, like which side the file's case shows: nothing here is written to the patch.
+var flipped_modules := {}
+var module_mounts := {}
 ## Where the face is mounted, in graph coordinates: the case's own corner at the moment
 ## it was turned over. The graph's camera does the rest.
 var face_anchor := Vector2.ZERO
@@ -623,6 +627,15 @@ func _build_ui() -> void:
 	# and dragging that band moves everything mounted in it.
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
 	graph_edit.case_flipped.connect(func() -> void: _flip_container(true))
+	graph_edit.group_flip_toggled.connect(func(module_name: String) -> void:
+		if flipped_modules.has(module_name):
+			flipped_modules.erase(module_name)
+			# Turning back needs the members and cables restored, and the rebuild is
+			# the one honest way to get a view that matches the document again.
+			await _rebuild_view()
+		else:
+			flipped_modules[module_name] = true
+			_apply_flips())
 	graph_edit.face_needs_placing.connect(_place_face)
 	# Clicking the container chooses the container: the panel shows its face and the
 	# inspector describes the whole patch, exactly as they do when a seam like the
@@ -1633,6 +1646,8 @@ func _flip_container(show_face: bool) -> void:
 			if child is GraphNode:
 				(child as GraphNode).visible = false
 		graph_edit.clear_connections()
+		for module_name in module_mounts:
+			(module_mounts[module_name] as Control).visible = false
 		big_face.visible = true
 		_refresh_face()
 		# As wide as the case it replaces, or its own need if that is more: the face
@@ -1651,12 +1666,71 @@ func _flip_container(show_face: bool) -> void:
 ## Keeps the mounted face under the graph's camera: its position and scale are the
 ## case's, through the same transform every node uses. Called from the graph each frame
 ## while the face is up — a canvas tenant has to follow the canvas.
+## Reapplies every per-module flip to a freshly built view: hide the members, take
+## their cables off the canvas, mount the face over where they stood. Runs at the end of
+## every rebuild, because a rebuild restores everything and the flips are session state
+## the document knows nothing about.
+func _apply_flips() -> void:
+	if graph_edit == null:
+		return
+	graph_edit.flip_frames = {}
+	# A flip for a module that is no longer open has nothing to stand on.
+	for module_name in flipped_modules.keys():
+		if not graph_edit.groups.has(module_name):
+			flipped_modules.erase(module_name)
+	for module_name in module_mounts.keys():
+		if not flipped_modules.has(module_name):
+			(module_mounts[module_name] as Control).visible = false
+	for module_name in flipped_modules:
+		var frame: Rect2 = graph_edit.group_box(str(module_name))
+		if frame.size.x <= 0.0:
+			continue
+		var members: Array = graph_edit.groups.get(module_name, [])
+		for widget_name in members:
+			var member := graph_edit.get_node_or_null(
+				NodePath(str(widget_name))) as GraphNode
+			if member != null:
+				member.visible = false
+		for wire in graph_edit.get_connection_list():
+			if members.has(String(wire["from_node"])) 					or members.has(String(wire["to_node"])):
+				graph_edit.disconnect_node(wire["from_node"], wire["from_port"],
+					wire["to_node"], wire["to_port"])
+		var mount: Control = module_mounts.get(module_name, null)
+		if mount == null:
+			mount = ModuleFace.new()
+			mount.z_index = 50
+			(mount as ModuleFace).rearranged.connect(_on_face_rearranged)
+			(mount as ModuleFace).removed.connect(_on_face_knob_removed)
+			(mount as ModuleFace).refused.connect(
+				func(reason: String) -> void: _say(reason))
+			graph_edit.add_child(mount)
+			module_mounts[module_name] = mount
+		var shown := mount as ModuleFace
+		shown.patch = patch
+		shown.registry = registry
+		shown.rack = rack
+		shown.node_id = ""
+		shown.opened_module = str(module_name)
+		shown.visible = true
+		shown.rebuild()
+		var natural: Vector2 = shown.get_combined_minimum_size()
+		shown.size = Vector2(maxf(natural.x, frame.size.x), natural.y)
+		shown.set_meta("anchor", frame.position)
+		graph_edit.flip_frames[str(module_name)] = Rect2(frame.position, shown.size)
+
+
 func _place_face() -> void:
-	if big_face == null or not big_face.visible:
+	if graph_edit == null:
 		return
 	var zoom: float = graph_edit.zoom if graph_edit.zoom > 0.0 else 1.0
-	big_face.position = face_anchor * zoom - graph_edit.scroll_offset
-	big_face.scale = Vector2(zoom, zoom)
+	if big_face != null and big_face.visible:
+		big_face.position = face_anchor * zoom - graph_edit.scroll_offset
+		big_face.scale = Vector2(zoom, zoom)
+	for module_name in module_mounts:
+		var mount := module_mounts[module_name] as Control
+		if mount.visible and mount.has_meta("anchor"):
+			mount.position = (mount.get_meta("anchor") as Vector2) * zoom 				- graph_edit.scroll_offset
+			mount.scale = Vector2(zoom, zoom)
 
 
 func _refresh_context() -> void:
@@ -2386,6 +2460,7 @@ func _rebuild_view() -> void:
 		graph_edit.connect_node(widgets[from_id].name, from_port, widgets[to_id].name, to_port)
 
 	_restore_waypoints()
+	_apply_flips()
 
 	# Fresh widgets are built showing everything, but the zoom has an opinion already.
 	# _apply_detail only ran on detail_changed, and a rebuild does not change the
