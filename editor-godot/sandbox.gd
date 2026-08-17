@@ -163,6 +163,14 @@ func _ready() -> void:
 	_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_stage.add_child(_holder)
+	# Input follows the same rule as rendering: a world nobody can see gets nothing.
+	# The container forwards events at the Node layer, which does not care that the
+	# tab is hidden — and hidden, the layout is 0x0, the viewport's stretch transform
+	# has no inverse, and every key pressed anywhere in the editor printed one
+	# "det == 0" error from inverting it. (The render half of the same story is
+	# UPDATE_WHEN_VISIBLE below.)
+	_holder.visibility_changed.connect(_mute_hidden_input)
+	_mute_hidden_input.call_deferred()
 
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(WORLD_SIZE)
@@ -196,6 +204,12 @@ func _ready() -> void:
 	world.status = _status
 	viewport.add_child(world)
 	_apply_fit()
+
+
+func _mute_hidden_input() -> void:
+	var live := _holder.is_visible_in_tree()
+	_holder.set_process_input(live)
+	_holder.set_process_unhandled_input(live)
 
 
 ## Applies the current fit. Actual size pins the stage to the game's own resolution, so

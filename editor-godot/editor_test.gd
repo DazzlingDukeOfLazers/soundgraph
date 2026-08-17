@@ -954,6 +954,25 @@ func _initialize() -> void:
 		check(sandbox_viewport.size_2d_override_stretch,
 			"scaled to the stage rather than cropped by it")
 
+	# Input follows the same rule as rendering: a world nobody can see gets nothing.
+	# The container forwards events at the Node layer, which ignores visibility — and
+	# hidden, the collapsed viewport's stretch transform has no inverse, so every key
+	# pressed anywhere in the editor printed one engine error from inverting it. The
+	# error itself is C++-side and invisible to this suite, so the check pins the
+	# valve: forwarding on when the tab shows, off when it does not.
+	check(main.sandbox._holder.is_processing_input(),
+		"the sandbox hears input while its tab is up")
+	main.show_view("Graph")
+	for i in 6:
+		await process_frame
+	check(not main.sandbox._holder.is_processing_input(),
+		"and is deaf while another tab is")
+	main.show_view("Sandbox")
+	for i in 6:
+		await process_frame
+	check(main.sandbox._holder.is_processing_input(),
+		"and hears again when it returns")
+
 	# One strip, not three paragraphs. Counted rather than eyeballed, because the thing
 	# that made it look like a debug page was the number of lines.
 	var sandbox_labels := 0

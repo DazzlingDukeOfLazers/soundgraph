@@ -4938,7 +4938,10 @@ func _refresh_seam_cables() -> void:
 					continue
 				var from = jacks.socket_centre(str(socket["port"]), str(socket["node"]))
 				var widget: GraphNode = widgets.get(str(socket["node"]))
-				if from == null or widget == null:
+				# Not the hidden ones: a flipped case hides its nodes, and a hidden
+				# GraphNode has no port cache to ask — every frame asked anyway, and the
+				# console filled with index errors. No cable runs to what cannot be seen.
+				if from == null or widget == null or not widget.visible:
 					continue
 				var driven: bool = str(socket["type"]) != "audio" 					or jacks == note_jacks
 				var index := _input_port_index(str(socket["node"]), Seams.HOST_PORT) 					if driven else _output_port_index(str(socket["node"]), Seams.HOST_PORT)
