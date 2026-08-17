@@ -68,6 +68,13 @@ var rack: Control = null
 ## the plates are mounted in.
 var title := ""
 
+## When the panel plays a module instance rather than the file it was drawn from:
+## "inner_node.parameter" -> {"node": instance id, "parameter": export name}. A
+## control keeps its inner target for structure — groups, chains, what is heard —
+## but its writes land on the instance's exported parameter, which is the only
+## parameter an instance actually has. Empty for the file's own panel.
+var write_as: Dictionary = {}
+
 ## True while the panel is showing the default rather than the file's own.
 ##
 ## A file with no `controls` used to get one line of hint and nothing else — which is most
@@ -663,8 +670,9 @@ func rebuild() -> void:
 				if enveloped and ENVELOPE.has(parameter):
 					var slide := Rack.Fader.new()
 					slide.rack = rack
-					slide.node_id = cell_node
-					slide.descriptor = entry["descriptor"]
+					var wired := _wire(cell_node, parameter, entry["descriptor"])
+					slide.node_id = wired[0]
+					slide.descriptor = wired[1]
 					slide.label = str(ENVELOPE[parameter])
 					slide.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 					slide.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1144,8 +1152,10 @@ func _cell(control: Dictionary, descriptor: Dictionary) -> Control:
 	# A smaller dial, not smaller text — a smaller circle is still a circle, but a
 	# smaller label is a squint. Sized so the dial clears its cell's two-thirds pitch.
 	knob.dial = 0.72
-	knob.node_id = str(target.get("node", ""))
-	knob.descriptor = descriptor
+	var wired := _wire(str(target.get("node", "")), str(target.get("parameter", "")),
+		descriptor)
+	knob.node_id = wired[0]
+	knob.descriptor = wired[1]
 	knob.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var current: float = float(_value_of(str(target.get("node", "")),
 		str(target.get("parameter", "")), float(descriptor.get("default", 0.0))))
@@ -1171,6 +1181,19 @@ func _cell(control: Dictionary, descriptor: Dictionary) -> Control:
 		str(target.get("parameter", ""))]
 	cell.add_child(caption)
 	return cell
+
+
+## Where a control's writes go: [node id, descriptor]. Its own target, unless
+## write_as redirects it — then the id is the instance's and the descriptor is the
+## same dial wearing the export's name, because the rack emits descriptor["name"]
+## and the export is what the instance answers to.
+func _wire(cell_node: String, parameter: String, descriptor: Dictionary) -> Array:
+	var mapped: Dictionary = write_as.get("%s.%s" % [cell_node, parameter], {})
+	if mapped.is_empty():
+		return [cell_node, descriptor]
+	var renamed: Dictionary = descriptor.duplicate(true)
+	renamed["name"] = str(mapped["parameter"])
+	return [str(mapped["node"]), renamed]
 
 
 func _value_of(node_id: String, parameter: String, fallback: float) -> float:

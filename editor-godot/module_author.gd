@@ -804,6 +804,24 @@ static func from_patch(patch: Dictionary, foreign: Dictionary, name_hint: String
 				node["module"] = renamed[str(node.get("module", ""))]
 	result.module_name = _unique_name(name_hint if name_hint != "" else "module",
 		out["modules"].keys())
+	# The face travels with the definition: a device's panel is the panel its file
+	# already drew — same controls, same groups, same order. Every control aimed at
+	# an inner node gets an export (on demand, like everything else) so an instance's
+	# knobs have a parameter of their own to write; a control aimed at a seam keeps
+	# its place on the face but writes nothing, since an instance has no master out
+	# of its own.
+	var faces: Array = (foreign.get("controls", []) as Array).duplicate(true)
+	if not faces.is_empty():
+		var inner_ids := {}
+		for node in inner_nodes:
+			if not str(node.get("type", "")) in ["Input", "Output"]:
+				inner_ids[str(node["id"])] = true
+		for control: Dictionary in faces:
+			var face_target: Dictionary = control.get("target", {})
+			if inner_ids.has(str(face_target.get("node", ""))):
+				_export_for(exported, {}, str(face_target.get("node", "")),
+					str(face_target.get("parameter", "")))
+
 	var definition := {
 		"nodes": inner_nodes,
 		"connections": internal,
@@ -817,6 +835,8 @@ static func from_patch(patch: Dictionary, foreign: Dictionary, name_hint: String
 		definition["outputs"] = outputs
 	if not exported.is_empty():
 		definition["parameters"] = exported
+	if not faces.is_empty():
+		definition["controls"] = faces
 	out["modules"][result.module_name] = definition
 
 	result.instance_id = _unique_name(result.module_name,

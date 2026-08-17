@@ -1739,24 +1739,110 @@ func _apply_flips() -> void:
 					or String(wire["to_node"]) == String(widget.name):
 				graph_edit.disconnect_node(wire["from_node"], wire["from_port"],
 					wire["to_node"], wire["to_port"])
-		var shown := _mount_for(str(instance_id))
-		shown.node_id = str(instance_id)
-		shown.opened_module = ""
+		var module_name := _module_of(str(instance_id))
+		var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
+		var shown: Control
+		var band_label := ""
+		if (definition.get("controls", []) as Array).is_empty():
+			# No face in the definition — an older import, or a collapse that never
+			# had one. The flat surface of exports is all there is to show.
+			var face := _mount_for(str(instance_id))
+			face.node_id = str(instance_id)
+			face.opened_module = ""
+			face.rebuild()
+			shown = face
+			band_label = module_name
+		else:
+			# The panel the device's file draws, wearing its own name badge — the
+			# band above it needs no second copy.
+			shown = _device_panel_for(str(instance_id), module_name, definition)
 		shown.visible = true
-		shown.rebuild()
 		var natural: Vector2 = shown.get_combined_minimum_size()
 		shown.size = Vector2(maxf(natural.x, widget.size.x), natural.y)
 		shown.set_meta("anchor", widget.position_offset)
-		# The band is keyed by instance so two of the same device turn independently,
-		# but it wears the module's name — the key is plumbing, not a label.
+		# The band is keyed by instance so two of the same device turn independently —
+		# the key is plumbing, not a label.
 		graph_edit.flip_frames[str(instance_id)] = Rect2(widget.position_offset, shown.size)
-		graph_edit.flip_labels[str(instance_id)] = _module_of(str(instance_id))
+		graph_edit.flip_labels[str(instance_id)] = band_label
+
+
+## The full panel a device's file draws, mounted for one instance. The definition is
+## a whole document — seams, wiring, and (since it carries the source's controls) the
+## face — so the same PatchFace the file itself shows is built from a copy of it. The
+## copy carries the instance's own parameter values, and write_as sends every knob's
+## writes to the instance's exported parameter, which is the only parameter an
+## instance actually has. Reorder and remove gestures stay unconnected on purpose:
+## the face belongs to the definition's file, and an instance only plays it.
+func _device_panel_for(instance_id: String, module_name: String,
+		definition: Dictionary) -> Control:
+	var mount: Control = module_mounts.get(instance_id, null)
+	if mount != null and not (mount is PatchFace):
+		# The same key wore a ModuleFace before the definition had a face to show.
+		mount.queue_free()
+		module_mounts.erase(instance_id)
+		mount = null
+	if mount == null:
+		mount = PatchFace.new()
+		mount.z_index = 50
+		graph_edit.add_child(mount)
+		module_mounts[instance_id] = mount
+	var panel := mount as PatchFace
+	var overrides: Dictionary = {}
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == instance_id:
+			overrides = node.get("parameters", {})
+	var doc := {
+		"schema_version": 2,
+		"metadata": {"name": module_name},
+		"nodes": (definition.get("nodes", []) as Array).duplicate(true),
+		"connections": definition.get("connections", []),
+		"controls": definition.get("controls", []),
+	}
+	var writes := {}
+	for binding in definition.get("parameters", []):
+		writes["%s.%s" % [str(binding["node"]), str(binding["parameter"])]] = {
+			"node": instance_id, "parameter": str(binding["name"])}
+		# What the instance has turned lands on the copy, so the knobs stand where
+		# this device is actually set rather than where its file was saved.
+		if overrides.has(str(binding["name"])):
+			for node in doc["nodes"]:
+				if str(node["id"]) == str(binding["node"]):
+					if not node.has("parameters"):
+						node["parameters"] = {}
+					node["parameters"][str(binding["parameter"])] = \
+						overrides[str(binding["name"])]
+	# A control aimed at a seam stays off a device's face for now. Expansion splices
+	# a definition's seams away, and the master level a file stores on one goes with
+	# them — measured: an instance's "level" export validates, writes, and changes
+	# nothing a listener can hear. A knob that writes a parameter nothing hears
+	# would be a lie, so until patch-io honours seam levels the face shows only what
+	# plays. (The mix group's own level knob is the device's volume meanwhile.)
+	var seams := {}
+	for node in doc["nodes"]:
+		if str(node.get("type", "")) in ["Input", "Output"]:
+			seams[str(node["id"])] = true
+	var playable: Array = []
+	for control: Dictionary in doc["controls"]:
+		if not seams.has(str(control.get("target", {}).get("node", ""))):
+			playable.append(control)
+	doc["controls"] = playable
+	panel.patch = doc
+	panel.registry = registry
+	panel.rack = rack
+	panel.title = module_name
+	panel.write_as = writes
+	panel.rebuild()
+	return panel
 
 
 ## The ModuleFace mounted on the canvas for this key — an open module's name or a
 ## flipped instance's id — made once and reused across rebuilds.
 func _mount_for(key: String) -> ModuleFace:
 	var mount: Control = module_mounts.get(key, null)
+	if mount != null and not (mount is ModuleFace):
+		mount.queue_free()
+		module_mounts.erase(key)
+		mount = null
 	if mount == null:
 		mount = ModuleFace.new()
 		mount.z_index = 50

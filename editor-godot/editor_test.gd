@@ -5533,13 +5533,65 @@ func _initialize() -> void:
 	check(node_mount != null and node_mount.visible and node_mount._cells.size() > 0,
 		"and mounts the module's face where it stood (%d cells)"
 			% (0 if node_mount == null else node_mount._cells.size()))
+	# Not the flat export list — the panel the device's file draws: the rack case
+	# with the name on the band, rows of grouped blocks, port plates at the ends.
+	check(node_mount is PatchFace,
+		"the mount is the file's own panel, not a knob list")
+	var mount_rail = node_mount.get_node_or_null("Case/Rack/Rail")
+	check(mount_rail != null
+			and mount_rail.get_node_or_null("PortsIn") != null
+			and mount_rail.get_node_or_null("PortsOut") != null,
+		"wearing the case, the rail and both port plates")
+	check(str(node_mount.get_node("Case/Name").text).to_lower().contains("algo"),
+		"with the module's name on the badge (%s)"
+			% node_mount.get_node("Case/Name").text)
+	# Every knob writes the instance's exported parameter — the only parameter an
+	# instance has. A real knob on the mounted face, played the way a hand plays
+	# it: one notch of the wheel through the knob's own input. Not an emitted
+	# signal — an earlier version of this check emitted what it assumed the knob
+	# would send, and passed identically with the wiring cut.
+	var played_knob = null
+	for cell in node_mount._cells:
+		for part in (cell as Node).get_children():
+			if part is RackView.Knob:
+				played_knob = part
+				break
+		if played_knob != null:
+			break
+	check(played_knob != null, "the face has a knob to play")
+	check(str(played_knob.node_id) == onto_fresh,
+		"and it is wired to the instance, not the inner node (%s)" % played_knob.node_id)
+	var export_name := str(played_knob.descriptor.get("name", ""))
+	var value_before: float = 0.0
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == onto_fresh:
+			value_before = float(node.get("parameters", {}).get(export_name, -999.0))
+	_wheel(played_knob, true)
+	for i in 4:
+		await process_frame
+	var value_after: float = -999.0
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == onto_fresh:
+			value_after = float(node.get("parameters", {}).get(export_name, -999.0))
+	check(value_after > -999.0 and not is_equal_approx(value_after, value_before),
+		"a wheel notch on it lands on the instance's parameters (%s: %s -> %s)"
+			% [export_name, str(value_before), str(value_after)])
+	# Nothing on the face writes a seam: expansion splices seams away, so a knob
+	# aimed at one would move without a sound. Off the face until patch-io hears it.
+	var seam_cells := 0
+	for target in node_mount._targets.values():
+		for node in main.patch["modules"][main._module_of(onto_fresh)]["nodes"]:
+			if str(node["id"]) == str(target["node"]) \
+					and str(node.get("type", "")) in ["Input", "Output"]:
+				seam_cells += 1
+	check(seam_cells == 0, "and no cell is wired to a spliced-away seam")
 	check(main.graph_edit.get_connection_list().is_empty()
 			and main.patch["connections"].size() == wired_when_flipped,
 		"its cables leave the view and stay in the document (%d kept)"
 			% main.patch["connections"].size())
-	check(str(main.graph_edit.flip_labels.get(onto_fresh, "")) != "",
-		"and the band wears the module's name (%s)"
-			% str(main.graph_edit.flip_labels.get(onto_fresh, "")))
+	check(main.graph_edit.flip_frames.has(onto_fresh)
+			and str(main.graph_edit.flip_labels.get(onto_fresh, "x")) == "",
+		"the band keeps its WIRES chip and leaves the naming to the badge")
 
 	# A flipped node cannot be deleted: what cannot be seen cannot be taken. The
 	# selection may well still be on from before the flip.
