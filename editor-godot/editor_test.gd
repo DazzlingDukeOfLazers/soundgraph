@@ -5272,6 +5272,35 @@ func _initialize() -> void:
 		"and a click is not a move: the history gains nothing (%d)"
 			% main.undo_redo.get_history_count())
 
+	# The empty floor inside the case chooses the container too: the canvas is the
+	# inside of the room, and clicking it lands where clicking the band does. Only a
+	# click — a press that travels is a rubber band, and the selection it makes is not
+	# overruled by the room it was made in.
+	main._focus_node("filter")
+	for i in 6:
+		await process_frame
+	var floor_at: Vector2 = main.graph_edit._case_band_rect().position \
+		+ Vector2(30.0, 220.0)
+	check(main.graph_edit.get_child_count() > 0
+			and main.graph_edit._connection_at(
+				main.graph_edit._to_graph(floor_at)).is_empty(),
+		"the aimed-at point is bare canvas")
+	_press_graph(main, floor_at)
+	for i in 8:
+		await process_frame
+	check(main.inspecting.is_empty(),
+		"clicking the empty floor chooses the container (%s)" % str(main.inspecting))
+	main._focus_node("filter")
+	for i in 6:
+		await process_frame
+	var sweep_from: Vector2 = main.graph_edit._case_band_rect().position \
+		+ Vector2(30.0, 220.0)
+	_drag_graph(main, sweep_from, sweep_from + Vector2(160.0, 90.0))
+	for i in 8:
+		await process_frame
+	check(str(main.inspecting.get("node", "")) == "filter",
+		"but a rubber band across it chooses nothing (%s)" % str(main.inspecting))
+
 	main.show_view("Graph")
 	for i in 6:
 		await process_frame

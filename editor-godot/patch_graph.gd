@@ -602,6 +602,11 @@ func _gui_input(event: InputEvent) -> void:
 				cable_drag_started.emit()
 				accept_event()
 				return
+			# Empty canvas. Remembered but not claimed: the press still belongs to the
+			# rubber band, and only the release decides which gesture this was. Node
+			# presses never arrive here — a GraphNode consumes its own — so anything
+			# that does is the canvas.
+			_canvas_press_at = button.position
 		elif _dragging_key != "":
 			var fields := _connection_fields(_drag_connection)
 			waypoint_changed.emit(fields[0], fields[1], fields[2], fields[3],
@@ -610,6 +615,15 @@ func _gui_input(event: InputEvent) -> void:
 			_drag_connection = {}
 			accept_event()
 			return
+		elif _canvas_press_at.x != INF:
+			# A click on the room you are standing in chooses the room: the canvas is
+			# the inside of the container, so clicking its empty floor lands where
+			# clicking the case band does. Travelled, it was a rubber band, and the
+			# selection it made is not overruled. Not accepted either way — the native
+			# rubber band still ends however it ends.
+			if button.position.distance_to(_canvas_press_at) < 4.0:
+				case_selected.emit()
+			_canvas_press_at = Vector2.INF
 
 	# Right-clicking a cable straightens it again — an escape hatch from a bad drag that
 	# does not require finding exactly the right undo.
@@ -959,6 +973,8 @@ signal case_moved
 var _case_dragging := false
 var _case_drag_from := Vector2.ZERO
 var _case_drag_travel := 0.0
+## Where an empty-canvas press landed, or INF while none is in flight.
+var _canvas_press_at := Vector2.INF
 
 
 ## The case's title band, in screen coordinates: its name, and the one strip
