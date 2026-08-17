@@ -5105,13 +5105,19 @@ func _initialize() -> void:
 	var voice_definition: Dictionary = main.patch.get("modules", {}).get(
 		"dx7_algo_01", {})
 	check(not voice_definition.is_empty(), "a DX7 voice imports as a definition")
+	# Keeping its own modules, now that a definition may hold them. It used to be
+	# flattened — 41 nodes with dx7_operator dissolved into it — because nesting was
+	# refused; the notation the source chose survives the trip, and so does the sharing.
 	var nested := 0
 	for node in voice_definition.get("nodes", []):
 		if str(node.get("type", "")) == "module":
 			nested += 1
-	check(nested == 0 and (voice_definition.get("nodes", []) as Array).size() > 30,
-		"flattened, with no module inside it (%d nodes, %d nested)"
+	check(nested == 6 and (voice_definition.get("nodes", []) as Array).size() < 30,
+		"holding its six operators as instances (%d nodes, %d of them modules)"
 			% [(voice_definition.get("nodes", []) as Array).size(), nested])
+	check((main.patch.get("modules", {}) as Dictionary).has("dx7_operator"),
+		"with the operator definition beside it, shared rather than copied (%s)"
+			% str((main.patch.get("modules", {}) as Dictionary).keys()))
 	var voice_nodes := 0
 	for node in main.patch["nodes"]:
 		if str(node.get("module", "")) == "dx7_algo_01":
@@ -5143,6 +5149,41 @@ func _initialize() -> void:
 				"to": {"node": host_out, "port": "right"}}]:
 		main.patch["connections"].append(wire)
 	check_loads(main, "wiring the voice node into the host patch")
+
+	# Which is the whole of nesting, end to end: a module holding modules, expanded two
+	# levels deep by the engine, in a patch that plays.
+	var voice_depth := 0
+	for node in voice_definition.get("nodes", []):
+		if str(node.get("type", "")) == "module":
+			var inner: Dictionary = main.patch["modules"].get(
+				str(node.get("module", "")), {})
+			voice_depth = maxi(voice_depth, (inner.get("nodes", []) as Array).size())
+	check(voice_depth > 0,
+		"and the operators have innards of their own, a level further down (%d nodes)"
+			% voice_depth)
+
+	# ---- the graph draws the same boundary the panel does ----------------------------
+	# One container, two views: the panel shows it as knobs and the graph as wiring, and
+	# both draw its edge and put its name on it. The case is behind the nodes because a
+	# case is what modules are mounted in — an open module's frame is drawn above them,
+	# because that is a thing you are working inside.
+	main.show_view("Graph")
+	for i in 6:
+		await process_frame
+	check(main.graph_edit.case_title == "First Synth",
+		"the graph's case wears the instrument's name (%s)" % main.graph_edit.case_title)
+	var case_frame: Rect2 = main.graph_edit.case_box()
+	check(case_frame.size.x > 0.0 and case_frame.size.y > 0.0,
+		"and encloses something (%s)" % str(case_frame))
+	var uncased := ""
+	for child in main.graph_edit.get_children():
+		var mounted := child as GraphNode
+		if mounted == null or not mounted.visible:
+			continue
+		if not case_frame.encloses(Rect2(mounted.position_offset, mounted.size)) \
+				and uncased == "":
+			uncased = str(mounted.name)
+	check(uncased == "", "with every node inside it (%s)" % uncased)
 	await main._load_example("First Synth")
 	for i in 6:
 		await process_frame
@@ -5335,7 +5376,7 @@ func _initialize() -> void:
 	# "Am I running a stale build" has to be answerable, and — more importantly — the
 	# answer must never be confidently wrong. A missing stamp says "development build";
 	# it must not invent a version, because a build stamp that lies converts uncertainty
-	# into false certainty, which is worse than the uncertainty it replaced.
+	# into false certainty, which is worse than the uncertainty it remounted.
 	var description: String = main._build_description()
 	check(not description.is_empty(), "the editor can say what build it is (%s)"
 		% description)

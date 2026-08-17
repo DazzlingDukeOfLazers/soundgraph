@@ -4798,6 +4798,11 @@ func _refresh_face() -> void:
 		patch_face.rack = rack
 		patch_face.title = _instrument_name()
 		patch_face.rebuild()
+	if graph_edit != null:
+		# The same name on both boundaries. The graph's case and the panel's are one
+		# container drawn twice — as wiring on one side, as knobs on the other — and a
+		# container whose two faces disagreed about its name would be two containers.
+		graph_edit.case_title = _instrument_name()
 	if face_heading != null:
 		# Whose face this is — but only when it is a module's. The file's own name is on
 		# the case now, printed on the thing it names rather than floating above it, so a

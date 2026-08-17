@@ -16,6 +16,8 @@ extends GraphEdit
 ##   line space   — what _get_connection_line receives and returns: graph space * zoom
 ##   local space  — mouse events: graph space * zoom - scroll_offset
 
+const Rack := preload("res://rack.gd")
+
 signal waypoint_changed(from_node: StringName, from_port: int, to_node: StringName,
 	to_port: int, point)
 ## Emitted when a cable drag begins, so the editor can take an undo snapshot before the
@@ -868,7 +870,75 @@ func _process(delta: float) -> void:
 
 ## The grid is drawn on the GraphEdit's own canvas item, which sits below the connection
 ## layer — so cables and nodes stay on top of it.
+## The case around everything the file holds, with the instrument's name on it.
+##
+## The same boundary the panel draws, on the other side of the same idea: a container has
+## a name, an edge, ports where signals cross it, and contents. The panel shows one of
+## those containers as knobs and this shows it as wiring, and they are worth drawing alike
+## because they are the same object seen from two directions.
+##
+## Behind the nodes, not over them — a case is what modules are mounted *in*, so it sits
+## under them the way the rack's rails do. That is also why it is here in the graph's own
+## _draw rather than in WandOverlay: an open module's frame is drawn above, because that
+## one is a thing you are working inside and it has a button on it.
+##
+## From the nodes' own rectangles at this instant, like group_box: a stored rectangle is a
+## second copy of where the nodes are, and the copies disagree the first time one moves.
+func case_box() -> Rect2:
+	var box := Rect2()
+	var first := true
+	for child in get_children():
+		var node := child as GraphNode
+		if node == null or not node.visible:
+			continue
+		var rect := Rect2(node.position_offset, node.size)
+		box = rect if first else box.merge(rect)
+		first = false
+	if first:
+		return Rect2()
+	return box.grow(float(Design.scale(Design.SPACE_L))) \
+		.grow_individual(0.0, float(Design.scale(CASE_BAND)), 0.0, 0.0)
+
+
+## The band along the top of the case, where its name sits. Before UI scaling.
+const CASE_BAND := 30.0
+
+## What the case is called: the instrument's name, set by main from the document. Empty
+## draws nothing at all, which is right for a patch with no nodes in it yet — a case
+## around nothing is a box with a name and no reason.
+var case_title := "":
+	set(value):
+		case_title = value
+		queue_redraw()
+
+
+func _draw_case() -> void:
+	if case_title == "":
+		return
+	var frame := case_box()
+	if frame.size.x <= 0.0:
+		return
+	var scale := zoom if zoom > 0.0 else 1.0
+	var box := Rect2(frame.position * scale - scroll_offset, frame.size * scale)
+	var band := float(Design.scale(CASE_BAND)) * scale
+
+	# The rack's own case colours, so the graph's boundary and the panel's are the same
+	# aluminium rather than two greys that happen to be close.
+	draw_rect(box, Color(Rack.PANEL_LOW.darkened(0.35), 0.55))
+	draw_rect(box, Rack.PANEL_EDGE, false, 1.0)
+	Rack.draw_rail(self, Rect2(box.position, Vector2(box.size.x, band)))
+
+	var font := Design.font(Design.WEIGHT_SEMIBOLD)
+	if font == null:
+		return
+	var text_size := int(maxf(float(Design.type(Design.SIZE_CONTROL)) * scale, 8.0))
+	draw_string(font, box.position + Vector2(float(Design.scale(Design.SPACE_M)),
+		band * 0.72), case_title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+		text_size, Design.INK_SECOND)
+
+
 func _draw() -> void:
+	_draw_case()
 	if not draw_grid:
 		return
 	var scale := zoom if zoom > 0.0 else 1.0

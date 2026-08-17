@@ -176,8 +176,44 @@ preserves the module structure** — flattening is for the engine, never for the
 Device note: expansion allocates during *load*, which is where allocation already
 lives. The steady-state invariant (no allocation, locks, or I/O in `process()`) is
 untouched. The abuse suite gains: unknown module name, undeclared port, duplicate
-export names, module-typed node inside a definition, and an expansion-size bomb
-(instances × nodes over the existing engine cap must refuse, not exhaust the heap).
+export names, a module that reaches itself, and an expansion-size bomb (instances ×
+nodes over the existing engine cap must refuse, not exhaust the heap).
+
+## Nesting
+
+**A module may hold other modules. It may not hold itself, at any remove.**
+
+This was deferred once — "wanted eventually (a DX7 voice inside a performance patch);
+needs a recursion budget and better diagnostics" — and the two things it was waiting
+for are what it now has.
+
+Expansion runs **a level at a time** until nothing is left to expand. It has to: a
+definition's own instances become ordinary nodes of the flattened graph only once
+their parent has been inlined, so the second level is not visible until the first has
+run. On a document that nests nothing the loop finds no instances and stops, which is
+the common case and costs a scan.
+
+The recursion budget is two separate things, and only one of them is a limit:
+
+- **A cycle is refused by name.** `definition_is_acyclic` walks definitions by
+  instantiation carrying its path, so the diagnostic reads *"Module 'amp' contains
+  itself: amp contains stack contains amp."* The indirect case is the one that
+  matters — a single-step "does this definition instantiate a module" check, which is
+  what the old refusal was, catches `A` in `A` and misses `A` in `B` in `A`.
+- **A depth bound** (`kMaxNestingDepth`) is a backstop, not a rule. Nothing that could
+  recur forever survives the cycle check, so reaching the bound means a generated file
+  gone wrong rather than a patch anybody wrote.
+
+What it buys, beyond the metaphor: **sharing**. Before nesting, importing a DX7 voice
+as a definition meant flattening its six operators into it — 41 nodes, with the
+`dx7_operator` definition dissolved, and a second voice carrying its own copy of the
+same five nodes six times over. With nesting the voice is 17 nodes, six of them
+instances, and `dx7_operator` sits beside it shared by every voice in the document.
+
+The original two concerns still hold. Definitions are still inline, so there is still
+nothing to resolve (concern 2). dsp-core still never learns: what leaves patch-io is
+the same flat version-1 graph it always was, and a nested patch renders byte-identical
+audio to the flat graph written by hand (concern 1).
 
 ## What the editor does with it
 
@@ -444,9 +480,8 @@ same audio.
 
 - **Cross-file module libraries** — reintroduces concern 2; if it ever comes, it
   comes as *vendoring on import* (copy the definition in), never as live links.
-- **Nested modules** — wanted eventually (a DX7 voice inside a performance patch);
-  needs a recursion budget and better diagnostics; not worth designing until stage 3
-  usage exists.
+- ~~**Nested modules**~~ — done; see [Nesting](#nesting). Stage 3 usage did arrive, in
+  the shape it predicted: a DX7 voice inside a performance patch.
 - **Runtime modules** (dynamic voice allocation, per-instance bypass) — a different
   feature wearing the same name; nothing in this design blocks it, nothing requires
   it.
