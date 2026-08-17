@@ -614,6 +614,17 @@ func _build_ui() -> void:
 	# The container's own controls: its band switches which way you are looking at it,
 	# and dragging that band moves everything mounted in it.
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
+	# Clicking the container chooses the container: the panel shows its face and the
+	# inspector describes the whole patch, exactly as they do when a seam like the
+	# keyboard is selected — both are ways of pointing at the file rather than at a
+	# part of it. The node selection is cleared first, or the panel would stay on
+	# whichever part happened to be selected before.
+	graph_edit.case_selected.connect(func() -> void:
+		for child in graph_edit.get_children():
+			if child is GraphNode:
+				(child as GraphNode).selected = false
+		inspecting = {}
+		_refresh_context())
 	graph_edit.case_moved.connect(func() -> void:
 		_capture_positions()
 		_commit_edit("move %s" % _instrument_name()))

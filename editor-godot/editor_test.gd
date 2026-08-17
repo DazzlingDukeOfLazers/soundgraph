@@ -5239,6 +5239,39 @@ func _initialize() -> void:
 	var band: Rect2 = main.graph_edit._case_band_rect()
 	check(band.size.y > 0.0, "the case has a band (%s)" % str(band))
 
+	# And a click on it — a press that never travels — chooses the container: node
+	# selection cleared, panel on the file's face, inspector describing the whole patch.
+	# The same landing as clicking a seam like the keyboard, because both are ways of
+	# pointing at the file rather than at a part of it.
+	main._focus_node("filter")
+	for i in 6:
+		await process_frame
+	check(str(main.inspecting.get("node", "")) == "filter",
+		"a part is selected to start from (%s)" % str(main.inspecting))
+	# Re-read the band: focusing scrolled the canvas, and the rect is in screen space.
+	band = main.graph_edit._case_band_rect()
+	_press_graph(main, band.position + Vector2(8.0, 8.0))
+	for i in 8:
+		await process_frame
+	check(main.inspecting.is_empty(),
+		"clicking the case band chooses the container (%s)" % str(main.inspecting))
+	check(main.patch_face.visible and not main.module_face.visible,
+		"and the panel shows the container's face")
+	var chosen_still := 0
+	for child in main.graph_edit.get_children():
+		if child is GraphNode and (child as GraphNode).selected:
+			chosen_still += 1
+	check(chosen_still == 0,
+		"with no part left selected under it (%d)" % chosen_still)
+	var history_before: int = main.undo_redo.get_history_count()
+	band = main.graph_edit._case_band_rect()
+	_press_graph(main, band.position + Vector2(8.0, 8.0))
+	for i in 6:
+		await process_frame
+	check(main.undo_redo.get_history_count() == history_before,
+		"and a click is not a move: the history gains nothing (%d)"
+			% main.undo_redo.get_history_count())
+
 	main.show_view("Graph")
 	for i in 6:
 		await process_frame

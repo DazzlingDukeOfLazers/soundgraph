@@ -577,12 +577,19 @@ func _gui_input(event: InputEvent) -> void:
 			# it. Grabbing anywhere on the case would make a rubber band impossible.
 			_case_drag_from = _to_graph(button.position)
 			_case_dragging = true
+			_case_drag_travel = 0.0
 			case_move_started.emit()
 			accept_event()
 			return
 		if not button.pressed and _case_dragging:
 			_case_dragging = false
+			# A press that never travelled is a click, and a click on the container
+			# chooses the container — the same distinction a node makes between being
+			# dragged and being selected. case_moved still fires, and harmlessly: a
+			# drag that went nowhere is already not an edit.
 			case_moved.emit()
+			if _case_drag_travel < 4.0:
+				case_selected.emit()
 			accept_event()
 			return
 		if button.pressed:
@@ -626,6 +633,7 @@ func _gui_input(event: InputEvent) -> void:
 		var at := _to_graph(motion.position)
 		var step := at - _case_drag_from
 		_case_drag_from = at
+		_case_drag_travel += step.length()
 		for child in get_children():
 			var node := child as GraphNode
 			if node != null and node.visible:
@@ -940,6 +948,9 @@ var case_title := "":
 		case_title = value
 		queue_redraw()
 
+## The band was clicked rather than dragged: the container itself was chosen, the way
+## clicking a node chooses the node.
+signal case_selected
 ## The case is about to move, so an undo step can be opened before anything shifts.
 signal case_move_started
 ## The case finished moving, so the document should be told where its nodes are now.
@@ -947,6 +958,7 @@ signal case_moved
 
 var _case_dragging := false
 var _case_drag_from := Vector2.ZERO
+var _case_drag_travel := 0.0
 
 
 ## The case's title band, in screen coordinates: its name, and the one strip
