@@ -5322,6 +5322,66 @@ func _initialize() -> void:
 	check(str(main.inspecting.get("node", "")) == "filter",
 		"and clicking it does not bounce to the container (%s)" % str(main.inspecting))
 
+	# ---- turning the container over ---------------------------------------------------
+	# The graph is the device's insides and the face is what a player holds, and the FACE
+	# control on the case turns it over in place: same tab, same spot on screen, the
+	# other side of the same container. Presentation only — nothing is written, nothing
+	# lands in the history.
+	var flip: Rect2 = main.graph_edit._case_flip_rect()
+	check(flip.size.x > 0.0, "the case band carries a FACE control (%s)" % str(flip))
+	var history_at_flip: int = main.undo_redo.get_history_count()
+	_press_graph(main, flip.get_center())
+	for i in 8:
+		await process_frame
+	check(not main.graph_edit.visible and main.face_scroll.visible,
+		"flipping shows the face where the wiring was")
+	check(main.views.get_tab_title(main.views.current_tab) == "Graph",
+		"without leaving the tab (%s)"
+			% main.views.get_tab_title(main.views.current_tab))
+	var big_blocks: int = 0
+	var big_rows: Node = main.big_face.get_node_or_null("Case/Rack/Rail/Rows")
+	if big_rows != null:
+		for one_row in big_rows.get_children():
+			for one in (one_row as Node).get_children():
+				if one is VBoxContainer:
+					big_blocks += 1
+	check(big_blocks > 0,
+		"and the face is the real rack, blocks and all (%d)" % big_blocks)
+	check(main.undo_redo.get_history_count() == history_at_flip,
+		"with nothing added to the history (%d)" % main.undo_redo.get_history_count())
+
+	# A knob on the turned-over face is the same live control as everywhere else.
+	var big_knob: Control = null
+	for index in main.big_face._targets:
+		if str(main.big_face._targets[index]["parameter"]) == "cutoff" \
+				and big_knob == null:
+			big_knob = main.big_face._cells[index]
+	check(big_knob != null, "the big face has the cutoff knob on it")
+	if big_knob != null:
+		var before_turn := 0.0
+		for node in main.patch["nodes"]:
+			if str(node["id"]) == "filter":
+				before_turn = float(node["parameters"]["cutoff"])
+		(big_knob.get_child(0) as RackView.Knob).nudge(0.05)
+		for i in 6:
+			await process_frame
+		var after_turn := 0.0
+		for node in main.patch["nodes"]:
+			if str(node["id"]) == "filter":
+				after_turn = float(node["parameters"]["cutoff"])
+		check(after_turn > before_turn,
+			"and turning it writes the document (%.0f from %.0f)"
+				% [after_turn, before_turn])
+		await main._undo()
+		for i in 4:
+			await process_frame
+
+	main.wires_button.pressed.emit()
+	for i in 6:
+		await process_frame
+	check(main.graph_edit.visible and not main.face_scroll.visible,
+		"and WIRES turns it back")
+
 	main.show_view("Graph")
 	for i in 6:
 		await process_frame

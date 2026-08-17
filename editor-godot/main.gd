@@ -143,6 +143,12 @@ var graph_edit: GraphEdit
 ## the ones it makes — picks that survive a rebuild are the whole reason this is not just
 ## a list of Controls.
 var make_module_button: Button
+## The container turned over: the file's face, full size, in the Graph tab's slot.
+## Same class as the side panel's face — one face, two mountings.
+var big_face: PatchFace
+var face_scroll: ScrollContainer
+var wires_button: Button
+
 ## The file's own face: the knobs somebody plays. See patch_face.gd.
 var patch_face: PatchFace
 ## And one module's, when a module instance is what is selected. See module_face.gd.
@@ -614,6 +620,7 @@ func _build_ui() -> void:
 	# The container's own controls: its band switches which way you are looking at it,
 	# and dragging that band moves everything mounted in it.
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
+	graph_edit.case_flipped.connect(func() -> void: _flip_container(true))
 	# Clicking the container chooses the container: the panel shows its face and the
 	# inspector describes the whole patch, exactly as they do when a seam like the
 	# keyboard is selected — both are ways of pointing at the file rather than at a
@@ -635,8 +642,42 @@ func _build_ui() -> void:
 	# how to read. Which one leads at Knobcon is a question to settle by watching people.
 	views = TabContainer.new()
 	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	graph_edit.name = "Graph"
-	views.add_child(graph_edit)
+	# One tab, both sides of the container. The graph is the device's insides and the
+	# face is what a player holds, and turning it over should not mean going somewhere
+	# else — so the tab holds the two and the case's FACE control swaps them in place.
+	var container_tab := Control.new()
+	container_tab.name = "Graph"
+	graph_edit.name = "Wires"
+	graph_edit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	container_tab.add_child(graph_edit)
+
+	face_scroll = ScrollContainer.new()
+	face_scroll.name = "Face"
+	face_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	face_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	face_scroll.visible = false
+	big_face = PatchFace.new()
+	big_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	big_face.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	big_face.reordered.connect(_on_panel_reordered)
+	big_face.offered.connect(_toggle_control)
+	face_scroll.add_child(big_face)
+	container_tab.add_child(face_scroll)
+
+	# The way back, floating over the face: the same flip, wearing the other side's
+	# name. A sibling of the scroller rather than inside it — a ScrollContainer lays out
+	# one content child, and the way back must not scroll out of reach anyway.
+	wires_button = Button.new()
+	wires_button.text = "WIRES"
+	wires_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	wires_button.offset_left = -Design.scale(100)
+	wires_button.offset_top = Design.scale(10)
+	wires_button.offset_right = -Design.scale(14)
+	wires_button.offset_bottom = Design.scale(38)
+	wires_button.visible = false
+	wires_button.pressed.connect(func() -> void: _flip_container(false))
+	container_tab.add_child(_defocus(wires_button))
+	views.add_child(container_tab)
 
 	var rack_scroll := ScrollContainer.new()
 	rack_scroll.name = "Rack"
@@ -1575,6 +1616,21 @@ func _build_side_panel() -> Control:
 
 
 ## Fills the contextual region: the graph when nothing is selected, otherwise the node.
+## Turn the container over: wiring one way, the face the other, in the same place.
+##
+## Presentation, not document — which side is up is a fact about the session, like the
+## scroll position, so nothing is written and nothing lands in the undo history.
+func _flip_container(show_face: bool) -> void:
+	if graph_edit != null:
+		graph_edit.visible = not show_face
+	if face_scroll != null:
+		face_scroll.visible = show_face
+	if wires_button != null:
+		wires_button.visible = show_face
+	if show_face:
+		_refresh_face()
+
+
 func _refresh_context() -> void:
 	# Which face the panel shows, and which module offers its ghost jacks, both follow the
 	# selection — settled here rather than by each of the half-dozen paths that can change
@@ -4825,6 +4881,14 @@ func _refresh_face() -> void:
 		patch_face.rack = rack
 		patch_face.title = _instrument_name()
 		patch_face.rebuild()
+	# The turned-over container shows the same face at full size, and it follows the
+	# document the same way — one face, two mountings, never two states.
+	if big_face != null and face_scroll != null and face_scroll.visible:
+		big_face.patch = patch
+		big_face.registry = registry
+		big_face.rack = rack
+		big_face.title = _instrument_name()
+		big_face.rebuild()
 	if graph_edit != null:
 		# The same name on both boundaries. The graph's case and the panel's are one
 		# container drawn twice — as wiring on one side, as knobs on the other — and a

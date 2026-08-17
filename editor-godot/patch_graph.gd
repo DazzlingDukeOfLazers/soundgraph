@@ -570,6 +570,13 @@ func _connection_at(point: Vector2) -> Dictionary:
 func _gui_input(event: InputEvent) -> void:
 	var button := event as InputEventMouseButton
 	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
+		if button.pressed and _case_flip_rect().has_point(button.position):
+			# Turn the device over. The graph is its insides and the face is what a
+			# player holds, and they are the same container — so the flip lives on the
+			# container, in the same place on both sides.
+			case_flipped.emit()
+			accept_event()
+			return
 		if button.pressed and _case_band_rect().has_point(button.position):
 			# The band is the handle, as the caption is on a panel knob: the case's
 			# inside is where the work happens — selecting, rubber-banding, dragging
@@ -979,10 +986,24 @@ var case_title := "":
 ## The band was clicked rather than dragged: the container itself was chosen, the way
 ## clicking a node chooses the node.
 signal case_selected
+## Somebody asked to turn the container over — wiring to face, or back.
+signal case_flipped
 ## The case is about to move, so an undo step can be opened before anything shifts.
 signal case_move_started
 ## The case finished moving, so the document should be told where its nodes are now.
 signal case_moved
+
+## The control that turns the container over, at the right-hand end of the band.
+func _case_flip_rect() -> Rect2:
+	var band := _case_band_rect()
+	if band.size.x <= 0.0:
+		return Rect2()
+	var width: float = minf(float(Design.scale(80)) * (zoom if zoom > 0.0 else 1.0),
+		band.size.x * 0.4)
+	var inset := band.size.y * 0.18
+	return Rect2(Vector2(band.end.x - width - inset, band.position.y + inset),
+		Vector2(width, band.size.y - inset * 2.0))
+
 
 var _case_dragging := false
 var _case_drag_from := Vector2.ZERO
@@ -1027,6 +1048,18 @@ func _draw_case() -> void:
 	draw_string(font, box.position + Vector2(float(Design.scale(Design.SPACE_M)),
 		band * 0.72), case_title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 		text_size, Design.INK_SECOND)
+
+	# The flip, labelled with the side you will get: from in here that is the face.
+	var flip := _case_flip_rect()
+	if flip.size.x > 4.0:
+		draw_rect(flip, Color(Design.ACCENT, 0.16))
+		draw_rect(flip, Color(Design.ACCENT, 0.55), false, 1.0)
+		var flip_label := "FACE"
+		var measured := font.get_string_size(flip_label,
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
+		draw_string(font, flip.position + Vector2((flip.size.x - measured.x) * 0.5,
+			flip.size.y * 0.5 + measured.y * 0.34), flip_label,
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size, Design.ACCENT)
 
 
 func _draw() -> void:
