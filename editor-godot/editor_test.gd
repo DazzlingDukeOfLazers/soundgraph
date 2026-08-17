@@ -4575,6 +4575,7 @@ func _initialize() -> void:
 	check(not main.flipped_modules.has("part") and part_back > 0,
 		"WIRES brings the parts back (%d)" % part_back)
 
+
 	# ---- editing a module from the inside --------------------------------------------
 	# The argument for opening a module on the canvas rather than in a view of its own:
 	# once it is open its parts are ordinary nodes, so adding one and wiring it are the
@@ -5305,6 +5306,76 @@ func _initialize() -> void:
 				and uncased == "":
 			uncased = str(mounted.name)
 	check(uncased == "", "with every node inside it (%s)" % uncased)
+
+	# ---- mixed mode: a whole patch as one node in the palette ------------------------
+	# The main way to build is mixing modules and nodes: a DX7 voice drops onto any
+	# graph as a single device, found where the nodes are found, wired like anything
+	# else. This is the front door the nesting work was for.
+	await main._load_example("First Synth")
+	for i in 8:
+		await process_frame
+	var found: Array = main._matching_devices("algo-01")
+	check(found.has("DX7: algo-01"),
+		"searching finds the voice as a device (%s)" % str(found))
+
+	var first_added: String = await main._add_device("DX7: algo-01", Vector2(200, 900))
+	for i in 8:
+		await process_frame
+	check(first_added != "" and main.patch.get("modules", {}).has("algo-01"),
+		"adding it brings the definition aboard (%s)" % first_added)
+	check(main.widgets.has(first_added),
+		"with an instance node on the canvas")
+
+	# The second copy shares the first's definition: two voices, one dx7 module —
+	# the sharing that nesting bought, surfaced in the gesture people will actually use.
+	var second_added: String = await main._add_device("DX7: algo-01", Vector2(200, 1400))
+	for i in 8:
+		await process_frame
+	var voice_definitions := 0
+	for name in main.patch.get("modules", {}):
+		if str(name).begins_with("algo-01"):
+			voice_definitions += 1
+	var voice_instances := 0
+	for node in main.patch["nodes"]:
+		if str(node.get("module", "")) == "algo-01":
+			voice_instances += 1
+	check(second_added != "" and second_added != first_added
+			and voice_definitions == 1 and voice_instances == 2,
+		"a second copy shares the definition (%d definition, %d instances)"
+			% [voice_definitions, voice_instances])
+
+	# Wired up, the mixture plays: keyboard into both voices, both into the speakers,
+	# beside the plain nodes that were already there. A device arrives unwired on
+	# purpose — the diagnostics say which sockets want cables — so the loads check
+	# belongs after the wiring, not before it.
+	var mixed_in := ""
+	var mixed_out := ""
+	for node in main.patch["nodes"]:
+		if str(node.get("type", "")) == "Input":
+			mixed_in = str(node["id"])
+		if str(node.get("type", "")) == "Output":
+			mixed_out = str(node["id"])
+	for voice_id in [first_added, second_added]:
+		for wire in [{"from": {"node": mixed_in, "port": "frequency"},
+					"to": {"node": voice_id, "port": "frequency"}},
+				{"from": {"node": mixed_in, "port": "gate"},
+					"to": {"node": voice_id, "port": "gate"}},
+				{"from": {"node": voice_id, "port": "out"},
+					"to": {"node": mixed_out, "port": "left"}}]:
+			main.patch["connections"].append(wire)
+	check_loads(main, "two voices wired in beside the plain nodes")
+
+	# A file may not be added to itself. The definitional cycle is refused deeper down;
+	# this is the surface refusal for the gesture that almost never means "make a twin".
+	await main._load_example("DX7: algo-01")
+	for i in 8:
+		await process_frame
+	var refused: String = await main._add_device("DX7: algo-01", Vector2(0, 0))
+	check(refused == "" and not main.patch.get("modules", {}).has("algo-01"),
+		"adding a file to itself is refused (%s)" % main.message_label.text)
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
 
 	# The band is the case's handle. Only the band — the inside of the case is where
 	# selecting and rubber-banding happen, and a case you could grab anywhere would make

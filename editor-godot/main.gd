@@ -4246,6 +4246,12 @@ func _addable(names: PackedStringArray) -> PackedStringArray:
 
 func _build_result_row(type_name: String) -> Control:
 	var descriptor: Dictionary = registry.get(type_name, {})
+	if type_name.begins_with("device:"):
+		descriptor = {
+			"display_name": type_name.trim_prefix("device:"),
+			"summary": "device — a whole patch as one node",
+			"category": "Devices",
+		}
 
 	var row := PanelContainer.new()
 	var line := HBoxContainer.new()
@@ -4305,6 +4311,13 @@ func _on_search_changed(query: String) -> void:
 		else PackedStringArray(registry.keys())
 	names = _addable(names)
 
+	# Devices beside nodes, because the main way to build is mixing them: a whole patch
+	# — a DX7 voice, an effect — drops in as one module node, wired like anything else.
+	# Matched by name against the example library, and only on a real query: browsing
+	# two hundred devices under an empty search would bury the node vocabulary.
+	for label in _matching_devices(query):
+		names.append("device:%s" % label)
+
 	_search_top_result = names[0] if names.size() > 0 else ""
 	for type_name in names:
 		search_results.add_child(_build_result_row(type_name))
@@ -4334,8 +4347,101 @@ func _add_from_search(type_name: String) -> void:
 	spawn += Vector2(0.0, _added_since_open * GRID * 4.0)
 	_added_since_open += 1
 
+	if type_name.begins_with("device:"):
+		var added := await _add_device(type_name.trim_prefix("device:"), spawn)
+		if added != "":
+			search_hint.text = "Added %s. Keep going, or press Escape when you are done." \
+				% added
+		return
 	var node_id := await _add_node(type_name, spawn)
 	search_hint.text = "Added %s. Keep going, or press Escape when you are done." % node_id
+
+
+## Example patches whose labels match every word of the query, a handful at most.
+func _matching_devices(query: String) -> Array:
+	var words := query.strip_edges().to_lower().split(" ", false)
+	if words.is_empty():
+		return []
+	var matches: Array = []
+	for label in _examples:
+		var lowered := str(label).to_lower()
+		var all_words := true
+		for word in words:
+			if not lowered.contains(str(word)):
+				all_words = false
+		if all_words:
+			matches.append(str(label))
+		if matches.size() >= 8:
+			break
+	return matches
+
+
+## Drops a whole patch onto this one as a single module node — mixed mode's front door.
+##
+## The second copy shares the first's definition: two DX7 voices in a graph are two
+## instances of one dx7_algo_01, not two forty-line definitions that happen to agree.
+## The name is the identity, as it is everywhere else in the document.
+##
+## A file may not be added to itself. The definitional cycle is already refused by
+## patch-io, but adding ALGO 01 while editing ALGO 01 is almost never a request for a
+## twin — it reads as "put this inside itself", and the honest answer to that is no.
+func _add_device(label: String, at_position: Vector2) -> String:
+	if not _examples.has(label):
+		_say("no device called %s" % label)
+		return ""
+	var path := _example_path(_examples[label])
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		_say("could not read %s" % path)
+		return ""
+	var text := file.get_as_text()
+	file.close()
+	var parsed: Variant = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		_say("that file is not a patch")
+		return ""
+
+	var device_name := str((parsed as Dictionary).get("metadata", {}).get("name", ""))
+	if device_name != "" and device_name == _instrument_name():
+		_say("that is this file — a patch cannot contain itself")
+		return ""
+
+	var module_name := ModuleImport.name_from_path(path)
+	if patch.get("modules", {}).has(module_name):
+		# Already aboard: another instance of the definition this document has.
+		_begin_edit()
+		var taken: Array = patch.get("nodes", []).map(func(n): return str(n["id"]))
+		var instance_id := module_name
+		var suffix := 2
+		while taken.has(instance_id):
+			instance_id = "%s-%d" % [module_name, suffix]
+			suffix += 1
+		patch["nodes"].append({
+			"id": instance_id,
+			"type": "module",
+			"module": module_name,
+			"position": {"x": at_position.x, "y": at_position.y},
+		})
+		await _rebuild_view()
+		_apply()
+		_commit_edit("add %s" % instance_id)
+		return instance_id
+
+	var terminals := _terminal_types()
+	var result := ModuleAuthor.from_patch(patch, parsed, module_name, terminals)
+	if not result.ok():
+		_say(result.error)
+		return ""
+	_begin_edit()
+	patch = result.patch
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == result.instance_id:
+			node["position"] = {"x": at_position.x, "y": at_position.y}
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("add %s" % result.instance_id)
+	return result.instance_id
 
 
 func _add_node(type_name: String, at_position: Vector2) -> String:
