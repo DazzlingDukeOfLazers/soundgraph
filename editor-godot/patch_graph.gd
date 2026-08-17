@@ -719,6 +719,9 @@ class CrossingOverlay extends Control:
 			queue_redraw()
 
 	func _draw() -> void:
+		# The cables describe the wiring, and the wiring is put away.
+		if graph != null and graph.face_up:
+			return
 		if graph != null:
 			graph._draw_crossings(self)
 
@@ -988,6 +991,15 @@ var case_title := "":
 signal case_selected
 ## Somebody asked to turn the container over — wiring to face, or back.
 signal case_flipped
+## The face is up: the wiring is hidden and the mounted face stands in its place. The
+## overlays stand down while it is — cables, glows and frames describe the wiring, and
+## the wiring is what the flip put away.
+var face_up := false:
+	set(value):
+		face_up = value
+		queue_redraw()
+## Called every frame while the face is up, so the mount follows the camera.
+signal face_needs_placing
 ## The case is about to move, so an undo step can be opened before anything shifts.
 signal case_move_started
 ## The case finished moving, so the document should be told where its nodes are now.
@@ -1026,6 +1038,10 @@ func _case_band_rect() -> Rect2:
 
 
 func _draw_case() -> void:
+	# The mounted face draws its own case; two cases in one spot is one too many.
+	if face_up:
+		face_needs_placing.emit()
+		return
 	if case_title == "":
 		return
 	var frame := case_box()
@@ -1375,6 +1391,8 @@ class GlowOverlay extends Control:
 
 
 	func _draw() -> void:
+		if graph != null and graph.face_up:
+			return
 		if graph == null:
 			return
 		_draw_hover()
@@ -1422,7 +1440,7 @@ class WandOverlay extends Control:
 			queue_redraw()
 
 	func _draw() -> void:
-		if graph == null:
+		if graph == null or graph.face_up:
 			return
 		_draw_groups()
 		_draw_band()

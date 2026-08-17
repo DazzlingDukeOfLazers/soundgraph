@@ -146,12 +146,10 @@ var make_module_button: Button
 ## The container turned over: the file's face, full size, in the Graph tab's slot.
 ## Same class as the side panel's face — one face, two mountings.
 var big_face: PatchFace
-var face_scroll: ScrollContainer
-var face_zoom_box: Control
 var wires_button: Button
-## How large the turned-over face is drawn. 1.0 is life size; smaller makes room for
-## the neighbours a graph of several containers will put beside it.
-var face_zoom := 1.0
+## Where the face is mounted, in graph coordinates: the case's own corner at the moment
+## it was turned over. The graph's camera does the rest.
+var face_anchor := Vector2.ZERO
 
 ## The file's own face: the knobs somebody plays. See patch_face.gd.
 var patch_face: PatchFace
@@ -625,6 +623,7 @@ func _build_ui() -> void:
 	# and dragging that band moves everything mounted in it.
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
 	graph_edit.case_flipped.connect(func() -> void: _flip_container(true))
+	graph_edit.face_needs_placing.connect(_place_face)
 	# Clicking the container chooses the container: the panel shows its face and the
 	# inspector describes the whole patch, exactly as they do when a seam like the
 	# keyboard is selected — both are ways of pointing at the file rather than at a
@@ -646,39 +645,24 @@ func _build_ui() -> void:
 	# how to read. Which one leads at Knobcon is a question to settle by watching people.
 	views = TabContainer.new()
 	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# One tab, both sides of the container. The graph is the device's insides and the
-	# face is what a player holds, and turning it over should not mean going somewhere
-	# else — so the tab holds the two and the case's FACE control swaps them in place.
+	# One tab, one canvas, both sides of the container. The graph already owns zoom,
+	# pan and the grid, so the face is a tenant on that canvas rather than a rival
+	# view: flipping hides the wiring and mounts the face at the case's own spot, and
+	# every camera gesture keeps working because it is the same camera.
 	var container_tab := Control.new()
 	container_tab.name = "Graph"
 	graph_edit.name = "Wires"
 	graph_edit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	container_tab.add_child(graph_edit)
 
-	face_scroll = ScrollContainer.new()
-	face_scroll.name = "Face"
-	face_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	face_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	face_scroll.visible = false
-	# A scaled mounting: the face draws at its natural size and the wrapper presents it
-	# smaller or larger, claiming the scaled footprint so the scroller ranges over what
-	# is actually shown. Zoomed out, the case shrinks and its neighbours-to-be will
-	# share the room; a ScrollContainer child cannot simply be scaled, because layout
-	# reads minimum sizes and scale is not one.
-	face_zoom_box = Control.new()
 	big_face = PatchFace.new()
+	big_face.visible = false
+	big_face.z_index = 50
 	big_face.reordered.connect(_on_panel_reordered)
 	big_face.offered.connect(_toggle_control)
-	big_face.resized.connect(_fit_face_zoom)
-	face_zoom_box.add_child(big_face)
-	face_scroll.add_child(face_zoom_box)
-	face_scroll.gui_input.connect(_on_face_gui_input)
-	face_scroll.resized.connect(_fit_face_zoom)
-	container_tab.add_child(face_scroll)
+	graph_edit.add_child(big_face)
 
-	# The way back, floating over the face: the same flip, wearing the other side's
-	# name. A sibling of the scroller rather than inside it — a ScrollContainer lays out
-	# one content child, and the way back must not scroll out of reach anyway.
+	# The way back, floating over the canvas while the face is up.
 	wires_button = Button.new()
 	wires_button.text = "WIRES"
 	wires_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
@@ -1632,52 +1616,47 @@ func _build_side_panel() -> Control:
 ##
 ## Presentation, not document — which side is up is a fact about the session, like the
 ## scroll position, so nothing is written and nothing lands in the undo history.
-## Ctrl+wheel over the face zooms it, the same gesture the graph uses. Plain wheel
-## still steps the knob it is over — the knobs yield only the Ctrl form.
-func _on_face_gui_input(event: InputEvent) -> void:
-	var button := event as InputEventMouseButton
-	if button == null or not button.pressed or not button.ctrl_pressed:
-		return
-	if button.button_index == MOUSE_BUTTON_WHEEL_UP:
-		_set_face_zoom(face_zoom * 1.1)
-		face_scroll.accept_event()
-	elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-		_set_face_zoom(face_zoom / 1.1)
-		face_scroll.accept_event()
-
-
-func _set_face_zoom(zoom: float) -> void:
-	# Floored where a knob is still a target and capped where one fills the screen.
-	face_zoom = clampf(zoom, 0.35, 2.0)
-	_fit_face_zoom()
-
-
-## Keeps the wrapper's claimed footprint equal to the face's scaled one. Run on zoom and
-## on the face resizing itself, because both change what the scroller should range over.
-func _fit_face_zoom() -> void:
-	if big_face == null or face_zoom_box == null:
-		return
-	big_face.scale = Vector2(face_zoom, face_zoom)
-	# Sized by hand, because the wrapper is deliberately not a container — a container
-	# would fight the scale — and a box child of a plain Control otherwise stays at
-	# zero. The face gets its natural minimum or the viewport's room, whichever is
-	# larger, so life size fills the screen exactly as it did before zoom existed.
-	var natural: Vector2 = big_face.get_combined_minimum_size()
-	var room: Vector2 = face_scroll.size / maxf(face_zoom, 0.01)
-	big_face.size = natural.max(room)
-	face_zoom_box.custom_minimum_size = big_face.size * face_zoom
-
-
+## Turn the container over: wiring one way, the face the other, on the same canvas.
+##
+## Presentation, not document — which side is up is a fact about the session, like the
+## scroll position, so nothing is written and nothing lands in the undo history. The
+## nodes are hidden and the view's cables cleared (the document keeps every connection);
+## turning back rebuilds the view from the document, which restores both.
 func _flip_container(show_face: bool) -> void:
-	if graph_edit != null:
-		graph_edit.visible = not show_face
-	if face_scroll != null:
-		face_scroll.visible = show_face
+	if graph_edit == null or big_face == null:
+		return
+	if show_face:
+		face_anchor = graph_edit.case_box().position
+		var footprint: Rect2 = graph_edit.case_box()
+		graph_edit.face_up = true
+		for child in graph_edit.get_children():
+			if child is GraphNode:
+				(child as GraphNode).visible = false
+		graph_edit.clear_connections()
+		big_face.visible = true
+		_refresh_face()
+		# As wide as the case it replaces, or its own need if that is more: the face
+		# stands where the wiring stood.
+		var natural: Vector2 = big_face.get_combined_minimum_size()
+		big_face.size = Vector2(maxf(natural.x, footprint.size.x), natural.y)
+		_place_face()
+	else:
+		graph_edit.face_up = false
+		big_face.visible = false
+		await _rebuild_view()
 	if wires_button != null:
 		wires_button.visible = show_face
-	if show_face:
-		_refresh_face()
-		_fit_face_zoom()
+
+
+## Keeps the mounted face under the graph's camera: its position and scale are the
+## case's, through the same transform every node uses. Called from the graph each frame
+## while the face is up — a canvas tenant has to follow the canvas.
+func _place_face() -> void:
+	if big_face == null or not big_face.visible:
+		return
+	var zoom: float = graph_edit.zoom if graph_edit.zoom > 0.0 else 1.0
+	big_face.position = face_anchor * zoom - graph_edit.scroll_offset
+	big_face.scale = Vector2(zoom, zoom)
 
 
 func _refresh_context() -> void:
@@ -4932,7 +4911,7 @@ func _refresh_face() -> void:
 		patch_face.rebuild()
 	# The turned-over container shows the same face at full size, and it follows the
 	# document the same way — one face, two mountings, never two states.
-	if big_face != null and face_scroll != null and face_scroll.visible:
+	if big_face != null and big_face.visible:
 		big_face.patch = patch
 		big_face.registry = registry
 		big_face.rack = rack

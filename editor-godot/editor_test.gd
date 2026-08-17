@@ -5334,17 +5334,32 @@ func _initialize() -> void:
 
 	# ---- turning the container over ---------------------------------------------------
 	# The graph is the device's insides and the face is what a player holds, and the FACE
-	# control on the case turns it over in place: same tab, same spot on screen, the
-	# other side of the same container. Presentation only — nothing is written, nothing
-	# lands in the history.
+	# control turns the container over on the same canvas: the wiring is hidden, the face
+	# mounts at the case's own corner, and the graph's camera — zoom, pan, grid — keeps
+	# working because it is the same camera. Presentation only: nothing is written.
+	# From a view that matches the document. Earlier sections can leave the view a
+	# cable adrift of the doc, and the unflip rebuilds *from the doc* — so comparing
+	# against a drifted count would blame the flip for correcting somebody else.
+	await main._rebuild_view()
+	for i in 8:
+		await process_frame
 	var flip: Rect2 = main.graph_edit._case_flip_rect()
 	check(flip.size.x > 0.0, "the case band carries a FACE control (%s)" % str(flip))
+	var wired_before: int = main.graph_edit.get_connection_list().size()
+	check(wired_before > 0, "the wiring is on view to start with (%d)" % wired_before)
 	var history_at_flip: int = main.undo_redo.get_history_count()
 	_press_graph(main, flip.get_center())
 	for i in 8:
 		await process_frame
-	check(not main.graph_edit.visible and main.face_scroll.visible,
-		"flipping shows the face where the wiring was")
+	check(main.big_face.visible and main.graph_edit.visible,
+		"flipping mounts the face on the still-visible canvas")
+	var wires_shown := 0
+	for child in main.graph_edit.get_children():
+		if child is GraphNode and (child as GraphNode).visible:
+			wires_shown += 1
+	check(wires_shown == 0 and main.graph_edit.get_connection_list().is_empty(),
+		"with the wiring put away (%d nodes, %d cables)"
+			% [wires_shown, main.graph_edit.get_connection_list().size()])
 	check(main.views.get_tab_title(main.views.current_tab) == "Graph",
 		"without leaving the tab (%s)"
 			% main.views.get_tab_title(main.views.current_tab))
@@ -5360,11 +5375,35 @@ func _initialize() -> void:
 	check(main.undo_redo.get_history_count() == history_at_flip,
 		"with nothing added to the history (%d)" % main.undo_redo.get_history_count())
 
+	# The graph's camera moves the face: zoom scales it, scroll shifts it, because a
+	# canvas tenant follows the canvas. This is the whole reason the face lives on the
+	# graph rather than in a view of its own with a second set of controls.
+	# Through the graph's own redraw, not by calling the placement by hand: the first
+	# version did, and it kept passing with the signal unplugged — testing the math
+	# while the wiring hung loose.
+	main.graph_edit.zoom = 0.6
+	main.graph_edit.queue_redraw()
+	for i in 4:
+		await process_frame
+	check(absf(main.big_face.scale.x - 0.6) < 0.001,
+		"the graph's zoom scales the face (%.2f)" % main.big_face.scale.x)
+	var seen_at: Vector2 = main.big_face.position
+	main.graph_edit.scroll_offset += Vector2(200.0, 0.0)
+	main.graph_edit.queue_redraw()
+	for i in 4:
+		await process_frame
+	check(absf(main.big_face.position.x - (seen_at.x - 200.0)) < 0.5,
+		"and its scroll moves it (%.0f from %.0f)"
+			% [main.big_face.position.x, seen_at.x])
+	main.graph_edit.zoom = 1.0
+	main.graph_edit.queue_redraw()
+	for i in 4:
+		await process_frame
+
 	# A knob on the turned-over face is the same live control as everywhere else.
 	var big_knob: Control = null
 	for index in main.big_face._targets:
-		if str(main.big_face._targets[index]["parameter"]) == "cutoff" \
-				and big_knob == null:
+		if str(main.big_face._targets[index]["parameter"]) == "cutoff" 				and big_knob == null:
 			big_knob = main.big_face._cells[index]
 	check(big_knob != null, "the big face has the cutoff knob on it")
 	if big_knob != null:
@@ -5386,42 +5425,10 @@ func _initialize() -> void:
 		for i in 4:
 			await process_frame
 
-	# Zoom, for the neighbours to come: Ctrl+wheel shrinks the face in place, the same
-	# gesture the graph uses, and the wrapper's claimed footprint follows so the
-	# scroller ranges over what is actually shown.
-	var zoom_before: float = main.face_zoom
-	var footprint_before: Vector2 = main.face_zoom_box.custom_minimum_size
-	var notch := InputEventMouseButton.new()
-	notch.button_index = MOUSE_BUTTON_WHEEL_DOWN
-	notch.pressed = true
-	notch.ctrl_pressed = true
-	main._on_face_gui_input(notch)
-	for i in 4:
-		await process_frame
-	check(main.face_zoom < zoom_before,
-		"Ctrl+wheel zooms the face out (%.2f from %.2f)"
-			% [main.face_zoom, zoom_before])
-	# Real numbers, not a vacuous pair of zeroes: the face must be laid out at a
-	# playable size — the first wrapper version left it at 0x0, since a box child of a
-	# plain Control gets no layout — and the wrapper's claim must be the scaled size.
-	check(main.big_face.size.x > 200.0,
-		"the face is laid out at a playable size (%.0f wide)" % main.big_face.size.x)
-	# Zoomed out, the screen holds more face, not a smaller box: the footprint stays
-	# a screenful while the face's logical width grows past it — which is what zoom
-	# means on a canvas, and why the first version of this check was wrong to expect
-	# the footprint to shrink below the viewport.
-	check(absf(main.face_zoom_box.custom_minimum_size.x
-				- main.big_face.size.x * main.face_zoom) < 1.0
-			and main.big_face.size.x > main.face_zoom_box.custom_minimum_size.x,
-		"and a screenful now holds more face than it did (%.0f drawn into %.0f)"
-			% [main.big_face.size.x, main.face_zoom_box.custom_minimum_size.x])
-
-	# The knobs yield the Ctrl form and keep the plain one: zoom must work exactly
-	# where the knobs are, and stepping must not become zooming.
+	# The knobs yield Ctrl+wheel — the camera's zoom — and keep the plain wheel.
 	var wheel_knob: Control = null
 	for index in main.big_face._targets:
-		if str(main.big_face._targets[index]["parameter"]) == "cutoff" \
-				and wheel_knob == null:
+		if str(main.big_face._targets[index]["parameter"]) == "cutoff" 				and wheel_knob == null:
 			wheel_knob = (main.big_face._cells[index] as Node).get_child(0)
 	check(wheel_knob != null, "a knob on the face to aim the wheel at")
 	if wheel_knob != null:
@@ -5436,13 +5443,18 @@ func _initialize() -> void:
 				% (wheel_knob as RackView.Knob)._position)
 		(wheel_knob as RackView.Knob).set_value_silently(
 			(wheel_knob as RackView.Knob)._to_value(held))
-	main._set_face_zoom(1.0)
 
 	main.wires_button.pressed.emit()
-	for i in 6:
+	for i in 10:
 		await process_frame
-	check(main.graph_edit.visible and not main.face_scroll.visible,
-		"and WIRES turns it back")
+	var wires_back := 0
+	for child in main.graph_edit.get_children():
+		if child is GraphNode and (child as GraphNode).visible:
+			wires_back += 1
+	check(not main.big_face.visible and wires_back > 0
+			and main.graph_edit.get_connection_list().size() == wired_before,
+		"and WIRES puts the wiring back, cables and all (%d nodes, %d cables)"
+			% [wires_back, main.graph_edit.get_connection_list().size()])
 
 	main.show_view("Graph")
 	for i in 6:
