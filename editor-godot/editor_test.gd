@@ -5497,6 +5497,71 @@ func _initialize() -> void:
 	check(main.patch["connections"].size() == cable_count,
 		"and undo strings it back (%d)" % main.patch["connections"].size())
 
+	# ---- flipping a closed node to its panel ------------------------------------------
+	# The chip lives on the device node itself: a device in a mixed graph is either
+	# being patched or being played, and turning it over should not require opening
+	# its wires first. Seams have no panel, so they carry no chip.
+	var device_widget: GraphNode = main.widgets[onto_fresh]
+	var device_chip: Button = device_widget.get_titlebar_hbox().get_node_or_null("Flip")
+	check(device_chip != null, "a device node carries a FACE chip")
+	var seam_widget: GraphNode = null
+	for node in main.patch["nodes"]:
+		if str(node.get("type", "")) == "Input":
+			seam_widget = main.widgets[str(node["id"])]
+	check(seam_widget.get_titlebar_hbox().get_node_or_null("Flip") == null,
+		"and a seam does not")
+
+	var wired_when_flipped: int = main.patch["connections"].size()
+	device_chip.pressed.emit()
+	for i in 10:
+		await process_frame
+	check(not main.widgets[onto_fresh].visible,
+		"the chip hides the node")
+	var node_mount = main.module_mounts.get(onto_fresh)
+	check(node_mount != null and node_mount.visible and node_mount._cells.size() > 0,
+		"and mounts the module's face where it stood (%d cells)"
+			% (0 if node_mount == null else node_mount._cells.size()))
+	check(main.graph_edit.get_connection_list().is_empty()
+			and main.patch["connections"].size() == wired_when_flipped,
+		"its cables leave the view and stay in the document (%d kept)"
+			% main.patch["connections"].size())
+	check(str(main.graph_edit.flip_labels.get(onto_fresh, "")) != "",
+		"and the band wears the module's name (%s)"
+			% str(main.graph_edit.flip_labels.get(onto_fresh, "")))
+
+	# A flipped node cannot be deleted: what cannot be seen cannot be taken. The
+	# selection may well still be on from before the flip.
+	main.widgets[onto_fresh].selected = true
+	var flipped_nodes_count: int = main.patch["nodes"].size()
+	var flip_delete := InputEventKey.new()
+	flip_delete.keycode = KEY_DELETE
+	flip_delete.physical_keycode = KEY_DELETE
+	flip_delete.pressed = true
+	Input.parse_input_event(flip_delete)
+	for i in 8:
+		await process_frame
+	check(main.patch["nodes"].size() == flipped_nodes_count,
+		"delete spares a node that is turned over")
+
+	# The flip is session furniture, so a rebuild keeps it — the same reason the
+	# per-case flips survive one.
+	await main._rebuild_view()
+	for i in 8:
+		await process_frame
+	check(not main.widgets[onto_fresh].visible
+			and (main.module_mounts.get(onto_fresh) as Control).visible,
+		"the flip survives a rebuild")
+
+	# WIRES on the band is the way back: the same signal a click sends.
+	main.graph_edit.group_flip_toggled.emit(onto_fresh)
+	for i in 10:
+		await process_frame
+	check(main.widgets[onto_fresh].visible,
+		"WIRES brings the node back")
+	check(main.graph_edit.get_connection_list().size() == wired_when_flipped,
+		"with its cables strung again (%d)"
+			% main.graph_edit.get_connection_list().size())
+
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".
 	await main._load_example("DX7: algo-01")

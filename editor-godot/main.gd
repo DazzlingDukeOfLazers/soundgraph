@@ -150,6 +150,9 @@ var wires_button: Button
 ## Which open modules are turned over, and the ModuleFace mounted for each. Session
 ## state, like which side the file's case shows: nothing here is written to the patch.
 var flipped_modules := {}
+## Closed instance nodes turned over where they stand, keyed by instance id — the
+## one-step flip: no need to open a module's wires just to play its panel.
+var flipped_nodes := {}
 var module_mounts := {}
 ## Where the face is mounted, in graph coordinates: the case's own corner at the moment
 ## it was turned over. The graph's camera does the rest.
@@ -631,6 +634,13 @@ func _build_ui() -> void:
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
 	graph_edit.case_flipped.connect(func() -> void: _flip_container(true))
 	graph_edit.group_flip_toggled.connect(func(module_name: String) -> void:
+		# The key names either an open group or a flipped instance node; the node case
+		# first, since only its WIRES chip arrives here — its FACE control is a real
+		# button on the widget.
+		if flipped_nodes.has(module_name):
+			flipped_nodes.erase(module_name)
+			await _rebuild_view()
+			return
 		if flipped_modules.has(module_name):
 			flipped_modules.erase(module_name)
 			# Turning back needs the members and cables restored, and the rebuild is
@@ -1681,13 +1691,18 @@ func _apply_flips() -> void:
 	if graph_edit == null:
 		return
 	graph_edit.flip_frames = {}
-	# A flip for a module that is no longer open has nothing to stand on.
+	graph_edit.flip_labels = {}
+	# A flip for a module that is no longer open — or an instance no longer in the
+	# patch — has nothing to stand on.
 	for module_name in flipped_modules.keys():
 		if not graph_edit.groups.has(module_name):
 			flipped_modules.erase(module_name)
-	for module_name in module_mounts.keys():
-		if not flipped_modules.has(module_name):
-			(module_mounts[module_name] as Control).visible = false
+	for instance_id in flipped_nodes.keys():
+		if not widgets.has(str(instance_id)):
+			flipped_nodes.erase(instance_id)
+	for key in module_mounts.keys():
+		if not flipped_modules.has(key) and not flipped_nodes.has(key):
+			(module_mounts[key] as Control).visible = false
 	for module_name in flipped_modules:
 		var frame: Rect2 = graph_edit.group_box(str(module_name))
 		if frame.size.x <= 0.0:
@@ -1702,20 +1717,7 @@ func _apply_flips() -> void:
 			if members.has(String(wire["from_node"])) 					or members.has(String(wire["to_node"])):
 				graph_edit.disconnect_node(wire["from_node"], wire["from_port"],
 					wire["to_node"], wire["to_port"])
-		var mount: Control = module_mounts.get(module_name, null)
-		if mount == null:
-			mount = ModuleFace.new()
-			mount.z_index = 50
-			(mount as ModuleFace).rearranged.connect(_on_face_rearranged)
-			(mount as ModuleFace).removed.connect(_on_face_knob_removed)
-			(mount as ModuleFace).refused.connect(
-				func(reason: String) -> void: _say(reason))
-			graph_edit.add_child(mount)
-			module_mounts[module_name] = mount
-		var shown := mount as ModuleFace
-		shown.patch = patch
-		shown.registry = registry
-		shown.rack = rack
+		var shown := _mount_for(str(module_name))
 		shown.node_id = ""
 		shown.opened_module = str(module_name)
 		shown.visible = true
@@ -1724,6 +1726,51 @@ func _apply_flips() -> void:
 		shown.size = Vector2(maxf(natural.x, frame.size.x), natural.y)
 		shown.set_meta("anchor", frame.position)
 		graph_edit.flip_frames[str(module_name)] = Rect2(frame.position, shown.size)
+	# Flipped instance nodes: the same turn, one widget wide. The node hides, its
+	# cables leave the view (the document keeps them), and the module's face stands
+	# where the node stood, knobs writing the instance's own parameters.
+	for instance_id in flipped_nodes:
+		var widget: GraphNode = widgets.get(str(instance_id), null)
+		if widget == null:
+			continue
+		widget.visible = false
+		for wire in graph_edit.get_connection_list():
+			if String(wire["from_node"]) == String(widget.name) \
+					or String(wire["to_node"]) == String(widget.name):
+				graph_edit.disconnect_node(wire["from_node"], wire["from_port"],
+					wire["to_node"], wire["to_port"])
+		var shown := _mount_for(str(instance_id))
+		shown.node_id = str(instance_id)
+		shown.opened_module = ""
+		shown.visible = true
+		shown.rebuild()
+		var natural: Vector2 = shown.get_combined_minimum_size()
+		shown.size = Vector2(maxf(natural.x, widget.size.x), natural.y)
+		shown.set_meta("anchor", widget.position_offset)
+		# The band is keyed by instance so two of the same device turn independently,
+		# but it wears the module's name — the key is plumbing, not a label.
+		graph_edit.flip_frames[str(instance_id)] = Rect2(widget.position_offset, shown.size)
+		graph_edit.flip_labels[str(instance_id)] = _module_of(str(instance_id))
+
+
+## The ModuleFace mounted on the canvas for this key — an open module's name or a
+## flipped instance's id — made once and reused across rebuilds.
+func _mount_for(key: String) -> ModuleFace:
+	var mount: Control = module_mounts.get(key, null)
+	if mount == null:
+		mount = ModuleFace.new()
+		mount.z_index = 50
+		(mount as ModuleFace).rearranged.connect(_on_face_rearranged)
+		(mount as ModuleFace).removed.connect(_on_face_knob_removed)
+		(mount as ModuleFace).refused.connect(
+			func(reason: String) -> void: _say(reason))
+		graph_edit.add_child(mount)
+		module_mounts[key] = mount
+	var shown := mount as ModuleFace
+	shown.patch = patch
+	shown.registry = registry
+	shown.rack = rack
+	return shown
 
 
 func _place_face() -> void:
@@ -3064,6 +3111,27 @@ func _create_widget(node: Dictionary) -> void:
 	widget.set_meta("type", type_name)
 
 	_style_node_title(widget, descriptor)
+
+	# A closed module carries its own flip, in the titlebar: the case band and the open
+	# frame already have theirs, and a device in a mixed graph is either being patched
+	# or being played. The chip turns it over to its panel where it stands, without
+	# opening its wires first; WIRES on the mounted panel turns it back.
+	if str(node.get("module", "")) != "":
+		var flip := Button.new()
+		flip.name = "Flip"
+		flip.text = "FACE"
+		flip.flat = true
+		flip.focus_mode = Control.FOCUS_NONE
+		flip.tooltip_text = "Turn the module over to its panel. " \
+			+ "WIRES on the panel turns it back."
+		flip.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+		flip.add_theme_color_override("font_color", Design.ACCENT)
+		var instance_id := str(node["id"])
+		flip.pressed.connect(func() -> void:
+			flipped_nodes[instance_id] = true
+			_apply_flips())
+		widget.get_titlebar_hbox().add_child(flip)
+
 	# Hover is its own state, distinct from selection.
 	#
 	# GraphNode has normal and selected and nothing between them, so a node under the

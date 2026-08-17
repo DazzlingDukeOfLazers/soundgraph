@@ -1050,12 +1050,16 @@ var face_up := false:
 		queue_redraw()
 ## Called every frame while any face is up, so the mounts follow the camera.
 signal face_needs_placing
-## An open module's FACE/WIRES control was clicked: turn that one container.
+## An open module's FACE/WIRES control was clicked: turn that one container. The name
+## is a flip key: an open group's module name, or a flipped instance node's id.
 signal group_flip_toggled(module_name: String)
 ## Frames of turned-over open modules, in graph coordinates: name -> Rect2. Set by main
 ## when it mounts a face, because the members' own rectangles are hidden with the
 ## members and can no longer say where the container stands.
 var flip_frames: Dictionary = {}
+## What the band above a turned container says, when its key is not worth reading:
+## a flipped instance node is keyed by instance id but wears its module's name.
+var flip_labels: Dictionary = {}
 var _flip_hits: Dictionary = {}
 ## The case is about to move, so an undo step can be opened before anything shifts.
 signal case_move_started
@@ -1569,7 +1573,8 @@ class WandOverlay extends Control:
 				Vector2(frame.size.x * scale, float(Design.scale(26.0)) * scale))
 			draw_rect(strip, Color(Design.ACCENT, 0.10))
 			draw_string(font, strip.position + Vector2(pad, strip.size.y * 0.72),
-				str(module_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
+				str(graph.flip_labels.get(module_name, module_name)),
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
 			var wires_text := "WIRES"
 			var wires_measured := font.get_string_size(wires_text,
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
