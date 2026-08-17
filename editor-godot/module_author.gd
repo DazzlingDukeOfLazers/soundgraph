@@ -716,11 +716,12 @@ static func from_patch(patch: Dictionary, foreign: Dictionary, name_hint: String
 	for node in foreign.get("nodes", []):
 		if str(node.get("type", "")) == "module":
 			uses_modules = true
-	if uses_modules:
-		foreign = flattened(foreign)
-		if foreign.is_empty():
-			result.error = "that patch's modules could not be opened"
-			return result
+	# A modular source keeps its modules. Flattening was the answer while a definition
+	# could not hold instances; now that one can, dissolving them would throw away the
+	# notation the source chose — and with it the sharing, since six operators flattened
+	# into a voice are six copies of the same five nodes. The definitions travel across
+	# beside the new one, and expansion walks down through both levels.
+	var carried: Dictionary = (foreign.get("modules", {}) as Dictionary).duplicate(true)
 	foreign = _split_input_seams(foreign)
 	for node in foreign.get("nodes", []):
 		var type_name := str(node.get("type", ""))
@@ -782,6 +783,25 @@ static func from_patch(patch: Dictionary, foreign: Dictionary, name_hint: String
 	out["schema_version"] = maxi(int(patch.get("schema_version", 1)), 2)
 	if not out.has("modules"):
 		out["modules"] = {}
+	# The definitions the source's own instances are of, carried across beside the new
+	# one. An identical definition already here is reused — importing two DX7 voices
+	# should mean one dx7_operator, which is the sharing that flattening used to throw
+	# away — and a different one under the same name is renamed, since merging two
+	# unrelated definitions because they agree on a word would change what this patch
+	# already does. The nodes that name it follow.
+	var renamed := {}
+	for name in carried:
+		var wanted := str(name)
+		if out["modules"].has(wanted):
+			if JSON.stringify(out["modules"][wanted]) == JSON.stringify(carried[name]):
+				continue
+			wanted = _unique_name(wanted, out["modules"].keys())
+			renamed[str(name)] = wanted
+		out["modules"][wanted] = carried[name]
+	if not renamed.is_empty():
+		for node: Dictionary in inner_nodes:
+			if renamed.has(str(node.get("module", ""))):
+				node["module"] = renamed[str(node.get("module", ""))]
 	result.module_name = _unique_name(name_hint if name_hint != "" else "module",
 		out["modules"].keys())
 	var definition := {

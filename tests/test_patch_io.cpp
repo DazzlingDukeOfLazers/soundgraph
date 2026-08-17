@@ -650,11 +650,13 @@ TEST(modules_refuse_the_documented_abuses) {
     unexported.replace(unexported.find("{ \"frequency\": 330 }"), 20, "{ \"gain\": 1 }");
     CHECK(refuses(unexported, "parameter_not_exported"));
 
-    // A module inside a module.
-    std::string nested = modular_patch();
-    nested.replace(nested.find("\"id\": \"env\", \"type\": \"ADSR\""), 27,
-                   "\"id\": \"env\", \"type\": \"module\", \"module\": \"voice\"");
-    CHECK(refuses(nested, "module_nesting"));
+    // A module inside itself. Nesting is allowed now — see the test below — so what is
+    // refused is the one shape of it that has no end: a definition that reaches itself.
+    // Here directly; the indirect case is covered where nesting is exercised.
+    std::string looping = modular_patch();
+    looping.replace(looping.find("\"id\": \"env\", \"type\": \"ADSR\""), 27,
+                    "\"id\": \"env\", \"type\": \"module\", \"module\": \"voice\"");
+    CHECK(refuses(looping, "module_cycle"));
 
     // A top-level node whose literal name collides with an expansion.
     std::string collision = modular_patch();
@@ -970,4 +972,113 @@ TEST(a_seam_fans_out_to_everything_it_feeds) {
     }
     CHECK(from_keyboard == 2);  // one cable in, both envelopes gated
     CHECK(description.find_node("p.gate") == nullptr);
+}
+
+TEST(a_module_may_hold_another_module) {
+    // Nesting, which is what makes a graph a graph: walk in, drill down, climb out. It
+    // was refused outright to prevent one case of it — a definition reaching itself —
+    // and that case is now refused by name, leaving the useful ones alone.
+    //
+    // `stack` holds two `amp`s in series. Neither the engine nor the golden manifest
+    // learns anything new: expansion runs a level at a time until nothing is left to
+    // expand, and what comes out the far end is the flat graph it always was.
+    const std::string text = R"({
+      "schema_version": 2,
+      "modules": {
+        "amp": {
+          "nodes": [{ "id": "g", "type": "Gain", "parameters": { "gain": 0.5 } }],
+          "connections": [],
+          "inputs": [{ "name": "in", "node": "g", "port": "in" }],
+          "outputs": [{ "name": "out", "node": "g", "port": "out" }]
+        },
+        "stack": {
+          "nodes": [
+            { "id": "a", "type": "module", "module": "amp" },
+            { "id": "b", "type": "module", "module": "amp" }
+          ],
+          "connections": [
+            { "from": { "node": "a", "port": "out" }, "to": { "node": "b", "port": "in" } }
+          ],
+          "inputs": [{ "name": "in", "node": "a", "port": "in" }],
+          "outputs": [{ "name": "out", "node": "b", "port": "out" }]
+        }
+      },
+      "nodes": [
+        { "id": "osc", "type": "SawOscillator", "parameters": { "frequency": 220 } },
+        { "id": "quiet", "type": "module", "module": "stack" },
+        { "id": "out", "type": "Output", "host": "stereo" }
+      ],
+      "connections": [
+        { "from": { "node": "osc", "port": "out" }, "to": { "node": "quiet", "port": "in" } },
+        { "from": { "node": "quiet", "port": "out" }, "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+
+    // Two levels down: the ids carry the whole path, so a node knows where it came from
+    // however deep it was written.
+    CHECK(description.find_node("quiet.a.g") != nullptr);
+    CHECK(description.find_node("quiet.b.g") != nullptr);
+    CHECK(description.find_node("quiet.a") == nullptr);   // the inner instance is gone
+    CHECK(description.find_node("quiet") == nullptr);     // and so is the outer one
+
+    // And the cables run through both levels of ports: osc into the first gain, the
+    // first into the second, the second out.
+    int into_first = 0;
+    int between = 0;
+    int to_output = 0;
+    for (const soundgraph::ConnectionDescription& wire : description.connections) {
+        if (wire.from_node == "osc" && wire.to_node == "quiet.a.g") ++into_first;
+        if (wire.from_node == "quiet.a.g" && wire.to_node == "quiet.b.g") ++between;
+        if (wire.from_node == "quiet.b.g" && wire.to_node == "out") ++to_output;
+    }
+    CHECK(into_first == 1);
+    CHECK(between == 1);
+    CHECK(to_output == 1);
+}
+
+TEST(a_module_may_not_reach_itself_through_another) {
+    // The indirect cycle, which no single-step check would catch: amp holds stack, stack
+    // holds amp. The message names the path rather than the fact, because "amp contains
+    // stack contains amp" is something a person can act on.
+    const std::string text = R"({
+      "schema_version": 2,
+      "modules": {
+        "amp": {
+          "nodes": [
+            { "id": "g", "type": "Gain" },
+            { "id": "loop", "type": "module", "module": "stack" }
+          ],
+          "connections": [],
+          "inputs": [{ "name": "in", "node": "g", "port": "in" }],
+          "outputs": [{ "name": "out", "node": "g", "port": "out" }]
+        },
+        "stack": {
+          "nodes": [{ "id": "a", "type": "module", "module": "amp" }],
+          "connections": [],
+          "inputs": [{ "name": "in", "node": "a", "port": "in" }],
+          "outputs": [{ "name": "out", "node": "a", "port": "out" }]
+        }
+      },
+      "nodes": [
+        { "id": "quiet", "type": "module", "module": "stack" },
+        { "id": "out", "type": "Output", "host": "stereo" }
+      ],
+      "connections": [
+        { "from": { "node": "quiet", "port": "out" }, "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(!soundgraph::parse_patch(text, description, diagnostics));
+    bool named_the_path = false;
+    for (const Diagnostic& diagnostic : diagnostics) {
+        if (diagnostic.code == "module_cycle" &&
+            diagnostic.message.find("contains") != std::string::npos) {
+            named_the_path = true;
+        }
+    }
+    CHECK(named_the_path);
 }

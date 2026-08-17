@@ -261,6 +261,10 @@ bool read_module_binding(const json::Value& entry,
 // which is where allocation already lives.
 constexpr std::size_t kMaxExpandedNodes = 2048;
 
+// How deep modules may nest. Not a judgement about how deep is useful — a cycle is
+// already refused by name, so this only catches a generated file gone wrong.
+constexpr int kMaxNestingDepth = 16;
+
 // instance id + "." + inner id, the separator the editor's module import established.
 std::string expanded_id(const std::string& instance, const std::string& inner) {
     return instance + "." + inner;
@@ -437,7 +441,59 @@ bool port_endpoints(const ModuleDescription& definition,
     return true;
 }
 
-bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diagnostics) {
+// Whether `name` can reach itself by instantiation, directly or through others.
+//
+// The one thing nesting must not allow. A definition that instantiates itself expands
+// without end, and so does any loop of them — so the walk carries its path and reports
+// it, because "dx7_voice contains dx7_stack contains dx7_voice" is a sentence somebody
+// can act on and "cycle detected" is not.
+bool definition_is_acyclic(const GraphDescription& description, const std::string& name,
+                           std::vector<Diagnostic>& diagnostics,
+                           std::vector<std::string> path = {}) {
+    for (const std::string& seen : path) {
+        if (seen == name) {
+            std::string chain;
+            for (const std::string& step : path) {
+                chain += step + " contains ";
+            }
+            diagnostics.push_back(error(
+                "module_cycle",
+                "Module '" + name + "' contains itself: " + chain + name + ".",
+                "A module may hold other modules, but not itself — directly or at any "
+                "remove. There would be no end to expanding it."));
+            return false;
+        }
+    }
+    path.push_back(name);
+    for (const ModuleDescription& definition : description.modules) {
+        if (definition.name != name) {
+            continue;
+        }
+        for (const NodeDescription& inner : definition.nodes) {
+            if (inner.type != "module") {
+                continue;
+            }
+            if (!definition_is_acyclic(description, inner.module, diagnostics, path)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+
+bool has_instances(const GraphDescription& description) {
+    for (const NodeDescription& node : description.nodes) {
+        if (node.type == "module") {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+bool expand_one_level(GraphDescription& description,
+                      std::vector<Diagnostic>& diagnostics) {
     bool any_instance = false;
     for (const NodeDescription& node : description.nodes) {
         if (node.type == "module") {
@@ -461,15 +517,13 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
 
     // Definitions are sound on their own terms before any instance is considered.
     for (const ModuleDescription& definition : description.modules) {
-        for (const NodeDescription& inner : definition.nodes) {
-            if (inner.type == "module") {
-                diagnostics.push_back(error(
-                    "module_nesting",
-                    "Module '" + definition.name + "' instantiates module '" +
-                        inner.module + "'; modules may not contain modules.",
-                    "Nesting is deliberately out of scope — see docs/modules-design.md."));
-                return false;
-            }
+        // A module may hold modules; it may not hold itself. Nesting is how a graph is
+        // meant to read — walk in, drill down, climb back out — and the old refusal
+        // ruled out the whole idea to prevent one case of it. That case is a cycle, and
+        // a cycle is what is checked for: A inside A expands forever, and so does A
+        // inside B inside A, which no single-step check would have caught.
+        if (!definition_is_acyclic(description, definition.name, diagnostics)) {
+            return false;
         }
         for (std::size_t i = 0; i < definition.nodes.size(); ++i) {
             for (std::size_t j = i + 1; j < definition.nodes.size(); ++j) {
@@ -732,9 +786,55 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
     description.connections = std::move(flat_connections);
     description.controls = std::move(flat_controls);
     description.automation = std::move(flat_automation);
-    // The flattened view is a version-1 graph, which is the whole trick: the engine,
-    // the golden manifest and every target build from exactly the document model they
-    // always did.
+    // The version is stamped by the caller, once the descent is over. Doing it here said
+    // "this is a version-1 graph now" after the first level — and the next level read
+    // that back as a v1 document using modules and refused it, which is a patch failing
+    // to load because it was two deep rather than one.
+    return true;
+}
+
+
+// Expansion, all the way down.
+//
+// One level at a time, because a definition's instances only become ordinary nodes of
+// the flattened graph once their parent has been inlined — so the second level is not
+// visible until the first has run. Repeating the pass is what makes nesting work, and it
+// costs nothing on the common case of no nesting at all: the loop finds no instances
+// left and stops.
+//
+// The first pass always runs, because it carries the schema and definition checks, and
+// those apply to a document that declares definitions even if nothing instantiates them.
+//
+// The depth bound is a backstop, not the rule. definition_is_acyclic has already refused
+// anything that could recur forever, so reaching this means a patch nested deeper than
+// any hand would nest and probably a bug in something that generates them.
+bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diagnostics) {
+    if (!expand_one_level(description, diagnostics)) {
+        return false;
+    }
+    for (int level = 1; level < kMaxNestingDepth; ++level) {
+        // Out of the loop, not out of the function: the version is stamped below, and
+        // returning here left the flattened graph still declaring 2, which validate
+        // rejects as a document from a newer build.
+        if (!has_instances(description)) {
+            break;
+        }
+        if (!expand_one_level(description, diagnostics)) {
+            return false;
+        }
+    }
+    if (has_instances(description)) {
+        diagnostics.push_back(error(
+            "module_too_deep",
+            "This patch nests modules more than " + std::to_string(kMaxNestingDepth) +
+                " deep.",
+            "Nothing this deep is meant to be read by a person; the limit is here to "
+            "stop a generated file from expanding without end."));
+        return false;
+    }
+    // The flattened view is a version-1 graph, which is the whole trick: the
+    // engine, the golden manifest and every target build from exactly the
+    // document model they always did. Stamped once the descent is over.
     description.schema_version = kSchemaVersion;
     return true;
 }
