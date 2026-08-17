@@ -1811,23 +1811,32 @@ func _device_panel_for(instance_id: String, module_name: String,
 						node["parameters"] = {}
 					node["parameters"][str(binding["parameter"])] = \
 						overrides[str(binding["name"])]
-	# A control aimed at a seam stays off a device's face for now. Expansion splices
-	# a definition's seams away, and the master level a file stores on one goes with
-	# them — measured: an instance's "level" export validates, writes, and changes
-	# nothing a listener can hear. A knob that writes a parameter nothing hears
-	# would be a lie, so until patch-io honours seam levels the face shows only what
-	# plays. (The mix group's own level knob is the device's volume meanwhile.)
-	var seams := {}
+	# The definition's seams are unbound by design — the host wires them — so the
+	# document's registry has no entry under their keys, and without one the face
+	# drops their controls: the OUT knob vanished and took the whole mix strip's
+	# terminal standing with it. The face only needs enough to draw them: an entry
+	# under the seam's key carrying the parameters the terminals of its type have,
+	# which is where a bound seam's level comes from too. The knob is honest now —
+	# expansion leaves a trimmed seam behind as a Level node, so the instance's
+	# "level" export reaches something that plays.
+	var local_registry: Dictionary = registry.duplicate()
 	for node in doc["nodes"]:
-		if str(node.get("type", "")) in ["Input", "Output"]:
-			seams[str(node["id"])] = true
-	var playable: Array = []
-	for control: Dictionary in doc["controls"]:
-		if not seams.has(str(control.get("target", {}).get("node", ""))):
-			playable.append(control)
-	doc["controls"] = playable
+		var type_name := str(node.get("type", ""))
+		if type_name != "Input" and type_name != "Output":
+			continue
+		var key := Seams.registry_key(node)
+		if local_registry.has(key):
+			continue
+		var entry: Dictionary = registry.get(type_name, {}).duplicate(true)
+		var parameters: Array = []
+		for terminal_key in Seams.TERMINALS:
+			if str(terminal_key).begins_with(type_name + "/"):
+				parameters.append_array(registry.get(
+					Seams.TERMINALS[terminal_key], {}).get("parameters", []))
+		entry["parameters"] = parameters
+		local_registry[key] = entry
 	panel.patch = doc
-	panel.registry = registry
+	panel.registry = local_registry
 	panel.rack = rack
 	panel.title = module_name
 	panel.write_as = writes

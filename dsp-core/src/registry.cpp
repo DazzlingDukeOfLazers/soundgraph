@@ -133,6 +133,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kDelay,
         &nodes::kPhaser,
         &nodes::kGain,
+        &nodes::kLevel,
         &nodes::kMixer,
         &nodes::kAdsr,
         &nodes::kAhdEnvelope,

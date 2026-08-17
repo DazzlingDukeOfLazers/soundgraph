@@ -44,6 +44,40 @@ public:
 };
 
 // ---------------------------------------------------------------------------------
+// Level
+// ---------------------------------------------------------------------------------
+// A port's own trim. This is what a module's Output seam becomes when it carries a
+// level: expansion re-aims the cables through it, so the level a file sets on its
+// out survives the file becoming a device. Gain with a control inlet is for shaping;
+// this is the plain multiplier a jack's trim pot is.
+
+constexpr PortDescriptor kLevelInputs[] = {
+    {"in", SignalType::Audio, "", false, true, "Signal to trim; several sum."},
+};
+
+constexpr PortDescriptor kLevelOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "Trimmed signal."},
+};
+
+constexpr ParameterDescriptor kLevelParameters[] = {
+    {"level", "", 0.0f, 2.0f, 1.0f, Scaling::Logarithmic,
+     "Linear level. 1 leaves the signal unchanged.", nullptr, 0},
+};
+
+class LevelNode final : public DspNode {
+public:
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        float* out = context.outputs[0];
+        const float level = parameter(0);
+
+        for (int i = 0; i < context.frames; ++i) {
+            out[i] = (in != nullptr ? in[i] : 0.0f) * level;
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------------
 // Mixer
 // ---------------------------------------------------------------------------------
 
@@ -268,6 +302,18 @@ const NodeTypeDescriptor kGain = {
     false, NodeRole::Processor, false,
     ResourceCost{1.0f, 0, 0},
     &make<GainNode>,
+};
+
+const NodeTypeDescriptor kLevel = {
+    "Level", "Level", "Amplitude",
+    "Trims a signal by a fixed amount. What a port's own level becomes in the flat graph.",
+    "level|trim|attenuate|port level|output level|master",
+    Slice<PortDescriptor>(kLevelInputs),
+    Slice<PortDescriptor>(kLevelOutputs),
+    Slice<ParameterDescriptor>(kLevelParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{1.0f, 0, 0},
+    &make<LevelNode>,
 };
 
 const NodeTypeDescriptor kMixer = {

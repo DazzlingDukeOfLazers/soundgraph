@@ -930,6 +930,110 @@ TEST(a_module_can_draw_its_ports_as_seams) {
     CHECK(landed);
 }
 
+TEST(a_trimmed_output_seam_stands_as_a_level_node) {
+    // A module's out that carries a level is more than plumbing: everything leaving
+    // through it is trimmed. The splice cannot say that with cables, so the seam
+    // stays behind as a Level node under its own id — which is also the id an
+    // instance's exported "level" reaches, so the knob and the trim are one thing.
+    const std::string text = R"({
+      "schema_version": 2,
+      "modules": {
+        "voice": {
+          "nodes": [
+            { "id": "osc", "type": "SineOscillator" },
+            { "id": "out", "type": "Output", "parameters": { "level": 0.5 } }
+          ],
+          "connections": [
+            { "from": { "node": "osc", "port": "out" }, "to": { "node": "out", "port": "left" } },
+            { "from": { "node": "osc", "port": "out" }, "to": { "node": "out", "port": "right" } }
+          ],
+          "parameters": [ { "name": "level", "node": "out", "parameter": "level" } ]
+        }
+      },
+      "nodes": [
+        { "id": "v",   "type": "module", "module": "voice",
+          "parameters": { "level": 0.25 } },
+        { "id": "out", "type": "StereoOutput" }
+      ],
+      "connections": [
+        { "from": { "node": "v", "port": "out" }, "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+
+    const soundgraph::NodeDescription* trim = description.find_node("v.out");
+    CHECK(trim != nullptr);
+    if (trim != nullptr) {
+        CHECK(trim->type == "Level");
+        // The instance's export overrides the stored 0.5, by the ordinary parameter path.
+        const soundgraph::ParameterValue* level = trim->find_parameter("level");
+        CHECK(level != nullptr);
+        CHECK(level != nullptr && level->value == 0.25);
+    }
+
+    // Both inner wires land on the node's summing inlet, and the outside cable takes
+    // from the node — nothing reaches past it to the feeders any more.
+    int into_trim = 0;
+    bool outside_from_trim = false;
+    bool anything_from_osc_outward = false;
+    for (const auto& wire : description.connections) {
+        if (wire.to_node == "v.out" && wire.to_port == "in" && wire.from_node == "v.osc") {
+            ++into_trim;
+        }
+        if (wire.from_node == "v.out" && wire.from_port == "out" && wire.to_node == "out") {
+            outside_from_trim = true;
+        }
+        if (wire.from_node == "v.osc" && wire.to_node == "out") {
+            anything_from_osc_outward = true;
+        }
+    }
+    CHECK(into_trim == 2);
+    CHECK(outside_from_trim);
+    CHECK(!anything_from_osc_outward);
+}
+
+TEST(an_untrimmed_output_seam_still_splices_away) {
+    // The other half of the rule: a seam carrying no level and reached by no export
+    // expands exactly as it always has — no node, cables re-aimed at the feeders —
+    // so every patch that never used the trim is untouched to the byte.
+    const std::string text = R"({
+      "schema_version": 2,
+      "modules": {
+        "voice": {
+          "nodes": [
+            { "id": "osc", "type": "SineOscillator" },
+            { "id": "out", "type": "Output" }
+          ],
+          "connections": [
+            { "from": { "node": "osc", "port": "out" }, "to": { "node": "out", "port": "left" } }
+          ]
+        }
+      },
+      "nodes": [
+        { "id": "v",   "type": "module", "module": "voice" },
+        { "id": "out", "type": "StereoOutput" }
+      ],
+      "connections": [
+        { "from": { "node": "v", "port": "out" }, "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+    CHECK(description.find_node("v.out") == nullptr);
+    bool direct = false;
+    for (const auto& wire : description.connections) {
+        if (wire.from_node == "v.osc" && wire.to_node == "out" && wire.to_port == "left") {
+            direct = true;
+        }
+    }
+    CHECK(direct);
+}
+
 TEST(a_seam_fans_out_to_everything_it_feeds) {
     // One port, three places. A declared binding could never say this — it names exactly
     // one (node, port) — so this is the case seams add rather than restate.

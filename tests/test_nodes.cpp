@@ -317,6 +317,20 @@ TEST(gain_multiplies_by_parameter_and_input_together) {
     CHECK_NEAR(harness.output()[0], 0.125, 1e-6);
 }
 
+TEST(level_trims_by_its_parameter_and_nothing_else) {
+    NodeHarness harness("Level", 64, kSampleRate);
+    harness.connect("in", 1.0f);
+    harness.set("level", 0.5f);
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 0.5, 1e-6);
+
+    // At 1 it is a wire: this is the identity that lets expansion stand one in for
+    // every trimmed port without changing a patch that left the trim alone.
+    harness.set("level", 1.0f);
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 1.0, 1e-6);
+}
+
 TEST(mixer_sums_channels_at_their_levels) {
     NodeHarness harness("Mixer", 64, kSampleRate);
     harness.connect("in1", 1.0f);

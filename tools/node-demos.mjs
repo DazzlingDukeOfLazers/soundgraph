@@ -269,6 +269,30 @@ const DEMOS = {
       ],
     }),
   },
+  Level: {
+    summary: "A fixed trim -- what a port's own level becomes in the flat graph.",
+    try: 'Pull level down and back. Nothing else about the sound changes, which is the '
+      + 'point: this is the trim pot on a jack, not an amplifier stage.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('osc', 'SawOscillator', { frequency: 220 }, 1, 0),
+        envelope(1, 1),
+        amp(2),
+        node('demo', 'Level', { level: 0.7 }, 3, 0),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('osc', 'out', 'amp', 'in'),
+        wire('kb', 'trigger', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('amp', 'out', 'demo', 'in'),
+        wire('demo', 'out', 'out', 'left'),
+        wire('demo', 'out', 'out', 'right'),
+      ],
+    }),
+  },
   Mixer: {
     summary: 'Four signals at independent levels.',
     try: 'The three oscillators are detuned by a few hertz. Pull level2 and level3 to zero '
@@ -526,6 +550,7 @@ const PROBES = {
   Phaser: { parameter: 'sweep', value: 0 },
 
   Gain: { parameter: 'gain', value: 0.15 },
+  Level: { parameter: 'level', value: 0.15 },
   Mixer: { parameter: 'level2', value: 0 },
 
   ADSR: { parameter: 'attack', value: 2.0 },

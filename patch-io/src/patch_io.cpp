@@ -405,6 +405,29 @@ std::string seam_port_name(const NodeDescription& node) {
     return node.name.empty() ? node.id : node.name;
 }
 
+// Whether this seam's level survives expansion as a node of its own.
+//
+// An Output seam that carries a level — stored on it, or reachable through an export —
+// has something the splice cannot say with cables alone: everything leaving through
+// this port is trimmed. Such a seam expands into a Level node instead of vanishing,
+// wearing the seam's own id, which is also what keeps an instance's exported "level"
+// reaching it by the ordinary parameter path. A seam carrying nothing splices away
+// exactly as before, so a patch that never used the level expands byte-identically.
+bool seam_level_stands(const ModuleDescription& definition, const NodeDescription& seam) {
+    if (seam.type != "Output") {
+        return false;
+    }
+    if (seam.find_parameter("level") != nullptr) {
+        return true;
+    }
+    for (const ModuleParameterDescription& exported : definition.parameters) {
+        if (exported.node == seam.id && exported.parameter == "level") {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Every place inside a definition that one of its ports reaches, whether the port was
 // declared as a binding or drawn as a seam.
 //
@@ -421,11 +444,26 @@ bool port_endpoints(const ModuleDescription& definition,
         if (inner.type != wanted_type || seam_port_name(inner) != port) {
             continue;
         }
+        // A seam whose level stands is a node in the flat graph, so the outside cable
+        // takes from the node rather than reaching past it to its feeders.
+        if (is_output && seam_level_stands(definition, inner)) {
+            out.emplace_back(inner.id, "out");
+            return true;
+        }
         for (const ConnectionDescription& wire : definition.connections) {
             if (is_output && wire.to_node == inner.id) {
                 out.emplace_back(wire.from_node, wire.from_port);
             } else if (!is_output && wire.from_node == inner.id) {
-                out.emplace_back(wire.to_node, wire.to_port);
+                // The inside end may itself be a levelled Output seam — an input port
+                // passed straight to a trimmed out — and then the cable lands on the
+                // Level node's summing inlet, the same place its inner feeders land.
+                const NodeDescription* target = inner_node(definition, wire.to_node);
+                if (target != nullptr && is_seam(target->type) &&
+                    seam_level_stands(definition, *target)) {
+                    out.emplace_back(wire.to_node, "in");
+                } else {
+                    out.emplace_back(wire.to_node, wire.to_port);
+                }
             }
         }
         // A seam wired to nothing is a port that goes nowhere, which is legal and quiet:
@@ -622,11 +660,27 @@ bool expand_one_level(GraphDescription& description,
         }
         for (const NodeDescription& inner : definition->nodes) {
             // A seam is the edge, not a thing on it. Expansion aims the outside cable at
-            // what the seam feeds, so the seam itself has nothing left to be.
-            if (is_seam(inner.type)) {
+            // what the seam feeds, so the seam itself has nothing left to be — except a
+            // level. A trimmed Output seam leaves its trim behind as a Level node under
+            // the seam's own id, so the level a file set on its out survives the file
+            // becoming a device, and an instance's exported "level" reaches it by the
+            // same path every export takes.
+            const bool leveled = is_seam(inner.type) && seam_level_stands(*definition, inner);
+            if (is_seam(inner.type) && !leveled) {
                 continue;
             }
             NodeDescription expanded = inner;
+            if (leveled) {
+                expanded.type = "Level";
+                expanded.host.clear();
+                std::vector<ParameterValue> kept;
+                for (const ParameterValue& value : expanded.parameters) {
+                    if (value.name == "level") {
+                        kept.push_back(value);
+                    }
+                }
+                expanded.parameters = std::move(kept);
+            }
             expanded.id = expanded_id(node.id, inner.id);
             expanded.has_position = false;
             for (const ParameterValue& value : node.parameters) {
@@ -713,12 +767,20 @@ bool expand_one_level(GraphDescription& description,
             const NodeDescription* to_inner = inner_node(*definition, inner.to_node);
             // The wire from a seam to what it feeds is not a wire in the flat graph; it
             // is the instruction for where the outside cable lands. Consumed here, put
-            // back by the resolve below.
+            // back by the resolve below. A wire into a trimmed Output seam is different:
+            // the seam stands as a Level node, so the wire stays real and lands on the
+            // node's summing inlet — which collapses the seam's inlet names exactly as
+            // the splice already collapsed them into an undifferentiated feeder list.
+            const bool to_leveled = to_inner != nullptr && is_seam(to_inner->type) &&
+                                    seam_level_stands(*definition, *to_inner);
             if ((from_inner != nullptr && is_seam(from_inner->type)) ||
-                (to_inner != nullptr && is_seam(to_inner->type))) {
+                (to_inner != nullptr && is_seam(to_inner->type) && !to_leveled)) {
                 continue;
             }
             ConnectionDescription expanded = inner;
+            if (to_leveled) {
+                expanded.to_port = "in";
+            }
             expanded.from_node = expanded_id(node.id, inner.from_node);
             expanded.to_node = expanded_id(node.id, inner.to_node);
             expanded.has_waypoint = false;

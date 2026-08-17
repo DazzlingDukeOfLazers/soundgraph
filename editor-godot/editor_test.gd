@@ -212,6 +212,25 @@ func _press_graph(main, at: Vector2) -> void:
 		main.graph_edit._gui_input(click)
 
 
+## The engine's peak over a short render, for checks that something is heard.
+func _device_peak(main) -> float:
+	var generator := AudioStreamGenerator.new()
+	generator.buffer_length = 0.5
+	var player := AudioStreamPlayer.new()
+	player.stream = generator
+	root.add_child(player)
+	player.play()
+	await process_frame
+	var playback: AudioStreamGeneratorPlayback = player.get_stream_playback()
+	main.engine.get_peak()
+	for i in 20:
+		main.engine.fill_playback(playback, 1024)
+		await process_frame
+	var peak: float = main.engine.get_peak()
+	player.queue_free()
+	return peak
+
+
 ## Press, move, release on the graph canvas.
 func _drag_graph(main, from: Vector2, to: Vector2) -> void:
 	var press := InputEventMouseButton.new()
@@ -5576,15 +5595,33 @@ func _initialize() -> void:
 	check(value_after > -999.0 and not is_equal_approx(value_after, value_before),
 		"a wheel notch on it lands on the instance's parameters (%s: %s -> %s)"
 			% [export_name, str(value_before), str(value_after)])
-	# Nothing on the face writes a seam: expansion splices seams away, so a knob
-	# aimed at one would move without a sound. Off the face until patch-io hears it.
-	var seam_cells := 0
-	for target in node_mount._targets.values():
-		for node in main.patch["modules"][main._module_of(onto_fresh)]["nodes"]:
-			if str(node["id"]) == str(target["node"]) \
-					and str(node.get("type", "")) in ["Input", "Output"]:
-				seam_cells += 1
-	check(seam_cells == 0, "and no cell is wired to a spliced-away seam")
+	# The OUT knob is back, and it is real: expansion leaves a trimmed Output seam
+	# behind as a Level node, so the instance's "level" export reaches something
+	# that plays. The mix strip stands again too — its terminal standing came from
+	# exactly the control that was missing.
+	check(node_mount.get_node_or_null("Case/Rack/Rail/Mix") != null,
+		"the mix strip stands on the device's face")
+	var out_cell := -1
+	for index in node_mount._targets:
+		if str(node_mount._targets[index]["parameter"]) == "level" \
+				and str(node_mount._targets[index]["node"]) == "out":
+			out_cell = index
+	check(out_cell >= 0, "with the OUT knob on it")
+	# And the trim is audible: the instance's level export, written through the
+	# document and applied, moves the rendered peak. This is the whole reason the
+	# knob was kept off the face until patch-io could hear it.
+	main._hold_note(60)
+	for i in 5:
+		await process_frame
+	var loud := await _device_peak(main)
+	main._set_parameter(onto_fresh, "level", 0.001)
+	for i in 5:
+		await process_frame
+	var trimmed := await _device_peak(main)
+	main._let_go_note(60)
+	main._set_parameter(onto_fresh, "level", 0.704)
+	check(loud > 0.01 and trimmed < loud * 0.1,
+		"and turning it down is heard (peak %.3f -> %.3f)" % [loud, trimmed])
 	check(main.graph_edit.get_connection_list().is_empty()
 			and main.patch["connections"].size() == wired_when_flipped,
 		"its cables leave the view and stay in the document (%d kept)"
