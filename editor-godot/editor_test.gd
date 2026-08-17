@@ -5450,6 +5450,18 @@ func _initialize() -> void:
 		await process_frame
 	check_loads(main, "and one device dropped onto it")
 
+	# A device arrives face up: it is for playing, and the panel is the playing
+	# side. The wiring is still underneath — WIRES on the band opens it.
+	check(not main.widgets[onto_fresh].visible
+			and main.module_mounts.get(onto_fresh) != null
+			and (main.module_mounts[onto_fresh] as Control).visible,
+		"a fresh device arrives face up")
+	main.graph_edit.group_flip_toggled.emit(onto_fresh)
+	for i in 10:
+		await process_frame
+	check(main.widgets[onto_fresh].visible,
+		"and WIRES opens its graph side")
+
 	# Delete removes the selected node, and the key must work with the canvas NOT
 	# focused: GraphEdit's own shortcut only listens while it holds keyboard focus,
 	# which after a trip through the inspector it does not — that focus hole is

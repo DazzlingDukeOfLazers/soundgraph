@@ -4555,6 +4555,7 @@ func _add_device(label: String, at_position: Vector2) -> String:
 		})
 		var rewired: Array = _auto_wire_device(instance_id, module_name)
 		await _rebuild_view()
+		_arrive_face_up(instance_id, module_name)
 		_apply()
 		_commit_edit("add %s" % instance_id)
 		if not rewired.is_empty():
@@ -4576,11 +4577,24 @@ func _add_device(label: String, at_position: Vector2) -> String:
 	_synthesize_module_descriptors()
 	var wired: Array = _auto_wire_device(result.instance_id, result.module_name)
 	await _rebuild_view()
+	_arrive_face_up(result.instance_id, result.module_name)
 	_apply()
 	_commit_edit("add %s" % result.instance_id)
 	if not wired.is_empty():
 		_say("added %s — wired %s" % [result.instance_id, ", ".join(wired)])
 	return result.instance_id
+
+
+## A fresh device arrives face up: a device is for playing, and the panel is the
+## playing side — the wiring underneath is what the flip is for, the reverse of a
+## node's chip. A module exporting nothing stays a node, because an empty plate
+## says less than the node's ports do.
+func _arrive_face_up(instance_id: String, module_name: String) -> void:
+	var exports: Array = registry.get("module:%s" % module_name, {}).get("parameters", [])
+	if exports.is_empty():
+		return
+	flipped_nodes[instance_id] = true
+	_apply_flips()
 
 
 func _add_node(type_name: String, at_position: Vector2) -> String:
