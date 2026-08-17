@@ -1364,6 +1364,11 @@ class Knob extends Control:
 		# somebody is setting a value.
 		if event is InputEventMouseButton and event.pressed \
 				and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			# Ctrl+wheel belongs to the view, not the value: it zooms the graph and the
+			# turned-over face alike, so a knob that swallowed it would make zoom stop
+			# working exactly where the knobs are.
+			if event.ctrl_pressed:
+				return
 			var notch: float = KEY_COARSE if event.shift_pressed else KEY_STEP
 			nudge(notch if event.button_index == MOUSE_BUTTON_WHEEL_UP else -notch)
 			accept_event()

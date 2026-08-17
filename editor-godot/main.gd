@@ -147,7 +147,11 @@ var make_module_button: Button
 ## Same class as the side panel's face — one face, two mountings.
 var big_face: PatchFace
 var face_scroll: ScrollContainer
+var face_zoom_box: Control
 var wires_button: Button
+## How large the turned-over face is drawn. 1.0 is life size; smaller makes room for
+## the neighbours a graph of several containers will put beside it.
+var face_zoom := 1.0
 
 ## The file's own face: the knobs somebody plays. See patch_face.gd.
 var patch_face: PatchFace
@@ -654,14 +658,22 @@ func _build_ui() -> void:
 	face_scroll = ScrollContainer.new()
 	face_scroll.name = "Face"
 	face_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	face_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	face_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	face_scroll.visible = false
+	# A scaled mounting: the face draws at its natural size and the wrapper presents it
+	# smaller or larger, claiming the scaled footprint so the scroller ranges over what
+	# is actually shown. Zoomed out, the case shrinks and its neighbours-to-be will
+	# share the room; a ScrollContainer child cannot simply be scaled, because layout
+	# reads minimum sizes and scale is not one.
+	face_zoom_box = Control.new()
 	big_face = PatchFace.new()
-	big_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	big_face.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	big_face.reordered.connect(_on_panel_reordered)
 	big_face.offered.connect(_toggle_control)
-	face_scroll.add_child(big_face)
+	big_face.resized.connect(_fit_face_zoom)
+	face_zoom_box.add_child(big_face)
+	face_scroll.add_child(face_zoom_box)
+	face_scroll.gui_input.connect(_on_face_gui_input)
+	face_scroll.resized.connect(_fit_face_zoom)
 	container_tab.add_child(face_scroll)
 
 	# The way back, floating over the face: the same flip, wearing the other side's
@@ -1620,6 +1632,42 @@ func _build_side_panel() -> Control:
 ##
 ## Presentation, not document — which side is up is a fact about the session, like the
 ## scroll position, so nothing is written and nothing lands in the undo history.
+## Ctrl+wheel over the face zooms it, the same gesture the graph uses. Plain wheel
+## still steps the knob it is over — the knobs yield only the Ctrl form.
+func _on_face_gui_input(event: InputEvent) -> void:
+	var button := event as InputEventMouseButton
+	if button == null or not button.pressed or not button.ctrl_pressed:
+		return
+	if button.button_index == MOUSE_BUTTON_WHEEL_UP:
+		_set_face_zoom(face_zoom * 1.1)
+		face_scroll.accept_event()
+	elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		_set_face_zoom(face_zoom / 1.1)
+		face_scroll.accept_event()
+
+
+func _set_face_zoom(zoom: float) -> void:
+	# Floored where a knob is still a target and capped where one fills the screen.
+	face_zoom = clampf(zoom, 0.35, 2.0)
+	_fit_face_zoom()
+
+
+## Keeps the wrapper's claimed footprint equal to the face's scaled one. Run on zoom and
+## on the face resizing itself, because both change what the scroller should range over.
+func _fit_face_zoom() -> void:
+	if big_face == null or face_zoom_box == null:
+		return
+	big_face.scale = Vector2(face_zoom, face_zoom)
+	# Sized by hand, because the wrapper is deliberately not a container — a container
+	# would fight the scale — and a box child of a plain Control otherwise stays at
+	# zero. The face gets its natural minimum or the viewport's room, whichever is
+	# larger, so life size fills the screen exactly as it did before zoom existed.
+	var natural: Vector2 = big_face.get_combined_minimum_size()
+	var room: Vector2 = face_scroll.size / maxf(face_zoom, 0.01)
+	big_face.size = natural.max(room)
+	face_zoom_box.custom_minimum_size = big_face.size * face_zoom
+
+
 func _flip_container(show_face: bool) -> void:
 	if graph_edit != null:
 		graph_edit.visible = not show_face
@@ -1629,6 +1677,7 @@ func _flip_container(show_face: bool) -> void:
 		wires_button.visible = show_face
 	if show_face:
 		_refresh_face()
+		_fit_face_zoom()
 
 
 func _refresh_context() -> void:

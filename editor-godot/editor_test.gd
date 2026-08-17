@@ -182,6 +182,16 @@ func _drag_fader(fader, from_y: float, to_y: float, fine: bool = false) -> void:
 	fader._gui_input(release)
 
 
+## One Ctrl+notch over a control — the view's zoom gesture, which a knob must yield.
+func _wheel_with_ctrl(control) -> void:
+	var notch := InputEventMouseButton.new()
+	notch.button_index = MOUSE_BUTTON_WHEEL_UP
+	notch.pressed = true
+	notch.ctrl_pressed = true
+	notch.position = control.size * 0.5
+	control._gui_input(notch)
+
+
 ## One notch of the wheel over a control, through its own input.
 func _wheel(control, up: bool, coarse: bool = false) -> void:
 	var notch := InputEventMouseButton.new()
@@ -5375,6 +5385,58 @@ func _initialize() -> void:
 		await main._undo()
 		for i in 4:
 			await process_frame
+
+	# Zoom, for the neighbours to come: Ctrl+wheel shrinks the face in place, the same
+	# gesture the graph uses, and the wrapper's claimed footprint follows so the
+	# scroller ranges over what is actually shown.
+	var zoom_before: float = main.face_zoom
+	var footprint_before: Vector2 = main.face_zoom_box.custom_minimum_size
+	var notch := InputEventMouseButton.new()
+	notch.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	notch.pressed = true
+	notch.ctrl_pressed = true
+	main._on_face_gui_input(notch)
+	for i in 4:
+		await process_frame
+	check(main.face_zoom < zoom_before,
+		"Ctrl+wheel zooms the face out (%.2f from %.2f)"
+			% [main.face_zoom, zoom_before])
+	# Real numbers, not a vacuous pair of zeroes: the face must be laid out at a
+	# playable size — the first wrapper version left it at 0x0, since a box child of a
+	# plain Control gets no layout — and the wrapper's claim must be the scaled size.
+	check(main.big_face.size.x > 200.0,
+		"the face is laid out at a playable size (%.0f wide)" % main.big_face.size.x)
+	# Zoomed out, the screen holds more face, not a smaller box: the footprint stays
+	# a screenful while the face's logical width grows past it — which is what zoom
+	# means on a canvas, and why the first version of this check was wrong to expect
+	# the footprint to shrink below the viewport.
+	check(absf(main.face_zoom_box.custom_minimum_size.x
+				- main.big_face.size.x * main.face_zoom) < 1.0
+			and main.big_face.size.x > main.face_zoom_box.custom_minimum_size.x,
+		"and a screenful now holds more face than it did (%.0f drawn into %.0f)"
+			% [main.big_face.size.x, main.face_zoom_box.custom_minimum_size.x])
+
+	# The knobs yield the Ctrl form and keep the plain one: zoom must work exactly
+	# where the knobs are, and stepping must not become zooming.
+	var wheel_knob: Control = null
+	for index in main.big_face._targets:
+		if str(main.big_face._targets[index]["parameter"]) == "cutoff" \
+				and wheel_knob == null:
+			wheel_knob = (main.big_face._cells[index] as Node).get_child(0)
+	check(wheel_knob != null, "a knob on the face to aim the wheel at")
+	if wheel_knob != null:
+		var held: float = (wheel_knob as RackView.Knob)._position
+		_wheel_with_ctrl(wheel_knob)
+		check(absf((wheel_knob as RackView.Knob)._position - held) < 0.0001,
+			"Ctrl+wheel over a knob leaves the value alone (%.3f)"
+				% (wheel_knob as RackView.Knob)._position)
+		_wheel(wheel_knob, true)
+		check((wheel_knob as RackView.Knob)._position > held,
+			"and the plain wheel still steps it (%.3f)"
+				% (wheel_knob as RackView.Knob)._position)
+		(wheel_knob as RackView.Knob).set_value_silently(
+			(wheel_knob as RackView.Knob)._to_value(held))
+	main._set_face_zoom(1.0)
 
 	main.wires_button.pressed.emit()
 	for i in 6:

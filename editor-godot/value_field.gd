@@ -153,6 +153,9 @@ func _gui_input(event: InputEvent) -> void:
 	var button := event as InputEventMouseButton
 	if button != null and button.pressed \
 			and button.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		# Ctrl+wheel is the view's zoom, here as on the panel's knobs.
+		if button.ctrl_pressed:
+			return
 		# One notch, one step, the same step an arrow key takes — a wheel is a discrete
 		# gesture like a key press rather than a continuous one like a drag, so it borrows
 		# the keyboard's numbers rather than the drag's. Accepted whether or not the field
