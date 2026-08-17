@@ -2229,6 +2229,28 @@ func _initialize() -> void:
 	for i in 3:
 		await process_frame
 
+	# The fit preset beside the detail pair: 1:1 is "show me the real thing", fit is
+	# "show me all of it". Driven with the camera deliberately lost, because "I have
+	# lost the graph, show me it" is the whole reason the entry exists.
+	main.graph_edit.zoom = 2.0
+	main.graph_edit.scroll_offset = Vector2(90000, 90000)
+	for i in 2:
+		await process_frame
+	main.view_popup.id_pressed.emit(72)
+	for i in 3:
+		await process_frame
+	var menu_framed: Rect2 = main.graph_edit.usable_rect()
+	var menu_outside := 0
+	for id in main.widgets:
+		var node: GraphNode = main.widgets[id]
+		var spot := Rect2(
+			node.position_offset * main.graph_edit.zoom - main.graph_edit.scroll_offset,
+			node.size * main.graph_edit.zoom)
+		if not menu_framed.encloses(spot):
+			menu_outside += 1
+	check(menu_outside == 0,
+		"the View menu's fit recovers a lost graph (%d outside)" % menu_outside)
+
 	# ---- the nodes do not sit on top of each other, at any size preference -----------
 	# Reported as a text bug — "out" printed over the next node's "in" at XL and 63% —
 	# and chased through three wrong theories in the label overlay before anybody

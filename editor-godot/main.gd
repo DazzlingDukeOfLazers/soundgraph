@@ -1081,6 +1081,14 @@ func _build_toolbar() -> Control:
 	view_popup.add_radio_check_item("Detail: 1:1", 71)
 	view_popup.set_item_checked(view_popup.get_item_index(
 		70 + int(Settings.fetch("graph_detail_mode", 0))), true)
+	# Beside the detail pair because the two get reached for together: 1:1 is "show
+	# me the real thing" and fit is "show me all of it". An action rather than a
+	# state — same framing the toolbar's Fit does, in the menu where the eye already
+	# is when choosing how to look at the graph.
+	view_popup.add_item("Zoom: fit to screen", 72)
+	view_popup.set_item_tooltip(view_popup.get_item_index(72),
+		"Zoom and scroll so the whole patch is visible, clear of the minimap "
+		+ "and the zoom controls.")
 	view_popup.add_separator()
 	# An accessibility switch that only exists as a hope is not one. Everything that
 	# moves on its own in this editor is off behind this: the signal glow and the grid
@@ -1301,6 +1309,9 @@ func _on_file_menu(id: int) -> void:
 
 
 func _on_view_menu(id: int) -> void:
+	if id == 72:
+		graph_edit.fit_graph()
+		return
 	if id >= 70:
 		var mode: int = id - 70
 		graph_edit.set_detail_mode(mode)
