@@ -5344,26 +5344,73 @@ func _initialize() -> void:
 		"a second copy shares the definition (%d definition, %d instances)"
 			% [voice_definitions, voice_instances])
 
-	# Wired up, the mixture plays: keyboard into both voices, both into the speakers,
-	# beside the plain nodes that were already there. A device arrives unwired on
-	# purpose — the diagnostics say which sockets want cables — so the loads check
-	# belongs after the wiring, not before it.
-	var mixed_in := ""
-	var mixed_out := ""
-	for node in main.patch["nodes"]:
-		if str(node.get("type", "")) == "Input":
-			mixed_in = str(node["id"])
-		if str(node.get("type", "")) == "Output":
-			mixed_out = str(node["id"])
+	# The keyboard is already on both voices: adding a device wires it to the machine
+	# where the names line up, in the same undo step, because "added" should be next
+	# door to "heard". First Synth's speakers are taken by its own amp, so the voices'
+	# audio is deliberately NOT wired — a socket something else is using is never
+	# stolen, and what the auto-wire declines it leaves to the hand.
+	var auto_wired := {}
+	for wire in main.patch["connections"]:
+		auto_wired["%s>%s.%s" % [str(wire["from"]["node"]),
+			str(wire["to"]["node"]), str(wire["to"]["port"])]] = true
 	for voice_id in [first_added, second_added]:
-		for wire in [{"from": {"node": mixed_in, "port": "frequency"},
-					"to": {"node": voice_id, "port": "frequency"}},
-				{"from": {"node": mixed_in, "port": "gate"},
-					"to": {"node": voice_id, "port": "gate"}},
-				{"from": {"node": voice_id, "port": "out"},
-					"to": {"node": mixed_out, "port": "left"}}]:
-			main.patch["connections"].append(wire)
+		for wanted_port in ["frequency", "gate"]:
+			check(auto_wired.has("note>%s.%s" % [voice_id, wanted_port]),
+				"the keyboard is auto-wired to %s.%s" % [voice_id, wanted_port])
+	# First Synth feeds only the left speaker, so the free right inlet went to the
+	# first voice — and the second voice, arriving to find both taken, got neither.
+	# Never stolen, only claimed while vacant: amp keeps the socket it had.
+	var amp_kept := false
+	var second_wired_out := false
+	var first_took_right := false
+	for wire in main.patch["connections"]:
+		if str(wire["to"]["node"]) != "out":
+			continue
+		if str(wire["from"]["node"]) == "amp" and str(wire["to"]["port"]) == "left":
+			amp_kept = true
+		if str(wire["from"]["node"]) == first_added 				and str(wire["to"]["port"]) == "right":
+			first_took_right = true
+		if str(wire["from"]["node"]) == second_added:
+			second_wired_out = true
+	check(amp_kept, "the socket amp had is never stolen")
+	check(first_took_right, "the vacant right inlet went to the first voice")
+	check(not second_wired_out,
+		"and the second voice, finding both taken, was left for the hand")
+
+	# The hand finishes what the offer declined, and the mixture plays.
+	main.patch["connections"].append({"from": {"node": second_added, "port": "out"},
+		"to": {"node": "out", "port": "left"}})
 	check_loads(main, "two voices wired in beside the plain nodes")
+
+	# On a bare machine — keyboard and speakers, nothing else — the whole job is done:
+	# pitch, gate, and both speaker inlets, because nothing was using them.
+	main.patch = {"schema_version": 1, "metadata": {"name": "Bare"},
+		"nodes": [
+			{"id": "note", "type": "Input", "host": "note", "name": "Keyboard",
+				"position": {"x": 0, "y": 0}},
+			{"id": "out", "type": "Output", "host": "stereo",
+				"position": {"x": 1200, "y": 0}}],
+		"connections": []}
+	main._synthesize_module_descriptors()
+	await main._rebuild_view()
+	for i in 6:
+		await process_frame
+	var bare_added: String = await main._add_device("DX7: algo-01", Vector2(400, 0))
+	for i in 8:
+		await process_frame
+	var bare_wired := {}
+	for wire in main.patch["connections"]:
+		bare_wired["%s.%s>%s.%s" % [str(wire["from"]["node"]),
+			str(wire["from"]["port"]), str(wire["to"]["node"]),
+			str(wire["to"]["port"])]] = true
+	check(bare_wired.has("note.frequency>%s.frequency" % bare_added)
+			and bare_wired.has("note.gate>%s.gate" % bare_added)
+			and bare_wired.has("%s.out>out.left" % bare_added)
+			and bare_wired.has("%s.out>out.right" % bare_added),
+		"on a bare machine the device is fully wired (%s)" % str(bare_wired.keys()))
+	check_loads(main, "and the bare machine with one device")
+	check(str(main.message_label.text).contains("wired"),
+		"with the wiring announced (%s)" % main.message_label.text)
 
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".

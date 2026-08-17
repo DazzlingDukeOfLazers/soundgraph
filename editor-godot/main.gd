@@ -4376,6 +4376,62 @@ func _matching_devices(query: String) -> Array:
 	return matches
 
 
+## Wires a fresh device to the machine where the names line up, and says what it did.
+##
+## The gap this closes: an added device sat silent until somebody found its sockets, and
+## "added" should be a lot closer to "heard". The rule is deliberately narrow — an input
+## port is wired to a host seam outlet with exactly the same name (frequency to
+## frequency, gate to gate), and an audio output to a host output inlet only when that
+## inlet is unfed, because taking a socket something else is using would change the
+## sound that was already there. Everything it declines is left for the hand, and the
+## diagnostics already say which sockets still want cables.
+##
+## Part of the same edit as the add, so one Ctrl+Z removes the device and its cables
+## together — the offer is a done thing that costs one undo to refuse.
+func _auto_wire_device(instance_id: String, module_name: String) -> Array:
+	var wired: Array = []
+	var descriptor: Dictionary = registry.get("module:%s" % module_name, {})
+	var fed := {}
+	for wire in patch.get("connections", []):
+		fed["%s/%s" % [str(wire["to"]["node"]), str(wire["to"]["port"])]] = true
+
+	for port: Dictionary in descriptor.get("inputs", []):
+		var port_name := str(port.get("name", ""))
+		if fed.has("%s/%s" % [instance_id, port_name]):
+			continue
+		for node in patch.get("nodes", []):
+			if str(node.get("type", "")) != "Input" or str(node.get("host", "")) == "":
+				continue
+			var offers: Dictionary = registry.get(Seams.registry_key(node), {})
+			for outlet: Dictionary in offers.get("outputs", []):
+				if str(outlet.get("name", "")) == port_name:
+					patch["connections"].append({
+						"from": {"node": str(node["id"]), "port": port_name},
+						"to": {"node": instance_id, "port": port_name}})
+					fed["%s/%s" % [instance_id, port_name]] = true
+					wired.append("%s → %s" % [str(node.get("name", node["id"])),
+						port_name])
+
+	for port: Dictionary in descriptor.get("outputs", []):
+		if str(port.get("type", port.get("signal", ""))) != "audio":
+			continue
+		var port_name := str(port.get("name", ""))
+		for node in patch.get("nodes", []):
+			if str(node.get("type", "")) != "Output" or str(node.get("host", "")) == "":
+				continue
+			var takes: Dictionary = registry.get(Seams.registry_key(node), {})
+			for inlet: Dictionary in takes.get("inputs", []):
+				var inlet_name := str(inlet.get("name", ""))
+				if fed.has("%s/%s" % [str(node["id"]), inlet_name]):
+					continue
+				patch["connections"].append({
+					"from": {"node": instance_id, "port": port_name},
+					"to": {"node": str(node["id"]), "port": inlet_name}})
+				fed["%s/%s" % [str(node["id"]), inlet_name]] = true
+				wired.append("%s → %s" % [port_name, inlet_name])
+	return wired
+
+
 ## Drops a whole patch onto this one as a single module node — mixed mode's front door.
 ##
 ## The second copy shares the first's definition: two DX7 voices in a graph are two
@@ -4422,9 +4478,12 @@ func _add_device(label: String, at_position: Vector2) -> String:
 			"module": module_name,
 			"position": {"x": at_position.x, "y": at_position.y},
 		})
+		var rewired: Array = _auto_wire_device(instance_id, module_name)
 		await _rebuild_view()
 		_apply()
 		_commit_edit("add %s" % instance_id)
+		if not rewired.is_empty():
+			_say("added %s — wired %s" % [instance_id, ", ".join(rewired)])
 		return instance_id
 
 	var terminals := _terminal_types()
@@ -4437,10 +4496,15 @@ func _add_device(label: String, at_position: Vector2) -> String:
 	for node in patch.get("nodes", []):
 		if str(node["id"]) == result.instance_id:
 			node["position"] = {"x": at_position.x, "y": at_position.y}
+	# Descriptors before wiring: the auto-wire reads the new definition's ports from
+	# the registry, and the registry has not met this definition yet.
 	_synthesize_module_descriptors()
+	var wired: Array = _auto_wire_device(result.instance_id, result.module_name)
 	await _rebuild_view()
 	_apply()
 	_commit_edit("add %s" % result.instance_id)
+	if not wired.is_empty():
+		_say("added %s — wired %s" % [result.instance_id, ", ".join(wired)])
 	return result.instance_id
 
 
