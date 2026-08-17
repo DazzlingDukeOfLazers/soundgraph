@@ -627,16 +627,119 @@ static func close_module(patch: Dictionary, module_name: String) -> Result:
 ## Adds a foreign patch to `patch` as a definition plus one instance. The foreign
 ## patch's terminals become the declared surface: an edge from its NoteInput is an
 ## input, an edge into its StereoOutput is an output.
+## A patch with no module instances left in it: every one expanded where it stood.
+##
+## Expansion is the operation that already exists — expand() turns one instance into the
+## nodes it stood for — so flattening is that, applied until none remain. The `modules`
+## block goes with them: once nothing instantiates a definition, keeping it would leave
+## the document carrying a definition it does not use.
+##
+## The bound is not decoration. Nesting is refused everywhere else, so a cycle should be
+## impossible, but "should be impossible" is what a loop with no exit is always resting on.
+static func flattened(foreign: Dictionary) -> Dictionary:
+	var flat: Dictionary = foreign.duplicate(true)
+	for _step in 1000:
+		var instance_id := ""
+		for node in flat.get("nodes", []):
+			if str(node.get("type", "")) == "module":
+				instance_id = str(node["id"])
+				break
+		if instance_id == "":
+			flat.erase("modules")
+			return flat
+		var opened := expand(flat, instance_id)
+		if not opened.ok():
+			return {}
+		flat = opened.patch
+	return {}
+
+
+## Splits a host-bound input seam into one port per outlet it actually drives.
+##
+## A keyboard is not one signal. The seam carries frequency, gate, velocity and trigger,
+## and a module port carries one thing — so kept whole it becomes a single `Keyboard`
+## port that cannot deliver both the pitch and the gate, and nothing in the host patch can
+## drive it. Split, it is a `frequency` port and a `gate` port, each still fanning out to
+## all six operators, each drivable by an ordinary control cable.
+##
+## Only the outlets in use: a port for `velocity` on a voice that ignores velocity would
+## be a socket wired to nothing.
+##
+## Outputs are left whole, and the asymmetry is real rather than an oversight. An input
+## seam's outlets are different signals; an output seam's inlets are channels of the same
+## one — `left` and `right` here are both the mix — so splitting them would turn one
+## output into two sockets carrying identical sound.
+static func _split_input_seams(source: Dictionary) -> Dictionary:
+	var out: Dictionary = source.duplicate(true)
+	var nodes: Array = out.get("nodes", [])
+	var connections: Array = out.get("connections", [])
+	for index in range(nodes.size() - 1, -1, -1):
+		var node: Dictionary = nodes[index]
+		if str(node.get("type", "")) != "Input" or str(node.get("host", "")) == "":
+			continue
+		var seam_id := str(node["id"])
+		var used: Array = []
+		for wire in connections:
+			var from: Dictionary = wire.get("from", {})
+			if str(from.get("node", "")) == seam_id \
+					and not used.has(str(from.get("port", ""))):
+				used.append(str(from.get("port", "")))
+		if used.size() < 2:
+			# One outlet is already one port; leave the seam and its name alone.
+			node.erase("host")
+			continue
+		nodes.remove_at(index)
+		for outlet: String in used:
+			nodes.append({"id": "%s_%s" % [seam_id, outlet], "type": "Input",
+				"name": outlet, "position": node.get("position", {})})
+		for wire in connections:
+			var from: Dictionary = wire.get("from", {})
+			if str(from.get("node", "")) == seam_id:
+				from["node"] = "%s_%s" % [seam_id, str(from.get("port", ""))]
+	return out
+
+
+## Turns another file into a definition of this one, with one instance placed.
+##
+## A modular source is flattened first rather than refused. It used to say "nesting is not
+## supported yet", which is true of the *result* — a definition may not contain module
+## instances — but it is a fact about the notation rather than about the patch: a DX7
+## voice is six operators however it is written down, and expanding them back into plain
+## nodes says the same thing in a form a definition can hold. The instances the source
+## used are notation the source chose, and this is a different document.
 static func from_patch(patch: Dictionary, foreign: Dictionary, name_hint: String,
 		terminal_types: Array) -> Result:
 	var result := Result.new()
 	var terminals := {}
 	var inner_nodes: Array = []
+	var uses_modules := false
 	for node in foreign.get("nodes", []):
 		if str(node.get("type", "")) == "module":
-			result.error = "that patch already uses modules; nesting is not supported yet"
+			uses_modules = true
+	if uses_modules:
+		foreign = flattened(foreign)
+		if foreign.is_empty():
+			result.error = "that patch's modules could not be opened"
 			return result
-		if terminal_types.has(str(node.get("type", ""))):
+	foreign = _split_input_seams(foreign)
+	for node in foreign.get("nodes", []):
+		var type_name := str(node.get("type", ""))
+		# A seam is already a port, so it survives as one rather than being dissolved into
+		# bindings. The difference matters most where a port fans out: this voice's
+		# keyboard feeds six operators, and dropping the seam turned one `note` socket
+		# into twelve — op6.note, op6.gate, op5.note, and so on — which is a faithful
+		# list of the cables and a useless description of the instrument. Kept, it is one
+		# `note` port and one `out`, which is what the file was already saying.
+		#
+		# The host binding goes: inside a module a port is wired by whatever holds the
+		# module, and a port still bolted to the machine would be a module that reaches
+		# past its own edges for the keyboard.
+		if type_name == "Input" or type_name == "Output":
+			var port: Dictionary = node.duplicate(true)
+			port.erase("host")
+			inner_nodes.append(port)
+			continue
+		if terminal_types.has(type_name):
 			terminals[str(node["id"])] = true
 		else:
 			inner_nodes.append(node.duplicate(true))

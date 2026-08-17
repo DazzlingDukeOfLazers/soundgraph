@@ -2914,7 +2914,13 @@ func _initialize() -> void:
 	check(main.patch.get("modules", {}).has("voice"),
 		"a foreign patch becomes a definition")
 	var voice_def: Dictionary = main.patch["modules"]["voice"]
-	var input_names: Array = voice_def.get("inputs", []).map(func(b): return str(b["name"]))
+	# Through declared_ports, because a definition spells its ports two ways and this one
+	# now uses the other. A patch's own Input seam survives as a port rather than being
+	# dissolved into a binding — it was already a port, and dissolving it lost the fan-out
+	# — so reading `inputs` alone finds an empty list and calls it a missing port.
+	var input_names: Array = []
+	for port: Dictionary in Seams.declared_ports(voice_def, false):
+		input_names.append(str(port["name"]))
 	check(input_names.has("frequency") and input_names.has("gate"),
 		"its terminals became ports named for what fed them (%s)" % str(input_names))
 	check(main.widgets.has("voice"), "and one instance arrived, ready to wire")
@@ -5015,6 +5021,70 @@ func _initialize() -> void:
 			operator_definitions += 1
 	check(operator_definitions == 1,
 		"a second voice reuses the one definition (%d)" % operator_definitions)
+
+	# ---- a whole voice as one node ----------------------------------------------------
+	# Importing algo-01 *as a definition* used to be refused outright: "that patch already
+	# uses modules; nesting is not supported yet". True of the result — a definition may
+	# not hold instances — but a fact about the notation rather than about the patch. A
+	# DX7 voice is six operators however it is written down, so the instances are expanded
+	# back into plain nodes and the definition holds those.
+	await main._load_example("First Synth")
+	for i in 8:
+		await process_frame
+	var host_in := ""
+	var host_out := ""
+	for node in main.patch["nodes"]:
+		if str(node.get("type", "")) == "Input":
+			host_in = str(node["id"])
+		if str(node.get("type", "")) == "Output":
+			host_out = str(node["id"])
+	main._import_module_as_definition(voice_text, "dx7_algo_01")
+	for i in 10:
+		await process_frame
+	var voice_definition: Dictionary = main.patch.get("modules", {}).get(
+		"dx7_algo_01", {})
+	check(not voice_definition.is_empty(), "a DX7 voice imports as a definition")
+	var nested := 0
+	for node in voice_definition.get("nodes", []):
+		if str(node.get("type", "")) == "module":
+			nested += 1
+	check(nested == 0 and (voice_definition.get("nodes", []) as Array).size() > 30,
+		"flattened, with no module inside it (%d nodes, %d nested)"
+			% [(voice_definition.get("nodes", []) as Array).size(), nested])
+	var voice_nodes := 0
+	for node in main.patch["nodes"]:
+		if str(node.get("module", "")) == "dx7_algo_01":
+			voice_nodes += 1
+	check(voice_nodes == 1, "and one node placed for it (%d)" % voice_nodes)
+
+	# The ports are the ones a hand can reach: a keyboard is not one signal, so the seam
+	# that fed six operators' note and gate becomes a `frequency` port and a `gate` port
+	# rather than a single `Keyboard` that could deliver neither. Outputs stay whole —
+	# `left` and `right` are channels of one mix, not two different signals.
+	var voice_in: Array = []
+	for port: Dictionary in Seams.declared_ports(voice_definition, false):
+		voice_in.append(str(port["name"]))
+	var voice_out: Array = []
+	for port: Dictionary in Seams.declared_ports(voice_definition, true):
+		voice_out.append(str(port["name"]))
+	check(voice_in == ["frequency", "gate"],
+		"its inputs are the signals the keyboard actually drives (%s)" % str(voice_in))
+	check(voice_out == ["out"], "and one output (%s)" % str(voice_out))
+
+	# And wired into the host, it is a patch that loads — which is the whole claim.
+	for wire in [{"from": {"node": host_in, "port": "frequency"},
+				"to": {"node": "dx7_algo_01", "port": "frequency"}},
+			{"from": {"node": host_in, "port": "gate"},
+				"to": {"node": "dx7_algo_01", "port": "gate"}},
+			{"from": {"node": "dx7_algo_01", "port": "out"},
+				"to": {"node": host_out, "port": "left"}},
+			{"from": {"node": "dx7_algo_01", "port": "out"},
+				"to": {"node": host_out, "port": "right"}}]:
+		main.patch["connections"].append(wire)
+	check_loads(main, "wiring the voice node into the host patch")
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
 	await main._load_example("First Synth")
 	for i in 6:
 		await process_frame
