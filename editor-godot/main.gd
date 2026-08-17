@@ -2557,12 +2557,22 @@ func _port_offers(definition: Dictionary) -> Array:
 	var fed := {}
 	for connection in definition.get("connections", []):
 		fed["%s/%s" % [str(connection["to"]["node"]), str(connection["to"]["port"])]] = true
+	# Through Seams, which answers for both spellings of a declared port. Reading the
+	# binding lists alone made a module whose ports are *drawn* look as though it declared
+	# none — so every port it already had came back as a ghost offering to declare it
+	# again. Found by the test that builds one module both ways and demands the editor
+	# cannot tell them apart, which is the fourth time this rule has been copied wrong.
 	var declared := {}
-	for side in ["inputs", "outputs"]:
-		for binding in definition.get(side, []):
+	for is_output in [false, true]:
+		for binding: Dictionary in Seams.declared_ports(definition, is_output):
 			declared["%s/%s" % [str(binding["node"]), str(binding["port"])]] = true
 	var offers: Array = []
 	for node in definition.get("nodes", []):
+		# A seam is a port, not a part: offering to expose its innards would be offering
+		# to declare a port on a port.
+		if Seams.is_port_seam(node) \
+				or str(node.get("type", "")) in ["Input", "Output"]:
+			continue
 		var inner_type: Dictionary = registry.get(str(node.get("type", "")), {})
 		for side in ["inputs", "outputs"]:
 			for port in inner_type.get(side, []):

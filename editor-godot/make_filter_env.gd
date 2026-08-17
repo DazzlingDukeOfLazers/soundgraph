@@ -9,6 +9,7 @@ extends SceneTree
 
 const OUT := "res://../examples/patches/filter-envelope.json"
 const ModuleAuthor := preload("res://module_author.gd")
+const Seams := preload("res://seams.gd")
 
 
 func _initialize() -> void:
@@ -82,9 +83,14 @@ func _initialize() -> void:
 
 	print("derived surface: %s" % str(definition.get("parameters", [])
 		.map(func(p): return str(p["name"]))))
+	# Through Seams, which answers for both spellings. This read the binding list, which
+	# happens to be the spelling collapse writes — so it was right by luck rather than by
+	# rule, and would have printed an empty pair the day the transform drew its ports.
 	print("derived ports: in %s out %s"
-		% [str(definition.get("inputs", []).map(func(p): return str(p["name"]))),
-			str(definition.get("outputs", []).map(func(p): return str(p["name"])))])
+		% [str(Seams.declared_ports(definition, false)
+				.map(func(p): return str(p["name"]))),
+			str(Seams.declared_ports(definition, true)
+				.map(func(p): return str(p["name"])))])
 
 	# Two rows: what the filter is doing, then what the envelope is doing to it. `mode`
 	# and `cutoff_sweep` come off the face and stay exported — a patch can still set them,

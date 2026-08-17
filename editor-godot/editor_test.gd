@@ -5022,6 +5022,67 @@ func _initialize() -> void:
 	check(operator_definitions == 1,
 		"a second voice reuses the one definition (%d)" % operator_definitions)
 
+	# ---- one module, written both ways, reaching the editor the same ------------------
+	# A definition spells its ports twice over: a binding in `inputs`/`outputs`, or a port
+	# drawn as a seam among its nodes. Seams.declared_ports is the single answer, and
+	# three separate bugs this session were code that asked one spelling directly —
+	# close_module feeding _draw_ports the raw lists, patch_face asking the registry for
+	# "Output", a check here reading `inputs` and finding nothing.
+	#
+	# Naming those call sites one at a time only ever fixes the ones already found. This
+	# builds the same module both ways and asserts the editor cannot tell them apart: any
+	# reader that understands one spelling makes the other come back short.
+	var both_ways := {"bindings": {}, "seams": {}}
+	for spelling in ["bindings", "seams"]:
+		var definition := {
+			"nodes": [{"id": "amp", "type": "Gain", "parameters": {"gain": 0.5}}],
+			"connections": [],
+			"parameters": [{"name": "level", "node": "amp", "parameter": "gain"}],
+		}
+		if spelling == "bindings":
+			definition["inputs"] = [{"name": "sound", "node": "amp", "port": "in"}]
+			definition["outputs"] = [{"name": "louder", "node": "amp", "port": "out"}]
+		else:
+			(definition["nodes"] as Array).append(
+				{"id": "sound", "type": "Input", "name": "sound"})
+			(definition["nodes"] as Array).append(
+				{"id": "louder", "type": "Output", "name": "louder"})
+			(definition["connections"] as Array).append(
+				{"from": {"node": "sound", "port": "sound"},
+					"to": {"node": "amp", "port": "in"}})
+			(definition["connections"] as Array).append(
+				{"from": {"node": "amp", "port": "out"},
+					"to": {"node": "louder", "port": "louder"}})
+		main.patch = {
+			"schema_version": 2,
+			"metadata": {"name": "spelling"},
+			"modules": {"twice": definition},
+			"nodes": [{"id": "one", "type": "module", "module": "twice",
+				"position": {"x": 0, "y": 0}}],
+			"connections": [],
+		}
+		main._synthesize_module_descriptors()
+		await main._rebuild_view()
+		for i in 8:
+			await process_frame
+		var seen := {}
+		var descriptor: Dictionary = main.registry.get("module:twice", {})
+		for side in ["inputs", "outputs"]:
+			var names: Array = []
+			for port in descriptor.get(side, []):
+				names.append(str(port["name"]))
+			seen[side] = names
+		# And what the graph actually draws, not only what the registry believes.
+		var widget = main.widgets.get("one", null)
+		seen["slots"] = 0 if widget == null else widget.get_child_count()
+		both_ways[spelling] = seen
+	check(both_ways["bindings"]["inputs"] == ["sound"]
+			and both_ways["bindings"]["outputs"] == ["louder"],
+		"a module's ports as bindings (%s)" % str(both_ways["bindings"]))
+	check(both_ways["seams"] == both_ways["bindings"],
+		"and drawn as seams, the editor cannot tell the difference (%s vs %s)"
+			% [str(both_ways["seams"]), str(both_ways["bindings"])])
+
 	# ---- a whole voice as one node ----------------------------------------------------
 	# Importing algo-01 *as a definition* used to be refused outright: "that patch already
 	# uses modules; nesting is not supported yet". True of the result — a definition may
