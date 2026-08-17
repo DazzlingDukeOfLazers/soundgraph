@@ -602,11 +602,15 @@ func _gui_input(event: InputEvent) -> void:
 				cable_drag_started.emit()
 				accept_event()
 				return
-			# Empty canvas. Remembered but not claimed: the press still belongs to the
-			# rubber band, and only the release decides which gesture this was. Node
-			# presses never arrive here — a GraphNode consumes its own — so anything
-			# that does is the canvas.
-			_canvas_press_at = button.position
+			# Empty canvas — checked, not assumed. The first version reasoned "a
+			# GraphNode consumes its own presses, so anything arriving is the canvas",
+			# which is false: GraphEdit itself handles selection, so a press on a node's
+			# body reaches this override too, and treating it as floor meant every click
+			# on a node selected it and then immediately chose the container instead.
+			# Remembered but not claimed: the press still belongs to the rubber band,
+			# and only the release decides which gesture this was.
+			if _node_at(point) == "":
+				_canvas_press_at = button.position
 		elif _dragging_key != "":
 			var fields := _connection_fields(_drag_connection)
 			waypoint_changed.emit(fields[0], fields[1], fields[2], fields[3],
@@ -824,6 +828,16 @@ func group_box(module_name: String) -> Rect2:
 	# out the owner of.
 	return box.grow(float(Design.scale(Design.SPACE_M))) \
 		.grow_individual(0.0, float(Design.scale(34.0)), 0.0, 0.0)
+
+
+## The node under a point in graph coordinates, or "" for bare canvas.
+func _node_at(point: Vector2) -> String:
+	for child in get_children():
+		var node := child as GraphNode
+		if node != null and node.visible \
+				and Rect2(node.position_offset, node.size).has_point(point):
+			return String(node.name)
+	return ""
 
 
 ## Which open module a point in graph coordinates falls inside, or "".

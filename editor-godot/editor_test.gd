@@ -5301,6 +5301,27 @@ func _initialize() -> void:
 	check(str(main.inspecting.get("node", "")) == "filter",
 		"but a rubber band across it chooses nothing (%s)" % str(main.inspecting))
 
+	# And a click on a node stays on the node. In the real event flow a press on a
+	# node's body reaches this override too — GraphEdit itself handles selection, so a
+	# GraphNode does not consume the press — and the first floor-click version treated
+	# it as floor: every node click selected the node and then immediately chose the
+	# container instead. The reported symptom, verbatim: "clicking on an object will
+	# select it, but then it reverts back".
+	main._focus_node("filter")
+	for i in 6:
+		await process_frame
+	var clicked_widget: GraphNode = main.widgets["filter"]
+	var on_node: Vector2 = (clicked_widget.position_offset
+		+ clicked_widget.size * 0.5) * main.graph_edit.zoom \
+		- main.graph_edit.scroll_offset
+	check(main.graph_edit._node_at(main.graph_edit._to_graph(on_node)) != "",
+		"the aimed-at point is on the node")
+	_press_graph(main, on_node)
+	for i in 8:
+		await process_frame
+	check(str(main.inspecting.get("node", "")) == "filter",
+		"and clicking it does not bounce to the container (%s)" % str(main.inspecting))
+
 	main.show_view("Graph")
 	for i in 6:
 		await process_frame
