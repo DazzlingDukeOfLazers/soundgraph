@@ -2251,6 +2251,41 @@ func _initialize() -> void:
 	check(menu_outside == 0,
 		"the View menu's fit recovers a lost graph (%d outside)" % menu_outside)
 
+	# 100% with a selection: take me to it at real size.
+	var chosen_widget: GraphNode = main.widgets["filter"]
+	chosen_widget.selected = true
+	main.view_popup.id_pressed.emit(73)
+	for i in 3:
+		await process_frame
+	var chosen_spot := Rect2(
+		chosen_widget.position_offset * main.graph_edit.zoom
+			- main.graph_edit.scroll_offset,
+		chosen_widget.size * main.graph_edit.zoom)
+	check(is_equal_approx(main.graph_edit.zoom, 1.0)
+			and main.graph_edit.usable_rect().encloses(chosen_spot),
+		"100%% centres the selection at real size (zoom %.2f)" % main.graph_edit.zoom)
+	chosen_widget.selected = false
+	# 100% with nothing selected changes the distance, never the subject: the graph
+	# point under the view's centre stays put.
+	main.graph_edit.zoom = 0.4
+	main.graph_edit._update_detail()
+	var view_mid: Vector2 = main.graph_edit.usable_rect().get_center()
+	var subject: Vector2 = (main.graph_edit.scroll_offset + view_mid) / main.graph_edit.zoom
+	main.view_popup.id_pressed.emit(73)
+	for i in 3:
+		await process_frame
+	var subject_after: Vector2 = (main.graph_edit.scroll_offset
+		+ main.graph_edit.usable_rect().get_center()) / main.graph_edit.zoom
+	check(is_equal_approx(main.graph_edit.zoom, 1.0)
+			and subject.distance_to(subject_after) < 1.0,
+		"and unselected it keeps the subject under the centre (%.1f units drift)"
+			% subject.distance_to(subject_after))
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	for i in 3:
+		await process_frame
+
 	# ---- the nodes do not sit on top of each other, at any size preference -----------
 	# Reported as a text bug — "out" printed over the next node's "in" at XL and 63% —
 	# and chased through three wrong theories in the label overlay before anybody

@@ -1853,6 +1853,28 @@ func usable_rect() -> Rect2:
 
 
 ## Scrolls so that a rectangle in graph space sits in the middle of the usable area.
+## The 100% preset: working scale. Around the selection when there is one — "take me
+## to it at real size" — and otherwise around whatever the view was already looking
+## at, so the jump changes the distance and never the subject.
+func zoom_actual() -> void:
+	var chosen := Rect2()
+	var any := false
+	for child in get_children():
+		var node := child as GraphNode
+		if node != null and node.visible and node.selected:
+			var rect := Rect2(node.position_offset, node.size)
+			chosen = rect if not any else chosen.merge(rect)
+			any = true
+	if any:
+		zoom = 1.0
+		centre_on(chosen)
+		return
+	var middle: Vector2 = usable_rect().get_center()
+	var focus: Vector2 = (scroll_offset + middle) / maxf(zoom, 0.01)
+	zoom = 1.0
+	scroll_offset = focus - middle
+
+
 func centre_on(graph_rect: Rect2) -> void:
 	var view := usable_rect()
 	var middle := view.position + view.size * 0.5

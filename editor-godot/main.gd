@@ -1089,6 +1089,10 @@ func _build_toolbar() -> Control:
 	view_popup.set_item_tooltip(view_popup.get_item_index(72),
 		"Zoom and scroll so the whole patch is visible, clear of the minimap "
 		+ "and the zoom controls.")
+	view_popup.add_item("Zoom: 100%", 73)
+	view_popup.set_item_tooltip(view_popup.get_item_index(73),
+		"Working scale. Centres on the selection when there is one, and on "
+		+ "whatever the view was already looking at otherwise.")
 	view_popup.add_separator()
 	# An accessibility switch that only exists as a hope is not one. Everything that
 	# moves on its own in this editor is off behind this: the signal glow and the grid
@@ -1311,6 +1315,9 @@ func _on_file_menu(id: int) -> void:
 func _on_view_menu(id: int) -> void:
 	if id == 72:
 		graph_edit.fit_graph()
+		return
+	if id == 73:
+		graph_edit.zoom_actual()
 		return
 	if id >= 70:
 		var mode: int = id - 70
