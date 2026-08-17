@@ -5412,6 +5412,72 @@ func _initialize() -> void:
 	check(str(main.message_label.text).contains("wired"),
 		"with the wiring announced (%s)" % main.message_label.text)
 
+	# ---- new file, and the delete key -------------------------------------------------
+	# New gives a bare machine, not an empty document: the keyboard and speakers are
+	# already on it, so the very first device added makes sound. A case with no jacks
+	# is a box, not an instrument.
+	main._new_file()
+	for i in 8:
+		await process_frame
+	var fresh_kinds: Array = []
+	for node in main.patch["nodes"]:
+		fresh_kinds.append(str(node.get("type", "")))
+	fresh_kinds.sort()
+	check(fresh_kinds == ["Input", "Output"] and main.patch["connections"].is_empty(),
+		"New is a bare machine (%s)" % str(fresh_kinds))
+	check(not main.unsaved, "with nothing unsaved yet")
+	var onto_fresh: String = await main._add_device("DX7: algo-01", Vector2(600, 0))
+	for i in 8:
+		await process_frame
+	check_loads(main, "and one device dropped onto it")
+
+	# Delete removes the selected node, and the key must work with the canvas NOT
+	# focused: GraphEdit's own shortcut only listens while it holds keyboard focus,
+	# which after a trip through the inspector it does not — that focus hole is
+	# exactly the bug being pinned. The key goes in through the input system, so a
+	# regression anywhere along unhandled-key → delete request → document fails this.
+	var focus_owner = main.get_viewport().gui_get_focus_owner()
+	if focus_owner != null:
+		focus_owner.release_focus()
+	var before_delete: int = main.patch["nodes"].size()
+	main.widgets[onto_fresh].selected = true
+	var press_delete := InputEventKey.new()
+	press_delete.keycode = KEY_DELETE
+	press_delete.physical_keycode = KEY_DELETE
+	press_delete.pressed = true
+	Input.parse_input_event(press_delete)
+	for i in 8:
+		await process_frame
+	check(main.patch["nodes"].size() == before_delete - 1
+			and not main.widgets.has(onto_fresh),
+		"delete removes the selected module with the canvas unfocused (%d nodes from %d)"
+			% [main.patch["nodes"].size(), before_delete])
+	await main._undo()
+	for i in 8:
+		await process_frame
+
+	# Delete with a cable under the pointer removes that cable — ahead of any
+	# selection, and through the same handler dragging it off uses: one document
+	# change, one undo step.
+	var cable_count: int = main.patch["connections"].size()
+	check(cable_count > 0, "there are cables to point at (%d)" % cable_count)
+	main.graph_edit.hovered_cable = main.graph_edit.get_connection_list()[0]
+	var cable_delete := InputEventKey.new()
+	cable_delete.keycode = KEY_DELETE
+	cable_delete.physical_keycode = KEY_DELETE
+	cable_delete.pressed = true
+	Input.parse_input_event(cable_delete)
+	for i in 8:
+		await process_frame
+	check(main.patch["connections"].size() == cable_count - 1,
+		"delete over a hovered cable removes it (%d cables from %d)"
+			% [main.patch["connections"].size(), cable_count])
+	await main._undo()
+	for i in 6:
+		await process_frame
+	check(main.patch["connections"].size() == cable_count,
+		"and undo strings it back (%d)" % main.patch["connections"].size())
+
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".
 	await main._load_example("DX7: algo-01")

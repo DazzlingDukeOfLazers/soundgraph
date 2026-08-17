@@ -23,6 +23,10 @@ signal waypoint_changed(from_node: StringName, from_port: int, to_node: StringNa
 ## Emitted when a cable drag begins, so the editor can take an undo snapshot before the
 ## first movement rather than reconstructing where the cable used to be.
 signal cable_drag_started
+## Emitted when the Delete key falls on a hovered cable — the same edit as dragging the
+## cable off its port, and it goes through the same handler.
+signal cable_delete_requested(from_node: StringName, from_port: int,
+	to_node: StringName, to_port: int)
 
 ## Extra room left around a node when routing past it.
 const CLEARANCE := 26.0
@@ -651,6 +655,12 @@ func _gui_input(event: InputEvent) -> void:
 				accept_event()
 				return
 
+	var key := event as InputEventKey
+	if key != null and key.pressed and key.keycode == KEY_DELETE:
+		if _delete_pointed_at():
+			accept_event()
+			return
+
 	var motion := event as InputEventMouseMotion
 	if motion != null and _case_dragging:
 		# Every node by the same delta, so the patch keeps its shape and only its
@@ -681,6 +691,46 @@ func _gui_input(event: InputEvent) -> void:
 		queue_redraw()
 		accept_event()
 		return
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	# The canvas rarely holds keyboard focus — a click lands it on whatever was
+	# clicked, and working the inspector moves it off the graph entirely. GraphEdit's
+	# own Delete shortcut only listens while focused, so the key looked dead. Delete
+	# is not a focus-dependent idea here: a hovered cable or a selection is already
+	# the pointing. Anything that eats keys first — a search field, a value being
+	# typed — still wins, because this sees only what nothing else consumed.
+	if not is_visible_in_tree():
+		return
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.keycode != KEY_DELETE:
+		return
+	if _delete_pointed_at():
+		get_viewport().set_input_as_handled()
+
+
+## Delete what the user is pointing at: the hovered cable first, else the selected
+## nodes. A cable cannot be selected, so hover is how one is singled out — and the
+## hover highlight already shows which cable would go. Ahead of the selection on
+## purpose: pointing at a cable is more precise than having something selected
+## somewhere. Returns whether there was anything to delete.
+func _delete_pointed_at() -> bool:
+	if not hovered_cable.is_empty():
+		var doomed := _connection_fields(hovered_cable)
+		cable_delete_requested.emit(doomed[0], doomed[1], doomed[2], doomed[3])
+		hovered_cable = {}
+		return true
+	var chosen: Array[StringName] = []
+	for child in get_children():
+		var node := child as GraphNode
+		# Not the hidden ones: a flipped case's insides are still selected from before
+		# the flip, and deleting what cannot be seen is a trap.
+		if node != null and node.selected and node.visible:
+			chosen.append(node.name)
+	if chosen.is_empty():
+		return false
+	delete_nodes_request.emit(chosen)
+	return true
 
 
 # ---------------------------------------------------------------------------------

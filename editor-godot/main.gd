@@ -609,6 +609,9 @@ func _build_ui() -> void:
 	graph_edit.add_valid_connection_type(SLOT_CONTROL, SLOT_AUDIO)
 	graph_edit.connection_request.connect(_on_connection_request)
 	graph_edit.disconnection_request.connect(_on_disconnection_request)
+	# Delete over a hovered cable is the same edit as dragging it off: one document
+	# change, one undo step, through the one handler that already knows how.
+	graph_edit.cable_delete_requested.connect(_on_disconnection_request)
 	graph_edit.delete_nodes_request.connect(_on_delete_nodes_request)
 	graph_edit.node_selected.connect(_on_node_selected)
 	graph_edit.node_selected.connect(func(_n): _refresh_selection_button())
@@ -1020,6 +1023,7 @@ func _build_toolbar() -> Control:
 	file_menu.text = "File"
 	file_menu.flat = false
 	var file_popup := file_menu.get_popup()
+	file_popup.add_item("New", 4)
 	file_popup.add_item("Open…", 0)
 	file_popup.add_item("Add module…", 1)
 	file_popup.add_item("Add module as definition…", 3)
@@ -1252,6 +1256,9 @@ const CASE_WIDTHS := [0, 84, 104, 168]
 
 
 func _on_file_menu(id: int) -> void:
+	if id == 4:
+		_new_file()
+		return
 	_importing_module = id == 1
 	_importing_definition = id == 3
 	if _on_web():
@@ -6342,6 +6349,25 @@ func _web_save() -> void:
 	JavaScriptBridge.download_buffer(text.to_utf8_buffer(), file_name, "application/json")
 	_set_document_name(file_name)
 	_say("downloaded %s" % file_name)
+
+
+## A fresh patch: not an empty document, a bare machine. The keyboard and the speakers
+## are already on it, because that is the state where adding one device makes sound —
+## and because a case with no jacks is a box, not an instrument. Goes through
+## _load_text like every other way a document arrives, so it starts clean and saved.
+func _new_file() -> void:
+	_load_text(JSON.stringify({
+		"schema_version": 1,
+		"metadata": {"name": ""},
+		"nodes": [
+			{"id": "note", "type": "Input", "host": "note", "name": "Keyboard",
+				"position": {"x": 0.0, "y": 0.0}},
+			{"id": "out", "type": "Output", "host": "stereo",
+				"position": {"x": 1600.0, "y": 0.0}},
+		],
+		"connections": [],
+	}))
+	_set_document_name("")
 
 
 func _load_text(text: String) -> void:
