@@ -192,6 +192,35 @@ func _wheel(control, up: bool, coarse: bool = false) -> void:
 	control._gui_input(notch)
 
 
+## A click on the graph canvas, through its own _gui_input.
+func _press_graph(main, at: Vector2) -> void:
+	for pressed in [true, false]:
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = pressed
+		click.position = at
+		main.graph_edit._gui_input(click)
+
+
+## Press, move, release on the graph canvas.
+func _drag_graph(main, from: Vector2, to: Vector2) -> void:
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = from
+	main.graph_edit._gui_input(press)
+
+	var move := InputEventMouseMotion.new()
+	move.position = to
+	main.graph_edit._gui_input(move)
+
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = to
+	main.graph_edit._gui_input(release)
+
+
 func check(condition: bool, description: String) -> void:
 	if condition:
 		print("  ok   %s" % description)
@@ -5184,6 +5213,69 @@ func _initialize() -> void:
 				and uncased == "":
 			uncased = str(mounted.name)
 	check(uncased == "", "with every node inside it (%s)" % uncased)
+
+	# The band is the container's own control strip: a switch to the other view of it,
+	# and a handle for the whole thing. Only the band — the inside of the case is where
+	# selecting and rubber-banding happen, and a case you could grab anywhere would make
+	# a rubber band impossible to start.
+	var band: Rect2 = main.graph_edit._case_band_rect()
+	var switch: Rect2 = main.graph_edit._case_switch_rect()
+	check(band.size.y > 0.0 and switch.size.x > 0.0,
+		"the case has a band with a switch on it (%s)" % str(switch))
+	check(band.encloses(switch), "which sits inside the band (%s)" % str(band))
+
+	main.show_view("Graph")
+	for i in 4:
+		await process_frame
+	_press_graph(main, switch.get_center())
+	for i in 6:
+		await process_frame
+	check(main.views.get_tab_title(main.views.current_tab) == "Rack",
+		"clicking it turns the container round (%s)"
+			% main.views.get_tab_title(main.views.current_tab))
+
+	main.show_view("Graph")
+	for i in 6:
+		await process_frame
+	# Dragging the band moves everything mounted in the case, and by the same step, so
+	# the patch keeps its shape and only its position changes.
+	var was_at := {}
+	for child in main.graph_edit.get_children():
+		var moved := child as GraphNode
+		if moved != null and moved.visible:
+			was_at[str(moved.name)] = moved.position_offset
+	var grip: Vector2 = main.graph_edit._case_band_rect().position + Vector2(6.0, 6.0)
+	_drag_graph(main, grip, grip + Vector2(120.0, 60.0))
+	for i in 8:
+		await process_frame
+	# One step for all of them, within floating point: the deltas are accumulated per
+	# node, so demanding they be bit-identical would be demanding arithmetic that never
+	# rounds. What matters is that nothing drifts relative to anything else.
+	var first_step := Vector2.ZERO
+	var spread := 0.0
+	var counted := 0
+	for child in main.graph_edit.get_children():
+		var moved := child as GraphNode
+		if moved == null or not was_at.has(str(moved.name)):
+			continue
+		var step_taken: Vector2 = moved.position_offset - was_at[str(moved.name)]
+		if counted == 0:
+			first_step = step_taken
+		spread = maxf(spread, step_taken.distance_to(first_step))
+		counted += 1
+	check(counted > 1 and first_step.length() > 1.0 and spread < 0.01,
+		"dragging the band moves every node by one step (%d nodes by %s, spread %.4f)"
+			% [counted, str(first_step), spread])
+	await main._undo()
+	for i in 6:
+		await process_frame
+	var back := true
+	for child in main.graph_edit.get_children():
+		var moved := child as GraphNode
+		if moved != null and was_at.has(str(moved.name)) \
+				and moved.position_offset.distance_to(was_at[str(moved.name)]) > 1.0:
+			back = false
+	check(back, "and undo puts the case back where it was")
 	await main._load_example("First Synth")
 	for i in 6:
 		await process_frame

@@ -611,6 +611,13 @@ func _build_ui() -> void:
 	graph_edit.group_closed.connect(func(name: String) -> void: _close_module(name))
 	graph_edit.begin_node_move.connect(func() -> void: _begin_edit())
 	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
+	# The container's own controls: its band switches which way you are looking at it,
+	# and dragging that band moves everything mounted in it.
+	graph_edit.case_mode_toggled.connect(func() -> void: show_view("Rack"))
+	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
+	graph_edit.case_moved.connect(func() -> void:
+		_capture_positions()
+		_commit_edit("move %s" % _instrument_name()))
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
 
 	# Two views of one document, side by side in tabs rather than as a mode: the graph is
