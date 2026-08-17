@@ -613,7 +613,6 @@ func _build_ui() -> void:
 	graph_edit.end_node_move.connect(func() -> void: _commit_edit("move"))
 	# The container's own controls: its band switches which way you are looking at it,
 	# and dragging that band moves everything mounted in it.
-	graph_edit.case_mode_toggled.connect(func() -> void: show_view("Rack"))
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
 	graph_edit.case_moved.connect(func() -> void:
 		_capture_positions()
@@ -4794,6 +4793,16 @@ func _refresh_face() -> void:
 		module_face.registry = registry
 		module_face.rack = rack
 		module_face.node_id = str(inspecting.get("node", ""))
+		# Inside a container, the panel is that container's face. The graph is the inside
+		# of the device and the panel is what a player holds, and drilling into a module
+		# turns both at once — the graph shows its parts, the panel its knobs. Selecting
+		# an instance still wins, because pointing at a thing is more specific than
+		# standing inside one.
+		module_face.opened_module = ""
+		if module_face.module_name() == "" and graph_edit != null:
+			for open_name in graph_edit.groups:
+				module_face.opened_module = str(open_name)
+				break
 		showing = module_face.module_name()
 		module_face.visible = showing != ""
 		if module_face.visible:

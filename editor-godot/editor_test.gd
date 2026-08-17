@@ -4483,6 +4483,25 @@ func _initialize() -> void:
 	check(main.engine.flatten_patch(JSON.stringify(main.patch, "  ")) == flat_open,
 		"and opening it again returns to the same one")
 
+	# ---- drilling in turns the panel too ---------------------------------------------
+	# The graph is the inside of the device and the panel is what a player holds, and
+	# they are two views of one container — so opening a module turns both at once: the
+	# graph shows its parts, the panel its face. With no instance node left on the
+	# canvas, the face's knobs write to the inner nodes the export bindings name.
+	main._focus_node(main._output_node())
+	for i in 6:
+		await process_frame
+	check(main.module_face.visible and main.module_face.module_name() == "part",
+		"inside an open module the panel is its face (%s)"
+			% main.module_face.module_name())
+	check(main.face_heading.text == "part",
+		"under the container's name (%s)" % main.face_heading.text)
+	var opened_target: Array = main.module_face._write_target("cutoff")
+	check(str(opened_target[0]).begins_with("part.") \
+			and str(opened_target[1]) == "cutoff",
+		"and its knobs reach the parts directly (%s.%s)"
+			% [opened_target[0], opened_target[1]])
+
 	# ---- editing a module from the inside --------------------------------------------
 	# The argument for opening a module on the canvas rather than in a view of its own:
 	# once it is open its parts are ordinary nodes, so adding one and wiring it are the
@@ -5214,25 +5233,11 @@ func _initialize() -> void:
 			uncased = str(mounted.name)
 	check(uncased == "", "with every node inside it (%s)" % uncased)
 
-	# The band is the container's own control strip: a switch to the other view of it,
-	# and a handle for the whole thing. Only the band — the inside of the case is where
+	# The band is the case's handle. Only the band — the inside of the case is where
 	# selecting and rubber-banding happen, and a case you could grab anywhere would make
 	# a rubber band impossible to start.
 	var band: Rect2 = main.graph_edit._case_band_rect()
-	var switch: Rect2 = main.graph_edit._case_switch_rect()
-	check(band.size.y > 0.0 and switch.size.x > 0.0,
-		"the case has a band with a switch on it (%s)" % str(switch))
-	check(band.encloses(switch), "which sits inside the band (%s)" % str(band))
-
-	main.show_view("Graph")
-	for i in 4:
-		await process_frame
-	_press_graph(main, switch.get_center())
-	for i in 6:
-		await process_frame
-	check(main.views.get_tab_title(main.views.current_tab) == "Rack",
-		"clicking it turns the container round (%s)"
-			% main.views.get_tab_title(main.views.current_tab))
+	check(band.size.y > 0.0, "the case has a band (%s)" % str(band))
 
 	main.show_view("Graph")
 	for i in 6:

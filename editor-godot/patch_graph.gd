@@ -570,13 +570,6 @@ func _connection_at(point: Vector2) -> Dictionary:
 func _gui_input(event: InputEvent) -> void:
 	var button := event as InputEventMouseButton
 	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
-		if button.pressed and _case_switch_rect().has_point(button.position):
-			# The container's own view control. A patch is one thing whether it is drawn
-			# as wiring or as knobs, so the switch between those belongs on the thing
-			# rather than in a tab bar off to the side.
-			case_mode_toggled.emit()
-			accept_event()
-			return
 		if button.pressed and _case_band_rect().has_point(button.position):
 			# The band is the handle, as the caption is on a panel knob: the case's
 			# inside is where the work happens — selecting, rubber-banding, dragging
@@ -947,8 +940,6 @@ var case_title := "":
 		case_title = value
 		queue_redraw()
 
-## Somebody asked for the other view of this container.
-signal case_mode_toggled
 ## The case is about to move, so an undo step can be opened before anything shifts.
 signal case_move_started
 ## The case finished moving, so the document should be told where its nodes are now.
@@ -958,7 +949,7 @@ var _case_dragging := false
 var _case_drag_from := Vector2.ZERO
 
 
-## The case's title band, in screen coordinates: its name, its switch, and the one strip
+## The case's title band, in screen coordinates: its name, and the one strip
 ## of it that is a handle rather than workspace.
 func _case_band_rect() -> Rect2:
 	if case_title == "":
@@ -969,18 +960,6 @@ func _case_band_rect() -> Rect2:
 	var scale := zoom if zoom > 0.0 else 1.0
 	return Rect2(frame.position * scale - scroll_offset,
 		Vector2(frame.size.x * scale, float(Design.scale(CASE_BAND)) * scale))
-
-
-## The switch at the right-hand end of the band.
-func _case_switch_rect() -> Rect2:
-	var band := _case_band_rect()
-	if band.size.x <= 0.0:
-		return Rect2()
-	var width: float = minf(float(Design.scale(96)) * (zoom if zoom > 0.0 else 1.0),
-		band.size.x * 0.5)
-	var inset := band.size.y * 0.18
-	return Rect2(Vector2(band.end.x - width - inset, band.position.y + inset),
-		Vector2(width, band.size.y - inset * 2.0))
 
 
 func _draw_case() -> void:
@@ -1006,20 +985,6 @@ func _draw_case() -> void:
 	draw_string(font, box.position + Vector2(float(Design.scale(Design.SPACE_M)),
 		band * 0.72), case_title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 		text_size, Design.INK_SECOND)
-
-	# The other view of the same container, offered on the container itself. It says
-	# where it goes rather than where you are — a switch labelled with the state you are
-	# already in is a switch you have to think about.
-	var switch := _case_switch_rect()
-	if switch.size.x <= 4.0:
-		return
-	draw_rect(switch, Color(Design.ACCENT, 0.16))
-	draw_rect(switch, Color(Design.ACCENT, 0.55), false, 1.0)
-	var label := "RACK"
-	var measured := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
-	draw_string(font, switch.position + Vector2((switch.size.x - measured.x) * 0.5,
-		switch.size.y * 0.5 + measured.y * 0.34), label, HORIZONTAL_ALIGNMENT_LEFT,
-		-1.0, text_size, Design.ACCENT)
 
 
 func _draw() -> void:

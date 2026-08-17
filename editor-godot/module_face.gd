@@ -38,6 +38,16 @@ var rack: Control = null
 ## The instance whose module is being shown, or "" for none.
 var node_id := ""
 
+## The module shown because it is *open*, with no instance node to stand for it.
+##
+## The face has two customers now: select an instance and this is that instance's face,
+## its knobs writing the instance's parameters; drill into a module and it is the open
+## container's face, its knobs writing the inner nodes directly — because inside an open
+## module there is no instance, only the parts, and the export bindings say which part
+## each knob reaches. Same face either way, which is the point: the panel is the
+## container inspector, whichever container you are in.
+var opened_module := ""
+
 ## The face, after a drag. `rows` is the whole arrangement; `added` is set only when what
 ## was dragged on was a ghost, and carries the inner binding that has to be exported first.
 signal rearranged(rows: Array, added: Dictionary)
@@ -300,10 +310,28 @@ func _ready() -> void:
 
 ## The module this instance is of, or "" when the selection is not a module.
 func module_name() -> String:
+	if opened_module != "":
+		return opened_module
 	for node in patch.get("nodes", []):
 		if str(node["id"]) == node_id:
 			return str(node.get("module", ""))
 	return ""
+
+
+## Where a knob for this export actually writes: [node id, parameter name].
+##
+## Through the instance when there is one — an export is the instance's parameter, and
+## expansion pushes it down. Open, there is no instance, so the export's own binding says
+## which part it reaches, and the id carries the open module's prefix the way every part
+## on the canvas does.
+func _write_target(export_name: String) -> Array:
+	if opened_module == "":
+		return [node_id, export_name]
+	for binding in patch.get("modules", {}).get(opened_module, {}).get("parameters", []):
+		if str(binding.get("name", "")) == export_name:
+			return ["%s.%s" % [opened_module, str(binding["node"])],
+				str(binding["parameter"])]
+	return [node_id, export_name]
 
 
 ## The descriptor the face is drawn from: the synthesized `module:<name>` entry, which
@@ -423,8 +451,14 @@ func _cell(parameter: Dictionary, caption_text: String) -> Control:
 	var knob := Rack.Knob.new()
 	knob.rack = rack
 	knob.compact = true
-	knob.node_id = node_id
-	knob.descriptor = parameter
+	# The knob writes wherever the export actually lands. Its descriptor's name is the
+	# written parameter, because that is what the rack's signals carry; the caption
+	# below keeps the export's name, which is what a player calls it.
+	var target := _write_target(str(parameter["name"]))
+	var wired: Dictionary = parameter.duplicate(true)
+	wired["name"] = target[1]
+	knob.node_id = target[0]
+	knob.descriptor = wired
 	knob.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	knob.set_value_silently(_value_of(str(parameter["name"]),
 		float(parameter.get("default", 0.0))))
@@ -448,7 +482,8 @@ func _cell(parameter: Dictionary, caption_text: String) -> Control:
 
 
 func _value_of(parameter: String, fallback: float) -> float:
+	var target := _write_target(parameter)
 	for node in patch.get("nodes", []):
-		if str(node["id"]) == node_id:
-			return float(node.get("parameters", {}).get(parameter, fallback))
+		if str(node["id"]) == str(target[0]):
+			return float(node.get("parameters", {}).get(str(target[1]), fallback))
 	return fallback
