@@ -32,10 +32,19 @@ struct Setting {
     double value = 0.0;
 };
 
-// The harness patch: keyboard -> one operator -> speakers, with an optional sine
+// An optional feed into one of the operator's modulation inlets: a 110 Hz sine
+// through a gain of two by default, or — when `steady` is nonzero — a Constant
+// holding that value, the probe that tells fm from pm (a steady value bends
+// fm's pitch and does nothing to pm's).
+struct Modulator {
+    std::string port;     // empty: nothing plugged in
+    double steady = 0.0;  // 0: the sine; otherwise a Constant at this value
+};
+
+// The harness patch: keyboard -> one operator -> speakers, with an optional
 // modulator into one of the operator's modulation inlets. The operator definition
 // is lifted from the shipped algo file so this tests what players actually get.
-bool operator_patch(const std::vector<Setting>& settings, const std::string& modulate,
+bool operator_patch(const std::vector<Setting>& settings, const Modulator& modulate,
                     GraphDescription& out) {
     GraphDescription shipped;
     std::vector<Diagnostic> diagnostics;
@@ -83,7 +92,14 @@ bool operator_patch(const std::vector<Setting>& settings, const std::string& mod
     wire("kb", "gate", "op", "gate");
     wire("op", "out", "out", "left");
 
-    if (!modulate.empty()) {
+    if (!modulate.port.empty() && modulate.steady != 0.0) {
+        soundgraph::NodeDescription held;
+        held.id = "held";
+        held.type = "Constant";
+        held.parameters.push_back({"value", modulate.steady});
+        harness.nodes.push_back(held);
+        wire("held", "out", "op", modulate.port);
+    } else if (!modulate.port.empty()) {
         soundgraph::NodeDescription modulator;
         modulator.id = "mod";
         modulator.type = "SineOscillator";
@@ -95,7 +111,7 @@ bool operator_patch(const std::vector<Setting>& settings, const std::string& mod
         depth.parameters.push_back({"gain", 2.0});
         harness.nodes.push_back(depth);
         wire("mod", "out", "depth", "in");
-        wire("depth", "out", "op", modulate);
+        wire("depth", "out", "op", modulate.port);
     }
 
     // Through the text and back, because expansion lives in the loader: a
@@ -186,7 +202,7 @@ TEST(the_operator_pitches_at_ratio_times_the_note) {
     for (double ratio : {1.0, 2.0}) {
         GraphDescription description;
         CHECK(operator_patch({{"ratio", ratio}, {"attack", 0.005}, {"sustain", 1.0}},
-                             "", description));
+                             {}, description));
         bool ok = false;
         std::vector<float> heard = render(description, 1.0, -1.0, ok);
         CHECK(ok);
@@ -202,7 +218,7 @@ TEST(the_envelope_shapes_the_note) {
     GraphDescription description;
     CHECK(operator_patch({{"ratio", 1.0}, {"attack", 0.2}, {"decay", 0.05},
                           {"sustain", 1.0}, {"release", 0.05}},
-                         "", description));
+                         {}, description));
     bool ok = false;
     std::vector<float> heard = render(description, 1.0, 0.6, ok);
     CHECK(ok);
@@ -224,9 +240,9 @@ TEST(the_pm_inlet_bends_the_phase) {
     GraphDescription clean_patch;
     GraphDescription bent_patch;
     CHECK(operator_patch({{"ratio", 1.0}, {"attack", 0.005}, {"sustain", 1.0}},
-                         "", clean_patch));
+                         {}, clean_patch));
     CHECK(operator_patch({{"ratio", 1.0}, {"attack", 0.005}, {"sustain", 1.0}},
-                         "pm", bent_patch));
+                         {"pm"}, bent_patch));
     bool ok = false;
     std::vector<float> clean = render(clean_patch, 1.0, -1.0, ok);
     CHECK(ok);
@@ -244,17 +260,43 @@ TEST(the_pm_inlet_bends_the_phase) {
                   "and stays bounded (" + std::to_string(loudest) + ")");
 }
 
+TEST(the_fm_inlet_bends_the_pitch_in_octaves) {
+    // The exponential companion to pm, calibrated in octaves: a steady 1.0 into
+    // fm lifts the note a whole octave, while the same steady 1.0 into pm only
+    // slides the phase and leaves the pitch exactly where it was. This pair is
+    // what tells the two inlets apart — a crossed wire would fail one of them.
+    GraphDescription lifted_patch;
+    GraphDescription slid_patch;
+    CHECK(operator_patch({{"ratio", 1.0}, {"attack", 0.005}, {"sustain", 1.0}},
+                         {"fm", 1.0}, lifted_patch));
+    CHECK(operator_patch({{"ratio", 1.0}, {"attack", 0.005}, {"sustain", 1.0}},
+                         {"pm", 1.0}, slid_patch));
+    bool ok = false;
+    std::vector<float> lifted = render(lifted_patch, 1.0, -1.0, ok);
+    CHECK(ok);
+    std::vector<float> slid = render(slid_patch, 1.0, -1.0, ok);
+    CHECK(ok);
+    const double lifted_pitch = fundamental(lifted);
+    CHECK_MESSAGE(std::fabs(lifted_pitch - 440.0) < 440.0 * 0.03,
+                  "a steady 1.0 into fm is an octave up (" +
+                      std::to_string(lifted_pitch) + ", wanted ~440)");
+    const double slid_pitch = fundamental(slid);
+    CHECK_MESSAGE(std::fabs(slid_pitch - 220.0) < 220.0 * 0.03,
+                  "while into pm it leaves the pitch alone (" +
+                      std::to_string(slid_pitch) + ", wanted ~220)");
+}
+
 TEST(feedback_thickens_the_wave_without_moving_the_pitch) {
     GraphDescription plain_patch;
     GraphDescription fed_patch;
     CHECK(operator_patch({{"ratio", 1.0}, {"attack", 0.005}, {"sustain", 1.0},
                           {"feedback", 0.0}},
-                         "", plain_patch));
+                         {}, plain_patch));
     // Shipped voices sit near 0.06; 0.15 is a hard but still-musical drive.
     // (Much past that the operator goes noise-like, faithfully to the DX7.)
     CHECK(operator_patch({{"ratio", 1.0}, {"attack", 0.005}, {"sustain", 1.0},
                           {"feedback", 0.15}},
-                         "", fed_patch));
+                         {}, fed_patch));
     bool ok = false;
     std::vector<float> plain = render(plain_patch, 1.0, -1.0, ok);
     CHECK(ok);
