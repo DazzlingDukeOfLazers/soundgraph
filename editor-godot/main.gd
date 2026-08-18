@@ -676,8 +676,12 @@ func _build_ui() -> void:
 		_commit_edit("move %s" % key))
 	graph_edit.face_socket_grabbed.connect(_on_face_socket_grabbed)
 	graph_edit.face_rename_requested.connect(_begin_face_rename)
-	# The band's DIVE chip names the instance directly.
+	# The band's DIVE chip names the instance directly; a faceless module's node
+	# answers to a double tap on its title. A non-module title dives nowhere,
+	# which _dive_into already says by doing nothing.
 	graph_edit.face_dive_requested.connect(_dive_into)
+	graph_edit.node_dive_requested.connect(func(widget_name: String) -> void:
+		_dive_into(ids.get(widget_name, "")))
 	# The band's ✕ deletes through the same path the Delete key takes: node,
 	# cables, controls and automation together, one undo step.
 	graph_edit.face_remove_requested.connect(func(key: String) -> void:
@@ -711,13 +715,26 @@ func _build_ui() -> void:
 	document_label.meta_clicked.connect(func(meta: Variant) -> void:
 		var level := int(str(meta))
 		_climb_levels.call_deferred(dive_stack.size() - level))
-	document_label.anchor_left = 0.45
-	document_label.anchor_right = 1.0
-	document_label.anchor_top = 0.0
-	document_label.anchor_bottom = 1.0
-	document_label.offset_right = -float(Design.scale(Design.SPACE_M))
-	document_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	views.get_tab_bar().add_child(document_label)
+	document_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	document_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# The path and its way back share one row: the breadcrumb names where you are,
+	# the climb button is the step home, and both live where the question lives.
+	var crumb_row := HBoxContainer.new()
+	crumb_row.anchor_left = 0.45
+	crumb_row.anchor_right = 1.0
+	crumb_row.anchor_top = 0.0
+	crumb_row.anchor_bottom = 1.0
+	crumb_row.offset_right = -float(Design.scale(Design.SPACE_M))
+	crumb_row.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	crumb_row.add_theme_constant_override("separation", Design.SPACE_S)
+	crumb_row.add_child(document_label)
+	climb_button = Button.new()
+	climb_button.visible = false
+	climb_button.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	climb_button.pressed.connect(_climb_up)
+	crumb_row.add_child(_defocus(climb_button))
+	views.get_tab_bar().add_child(crumb_row)
 	# One tab, one canvas, both sides of the container. The graph already owns zoom,
 	# pan and the grid, so the face is a tenant on that canvas rather than a rival
 	# view: flipping hides the wiring and mounts the face at the case's own spot, and
@@ -1032,13 +1049,6 @@ func _build_toolbar() -> Control:
 		+ "the minimap and the zoom controls."
 	fit_button.pressed.connect(func() -> void: graph_edit.fit_graph())
 	graph_group.add_child(_defocus(fit_button))
-
-	# The way back up from a dive. Hidden until there is an up to climb to, and
-	# named for where it goes — "Climb" alone would make somebody guess.
-	climb_button = Button.new()
-	climb_button.visible = false
-	climb_button.pressed.connect(_climb_up)
-	graph_group.add_child(_defocus(climb_button))
 
 	# ---- edit --------------------------------------------------------------------
 	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first

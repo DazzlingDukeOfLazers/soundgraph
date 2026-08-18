@@ -6477,6 +6477,35 @@ func _initialize() -> void:
 	check(main.document_name == surface_name and main.dive_stack.is_empty()
 			and main.widgets.has(first_dev),
 		"clicking the root climbs the whole way home (%s)" % main.document_name)
+	# The climb button lives with the path now, on the tab strip's row.
+	check(main.climb_button.get_parent() == main.document_label.get_parent()
+			and main.views.get_tab_bar().is_ancestor_of(main.climb_button),
+		"the climb button shares the breadcrumb's row on the tab strip")
+	# A faceless module — an OP inside the algo — shows as a node, and its title
+	# answers the double tap: the same way down the device's band offers, met one
+	# level deeper. Driven inside a dive, which is where those nodes live.
+	main._dive_into(first_dev)
+	for i in 8:
+		await process_frame
+	var op_widget: GraphNode = main.widgets["op1"]
+	check(op_widget.visible, "an OP inside the algo stands as a node")
+	var op_bar_rect: Rect2 = op_widget.get_titlebar_hbox().get_global_rect()
+	var op_tap := InputEventMouseButton.new()
+	op_tap.button_index = MOUSE_BUTTON_LEFT
+	op_tap.pressed = true
+	op_tap.double_click = true
+	op_tap.position = Vector2(op_bar_rect.position.x + 10.0, op_bar_rect.get_center().y)
+	main.graph_edit._input(op_tap)
+	for i in 10:
+		await process_frame
+	check(main.document_name.ends_with("> algo-01 > dx7_operator"),
+		"double-tapping its title dives a level deeper (%s)" % main.document_name)
+	await main._climb_up()
+	await main._climb_up()
+	for i in 10:
+		await process_frame
+	check(main.dive_stack.is_empty() and main.widgets.has(first_dev),
+		"and two climbs come all the way home")
 
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".

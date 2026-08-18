@@ -1090,6 +1090,10 @@ signal face_rename_requested(key: String)
 signal face_remove_requested(key: String)
 ## The band's DIVE chip: descend into the turned device's definition.
 signal face_dive_requested(key: String)
+## A node's title was double-tapped: dive into what it stands for. This is the
+## faceless module's way down — a subcircuit shows as a node, and its title is the
+## same handle the device's band is.
+signal node_dive_requested(widget_name: String)
 var _dive_hits: Dictionary = {}
 ## Which turned containers may be removed from their band — instances, not open
 ## groups, whose ✕ would mean something murkier. Set by main beside flip_frames.
@@ -1863,6 +1867,19 @@ func _input(event: InputEvent) -> void:
 			face_socket_grabbed.emit(face, socket)
 			get_viewport().set_input_as_handled()
 			return
+
+	# A double tap on a node's title dives into it — the title strip only, because
+	# the body is where knobs live and their own double tap means "go home".
+	if button.double_click:
+		var over := _node_at(_to_graph(button.position - rect.position))
+		if over != "":
+			var widget := get_node_or_null(NodePath(over)) as GraphNode
+			if widget != null:
+				var bar := widget.get_titlebar_hbox()
+				if bar != null and bar.get_global_rect().grow(4.0).has_point(button.position):
+					node_dive_requested.emit(over)
+					get_viewport().set_input_as_handled()
+					return
 
 	# A ghost jack: an inner port the module does not expose, drawn on the instance while
 	# it is selected. Tested before the node gets the press because a ghost is inside the
