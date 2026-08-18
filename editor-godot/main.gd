@@ -5221,11 +5221,63 @@ func _refresh_seam_cables() -> void:
 				var landing: Vector2 = rect.position 					+ (widget.position_offset + spot) * scale - graph_edit.scroll_offset
 				runs.append([from, landing,
 					TYPE_COLOURS.get(str(socket["type"]), INK)])
+		# A turned device keeps its wires. The document's cables to a flipped
+		# instance have no widget to land on — the flip took it — so they run to
+		# the panel instead: into its IN plate, out of its OUT plate. Without this
+		# a fresh device played while its panel sat looking unplugged, which on an
+		# instrument reads as a lie.
+		for connection in patch.get("connections", []):
+			var from_id := str(connection["from"]["node"])
+			var to_id := str(connection["to"]["node"])
+			if not flipped_nodes.has(from_id) and not flipped_nodes.has(to_id):
+				continue
+			var start: Variant = _stub_cable_end(from_id,
+				str(connection["from"]["port"]), true, rect, scale)
+			var finish: Variant = _stub_cable_end(to_id,
+				str(connection["to"]["port"]), false, rect, scale)
+			if start == null or finish == null:
+				continue
+			var flavour := ""
+			for port in _port_list(from_id, "outputs"):
+				if str(port["name"]) == str(connection["from"]["port"]):
+					flavour = str(port.get("type", ""))
+			runs.append([start, finish, TYPE_COLOURS.get(flavour, INK)])
 	else:
 		seam_cables.window = Rect2()
 	seam_cables.runs = runs
 	seam_cables.live = _live_cable()
 	seam_cables.queue_redraw()
+
+
+## Where a stand-in cable meets one end of a document connection, in viewport space —
+## or null when that end has nothing to show. A flipped instance answers with its
+## panel's port plate (the IN plate for cables arriving, OUT for cables leaving,
+## falling back to the mount's own edge when the face has no plates); an ordinary
+## node answers with the port itself, exactly where the native cable would end.
+func _stub_cable_end(node_id: String, port: String, is_output: bool,
+		rect: Rect2, scale: float) -> Variant:
+	if flipped_nodes.has(node_id):
+		var mount := module_mounts.get(node_id, null) as Control
+		if mount == null or not mount.visible:
+			return null
+		var plate := mount.get_node_or_null(
+			"Case/Rack/Rail/" + ("PortsOut" if is_output else "PortsIn")) as Control
+		if plate != null:
+			return plate.get_global_rect().get_center()
+		var edge := mount.get_global_rect()
+		return Vector2(edge.end.x if is_output else edge.position.x,
+			edge.get_center().y)
+	var widget: GraphNode = widgets.get(node_id, null)
+	if widget == null or not widget.visible:
+		return null
+	var index := _output_port_index(node_id, port) if is_output \
+		else _input_port_index(node_id, port)
+	if index < 0:
+		return null
+	var spot: Vector2 = widget.get_output_port_position(index) if is_output \
+		else widget.get_input_port_position(index)
+	return rect.position + (widget.position_offset + spot) * scale \
+		- graph_edit.scroll_offset
 
 
 ## ---------------------------------------------------------------------------------

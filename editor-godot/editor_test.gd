@@ -227,6 +227,12 @@ func _device_peak(main) -> float:
 		main.engine.fill_playback(playback, 1024)
 		await process_frame
 	var peak: float = main.engine.get_peak()
+	# Stopped and unplugged before it is freed: AudioServer mixes on its own thread
+	# and holds the generator playback, and freeing a player still playing is a race
+	# with that thread — the same race the end-of-run teardown documents.
+	player.stop()
+	player.stream = null
+	await process_frame
 	player.queue_free()
 	return peak
 
@@ -5636,6 +5642,23 @@ func _initialize() -> void:
 			and main.module_mounts.get(onto_fresh) != null
 			and (main.module_mounts[onto_fresh] as Control).visible,
 		"a fresh device arrives face up")
+	# And wired-looking: the document's cables to a flipped instance run to the
+	# panel's plates — the keyboard into IN, the speakers out of OUT — because a
+	# device that plays while its panel sits unplugged reads as a lie.
+	main._refresh_seam_cables()
+	var stub_mount: Control = main.module_mounts[onto_fresh]
+	var in_plate: Control = stub_mount.get_node("Case/Rack/Rail/PortsIn")
+	var out_plate: Control = stub_mount.get_node("Case/Rack/Rail/PortsOut")
+	var into_panel := 0
+	var out_of_panel := 0
+	for run in main.seam_cables.runs:
+		if in_plate.get_global_rect().grow(4.0).has_point(run[1] as Vector2):
+			into_panel += 1
+		if out_plate.get_global_rect().grow(4.0).has_point(run[0] as Vector2):
+			out_of_panel += 1
+	check(into_panel >= 2 and out_of_panel >= 2,
+		"a turned device keeps its wires (%d into IN, %d out of OUT)"
+			% [into_panel, out_of_panel])
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:
 		await process_frame
@@ -5934,11 +5957,10 @@ func _initialize() -> void:
 			frame_restored = false
 	check(frame_restored, "and undo puts the whole frame back")
 	# Folded shut again: the section owns its fixture. A run once segfaulted at exit
-	# with the frame left open and the close was added as the cure — then five runs
-	# of the uncleaned suite exited cleanly, so the crash was a rare teardown race
-	# that had nothing provable to do with the frame. The close stays as fixture
-	# hygiene and as one more drive of the close-module path, not as a cure for a
-	# crash it never caused.
+	# with the frame left open and the close was added as the cure — wrongly. The
+	# real culprit was audio teardown order (players freed while playing, see the
+	# end of this file), and the frame was a bystander. The close stays as fixture
+	# hygiene and as one more drive of the close-module path.
 	main.graph_edit.group_closed.emit(group_key)
 	for i in 10:
 		await process_frame
@@ -6429,18 +6451,22 @@ func _initialize() -> void:
 	check(preset != null and preset.get_as_text().contains("build_stamp.json"),
 		"and the web export is still set up to carry the stamp")
 
+	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
+	# thread and holds the generator playback, so the engine has to be let go with
+	# frames to spare rather than destroyed underneath it. Order matters and was
+	# wrong: the probe player was freed while still *playing*, and main was queued
+	# for deletion before shutdown_audio was asked of it — a teardown improvised in
+	# exactly the way that segfaulted roughly one run in five, always after the
+	# last check had already passed.
+	player.stop()
+	player.stream = null
+	if main.has_method("shutdown_audio"):
+		main.shutdown_audio()
+	await process_frame
+	await process_frame
 	player.queue_free()
 	main.queue_free()
 	await process_frame
-
-	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
-	# thread and holds the generator playback, so the engine has to be let go with
-	# frames to spare rather than destroyed underneath it. This harness was crashing
-	# at exit too, just without anything watching the exit status.
-	if main.has_method("shutdown_audio"):
-		main.shutdown_audio()
-		await process_frame
-		await process_frame
 
 	print("")
 	if failures == 0:
