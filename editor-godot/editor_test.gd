@@ -6500,6 +6500,25 @@ func _initialize() -> void:
 		await process_frame
 	check(main.document_name == surface_name,
 		"and the surface wears its own name again (%s)" % main.document_name)
+	# The segments are links: two levels down, clicking the root climbs both in one
+	# gesture — each level still its own climb, writing its own edit to its own
+	# host. Driven through the label's own meta_clicked, the path a real click takes.
+	main._dive_into(first_dev)
+	for i in 8:
+		await process_frame
+	main._dive_into("op1")
+	for i in 8:
+		await process_frame
+	check(main.document_label.text.contains("[url=0]"),
+		"the ancestors are links (%s)" % main.document_label.text)
+	check(not main.document_label.text.contains("[url=2]"),
+		"and where you stand is not")
+	main.document_label.meta_clicked.emit("0")
+	for i in 14:
+		await process_frame
+	check(main.document_name == surface_name and main.dive_stack.is_empty()
+			and main.widgets.has(first_dev),
+		"clicking the root climbs the whole way home (%s)" % main.document_name)
 
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".

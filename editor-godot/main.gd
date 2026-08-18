@@ -232,7 +232,7 @@ var seam_cables
 var dragging_jack := {}
 var keyboard_expanded := true
 ## What is open, shown so "which patch am I looking at" is never a guess.
-var document_label: Label
+var document_label: RichTextLabel
 var document_name := "untitled"
 var diagnostics_list: VBoxContainer
 ## Round-robin state for the signal glow; see _update_port_levels().
@@ -902,20 +902,24 @@ func _build_toolbar() -> Control:
 	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	identity.add_child(title)
 
-	document_label = Label.new()
+	# Rich rather than plain, because while dived the name is a breadcrumb and every
+	# ancestor segment is a link: click one and the editor climbs to that level.
+	document_label = RichTextLabel.new()
+	document_label.bbcode_enabled = true
+	document_label.fit_content = true
+	document_label.scroll_active = false
+	document_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	document_label.text = document_name
 	document_label.tooltip_text = document_name
-	document_label.add_theme_font_size_override("font_size",
+	document_label.add_theme_font_size_override("normal_font_size",
 		Design.type(Design.SIZE_SECONDARY))
-	document_label.add_theme_color_override("font_color", Design.INK_SECOND)
-	# Trimmed rather than allowed to set the width of the toolbar.
-	#
-	# A latent version of the bug this budget exists to catch: the file name was free to
-	# grow the identity block, so opening something with a long name pushed every control
-	# to its right and could walk the inspector off the screen — from a file name. The
-	# full name is in the tooltip and in the title bar.
-	document_label.clip_text = true
-	document_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	document_label.add_theme_color_override("default_color", Design.INK_SECOND)
+	# Trimmed rather than allowed to set the width of the toolbar: the full name is
+	# in the tooltip and the title bar, exactly as when this was a Label.
+	document_label.clip_contents = true
+	document_label.meta_clicked.connect(func(meta: Variant) -> void:
+		var level := int(str(meta))
+		_climb_levels.call_deferred(dive_stack.size() - level))
 	identity.add_child(document_label)
 	bar.add_child(identity)
 
@@ -5675,6 +5679,14 @@ func _climb_up() -> void:
 		_say("climbed up")
 
 
+## Climbs several levels as one gesture — what clicking a breadcrumb segment asks
+## for. Each level is still its own climb, so each writes its own edit into its own
+## host, exactly as climbing by hand would.
+func _climb_levels(hops: int) -> void:
+	for hop in maxi(hops, 0):
+		await _climb_up()
+
+
 ## The last segment of a breadcrumb: what the climb button names, since "Climb to
 ## first-synth > algo-01" would quote the whole journey to describe one step.
 func _dive_leaf(path: String) -> String:
@@ -6488,10 +6500,23 @@ func _refresh_document_label() -> void:
 	# A dot rather than an asterisk, and the name goes bright rather than gaining
 	# punctuation — the change should be noticeable without the label jumping about,
 	# and a leading "*" shifts every character along by one.
-	document_label.text = document_name + ("  (unsaved)" if unsaved else "")
+	var shown := document_name + ("  (unsaved)" if unsaved else "")
+	if dive_stack.is_empty():
+		document_label.text = shown
+	else:
+		# Every ancestor is a link back to its level; the last segment is where
+		# you already stand, and a link to where you are would only lie about it.
+		var segments := document_name.split(" > ")
+		var parts := PackedStringArray()
+		for index in segments.size():
+			if index < segments.size() - 1:
+				parts.append("[url=%d]%s[/url]" % [index, segments[index]])
+			else:
+				parts.append(segments[index])
+		document_label.text = " > ".join(parts) 			+ ("  (unsaved)" if unsaved else "")
 	# Because the label is clipped, this is the only place a long name can be read whole.
-	document_label.tooltip_text = document_label.text
-	document_label.add_theme_color_override("font_color",
+	document_label.tooltip_text = shown
+	document_label.add_theme_color_override("default_color",
 		Design.INK_NORMAL if unsaved else Design.INK_SECOND)
 
 
