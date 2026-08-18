@@ -5814,6 +5814,56 @@ func _initialize() -> void:
 			and (main.module_mounts.get(onto_fresh) as Control).visible,
 		"the flip survives a rebuild")
 
+	# The band is also the handle: drag it and the device moves — the same edit as
+	# dragging the node it stands for, one undo step, written down at the drop.
+	# Driven through _input with viewport coordinates, the path a real hand takes.
+	var doc_before := Vector2.ZERO
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == onto_fresh:
+			doc_before = Vector2(float(node["position"]["x"]),
+				float(node["position"]["y"]))
+	var band_frame: Rect2 = main.graph_edit.flip_frames[onto_fresh]
+	var graph_rect: Rect2 = main.graph_edit.get_global_rect()
+	var band_at: Vector2 = graph_rect.position \
+		+ band_frame.position * main.graph_edit.zoom - main.graph_edit.scroll_offset \
+		+ Vector2(12.0, 8.0) * main.graph_edit.zoom
+	var grab := InputEventMouseButton.new()
+	grab.button_index = MOUSE_BUTTON_LEFT
+	grab.pressed = true
+	grab.position = band_at
+	main.graph_edit._input(grab)
+	var pull := InputEventMouseMotion.new()
+	pull.position = band_at + Vector2(240.0, 160.0)
+	main.graph_edit._input(pull)
+	var drop := InputEventMouseButton.new()
+	drop.button_index = MOUSE_BUTTON_LEFT
+	drop.pressed = false
+	drop.position = band_at + Vector2(240.0, 160.0)
+	main.graph_edit._input(drop)
+	for i in 6:
+		await process_frame
+	var doc_after := Vector2.ZERO
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == onto_fresh:
+			doc_after = Vector2(float(node["position"]["x"]),
+				float(node["position"]["y"]))
+	check(doc_after.distance_to(doc_before) > 10.0,
+		"dragging the band moves the device in the document (%.0f units)"
+			% doc_after.distance_to(doc_before))
+	check((main.graph_edit.flip_frames[onto_fresh] as Rect2).position
+			.distance_to(band_frame.position) > 10.0,
+		"and the mount's band goes with it")
+	await main._undo()
+	for i in 6:
+		await process_frame
+	var doc_undone := Vector2.ZERO
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == onto_fresh:
+			doc_undone = Vector2(float(node["position"]["x"]),
+				float(node["position"]["y"]))
+	check(doc_undone.distance_to(doc_before) < 0.5,
+		"and undo puts it back (%.1f away)" % doc_undone.distance_to(doc_before))
+
 	# WIRES on the band is the way back: the same signal a click sends.
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:

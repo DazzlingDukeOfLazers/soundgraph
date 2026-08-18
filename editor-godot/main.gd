@@ -667,6 +667,13 @@ func _build_ui() -> void:
 	graph_edit.case_moved.connect(func() -> void:
 		_capture_positions()
 		_commit_edit("move %s" % _instrument_name()))
+	# A mounted face moves by its band, and the move is the same edit as dragging
+	# the node it stands for: begin, drag, write the positions down, one undo step.
+	graph_edit.face_move_started.connect(func(_key: String) -> void: _begin_edit())
+	graph_edit.face_dragged.connect(_on_face_dragged)
+	graph_edit.face_moved.connect(func(key: String) -> void:
+		_capture_positions()
+		_commit_edit("move %s" % key))
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
 
 	# Two views of one document, side by side in tabs rather than as a mode: the graph is
@@ -1371,6 +1378,35 @@ func _on_view_menu(id: int) -> void:
 	for index in CASE_LABELS.size():
 		view_popup.set_item_checked(index + 3, index == choice)
 	rack.case_hp = CASE_WIDTHS[choice]
+
+
+## One step of a face drag. The hidden widgets move — they are where positions live
+## between commits, and _capture_positions reads them back at the drop — and the
+## mount, its anchor and its band follow. The key names either a flipped instance
+## (one widget) or a turned open group (all its members), the same two owners every
+## flip key has.
+func _on_face_dragged(key: String, step: Vector2) -> void:
+	var members: Array = []
+	if flipped_nodes.has(key):
+		var widget: GraphNode = widgets.get(key, null)
+		if widget != null:
+			members = [widget]
+	elif graph_edit.groups.has(key):
+		for widget_name in graph_edit.groups[key]:
+			var member := graph_edit.get_node_or_null(
+				NodePath(str(widget_name))) as GraphNode
+			if member != null:
+				members.append(member)
+	for member in members:
+		member.position_offset += step
+	var mount := module_mounts.get(key, null) as Control
+	if mount != null and mount.has_meta("anchor"):
+		mount.set_meta("anchor", (mount.get_meta("anchor") as Vector2) + step)
+	if graph_edit.flip_frames.has(key):
+		var frame: Rect2 = graph_edit.flip_frames[key]
+		frame.position += step
+		graph_edit.flip_frames[key] = frame
+	graph_edit.queue_redraw()
 
 
 ## One path for menu and key alike: the mode, the memory, the checkmarks, the word.

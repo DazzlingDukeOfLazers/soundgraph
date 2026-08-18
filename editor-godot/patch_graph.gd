@@ -1075,6 +1075,15 @@ signal group_flip_toggled(module_name: String)
 ## when it mounts a face, because the members' own rectangles are hidden with the
 ## members and can no longer say where the container stands.
 var flip_frames: Dictionary = {}
+## A mounted face is being picked up by its band, so an undo step can open first.
+signal face_move_started(key: String)
+## One step of the drag, in graph units. Main moves what the key stands for — the
+## hidden widgets are where positions live between commits — and the mount follows.
+signal face_dragged(key: String, step: Vector2)
+## The band was let go: write the positions down.
+signal face_moved(key: String)
+var _face_drag_key := ""
+var _face_drag_from := Vector2.ZERO
 ## What the band above a turned container says, when its key is not worth reading:
 ## a flipped instance node is keyed by instance id but wears its module's name.
 var flip_labels: Dictionary = {}
@@ -1670,6 +1679,27 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 
+	# A mounted face in hand. Motion and release are watched from here because the
+	# press was claimed here, ahead of the GUI pass — the mount underneath never saw
+	# it, and must not see the rest of the gesture either.
+	if _face_drag_key != "":
+		var moving := event as InputEventMouseMotion
+		if moving != null:
+			var at := _to_graph(moving.position - rect.position)
+			var step := at - _face_drag_from
+			_face_drag_from = at
+			face_dragged.emit(_face_drag_key, step)
+			get_viewport().set_input_as_handled()
+			return
+		var letting := event as InputEventMouseButton
+		if letting != null and letting.button_index == MOUSE_BUTTON_LEFT \
+				and not letting.pressed:
+			var done := _face_drag_key
+			_face_drag_key = ""
+			face_moved.emit(done)
+			get_viewport().set_input_as_handled()
+		return
+
 	var button := event as InputEventMouseButton
 	if button == null or button.button_index != MOUSE_BUTTON_LEFT or not button.pressed:
 		return
@@ -1688,6 +1718,21 @@ func _input(event: InputEvent) -> void:
 	for module_name in _flip_hits:
 		if (_flip_hits[module_name] as Rect2).has_point(button.position - rect.position):
 			group_flip_toggled.emit(str(module_name))
+			get_viewport().set_input_as_handled()
+			return
+
+	# The band above a turned container is its handle, as the case band is the case's:
+	# the panel below is for playing, and the strip that names the thing is what a hand
+	# moves it by. The chips were tested above and returned, so a press landing here is
+	# the band itself.
+	for key in flip_frames:
+		var frame: Rect2 = flip_frames[key]
+		var strip := Rect2(frame.position * zoom - scroll_offset,
+			Vector2(frame.size.x * zoom, float(Design.scale(26.0)) * zoom))
+		if strip.has_point(button.position - rect.position):
+			_face_drag_key = str(key)
+			_face_drag_from = _to_graph(button.position - rect.position)
+			face_move_started.emit(str(key))
 			get_viewport().set_input_as_handled()
 			return
 
