@@ -1736,6 +1736,23 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 
+	# An open module's frame carries the same handle: the band its name is written
+	# on, under the Close and FACE chips already tested above. One drag machinery
+	# for both — the key names a container either way, and main already knows a
+	# group key moves every member.
+	for module_name in groups:
+		var open_frame: Rect2 = group_box(str(module_name))
+		if open_frame.size.x <= 0.0:
+			continue
+		var open_strip := Rect2(open_frame.position * zoom - scroll_offset,
+			Vector2(open_frame.size.x * zoom, float(Design.scale(34.0)) * zoom))
+		if open_strip.has_point(button.position - rect.position):
+			_face_drag_key = str(module_name)
+			_face_drag_from = _to_graph(button.position - rect.position)
+			face_move_started.emit(str(module_name))
+			get_viewport().set_input_as_handled()
+			return
+
 	# A ghost jack: an inner port the module does not expose, drawn on the instance while
 	# it is selected. Tested before the node gets the press because a ghost is inside the
 	# node body, and the node would otherwise swallow it.

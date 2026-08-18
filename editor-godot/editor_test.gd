@@ -5874,6 +5874,72 @@ func _initialize() -> void:
 		"with its cables strung again (%d)"
 			% main.graph_edit.get_connection_list().size())
 
+	# ---- an open frame moves by its band too ------------------------------------------
+	# The same handle on the third kind of container: an open module's dashed frame,
+	# whose band already carries the name, Close and FACE. Dragging it moves every
+	# member together, and the drop is one undo step.
+	await main._open_module(onto_fresh)
+	for i in 8:
+		await process_frame
+	var opened: Array = main.graph_edit.groups.keys()
+	check(opened.size() == 1, "the device opens into a frame (%d)" % opened.size())
+	var group_key := str(opened[0])
+	var members_before := {}
+	for widget_name in main.graph_edit.groups[group_key]:
+		var member := main.graph_edit.get_node_or_null(
+			NodePath(str(widget_name))) as GraphNode
+		if member != null:
+			members_before[str(widget_name)] = member.position_offset
+	var open_box: Rect2 = main.graph_edit.group_box(group_key)
+	var open_at: Vector2 = main.graph_edit.get_global_rect().position \
+		+ open_box.position * main.graph_edit.zoom - main.graph_edit.scroll_offset \
+		+ Vector2(12.0, 8.0) * main.graph_edit.zoom
+	var frame_grab := InputEventMouseButton.new()
+	frame_grab.button_index = MOUSE_BUTTON_LEFT
+	frame_grab.pressed = true
+	frame_grab.position = open_at
+	main.graph_edit._input(frame_grab)
+	var frame_pull := InputEventMouseMotion.new()
+	frame_pull.position = open_at + Vector2(180.0, 120.0)
+	main.graph_edit._input(frame_pull)
+	var frame_drop := InputEventMouseButton.new()
+	frame_drop.button_index = MOUSE_BUTTON_LEFT
+	frame_drop.pressed = false
+	frame_drop.position = open_at + Vector2(180.0, 120.0)
+	main.graph_edit._input(frame_drop)
+	for i in 6:
+		await process_frame
+	var frame_step := Vector2.ZERO
+	var frame_agreed := true
+	for widget_name in members_before:
+		var member := main.graph_edit.get_node_or_null(
+			NodePath(str(widget_name))) as GraphNode
+		var delta: Vector2 = member.position_offset - members_before[widget_name]
+		if frame_step == Vector2.ZERO:
+			frame_step = delta
+		if delta.length() < 10.0 or delta.distance_to(frame_step) > 0.5:
+			frame_agreed = false
+	check(frame_agreed and members_before.size() > 1,
+		"dragging the frame's band moves every member by one step (%d members by %s)"
+			% [members_before.size(), str(frame_step)])
+	await main._undo()
+	for i in 6:
+		await process_frame
+	var frame_restored := true
+	for widget_name in members_before:
+		var member := main.graph_edit.get_node_or_null(
+			NodePath(str(widget_name))) as GraphNode
+		if member == null \
+				or member.position_offset.distance_to(members_before[widget_name]) > 0.5:
+			frame_restored = false
+	check(frame_restored, "and undo puts the whole frame back")
+	# Folded shut again: the section owns its fixture, and a frame left open was a
+	# teardown crash at exit — freed overlays still holding the group's furniture.
+	main.graph_edit.group_closed.emit(group_key)
+	for i in 10:
+		await process_frame
+	check(main.graph_edit.groups.is_empty(), "and the frame closes cleanly")
+
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".
 	await main._load_example("DX7: algo-01")
