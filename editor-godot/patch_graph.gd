@@ -1086,6 +1086,12 @@ signal face_moved(key: String)
 signal face_socket_grabbed(mount: Control, socket: Dictionary)
 ## The band was double-tapped: the container wants a new name.
 signal face_rename_requested(key: String)
+## The band's ✕ was pressed: take this device out of the patch.
+signal face_remove_requested(key: String)
+## Which turned containers may be removed from their band — instances, not open
+## groups, whose ✕ would mean something murkier. Set by main beside flip_frames.
+var flip_deletable: Dictionary = {}
+var _remove_hits: Dictionary = {}
 var _face_drag_key := ""
 var _face_drag_from := Vector2.ZERO
 ## What the band above a turned container says, when its key is not worth reading:
@@ -1557,6 +1563,7 @@ class WandOverlay extends Control:
 	func _draw_groups() -> void:
 		_close_hits_out.clear()
 		_flip_hits_out.clear()
+		_remove_hits_out.clear()
 		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
 		var font := Design.font(Design.WEIGHT_SEMIBOLD)
 		var size := Design.type(Design.SIZE_CONTROL)
@@ -1636,11 +1643,32 @@ class WandOverlay extends Control:
 				wires_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, wires_size, Design.ACCENT)
 			_flip_hits_out[module_name] = wires_chip
 
+			# The way out, for a device: an ✕ beside WIRES, drawn with strokes
+			# rather than a glyph the font may not carry. Same quiet chip dress;
+			# what it does is undoable, so it earns no alarm colour.
+			if graph.flip_deletable.has(module_name):
+				var cross_side: float = wires_chip.size.y
+				var cross_chip := Rect2(
+					Vector2(wires_chip.position.x - cross_side - wires_pad * 1.5,
+						wires_chip.position.y),
+					Vector2(cross_side, cross_side))
+				draw_rect(cross_chip, Color(Design.ACCENT, 0.16))
+				draw_rect(cross_chip, Color(Design.ACCENT, 0.55), false, 1.0)
+				var inset: float = cross_side * 0.30
+				draw_line(cross_chip.position + Vector2(inset, inset),
+					cross_chip.end - Vector2(inset, inset), Design.ACCENT, 1.6, true)
+				draw_line(Vector2(cross_chip.end.x - inset, cross_chip.position.y + inset),
+					Vector2(cross_chip.position.x + inset, cross_chip.end.y - inset),
+					Design.ACCENT, 1.6, true)
+				_remove_hits_out[module_name] = cross_chip
+
 		graph._close_hits = _close_hits_out.duplicate()
 		graph._flip_hits = _flip_hits_out.duplicate()
+		graph._remove_hits = _remove_hits_out.duplicate()
 
 	var _close_hits_out: Dictionary = {}
 	var _flip_hits_out: Dictionary = {}
+	var _remove_hits_out: Dictionary = {}
 
 
 	## The rubber band, while one is being drawn. Dashed for the same reason a target is:
@@ -1732,6 +1760,14 @@ func _input(event: InputEvent) -> void:
 	for module_name in _flip_hits:
 		if (_flip_hits[module_name] as Rect2).has_point(button.position - rect.position):
 			group_flip_toggled.emit(str(module_name))
+			get_viewport().set_input_as_handled()
+			return
+
+	# The band's ✕: take the device out. Ahead of the band's own handle, like the
+	# other chips.
+	for module_name in _remove_hits:
+		if (_remove_hits[module_name] as Rect2).has_point(button.position - rect.position):
+			face_remove_requested.emit(str(module_name))
 			get_viewport().set_input_as_handled()
 			return
 

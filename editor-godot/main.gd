@@ -676,6 +676,16 @@ func _build_ui() -> void:
 		_commit_edit("move %s" % key))
 	graph_edit.face_socket_grabbed.connect(_on_face_socket_grabbed)
 	graph_edit.face_rename_requested.connect(_begin_face_rename)
+	# The band's ✕ deletes through the same path the Delete key takes: node,
+	# cables, controls and automation together, one undo step.
+	graph_edit.face_remove_requested.connect(func(key: String) -> void:
+		var widget: GraphNode = widgets.get(key, null)
+		if widget == null:
+			return
+		# Typed to the handler's own signature: a deferred call does not coerce,
+		# and a plain Array died at the boundary with the least helpful of errors.
+		var doomed: Array[StringName] = [StringName(widget.name)]
+		_on_delete_nodes_request.call_deferred(doomed))
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
 
 	# Two views of one document, side by side in tabs rather than as a mode: the graph is
@@ -1833,6 +1843,7 @@ func _apply_flips() -> void:
 		return
 	graph_edit.flip_frames = {}
 	graph_edit.flip_labels = {}
+	graph_edit.flip_deletable = {}
 	# A flip for a module that is no longer open — or an instance no longer in the
 	# patch — has nothing to stand on.
 	for module_name in flipped_modules.keys():
@@ -1911,6 +1922,7 @@ func _apply_flips() -> void:
 		# the key is plumbing, not a label.
 		graph_edit.flip_frames[str(instance_id)] = Rect2(widget.position_offset, shown.size)
 		graph_edit.flip_labels[str(instance_id)] = band_label
+		graph_edit.flip_deletable[str(instance_id)] = true
 
 
 ## The full panel a device's file draws, mounted for one instance. The definition is

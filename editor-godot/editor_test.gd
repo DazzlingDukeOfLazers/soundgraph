@@ -6259,6 +6259,30 @@ func _initialize() -> void:
 		await process_frame
 	check(not main.widgets[onto_fresh].visible, "and the device turns back over")
 
+	# The band's ✕ takes the device out, through the same path the Delete key
+	# takes. The chip is painted by the overlay, so headless drives the signal it
+	# emits; the windowed smoke covers the pixels.
+	check(main.graph_edit.flip_deletable.has(onto_fresh),
+		"a device band is marked deletable")
+	var before_cross: int = main.patch["nodes"].size()
+	main.graph_edit.face_remove_requested.emit(onto_fresh)
+	for i in 10:
+		await process_frame
+	check(main.patch["nodes"].size() == before_cross - 1
+			and not main.widgets.has(onto_fresh),
+		"the band's ✕ deletes the device (%d nodes from %d)"
+			% [main.patch["nodes"].size(), before_cross])
+	await main._undo()
+	for i in 10:
+		await process_frame
+	check(main.widgets.has(onto_fresh), "and undo brings it back")
+	var reflip_cross: Button = main.widgets[onto_fresh].get_titlebar_hbox() \
+		.get_node("Flip")
+	reflip_cross.pressed.emit()
+	for i in 10:
+		await process_frame
+	check(not main.widgets[onto_fresh].visible, "turned over again for what follows")
+
 	# WIRES on the band is the way back: the same signal a click sends.
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:
