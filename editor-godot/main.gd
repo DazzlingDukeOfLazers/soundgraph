@@ -153,10 +153,7 @@ var flipped_modules := {}
 ## Closed instance nodes turned over where they stand, keyed by instance id — the
 ## one-step flip: no need to open a module's wires just to play its panel.
 var flipped_nodes := {}
-## Instances that left the view while turned over — deleted, mostly. If the id
-## comes back (undo, redo), it comes back face up: a device deleted as a panel
-## returning as a node reads as the undo changing more than it undid.
-var remembered_flips := {}
+
 ## Where the editor has dived from: one frame per level, holding the host document,
 ## its history, its name and its unsaved flag. Diving makes the module's definition
 ## the open document — full editing, full sound, since a definition carries its own
@@ -647,13 +644,6 @@ func _build_ui() -> void:
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
 	graph_edit.case_flipped.connect(func() -> void: _flip_container(true))
 	graph_edit.group_flip_toggled.connect(func(module_name: String) -> void:
-		# The key names either an open group or a flipped instance node; the node case
-		# first, since only its WIRES chip arrives here — its FACE control is a real
-		# button on the widget.
-		if flipped_nodes.has(module_name):
-			flipped_nodes.erase(module_name)
-			await _rebuild_view()
-			return
 		if flipped_modules.has(module_name):
 			flipped_modules.erase(module_name)
 			# Turning back needs the members and cables restored, and the rebuild is
@@ -686,8 +676,6 @@ func _build_ui() -> void:
 		_commit_edit("move %s" % key))
 	graph_edit.face_socket_grabbed.connect(_on_face_socket_grabbed)
 	graph_edit.face_rename_requested.connect(_begin_face_rename)
-	graph_edit.node_dive_requested.connect(func(widget_name: String) -> void:
-		_dive_into(ids.get(widget_name, "")))
 	# The band's DIVE chip names the instance directly.
 	graph_edit.face_dive_requested.connect(_dive_into)
 	# The band's ✕ deletes through the same path the Delete key takes: node,
@@ -1876,14 +1864,20 @@ func _apply_flips() -> void:
 			flipped_modules.erase(module_name)
 	for instance_id in flipped_nodes.keys():
 		if not widgets.has(str(instance_id)):
-			remembered_flips[str(instance_id)] = true
 			flipped_nodes.erase(instance_id)
-	# And the way back: an id that left the view flipped returns flipped. A WIRES
-	# flip is not this — it unflips while the widget stands, so nothing remembers.
-	for instance_id in remembered_flips.keys():
-		if widgets.has(str(instance_id)):
-			flipped_nodes[str(instance_id)] = true
-			remembered_flips.erase(instance_id)
+	# Devices are panels, full stop: an instance whose definition carries a face
+	# mounts it, on arrival and on load alike. The node form still exists
+	# underneath — position, deletion and the document live on it — but the canvas
+	# shows the instrument; WIRES went, and DIVE is the way into the wiring. A
+	# module with no face — a collapsed subcircuit — stays a node, where the wand,
+	# the ghost jacks and the open frame all still mean something.
+	for node in patch.get("nodes", []):
+		var faced_module := str(node.get("module", ""))
+		if faced_module == "" or not widgets.has(str(node["id"])):
+			continue
+		var faced: Dictionary = patch.get("modules", {}).get(faced_module, {})
+		if not (faced.get("controls", []) as Array).is_empty():
+			flipped_nodes[str(node["id"])] = true
 	for key in module_mounts.keys():
 		if not flipped_modules.has(key) and not flipped_nodes.has(key):
 			(module_mounts[key] as Control).visible = false
@@ -3470,41 +3464,6 @@ func _create_widget(node: Dictionary) -> void:
 
 	_style_node_title(widget, descriptor)
 
-	# A closed module carries its own flip, in the titlebar: the case band and the open
-	# frame already have theirs, and a device in a mixed graph is either being patched
-	# or being played. The chip turns it over to its panel where it stands, without
-	# opening its wires first; WIRES on the mounted panel turns it back.
-	if str(node.get("module", "")) != "":
-		var flip := Button.new()
-		flip.name = "Flip"
-		flip.text = "FACE"
-		flip.focus_mode = Control.FOCUS_NONE
-		flip.tooltip_text = "Turn the module over to its panel. " \
-			+ "WIRES on the panel turns it back."
-		flip.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-		flip.add_theme_color_override("font_color", Design.ACCENT)
-		# Dressed as the WIRES chip on the panel is dressed — outline and a breath
-		# of fill, secondary type, tight margins — so the two ends of the flip read
-		# as one control met twice.
-		var chip := StyleBoxFlat.new()
-		chip.bg_color = Color(Design.ACCENT, 0.16)
-		chip.border_color = Color(Design.ACCENT, 0.55)
-		chip.set_border_width_all(1)
-		chip.content_margin_left = float(Design.scale(Design.SPACE_S))
-		chip.content_margin_right = float(Design.scale(Design.SPACE_S))
-		chip.content_margin_top = 2.0
-		chip.content_margin_bottom = 2.0
-		var chip_hover := chip.duplicate() as StyleBoxFlat
-		chip_hover.bg_color = Color(Design.ACCENT, 0.28)
-		flip.add_theme_stylebox_override("normal", chip)
-		flip.add_theme_stylebox_override("hover", chip_hover)
-		flip.add_theme_stylebox_override("pressed", chip_hover)
-		var instance_id := str(node["id"])
-		flip.pressed.connect(func() -> void:
-			flipped_nodes[instance_id] = true
-			_apply_flips())
-		widget.get_titlebar_hbox().add_child(flip)
-
 	# Hover is its own state, distinct from selection.
 	#
 	# GraphNode has normal and selected and nothing between them, so a node under the
@@ -4970,7 +4929,6 @@ func _add_device(label: String, at_position: Vector2) -> String:
 		})
 		var rewired: Array = _auto_wire_device(instance_id, module_name)
 		await _rebuild_view()
-		_arrive_face_up(instance_id, module_name)
 		_apply()
 		_commit_edit("add %s" % instance_id)
 		if not rewired.is_empty():
@@ -4992,24 +4950,11 @@ func _add_device(label: String, at_position: Vector2) -> String:
 	_synthesize_module_descriptors()
 	var wired: Array = _auto_wire_device(result.instance_id, result.module_name)
 	await _rebuild_view()
-	_arrive_face_up(result.instance_id, result.module_name)
 	_apply()
 	_commit_edit("add %s" % result.instance_id)
 	if not wired.is_empty():
 		_say("added %s — wired %s" % [result.instance_id, ", ".join(wired)])
 	return result.instance_id
-
-
-## A fresh device arrives face up: a device is for playing, and the panel is the
-## playing side — the wiring underneath is what the flip is for, the reverse of a
-## node's chip. A module exporting nothing stays a node, because an empty plate
-## says less than the node's ports do.
-func _arrive_face_up(instance_id: String, module_name: String) -> void:
-	var exports: Array = registry.get("module:%s" % module_name, {}).get("parameters", [])
-	if exports.is_empty():
-		return
-	flipped_nodes[instance_id] = true
-	_apply_flips()
 
 
 func _add_node(type_name: String, at_position: Vector2) -> String:

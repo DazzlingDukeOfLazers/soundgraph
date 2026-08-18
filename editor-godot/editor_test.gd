@@ -5668,6 +5668,15 @@ func _initialize() -> void:
 			and main.module_mounts.get(onto_fresh) != null
 			and (main.module_mounts[onto_fresh] as Control).visible,
 		"a fresh device arrives face up")
+	# And structurally, not as session luck: reload the same document cold and the
+	# panel stands again — a faced module is an instrument wherever it appears.
+	main._load_text(JSON.stringify(main.patch))
+	for i in 10:
+		await process_frame
+	check(not main.widgets[onto_fresh].visible
+			and (main.module_mounts.get(onto_fresh) as Control) != null
+			and (main.module_mounts.get(onto_fresh) as Control).visible,
+		"and a cold reload mounts it face up again")
 	# And wired-looking: the document's cables to a flipped instance run to the
 	# panel's plates — the keyboard into IN, the speakers out of OUT — because a
 	# device that plays while its panel sits unplugged reads as a lie.
@@ -5964,22 +5973,19 @@ func _initialize() -> void:
 		"and an empty output jack takes the vacant mixer channel (%s)" % left_to)
 
 
-	main.graph_edit.group_flip_toggled.emit(onto_fresh)
-	for i in 10:
-		await process_frame
-	check(main.widgets[onto_fresh].visible,
-		"and WIRES opens its graph side")
-
 	# Delete removes the selected node, and the key must work with the canvas NOT
 	# focused: GraphEdit's own shortcut only listens while it holds keyboard focus,
 	# which after a trip through the inspector it does not — that focus hole is
-	# exactly the bug being pinned. The key goes in through the input system, so a
-	# regression anywhere along unhandled-key → delete request → document fails this.
+	# exactly the bug being pinned. Driven on a plain node, because a device is a
+	# panel now and the panel's way out is its ✕.
+	var expendable: String = await main._add_node("Gain", Vector2(2600, 700))
+	for i in 8:
+		await process_frame
 	var focus_owner = main.get_viewport().gui_get_focus_owner()
 	if focus_owner != null:
 		focus_owner.release_focus()
 	var before_delete: int = main.patch["nodes"].size()
-	main.widgets[onto_fresh].selected = true
+	main.widgets[expendable].selected = true
 	var press_delete := InputEventKey.new()
 	press_delete.keycode = KEY_DELETE
 	press_delete.physical_keycode = KEY_DELETE
@@ -5988,8 +5994,8 @@ func _initialize() -> void:
 	for i in 8:
 		await process_frame
 	check(main.patch["nodes"].size() == before_delete - 1
-			and not main.widgets.has(onto_fresh),
-		"delete removes the selected module with the canvas unfocused (%d nodes from %d)"
+			and not main.widgets.has(expendable),
+		"delete removes the selected node with the canvas unfocused (%d nodes from %d)"
 			% [main.patch["nodes"].size(), before_delete])
 	await main._undo()
 	for i in 8:
@@ -6017,26 +6023,13 @@ func _initialize() -> void:
 	check(main.patch["connections"].size() == cable_count,
 		"and undo strings it back (%d)" % main.patch["connections"].size())
 
-	# ---- flipping a closed node to its panel ------------------------------------------
-	# The chip lives on the device node itself: a device in a mixed graph is either
-	# being patched or being played, and turning it over should not require opening
-	# its wires first. Seams have no panel, so they carry no chip.
-	var device_widget: GraphNode = main.widgets[onto_fresh]
-	var device_chip: Button = device_widget.get_titlebar_hbox().get_node_or_null("Flip")
-	check(device_chip != null, "a device node carries a FACE chip")
-	var seam_widget: GraphNode = null
-	for node in main.patch["nodes"]:
-		if str(node.get("type", "")) == "Input":
-			seam_widget = main.widgets[str(node["id"])]
-	check(seam_widget.get_titlebar_hbox().get_node_or_null("Flip") == null,
-		"and a seam does not")
-
+	# ---- the device's panel -----------------------------------------------------------
+	# A device is a panel, full stop: no FACE chip to press and no WIRES to press
+	# back — DIVE is the way into the wiring. The mount stands from arrival, so
+	# these checks read what is already there.
 	var wired_when_flipped: int = main.patch["connections"].size()
-	device_chip.pressed.emit()
-	for i in 10:
-		await process_frame
 	check(not main.widgets[onto_fresh].visible,
-		"the chip hides the node")
+		"the device's node stays behind the panel")
 	var node_mount = main.module_mounts.get(onto_fresh)
 	check(node_mount != null and node_mount.visible and node_mount._cells.size() > 0,
 		"and mounts the module's face where it stood (%d cells)"
@@ -6144,7 +6137,7 @@ func _initialize() -> void:
 		+ "all %d" % main.patch["connections"].size())
 	check(main.graph_edit.flip_frames.has(onto_fresh)
 			and str(main.graph_edit.flip_labels.get(onto_fresh, "x")) == "",
-		"the band keeps its WIRES chip and leaves the naming to the badge")
+		"the band stands and leaves the naming to the badge")
 
 	# A flipped node cannot be deleted: what cannot be seen cannot be taken. The
 	# selection may well still be on from before the flip.
@@ -6251,13 +6244,9 @@ func _initialize() -> void:
 		await process_frame
 	check(main.patch["modules"].has("algo-01"),
 		"and undo brings the old name back")
-	# The rename pruned the flip with the old id, so turn the device back over for
-	# the checks that follow — through its own chip, the way a hand would.
-	var reflip: Button = main.widgets[onto_fresh].get_titlebar_hbox().get_node("Flip")
-	reflip.pressed.emit()
-	for i in 10:
-		await process_frame
-	check(not main.widgets[onto_fresh].visible, "and the device turns back over")
+	# The rename churned the ids, and the panel is structural now: the device is
+	# already back face up without anyone pressing anything.
+	check(not main.widgets[onto_fresh].visible, "and the device stands face up still")
 
 	# The band's ✕ takes the device out, through the same path the Delete key
 	# takes. The chip is painted by the overlay, so headless drives the signal it
@@ -6279,16 +6268,6 @@ func _initialize() -> void:
 			and (main.module_mounts.get(onto_fresh) as Control) != null
 			and (main.module_mounts.get(onto_fresh) as Control).visible,
 		"and undo brings it back face up, the way it left")
-
-	# WIRES on the band is the way back: the same signal a click sends.
-	main.graph_edit.group_flip_toggled.emit(onto_fresh)
-	for i in 10:
-		await process_frame
-	check(main.widgets[onto_fresh].visible,
-		"WIRES brings the node back")
-	check(main.graph_edit.get_connection_list().size() == wired_when_flipped,
-		"with its cables strung again (%d)"
-			% main.graph_edit.get_connection_list().size())
 
 	# ---- an open frame moves by its band too ------------------------------------------
 	# The same handle on the third kind of container: an open module's dashed frame,
@@ -6440,27 +6419,6 @@ func _initialize() -> void:
 		await process_frame
 	check(JSON.stringify(main.patch) == before_quiet,
 		"an untouched dive leaves the host exactly as it was")
-	# The title's double tap is the canvas way in — on a node that is showing.
-	main.graph_edit.group_flip_toggled.emit(second_dev)
-	for i in 8:
-		await process_frame
-	var dive_widget: GraphNode = main.widgets[second_dev]
-	var dive_bar := dive_widget.get_titlebar_hbox()
-	var bar_rect: Rect2 = dive_bar.get_global_rect()
-	var dive_tap := InputEventMouseButton.new()
-	dive_tap.button_index = MOUSE_BUTTON_LEFT
-	dive_tap.pressed = true
-	dive_tap.double_click = true
-	dive_tap.position = Vector2(bar_rect.position.x + 8.0, bar_rect.get_center().y)
-	main.graph_edit._input(dive_tap)
-	for i in 10:
-		await process_frame
-	check(str(main.patch.get("metadata", {}).get("name", "")) == "algo-01",
-		"double-tapping a node's title dives in")
-	await main._climb_up()
-	for i in 10:
-		await process_frame
-	check(main.widgets.has(second_dev), "and the climb comes home")
 	# The band's DIVE chip is the panel's way down — the double tap there belongs
 	# to the name. Painted chip, so headless drives its signal; the windowed smoke
 	# covers the pixels. first_dev is still face up, band standing.

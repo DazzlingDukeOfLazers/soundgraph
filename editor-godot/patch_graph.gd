@@ -1088,8 +1088,6 @@ signal face_socket_grabbed(mount: Control, socket: Dictionary)
 signal face_rename_requested(key: String)
 ## The band's ✕ was pressed: take this device out of the patch.
 signal face_remove_requested(key: String)
-## A node's title was double-tapped: dive into what it stands for.
-signal node_dive_requested(widget_name: String)
 ## The band's DIVE chip: descend into the turned device's definition.
 signal face_dive_requested(key: String)
 var _dive_hits: Dictionary = {}
@@ -1637,29 +1635,35 @@ class WandOverlay extends Control:
 			var chip_font: int = maxi(6, int(round(chip_h * 0.60)))
 			var chip_pad: float = chip_h * 0.30
 			var chip_top: float = strip.position.y + (strip.size.y - chip_h) * 0.5
-			var wires_text := "WIRES"
-			var wires_measured := font.get_string_size(wires_text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font)
-			var wires_chip := Rect2(
-				Vector2(strip.end.x - wires_measured.x - chip_pad * 2.0 - chip_pad,
-					chip_top),
-				Vector2(wires_measured.x + chip_pad * 2.0, chip_h))
-			draw_rect(wires_chip, Color(Design.ACCENT, 0.16))
-			draw_rect(wires_chip, Color(Design.ACCENT, 0.55), false, 1.0)
-			draw_string(font,
-				Vector2(wires_chip.position.x + chip_pad,
-					wires_chip.position.y + (chip_h + font.get_ascent(chip_font)
-						- font.get_descent(chip_font)) * 0.5),
-				wires_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font, Design.ACCENT)
-			var wires_reach: float = maxf(0.0, (20.0 - wires_chip.size.y) * 0.5)
-			_flip_hits_out[module_name] = wires_chip.grow(wires_reach)
+			var chip_reach: float = maxf(0.0, (20.0 - chip_h) * 0.5)
+			var chips_right: float = strip.end.x
+			if not graph.flip_deletable.has(module_name):
+				# WIRES belongs to turned open groups alone now: a device's way
+				# into its wiring is DIVE, and a toggle beside it would be two
+				# answers to one question.
+				var wires_text := "WIRES"
+				var wires_measured := font.get_string_size(wires_text,
+					HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font)
+				var wires_chip := Rect2(
+					Vector2(strip.end.x - wires_measured.x - chip_pad * 2.0 - chip_pad,
+						chip_top),
+					Vector2(wires_measured.x + chip_pad * 2.0, chip_h))
+				draw_rect(wires_chip, Color(Design.ACCENT, 0.16))
+				draw_rect(wires_chip, Color(Design.ACCENT, 0.55), false, 1.0)
+				draw_string(font,
+					Vector2(wires_chip.position.x + chip_pad,
+						wires_chip.position.y + (chip_h + font.get_ascent(chip_font)
+							- font.get_descent(chip_font)) * 0.5),
+					wires_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font, Design.ACCENT)
+				_flip_hits_out[module_name] = wires_chip.grow(chip_reach)
+				chips_right = wires_chip.position.x
 
 			# The way out, for a device: an ✕ beside WIRES, drawn with strokes
 			# rather than a glyph the font may not carry. Same quiet chip dress;
 			# what it does is undoable, so it earns no alarm colour.
 			if graph.flip_deletable.has(module_name):
 				var cross_chip := Rect2(
-					Vector2(wires_chip.position.x - chip_h - chip_pad, chip_top),
+					Vector2(chips_right - chip_h - chip_pad, chip_top),
 					Vector2(chip_h, chip_h))
 				draw_rect(cross_chip, Color(Design.ACCENT, 0.16))
 				draw_rect(cross_chip, Color(Design.ACCENT, 0.55), false, 1.0)
@@ -1670,7 +1674,7 @@ class WandOverlay extends Control:
 				draw_line(Vector2(cross_chip.end.x - inset, cross_chip.position.y + inset),
 					Vector2(cross_chip.position.x + inset, cross_chip.end.y - inset),
 					Design.ACCENT, maxf(1.0, chip_h * 0.07), true)
-				_remove_hits_out[module_name] = cross_chip.grow(wires_reach)
+				_remove_hits_out[module_name] = cross_chip.grow(chip_reach)
 
 				# And the way down: DIVE, in words — the double tap belongs to the
 				# name, so descending gets a chip of its own.
@@ -1689,7 +1693,7 @@ class WandOverlay extends Control:
 							- font.get_descent(chip_font)) * 0.5),
 					dive_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font,
 					Design.ACCENT)
-				_dive_hits_out[module_name] = dive_chip.grow(wires_reach)
+				_dive_hits_out[module_name] = dive_chip.grow(chip_reach)
 
 		graph._close_hits = _close_hits_out.duplicate()
 		graph._flip_hits = _flip_hits_out.duplicate()
@@ -1859,23 +1863,6 @@ func _input(event: InputEvent) -> void:
 			face_socket_grabbed.emit(face, socket)
 			get_viewport().set_input_as_handled()
 			return
-
-	# A double tap on a node's title dives into it. The title strip only — the body
-	# is where knobs live, and their own double tap means "go home" — and not the
-	# FACE chip, which is a button with its own meaning.
-	if button.double_click:
-		var over := _node_at(_to_graph(button.position - rect.position))
-		if over != "":
-			var widget := get_node_or_null(NodePath(over)) as GraphNode
-			if widget != null:
-				var bar := widget.get_titlebar_hbox()
-				if bar != null and bar.get_global_rect().grow(4.0).has_point(button.position):
-					var chip := bar.get_node_or_null("Flip") as Control
-					if chip == null \
-							or not chip.get_global_rect().grow(2.0).has_point(button.position):
-						node_dive_requested.emit(over)
-						get_viewport().set_input_as_handled()
-						return
 
 	# A ghost jack: an inner port the module does not expose, drawn on the instance while
 	# it is selected. Tested before the node gets the press because a ghost is inside the
