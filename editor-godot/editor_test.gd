@@ -5865,6 +5865,44 @@ func _initialize() -> void:
 		if str(wire["to"]["node"]) == onto_fresh and str(wire["to"]["port"]) == "gate":
 			gate_home = true
 	check(gate_home, "and undo moves it home")
+	# The quick yank: double-clicking a wired jack unplugs it in one gesture, no
+	# drag to carry through — and one undo step re-plugs it.
+	stub_mount = main.module_mounts[onto_fresh]
+	in_plate = stub_mount.get_node("Case/Rack/Rail/PortsIn")
+	plug_spots.clear()
+	socket_queue = [in_plate]
+	while not socket_queue.is_empty():
+		var yank_part: Node = socket_queue.pop_back()
+		for child in yank_part.get_children():
+			socket_queue.append(child)
+		if yank_part is HBoxContainer and yank_part.get_child_count() >= 2 \
+				and yank_part.get_child(1) is Label:
+			plug_spots[str((yank_part.get_child(1) as Label).text)] = \
+				(yank_part.get_child(0) as Control).get_global_rect().get_center()
+	var yank := InputEventMouseButton.new()
+	yank.button_index = MOUSE_BUTTON_LEFT
+	yank.pressed = true
+	yank.double_click = true
+	yank.position = plug_spots["frequency"]
+	main.graph_edit._input(yank)
+	for i in 8:
+		await process_frame
+	var yanked_fed := false
+	for wire in main.patch["connections"]:
+		if str(wire["to"]["node"]) == onto_fresh \
+				and str(wire["to"]["port"]) == "frequency":
+			yanked_fed = true
+	check(not yanked_fed and main.dragging_face_socket.is_empty(),
+		"double-clicking a wired jack unplugs it with nothing left in hand")
+	await main._undo()
+	for i in 6:
+		await process_frame
+	yanked_fed = false
+	for wire in main.patch["connections"]:
+		if str(wire["to"]["node"]) == onto_fresh \
+				and str(wire["to"]["port"]) == "frequency":
+			yanked_fed = true
+	check(yanked_fed, "and undo re-plugs it")
 
 
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)

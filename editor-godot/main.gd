@@ -5495,6 +5495,12 @@ func _on_face_socket_grabbed(mount: Control, socket: Dictionary) -> void:
 			var mine: Dictionary = connection["from"] if output else connection["to"]
 			if str(mine.get("node", "")) != instance or str(mine.get("port", "")) != port:
 				continue
+			# The quick yank: a double tap on a wired jack pulls the plug and drops
+			# it on the floor in one gesture, no drag to carry through.
+			if bool(socket.get("double", false)):
+				_unplug_face_socket.call_deferred(connection.duplicate(true),
+					instance, port)
+				return
 			var far: Dictionary = connection["to"] if output else connection["from"]
 			var anchor: Variant = _stub_cable_end(str(far["node"]), str(far["port"]),
 				not output, graph_edit.get_global_rect(), graph_edit.zoom)
@@ -5508,6 +5514,20 @@ func _on_face_socket_grabbed(mount: Control, socket: Dictionary) -> void:
 		dragging_face_socket = {"instance": instance, "port": port,
 			"output": output, "from": socket["centre"] as Vector2}
 		return
+
+
+## Takes one cable out of the document: the floor drop and the double-tap yank both
+## end here, one edit, one undo step.
+func _unplug_face_socket(connection: Dictionary, instance: String, port: String) -> void:
+	_begin_edit()
+	for index in patch["connections"].size():
+		if _same_connection(patch["connections"][index], connection):
+			patch["connections"].remove_at(index)
+			break
+	await _rebuild_view()
+	_apply()
+	_commit_edit("disconnect")
+	_say("unplugged %s.%s" % [instance, port])
 
 
 ## Whether two document cables are the same cable, field by field — Dictionary
@@ -5569,15 +5589,8 @@ func _drop_face_socket(at: Vector2) -> void:
 	var landed := _patch_point_at(at, wants_input)
 	if landed.is_empty():
 		if rewiring:
-			_begin_edit()
-			for index in patch["connections"].size():
-				if _same_connection(patch["connections"][index], grabbed["rewire"]):
-					patch["connections"].remove_at(index)
-					break
-			await _rebuild_view()
-			_apply()
-			_commit_edit("disconnect")
-			_say("unplugged %s.%s" % [str(grabbed["instance"]), str(grabbed["port"])])
+			await _unplug_face_socket(grabbed["rewire"],
+				str(grabbed["instance"]), str(grabbed["port"]))
 		return
 	var connection: Dictionary
 	if rewiring:

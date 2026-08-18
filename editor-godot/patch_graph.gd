@@ -1773,6 +1773,7 @@ func _input(event: InputEvent) -> void:
 			continue
 		var socket: Dictionary = face.socket_at(button.position)
 		if not socket.is_empty():
+			socket["double"] = button.double_click
 			face_socket_grabbed.emit(face, socket)
 			get_viewport().set_input_as_handled()
 			return
