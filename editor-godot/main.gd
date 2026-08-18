@@ -1761,9 +1761,11 @@ func _flip_container(show_face: bool) -> void:
 		big_face.visible = true
 		_refresh_face()
 		# As wide as the case it replaces, or its own need if that is more: the face
-		# stands where the wiring stood.
+		# stands where the wiring stood, and its need is the whole rail, ports to
+		# ports — a scroller's minimum would crop the instrument mid-panel.
 		var natural: Vector2 = big_face.get_combined_minimum_size()
-		big_face.size = Vector2(maxf(natural.x, footprint.size.x), natural.y)
+		big_face.size = Vector2(maxf(big_face.full_width(), footprint.size.x),
+			natural.y)
 		_place_face()
 	else:
 		graph_edit.face_up = false
@@ -1851,7 +1853,13 @@ func _apply_flips() -> void:
 			shown = _device_panel_for(str(instance_id), module_name, definition)
 		shown.visible = true
 		var natural: Vector2 = shown.get_combined_minimum_size()
-		shown.size = Vector2(maxf(natural.x, widget.size.x), natural.y)
+		# The whole panel, input plate to output plate: a PatchFace holds its rail in
+		# a scroller, and a scroller's minimum is its readiness to crop, not the
+		# instrument's width.
+		var wanted: float = natural.x
+		if shown is PatchFace:
+			wanted = (shown as PatchFace).full_width()
+		shown.size = Vector2(maxf(wanted, widget.size.x), natural.y)
 		shown.set_meta("anchor", widget.position_offset)
 		# The band is keyed by instance so two of the same device turn independently —
 		# the key is plumbing, not a label.

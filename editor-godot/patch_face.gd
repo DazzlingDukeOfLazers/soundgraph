@@ -115,6 +115,19 @@ var _carrying := -1
 var _target := -1
 ## The rail's scroller, kept so _fit_rail can size it once the tree has a size.
 var _rail: ScrollContainer = null
+
+
+## The width the whole face wants, ports to ports. A ScrollContainer's minimum is
+## its readiness to crop, not its content — sized by it, a mounted panel showed a
+## scrollable slice of an instrument. This asks the rail itself.
+func full_width() -> float:
+	var floor_width := get_combined_minimum_size().x
+	if _rail == null or _rail.get_child_count() == 0:
+		return floor_width
+	var inner := _rail.get_child(0) as Control
+	if inner == null:
+		return floor_width
+	return maxf(inner.get_combined_minimum_size().x, floor_width)
 ## The case it is mounted in, so the fit can measure the name band and rails around it.
 var _case: Control = null
 ## How many rows the rail ended up with, so the fit asks for the height it will use.

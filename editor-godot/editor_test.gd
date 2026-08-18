@@ -5659,6 +5659,16 @@ func _initialize() -> void:
 	check(into_panel >= 2 and out_of_panel >= 2,
 		"a turned device keeps its wires (%d into IN, %d out of OUT)"
 			% [into_panel, out_of_panel])
+	# The panel shows its whole width, input plate to output plate. Sized by the
+	# scroller's minimum it was a scrollable slice of an instrument, the OUT plate
+	# somewhere off the crop's right edge.
+	for i in 3:
+		await process_frame
+	var stub_rect: Rect2 = stub_mount.get_global_rect()
+	check(stub_rect.grow(2.0).encloses(out_plate.get_global_rect())
+			and stub_rect.grow(2.0).encloses(in_plate.get_global_rect()),
+		"the panel spans ports to ports (mount %.0f wide, OUT ends at %.0f)"
+			% [stub_rect.size.x, out_plate.get_global_rect().end.x - stub_rect.position.x])
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:
 		await process_frame
