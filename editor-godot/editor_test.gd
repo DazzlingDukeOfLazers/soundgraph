@@ -5726,6 +5726,67 @@ func _initialize() -> void:
 	check(out_sockets.has("left") and out_sockets.has("right"),
 		"the OUT plate shows each connected output as its own socket (%s)"
 			% str(out_sockets))
+
+	# And the sockets are jacks, not pictures of jacks: grab the OUT plate's left
+	# socket, pull the cable to a node's inlet, let go — a document connection to
+	# the instance's real port, one undo step. Driven through the same first-refusal
+	# input the grab actually takes.
+	var tap_id: String = await main._add_node("Gain", Vector2(2400, 200))
+	for i in 8:
+		await process_frame
+	# Re-taken: _add_node rebuilt the view, and a rebuild remounts the face — the
+	# plate held from before it is a freed instance.
+	stub_mount = main.module_mounts[onto_fresh]
+	out_plate = stub_mount.get_node("Case/Rack/Rail/PortsOut")
+	var left_jack: Vector2 = Vector2.ZERO
+	socket_queue = [out_plate]
+	while not socket_queue.is_empty():
+		var jack_part: Node = socket_queue.pop_back()
+		for child in jack_part.get_children():
+			socket_queue.append(child)
+		if jack_part is HBoxContainer and jack_part.get_child_count() >= 2 \
+				and jack_part.get_child(1) is Label \
+				and str((jack_part.get_child(1) as Label).text) == "left":
+			left_jack = (jack_part.get_child(0) as Control).get_global_rect().get_center()
+	check(left_jack != Vector2.ZERO, "the left jack is where a hand can find it")
+	var jack_press := InputEventMouseButton.new()
+	jack_press.button_index = MOUSE_BUTTON_LEFT
+	jack_press.pressed = true
+	jack_press.position = left_jack
+	main.graph_edit._input(jack_press)
+	check(not main.dragging_face_socket.is_empty(),
+		"pressing it puts a cable in hand (%s)" % str(main.dragging_face_socket))
+	var tap_widget: GraphNode = main.widgets[tap_id]
+	var tap_port: Vector2 = main.graph_edit.get_global_rect().position \
+		+ (tap_widget.position_offset + tap_widget.get_input_port_position(0)) \
+			* main.graph_edit.zoom - main.graph_edit.scroll_offset
+	var jack_pull := InputEventMouseMotion.new()
+	jack_pull.position = tap_port
+	main._input(jack_pull)
+	var jack_drop := InputEventMouseButton.new()
+	jack_drop.button_index = MOUSE_BUTTON_LEFT
+	jack_drop.pressed = false
+	jack_drop.position = tap_port
+	main._input(jack_drop)
+	for i in 8:
+		await process_frame
+	var tapped := false
+	for wire in main.patch["connections"]:
+		if str(wire["from"]["node"]) == onto_fresh and str(wire["from"]["port"]) == "left" \
+				and str(wire["to"]["node"]) == tap_id:
+			tapped = true
+	check(tapped, "and letting go on an inlet writes the cable into the document")
+	await main._undo()
+	for i in 6:
+		await process_frame
+	var still_tapped := false
+	for wire in main.patch["connections"]:
+		if str(wire["from"]["node"]) == onto_fresh and str(wire["to"]["node"]) == tap_id:
+			still_tapped = true
+	check(not still_tapped, "and undo unplugs it")
+	await main._undo()
+	for i in 6:
+		await process_frame
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:
 		await process_frame

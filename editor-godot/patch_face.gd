@@ -68,6 +68,26 @@ var rack: Control = null
 ## the plates are mounted in.
 var title := ""
 
+## The plate sockets, in draw order, each carrying its port in metadata. Filled by
+## _port_plate, asked by socket_at.
+var _jacks: Array = []
+
+
+## The plate socket under a viewport point, or {}: which port of the instance a hand
+## is reaching for, and where the cable it starts should be anchored. Grown a
+## little, because a fourteen-pixel pip is a statement, not a target.
+func socket_at(point: Vector2) -> Dictionary:
+	for jack in _jacks:
+		var control := jack as Control
+		if control == null or not control.is_visible_in_tree():
+			continue
+		if control.get_global_rect().grow(6.0).has_point(point):
+			return {"port": str(control.get_meta("seam_port")),
+				"output": bool(control.get_meta("seam_output")),
+				"centre": control.get_global_rect().get_center()}
+	return {}
+
+
 ## When the panel plays a module instance rather than the file it was drawn from:
 ## "inner_node.parameter" -> {"node": instance id, "parameter": export name}. A
 ## control keeps its inner target for structure — groups, chains, what is heard —
@@ -334,6 +354,7 @@ func rebuild() -> void:
 		remove_child(child)
 		child.queue_free()
 	_cells.clear()
+	_jacks.clear()
 	_ids.clear()
 	_offers.clear()
 	_targets.clear()
@@ -1118,6 +1139,11 @@ func _port_plate(seams: Array, title: String, tint: Color, height: float) -> Con
 			socket.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			socket.draw.connect(func() -> void:
 				Rack.draw_socket(socket, socket.size * 0.5, radius, facing, ink))
+			# A jack, not just a picture of one: socket_at answers with this port so
+			# a mounted face can be wired by hand.
+			socket.set_meta("seam_port", port_name)
+			socket.set_meta("seam_output", str(node.get("type", "")) == "Output")
+			_jacks.append(socket)
 			row.add_child(socket)
 
 			var line := Label.new()

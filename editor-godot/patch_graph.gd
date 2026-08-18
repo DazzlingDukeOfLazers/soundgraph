@@ -1082,6 +1082,8 @@ signal face_move_started(key: String)
 signal face_dragged(key: String, step: Vector2)
 ## The band was let go: write the positions down.
 signal face_moved(key: String)
+## A socket on a mounted face was grabbed: the start of a cable, headed for a port.
+signal face_socket_grabbed(mount: Control, socket: Dictionary)
 var _face_drag_key := ""
 var _face_drag_from := Vector2.ZERO
 ## What the band above a turned container says, when its key is not worth reading:
@@ -1760,6 +1762,18 @@ func _input(event: InputEvent) -> void:
 			_face_drag_key = str(module_name)
 			_face_drag_from = _to_graph(button.position - rect.position)
 			face_move_started.emit(str(module_name))
+			get_viewport().set_input_as_handled()
+			return
+
+	# A plate socket on a mounted face: the start of a cable. Under the bands on
+	# purpose — the band is the handle, and the sockets are the jacks below it.
+	for child in get_children():
+		var face := child as Control
+		if face == null or not face.visible or not face.has_method("socket_at"):
+			continue
+		var socket: Dictionary = face.socket_at(button.position)
+		if not socket.is_empty():
+			face_socket_grabbed.emit(face, socket)
 			get_viewport().set_input_as_handled()
 			return
 

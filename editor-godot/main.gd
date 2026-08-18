@@ -674,6 +674,7 @@ func _build_ui() -> void:
 	graph_edit.face_moved.connect(func(key: String) -> void:
 		_capture_positions()
 		_commit_edit("move %s" % key))
+	graph_edit.face_socket_grabbed.connect(_on_face_socket_grabbed)
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
 
 	# Two views of one document, side by side in tabs rather than as a mode: the graph is
@@ -5430,12 +5431,93 @@ func _stub_cable_end(node_id: String, port: String, is_output: bool,
 ## a keyboard soldered on, and the gesture would only ever be a swap.
 ## ---------------------------------------------------------------------------------
 
+## A cable in hand from a mounted face's plate socket: which instance port it is,
+## which way it faces, and where its fixed end sits. Session state, like a jack drag.
+var dragging_face_socket: Dictionary = {}
+
+
+func _on_face_socket_grabbed(mount: Control, socket: Dictionary) -> void:
+	for key in module_mounts:
+		if module_mounts[key] == mount and flipped_nodes.has(str(key)):
+			dragging_face_socket = {"instance": str(key),
+				"port": str(socket["port"]),
+				"output": bool(socket["output"]),
+				"from": socket["centre"] as Vector2}
+			return
+
+
+## The release that ends a socket drag: the port under the pointer becomes the other
+## end of a document cable, the instance's own port this end. Anywhere else drops
+## the cable on the floor, which is what letting go of a cable means.
+func _drop_face_socket(at: Vector2) -> void:
+	var grabbed := dragging_face_socket
+	dragging_face_socket = {}
+	seam_cables.live = []
+	seam_cables.queue_redraw()
+	var landed: Dictionary = graph_edit.port_at(at - graph_edit.get_global_rect().position)
+	if landed.is_empty():
+		return
+	var target_id: String = ids.get(landed["widget"], "")
+	if target_id == "":
+		return
+	var connection: Dictionary
+	if bool(grabbed["output"]):
+		# The device's out into somebody's inlet.
+		if str(landed["side"]) != "left":
+			return
+		var inlets := _port_list(target_id, "inputs")
+		if int(landed["index"]) >= inlets.size():
+			return
+		connection = {"from": {"node": str(grabbed["instance"]),
+				"port": str(grabbed["port"])},
+			"to": {"node": target_id,
+				"port": str(inlets[int(landed["index"])]["name"])}}
+	else:
+		# Somebody's outlet into the device's input.
+		if str(landed["side"]) != "right":
+			return
+		var outlets := _port_list(target_id, "outputs")
+		if int(landed["index"]) >= outlets.size():
+			return
+		connection = {"from": {"node": target_id,
+				"port": str(outlets[int(landed["index"])]["name"])},
+			"to": {"node": str(grabbed["instance"]),
+				"port": str(grabbed["port"])}}
+	for wire in patch["connections"]:
+		if wire == connection:
+			return
+	_begin_edit()
+	patch["connections"].append(connection)
+	await _rebuild_view()
+	_apply()
+	_commit_edit("connect")
+	_say("connected %s.%s → %s.%s" % [str(connection["from"]["node"]),
+		str(connection["from"]["port"]), str(connection["to"]["node"]),
+		str(connection["to"]["port"])])
+
+
 ## The release that ends a jack drag, wherever it happens.
 ##
 ## Here rather than on the Jacks control, because the mouse leaves that control the instant
 ## the drag begins and Godot delivers the button-up to whatever is under the cursor. `_input`
 ## sees it first, which is the same trick the wand uses on knobs.
 func _input(event: InputEvent) -> void:
+	if not dragging_face_socket.is_empty():
+		var pull := event as InputEventMouseMotion
+		if pull != null:
+			seam_cables.live = [dragging_face_socket["from"], pull.position,
+				TYPE_COLOURS.get("audio" if bool(dragging_face_socket["output"]) \
+					else "control", INK)]
+			seam_cables.queue_redraw()
+			return
+		var let_go := event as InputEventMouseButton
+		if let_go != null and let_go.button_index == MOUSE_BUTTON_LEFT \
+				and not let_go.pressed:
+			# Deferred because the drop awaits a rebuild, and an engine virtual is
+			# not a place a coroutine can suspend.
+			_drop_face_socket.call_deferred(let_go.position)
+			get_viewport().set_input_as_handled()
+		return
 	if dragging_jack.is_empty():
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT \
