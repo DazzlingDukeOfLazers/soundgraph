@@ -5401,6 +5401,11 @@ func _refresh_seam_cables() -> void:
 		# a fresh device played while its panel sat looking unplugged, which on an
 		# instrument reads as a lie.
 		for connection in patch.get("connections", []):
+			# Not the one in the user's hand: its stand-in would be drawn plugged
+			# in while the plug is visibly out.
+			if dragging_face_socket.has("rewire") \
+					and _same_connection(connection, dragging_face_socket["rewire"]):
+				continue
 			var from_id := str(connection["from"]["node"])
 			var to_id := str(connection["to"]["node"])
 			if not flipped_nodes.has(from_id) and not flipped_nodes.has(to_id):
@@ -5477,59 +5482,136 @@ var dragging_face_socket: Dictionary = {}
 
 func _on_face_socket_grabbed(mount: Control, socket: Dictionary) -> void:
 	for key in module_mounts:
-		if module_mounts[key] == mount and flipped_nodes.has(str(key)):
-			dragging_face_socket = {"instance": str(key),
-				"port": str(socket["port"]),
-				"output": bool(socket["output"]),
-				"from": socket["centre"] as Vector2}
+		if module_mounts[key] != mount or not flipped_nodes.has(str(key)):
+			continue
+		var instance := str(key)
+		var port := str(socket["port"])
+		var output := bool(socket["output"])
+		# A wired socket gives up its plug: the far end stays where it is, the
+		# freed end follows the hand — re-plugged somewhere compatible, or dropped
+		# on the floor, which is what unplugging is. An unwired socket starts a
+		# fresh cable, as before.
+		for connection in patch.get("connections", []):
+			var mine: Dictionary = connection["from"] if output else connection["to"]
+			if str(mine.get("node", "")) != instance or str(mine.get("port", "")) != port:
+				continue
+			var far: Dictionary = connection["to"] if output else connection["from"]
+			var anchor: Variant = _stub_cable_end(str(far["node"]), str(far["port"]),
+				not output, graph_edit.get_global_rect(), graph_edit.zoom)
+			if anchor == null:
+				anchor = socket["centre"]
+			dragging_face_socket = {"instance": instance, "port": port,
+				"output": output, "from": anchor as Vector2,
+				"rewire": connection.duplicate(true)}
+			graph_edit.queue_redraw()
 			return
+		dragging_face_socket = {"instance": instance, "port": port,
+			"output": output, "from": socket["centre"] as Vector2}
+		return
 
 
-## The release that ends a socket drag: the port under the pointer becomes the other
-## end of a document cable, the instance's own port this end. Anywhere else drops
-## the cable on the floor, which is what letting go of a cable means.
+## Whether two document cables are the same cable, field by field — Dictionary
+## equality is not a thing to lean on for this.
+func _same_connection(a: Dictionary, b: Dictionary) -> bool:
+	return str(a["from"]["node"]) == str(b["from"]["node"]) \
+		and str(a["from"]["port"]) == str(b["from"]["port"]) \
+		and str(a["to"]["node"]) == str(b["to"]["node"]) \
+		and str(a["to"]["port"]) == str(b["to"]["port"])
+
+
+## The connectable point under the viewport position, of the wanted kind: a plate
+## socket on any turned device first — they sit above the canvas — then a node
+## port. {node, port} in document terms, or {} for the floor.
+func _patch_point_at(at: Vector2, wants_input: bool) -> Dictionary:
+	for key in flipped_nodes:
+		var mount := module_mounts.get(str(key), null) as Control
+		if mount == null or not mount.visible or not mount.has_method("socket_at"):
+			continue
+		var socket: Dictionary = mount.socket_at(at)
+		if socket.is_empty():
+			continue
+		# An IN-plate socket is an input of the instance; an OUT-plate socket is an
+		# output. The wrong kind under the pointer is a miss, not a fallthrough.
+		if bool(socket["output"]) == wants_input:
+			return {}
+		return {"node": str(key), "port": str(socket["port"])}
+	var landed: Dictionary = graph_edit.port_at(at - graph_edit.get_global_rect().position)
+	if landed.is_empty():
+		return {}
+	var target_id: String = ids.get(landed["widget"], "")
+	if target_id == "":
+		return {}
+	var side_wanted := "left" if wants_input else "right"
+	if str(landed["side"]) != side_wanted:
+		return {}
+	var ports := _port_list(target_id, "inputs" if wants_input else "outputs")
+	if int(landed["index"]) >= ports.size():
+		return {}
+	return {"node": target_id, "port": str(ports[int(landed["index"])]["name"])}
+
+
+## The release that ends a socket drag. A fresh cable plugs the port under the
+## pointer into the instance; a plug pulled from a wired socket re-plugs where it
+## lands, its far end never having moved — and the floor unplugs it for good,
+## which is what letting go of a cable means.
 func _drop_face_socket(at: Vector2) -> void:
 	var grabbed := dragging_face_socket
 	dragging_face_socket = {}
 	seam_cables.live = []
 	seam_cables.queue_redraw()
-	var landed: Dictionary = graph_edit.port_at(at - graph_edit.get_global_rect().position)
+	graph_edit.queue_redraw()
+	var rewiring: bool = grabbed.has("rewire")
+	# What the hand holds decides what it fits. A fresh cable from a socket reaches
+	# for the opposite side; a plug pulled out of a socket fits sockets of the same
+	# kind it came from.
+	var wants_input: bool = not bool(grabbed["output"]) if rewiring \
+		else bool(grabbed["output"])
+	var landed := _patch_point_at(at, wants_input)
 	if landed.is_empty():
-		return
-	var target_id: String = ids.get(landed["widget"], "")
-	if target_id == "":
+		if rewiring:
+			_begin_edit()
+			for index in patch["connections"].size():
+				if _same_connection(patch["connections"][index], grabbed["rewire"]):
+					patch["connections"].remove_at(index)
+					break
+			await _rebuild_view()
+			_apply()
+			_commit_edit("disconnect")
+			_say("unplugged %s.%s" % [str(grabbed["instance"]), str(grabbed["port"])])
 		return
 	var connection: Dictionary
-	if bool(grabbed["output"]):
-		# The device's out into somebody's inlet.
-		if str(landed["side"]) != "left":
+	if rewiring:
+		var old: Dictionary = grabbed["rewire"]
+		if wants_input:
+			connection = {"from": (old["from"] as Dictionary).duplicate(true),
+				"to": {"node": str(landed["node"]), "port": str(landed["port"])}}
+		else:
+			connection = {"from": {"node": str(landed["node"]),
+					"port": str(landed["port"])},
+				"to": (old["to"] as Dictionary).duplicate(true)}
+		if _same_connection(connection, old):
 			return
-		var inlets := _port_list(target_id, "inputs")
-		if int(landed["index"]) >= inlets.size():
-			return
+	elif bool(grabbed["output"]):
 		connection = {"from": {"node": str(grabbed["instance"]),
 				"port": str(grabbed["port"])},
-			"to": {"node": target_id,
-				"port": str(inlets[int(landed["index"])]["name"])}}
+			"to": {"node": str(landed["node"]), "port": str(landed["port"])}}
 	else:
-		# Somebody's outlet into the device's input.
-		if str(landed["side"]) != "right":
-			return
-		var outlets := _port_list(target_id, "outputs")
-		if int(landed["index"]) >= outlets.size():
-			return
-		connection = {"from": {"node": target_id,
-				"port": str(outlets[int(landed["index"])]["name"])},
-			"to": {"node": str(grabbed["instance"]),
-				"port": str(grabbed["port"])}}
+		connection = {"from": {"node": str(landed["node"]),
+				"port": str(landed["port"])},
+			"to": {"node": str(grabbed["instance"]), "port": str(grabbed["port"])}}
 	for wire in patch["connections"]:
-		if wire == connection:
+		if _same_connection(wire, connection):
 			return
 	_begin_edit()
+	if rewiring:
+		for index in patch["connections"].size():
+			if _same_connection(patch["connections"][index], grabbed["rewire"]):
+				patch["connections"].remove_at(index)
+				break
 	patch["connections"].append(connection)
 	await _rebuild_view()
 	_apply()
-	_commit_edit("connect")
+	_commit_edit("reconnect" if rewiring else "connect")
 	_say("connected %s.%s → %s.%s" % [str(connection["from"]["node"]),
 		str(connection["from"]["port"]), str(connection["to"]["node"]),
 		str(connection["to"]["port"])])

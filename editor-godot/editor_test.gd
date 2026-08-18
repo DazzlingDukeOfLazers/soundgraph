@@ -5751,15 +5751,14 @@ func _initialize() -> void:
 		"the OUT plate shows each connected output as its own socket (%s)"
 			% str(out_sockets))
 
-	# And the sockets are jacks, not pictures of jacks: grab the OUT plate's left
-	# socket, pull the cable to a node's inlet, let go — a document connection to
-	# the instance's real port, one undo step. Driven through the same first-refusal
-	# input the grab actually takes.
+	# And the sockets are jacks, not pictures of jacks. A wired socket gives up its
+	# plug — the far end stays put, the freed end fits sockets of the kind it came
+	# out of, and the floor unplugs it for good. An unwired socket starts a fresh
+	# cable. All of it through the first-refusal input a real hand takes.
 	var tap_id: String = await main._add_node("Gain", Vector2(2400, 200))
 	for i in 8:
 		await process_frame
-	# Re-taken: _add_node rebuilt the view, and a rebuild remounts the face — the
-	# plate held from before it is a freed instance.
+	# Re-taken: _add_node rebuilt the view, and a rebuild remounts the face.
 	stub_mount = main.module_mounts[onto_fresh]
 	out_plate = stub_mount.get_node("Case/Rack/Rail/PortsOut")
 	var left_jack: Vector2 = Vector2.ZERO
@@ -5768,9 +5767,7 @@ func _initialize() -> void:
 		var jack_part: Node = socket_queue.pop_back()
 		for child in jack_part.get_children():
 			socket_queue.append(child)
-		if jack_part is HBoxContainer and jack_part.get_child_count() >= 2 \
-				and jack_part.get_child(1) is Label \
-				and str((jack_part.get_child(1) as Label).text) == "left":
+		if jack_part is HBoxContainer and jack_part.get_child_count() >= 2 				and jack_part.get_child(1) is Label 				and str((jack_part.get_child(1) as Label).text) == "left":
 			left_jack = (jack_part.get_child(0) as Control).get_global_rect().get_center()
 	check(left_jack != Vector2.ZERO, "the left jack is where a hand can find it")
 	var jack_press := InputEventMouseButton.new()
@@ -5778,15 +5775,32 @@ func _initialize() -> void:
 	jack_press.pressed = true
 	jack_press.position = left_jack
 	main.graph_edit._input(jack_press)
-	check(not main.dragging_face_socket.is_empty(),
-		"pressing it puts a cable in hand (%s)" % str(main.dragging_face_socket))
+	check(main.dragging_face_socket.has("rewire"),
+		"grabbing the wired left jack pulls its plug")
+	var floor_far := InputEventMouseButton.new()
+	floor_far.button_index = MOUSE_BUTTON_LEFT
+	floor_far.pressed = false
+	floor_far.position = left_jack + Vector2(0.0, 500.0)
+	main._input(floor_far)
+	for i in 8:
+		await process_frame
+	var left_fed := false
+	for wire in main.patch["connections"]:
+		if str(wire["from"]["node"]) == onto_fresh and str(wire["from"]["port"]) == "left":
+			left_fed = true
+	check(not left_fed, "and the floor unplugs it from the mixer")
+	# Unwired now: the same press starts a fresh cable instead.
+	stub_mount = main.module_mounts[onto_fresh]
+	var fresh_press := InputEventMouseButton.new()
+	fresh_press.button_index = MOUSE_BUTTON_LEFT
+	fresh_press.pressed = true
+	fresh_press.position = left_jack
+	main.graph_edit._input(fresh_press)
+	check(not main.dragging_face_socket.is_empty()
+			and not main.dragging_face_socket.has("rewire"),
+		"an unwired socket starts a fresh cable (%s)" % str(main.dragging_face_socket))
 	var tap_widget: GraphNode = main.widgets[tap_id]
-	var tap_port: Vector2 = main.graph_edit.get_global_rect().position \
-		+ (tap_widget.position_offset + tap_widget.get_input_port_position(0)) \
-			* main.graph_edit.zoom - main.graph_edit.scroll_offset
-	var jack_pull := InputEventMouseMotion.new()
-	jack_pull.position = tap_port
-	main._input(jack_pull)
+	var tap_port: Vector2 = main.graph_edit.get_global_rect().position 		+ (tap_widget.position_offset + tap_widget.get_input_port_position(0)) 			* main.graph_edit.zoom - main.graph_edit.scroll_offset
 	var jack_drop := InputEventMouseButton.new()
 	jack_drop.button_index = MOUSE_BUTTON_LEFT
 	jack_drop.pressed = false
@@ -5796,21 +5810,61 @@ func _initialize() -> void:
 		await process_frame
 	var tapped := false
 	for wire in main.patch["connections"]:
-		if str(wire["from"]["node"]) == onto_fresh and str(wire["from"]["port"]) == "left" \
-				and str(wire["to"]["node"]) == tap_id:
+		if str(wire["from"]["node"]) == onto_fresh and str(wire["from"]["port"]) == "left" 				and str(wire["to"]["node"]) == tap_id:
 			tapped = true
 	check(tapped, "and letting go on an inlet writes the cable into the document")
 	await main._undo()
-	for i in 6:
-		await process_frame
-	var still_tapped := false
-	for wire in main.patch["connections"]:
-		if str(wire["from"]["node"]) == onto_fresh and str(wire["to"]["node"]) == tap_id:
-			still_tapped = true
-	check(not still_tapped, "and undo unplugs it")
 	await main._undo()
-	for i in 6:
+	for i in 8:
 		await process_frame
+	var mixer_back := false
+	for wire in main.patch["connections"]:
+		if str(wire["from"]["node"]) == onto_fresh and str(wire["from"]["port"]) == "left" 				and str(wire["to"]["port"]) == "in1":
+			mixer_back = true
+	check(mixer_back, "and two undos re-plug the mixer")
+	# Re-plugging: pull gate's plug — the keyboard end stays — and land it on the
+	# tap's inlet instead: one edit moves the feed, and undo moves it home.
+	stub_mount = main.module_mounts[onto_fresh]
+	in_plate = stub_mount.get_node("Case/Rack/Rail/PortsIn")
+	var plug_spots := {}
+	socket_queue = [in_plate]
+	while not socket_queue.is_empty():
+		var plug_part: Node = socket_queue.pop_back()
+		for child in plug_part.get_children():
+			socket_queue.append(child)
+		if plug_part is HBoxContainer and plug_part.get_child_count() >= 2 				and plug_part.get_child(1) is Label:
+			plug_spots[str((plug_part.get_child(1) as Label).text)] = 				(plug_part.get_child(0) as Control).get_global_rect().get_center()
+	var re_press := InputEventMouseButton.new()
+	re_press.button_index = MOUSE_BUTTON_LEFT
+	re_press.pressed = true
+	re_press.position = plug_spots["gate"]
+	main.graph_edit._input(re_press)
+	check(main.dragging_face_socket.has("rewire"), "gate gives up its plug too")
+	var re_drop := InputEventMouseButton.new()
+	re_drop.button_index = MOUSE_BUTTON_LEFT
+	re_drop.pressed = false
+	re_drop.position = main.graph_edit.get_global_rect().position 		+ (main.widgets[tap_id].position_offset
+			+ main.widgets[tap_id].get_input_port_position(0)) 			* main.graph_edit.zoom - main.graph_edit.scroll_offset
+	main._input(re_drop)
+	for i in 8:
+		await process_frame
+	var moved_feed := false
+	var gate_still := false
+	for wire in main.patch["connections"]:
+		if str(wire["from"]["node"]) == "note" and str(wire["from"]["port"]) == "gate" 				and str(wire["to"]["node"]) == tap_id:
+			moved_feed = true
+		if str(wire["to"]["node"]) == onto_fresh and str(wire["to"]["port"]) == "gate":
+			gate_still = true
+	check(moved_feed and not gate_still,
+		"re-plugging moves the keyboard's feed to the new inlet in one edit")
+	await main._undo()
+	for i in 8:
+		await process_frame
+	var gate_home := false
+	for wire in main.patch["connections"]:
+		if str(wire["to"]["node"]) == onto_fresh and str(wire["to"]["port"]) == "gate":
+			gate_home = true
+	check(gate_home, "and undo moves it home")
 
 
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
