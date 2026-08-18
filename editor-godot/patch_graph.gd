@@ -1609,17 +1609,27 @@ class WandOverlay extends Control:
 			draw_string(font, strip.position + Vector2(pad, strip.size.y * 0.72),
 				str(graph.flip_labels.get(module_name, module_name)),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
+			# Small and quiet, sitting inside the title band rather than shouting
+			# over it: the panel already wears its name there, and the way back is a
+			# chip beside it, styled as the open frame's FACE chip is. It stays
+			# painted rather than becoming a real Button because the band claims
+			# every press first — the drag handle would eat a button alive.
 			var wires_text := "WIRES"
+			var wires_size := Design.type(Design.SIZE_SECONDARY)
 			var wires_measured := font.get_string_size(wires_text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, wires_size)
+			var wires_pad: float = pad * 0.5
 			var wires_chip := Rect2(
-				Vector2(strip.end.x - wires_measured.x - pad * 2.0,
-					strip.position.y + (strip.size.y - wires_measured.y - pad * 0.5) * 0.5),
-				wires_measured + Vector2(pad, pad * 0.5) * 2.0)
-			draw_rect(wires_chip, Design.ACCENT)
+				Vector2(strip.end.x - wires_measured.x - wires_pad * 3.0,
+					strip.position.y + (strip.size.y
+						- wires_measured.y - wires_pad) * 0.5),
+				wires_measured + Vector2(wires_pad, wires_pad * 0.5) * 2.0)
+			draw_rect(wires_chip, Color(Design.ACCENT, 0.16))
+			draw_rect(wires_chip, Color(Design.ACCENT, 0.55), false, 1.0)
 			draw_string(font,
-				wires_chip.position + Vector2(pad, pad * 0.5 + wires_measured.y * 0.8),
-				wires_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ON_ACCENT)
+				wires_chip.position + Vector2(wires_pad,
+					wires_pad * 0.5 + wires_measured.y * 0.8),
+				wires_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, wires_size, Design.ACCENT)
 			_flip_hits_out[module_name] = wires_chip
 
 		graph._close_hits = _close_hits_out.duplicate()
