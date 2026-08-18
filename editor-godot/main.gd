@@ -1079,6 +1079,10 @@ func _build_toolbar() -> Control:
 	# smaller only because it is farther away.
 	view_popup.add_radio_check_item("Detail: adaptive", 70)
 	view_popup.add_radio_check_item("Detail: 1:1", 71)
+	view_popup.set_item_tooltip(view_popup.get_item_index(70),
+		"The map: the drawing simplifies as you zoom out. Toggle with Ctrl+2.")
+	view_popup.set_item_tooltip(view_popup.get_item_index(71),
+		"The photograph: the full module at every zoom. Toggle with Ctrl+2.")
 	view_popup.set_item_checked(view_popup.get_item_index(
 		70 + int(Settings.fetch("graph_detail_mode", 0))), true)
 	# Beside the detail pair because the two get reached for together: 1:1 is "show
@@ -1329,14 +1333,7 @@ func _on_view_menu(id: int) -> void:
 		graph_edit.zoom_actual()
 		return
 	if id >= 70:
-		var mode: int = id - 70
-		graph_edit.set_detail_mode(mode)
-		Settings.store("graph_detail_mode", mode)
-		for entry in 2:
-			view_popup.set_item_checked(view_popup.get_item_index(70 + entry),
-				entry == mode)
-		_say("detail: %s" % ("1:1" if mode == PatchGraph.DetailMode.ONE_TO_ONE \
-			else "adaptive"))
+		_choose_detail_mode(id - 70)
 		return
 	if id >= 50:
 		_use_ui_scale(id - 50)
@@ -1374,6 +1371,17 @@ func _on_view_menu(id: int) -> void:
 	for index in CASE_LABELS.size():
 		view_popup.set_item_checked(index + 3, index == choice)
 	rack.case_hp = CASE_WIDTHS[choice]
+
+
+## One path for menu and key alike: the mode, the memory, the checkmarks, the word.
+func _choose_detail_mode(mode: int) -> void:
+	graph_edit.set_detail_mode(mode)
+	Settings.store("graph_detail_mode", mode)
+	for entry in 2:
+		view_popup.set_item_checked(view_popup.get_item_index(70 + entry),
+			entry == mode)
+	_say("detail: %s" % ("1:1" if mode == PatchGraph.DetailMode.ONE_TO_ONE \
+		else "adaptive"))
 
 
 ## Changes the size of the whole interface — text, padding, ports, knobs and hit areas.
@@ -6708,6 +6716,16 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	if key.pressed and key.ctrl_pressed and key.keycode == KEY_I:
 		_set_side_panel_open(not side_panel_open)
+		accept_event()
+		return
+
+	# The end of the view row Ctrl+0 and Ctrl+1 begin: fit, real size, and which
+	# drawing. A toggle on one key rather than an accelerator per radio item,
+	# because the question has two answers and one hand.
+	if key.pressed and key.ctrl_pressed and key.keycode == KEY_2:
+		_choose_detail_mode(PatchGraph.DetailMode.ADAPTIVE \
+			if graph_edit.detail_mode == PatchGraph.DetailMode.ONE_TO_ONE \
+			else PatchGraph.DetailMode.ONE_TO_ONE)
 		accept_event()
 		return
 

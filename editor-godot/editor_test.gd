@@ -2314,6 +2314,29 @@ func _initialize() -> void:
 		await process_frame
 	check(is_equal_approx(main.graph_edit.zoom, 1.0),
 		"and Ctrl+1 is real size (zoom %.2f)" % main.graph_edit.zoom)
+	# Ctrl+2 toggles which drawing — one key, both directions, same path as the menu.
+	var toggle_key := InputEventKey.new()
+	toggle_key.keycode = KEY_2
+	toggle_key.ctrl_pressed = true
+	toggle_key.pressed = true
+	Input.parse_input_event(toggle_key)
+	for i in 3:
+		await process_frame
+	check(main.graph_edit.detail_mode == main.PatchGraph.DetailMode.ONE_TO_ONE
+			and view_item_checked(main, 71)
+			and int(Settings.fetch("graph_detail_mode", 0)) == 1,
+		"Ctrl+2 turns 1:1 on, menu and memory following")
+	var toggle_back := InputEventKey.new()
+	toggle_back.keycode = KEY_2
+	toggle_back.ctrl_pressed = true
+	toggle_back.pressed = true
+	Input.parse_input_event(toggle_back)
+	for i in 3:
+		await process_frame
+	check(main.graph_edit.detail_mode == main.PatchGraph.DetailMode.ADAPTIVE
+			and view_item_checked(main, 70)
+			and int(Settings.fetch("graph_detail_mode", 0)) == 0,
+		"and again turns it off")
 	main.graph_edit.zoom = 1.0
 	main.graph_edit._update_detail()
 	main._apply_detail(main.graph_edit.detail)
