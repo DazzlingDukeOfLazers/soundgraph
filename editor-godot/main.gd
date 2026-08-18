@@ -157,6 +157,12 @@ var flipped_nodes := {}
 ## comes back (undo, redo), it comes back face up: a device deleted as a panel
 ## returning as a node reads as the undo changing more than it undid.
 var remembered_flips := {}
+## Where the editor has dived from: one frame per level, holding the host document,
+## its history, its name and its unsaved flag. Diving makes the module's definition
+## the open document — full editing, full sound, since a definition carries its own
+## seams — and climbing writes the edits back into the host as one undo step.
+var dive_stack: Array = []
+var climb_button: Button
 var module_mounts := {}
 ## Where the face is mounted, in graph coordinates: the case's own corner at the moment
 ## it was turned over. The graph's camera does the rest.
@@ -680,6 +686,8 @@ func _build_ui() -> void:
 		_commit_edit("move %s" % key))
 	graph_edit.face_socket_grabbed.connect(_on_face_socket_grabbed)
 	graph_edit.face_rename_requested.connect(_begin_face_rename)
+	graph_edit.node_dive_requested.connect(func(widget_name: String) -> void:
+		_dive_into(ids.get(widget_name, "")))
 	# The band's ✕ deletes through the same path the Delete key takes: node,
 	# cables, controls and automation together, one undo step.
 	graph_edit.face_remove_requested.connect(func(key: String) -> void:
@@ -1025,6 +1033,13 @@ func _build_toolbar() -> Control:
 		+ "the minimap and the zoom controls."
 	fit_button.pressed.connect(func() -> void: graph_edit.fit_graph())
 	graph_group.add_child(_defocus(fit_button))
+
+	# The way back up from a dive. Hidden until there is an up to climb to, and
+	# named for where it goes — "Climb" alone would make somebody guess.
+	climb_button = Button.new()
+	climb_button.visible = false
+	climb_button.pressed.connect(_climb_up)
+	graph_group.add_child(_defocus(climb_button))
 
 	# ---- edit --------------------------------------------------------------------
 	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
@@ -2215,6 +2230,14 @@ func _fill_node_context(node_id: String) -> void:
 			% module_name + "Closing the frame folds them back in."
 		open_button.pressed.connect(func() -> void: _open_module(node_id))
 		context_panel.add_child(_defocus(open_button))
+
+		var dive_button := Button.new()
+		dive_button.text = "Dive in"
+		dive_button.tooltip_text = "Make %s the open document — edit it as its own " \
+			% module_name + "patch, play it standalone, and climb back up when done. " \
+			+ "Double-tapping the node's title does the same."
+		dive_button.pressed.connect(func() -> void: _dive_into(node_id))
+		context_panel.add_child(_defocus(dive_button))
 
 		_fill_module_contract(module_name)
 
@@ -5555,6 +5578,140 @@ func _on_face_socket_grabbed(mount: Control, socket: Dictionary) -> void:
 		dragging_face_socket = {"instance": instance, "port": port,
 			"output": output, "from": socket["centre"] as Vector2}
 		return
+
+
+## Descends into a module: its definition becomes the open document. The definition
+## is already a whole patch — nodes, wiring, seams, controls — so the editor edits
+## it exactly as it edits a file, and the seams mean it plays standalone under the
+## keyboard. The host document, its history and its name wait on the dive stack.
+func _dive_into(instance_id: String) -> void:
+	var module_name := _module_of(instance_id)
+	var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
+	if definition.is_empty():
+		return
+	var doc := {
+		"schema_version": 2,
+		"metadata": {"name": module_name},
+		"nodes": (definition.get("nodes", []) as Array).duplicate(true),
+		"connections": (definition.get("connections", []) as Array).duplicate(true),
+		"modules": {},
+	}
+	# The definitions its own instances stand on come along — a dive that lost
+	# dx7_operator would show six unbuildable nodes. The dived definition itself
+	# cannot appear below: patch-io already refuses the cycle.
+	for name in patch.get("modules", {}):
+		if str(name) != module_name:
+			doc["modules"][str(name)] = (patch["modules"][name] as Dictionary) \
+				.duplicate(true)
+	if definition.has("controls"):
+		doc["controls"] = (definition["controls"] as Array).duplicate(true)
+	# Placed before loading: a node without a position trips the loader's
+	# auto-arrange, which commits an edit — and an untouched dive must not come
+	# home carrying one. A plain rank is enough; the arrange button remains for
+	# anyone who wants better.
+	var unplaced := 0
+	for node in doc["nodes"]:
+		if not node.has("position"):
+			node["position"] = {"x": 420.0 * float(unplaced % 6),
+				"y": 760.0 * float(unplaced / 6 + 1)}
+			unplaced += 1
+	dive_stack.append({
+		"patch": patch,
+		"module": module_name,
+		"definition": definition.duplicate(true),
+		"name": document_name,
+		"unsaved": unsaved,
+		"history": undo_redo,
+	})
+	undo_redo = UndoRedo.new()
+	_load_text(JSON.stringify(doc))
+	_set_document_name("%s — inside %s" % [module_name,
+		dive_stack.back()["name"]])
+	unsaved = false
+	if climb_button != null:
+		climb_button.text = "Climb to %s" % str(dive_stack.back()["name"])
+		climb_button.visible = true
+	_refresh_undo_buttons()
+	_say("dived into %s" % module_name)
+
+
+## Back up one level. Edits made below are written into the host's definition as a
+## single undo step; a dive that touched nothing changes nothing.
+func _climb_up() -> void:
+	if dive_stack.is_empty():
+		return
+	var edited: Dictionary = patch
+	var touched: bool = unsaved
+	var frame: Dictionary = dive_stack.pop_back()
+	patch = frame["patch"]
+	undo_redo.free()
+	undo_redo = frame["history"]
+	_set_document_name(str(frame["name"]))
+	unsaved = bool(frame["unsaved"])
+	if climb_button != null:
+		climb_button.visible = not dive_stack.is_empty()
+		if not dive_stack.is_empty():
+			climb_button.text = "Climb to %s" % str(dive_stack.back()["name"])
+	if touched:
+		_begin_edit()
+		patch["modules"][str(frame["module"])] = _definition_from_document(edited,
+			frame["definition"] as Dictionary)
+		# Definitions edited further down the stack ride back up too.
+		for name in edited.get("modules", {}):
+			patch["modules"][str(name)] = edited["modules"][name]
+	await _rebuild_view()
+	_apply()
+	if touched:
+		_commit_edit("edit %s" % str(frame["module"]))
+		_say("climbed up — %s carries the edits" % str(frame["module"]))
+	else:
+		_refresh_undo_buttons()
+		_say("climbed up")
+
+
+## A definition rebuilt from the document its dive produced. Structure maps one to
+## one; the exported surface keeps every old export whose node survived — instance
+## overrides and controls name those exports, and renaming them would orphan both —
+## and grows exports for anything newly written or newly on the face, by the same
+## on-demand rule the importer uses.
+func _definition_from_document(doc: Dictionary, old: Dictionary) -> Dictionary:
+	var definition := {
+		"nodes": (doc.get("nodes", []) as Array).duplicate(true),
+		"connections": (doc.get("connections", []) as Array).duplicate(true),
+	}
+	if str(old.get("description", "")) != "":
+		definition["description"] = old["description"]
+	var alive := {}
+	for node in definition["nodes"]:
+		alive[str(node["id"])] = true
+	var exported: Array = []
+	for binding in old.get("parameters", []):
+		if alive.has(str(binding["node"])):
+			exported.append((binding as Dictionary).duplicate(true))
+	for node in definition["nodes"]:
+		for parameter_name in node.get("parameters", {}):
+			ModuleAuthor._export_for(exported, {}, str(node["id"]),
+				str(parameter_name))
+	var faces: Array = (doc.get("controls", []) as Array).duplicate(true)
+	if not faces.is_empty():
+		var inner := {}
+		for node in definition["nodes"]:
+			if not str(node.get("type", "")) in ["Input", "Output"]:
+				inner[str(node["id"])] = true
+		for control: Dictionary in faces:
+			var target: Dictionary = control.get("target", {})
+			if inner.has(str(target.get("node", ""))):
+				ModuleAuthor._export_for(exported, {}, str(target.get("node", "")),
+					str(target.get("parameter", "")))
+		definition["controls"] = faces
+	elif old.has("controls"):
+		definition["controls"] = (old["controls"] as Array).duplicate(true)
+	if not exported.is_empty():
+		definition["parameters"] = exported
+	for carried in ["inputs", "outputs"]:
+		if old.has(carried):
+			definition[carried] = (old[carried] as Array).duplicate(true)
+	return definition
 
 
 ## An inline name field over the turned container's band: Enter commits through the

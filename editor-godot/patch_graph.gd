@@ -1088,6 +1088,8 @@ signal face_socket_grabbed(mount: Control, socket: Dictionary)
 signal face_rename_requested(key: String)
 ## The band's ✕ was pressed: take this device out of the patch.
 signal face_remove_requested(key: String)
+## A node's title was double-tapped: dive into what it stands for.
+signal node_dive_requested(widget_name: String)
 ## Which turned containers may be removed from their band — instances, not open
 ## groups, whose ✕ would mean something murkier. Set by main beside flip_frames.
 var flip_deletable: Dictionary = {}
@@ -1825,6 +1827,23 @@ func _input(event: InputEvent) -> void:
 			face_socket_grabbed.emit(face, socket)
 			get_viewport().set_input_as_handled()
 			return
+
+	# A double tap on a node's title dives into it. The title strip only — the body
+	# is where knobs live, and their own double tap means "go home" — and not the
+	# FACE chip, which is a button with its own meaning.
+	if button.double_click:
+		var over := _node_at(_to_graph(button.position - rect.position))
+		if over != "":
+			var widget := get_node_or_null(NodePath(over)) as GraphNode
+			if widget != null:
+				var bar := widget.get_titlebar_hbox()
+				if bar != null and bar.get_global_rect().grow(4.0).has_point(button.position):
+					var chip := bar.get_node_or_null("Flip") as Control
+					if chip == null \
+							or not chip.get_global_rect().grow(2.0).has_point(button.position):
+						node_dive_requested.emit(over)
+						get_viewport().set_input_as_handled()
+						return
 
 	# A ghost jack: an inner port the module does not expose, drawn on the instance while
 	# it is selected. Tested before the node gets the press because a ghost is inside the

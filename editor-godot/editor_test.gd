@@ -6389,6 +6389,79 @@ func _initialize() -> void:
 		"and neither wires past the mixer to the speakers")
 	check_loads(main, "and two devices on a mixer leave a patch that")
 
+	# ---- diving in and climbing up ----------------------------------------------------
+	# A dive makes the module's definition the open document: full editing, full
+	# sound, its own fresh undo history. The climb writes the edits back into the
+	# host's definition as one undo step; a dive that touched nothing changes
+	# nothing. The host waits on the stack with its name and history intact.
+	var host_name: String = main.document_name
+	var host_history: UndoRedo = main.undo_redo
+	main._dive_into(first_dev)
+	for i in 10:
+		await process_frame
+	check(str(main.patch.get("metadata", {}).get("name", "")) == "algo-01"
+			and main.widgets.has("op1"),
+		"a dive opens the definition as the document (%s, %d nodes)"
+			% [str(main.patch["metadata"]["name"]), main.patch["nodes"].size()])
+	check(main.climb_button.visible and main.undo_redo != host_history,
+		"with the way back showing and a history of its own")
+	check(main.engine.is_loaded(), "and the module plays standalone")
+	main._set_parameter("op1", "ratio", 3.5)
+	main.unsaved = true
+	await main._climb_up()
+	for i in 10:
+		await process_frame
+	check(main.widgets.has(first_dev) and main.document_name == host_name
+			and main.undo_redo == host_history,
+		"the climb restores the host, its name and its history")
+	var dive_ratio := 0.0
+	for node in main.patch["modules"]["algo-01"]["nodes"]:
+		if str(node["id"]) == "op1":
+			dive_ratio = float(node.get("parameters", {}).get("ratio", 0.0))
+	check(is_equal_approx(dive_ratio, 3.5),
+		"and the definition carries the dive's edit (op1 ratio %.1f)" % dive_ratio)
+	check(not main.climb_button.visible, "the way back stands down at the surface")
+	await main._undo()
+	for i in 8:
+		await process_frame
+	dive_ratio = 0.0
+	for node in main.patch["modules"]["algo-01"]["nodes"]:
+		if str(node["id"]) == "op1":
+			dive_ratio = float(node.get("parameters", {}).get("ratio", 0.0))
+	check(not is_equal_approx(dive_ratio, 3.5),
+		"and one undo takes the whole dive back (op1 ratio %.2f)" % dive_ratio)
+	# An untouched dive changes nothing on the way out.
+	var before_quiet: String = JSON.stringify(main.patch)
+	main._dive_into(first_dev)
+	for i in 8:
+		await process_frame
+	await main._climb_up()
+	for i in 8:
+		await process_frame
+	check(JSON.stringify(main.patch) == before_quiet,
+		"an untouched dive leaves the host exactly as it was")
+	# The title's double tap is the canvas way in — on a node that is showing.
+	main.graph_edit.group_flip_toggled.emit(second_dev)
+	for i in 8:
+		await process_frame
+	var dive_widget: GraphNode = main.widgets[second_dev]
+	var dive_bar := dive_widget.get_titlebar_hbox()
+	var bar_rect: Rect2 = dive_bar.get_global_rect()
+	var dive_tap := InputEventMouseButton.new()
+	dive_tap.button_index = MOUSE_BUTTON_LEFT
+	dive_tap.pressed = true
+	dive_tap.double_click = true
+	dive_tap.position = Vector2(bar_rect.position.x + 8.0, bar_rect.get_center().y)
+	main.graph_edit._input(dive_tap)
+	for i in 10:
+		await process_frame
+	check(str(main.patch.get("metadata", {}).get("name", "")) == "algo-01",
+		"double-tapping a node's title dives in")
+	await main._climb_up()
+	for i in 10:
+		await process_frame
+	check(main.widgets.has(second_dev), "and the climb comes home")
+
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".
 	await main._load_example("DX7: algo-01")
