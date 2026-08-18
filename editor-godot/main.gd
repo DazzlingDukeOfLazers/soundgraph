@@ -1935,6 +1935,38 @@ func _device_panel_for(instance_id: String, module_name: String,
 				parameters.append_array(registry.get(
 					Seams.TERMINALS[terminal_key], {}).get("parameters", []))
 		entry["parameters"] = parameters
+		# The seam's shape is its cables, exactly as an unbound seam's is at the top
+		# level: every wire through it is a socket, named and coloured by what it
+		# carries. The generic entry gave every seam one anonymous port, and the
+		# plate condensed an instrument's inputs into it.
+		var doc_ports: Array = []
+		var seen := {}
+		for wire in doc["connections"]:
+			var mine: Dictionary = {}
+			var far: Dictionary = {}
+			if str(wire.get("from", {}).get("node", "")) == str(node["id"]):
+				mine = wire["from"]
+				far = wire["to"]
+			elif str(wire.get("to", {}).get("node", "")) == str(node["id"]):
+				mine = wire["to"]
+				far = wire["from"]
+			else:
+				continue
+			var port_name := str(mine.get("port", ""))
+			if seen.has(port_name):
+				continue
+			seen[port_name] = true
+			var flavour := "control"
+			var far_side := "inputs" if type_name == "Input" else "outputs"
+			for far_node in doc["nodes"]:
+				if str(far_node["id"]) != str(far.get("node", "")):
+					continue
+				for far_port in registry.get(Seams.registry_key(far_node), {}).get(
+						far_side, []):
+					if str(far_port.get("name", "")) == str(far.get("port", "")):
+						flavour = str(far_port.get("type", "control"))
+			doc_ports.append({"name": port_name, "signal": flavour})
+		entry["outputs" if type_name == "Input" else "inputs"] = doc_ports
 		local_registry[key] = entry
 	panel.patch = doc
 	panel.registry = local_registry
@@ -3316,12 +3348,27 @@ func _create_widget(node: Dictionary) -> void:
 		var flip := Button.new()
 		flip.name = "Flip"
 		flip.text = "FACE"
-		flip.flat = true
 		flip.focus_mode = Control.FOCUS_NONE
 		flip.tooltip_text = "Turn the module over to its panel. " \
 			+ "WIRES on the panel turns it back."
 		flip.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
 		flip.add_theme_color_override("font_color", Design.ACCENT)
+		# Dressed as the WIRES chip on the panel is dressed — outline and a breath
+		# of fill, secondary type, tight margins — so the two ends of the flip read
+		# as one control met twice.
+		var chip := StyleBoxFlat.new()
+		chip.bg_color = Color(Design.ACCENT, 0.16)
+		chip.border_color = Color(Design.ACCENT, 0.55)
+		chip.set_border_width_all(1)
+		chip.content_margin_left = float(Design.scale(Design.SPACE_S))
+		chip.content_margin_right = float(Design.scale(Design.SPACE_S))
+		chip.content_margin_top = 2.0
+		chip.content_margin_bottom = 2.0
+		var chip_hover := chip.duplicate() as StyleBoxFlat
+		chip_hover.bg_color = Color(Design.ACCENT, 0.28)
+		flip.add_theme_stylebox_override("normal", chip)
+		flip.add_theme_stylebox_override("hover", chip_hover)
+		flip.add_theme_stylebox_override("pressed", chip_hover)
 		var instance_id := str(node["id"])
 		flip.pressed.connect(func() -> void:
 			flipped_nodes[instance_id] = true

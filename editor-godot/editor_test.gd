@@ -5669,6 +5669,22 @@ func _initialize() -> void:
 			and stub_rect.grow(2.0).encloses(in_plate.get_global_rect()),
 		"the panel spans ports to ports (mount %.0f wide, OUT ends at %.0f)"
 			% [stub_rect.size.x, out_plate.get_global_rect().end.x - stub_rect.position.x])
+	# The IN plate lists the device's actual inputs, one socket each — the seam's
+	# shape is its cables, and the generic registry entry used to condense them
+	# into one anonymous port.
+	var in_sockets := []
+	var socket_queue: Array = [in_plate]
+	while not socket_queue.is_empty():
+		var part: Node = socket_queue.pop_back()
+		for child in part.get_children():
+			socket_queue.append(child)
+		if part is HBoxContainer:
+			for child in part.get_children():
+				if child is Label:
+					in_sockets.append(str((child as Label).text))
+	check(in_sockets.has("frequency") and in_sockets.has("gate"),
+		"the IN plate shows each connected input as its own socket (%s)"
+			% str(in_sockets))
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:
 		await process_frame
