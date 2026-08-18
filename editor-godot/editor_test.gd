@@ -6275,13 +6275,10 @@ func _initialize() -> void:
 	await main._undo()
 	for i in 10:
 		await process_frame
-	check(main.widgets.has(onto_fresh), "and undo brings it back")
-	var reflip_cross: Button = main.widgets[onto_fresh].get_titlebar_hbox() \
-		.get_node("Flip")
-	reflip_cross.pressed.emit()
-	for i in 10:
-		await process_frame
-	check(not main.widgets[onto_fresh].visible, "turned over again for what follows")
+	check(main.widgets.has(onto_fresh) and not main.widgets[onto_fresh].visible
+			and (main.module_mounts.get(onto_fresh) as Control) != null
+			and (main.module_mounts.get(onto_fresh) as Control).visible,
+		"and undo brings it back face up, the way it left")
 
 	# WIRES on the band is the way back: the same signal a click sends.
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)

@@ -153,6 +153,10 @@ var flipped_modules := {}
 ## Closed instance nodes turned over where they stand, keyed by instance id — the
 ## one-step flip: no need to open a module's wires just to play its panel.
 var flipped_nodes := {}
+## Instances that left the view while turned over — deleted, mostly. If the id
+## comes back (undo, redo), it comes back face up: a device deleted as a panel
+## returning as a node reads as the undo changing more than it undid.
+var remembered_flips := {}
 var module_mounts := {}
 ## Where the face is mounted, in graph coordinates: the case's own corner at the moment
 ## it was turned over. The graph's camera does the rest.
@@ -1851,7 +1855,14 @@ func _apply_flips() -> void:
 			flipped_modules.erase(module_name)
 	for instance_id in flipped_nodes.keys():
 		if not widgets.has(str(instance_id)):
+			remembered_flips[str(instance_id)] = true
 			flipped_nodes.erase(instance_id)
+	# And the way back: an id that left the view flipped returns flipped. A WIRES
+	# flip is not this — it unflips while the widget stands, so nothing remembers.
+	for instance_id in remembered_flips.keys():
+		if widgets.has(str(instance_id)):
+			flipped_nodes[str(instance_id)] = true
+			remembered_flips.erase(instance_id)
 	for key in module_mounts.keys():
 		if not flipped_modules.has(key) and not flipped_nodes.has(key):
 			(module_mounts[key] as Control).visible = false

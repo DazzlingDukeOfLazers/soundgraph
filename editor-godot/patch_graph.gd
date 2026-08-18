@@ -1620,47 +1620,51 @@ class WandOverlay extends Control:
 			draw_string(font, strip.position + Vector2(pad, strip.size.y * 0.72),
 				str(graph.flip_labels.get(module_name, module_name)),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
-			# Small and quiet, sitting inside the title band rather than shouting
-			# over it: the panel already wears its name there, and the way back is a
-			# chip beside it, styled as the open frame's FACE chip is. It stays
-			# painted rather than becoming a real Button because the band claims
-			# every press first — the drag handle would eat a button alive.
+			# Small and quiet, sitting inside the title band rather than over it.
+			# Everything here is derived from the strip's own height, because the
+			# strip scales with the zoom and the chips must scale with the strip —
+			# sized in screen constants they towered over the band at any working
+			# zoom, twice the height of the title they sat beside. The hit rects
+			# are grown back to a clickable size when the drawing runs small; what
+			# the eye reads may shrink, what the hand aims at may not.
+			var chip_h: float = strip.size.y * 0.72
+			var chip_font: int = maxi(6, int(round(chip_h * 0.60)))
+			var chip_pad: float = chip_h * 0.30
+			var chip_top: float = strip.position.y + (strip.size.y - chip_h) * 0.5
 			var wires_text := "WIRES"
-			var wires_size := Design.type(Design.SIZE_SECONDARY)
 			var wires_measured := font.get_string_size(wires_text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1.0, wires_size)
-			var wires_pad: float = pad * 0.5
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font)
 			var wires_chip := Rect2(
-				Vector2(strip.end.x - wires_measured.x - wires_pad * 3.0,
-					strip.position.y + (strip.size.y
-						- wires_measured.y - wires_pad) * 0.5),
-				wires_measured + Vector2(wires_pad, wires_pad * 0.5) * 2.0)
+				Vector2(strip.end.x - wires_measured.x - chip_pad * 2.0 - chip_pad,
+					chip_top),
+				Vector2(wires_measured.x + chip_pad * 2.0, chip_h))
 			draw_rect(wires_chip, Color(Design.ACCENT, 0.16))
 			draw_rect(wires_chip, Color(Design.ACCENT, 0.55), false, 1.0)
 			draw_string(font,
-				wires_chip.position + Vector2(wires_pad,
-					wires_pad * 0.5 + wires_measured.y * 0.8),
-				wires_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, wires_size, Design.ACCENT)
-			_flip_hits_out[module_name] = wires_chip
+				Vector2(wires_chip.position.x + chip_pad,
+					wires_chip.position.y + (chip_h + font.get_ascent(chip_font)
+						- font.get_descent(chip_font)) * 0.5),
+				wires_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font, Design.ACCENT)
+			var wires_reach: float = maxf(0.0, (20.0 - wires_chip.size.y) * 0.5)
+			_flip_hits_out[module_name] = wires_chip.grow(wires_reach)
 
 			# The way out, for a device: an ✕ beside WIRES, drawn with strokes
 			# rather than a glyph the font may not carry. Same quiet chip dress;
 			# what it does is undoable, so it earns no alarm colour.
 			if graph.flip_deletable.has(module_name):
-				var cross_side: float = wires_chip.size.y
 				var cross_chip := Rect2(
-					Vector2(wires_chip.position.x - cross_side - wires_pad * 1.5,
-						wires_chip.position.y),
-					Vector2(cross_side, cross_side))
+					Vector2(wires_chip.position.x - chip_h - chip_pad, chip_top),
+					Vector2(chip_h, chip_h))
 				draw_rect(cross_chip, Color(Design.ACCENT, 0.16))
 				draw_rect(cross_chip, Color(Design.ACCENT, 0.55), false, 1.0)
-				var inset: float = cross_side * 0.30
+				var inset: float = chip_h * 0.30
 				draw_line(cross_chip.position + Vector2(inset, inset),
-					cross_chip.end - Vector2(inset, inset), Design.ACCENT, 1.6, true)
+					cross_chip.end - Vector2(inset, inset), Design.ACCENT,
+					maxf(1.0, chip_h * 0.07), true)
 				draw_line(Vector2(cross_chip.end.x - inset, cross_chip.position.y + inset),
 					Vector2(cross_chip.position.x + inset, cross_chip.end.y - inset),
-					Design.ACCENT, 1.6, true)
-				_remove_hits_out[module_name] = cross_chip
+					Design.ACCENT, maxf(1.0, chip_h * 0.07), true)
+				_remove_hits_out[module_name] = cross_chip.grow(wires_reach)
 
 		graph._close_hits = _close_hits_out.duplicate()
 		graph._flip_hits = _flip_hits_out.duplicate()
