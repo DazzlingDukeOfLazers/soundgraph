@@ -5643,9 +5643,9 @@ func _initialize() -> void:
 		"a legacy whole-out document modernizes on load (%s)" % str(modern.keys()))
 
 	# ---- new file, and the delete key -------------------------------------------------
-	# New gives a bare machine, not an empty document: the keyboard and speakers are
-	# already on it, so the very first device added makes sound. A case with no jacks
-	# is a box, not an instrument.
+	# New gives a working machine, not an empty document: keyboard, mixer and
+	# speakers are already on it and strung, so the very first device added makes
+	# sound — and the second has channels waiting beside the first.
 	main._new_file()
 	for i in 8:
 		await process_frame
@@ -5653,8 +5653,9 @@ func _initialize() -> void:
 	for node in main.patch["nodes"]:
 		fresh_kinds.append(str(node.get("type", "")))
 	fresh_kinds.sort()
-	check(fresh_kinds == ["Input", "Output"] and main.patch["connections"].is_empty(),
-		"New is a bare machine (%s)" % str(fresh_kinds))
+	check(fresh_kinds == ["Input", "Mixer", "Output"]
+			and main.patch["connections"].size() == 2,
+		"New is a machine with a mixer already strung (%s)" % str(fresh_kinds))
 	check(not main.unsaved, "with nothing unsaved yet")
 	var onto_fresh: String = await main._add_device("DX7: algo-01", Vector2(600, 0))
 	for i in 8:
@@ -5936,10 +5937,10 @@ func _initialize() -> void:
 	main._set_parameter(onto_fresh, "level", 0.704)
 	check(loud > 0.01 and trimmed < loud * 0.1,
 		"and turning it down is heard (peak %.3f -> %.3f)" % [loud, trimmed])
-	check(main.graph_edit.get_connection_list().is_empty()
+	check(main.graph_edit.get_connection_list().size() == 2
 			and main.patch["connections"].size() == wired_when_flipped,
-		"its cables leave the view and stay in the document (%d kept)"
-			% main.patch["connections"].size())
+		"its cables leave the view — the mixer pair stays — and the document keeps "
+		+ "all %d" % main.patch["connections"].size())
 	check(main.graph_edit.flip_frames.has(onto_fresh)
 			and str(main.graph_edit.flip_labels.get(onto_fresh, "x")) == "",
 		"the band keeps its WIRES chip and leaves the naming to the badge")
@@ -6104,17 +6105,7 @@ func _initialize() -> void:
 	main._new_file()
 	for i in 8:
 		await process_frame
-	var mix_id: String = await main._add_node("Mixer", Vector2(1600, 200))
-	for i in 6:
-		await process_frame
-	main._begin_edit()
-	main.patch["connections"].append({"from": {"node": mix_id, "port": "out"},
-		"to": {"node": "out", "port": "left"}})
-	main.patch["connections"].append({"from": {"node": mix_id, "port": "out"},
-		"to": {"node": "out", "port": "right"}})
-	await main._rebuild_view()
-	main._apply()
-	main._commit_edit("connect")
+	var mix_id := "mix"
 	var first_dev: String = await main._add_device("DX7: algo-01", Vector2(300, 0))
 	for i in 8:
 		await process_frame

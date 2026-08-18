@@ -6936,16 +6936,28 @@ func _web_save() -> void:
 ## and because a case with no jacks is a box, not an instrument. Goes through
 ## _load_text like every other way a document arrives, so it starts clean and saved.
 func _new_file() -> void:
+	# Keyboard, mixer, speakers: the machine a first device plugs into and makes
+	# sound, with room already set for a second and a third — the auto-wire lands
+	# fresh devices on the mixer's channels, and the mixer feeds the out. A bare
+	# pair of seams was the earlier answer, and it was right until there were two
+	# devices with nowhere to meet.
 	_load_text(JSON.stringify({
 		"schema_version": 1,
 		"metadata": {"name": ""},
 		"nodes": [
 			{"id": "note", "type": "Input", "host": "note", "name": "Keyboard",
 				"position": {"x": 0.0, "y": 0.0}},
-			{"id": "out", "type": "Output", "host": "stereo",
+			{"id": "mix", "type": "Mixer",
 				"position": {"x": 1600.0, "y": 0.0}},
+			{"id": "out", "type": "Output", "host": "stereo",
+				"position": {"x": 2000.0, "y": 0.0}},
 		],
-		"connections": [],
+		"connections": [
+			{"from": {"node": "mix", "port": "out"},
+				"to": {"node": "out", "port": "left"}},
+			{"from": {"node": "mix", "port": "out"},
+				"to": {"node": "out", "port": "right"}},
+		],
 	}))
 	_set_document_name("")
 
