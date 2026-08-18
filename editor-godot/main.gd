@@ -5511,9 +5511,78 @@ func _on_face_socket_grabbed(mount: Control, socket: Dictionary) -> void:
 				"rewire": connection.duplicate(true)}
 			graph_edit.queue_redraw()
 			return
+		# The double tap on an unwired jack plugs it into the obvious place — the
+		# same answer the auto-wire gives a fresh device, one port at a time.
+		if bool(socket.get("double", false)):
+			var obvious := _obvious_end(instance, port, output)
+			if obvious.is_empty():
+				_say("nothing obvious to plug %s into" % port)
+				return
+			var quick: Dictionary
+			if output:
+				quick = {"from": {"node": instance, "port": port},
+					"to": {"node": str(obvious["node"]), "port": str(obvious["port"])}}
+			else:
+				quick = {"from": {"node": str(obvious["node"]),
+						"port": str(obvious["port"])},
+					"to": {"node": instance, "port": port}}
+			_connect_face_socket.call_deferred(quick)
+			return
 		dragging_face_socket = {"instance": instance, "port": port,
 			"output": output, "from": socket["centre"] as Vector2}
 		return
+
+
+## The obvious other end for one port of a device, by the same rules the auto-wire
+## uses when a device arrives: an input takes the host outlet of its own name; an
+## output takes the first vacant mixer channel, or the vacant machine inlet of its
+## own name. {} when nothing obvious exists, which is an honest answer.
+func _obvious_end(instance_id: String, port: String, output: bool) -> Dictionary:
+	var fed := {}
+	for wire in patch.get("connections", []):
+		fed["%s/%s" % [str(wire["to"]["node"]), str(wire["to"]["port"])]] = true
+	if not output:
+		for node in patch.get("nodes", []):
+			if str(node.get("type", "")) != "Input" or str(node.get("host", "")) == "":
+				continue
+			for outlet: Dictionary in registry.get(
+					Seams.registry_key(node), {}).get("outputs", []):
+				if str(outlet.get("name", "")) == port:
+					return {"node": str(node["id"]), "port": port}
+		return {}
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) != "Mixer":
+			continue
+		for inlet: Dictionary in registry.get("Mixer", {}).get("inputs", []):
+			if str(inlet.get("type", "")) != "audio":
+				continue
+			var inlet_name := str(inlet.get("name", ""))
+			if not fed.has("%s/%s" % [str(node["id"]), inlet_name]):
+				return {"node": str(node["id"]), "port": inlet_name}
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) != "Output" or str(node.get("host", "")) == "":
+			continue
+		for inlet: Dictionary in registry.get(
+				Seams.registry_key(node), {}).get("inputs", []):
+			if str(inlet.get("name", "")) == port \
+					and not fed.has("%s/%s" % [str(node["id"]), port]):
+				return {"node": str(node["id"]), "port": port}
+	return {}
+
+
+## Puts one cable into the document: the double-tap's auto-plug lands here.
+func _connect_face_socket(connection: Dictionary) -> void:
+	for wire in patch["connections"]:
+		if _same_connection(wire, connection):
+			return
+	_begin_edit()
+	patch["connections"].append(connection)
+	await _rebuild_view()
+	_apply()
+	_commit_edit("connect")
+	_say("connected %s.%s → %s.%s" % [str(connection["from"]["node"]),
+		str(connection["from"]["port"]), str(connection["to"]["node"]),
+		str(connection["to"]["port"])])
 
 
 ## Takes one cable out of the document: the floor drop and the double-tap yank both

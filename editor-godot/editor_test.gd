@@ -5903,6 +5903,65 @@ func _initialize() -> void:
 				and str(wire["to"]["port"]) == "frequency":
 			yanked_fed = true
 	check(yanked_fed, "and undo re-plugs it")
+	# The double tap works the other way on an empty jack: it plugs into the
+	# obvious place — the keyboard outlet of its own name for an input, the first
+	# vacant mixer channel for an output — the same answers the auto-wire gives.
+	main.graph_edit._input(yank)
+	for i in 8:
+		await process_frame
+	var yank_again := InputEventMouseButton.new()
+	yank_again.button_index = MOUSE_BUTTON_LEFT
+	yank_again.pressed = true
+	yank_again.double_click = true
+	yank_again.position = plug_spots["frequency"]
+	main.graph_edit._input(yank_again)
+	for i in 8:
+		await process_frame
+	var obvious_from := ""
+	for wire in main.patch["connections"]:
+		if str(wire["to"]["node"]) == onto_fresh \
+				and str(wire["to"]["port"]) == "frequency":
+			obvious_from = "%s.%s" % [str(wire["from"]["node"]),
+				str(wire["from"]["port"])]
+	check(obvious_from == "note.frequency",
+		"double-tapping an empty input jack finds the keyboard (%s)" % obvious_from)
+	# And the output side: yank left off the mixer, tap again, and it takes the
+	# first vacant channel back.
+	stub_mount = main.module_mounts[onto_fresh]
+	out_plate = stub_mount.get_node("Case/Rack/Rail/PortsOut")
+	var out_spots := {}
+	socket_queue = [out_plate]
+	while not socket_queue.is_empty():
+		var out_part2: Node = socket_queue.pop_back()
+		for child in out_part2.get_children():
+			socket_queue.append(child)
+		if out_part2 is HBoxContainer and out_part2.get_child_count() >= 2 \
+				and out_part2.get_child(1) is Label:
+			out_spots[str((out_part2.get_child(1) as Label).text)] = \
+				(out_part2.get_child(0) as Control).get_global_rect().get_center()
+	var left_yank := InputEventMouseButton.new()
+	left_yank.button_index = MOUSE_BUTTON_LEFT
+	left_yank.pressed = true
+	left_yank.double_click = true
+	left_yank.position = out_spots["left"]
+	main.graph_edit._input(left_yank)
+	for i in 8:
+		await process_frame
+	var left_tap := InputEventMouseButton.new()
+	left_tap.button_index = MOUSE_BUTTON_LEFT
+	left_tap.pressed = true
+	left_tap.double_click = true
+	left_tap.position = out_spots["left"]
+	main.graph_edit._input(left_tap)
+	for i in 8:
+		await process_frame
+	var left_to := ""
+	for wire in main.patch["connections"]:
+		if str(wire["from"]["node"]) == onto_fresh \
+				and str(wire["from"]["port"]) == "left":
+			left_to = "%s.%s" % [str(wire["to"]["node"]), str(wire["to"]["port"])]
+	check(left_to == "mix.in1",
+		"and an empty output jack takes the vacant mixer channel (%s)" % left_to)
 
 
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
