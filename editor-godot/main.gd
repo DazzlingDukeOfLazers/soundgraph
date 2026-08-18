@@ -695,6 +695,29 @@ func _build_ui() -> void:
 	# how to read. Which one leads at Knobcon is a question to settle by watching people.
 	views = TabContainer.new()
 	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# The breadcrumb rides the tab strip's right edge: the tabs say which view, the
+	# path says which document and how deep — one row answers both questions. The
+	# label owns only the right half of the strip, so the tabs keep every click
+	# that belongs to them.
+	document_label = RichTextLabel.new()
+	document_label.bbcode_enabled = true
+	document_label.fit_content = true
+	document_label.scroll_active = false
+	document_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	document_label.add_theme_font_size_override("normal_font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	document_label.add_theme_color_override("default_color", Design.INK_SECOND)
+	document_label.clip_contents = true
+	document_label.meta_clicked.connect(func(meta: Variant) -> void:
+		var level := int(str(meta))
+		_climb_levels.call_deferred(dive_stack.size() - level))
+	document_label.anchor_left = 0.45
+	document_label.anchor_right = 1.0
+	document_label.anchor_top = 0.0
+	document_label.anchor_bottom = 1.0
+	document_label.offset_right = -float(Design.scale(Design.SPACE_M))
+	document_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	views.get_tab_bar().add_child(document_label)
 	# One tab, one canvas, both sides of the container. The graph already owns zoom,
 	# pan and the grid, so the face is a tenant on that canvas rather than a rival
 	# view: flipping hides the wiring and mounts the face at the case's own spot, and
@@ -890,25 +913,7 @@ func _build_toolbar() -> Control:
 	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	identity.add_child(title)
 
-	# Rich rather than plain, because while dived the name is a breadcrumb and every
-	# ancestor segment is a link: click one and the editor climbs to that level.
-	document_label = RichTextLabel.new()
-	document_label.bbcode_enabled = true
-	document_label.fit_content = true
-	document_label.scroll_active = false
-	document_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	document_label.text = document_name
-	document_label.tooltip_text = document_name
-	document_label.add_theme_font_size_override("normal_font_size",
-		Design.type(Design.SIZE_SECONDARY))
-	document_label.add_theme_color_override("default_color", Design.INK_SECOND)
-	# Trimmed rather than allowed to set the width of the toolbar: the full name is
-	# in the tooltip and the title bar, exactly as when this was a Label.
-	document_label.clip_contents = true
-	document_label.meta_clicked.connect(func(meta: Variant) -> void:
-		var level := int(str(meta))
-		_climb_levels.call_deferred(dive_stack.size() - level))
-	identity.add_child(document_label)
+
 	bar.add_child(identity)
 
 	var project := _toolbar_group(bar, true)
@@ -6447,7 +6452,7 @@ func _refresh_document_label() -> void:
 	# and a leading "*" shifts every character along by one.
 	var shown := document_name + ("  (unsaved)" if unsaved else "")
 	if dive_stack.is_empty():
-		document_label.text = shown
+		document_label.text = "[right]%s[/right]" % shown
 	else:
 		# Every ancestor is a link back to its level; the last segment is where
 		# you already stand, and a link to where you are would only lie about it.
@@ -6458,7 +6463,8 @@ func _refresh_document_label() -> void:
 				parts.append("[url=%d]%s[/url]" % [index, segments[index]])
 			else:
 				parts.append(segments[index])
-		document_label.text = " > ".join(parts) 			+ ("  (unsaved)" if unsaved else "")
+		document_label.text = "[right]%s%s[/right]" % [" > ".join(parts),
+			"  (unsaved)" if unsaved else ""]
 	# Because the label is clipped, this is the only place a long name can be read whole.
 	document_label.tooltip_text = shown
 	document_label.add_theme_color_override("default_color",
