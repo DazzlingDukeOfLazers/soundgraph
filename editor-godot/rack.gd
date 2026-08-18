@@ -1375,6 +1375,21 @@ class Knob extends Control:
 			return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
+				# The double tap sends it home: the descriptor's default, one undo
+				# step, reported the way every other gesture reports. Already home,
+				# it does nothing — a reset that writes an empty edit teaches undo
+				# to lie.
+				if event.double_click:
+					var before := _position
+					set_value_silently(float(descriptor.get("default", value())))
+					if not is_equal_approx(before, _position):
+						rack.edit_started.emit()
+						rack.parameter_changed.emit(node_id,
+							str(descriptor["name"]), value())
+						rack.edit_finished.emit("set %s" % str(descriptor["name"]))
+					_dragging = false
+					accept_event()
+					return
 				# So the arrow keys go to the knob that was just touched, rather than to
 				# whatever held focus before it.
 				grab_focus()

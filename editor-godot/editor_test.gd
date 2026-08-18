@@ -6084,6 +6084,33 @@ func _initialize() -> void:
 	check(value_after > -999.0 and not is_equal_approx(value_after, value_before),
 		"a wheel notch on it lands on the instance's parameters (%s: %s -> %s)"
 			% [export_name, str(value_before), str(value_after)])
+	# The double tap sends the knob home — the descriptor's default — as one undo
+	# step, through the knob's own input like every other gesture.
+	var home_default: float = float(played_knob.descriptor.get("default", 0.0))
+	var reset_tap := InputEventMouseButton.new()
+	reset_tap.button_index = MOUSE_BUTTON_LEFT
+	reset_tap.pressed = true
+	reset_tap.double_click = true
+	reset_tap.position = played_knob.size * 0.5
+	played_knob._gui_input(reset_tap)
+	for i in 4:
+		await process_frame
+	var value_home: float = -999.0
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == onto_fresh:
+			value_home = float(node.get("parameters", {}).get(export_name, -999.0))
+	check(is_equal_approx(value_home, home_default),
+		"a double tap sends it home (%s: %.2f -> default %.2f)"
+			% [export_name, value_after, home_default])
+	await main._undo()
+	for i in 4:
+		await process_frame
+	var value_back: float = -999.0
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == onto_fresh:
+			value_back = float(node.get("parameters", {}).get(export_name, -999.0))
+	check(is_equal_approx(value_back, value_after),
+		"and undo brings the turn back (%.2f)" % value_back)
 	# The OUT knob is back, and it is real: expansion leaves a trimmed Output seam
 	# behind as a Level node, so the instance's "level" export reaches something
 	# that plays. The mix strip stands again too — its terminal standing came from
