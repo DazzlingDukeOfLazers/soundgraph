@@ -5787,6 +5787,8 @@ func _initialize() -> void:
 	await main._undo()
 	for i in 6:
 		await process_frame
+
+
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:
 		await process_frame
@@ -6093,6 +6095,46 @@ func _initialize() -> void:
 	for i in 10:
 		await process_frame
 	check(main.graph_edit.groups.is_empty(), "and the frame closes cleanly")
+
+	# ---- devices land on the mixer when there is one ----------------------------------
+	# Several devices into one mix is what a mixer is for. When the graph has a
+	# Mixer with room for the whole pair, a fresh device's outs take its vacant
+	# channels in order instead of wiring past it to the speakers; the second
+	# device takes the next two, and nobody touches the machine's out directly.
+	main._new_file()
+	for i in 8:
+		await process_frame
+	var mix_id: String = await main._add_node("Mixer", Vector2(1600, 200))
+	for i in 6:
+		await process_frame
+	main._begin_edit()
+	main.patch["connections"].append({"from": {"node": mix_id, "port": "out"},
+		"to": {"node": "out", "port": "left"}})
+	main.patch["connections"].append({"from": {"node": mix_id, "port": "out"},
+		"to": {"node": "out", "port": "right"}})
+	await main._rebuild_view()
+	main._apply()
+	main._commit_edit("connect")
+	var first_dev: String = await main._add_device("DX7: algo-01", Vector2(300, 0))
+	for i in 8:
+		await process_frame
+	var second_dev: String = await main._add_device("DX7: algo-01", Vector2(300, 900))
+	for i in 8:
+		await process_frame
+	var mix_wired := {}
+	for wire in main.patch["connections"]:
+		mix_wired["%s.%s>%s.%s" % [str(wire["from"]["node"]), str(wire["from"]["port"]),
+			str(wire["to"]["node"]), str(wire["to"]["port"])]] = true
+	check(mix_wired.has("%s.left>%s.in1" % [first_dev, mix_id])
+			and mix_wired.has("%s.right>%s.in2" % [first_dev, mix_id]),
+		"the first device takes the mixer's first pair of channels")
+	check(mix_wired.has("%s.left>%s.in3" % [second_dev, mix_id])
+			and mix_wired.has("%s.right>%s.in4" % [second_dev, mix_id]),
+		"the second takes the next pair")
+	check(not mix_wired.has("%s.left>out.left" % first_dev)
+			and not mix_wired.has("%s.left>out.left" % second_dev),
+		"and neither wires past the mixer to the speakers")
+	check_loads(main, "and two devices on a mixer leave a patch that")
 
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".

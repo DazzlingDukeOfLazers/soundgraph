@@ -4807,6 +4807,38 @@ func _auto_wire_device(instance_id: String, module_name: String) -> Array:
 					wired.append("%s → %s" % [str(node.get("name", node["id"])),
 						port_name])
 
+	# Where the outs land: a Mixer first, when the graph has one with room for the
+	# whole pair — several devices into one mix is what a mixer is for, and wiring
+	# past it straight to the speakers would put the device outside the mix. Each
+	# out takes one vacant channel, in order; a mixer without room for all of them
+	# is passed over rather than splitting a pair across boxes.
+	var audio_outs: Array = []
+	for port: Dictionary in descriptor.get("outputs", []):
+		if str(port.get("type", port.get("signal", ""))) == "audio":
+			audio_outs.append(str(port.get("name", "")))
+	if not audio_outs.is_empty():
+		for node in patch.get("nodes", []):
+			if str(node.get("type", "")) != "Mixer":
+				continue
+			var mixer_id := str(node["id"])
+			var vacant: Array = []
+			for inlet: Dictionary in registry.get("Mixer", {}).get("inputs", []):
+				if str(inlet.get("type", "")) != "audio":
+					continue
+				var inlet_name := str(inlet.get("name", ""))
+				if not fed.has("%s/%s" % [mixer_id, inlet_name]):
+					vacant.append(inlet_name)
+			if vacant.size() < audio_outs.size():
+				continue
+			for index in audio_outs.size():
+				patch["connections"].append({
+					"from": {"node": instance_id, "port": str(audio_outs[index])},
+					"to": {"node": mixer_id, "port": str(vacant[index])}})
+				fed["%s/%s" % [mixer_id, str(vacant[index])]] = true
+				wired.append("%s → %s.%s" % [str(audio_outs[index]), mixer_id,
+					str(vacant[index])])
+			return wired
+
 	for port: Dictionary in descriptor.get("outputs", []):
 		if str(port.get("type", port.get("signal", ""))) != "audio":
 			continue
