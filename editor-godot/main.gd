@@ -675,6 +675,7 @@ func _build_ui() -> void:
 		_capture_positions()
 		_commit_edit("move %s" % key))
 	graph_edit.face_socket_grabbed.connect(_on_face_socket_grabbed)
+	graph_edit.face_rename_requested.connect(_begin_face_rename)
 	graph_edit.cable_drag_started.connect(func() -> void: _begin_edit())
 
 	# Two views of one document, side by side in tabs rather than as a mode: the graph is
@@ -5531,6 +5532,51 @@ func _on_face_socket_grabbed(mount: Control, socket: Dictionary) -> void:
 		dragging_face_socket = {"instance": instance, "port": port,
 			"output": output, "from": socket["centre"] as Vector2}
 		return
+
+
+## An inline name field over the turned container's band: Enter commits through the
+## same handler the inspector's rename uses, Escape or clicking away cancels. The
+## field is screen furniture, not document state — nothing happens until Enter.
+func _begin_face_rename(key: String) -> void:
+	var module_name := _module_of(key)
+	if module_name == "" and patch.get("modules", {}).has(key):
+		module_name = key
+	if module_name == "":
+		return
+	var frame: Rect2 = graph_edit.flip_frames.get(key, Rect2())
+	if frame.size.x <= 0.0:
+		return
+	var zoom: float = graph_edit.zoom if graph_edit.zoom > 0.0 else 1.0
+	var field := LineEdit.new()
+	field.text = module_name
+	field.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
+	field.position = frame.position * zoom - graph_edit.scroll_offset
+	field.size = Vector2(minf(frame.size.x * zoom, 320.0),
+		maxf(float(Design.scale(26.0)) * zoom, 28.0))
+	field.z_index = 120
+	field.tooltip_text = "Enter renames the module; Escape leaves it alone."
+	graph_edit.add_child(field)
+	field.select_all()
+	field.grab_focus()
+	var closing := [false]
+	field.text_submitted.connect(func(text: String) -> void:
+		if closing[0]:
+			return
+		closing[0] = true
+		var wanted := text.strip_edges()
+		field.queue_free()
+		_on_module_renamed(module_name, wanted))
+	field.focus_exited.connect(func() -> void:
+		if closing[0]:
+			return
+		closing[0] = true
+		field.queue_free())
+	field.gui_input.connect(func(event: InputEvent) -> void:
+		var pressed := event as InputEventKey
+		if pressed != null and pressed.pressed and pressed.keycode == KEY_ESCAPE \
+				and not closing[0]:
+			closing[0] = true
+			field.queue_free())
 
 
 ## The obvious other end for one port of a device, by the same rules the auto-wire

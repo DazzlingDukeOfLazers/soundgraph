@@ -1084,6 +1084,8 @@ signal face_dragged(key: String, step: Vector2)
 signal face_moved(key: String)
 ## A socket on a mounted face was grabbed: the start of a cable, headed for a port.
 signal face_socket_grabbed(mount: Control, socket: Dictionary)
+## The band was double-tapped: the container wants a new name.
+signal face_rename_requested(key: String)
 var _face_drag_key := ""
 var _face_drag_from := Vector2.ZERO
 ## What the band above a turned container says, when its key is not worth reading:
@@ -1742,6 +1744,12 @@ func _input(event: InputEvent) -> void:
 		var strip := Rect2(frame.position * zoom - scroll_offset,
 			Vector2(frame.size.x * zoom, float(Design.scale(26.0)) * zoom))
 		if strip.has_point(button.position - rect.position):
+			# The double tap on the name asks to change it; the single press is the
+			# handle, as ever.
+			if button.double_click:
+				face_rename_requested.emit(str(key))
+				get_viewport().set_input_as_handled()
+				return
 			_face_drag_key = str(key)
 			_face_drag_from = _to_graph(button.position - rect.position)
 			face_move_started.emit(str(key))

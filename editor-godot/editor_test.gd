@@ -6219,6 +6219,46 @@ func _initialize() -> void:
 	check(doc_undone.distance_to(doc_before) < 0.5,
 		"and undo puts it back (%.1f away)" % doc_undone.distance_to(doc_before))
 
+	# Double-tapping the band renames the module, through the same handler the
+	# inspector's field uses: Enter commits, the definition and its instances
+	# follow, and undo brings the old name back.
+	var rename_frame: Rect2 = main.graph_edit.flip_frames[onto_fresh]
+	var rename_tap := InputEventMouseButton.new()
+	rename_tap.button_index = MOUSE_BUTTON_LEFT
+	rename_tap.pressed = true
+	rename_tap.double_click = true
+	rename_tap.position = main.graph_edit.get_global_rect().position \
+		+ rename_frame.position * main.graph_edit.zoom - main.graph_edit.scroll_offset \
+		+ Vector2(12.0, 8.0) * main.graph_edit.zoom
+	main.graph_edit._input(rename_tap)
+	for i in 3:
+		await process_frame
+	var band_field: LineEdit = null
+	for child in main.graph_edit.get_children():
+		if child is LineEdit:
+			band_field = child
+	check(band_field != null and str(band_field.text) == "algo-01",
+		"the band's double tap opens a name field holding the name")
+	band_field.text = "algo-uno"
+	band_field.text_submitted.emit("algo-uno")
+	for i in 10:
+		await process_frame
+	check(main.patch["modules"].has("algo-uno")
+			and not main.patch["modules"].has("algo-01"),
+		"Enter renames the definition (%s)" % str(main.patch["modules"].keys()))
+	await main._undo()
+	for i in 10:
+		await process_frame
+	check(main.patch["modules"].has("algo-01"),
+		"and undo brings the old name back")
+	# The rename pruned the flip with the old id, so turn the device back over for
+	# the checks that follow — through its own chip, the way a hand would.
+	var reflip: Button = main.widgets[onto_fresh].get_titlebar_hbox().get_node("Flip")
+	reflip.pressed.emit()
+	for i in 10:
+		await process_frame
+	check(not main.widgets[onto_fresh].visible, "and the device turns back over")
+
 	# WIRES on the band is the way back: the same signal a click sends.
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:
