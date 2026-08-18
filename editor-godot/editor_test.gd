@@ -2280,6 +2280,40 @@ func _initialize() -> void:
 			and subject.distance_to(subject_after) < 1.0,
 		"and unselected it keeps the subject under the centre (%.1f units drift)"
 			% subject.distance_to(subject_after))
+
+	# The presets on keys, through the accelerators the menu itself declares — the
+	# image editors' pair, Ctrl-modified so the piano keys cannot collide.
+	main.graph_edit.zoom = 2.0
+	main.graph_edit.scroll_offset = Vector2(90000, 90000)
+	for i in 2:
+		await process_frame
+	var fit_key := InputEventKey.new()
+	fit_key.keycode = KEY_0
+	fit_key.ctrl_pressed = true
+	fit_key.pressed = true
+	Input.parse_input_event(fit_key)
+	for i in 3:
+		await process_frame
+	var keyed_frame: Rect2 = main.graph_edit.usable_rect()
+	var keyed_outside := 0
+	for id in main.widgets:
+		var node: GraphNode = main.widgets[id]
+		var spot := Rect2(
+			node.position_offset * main.graph_edit.zoom - main.graph_edit.scroll_offset,
+			node.size * main.graph_edit.zoom)
+		if not keyed_frame.encloses(spot):
+			keyed_outside += 1
+	check(keyed_outside == 0,
+		"Ctrl+0 fits the graph (%d outside)" % keyed_outside)
+	var actual_key := InputEventKey.new()
+	actual_key.keycode = KEY_1
+	actual_key.ctrl_pressed = true
+	actual_key.pressed = true
+	Input.parse_input_event(actual_key)
+	for i in 3:
+		await process_frame
+	check(is_equal_approx(main.graph_edit.zoom, 1.0),
+		"and Ctrl+1 is real size (zoom %.2f)" % main.graph_edit.zoom)
 	main.graph_edit.zoom = 1.0
 	main.graph_edit._update_detail()
 	main._apply_detail(main.graph_edit.detail)

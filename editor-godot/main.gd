@@ -1093,6 +1093,15 @@ func _build_toolbar() -> Control:
 	view_popup.set_item_tooltip(view_popup.get_item_index(73),
 		"Working scale. Centres on the selection when there is one, and on "
 		+ "whatever the view was already looking at otherwise.")
+	# The image editors' pair — fit on 0, real size on 1 — because that is where
+	# these hands already are. Accelerators rather than another _unhandled_key
+	# branch: the popup matches them while closed, the menu prints them in the
+	# right-hand column, and there is exactly one path for key and click alike.
+	# Ctrl-modified, so the piano keys cannot collide.
+	view_popup.set_item_accelerator(view_popup.get_item_index(72),
+		KEY_MASK_CTRL | KEY_0)
+	view_popup.set_item_accelerator(view_popup.get_item_index(73),
+		KEY_MASK_CTRL | KEY_1)
 	view_popup.add_separator()
 	# An accessibility switch that only exists as a hope is not one. Everything that
 	# moves on its own in this editor is off behind this: the signal glow and the grid
