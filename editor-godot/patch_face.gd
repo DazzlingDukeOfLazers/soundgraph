@@ -88,6 +88,20 @@ func socket_at(point: Vector2) -> Dictionary:
 	return {}
 
 
+## Where a given port's socket sits, in viewport space — or null when the face has
+## no such jack. The stand-in cables land here, so the wire into "gate" meets the
+## socket labelled gate rather than the middle of the plate.
+func socket_centre(port: String, output: bool) -> Variant:
+	for jack in _jacks:
+		var control := jack as Control
+		if control == null or not control.is_visible_in_tree():
+			continue
+		if str(control.get_meta("seam_port")) == port \
+				and bool(control.get_meta("seam_output")) == output:
+			return control.get_global_rect().get_center()
+	return null
+
+
 ## When the panel plays a module instance rather than the file it was drawn from:
 ## "inner_node.parameter" -> {"node": instance id, "parameter": export name}. A
 ## control keeps its inner target for structure — groups, chains, what is heard —

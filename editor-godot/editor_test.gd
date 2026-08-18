@@ -5685,6 +5685,29 @@ func _initialize() -> void:
 	check(into_panel >= 2 and out_of_panel >= 2,
 		"a turned device keeps its wires (%d into IN, %d out of OUT)"
 			% [into_panel, out_of_panel])
+	# And each wire meets its own socket: the frequency cable lands on the jack
+	# labelled frequency, the gate cable on gate — not both on the middle of the
+	# plate, which is where they used to pile up.
+	var jack_spots := {}
+	var spot_queue: Array = [in_plate, out_plate]
+	while not spot_queue.is_empty():
+		var spot_part: Node = spot_queue.pop_back()
+		for child in spot_part.get_children():
+			spot_queue.append(child)
+		if spot_part is HBoxContainer and spot_part.get_child_count() >= 2 \
+				and spot_part.get_child(1) is Label:
+			jack_spots[str((spot_part.get_child(1) as Label).text)] = \
+				(spot_part.get_child(0) as Control).get_global_rect().get_center()
+	var met := {}
+	for run in main.seam_cables.runs:
+		for jack_name in jack_spots:
+			var spot: Vector2 = jack_spots[jack_name]
+			if (run[1] as Vector2).distance_to(spot) < 8.0 \
+					or (run[0] as Vector2).distance_to(spot) < 8.0:
+				met[jack_name] = true
+	check(met.has("frequency") and met.has("gate")
+			and met.has("left") and met.has("right"),
+		"each wire meets its own labelled socket (%s)" % str(met.keys()))
 	# The panel shows its whole width, input plate to output plate. Sized by the
 	# scroller's minimum it was a scrollable slice of an instrument, the OUT plate
 	# somewhere off the crop's right edge.

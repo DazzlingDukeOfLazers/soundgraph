@@ -5434,6 +5434,13 @@ func _stub_cable_end(node_id: String, port: String, is_output: bool,
 		var mount := module_mounts.get(node_id, null) as Control
 		if mount == null or not mount.visible:
 			return null
+		# The named socket itself, when the face has one: the wire into "gate" meets
+		# the jack labelled gate, not the middle of the plate. The plate centre is
+		# only the fallback for a face without that jack.
+		if mount.has_method("socket_centre"):
+			var jack: Variant = mount.socket_centre(port, is_output)
+			if jack != null:
+				return jack
 		var plate := mount.get_node_or_null(
 			"Case/Rack/Rail/" + ("PortsOut" if is_output else "PortsIn")) as Control
 		if plate != null:
