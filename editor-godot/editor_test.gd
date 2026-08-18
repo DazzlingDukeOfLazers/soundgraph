@@ -5685,6 +5685,22 @@ func _initialize() -> void:
 	check(in_sockets.has("frequency") and in_sockets.has("gate"),
 		"the IN plate shows each connected input as its own socket (%s)"
 			% str(in_sockets))
+	# And the OUT plate the same way, from its side: every wire into the out seam is
+	# a socket. Same rule, other direction — pinned separately because the first
+	# version of the check only looked left.
+	var out_sockets := []
+	socket_queue = [out_plate]
+	while not socket_queue.is_empty():
+		var out_part: Node = socket_queue.pop_back()
+		for child in out_part.get_children():
+			socket_queue.append(child)
+		if out_part is HBoxContainer:
+			for child in out_part.get_children():
+				if child is Label:
+					out_sockets.append(str((child as Label).text))
+	check(out_sockets.has("left") and out_sockets.has("right"),
+		"the OUT plate shows each connected output as its own socket (%s)"
+			% str(out_sockets))
 	main.graph_edit.group_flip_toggled.emit(onto_fresh)
 	for i in 10:
 		await process_frame
