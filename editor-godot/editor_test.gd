@@ -6461,6 +6461,19 @@ func _initialize() -> void:
 	for i in 10:
 		await process_frame
 	check(main.widgets.has(second_dev), "and the climb comes home")
+	# The band's DIVE chip is the panel's way down — the double tap there belongs
+	# to the name. Painted chip, so headless drives its signal; the windowed smoke
+	# covers the pixels. first_dev is still face up, band standing.
+	main.graph_edit.face_dive_requested.emit(first_dev)
+	for i in 10:
+		await process_frame
+	check(str(main.patch.get("metadata", {}).get("name", "")) == "algo-01",
+		"the band's DIVE chip descends from the panel")
+	await main._climb_up()
+	for i in 10:
+		await process_frame
+	check(main.widgets.has(first_dev) and not main.widgets[first_dev].visible,
+		"and the climb comes home with the device still face up")
 
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".

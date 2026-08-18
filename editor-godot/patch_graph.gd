@@ -1090,6 +1090,9 @@ signal face_rename_requested(key: String)
 signal face_remove_requested(key: String)
 ## A node's title was double-tapped: dive into what it stands for.
 signal node_dive_requested(widget_name: String)
+## The band's DIVE chip: descend into the turned device's definition.
+signal face_dive_requested(key: String)
+var _dive_hits: Dictionary = {}
 ## Which turned containers may be removed from their band — instances, not open
 ## groups, whose ✕ would mean something murkier. Set by main beside flip_frames.
 var flip_deletable: Dictionary = {}
@@ -1566,6 +1569,7 @@ class WandOverlay extends Control:
 		_close_hits_out.clear()
 		_flip_hits_out.clear()
 		_remove_hits_out.clear()
+		_dive_hits_out.clear()
 		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
 		var font := Design.font(Design.WEIGHT_SEMIBOLD)
 		var size := Design.type(Design.SIZE_CONTROL)
@@ -1668,13 +1672,34 @@ class WandOverlay extends Control:
 					Design.ACCENT, maxf(1.0, chip_h * 0.07), true)
 				_remove_hits_out[module_name] = cross_chip.grow(wires_reach)
 
+				# And the way down: DIVE, in words — the double tap belongs to the
+				# name, so descending gets a chip of its own.
+				var dive_text := "DIVE"
+				var dive_measured := font.get_string_size(dive_text,
+					HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font)
+				var dive_chip := Rect2(
+					Vector2(cross_chip.position.x - dive_measured.x
+						- chip_pad * 2.0 - chip_pad, chip_top),
+					Vector2(dive_measured.x + chip_pad * 2.0, chip_h))
+				draw_rect(dive_chip, Color(Design.ACCENT, 0.16))
+				draw_rect(dive_chip, Color(Design.ACCENT, 0.55), false, 1.0)
+				draw_string(font,
+					Vector2(dive_chip.position.x + chip_pad,
+						dive_chip.position.y + (chip_h + font.get_ascent(chip_font)
+							- font.get_descent(chip_font)) * 0.5),
+					dive_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font,
+					Design.ACCENT)
+				_dive_hits_out[module_name] = dive_chip.grow(wires_reach)
+
 		graph._close_hits = _close_hits_out.duplicate()
 		graph._flip_hits = _flip_hits_out.duplicate()
 		graph._remove_hits = _remove_hits_out.duplicate()
+		graph._dive_hits = _dive_hits_out.duplicate()
 
 	var _close_hits_out: Dictionary = {}
 	var _flip_hits_out: Dictionary = {}
 	var _remove_hits_out: Dictionary = {}
+	var _dive_hits_out: Dictionary = {}
 
 
 	## The rubber band, while one is being drawn. Dashed for the same reason a target is:
@@ -1774,6 +1799,13 @@ func _input(event: InputEvent) -> void:
 	for module_name in _remove_hits:
 		if (_remove_hits[module_name] as Rect2).has_point(button.position - rect.position):
 			face_remove_requested.emit(str(module_name))
+			get_viewport().set_input_as_handled()
+			return
+
+	# The band's DIVE: down into the definition.
+	for module_name in _dive_hits:
+		if (_dive_hits[module_name] as Rect2).has_point(button.position - rect.position):
+			face_dive_requested.emit(str(module_name))
 			get_viewport().set_input_as_handled()
 			return
 

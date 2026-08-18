@@ -688,6 +688,8 @@ func _build_ui() -> void:
 	graph_edit.face_rename_requested.connect(_begin_face_rename)
 	graph_edit.node_dive_requested.connect(func(widget_name: String) -> void:
 		_dive_into(ids.get(widget_name, "")))
+	# The band's DIVE chip names the instance directly.
+	graph_edit.face_dive_requested.connect(_dive_into)
 	# The band's ✕ deletes through the same path the Delete key takes: node,
 	# cables, controls and automation together, one undo step.
 	graph_edit.face_remove_requested.connect(func(key: String) -> void:
