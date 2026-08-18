@@ -6474,6 +6474,32 @@ func _initialize() -> void:
 		await process_frame
 	check(main.widgets.has(first_dev) and not main.widgets[first_dev].visible,
 		"and the climb comes home with the device still face up")
+	# The title bar is the breadcrumb: one segment per level, grown on the dive and
+	# shrunk on the climb, with the climb button naming only the last step.
+	var surface_name: String = main.document_name
+	main._dive_into(first_dev)
+	for i in 8:
+		await process_frame
+	check(main.document_name == "%s > algo-01" % surface_name,
+		"one dive is one segment (%s)" % main.document_name)
+	main._dive_into("op1")
+	for i in 8:
+		await process_frame
+	check(main.document_name == "%s > algo-01 > dx7_operator" % surface_name,
+		"a second dive is a second segment (%s)" % main.document_name)
+	check(main.climb_button.text == "Climb to algo-01",
+		"and the climb button names one step, not the journey (%s)"
+			% main.climb_button.text)
+	await main._climb_up()
+	for i in 8:
+		await process_frame
+	check(main.document_name == "%s > algo-01" % surface_name,
+		"climbing trims the path from the right (%s)" % main.document_name)
+	await main._climb_up()
+	for i in 8:
+		await process_frame
+	check(main.document_name == surface_name,
+		"and the surface wears its own name again (%s)" % main.document_name)
 
 	# A file may not be added to itself. The definitional cycle is refused deeper down;
 	# this is the surface refusal for the gesture that almost never means "make a twin".

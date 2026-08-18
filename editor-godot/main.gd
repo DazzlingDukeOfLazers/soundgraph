@@ -5627,11 +5627,14 @@ func _dive_into(instance_id: String) -> void:
 	})
 	undo_redo = UndoRedo.new()
 	_load_text(JSON.stringify(doc))
-	_set_document_name("%s — inside %s" % [module_name,
-		dive_stack.back()["name"]])
+	# The title bar is the breadcrumb: each frame stores the name at its level, so
+	# the path grows one segment per dive and shrinks itself on the climb —
+	# "first-synth > algo-01 > dx7_operator" says where you are and how you got
+	# there. An ASCII separator, because a path drawn in tofu is no path at all.
+	_set_document_name("%s > %s" % [str(dive_stack.back()["name"]), module_name])
 	unsaved = false
 	if climb_button != null:
-		climb_button.text = "Climb to %s" % str(dive_stack.back()["name"])
+		climb_button.text = "Climb to %s" % _dive_leaf(str(dive_stack.back()["name"]))
 		climb_button.visible = true
 	_refresh_undo_buttons()
 	_say("dived into %s" % module_name)
@@ -5653,7 +5656,8 @@ func _climb_up() -> void:
 	if climb_button != null:
 		climb_button.visible = not dive_stack.is_empty()
 		if not dive_stack.is_empty():
-			climb_button.text = "Climb to %s" % str(dive_stack.back()["name"])
+			climb_button.text = "Climb to %s" \
+				% _dive_leaf(str(dive_stack.back()["name"]))
 	if touched:
 		_begin_edit()
 		patch["modules"][str(frame["module"])] = _definition_from_document(edited,
@@ -5669,6 +5673,13 @@ func _climb_up() -> void:
 	else:
 		_refresh_undo_buttons()
 		_say("climbed up")
+
+
+## The last segment of a breadcrumb: what the climb button names, since "Climb to
+## first-synth > algo-01" would quote the whole journey to describe one step.
+func _dive_leaf(path: String) -> String:
+	var segments := path.split(" > ")
+	return segments[segments.size() - 1]
 
 
 ## A definition rebuilt from the document its dive produced. Structure maps one to
