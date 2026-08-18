@@ -5933,8 +5933,12 @@ func _initialize() -> void:
 				or member.position_offset.distance_to(members_before[widget_name]) > 0.5:
 			frame_restored = false
 	check(frame_restored, "and undo puts the whole frame back")
-	# Folded shut again: the section owns its fixture, and a frame left open was a
-	# teardown crash at exit — freed overlays still holding the group's furniture.
+	# Folded shut again: the section owns its fixture. A run once segfaulted at exit
+	# with the frame left open and the close was added as the cure — then five runs
+	# of the uncleaned suite exited cleanly, so the crash was a rare teardown race
+	# that had nothing provable to do with the frame. The close stays as fixture
+	# hygiene and as one more drive of the close-module path, not as a cure for a
+	# crash it never caused.
 	main.graph_edit.group_closed.emit(group_key)
 	for i in 10:
 		await process_frame
