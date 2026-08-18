@@ -76,6 +76,21 @@ static func declared_ports(definition: Dictionary, is_output: bool) -> Array:
 	for node: Dictionary in definition.get("nodes", []):
 		if str(node.get("type", "")) != wanted or str(node.get("host", "")) != "":
 			continue
+		# A stereo pair answers to its channels: left and right are ports of the
+		# instance in their own right, which is what keeps channel identity — one
+		# port for the whole seam summed left into right at every destination.
+		# Mirrors patch-io's seam_is_stereo, and the spelling guard holds both to it.
+		if is_output and stereo_pair(definition, node):
+			for channel in ["left", "right"]:
+				for wire: Dictionary in definition.get("connections", []):
+					if str(wire["to"]["node"]) == str(node["id"]) \
+							and str(wire["to"]["port"]) == channel:
+						ports.append({"name": channel,
+							"node": str(wire["from"]["node"]),
+							"port": str(wire["from"]["port"])})
+						claimed[channel] = true
+						break
+			continue
 		var port_name := str(node.get("name", ""))
 		if port_name == "":
 			port_name = str(node["id"])
@@ -94,6 +109,18 @@ static func declared_ports(definition: Dictionary, is_output: bool) -> Array:
 		ports.append({"name": str(binding["name"]), "node": str(binding["node"]),
 			"port": str(binding["port"])})
 	return ports
+
+
+## Whether this Output seam is a stereo pair: wired through exactly "left" and
+## "right". The same recognition patch-io uses, spelled once per language.
+static func stereo_pair(definition: Dictionary, seam: Dictionary) -> bool:
+	if str(seam.get("type", "")) != "Output":
+		return false
+	var inlets := {}
+	for wire: Dictionary in definition.get("connections", []):
+		if str(wire["to"]["node"]) == str(seam["id"]):
+			inlets[str(wire["to"]["port"])] = true
+	return inlets.size() == 2 and inlets.has("left") and inlets.has("right")
 
 
 ## True when this node is one of a definition's own edges rather than a part of it. Used

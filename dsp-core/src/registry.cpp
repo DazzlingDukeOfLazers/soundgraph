@@ -134,6 +134,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kPhaser,
         &nodes::kGain,
         &nodes::kLevel,
+        &nodes::kStereoLevel,
         &nodes::kMixer,
         &nodes::kAdsr,
         &nodes::kAhdEnvelope,

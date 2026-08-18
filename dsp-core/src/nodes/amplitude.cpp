@@ -78,6 +78,45 @@ public:
 };
 
 // ---------------------------------------------------------------------------------
+// StereoLevel
+// ---------------------------------------------------------------------------------
+// The two-channel trim: what a module's stereo Output seam becomes when it carries a
+// level. One knob, two wires, and the channels never meet — the mono Level's summing
+// inlet would fold left into right, which is exactly the collapse a stereo port
+// exists to avoid.
+
+constexpr PortDescriptor kStereoLevelInputs[] = {
+    {"left", SignalType::Audio, "", false, true, "Left channel; several sum."},
+    {"right", SignalType::Audio, "", false, true, "Right channel; several sum."},
+};
+
+constexpr PortDescriptor kStereoLevelOutputs[] = {
+    {"left", SignalType::Audio, "", false, false, "Trimmed left channel."},
+    {"right", SignalType::Audio, "", false, false, "Trimmed right channel."},
+};
+
+constexpr ParameterDescriptor kStereoLevelParameters[] = {
+    {"level", "", 0.0f, 2.0f, 1.0f, Scaling::Logarithmic,
+     "Linear level for both channels. 1 leaves the signal unchanged.", nullptr, 0},
+};
+
+class StereoLevelNode final : public DspNode {
+public:
+    void process(const ProcessContext& context) override {
+        const float* left = context.inputs[0];
+        const float* right = context.inputs[1];
+        float* out_left = context.outputs[0];
+        float* out_right = context.outputs[1];
+        const float level = parameter(0);
+
+        for (int i = 0; i < context.frames; ++i) {
+            out_left[i] = (left != nullptr ? left[i] : 0.0f) * level;
+            out_right[i] = (right != nullptr ? right[i] : 0.0f) * level;
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------------
 // Mixer
 // ---------------------------------------------------------------------------------
 
@@ -314,6 +353,18 @@ const NodeTypeDescriptor kLevel = {
     false, NodeRole::Processor, false,
     ResourceCost{1.0f, 0, 0},
     &make<LevelNode>,
+};
+
+const NodeTypeDescriptor kStereoLevel = {
+    "StereoLevel", "Stereo Level", "Amplitude",
+    "Trims a stereo pair by one fixed amount, keeping the channels apart.",
+    "stereo level|stereo trim|pair|balance level|output level",
+    Slice<PortDescriptor>(kStereoLevelInputs),
+    Slice<PortDescriptor>(kStereoLevelOutputs),
+    Slice<ParameterDescriptor>(kStereoLevelParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{1.0f, 0, 0},
+    &make<StereoLevelNode>,
 };
 
 const NodeTypeDescriptor kMixer = {

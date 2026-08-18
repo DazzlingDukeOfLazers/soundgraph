@@ -293,6 +293,31 @@ const DEMOS = {
       ],
     }),
   },
+  StereoLevel: {
+    summary: 'One trim for a stereo pair, channels kept apart.',
+    try: 'Pull level down and back. Both channels follow one knob, and neither leaks '
+      + 'into the other.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('osc', 'SawOscillator', { frequency: 220 }, 1, 0),
+        envelope(1, 1),
+        amp(2),
+        node('demo', 'StereoLevel', { level: 0.7 }, 3, 0),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('osc', 'out', 'amp', 'in'),
+        wire('kb', 'trigger', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('amp', 'out', 'demo', 'left'),
+        wire('amp', 'out', 'demo', 'right'),
+        wire('demo', 'left', 'out', 'left'),
+        wire('demo', 'right', 'out', 'right'),
+      ],
+    }),
+  },
   Mixer: {
     summary: 'Four signals at independent levels.',
     try: 'The three oscillators are detuned by a few hertz. Pull level2 and level3 to zero '
@@ -551,6 +576,7 @@ const PROBES = {
 
   Gain: { parameter: 'gain', value: 0.15 },
   Level: { parameter: 'level', value: 0.15 },
+  StereoLevel: { parameter: 'level', value: 0.15 },
   Mixer: { parameter: 'level2', value: 0 },
 
   ADSR: { parameter: 'attack', value: 2.0 },

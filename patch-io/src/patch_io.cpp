@@ -405,6 +405,37 @@ std::string seam_port_name(const NodeDescription& node) {
     return node.name.empty() ? node.id : node.name;
 }
 
+// The distinct inlet names wired into an Output seam, in first-wire order.
+std::vector<std::string> seam_inlets(const ModuleDescription& definition,
+                                     const NodeDescription& seam) {
+    std::vector<std::string> inlets;
+    for (const ConnectionDescription& wire : definition.connections) {
+        if (wire.to_node != seam.id) {
+            continue;
+        }
+        if (std::find(inlets.begin(), inlets.end(), wire.to_port) == inlets.end()) {
+            inlets.push_back(wire.to_port);
+        }
+    }
+    return inlets;
+}
+
+// Whether this Output seam is a stereo pair: wired through exactly "left" and
+// "right". A pair keeps channel identity through expansion — each inlet becomes a
+// port of the instance in its own right, and the old habit of aiming one cable at
+// the whole seam summed left into right at every destination.
+bool seam_is_stereo(const ModuleDescription& definition, const NodeDescription& seam) {
+    if (seam.type != "Output") {
+        return false;
+    }
+    const std::vector<std::string> inlets = seam_inlets(definition, seam);
+    if (inlets.size() != 2) {
+        return false;
+    }
+    return (inlets[0] == "left" && inlets[1] == "right") ||
+           (inlets[0] == "right" && inlets[1] == "left");
+}
+
 // Whether this seam's level survives expansion as a node of its own.
 //
 // An Output seam that carries a level — stored on it, or reachable through an export —
@@ -441,8 +472,37 @@ bool port_endpoints(const ModuleDescription& definition,
                     std::vector<std::pair<std::string, std::string>>& out) {
     const std::string wanted_type = is_output ? "Output" : "Input";
     for (const NodeDescription& inner : definition.nodes) {
-        if (inner.type != wanted_type || seam_port_name(inner) != port) {
+        if (inner.type != wanted_type) {
             continue;
+        }
+        const bool named = seam_port_name(inner) == port;
+        // A stereo seam answers to its channels: "left" and "right" are ports of the
+        // instance in their own right, which is what keeps channel identity — the
+        // whole-seam name still resolves for documents written before the pair, and
+        // means both channels, which is what it always meant.
+        const bool stereo = is_output && seam_is_stereo(definition, inner);
+        const bool channel = stereo && (port == "left" || port == "right");
+        if (!named && !channel) {
+            continue;
+        }
+        const bool leveled = is_output && seam_level_stands(definition, inner);
+        if (stereo && leveled) {
+            if (channel) {
+                out.emplace_back(inner.id, port);
+            } else {
+                out.emplace_back(inner.id, "left");
+                out.emplace_back(inner.id, "right");
+            }
+            return true;
+        }
+        if (stereo && channel) {
+            // Unleveled pair, one channel: that inlet's own feeders, nobody else's.
+            for (const ConnectionDescription& wire : definition.connections) {
+                if (wire.to_node == inner.id && wire.to_port == port) {
+                    out.emplace_back(wire.from_node, wire.from_port);
+                }
+            }
+            return true;
         }
         // A seam whose level stands is a node in the flat graph, so the outside cable
         // takes from the node rather than reaching past it to its feeders.
@@ -671,7 +731,8 @@ bool expand_one_level(GraphDescription& description,
             }
             NodeDescription expanded = inner;
             if (leveled) {
-                expanded.type = "Level";
+                expanded.type = seam_is_stereo(*definition, inner) ? "StereoLevel"
+                                                                   : "Level";
                 expanded.host.clear();
                 std::vector<ParameterValue> kept;
                 for (const ParameterValue& value : expanded.parameters) {
@@ -778,7 +839,9 @@ bool expand_one_level(GraphDescription& description,
                 continue;
             }
             ConnectionDescription expanded = inner;
-            if (to_leveled) {
+            if (to_leveled && !seam_is_stereo(*definition, *to_inner)) {
+                // The mono Level has one summing inlet; the stereo pair's inlets are
+                // already named left and right, which are the StereoLevel's own.
                 expanded.to_port = "in";
             }
             expanded.from_node = expanded_id(node.id, inner.from_node);

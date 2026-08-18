@@ -5453,8 +5453,10 @@ func _initialize() -> void:
 
 	# The ports are the ones a hand can reach: a keyboard is not one signal, so the seam
 	# that fed six operators' note and gate becomes a `frequency` port and a `gate` port
-	# rather than a single `Keyboard` that could deliver neither. Outputs stay whole —
-	# `left` and `right` are channels of one mix, not two different signals.
+	# rather than a single `Keyboard` that could deliver neither. Outputs are the
+	# pair itself: `left` and `right` are ports of the instance in their own right,
+	# because one port for the whole seam summed left into right at every
+	# destination — the pseudo-port the real io replaced.
 	var voice_in: Array = []
 	for port: Dictionary in Seams.declared_ports(voice_definition, false):
 		voice_in.append(str(port["name"]))
@@ -5463,7 +5465,8 @@ func _initialize() -> void:
 		voice_out.append(str(port["name"]))
 	check(voice_in == ["frequency", "gate"],
 		"its inputs are the signals the keyboard actually drives (%s)" % str(voice_in))
-	check(voice_out == ["out"], "and one output (%s)" % str(voice_out))
+	check(voice_out == ["left", "right"],
+		"and the stereo pair for outputs (%s)" % str(voice_out))
 
 	# And wired into the host, it is a patch that loads — which is the whole claim.
 	for wire in [{"from": {"node": host_in, "port": "frequency"},
@@ -5610,12 +5613,34 @@ func _initialize() -> void:
 			str(wire["to"]["port"])]] = true
 	check(bare_wired.has("note.frequency>%s.frequency" % bare_added)
 			and bare_wired.has("note.gate>%s.gate" % bare_added)
-			and bare_wired.has("%s.out>out.left" % bare_added)
-			and bare_wired.has("%s.out>out.right" % bare_added),
-		"on a bare machine the device is fully wired (%s)" % str(bare_wired.keys()))
+			and bare_wired.has("%s.left>out.left" % bare_added)
+			and bare_wired.has("%s.right>out.right" % bare_added)
+			and not bare_wired.has("%s.left>out.right" % bare_added),
+		"on a bare machine the device is fully wired, channel to channel (%s)"
+			% str(bare_wired.keys()))
 	check_loads(main, "and the bare machine with one device")
 	check(str(main.message_label.text).contains("wired"),
 		"with the wiring announced (%s)" % main.message_label.text)
+
+	# A document written before the pair spelled the whole out as one port. On load
+	# the editor rewrites it: a cable to a left or right destination keeps its
+	# channel, anything else takes both — which is what the old spelling meant.
+	var legacy_doc: Dictionary = JSON.parse_string(JSON.stringify(main.patch))
+	for wire in legacy_doc["connections"]:
+		if str(wire["from"]["node"]) == bare_added \
+				and str(wire["from"]["port"]) in ["left", "right"]:
+			wire["from"]["port"] = "out"
+	main._load_text(JSON.stringify(legacy_doc))
+	for i in 8:
+		await process_frame
+	var modern := {}
+	for wire in main.patch["connections"]:
+		modern["%s.%s>%s.%s" % [str(wire["from"]["node"]), str(wire["from"]["port"]),
+			str(wire["to"]["node"]), str(wire["to"]["port"])]] = true
+	check(modern.has("%s.left>out.left" % bare_added)
+			and modern.has("%s.right>out.right" % bare_added)
+			and not modern.has("%s.out>out.left" % bare_added),
+		"a legacy whole-out document modernizes on load (%s)" % str(modern.keys()))
 
 	# ---- new file, and the delete key -------------------------------------------------
 	# New gives a bare machine, not an empty document: the keyboard and speakers are

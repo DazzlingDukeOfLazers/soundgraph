@@ -930,11 +930,10 @@ TEST(a_module_can_draw_its_ports_as_seams) {
     CHECK(landed);
 }
 
-TEST(a_trimmed_output_seam_stands_as_a_level_node) {
-    // A module's out that carries a level is more than plumbing: everything leaving
-    // through it is trimmed. The splice cannot say that with cables, so the seam
-    // stays behind as a Level node under its own id — which is also the id an
-    // instance's exported "level" reaches, so the knob and the trim are one thing.
+TEST(a_trimmed_stereo_seam_stands_as_a_stereo_level) {
+    // A stereo out that carries a level becomes a StereoLevel under the seam's id:
+    // one knob, two wires, channels kept apart. The legacy whole-seam spelling
+    // still resolves and still means both channels.
     const std::string text = R"({
       "schema_version": 2,
       "modules": {
@@ -967,32 +966,119 @@ TEST(a_trimmed_output_seam_stands_as_a_level_node) {
     const soundgraph::NodeDescription* trim = description.find_node("v.out");
     CHECK(trim != nullptr);
     if (trim != nullptr) {
-        CHECK(trim->type == "Level");
-        // The instance's export overrides the stored 0.5, by the ordinary parameter path.
+        CHECK(trim->type == "StereoLevel");
         const soundgraph::ParameterValue* level = trim->find_parameter("level");
         CHECK(level != nullptr);
         CHECK(level != nullptr && level->value == 0.25);
     }
 
-    // Both inner wires land on the node's summing inlet, and the outside cable takes
-    // from the node — nothing reaches past it to the feeders any more.
-    int into_trim = 0;
-    bool outside_from_trim = false;
-    bool anything_from_osc_outward = false;
+    // Inner wires keep their channel names — the pair's inlets are the node's own.
+    int named_channels = 0;
+    int legacy_fanout = 0;
     for (const auto& wire : description.connections) {
-        if (wire.to_node == "v.out" && wire.to_port == "in" && wire.from_node == "v.osc") {
-            ++into_trim;
+        if (wire.from_node == "v.osc" && wire.to_node == "v.out" &&
+            (wire.to_port == "left" || wire.to_port == "right")) {
+            ++named_channels;
         }
-        if (wire.from_node == "v.out" && wire.from_port == "out" && wire.to_node == "out") {
-            outside_from_trim = true;
-        }
-        if (wire.from_node == "v.osc" && wire.to_node == "out") {
-            anything_from_osc_outward = true;
+        if (wire.from_node == "v.out" && wire.to_node == "out") {
+            ++legacy_fanout;
         }
     }
-    CHECK(into_trim == 2);
-    CHECK(outside_from_trim);
-    CHECK(!anything_from_osc_outward);
+    CHECK(named_channels == 2);
+    // The legacy spelling meant both channels, and still does.
+    CHECK(legacy_fanout == 2);
+}
+
+TEST(a_stereo_seam_answers_to_its_channels) {
+    // The pair's channels are ports of the instance in their own right, and a
+    // cable aimed at one carries that channel alone.
+    const std::string text = R"({
+      "schema_version": 2,
+      "modules": {
+        "voice": {
+          "nodes": [
+            { "id": "oscl", "type": "SineOscillator" },
+            { "id": "oscr", "type": "SineOscillator" },
+            { "id": "out", "type": "Output", "parameters": { "level": 0.5 } }
+          ],
+          "connections": [
+            { "from": { "node": "oscl", "port": "out" }, "to": { "node": "out", "port": "left" } },
+            { "from": { "node": "oscr", "port": "out" }, "to": { "node": "out", "port": "right" } }
+          ],
+          "parameters": [ { "name": "level", "node": "out", "parameter": "level" } ]
+        }
+      },
+      "nodes": [
+        { "id": "v",   "type": "module", "module": "voice" },
+        { "id": "out", "type": "StereoOutput" }
+      ],
+      "connections": [
+        { "from": { "node": "v", "port": "left" },  "to": { "node": "out", "port": "left" } },
+        { "from": { "node": "v", "port": "right" }, "to": { "node": "out", "port": "right" } }
+      ]
+    })";
+
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+    bool left_clean = false;
+    bool right_clean = false;
+    int crossed = 0;
+    for (const auto& wire : description.connections) {
+        if (wire.from_node != "v.out") {
+            continue;
+        }
+        if (wire.from_port == "left" && wire.to_port == "left") {
+            left_clean = true;
+        } else if (wire.from_port == "right" && wire.to_port == "right") {
+            right_clean = true;
+        } else {
+            ++crossed;
+        }
+    }
+    CHECK(left_clean);
+    CHECK(right_clean);
+    CHECK(crossed == 0);
+}
+
+TEST(a_trimmed_mono_seam_still_stands_as_a_level_node) {
+    // One inlet, not a pair: the mono Level with its summing inlet, as before.
+    const std::string text = R"({
+      "schema_version": 2,
+      "modules": {
+        "voice": {
+          "nodes": [
+            { "id": "osc", "type": "SineOscillator" },
+            { "id": "out", "type": "Output", "parameters": { "level": 0.5 } }
+          ],
+          "connections": [
+            { "from": { "node": "osc", "port": "out" }, "to": { "node": "out", "port": "in" } }
+          ],
+          "parameters": [ { "name": "level", "node": "out", "parameter": "level" } ]
+        }
+      },
+      "nodes": [
+        { "id": "v",   "type": "module", "module": "voice" },
+        { "id": "out", "type": "StereoOutput" }
+      ],
+      "connections": [
+        { "from": { "node": "v", "port": "out" }, "to": { "node": "out", "port": "left" } }
+      ]
+    })";
+
+    GraphDescription description;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, description, diagnostics));
+    const soundgraph::NodeDescription* trim = description.find_node("v.out");
+    CHECK(trim != nullptr);
+    CHECK(trim != nullptr && trim->type == "Level");
+    bool summed = false;
+    for (const auto& wire : description.connections) {
+        if (wire.from_node == "v.osc" && wire.to_node == "v.out" && wire.to_port == "in") {
+            summed = true;
+        }
+    }
+    CHECK(summed);
 }
 
 TEST(an_untrimmed_output_seam_still_splices_away) {

@@ -30,6 +30,7 @@ extern const NodeTypeDescriptor kRetrigger;
 // Amplitude and maths
 extern const NodeTypeDescriptor kGain;
 extern const NodeTypeDescriptor kLevel;
+extern const NodeTypeDescriptor kStereoLevel;
 extern const NodeTypeDescriptor kMixer;
 extern const NodeTypeDescriptor kAdsr;
 extern const NodeTypeDescriptor kAdd;

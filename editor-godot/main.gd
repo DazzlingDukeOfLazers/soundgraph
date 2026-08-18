@@ -1409,6 +1409,50 @@ func _on_face_dragged(key: String, step: Vector2) -> void:
 	graph_edit.queue_redraw()
 
 
+## Documents written before stereo pairs spelled a device's whole out as one port.
+## The surface now says left and right, so the old spelling is rewritten on load:
+## a cable to a left or right destination keeps its channel, and one to anywhere
+## else becomes both channels — which is exactly what the whole-seam port meant.
+## patch-io still resolves the old spelling on its own, so this is for the editor's
+## widgets, whose ports are the declared surface and nothing else.
+func _modernize_stereo_outputs() -> void:
+	var modules: Dictionary = patch.get("modules", {})
+	if modules.is_empty():
+		return
+	var rewired: Array = []
+	var touched := 0
+	for connection in patch.get("connections", []):
+		var from_id := str(connection.get("from", {}).get("node", ""))
+		var from_port := str(connection.get("from", {}).get("port", ""))
+		var module_name := ""
+		for node in patch.get("nodes", []):
+			if str(node["id"]) == from_id:
+				module_name = str(node.get("module", ""))
+		var definition: Dictionary = modules.get(module_name, {})
+		var legacy := false
+		if not definition.is_empty():
+			for seam in definition.get("nodes", []):
+				if Seams.stereo_pair(definition, seam) \
+						and str(seam.get("name", seam.get("id", ""))) == from_port:
+					legacy = true
+		if not legacy:
+			rewired.append(connection)
+			continue
+		touched += 1
+		var to_port := str(connection.get("to", {}).get("port", ""))
+		if to_port == "left" or to_port == "right":
+			var kept: Dictionary = connection.duplicate(true)
+			kept["from"]["port"] = to_port
+			rewired.append(kept)
+		else:
+			for channel in ["left", "right"]:
+				var split: Dictionary = connection.duplicate(true)
+				split["from"]["port"] = channel
+				rewired.append(split)
+	if touched > 0:
+		patch["connections"] = rewired
+
+
 ## One path for menu and key alike: the mode, the memory, the checkmarks, the word.
 func _choose_detail_mode(mode: int) -> void:
 	graph_edit.set_detail_mode(mode)
@@ -2573,6 +2617,37 @@ func _start_audio() -> void:
 ## GDExtension engine while that thread is mid-mix and the process dies with
 ## 0xC0000005 after all the work has finished. Under --verbose it never reproduces in
 ## 30 runs, which is how a race announces itself.
+## ---------------------------------------------------------------------------------
+## The killswitch
+##
+## Builds need the GDExtension DLL, and a running editor holds it — so anything that
+## wants to rebuild had to hunt processes. Instead the editor watches for a
+## quit-request file in the repo's run/ directory, once a second, and bows out on
+## its own: tooling drops the file, waits a breath, builds. Unsaved work is written
+## to a rescue file first, because a killswitch that eats work teaches people to
+## fear it — and a feared killswitch is one nobody throws.
+## ---------------------------------------------------------------------------------
+var _quit_poll := 0.0
+
+func _watch_for_quit_request(delta: float) -> void:
+	_quit_poll += delta
+	if _quit_poll < 1.0:
+		return
+	_quit_poll = 0.0
+	var flag := ProjectSettings.globalize_path("res://").path_join("../run/quit-request")
+	if not FileAccess.file_exists(flag):
+		return
+	DirAccess.remove_absolute(flag)
+	if unsaved and not patch.is_empty():
+		var rescue := ProjectSettings.globalize_path("res://").path_join(
+			"../run/rescued-%d.json" % int(Time.get_unix_time_from_system()))
+		var file := FileAccess.open(rescue, FileAccess.WRITE)
+		if file != null:
+			file.store_string(JSON.stringify(patch, "  "))
+			file.close()
+	get_tree().quit()
+
+
 func shutdown_audio() -> void:
 	set_process(false)
 	if engine != null:
@@ -2593,6 +2668,7 @@ func _exit_tree() -> void:
 
 
 func _process(_delta: float) -> void:
+	_watch_for_quit_request(_delta)
 	# Before the early return: the dock's cables have to follow the graph as it scrolls,
 	# zooms and has nodes dragged under them, and none of that waits for an engine.
 	_refresh_seam_cables()
@@ -4738,8 +4814,18 @@ func _auto_wire_device(instance_id: String, module_name: String) -> Array:
 			if str(node.get("type", "")) != "Output" or str(node.get("host", "")) == "":
 				continue
 			var takes: Dictionary = registry.get(Seams.registry_key(node), {})
+			# A named channel goes to its namesake and nowhere else — left to left,
+			# right to right, which is the whole point of the pair. A mono out has
+			# no namesake, and takes every vacant inlet: that is what plugging a
+			# mono jack into a stereo pair has always meant.
+			var named := false
+			for inlet: Dictionary in takes.get("inputs", []):
+				if str(inlet.get("name", "")) == port_name:
+					named = true
 			for inlet: Dictionary in takes.get("inputs", []):
 				var inlet_name := str(inlet.get("name", ""))
+				if named and inlet_name != port_name:
+					continue
 				if fed.has("%s/%s" % [str(node["id"]), inlet_name]):
 					continue
 				patch["connections"].append({
@@ -6764,6 +6850,7 @@ func _load_text(text: String) -> void:
 		patch["nodes"] = []
 	if not patch.has("connections"):
 		patch["connections"] = []
+	_modernize_stereo_outputs()
 	inspecting = {}
 
 	# Snap whatever arrives onto the grid. A patch written by another editor, or by hand,

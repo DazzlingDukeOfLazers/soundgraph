@@ -331,6 +331,16 @@ TEST(level_trims_by_its_parameter_and_nothing_else) {
     CHECK_NEAR(harness.output()[0], 1.0, 1e-6);
 }
 
+TEST(stereo_level_trims_both_channels_and_keeps_them_apart) {
+    NodeHarness harness("StereoLevel", 64, kSampleRate);
+    harness.connect("left", 1.0f);
+    harness.connect("right", 0.5f);
+    harness.set("level", 0.5f);
+    harness.process();
+    CHECK_NEAR(harness.output(0)[0], 0.5, 1e-6);
+    CHECK_NEAR(harness.output(1)[0], 0.25, 1e-6);
+}
+
 TEST(mixer_sums_channels_at_their_levels) {
     NodeHarness harness("Mixer", 64, kSampleRate);
     harness.connect("in1", 1.0f);
