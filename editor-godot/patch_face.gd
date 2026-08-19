@@ -428,6 +428,15 @@ func rebuild() -> void:
 		var descriptor := _descriptor_for(target)
 		if descriptor.is_empty():
 			continue
+		# The control's own curation rides over the type's raw range. The kit gives
+		# the kick's Tune 30-90 around 52; the raw frequency parameter spans
+		# 0.01-20000 around 440. Dropping the curation gave the knob the wrong
+		# sweep and, worse, the wrong home: the reset gesture sent a tuned kick
+		# to the oscillator's factory 440 — a kick drum turned into a doorbell.
+		descriptor = descriptor.duplicate(true)
+		for curated in ["min", "max", "default", "scaling"]:
+			if control.has(curated):
+				descriptor[curated] = control[curated]
 		var node_id := str(target.get("node", ""))
 		on_panel["%s.%s" % [node_id, str(target.get("parameter", ""))]] = true
 		var key: String = str(control.get("group", ""))
