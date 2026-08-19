@@ -120,8 +120,7 @@ protected:
 private:
     void push_scope(const float* samples, int count);
     void resolve_taps();
-    godot::PackedFloat32Array read_tap(const std::vector<float>& ring, int write,
-                                       int samples) const;
+    godot::PackedFloat32Array read_tap(int slot, int samples) const;
 
     soundgraph::Graph graph_;
     soundgraph::GraphDescription description_;
@@ -147,10 +146,6 @@ private:
     int tap_port_index_ = -1;
     int gate_index_ = -1;
     int gate_port_index_ = -1;
-    std::vector<float> tap_ring_;
-    std::vector<float> gate_ring_;
-    int tap_write_ = 0;
-    int gate_write_ = 0;
 };
 
 }  // namespace soundgraph_godot

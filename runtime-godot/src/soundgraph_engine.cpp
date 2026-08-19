@@ -15,11 +15,9 @@ namespace {
 
 constexpr int kMaxFillFrames = 4096;
 constexpr int kScopeSamples = 4096;
-// The probe rings: five and a half seconds at 48 kHz. Generous on purpose — the
-// trigger only accepts an edge with a whole window still after it, so the ring
-// must dwarf the largest window or a slow timebase leaves an edge catchable for
-// only a sliver of time, half a second after the key was ever pressed. A megabyte
-// per ring of editor-side memory, never on a small target.
+// The probe rings: five and a half seconds at 48 kHz, allocated inside the graph
+// when a probe is armed. Generous on purpose — the trigger only accepts an edge
+// with a whole window still after it, so the ring must dwarf the largest window.
 constexpr int kTapSamples = 262144;
 
 std::string to_utf8(const String& text) {
@@ -282,40 +280,7 @@ int SoundGraphEngine::fill_playback(const Ref<AudioStreamGeneratorPlayback>& pla
         return 0;
     }
 
-    if (tap_index_ >= 0 || gate_index_ >= 0) {
-        // Block-wise, so the taps capture every block the graph renders — one render
-        // for the whole request would leave only the final block visible to a probe,
-        // and a waveform cannot be reassembled from every sixteenth block.
-        const int block = graph_.port_signal_length();
-        int done = 0;
-        while (done < frames) {
-            const int step = std::min(block, frames - done);
-            graph_.render(left_.data() + done, right_.data() + done, step);
-            if (tap_index_ >= 0) {
-                const float* signal = graph_.port_signal(tap_index_, tap_port_index_);
-                if (signal != nullptr) {
-                    for (int i = 0; i < step; ++i) {
-                        tap_ring_[static_cast<std::size_t>(tap_write_)] =
-                            signal[block - step + i];
-                        tap_write_ = (tap_write_ + 1) % kTapSamples;
-                    }
-                }
-            }
-            if (gate_index_ >= 0) {
-                const float* signal = graph_.port_signal(gate_index_, gate_port_index_);
-                if (signal != nullptr) {
-                    for (int i = 0; i < step; ++i) {
-                        gate_ring_[static_cast<std::size_t>(gate_write_)] =
-                            signal[block - step + i];
-                        gate_write_ = (gate_write_ + 1) % kTapSamples;
-                    }
-                }
-            }
-            done += step;
-        }
-    } else {
-        graph_.render(left_.data(), right_.data(), frames);
-    }
+    graph_.render(left_.data(), right_.data(), frames);
 
     float peak = 0.0f;
     for (int i = 0; i < frames; ++i) {
@@ -365,13 +330,24 @@ void SoundGraphEngine::resolve_taps() {
             }
         }
     }
+
+    // The graph does the capturing now, at real block boundaries; the wrapper only
+    // points it.
+    if (tap_index_ >= 0) {
+        graph_.set_tap(0, tap_index_, tap_port_index_, kTapSamples);
+    } else {
+        graph_.clear_tap(0);
+    }
+    if (gate_index_ >= 0) {
+        graph_.set_tap(1, gate_index_, gate_port_index_, kTapSamples);
+    } else {
+        graph_.clear_tap(1);
+    }
 }
 
 bool SoundGraphEngine::set_scope_tap(const String& node_id, const String& port) {
     tap_node_ = to_utf8(node_id);
     tap_port_name_ = to_utf8(port);
-    tap_ring_.assign(kTapSamples, 0.0f);
-    tap_write_ = 0;
     resolve_taps();
     return tap_node_.empty() || tap_index_ >= 0;
 }
@@ -379,33 +355,27 @@ bool SoundGraphEngine::set_scope_tap(const String& node_id, const String& port) 
 bool SoundGraphEngine::set_scope_gate(const String& node_id, const String& port) {
     gate_node_ = to_utf8(node_id);
     gate_port_name_ = to_utf8(port);
-    gate_ring_.assign(kTapSamples, 0.0f);
-    gate_write_ = 0;
     resolve_taps();
     return gate_node_.empty() || gate_index_ >= 0;
 }
 
-PackedFloat32Array SoundGraphEngine::read_tap(const std::vector<float>& ring, int write,
-                                              int samples) const {
+PackedFloat32Array SoundGraphEngine::read_tap(int slot, int samples) const {
     PackedFloat32Array result;
-    if (ring.empty()) {
-        return result;
-    }
     const int count = std::min(std::max(samples, 0), kTapSamples);
     result.resize(count);
-    for (int i = 0; i < count; ++i) {
-        const int index = (write - count + i + kTapSamples * 2) % kTapSamples;
-        result[i] = ring[static_cast<std::size_t>(index)];
+    const int copied = graph_.read_tap(slot, result.ptrw(), count);
+    if (copied < count) {
+        result.resize(copied);
     }
     return result;
 }
 
 PackedFloat32Array SoundGraphEngine::get_scope_tap(int samples) const {
-    return read_tap(tap_ring_, tap_write_, samples);
+    return read_tap(0, samples);
 }
 
 PackedFloat32Array SoundGraphEngine::get_scope_gate(int samples) const {
-    return read_tap(gate_ring_, gate_write_, samples);
+    return read_tap(1, samples);
 }
 
 void SoundGraphEngine::push_scope(const float* samples, int count) {

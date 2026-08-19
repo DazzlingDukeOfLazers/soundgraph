@@ -3063,9 +3063,13 @@ func _initialize() -> void:
 	pump_player.play()
 	await process_frame
 	var pump_back: AudioStreamGeneratorPlayback = pump_player.get_stream_playback()
+	# Ragged on purpose: the live editor fills whatever the audio buffer asks for,
+	# almost never a whole number of blocks — precisely the condition under which
+	# the old outside-the-render capture dropped slivers of signal and lost gate
+	# pulses. The taps live inside the block render now, and this pump proves it.
 	var pump := func() -> void:
-		for i in 12:
-			main.engine.fill_playback(pump_back, 1024)
+		for i in 18:
+			main.engine.fill_playback(pump_back, 700)
 
 	main._hold_note(57)  # A3: 220 Hz, the probe's default timebase
 	pump.call()

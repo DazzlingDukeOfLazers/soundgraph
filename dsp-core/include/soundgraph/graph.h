@@ -91,6 +91,22 @@ public:
 
     // ---- inspection -------------------------------------------------------------
 
+    // ---- probe taps -------------------------------------------------------------
+    // Editor instruments. A tap copies one output port's every rendered block into
+    // a ring, at the one place block boundaries are real — capturing from outside
+    // the render loop had to guess which samples were fresh, and guessed wrong
+    // whenever a host filled in sizes that were not whole blocks, dropping or
+    // doubling slivers of signal at every boundary; a one-millisecond gate pulse
+    // could vanish entirely. Two slots: a probe and its trigger gate. The ring is
+    // allocated when a tap is set and freed when it is cleared, so an unset tap
+    // costs a branch per block and no memory — nothing on a small target.
+    static constexpr int kTapSlots = 2;
+    void set_tap(int slot, int node_index, int port_index, int ring_samples);
+    void clear_tap(int slot);
+    // Copies the newest `samples` into `destination`, oldest first. Returns the
+    // count actually copied.
+    int read_tap(int slot, float* destination, int samples) const;
+
     double sample_rate() const { return sample_rate_; }
     int node_count() const { return static_cast<int>(nodes_.size()); }
     const std::string& node_id(int index) const;
@@ -177,6 +193,14 @@ private:
 
     void route_note(const NoteEvent& event);
     void apply_parameter(int node_index, int parameter_index, float value);
+
+    struct Tap {
+        int node = -1;
+        int port = -1;
+        int write = 0;
+        std::vector<float> ring;
+    };
+    Tap taps_[kTapSlots];
 
     // One flat allocation; buffers are kBlockSize-sized windows into it. Keeping them
     // contiguous keeps the working set small, which matters on ESP32.

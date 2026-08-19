@@ -733,6 +733,9 @@ bool Graph::build(const GraphDescription& description,
     control_queue_.clear();
     cost_ = ResourceCost{};
 
+    for (int slot = 0; slot < kTapSlots; ++slot) {
+        clear_tap(slot);  // indices die with the graph they named
+    }
     voice_count_ = 1;
     voice_states_.clear();
     voice_receivers_.clear();
@@ -1110,8 +1113,69 @@ void Graph::process_block() {
     }
 
     snapshot_feedback();
+
+    // The probe taps, fed here because this is the one place a block is a block:
+    // every rendered frame passes exactly once, whatever sizes the host asks for.
+    for (Tap& tap : taps_) {
+        if (tap.node < 0 || tap.ring.empty()) {
+            continue;
+        }
+        const float* signal = port_signal(tap.node, tap.port);
+        if (signal == nullptr) {
+            continue;
+        }
+        const int capacity = static_cast<int>(tap.ring.size());
+        for (int i = 0; i < frames; ++i) {
+            tap.ring[static_cast<std::size_t>(tap.write)] = signal[i];
+            tap.write = (tap.write + 1) % capacity;
+        }
+    }
+
     host_input_offset_ += frames;
     pending_read_ = 0;
+}
+
+void Graph::set_tap(int slot, int node_index, int port_index, int ring_samples) {
+    if (slot < 0 || slot >= kTapSlots) {
+        return;
+    }
+    if (node_index < 0 || port_index < 0 || ring_samples <= 0) {
+        clear_tap(slot);
+        return;
+    }
+    Tap& tap = taps_[slot];
+    tap.node = node_index;
+    tap.port = port_index;
+    tap.write = 0;
+    tap.ring.assign(static_cast<std::size_t>(ring_samples), 0.0f);
+}
+
+void Graph::clear_tap(int slot) {
+    if (slot < 0 || slot >= kTapSlots) {
+        return;
+    }
+    taps_[slot].node = -1;
+    taps_[slot].port = -1;
+    taps_[slot].write = 0;
+    taps_[slot].ring.clear();
+    taps_[slot].ring.shrink_to_fit();
+}
+
+int Graph::read_tap(int slot, float* destination, int samples) const {
+    if (slot < 0 || slot >= kTapSlots || destination == nullptr) {
+        return 0;
+    }
+    const Tap& tap = taps_[slot];
+    if (tap.ring.empty()) {
+        return 0;
+    }
+    const int capacity = static_cast<int>(tap.ring.size());
+    const int count = std::min(std::max(samples, 0), capacity);
+    for (int i = 0; i < count; ++i) {
+        const int index = (tap.write - count + i + capacity * 2) % capacity;
+        destination[i] = tap.ring[static_cast<std::size_t>(index)];
+    }
+    return count;
 }
 
 void Graph::fill_pending() {
