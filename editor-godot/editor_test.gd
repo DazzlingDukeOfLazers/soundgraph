@@ -2649,6 +2649,78 @@ func _initialize() -> void:
 		await process_frame
 	check(not main.graph_edit.face_edit, "the button disarms the mode")
 
+	# ---- the piano roll ---------------------------------------------------------------
+	# A step grid over the keys. The lanes are borrowed from the keyboard, the notes
+	# live in the document, and the clock is main's, speaking through the same
+	# _hold_note path a hand does — so the keys light and the engine hears exactly
+	# what the grid says.
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+	check(not main.piano_roll.visible, "the roll starts folded away")
+	main.roll_button.button_pressed = true
+	for i in 3:
+		await process_frame
+	check(main.piano_roll.visible and main.roll_play.visible,
+		"Roll unfolds the grid and its transport")
+
+	var lane_a3: Rect2 = main.piano_roll.lane(57)
+	check(lane_a3.size.x > 0.0, "A3 has a lane over its key")
+	check(main.piano_roll.note_at(lane_a3.get_center().x) == 57,
+		"and pointing into the lane names the note back")
+
+	var roll_cell := func() -> void:
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = true
+		click.position = Vector2(main.piano_roll.lane(57).get_center().x,
+			main.piano_roll.size.y - 4.0)
+		main.piano_roll._gui_input(click)
+	roll_cell.call()
+	for i in 3:
+		await process_frame
+	var sung_notes: Array = main.patch.get("sequence", {}).get("notes", [])
+	check(sung_notes.size() == 1 and int(sung_notes[0].get("step", -1)) == 0
+			and int(sung_notes[0].get("note", -1)) == 57,
+		"a click on the bottom row places A3 on step one (%s)" % str(sung_notes))
+	roll_cell.call()
+	for i in 3:
+		await process_frame
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).is_empty(),
+		"the same click takes it away")
+	await main._undo()
+	for i in 3:
+		await process_frame
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 1,
+		"and undo puts the note back")
+
+	main.roll_play.button_pressed = true
+	# Primed to speak on the first breath: the smallest nudge lands step one.
+	main._advance_roll(0.001)
+	check(main.held_notes.has(57),
+		"the clock speaks the note through the keys' own path")
+	check(main.piano_roll.playing_step == 0, "with the playhead on the row")
+	main._advance_roll(main._roll_step_seconds())
+	check(not main.held_notes.has(57), "and lets go when the step ends")
+	main.roll_play.button_pressed = false
+	check(main.piano_roll.playing_step == -1
+			and main.held_notes.is_empty(),
+		"stopping parks the playhead and releases everything")
+
+	# The tune is part of the file: through text and back, the sequence survives.
+	var sung := JSON.stringify(main.patch)
+	await main._load_text(sung)
+	for i in 6:
+		await process_frame
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 1,
+		"the sequence survives a save and reload")
+	check(main.piano_roll.sequence == main.patch.get("sequence", {}),
+		"and the rebuilt roll reads the reloaded document")
+	main.roll_button.button_pressed = false
+	for i in 3:
+		await process_frame
+	check(not main.piano_roll.visible, "folding the roll away hides the grid")
+
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",
 			"Game: jump2", "DX7: algo-01"]:
@@ -5311,8 +5383,8 @@ func _initialize() -> void:
 	await process_frame
 	check(not main.muted, "and unmuting puts it back")
 
-	check(buttons == 6,
-		"with six buttons on it: collapse, mute, two octave, two width (%d)"
+	check(buttons == 8,
+		"with eight buttons on it: collapse, mute, roll, play, two octave, two width (%d)"
 		% buttons)
 
 	# The dock. The keyboard was the brightest, heaviest thing on screen and the eye

@@ -82,6 +82,7 @@ const Seams := preload("res://seams.gd")
 const SeamDock := preload("res://seam_dock.gd")
 const PatchFace := preload("res://patch_face.gd")
 const ModuleFace := preload("res://module_face.gd")
+const PianoRoll := preload("res://piano_roll.gd")
 
 const EXAMPLE_GROUPS := {
 	"": "",
@@ -161,6 +162,18 @@ var flipped_nodes := {}
 var dive_stack: Array = []
 var climb_button: Button
 var face_edit_button: Button
+
+# The piano roll and its transport. The clock lives here with the engine; the roll
+# itself only draws and points.
+var piano_roll: PianoRoll
+var roll_button: Button
+var roll_play: Button
+var roll_tempo: ValueField
+var roll_open := false
+var roll_playing := false
+var _roll_clock := 0.0
+var _roll_step := -1
+var _roll_sounding: Dictionary = {}
 var module_mounts := {}
 ## Where the face is mounted, in graph coordinates: the case's own corner at the moment
 ## it was turned over. The graph's camera does the rest.
@@ -2756,6 +2769,7 @@ func _process(_delta: float) -> void:
 		engine.fill_playback(playback, playback.get_frames_available())
 	_update_scope()
 	_update_port_levels(_delta)
+	_advance_roll(_delta)
 	if rack != null and rack.is_visible_in_tree():
 		rack.refresh_displays()
 	if message_label != null and message_label.text != "" \
@@ -2921,6 +2935,11 @@ func _rebuild_view() -> void:
 	# reload must not leave the overlay reading last document's dress.
 	if graph_edit != null and graph_edit.face_edit:
 		_refresh_face_edit_badges()
+	# The roll reads the document by reference, and the document was just replaced.
+	if piano_roll != null:
+		piano_roll.sequence = patch.get("sequence", {})
+		_refresh_roll_tempo_text()
+		piano_roll.queue_redraw()
 
 
 # ---------------------------------------------------------------------------------
@@ -4664,6 +4683,116 @@ func _let_go_note(note: int) -> void:
 		keyboard.set_held_notes(held_notes)
 
 
+## ---- the piano roll ----------------------------------------------------------------
+## The grid is the roll's; the document and the clock are here. Notes the roll plays
+## go through the same _hold_note/_let_go_note the keys use, so the keyboard lights
+## and the engine hears exactly what a hand would have played.
+
+## The document's sequence, made real the first time anything writes to it.
+func _roll_sequence() -> Dictionary:
+	if not patch.has("sequence"):
+		patch["sequence"] = {"tempo": 120.0, "steps": 16, "notes": []}
+	if not patch["sequence"].has("notes"):
+		patch["sequence"]["notes"] = []
+	return patch["sequence"]
+
+
+func _set_roll_open(open: bool) -> void:
+	roll_open = open
+	piano_roll.visible = open and keyboard_expanded
+	roll_play.visible = open
+	roll_tempo.visible = open
+	Settings.store("piano_roll", open)
+	piano_roll.sequence = patch.get("sequence", {})
+	_refresh_roll_tempo_text()
+	piano_roll.queue_redraw()
+	if not open and roll_playing:
+		roll_play.button_pressed = false
+
+
+func _on_roll_cell_toggled(step: int, note: int) -> void:
+	_begin_edit()
+	var notes: Array = _roll_sequence()["notes"]
+	var removed := false
+	for index in range(notes.size() - 1, -1, -1):
+		var entry: Dictionary = notes[index]
+		if int(entry.get("step", -1)) == step and int(entry.get("note", -1)) == note:
+			notes.remove_at(index)
+			removed = true
+	if not removed:
+		notes.append({"step": step, "note": note, "length": 1})
+	_commit_edit("roll: %s %s" % ["clear" if removed else "place", Keyboard.note_name(note)])
+	piano_roll.sequence = patch["sequence"]
+	piano_roll.queue_redraw()
+
+
+func _set_roll_playing(playing: bool) -> void:
+	roll_playing = playing
+	if playing:
+		# Primed so the very first tick speaks step zero rather than a beat of silence.
+		_roll_step = -1
+		_roll_clock = _roll_step_seconds()
+	else:
+		for note in _roll_sounding:
+			_let_go_note(int(note))
+		_roll_sounding.clear()
+		piano_roll.playing_step = -1
+
+
+func _roll_step_seconds() -> float:
+	var tempo: float = float(patch.get("sequence", {}).get("tempo", 120.0))
+	# Sixteenth notes: four steps to the beat.
+	return 60.0 / clampf(tempo, 40.0, 240.0) / 4.0
+
+
+func _set_roll_tempo(value: float) -> void:
+	_begin_edit()
+	_roll_sequence()["tempo"] = clampf(value, 40.0, 240.0)
+	_commit_edit("roll tempo")
+	_refresh_roll_tempo_text()
+
+
+func _refresh_roll_tempo_text() -> void:
+	if roll_tempo == null:
+		return
+	var tempo: float = float(patch.get("sequence", {}).get("tempo", 120.0))
+	roll_tempo.text = "%d bpm" % int(round(tempo))
+	roll_tempo.position_now = roll_tempo.to_position.call(tempo)
+
+
+func _advance_roll(delta: float) -> void:
+	if not roll_playing or engine == null:
+		return
+	_roll_clock += delta
+	while _roll_clock >= _roll_step_seconds():
+		_roll_clock -= _roll_step_seconds()
+		_roll_tick()
+
+
+func _roll_tick() -> void:
+	var sequence: Dictionary = patch.get("sequence", {})
+	var rows: int = maxi(1, int(sequence.get("steps", 16)))
+	_roll_step = (_roll_step + 1) % rows
+	# What ends on this step lets go before what begins on it: the same note can
+	# retrigger back-to-back without the second onset being swallowed.
+	var still: Dictionary = {}
+	for note in _roll_sounding:
+		var remaining: int = int(_roll_sounding[note]) - 1
+		if remaining <= 0:
+			_let_go_note(int(note))
+		else:
+			still[note] = remaining
+	_roll_sounding = still
+	for entry: Dictionary in sequence.get("notes", []):
+		if int(entry.get("step", -1)) != _roll_step:
+			continue
+		var note := int(entry.get("note", -1))
+		if note >= 0 and not _roll_sounding.has(note):
+			_hold_note(note)
+			_roll_sounding[note] = maxi(1, int(entry.get("length", 1)))
+	piano_roll.playing_step = _roll_step
+
+
 ## The strip above the keyboard: where it sits, and how much of it you can see.
 ##
 ## Both were already reachable — octave by Z and X, width not at all — and a shortcut
@@ -4691,7 +4820,19 @@ func _build_keyboard_dock() -> Control:
 	keyboard = Keyboard.new()
 	keyboard.note_pressed.connect(_on_keyboard_pressed)
 	keyboard.note_released.connect(_on_keyboard_released)
+
+	# The roll sits between the bar and the keys, folded away until asked for, its
+	# lanes borrowed live from the keyboard below it.
+	piano_roll = PianoRoll.new()
+	piano_roll.keyboard = keyboard
+	piano_roll.custom_minimum_size.y = Design.scale(150)
+	piano_roll.visible = false
+	piano_roll.cell_toggled.connect(_on_roll_cell_toggled)
+	column.add_child(piano_roll)
+
 	column.add_child(keyboard)
+	# The stored fold, through the same toggle a hand uses.
+	roll_button.button_pressed = bool(Settings.fetch("piano_roll", false))
 	return keyboard_dock
 
 
@@ -4702,6 +4843,8 @@ func _set_keyboard_expanded(expanded: bool) -> void:
 		# Hidden rather than shrunk: a keyboard two pixels tall is a row of slivers
 		# that still take clicks.
 		keyboard.visible = expanded
+		if piano_roll != null:
+			piano_roll.visible = expanded and roll_open
 		if not expanded:
 			_release_all_notes()
 	if keyboard_toggle != null:
@@ -4759,6 +4902,36 @@ func _build_keyboard_bar() -> Control:
 		Design.type(Design.SIZE_SECONDARY))
 	master_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	bar.add_child(master_label)
+
+	# The roll's fold and transport, beside the volume: Roll opens the grid, Play
+	# runs it, and the pace is a draggable number like every other value here.
+	roll_button = Button.new()
+	roll_button.toggle_mode = true
+	roll_button.text = "Roll"
+	roll_button.tooltip_text = "A step grid over the keys: click a lane to place a " \
+		+ "note, click it again to take it away."
+	roll_button.toggled.connect(_set_roll_open)
+	bar.add_child(_defocus(roll_button))
+	roll_play = Button.new()
+	roll_play.toggle_mode = true
+	roll_play.text = "Play"
+	roll_play.tooltip_text = "Loop the roll through the patch, exactly as the keys play."
+	roll_play.visible = false
+	roll_play.toggled.connect(_set_roll_playing)
+	bar.add_child(_defocus(roll_play))
+	roll_tempo = ValueField.new()
+	roll_tempo.centred = true
+	roll_tempo.custom_minimum_size.x = Design.scale(84)
+	roll_tempo.text = "120 bpm"
+	roll_tempo.default_value = 120.0
+	roll_tempo.position_now = (120.0 - 40.0) / 200.0
+	roll_tempo.to_value = func(position: float) -> float:
+		return 40.0 + 200.0 * clampf(position, 0.0, 1.0)
+	roll_tempo.to_position = func(value: float) -> float:
+		return clampf((value - 40.0) / 200.0, 0.0, 1.0)
+	roll_tempo.value_submitted.connect(_set_roll_tempo)
+	roll_tempo.visible = false
+	bar.add_child(roll_tempo)
 
 	# The keyboard's own jacks, on the keyboard. This is where the cables into the patch
 	# come from — see seam_dock.gd for why they cannot be drawn by GraphEdit.
@@ -4864,6 +5037,9 @@ func _refresh_keyboard_range() -> void:
 		labels[base + KEY_NOTES[keycode]] = OS.get_keycode_string(keycode)
 	keyboard.key_labels = labels
 	keyboard.set_range(base, keyboard_octaves)
+	# The roll's lanes are the keys' columns, so they move together.
+	if piano_roll != null:
+		piano_roll.queue_redraw()
 	_refresh_keyboard_label(base)
 
 
