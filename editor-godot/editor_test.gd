@@ -1992,6 +1992,37 @@ func _initialize() -> void:
 	for port in ports_at_full:
 		port_spots_at_full.append(node_widget.get_input_port_slot(port))
 
+	# ---- the default reading ----------------------------------------------------------
+	# The editor wakes up in 1:1: zooming out makes the knobs small, never gone. The
+	# adaptive map below remains a choice, but it is the one that has to be asked
+	# for — a graph that redraws itself as you move away reads as losing your work.
+	check(main.graph_edit.detail_mode == main.PatchGraph.DetailMode.ONE_TO_ONE,
+		"the editor opens in 1:1")
+	main.graph_edit.zoom = 0.30
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	for i in 3:
+		await process_frame
+	var born_controls := 0
+	for id in main.widgets:
+		for row in _parameter_cells(main.widgets[id]):
+			for part in row.get_children():
+				if (part is Rack.Knob or part is HSlider or part is OptionButton) \
+						and (part as Control).is_visible_in_tree():
+					born_controls += 1
+	check(born_controls > 0,
+		"and 30%% keeps the controls on the nodes (%d showing)" % born_controls)
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	for i in 3:
+		await process_frame
+
+	# The map from here down, chosen through the same path a hand would choose it.
+	main._choose_detail_mode(main.PatchGraph.DetailMode.ADAPTIVE)
+	for i in 3:
+		await process_frame
+
 	# ---- the acceptance tests for semantic zoom -------------------------------------
 	#
 	# Two rules, both measured in real pixels rather than in stylesheet pixels, because
@@ -2215,7 +2246,7 @@ func _initialize() -> void:
 					one_to_one_controls += 1
 	check(one_to_one_controls > 0,
 		"with the controls still on the nodes (%d showing)" % one_to_one_controls)
-	check(int(Settings.fetch("graph_detail_mode", 0)) == 1,
+	check(int(Settings.fetch("graph_detail", 1)) == 1,
 		"and the choice is remembered")
 	check(view_item_checked(main, 71) and not view_item_checked(main, 70),
 		"and the menu says so")
@@ -2227,7 +2258,7 @@ func _initialize() -> void:
 		await process_frame
 	check(main.graph_edit.detail == main.PatchGraph.Detail.TOPOLOGY,
 		"adaptive at the same zoom simplifies again (level %d)" % main.graph_edit.detail)
-	check(int(Settings.fetch("graph_detail_mode", 0)) == 0,
+	check(int(Settings.fetch("graph_detail", 1)) == 0,
 		"and the preference follows")
 	main.graph_edit.zoom = 1.0
 	main.graph_edit._update_detail()
@@ -2330,7 +2361,7 @@ func _initialize() -> void:
 		await process_frame
 	check(main.graph_edit.detail_mode == main.PatchGraph.DetailMode.ONE_TO_ONE
 			and view_item_checked(main, 71)
-			and int(Settings.fetch("graph_detail_mode", 0)) == 1,
+			and int(Settings.fetch("graph_detail", 1)) == 1,
 		"Ctrl+2 turns 1:1 on, menu and memory following")
 	var toggle_back := InputEventKey.new()
 	toggle_back.keycode = KEY_2
@@ -2341,7 +2372,7 @@ func _initialize() -> void:
 		await process_frame
 	check(main.graph_edit.detail_mode == main.PatchGraph.DetailMode.ADAPTIVE
 			and view_item_checked(main, 70)
-			and int(Settings.fetch("graph_detail_mode", 0)) == 0,
+			and int(Settings.fetch("graph_detail", 1)) == 0,
 		"and again turns it off")
 	main.graph_edit.zoom = 1.0
 	main.graph_edit._update_detail()

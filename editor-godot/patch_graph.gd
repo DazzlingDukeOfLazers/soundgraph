@@ -190,9 +190,14 @@ signal detail_changed(level: int)
 ## the full module — controls, text, all of it — at every zoom, scaled as geometry.
 ## Nothing is pinned and nothing is swapped; far out the text is small because the
 ## module is far away, which is the honest reading of "1:1".
+##
+## The photograph is the default. The map was, until zooming out over a patch made
+## its knobs vanish mid-thought — a graph that redraws itself as you move away
+## reads as losing your work, not as a considerate summary. Small-but-there beats
+## tidy-but-gone; the map stays one Ctrl+2 away for reading very large graphs.
 enum DetailMode { ADAPTIVE, ONE_TO_ONE }
 
-var detail_mode: int = DetailMode.ADAPTIVE
+var detail_mode: int = DetailMode.ONE_TO_ONE
 
 var detail: int = Detail.FULL
 

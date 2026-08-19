@@ -630,9 +630,12 @@ func _build_ui() -> void:
 	# Node drags and cable drags bracket their own undo entries, so a drag is one step
 	# rather than one per pixel of mouse movement.
 	graph_edit.detail_changed.connect(_apply_detail)
-	# The stored choice, through the same setter the menu uses. ADAPTIVE is the
-	# default and the setter refuses a no-op, so a fresh install changes nothing.
-	graph_edit.set_detail_mode(int(Settings.fetch("graph_detail_mode", 0)))
+	# The stored choice, through the same setter the menu uses. The photograph is
+	# the default and the setter refuses a no-op, so a fresh install changes
+	# nothing. The key retired "graph_detail_mode": that one had ADAPTIVE stamped
+	# into existing installs, and a default you cannot reach is not a default.
+	graph_edit.set_detail_mode(int(Settings.fetch("graph_detail",
+		PatchGraph.DetailMode.ONE_TO_ONE)))
 	graph_edit.port_hovered.connect(_on_port_hovered)
 	graph_edit.ghost_port_picked.connect(_on_ghost_port_picked)
 	graph_edit.region_drawn.connect(_on_region_drawn)
@@ -1131,7 +1134,7 @@ func _build_toolbar() -> Control:
 	view_popup.set_item_tooltip(view_popup.get_item_index(71),
 		"The photograph: the full module at every zoom. Toggle with Ctrl+2.")
 	view_popup.set_item_checked(view_popup.get_item_index(
-		70 + int(Settings.fetch("graph_detail_mode", 0))), true)
+		70 + int(Settings.fetch("graph_detail", PatchGraph.DetailMode.ONE_TO_ONE))), true)
 	# Beside the detail pair because the two get reached for together: 1:1 is "show
 	# me the real thing" and fit is "show me all of it". An action rather than a
 	# state — same framing the toolbar's Fit does, in the menu where the eye already
@@ -1496,7 +1499,7 @@ func _modernize_stereo_outputs() -> void:
 ## One path for menu and key alike: the mode, the memory, the checkmarks, the word.
 func _choose_detail_mode(mode: int) -> void:
 	graph_edit.set_detail_mode(mode)
-	Settings.store("graph_detail_mode", mode)
+	Settings.store("graph_detail", mode)
 	for entry in 2:
 		view_popup.set_item_checked(view_popup.get_item_index(70 + entry),
 			entry == mode)
