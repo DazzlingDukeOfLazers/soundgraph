@@ -3119,6 +3119,36 @@ func _initialize() -> void:
 	main.scope_probe.capture()
 	check(main.scope_probe.locked, "and the gate's rising edge locks the capture")
 	main._let_go_note(57)
+
+	# The probe on a gate wire itself. A gate never crosses zero, so the old
+	# zero-hunting trigger only caught one when free-run happened to align; the
+	# level now sits midway between the wire's floor and ceiling, so an edge that
+	# exists is an edge that locks.
+	var gate_probe := -1
+	for index in main.scope_probe._sources.size():
+		var entry: Dictionary = main.scope_probe._sources[index]
+		if str(entry["node"]) == "note" and str(entry["port"]) == "gate":
+			gate_probe = index + 1
+	check(gate_probe > 0, "the probe list offers the gate wire")
+	main.scope_probe.source_pick.selected = gate_probe
+	main.scope_probe._on_source_picked(gate_probe)
+	main.scope_probe.gate_pick.selected = 0
+	main.scope_probe._on_gate_picked(0)
+	pump.call()  # gate low: a flat wire offers no edge
+	main.scope_probe.capture()
+	check(not main.scope_probe.locked, "a flat gate offers nothing to lock to")
+	main._hold_note(57)
+	pump.call()
+	main.scope_probe.capture()
+	check(main.scope_probe.locked, "the gate's own rising edge locks the probe")
+	var gate_low := 1.0e9
+	var gate_high := -1.0e9
+	for value in main.scope_probe.window:
+		gate_low = minf(gate_low, value)
+		gate_high = maxf(gate_high, value)
+	check(gate_low < 0.1 and gate_high > 0.9,
+		"and the window holds the whole step (%.2f..%.2f)" % [gate_low, gate_high])
+	main._let_go_note(57)
 	pump_player.stop()
 	pump_player.stream = null
 	await process_frame

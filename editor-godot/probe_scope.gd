@@ -257,10 +257,10 @@ func capture() -> void:
 	if engine == null or probe.is_empty():
 		return
 	var span := window_span()
-	# Self-triggering only needs a little slack past the window — a periodic signal
-	# crosses again soon. An external gate may have fired long before the window's
-	# worth of samples, so a gated capture searches the whole ring for its edge.
-	var reach: int = 32768 if not gate.is_empty() else span + mini(6144, span * 2)
+	# The whole ring, always: a periodic signal crosses again soon, but a sparse
+	# one — a gate, a trigger line — may have stepped long before the window's
+	# worth of samples, and the probe exists precisely for wires like those.
+	var reach := 32768
 	var stream: PackedFloat32Array = engine.get_scope_tap(reach)
 	if stream.size() < span:
 		return
@@ -269,25 +269,46 @@ func capture() -> void:
 		var edges: PackedFloat32Array = engine.get_scope_gate(reach)
 		start = _last_edge(edges, span, 0.5)
 	else:
-		start = _last_edge(stream, span, 0.0)
+		# The trigger sits midway between what the signal actually reaches. Zero is
+		# right for audio and never right for a gate, which spends its whole life
+		# at or above zero — hunting a zero crossing, the scope only ever caught a
+		# gate when free-run happened to align. A flat wire offers no edge at all.
+		var level := _trigger_level(stream)
+		if is_finite(level):
+			start = _last_edge(stream, span, level)
+	# The trigger sits a quarter of the way in, the way a bench scope parks it:
+	# what led up to the edge is usually the half of the story being debugged.
+	var begin: int = maxi(0, start - span / 4) if start >= 0 else stream.size() - span
 	match mode:
 		Mode.LIVE:
 			locked = start >= 0
-			window = stream.slice(start if start >= 0 else stream.size() - span,
-				(start if start >= 0 else stream.size() - span) + span)
+			window = stream.slice(begin, begin + span)
 		Mode.FREEZE_FIRST:
 			if frozen:
 				return
 			if start >= 0:
-				window = stream.slice(start, start + span)
+				window = stream.slice(begin, begin + span)
 				locked = true
 				frozen = true
 		Mode.FREEZE_EACH:
 			if start >= 0:
-				window = stream.slice(start, start + span)
+				window = stream.slice(begin, begin + span)
 				locked = true
 	if display != null:
 		display.queue_redraw()
+
+
+## Midway between the stream's floor and ceiling, or INF for a wire too flat to
+## offer an edge worth locking to.
+func _trigger_level(samples: PackedFloat32Array) -> float:
+	var lowest := INF
+	var highest := -INF
+	for value in samples:
+		lowest = minf(lowest, value)
+		highest = maxf(highest, value)
+	if highest - lowest < 0.02:
+		return INF
+	return (highest + lowest) * 0.5
 
 
 ## The latest rising crossing of `level` that still leaves a whole window after it.
@@ -324,6 +345,14 @@ class ScopeDisplay extends Control:
 				"point the probe at a wire", HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 				Design.type(Design.SIZE_SECONDARY), Design.INK_SECOND)
 			return
+		# A gate never goes below zero, and drawn on the audio axis it lived in the
+		# top half with its floor on the centre line. A unipolar signal gets the
+		# floor near the bottom of the box instead, so high and low read as high
+		# and low.
+		var lowest := 1.0e9
+		for value in wave:
+			lowest = minf(lowest, value)
+		var unipolar: bool = lowest >= -0.02
 		# The trace, one point per pixel column: enough for the eye, cheap for the CPU.
 		var columns: int = maxi(2, int(size.x))
 		var points := PackedVector2Array()
@@ -331,8 +360,15 @@ class ScopeDisplay extends Control:
 		for column in columns:
 			var sample: float = wave[mini(wave.size() - 1,
 				int(float(column) * float(wave.size()) / float(columns)))]
-			points[column] = Vector2(float(column) * size.x / float(columns - 1),
-				size.y * 0.5 - clampf(sample, -1.2, 1.2) * size.y * 0.42)
+			var y: float
+			if unipolar:
+				y = size.y * 0.88 - clampf(sample, 0.0, 1.2) * size.y * 0.76
+			else:
+				y = size.y * 0.5 - clampf(sample, -1.2, 1.2) * size.y * 0.42
+			points[column] = Vector2(float(column) * size.x / float(columns - 1), y)
+		if unipolar:
+			draw_line(Vector2(0.0, size.y * 0.88), Vector2(size.x, size.y * 0.88),
+				Color(1.0, 1.0, 1.0, 0.10), 1.0)
 		draw_polyline(points, Design.ACCENT, 1.5, true)
 		# The lock lamp: lit when a trigger anchored this picture.
 		draw_circle(Vector2(size.x - Design.scale(12), Design.scale(12)),
