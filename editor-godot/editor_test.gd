@@ -2975,6 +2975,22 @@ func _initialize() -> void:
 		check(kit_peak > 0.01, "%s sounds when struck (peak %.3f)" % [kit_label, kit_peak])
 		check(not (main.patch.get("sequence", {}).get("notes", []) as Array).is_empty(),
 			"and ships its pattern in the roll")
+	# The kit machine: NoteTriggers routes one key to one drum — C3 up chromatically
+	# — a key below the base strikes nothing, and the classic beat ships in the roll.
+	await main._load_example("808: kit")
+	for i in 8:
+		await process_frame
+	for pad_note in [48, 49, 50, 51]:
+		var pad_peak: float = await _struck_peak(main, pad_note)
+		check(pad_peak > 0.01,
+			"pad %d strikes its drum (peak %.3f)" % [pad_note, pad_peak])
+	var off_pad: float = await _struck_peak(main, 47)
+	check(off_pad < 0.005,
+		"a key below the base strikes nothing (peak %.3f)" % off_pad)
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 16,
+		"and the beat ships in the roll (%d notes)"
+			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
+
 	main._new_file()
 	for i in 8:
 		await process_frame
