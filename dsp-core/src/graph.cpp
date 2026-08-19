@@ -786,6 +786,17 @@ bool Graph::build(const GraphDescription& description,
         NodeSlot& slot = nodes_[i];
         slot.id = node_description.id;
         slot.type = type;
+        // The stack arrays handed to process() are kMaxInputs/kMaxOutputs long; a
+        // descriptor past either would corrupt memory, not fail. Refuse loudly.
+        if (type->inputs.size() > kMaxInputs || type->outputs.size() > kMaxOutputs) {
+            Diagnostic diagnostic = error("node_exceeds_port_ceiling",
+                "Node type " + quote(node_description.type) + " declares more ports "
+                "than the engine's ceiling (" + std::to_string(kMaxInputs) + " in, " +
+                std::to_string(kMaxOutputs) + " out).");
+            diagnostic.node_ids = {node_description.id};
+            diagnostics.push_back(diagnostic);
+            return false;
+        }
         slot.node = registry.create(node_description.type);
         if (!slot.node) {
             Diagnostic diagnostic = error("node_creation_failed",

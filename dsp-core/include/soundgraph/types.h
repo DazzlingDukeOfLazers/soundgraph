@@ -17,7 +17,12 @@ inline constexpr int kBlockSize = 64;
 
 inline constexpr int kMaxParameters = 8;
 inline constexpr int kMaxInputs = 8;
-inline constexpr int kMaxOutputs = 4;
+// Twelve, and the number is load-bearing: process() receives pointer arrays this
+// long on the stack, so a node declaring more outputs than this corrupts memory
+// rather than failing. NoteTriggers shipped with eight outputs over a ceiling of
+// four and rendered through undefined behaviour for days before the ninth output
+// made it visible. build() refuses over-limit descriptors now.
+inline constexpr int kMaxOutputs = 12;
 
 // audio and control are both sample streams and interconvert freely.
 // event and note carry discrete messages and require an exact type match.

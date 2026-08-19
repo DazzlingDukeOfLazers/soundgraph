@@ -123,6 +123,7 @@ NodeRegistry::NodeRegistry() {
     types_ = {
         &nodes::kNoteInput,
         &nodes::kNoteTriggers,
+        &nodes::kTriggerBus,
         &nodes::kAudioInput,
         &nodes::kSineOscillator,
         &nodes::kSawOscillator,

@@ -16,6 +16,54 @@
       }
     },
     {
+      "id": "bus",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 400
+      }
+    },
+    {
+      "id": "split",
+      "type": "TriggerBus",
+      "position": {
+        "x": 440,
+        "y": 400
+      }
+    },
+    {
+      "id": "k_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 200
+      }
+    },
+    {
+      "id": "s_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 600
+      }
+    },
+    {
+      "id": "c_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 2200
+      }
+    },
+    {
+      "id": "o_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 3000
+      }
+    },
+    {
       "id": "k_penv",
       "type": "ADSR",
       "position": {
@@ -308,12 +356,12 @@
   "connections": [
     {
       "from": {
-        "node": "pads",
-        "port": "t1"
+        "node": "bus",
+        "port": "out"
       },
       "to": {
-        "node": "k_penv",
-        "port": "gate"
+        "node": "split",
+        "port": "bus"
       }
     },
     {
@@ -322,8 +370,18 @@
         "port": "t1"
       },
       "to": {
-        "node": "k_env",
-        "port": "gate"
+        "node": "k_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t1"
+      },
+      "to": {
+        "node": "k_gate",
+        "port": "b"
       }
     },
     {
@@ -332,18 +390,18 @@
         "port": "t2"
       },
       "to": {
-        "node": "s_tenv",
-        "port": "gate"
+        "node": "s_gate",
+        "port": "a"
       }
     },
     {
       "from": {
-        "node": "pads",
+        "node": "split",
         "port": "t2"
       },
       "to": {
-        "node": "s_nenv",
-        "port": "gate"
+        "node": "s_gate",
+        "port": "b"
       }
     },
     {
@@ -352,14 +410,94 @@
         "port": "t3"
       },
       "to": {
-        "node": "c_env",
-        "port": "gate"
+        "node": "c_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t3"
+      },
+      "to": {
+        "node": "c_gate",
+        "port": "b"
       }
     },
     {
       "from": {
         "node": "pads",
         "port": "t4"
+      },
+      "to": {
+        "node": "o_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t4"
+      },
+      "to": {
+        "node": "o_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "k_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "k_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "k_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "k_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "s_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_tenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "s_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_nenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "c_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "c_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "o_gate",
+        "port": "out"
       },
       "to": {
         "node": "o_env",

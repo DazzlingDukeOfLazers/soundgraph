@@ -3033,6 +3033,24 @@ func _initialize() -> void:
 	check(kit_mounted_peak > 0.01,
 		"and the mounted kit drums on C3 (peak %.3f)" % kit_mounted_peak)
 
+	# The ribbon cable: a host router's bus out into the kit's bus in — one wire
+	# where four trigger cables were, and it drums the kit exactly the same.
+	var host_router: String = await main._add_node("NoteTriggers", Vector2(100.0, 400.0))
+	for i in 6:
+		await process_frame
+	check(host_router != "", "a router lands in the host")
+	main._begin_edit()
+	main.patch["connections"].append({
+		"from": {"node": host_router, "port": "bus"},
+		"to": {"node": whole_kit, "port": "bus"}})
+	main._commit_edit("ribbon")
+	await main._rebuild_and_apply()
+	for i in 8:
+		await process_frame
+	var ribbon_peak: float = await _struck_peak(main, 48)
+	check(ribbon_peak > 0.01,
+		"one ribbon wire drums the whole kit (peak %.3f)" % ribbon_peak)
+
 	# ---- the probe scope --------------------------------------------------------------
 	# The bench instrument: clip the probe onto any wire, trigger like a real scope,
 	# and freeze what you caught. Driven against the saw oscillator at A3, whose

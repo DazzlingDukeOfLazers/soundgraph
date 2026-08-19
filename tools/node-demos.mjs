@@ -160,6 +160,30 @@ const DEMOS = {
       ],
     }),
   },
+  TriggerBus: {
+    summary: 'One wire in, eight pads out: the far end of a trigger ribbon cable.',
+    try: 'Strike middle C: the router puts lane one on the bus, the bus rides one '
+      + 'wire, and this splits it back out to gate the envelope. Probe the bus with '
+      + 'the scope — pulse height says which pad fired.',
+    build: () => ({
+      nodes: [
+        keyboard(0),
+        node('pads', 'NoteTriggers', { base: 60 }, 1, 1),
+        node('demo', 'TriggerBus', {}, 2, 1),
+        node('tone', 'SineOscillator', { frequency: 220 }, 1, 0),
+        envelope(3),
+        amp(4),
+        out(5),
+      ],
+      connections: [
+        wire('pads', 'bus', 'demo', 'bus'),
+        wire('demo', 't1', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('tone', 'out', 'amp', 'in'),
+        wire('amp', 'out', 'out', 'left'),
+      ],
+    }),
+  },
   AudioInput: {
     summary: 'Live audio from the host — a microphone, an instrument, a DAW track.',
     // The one demo that is silent when rendered offline, and correctly so.
@@ -584,6 +608,7 @@ const PROBES = {
   NoteInput: { node: 'kb', parameter: 'transpose', value: 12 },
   // Moving the base one semitone makes every strike miss its pad: silence, total.
   NoteTriggers: { node: 'pads', parameter: 'base', value: 61 },
+  TriggerBus: { probeless: 'it has no parameters; the router upstream owns the base' },
   AudioInput: { probeless: 'silent offline; there is no host input to change the sound of' },
   StereoOutput: { parameter: 'level', value: 0.25 },
 

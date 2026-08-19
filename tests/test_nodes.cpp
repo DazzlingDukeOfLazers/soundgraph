@@ -705,6 +705,37 @@ TEST(note_triggers_fire_their_lanes) {
     CHECK_NEAR(harness.output("t1")[0], 1.0, 1e-6);
 }
 
+TEST(note_triggers_carry_a_bus) {
+    // Lane n rides the bus as bit n, so simultaneous hits sum cleanly and a scope
+    // reads which pad fired by pulse height.
+    NodeHarness harness("NoteTriggers", 128, kSampleRate);
+    auto strike = [&](int note) {
+        soundgraph::NoteEvent event;
+        event.kind = soundgraph::NoteEvent::Kind::NoteOn;
+        event.note = note;
+        event.velocity = 1.0f;
+        harness.node().handle_note_event(event);
+    };
+    strike(48);  // lane one: bit zero
+    strike(50);  // lane three: bit two
+    harness.process();
+    CHECK_NEAR(harness.output("bus")[0], 5.0, 1e-6);  // 1 + 4
+    // An upstream bus rides through, so routers chain on one wire.
+    harness.connect("bus", 2.0f);
+    harness.process();
+    CHECK_NEAR(harness.output("bus")[0], 2.0, 1e-6);
+}
+
+TEST(trigger_bus_splits_its_lanes) {
+    NodeHarness harness("TriggerBus", 64, kSampleRate);
+    harness.connect("bus", 5.0f);  // lanes one and three
+    harness.process();
+    CHECK_NEAR(harness.output("t1")[0], 1.0, 1e-6);
+    CHECK_NEAR(harness.output("t2")[0], 0.0, 1e-6);
+    CHECK_NEAR(harness.output("t3")[0], 1.0, 1e-6);
+    CHECK_NEAR(harness.output("t8")[0], 0.0, 1e-6);
+}
+
 // The bug this guards: a one-shot patch played by jabbing at a key sounded once and then
 // went quiet. Two notes overlapping keep the gate high the whole way through, so an AHD
 // envelope watching the gate never sees a second rising edge. The trigger output exists to

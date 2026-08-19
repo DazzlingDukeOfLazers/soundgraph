@@ -270,6 +270,12 @@ std::unique_ptr<DspNode> make() {
 
 constexpr int kTriggerLanes = 8;
 
+constexpr PortDescriptor kNoteTriggersInputs[] = {
+    {"bus", SignalType::Control, "", false, false,
+     "Another router's bus out. Its lanes ride through onto this one's bus out, so "
+     "routers with different bases chain on a single wire."},
+};
+
 constexpr PortDescriptor kNoteTriggersOutputs[] = {
     {"t1", SignalType::Control, "", false, false, "Fires on the base note."},
     {"t2", SignalType::Control, "", false, false, "Fires one semitone above the base."},
@@ -279,6 +285,10 @@ constexpr PortDescriptor kNoteTriggersOutputs[] = {
     {"t6", SignalType::Control, "", false, false, "Fires five semitones above the base."},
     {"t7", SignalType::Control, "", false, false, "Fires six semitones above the base."},
     {"t8", SignalType::Control, "", false, false, "Fires seven semitones above the base."},
+    {"bus", SignalType::Control, "", false, false,
+     "All eight lanes on one wire: lane n rides as bit n, so simultaneous hits sum "
+     "cleanly and a scope reads which pad fired by the pulse's height. Feed it to a "
+     "Trigger Bus to split the lanes back out."},
 };
 
 constexpr ParameterDescriptor kNoteTriggersParameters[] = {
@@ -313,14 +323,18 @@ public:
     }
 
     void process(const ProcessContext& context) override {
-        for (int lane = 0; lane < kTriggerLanes; ++lane) {
-            float* out = context.outputs[lane];
-            for (int i = 0; i < context.frames; ++i) {
-                out[i] = remaining_[lane] > 0 ? 1.0f : 0.0f;
-                if (remaining_[lane] > 0) {
+        const float* bus_in = context.inputs[0];
+        for (int i = 0; i < context.frames; ++i) {
+            int mask = bus_in != nullptr ? static_cast<int>(bus_in[i] + 0.5f) : 0;
+            for (int lane = 0; lane < kTriggerLanes; ++lane) {
+                const bool firing = remaining_[lane] > 0;
+                context.outputs[lane][i] = firing ? 1.0f : 0.0f;
+                if (firing) {
+                    mask |= 1 << lane;
                     --remaining_[lane];
                 }
             }
+            context.outputs[kTriggerLanes][i] = static_cast<float>(mask & 0xff);
         }
     }
 
@@ -342,12 +356,62 @@ const NodeTypeDescriptor kNoteTriggers = {
     "NoteTriggers", "Note Triggers", "Modulation",
     "Eight triggers from eight chromatic notes: the keyboard as a row of drum pads.",
     "trigger|drum|pad|kit|split|map|note to trigger|drum machine",
-    Slice<PortDescriptor>(),
+    Slice<PortDescriptor>(kNoteTriggersInputs),
     Slice<PortDescriptor>(kNoteTriggersOutputs),
     Slice<ParameterDescriptor>(kNoteTriggersParameters),
     false, NodeRole::Processor, true,
     ResourceCost{0.5f, 64, 0},
     &make<NoteTriggersNode>,
+};
+
+// ---------------------------------------------------------------------------------
+// Trigger bus
+//
+// The other end of the ribbon cable: splits a trigger bus back into its eight
+// lanes. One wire between a router and a kit instead of eight patch cables.
+// ---------------------------------------------------------------------------------
+
+constexpr PortDescriptor kTriggerBusInputs[] = {
+    // Not required: a kit's ribbon socket sits unplugged until something drives
+    // it, and an unplugged ribbon is a quiet ribbon, not an invalid patch.
+    {"bus", SignalType::Control, "", false, false,
+     "A trigger bus: eight lanes riding one wire, lane n as bit n."},
+};
+
+constexpr PortDescriptor kTriggerBusOutputs[] = {
+    {"t1", SignalType::Control, "", false, false, "The bus's first lane."},
+    {"t2", SignalType::Control, "", false, false, "The bus's second lane."},
+    {"t3", SignalType::Control, "", false, false, "The bus's third lane."},
+    {"t4", SignalType::Control, "", false, false, "The bus's fourth lane."},
+    {"t5", SignalType::Control, "", false, false, "The bus's fifth lane."},
+    {"t6", SignalType::Control, "", false, false, "The bus's sixth lane."},
+    {"t7", SignalType::Control, "", false, false, "The bus's seventh lane."},
+    {"t8", SignalType::Control, "", false, false, "The bus's eighth lane."},
+};
+
+class TriggerBusNode final : public DspNode {
+public:
+    void process(const ProcessContext& context) override {
+        const float* bus = context.inputs[0];
+        for (int i = 0; i < context.frames; ++i) {
+            const int mask = bus != nullptr ? (static_cast<int>(bus[i] + 0.5f) & 0xff) : 0;
+            for (int lane = 0; lane < kTriggerLanes; ++lane) {
+                context.outputs[lane][i] = (mask & (1 << lane)) != 0 ? 1.0f : 0.0f;
+            }
+        }
+    }
+};
+
+const NodeTypeDescriptor kTriggerBus = {
+    "TriggerBus", "Trigger Bus", "Modulation",
+    "Splits a trigger bus back into its eight lanes: one wire in, eight pads out.",
+    "bus|demux|ribbon|split|trigger|drum|lanes",
+    Slice<PortDescriptor>(kTriggerBusInputs),
+    Slice<PortDescriptor>(kTriggerBusOutputs),
+    Slice<ParameterDescriptor>(),
+    false, NodeRole::Processor, false,
+    ResourceCost{0.3f, 0, 0},
+    &make<TriggerBusNode>,
 };
 
 const NodeTypeDescriptor kNoteInput = {
