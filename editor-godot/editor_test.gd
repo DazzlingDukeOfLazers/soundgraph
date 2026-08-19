@@ -2843,6 +2843,25 @@ func _initialize() -> void:
 	# A fresh FileDialog is a save dialog; the importer must have said otherwise.
 	check(main.midi_dialog.file_mode == FileDialog.FILE_MODE_OPEN_FILE,
 		"the MIDI dialog opens files rather than offering to save one")
+
+	# Every vendored tune parses — a sweep, so dropping a new file into
+	# examples/midi cannot silently ship something the importer refuses.
+	var midi_folder: String = ProjectSettings.globalize_path("res://") \
+		.path_join("../examples/midi")
+	var tunes_counted := 0
+	var unread_tunes: Array = []
+	for file_name in DirAccess.get_files_at(midi_folder):
+		if not file_name.ends_with(".mid"):
+			continue
+		tunes_counted += 1
+		var vendored_tune: Dictionary = main.MidiImport.read(
+			midi_folder.path_join(file_name))
+		if vendored_tune.is_empty() \
+				or (vendored_tune.get("notes", []) as Array).is_empty():
+			unread_tunes.append(file_name)
+	check(tunes_counted >= 7 and unread_tunes.is_empty(),
+		"every vendored tune parses (%d files, refused: %s)"
+			% [tunes_counted, str(unread_tunes)])
 	var tune: Dictionary = main.MidiImport.read(tune_path)
 	check(not tune.is_empty(), "the demo MIDI parses")
 	check((tune.get("notes", []) as Array).size() == 30,
