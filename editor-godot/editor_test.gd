@@ -3014,6 +3014,25 @@ func _initialize() -> void:
 	check(mounted_peak > 0.01,
 		"and the mounted kick sounds when struck (peak %.3f)" % mounted_peak)
 
+	# The whole kit as a device keeps its pads. NoteTriggers was filed under
+	# Terminals, and the device importer drops terminals because the host replaces
+	# them — so the kit arrived with its router stripped and every gate cable gone.
+	# Nothing replaces a note router; it rides along, and the mounted kit drums.
+	main._new_file()
+	for i in 8:
+		await process_frame
+	var whole_kit: String = await main._add_device("808: kit", Vector2(600.0, 0.0))
+	for i in 10:
+		await process_frame
+	var pads_kept := false
+	for definition_node in main.patch.get("modules", {}).get("kit", {}).get("nodes", []):
+		if str(definition_node.get("type", "")) == "NoteTriggers":
+			pads_kept = true
+	check(whole_kit != "" and pads_kept, "the kit device keeps its NoteTriggers")
+	var kit_mounted_peak: float = await _struck_peak(main, 48)
+	check(kit_mounted_peak > 0.01,
+		"and the mounted kit drums on C3 (peak %.3f)" % kit_mounted_peak)
+
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",
 			"Game: jump2", "DX7: algo-01"]:

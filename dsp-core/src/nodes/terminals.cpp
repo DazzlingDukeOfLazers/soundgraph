@@ -335,7 +335,11 @@ private:
 };
 
 const NodeTypeDescriptor kNoteTriggers = {
-    "NoteTriggers", "Note Triggers", "Terminals",
+    // Modulation, not Terminals, and the filing matters: importing a patch as a
+    // device drops terminal nodes because the host replaces them — its keyboard,
+    // its speakers. Nothing replaces a note router; filed as a terminal, the 808
+    // kit arrived with its pads stripped out and every gate cable gone with them.
+    "NoteTriggers", "Note Triggers", "Modulation",
     "Eight triggers from eight chromatic notes: the keyboard as a row of drum pads.",
     "trigger|drum|pad|kit|split|map|note to trigger|drum machine",
     Slice<PortDescriptor>(),
