@@ -887,6 +887,9 @@ func _build_ui() -> void:
 
 	midi_dialog = FileDialog.new()
 	midi_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	# Opening, not saving — which has to be said: a fresh FileDialog is a save
+	# dialog, and an importer wearing a Save button reads as a trap.
+	midi_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	midi_dialog.add_filter("*.mid,*.midi", "Standard MIDI file")
 	midi_dialog.title = "Import MIDI into the piano roll"
 	midi_dialog.file_selected.connect(_import_midi_file)

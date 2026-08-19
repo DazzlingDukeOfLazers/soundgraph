@@ -2840,6 +2840,9 @@ func _initialize() -> void:
 	# tempo, and a piece longer than one bar so the window has something to walk.
 	var tune_path: String = ProjectSettings.globalize_path("res://") \
 		.path_join("../examples/midi/ode-to-joy.mid")
+	# A fresh FileDialog is a save dialog; the importer must have said otherwise.
+	check(main.midi_dialog.file_mode == FileDialog.FILE_MODE_OPEN_FILE,
+		"the MIDI dialog opens files rather than offering to save one")
 	var tune: Dictionary = main.MidiImport.read(tune_path)
 	check(not tune.is_empty(), "the demo MIDI parses")
 	check((tune.get("notes", []) as Array).size() == 30,
