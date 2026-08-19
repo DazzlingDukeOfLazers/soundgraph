@@ -739,6 +739,7 @@ bool Graph::build(const GraphDescription& description,
     voice_count_ = 1;
     voice_states_.clear();
     voice_receivers_.clear();
+    global_note_receivers_.clear();
     replica_peers_.clear();
     allocation_stamp_ = 0;
 
@@ -841,6 +842,22 @@ bool Graph::build(const GraphDescription& description,
         }
         for (int member : kin.second) {
             replica_peers_[static_cast<std::size_t>(member)] = kin.second;
+        }
+    }
+    // A note receiver the replicator never copied is not part of any voice: it
+    // hears every note, and it leaves the voice lists so the allocator cannot
+    // hand it only voice zero's share.
+    for (int index : note_receiver_nodes_) {
+        if (replica_peers_[static_cast<std::size_t>(index)].empty()) {
+            global_note_receivers_.push_back(index);
+        }
+    }
+    if (voice_count_ > 1) {
+        for (std::vector<int>& per_voice : voice_receivers_) {
+            per_voice.erase(std::remove_if(per_voice.begin(), per_voice.end(),
+                [this](int index) {
+                    return replica_peers_[static_cast<std::size_t>(index)].empty();
+                }), per_voice.end());
         }
     }
 
@@ -977,6 +994,9 @@ void Graph::route_note(const NoteEvent& event) {
             for (int index : voice_receivers_[static_cast<std::size_t>(chosen)]) {
                 nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
             }
+            for (int index : global_note_receivers_) {
+                nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
+            }
             return;
         }
         case NoteEvent::Kind::NoteOff: {
@@ -990,6 +1010,9 @@ void Graph::route_note(const NoteEvent& event) {
                 for (int index : voice_receivers_[static_cast<std::size_t>(voice)]) {
                     nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
                 }
+            }
+            for (int index : global_note_receivers_) {
+                nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
             }
             return;
         }

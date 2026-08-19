@@ -190,6 +190,9 @@ private:
     std::uint32_t allocation_stamp_ = 0;
     std::vector<VoiceState> voice_states_;
     std::vector<std::vector<int>> voice_receivers_;  // note receivers, per voice
+    // Note receivers with no voice copies — a drum router outside the cone — hear
+    // every note: they are one instrument, not a voice's share of one.
+    std::vector<int> global_note_receivers_;
     // For each node, its replicas in the other voices (empty for unreplicated nodes).
     // A parameter set lands on the node somebody named and every copy of it, so one
     // knob still means one value however many voices are running.

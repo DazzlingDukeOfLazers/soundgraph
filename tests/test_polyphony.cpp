@@ -215,6 +215,35 @@ TEST(a_knob_reaches_every_voice) {
                       std::to_string(loudest) + ")");
 }
 
+TEST(a_note_router_outside_the_cone_hears_every_note) {
+    // A NoteTriggers has no inputs, so it is never downstream of the keyboard, so
+    // the replicator never copies it — and the allocator used to park it in voice
+    // zero's receiver list, where it heard one note in `voices`. Debugged on a real
+    // desk with the probe scope: the drums fired once per eight presses. An
+    // unreplicated receiver is one instrument, not a voice's share of one.
+    GraphDescription description = harness_patch(4);
+    soundgraph::NodeDescription pads;
+    pads.id = "pads";
+    pads.type = "NoteTriggers";
+    description.nodes.push_back(pads);
+
+    soundgraph::Graph graph;
+    CHECK(build(graph, description));
+    const int pads_index = graph.node_index("pads");
+    const int t1 = graph.node_type(pads_index)->find_output("t1");
+    CHECK(pads_index >= 0 && t1 >= 0);
+    graph.set_tap(0, pads_index, t1, 8192);
+    for (int press = 0; press < 4; ++press) {
+        graph.note_on(48, 0.9f);
+        render(graph, 0.05);
+        graph.note_off(48);
+        render(graph, 0.05);
+    }
+    CHECK_MESSAGE(graph.tap_edges(0) == 4,
+                  "four presses through four voices are four pad triggers (" +
+                      std::to_string(graph.tap_edges(0)) + ")");
+}
+
 TEST(a_poly_graph_rebuilds_cleanly) {
     // The replication is build-local: building twice from the same description must
     // not compound voices or leak replicas into the caller's document.
