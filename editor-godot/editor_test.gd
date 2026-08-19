@@ -3149,6 +3149,25 @@ func _initialize() -> void:
 	check(gate_low < 0.1 and gate_high > 0.9,
 		"and the window holds the whole step (%.2f..%.2f)" % [gate_low, gate_high])
 	main._let_go_note(57)
+
+	# The slow-sweep regression: with a two-second window the ring must still hold
+	# an edge long enough to catch. The old 0.68-second ring left a slow timebase's
+	# edge catchable for a sliver — the symptom was hammering a key until a strike
+	# happened to land in it.
+	main.scope_probe.note_mode = false
+	main.scope_probe.base_hz = 10.0
+	main.scope_probe.periods = 16
+	main.scope_probe.frozen = false
+	main._hold_note(57)
+	for i in 9:
+		pump.call()  # well past one full window of samples after the edge
+	main.scope_probe.capture()
+	check(main.scope_probe.locked,
+		"a single strike locks a sixteen-period 10 Hz sweep (span %d)"
+			% main.scope_probe.window_span())
+	main._let_go_note(57)
+	main.scope_probe.base_hz = 220.0
+	main.scope_probe.periods = 2
 	pump_player.stop()
 	pump_player.stream = null
 	await process_frame

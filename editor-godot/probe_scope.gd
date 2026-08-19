@@ -56,8 +56,11 @@ func base_frequency() -> float:
 
 
 func window_span() -> int:
+	# Two seconds at most: sixteen periods of 10 Hz fit, and the engine's ring is
+	# still several windows deep, so a slow sweep's edge stays catchable for
+	# seconds rather than for a sliver.
 	return clampi(int(sample_rate * float(periods) / maxf(10.0, base_frequency())),
-		32, 24576)
+		32, 96000)
 
 
 func _ready() -> void:
@@ -260,7 +263,7 @@ func capture() -> void:
 	# The whole ring, always: a periodic signal crosses again soon, but a sparse
 	# one — a gate, a trigger line — may have stepped long before the window's
 	# worth of samples, and the probe exists precisely for wires like those.
-	var reach := 32768
+	var reach := 262144
 	var stream: PackedFloat32Array = engine.get_scope_tap(reach)
 	if stream.size() < span:
 		return

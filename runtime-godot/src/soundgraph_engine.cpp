@@ -15,9 +15,12 @@ namespace {
 
 constexpr int kMaxFillFrames = 4096;
 constexpr int kScopeSamples = 4096;
-// The probe rings: long enough for eight periods of a 30 Hz wave with pre-trigger
-// context to spare. Editor-side memory, never on a small target.
-constexpr int kTapSamples = 32768;
+// The probe rings: five and a half seconds at 48 kHz. Generous on purpose — the
+// trigger only accepts an edge with a whole window still after it, so the ring
+// must dwarf the largest window or a slow timebase leaves an edge catchable for
+// only a sliver of time, half a second after the key was ever pressed. A megabyte
+// per ring of editor-side memory, never on a small target.
+constexpr int kTapSamples = 262144;
 
 std::string to_utf8(const String& text) {
     const CharString utf8 = text.utf8();
