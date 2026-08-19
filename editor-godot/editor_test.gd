@@ -3051,6 +3051,39 @@ func _initialize() -> void:
 	check(ribbon_peak > 0.01,
 		"one ribbon wire drums the whole kit (peak %.3f)" % ribbon_peak)
 
+	# The double tap goes home to the value the document was loaded with, not the
+	# type's factory default. The kit's kick body is a sine tuned to 52 Hz; the
+	# reset gesture used to send it to the oscillator's factory 440 — a kick drum
+	# turned into a doorbell. Found by the author on the real desk.
+	await main._load_example("808: kit")
+	for i in 8:
+		await process_frame
+	check(is_equal_approx(main._knob_home("k_body", "frequency", 440.0), 52.0),
+		"a loaded patch's authored value is the knob's home")
+	check(is_equal_approx(main._knob_home("k_body", "unset", 123.0), 123.0),
+		"a parameter the document never set keeps the factory default as home")
+	var kick_knob = (main.parameter_widgets.get("k_body", {}) as Dictionary) 		.get("frequency", {}).get("slider", null)
+	check(kick_knob != null, "the kick body's frequency knob is on the canvas")
+	if kick_knob != null:
+		_wheel(kick_knob, true)
+		for i in 4:
+			await process_frame
+		var home_tap := InputEventMouseButton.new()
+		home_tap.button_index = MOUSE_BUTTON_LEFT
+		home_tap.pressed = true
+		home_tap.double_click = true
+		home_tap.position = kick_knob.size * 0.5
+		kick_knob._gui_input(home_tap)
+		for i in 4:
+			await process_frame
+		var tuned: float = -999.0
+		for node in main.patch["nodes"]:
+			if str(node["id"]) == "k_body":
+				tuned = float(node.get("parameters", {}).get("frequency", -999.0))
+		check(is_equal_approx(tuned, 52.0),
+			"a double tap sends the kick home to its 52 Hz, not the factory 440 (%.1f)"
+				% tuned)
+
 	# ---- the probe scope --------------------------------------------------------------
 	# The bench instrument: clip the probe onto any wire, trigger like a real scope,
 	# and freeze what you caught. Driven against the saw oscillator at A3, whose

@@ -288,6 +288,13 @@ var _importing_definition := false
 ## path used for loading — so "undo an edit" reduces to "load the previous document",
 ## which cannot drift out of step with the operations the way hand-written inverses do.
 var undo_redo := UndoRedo.new()
+
+## Every node's parameters as they entered the document, keyed by node id: where a
+## knob's double tap goes home to. The 808's kick is tuned to 55 Hz by its author,
+## and a double tap that sent it to the oscillator's factory 440 was a reset to the
+## wrong origin. Recorded once per node and never overwritten, so twiddling does
+## not drag home along; cleared on load and carried across a dive like the history.
+var _home_values: Dictionary = {}
 var _pending_snapshot: Dictionary = {}
 var toolbar: Control
 
@@ -814,6 +821,7 @@ func _build_ui() -> void:
 		return engine.get_port_signal(source[0], source[1])
 	rack.ink = INK
 	rack.ink_dim = INK_DIM
+	rack.home_lookup = _knob_home
 	rack.parameter_changed.connect(_on_rack_parameter_changed)
 	rack.edit_started.connect(func() -> void: _begin_edit())
 	rack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
@@ -2950,12 +2958,27 @@ func _slot_type(signal_type: String) -> int:
 		_: return SLOT_NOTE
 
 
+## The value a knob returns to on a double tap: the one its node entered the
+## document with, falling back to the descriptor's factory default for a parameter
+## the document never set.
+func _knob_home(node_id: String, parameter_name: String, fallback: float) -> float:
+	var recorded: Dictionary = _home_values.get(node_id, {})
+	return float(recorded.get(parameter_name, fallback))
+
+
 func _rebuild_view() -> void:
 	# The synthesized descriptors are read from the document, so they are stale the moment
 	# it changes. Every caller that edited modules or seams used to remember to rebuild
 	# them and every new caller had to be told; doing it here means the widgets are built
 	# against the document in front of them, which is the only version that was ever right.
 	_synthesize_module_descriptors()
+	# Any node seen here for the first time is entering the document — off a loaded
+	# file, out of the add menu, or expanded from a module — and the values it
+	# arrives with are its home.
+	for node in patch.get("nodes", []):
+		var arrived := str(node["id"])
+		if not _home_values.has(arrived):
+			_home_values[arrived] = 				(node.get("parameters", {}) as Dictionary).duplicate(true)
 	graph_edit.clear_connections()
 	for child in graph_edit.get_children():
 		if child is GraphNode:
@@ -4457,7 +4480,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	readout.custom_minimum_size.x = Design.scale(72)
 	readout.centred = true
 	readout.text = _format_with_unit(parameter, current)
-	readout.default_value = float(parameter["default"])
+	readout.default_value = _knob_home(node_id, name, float(parameter["default"]))
 	readout.position_now = _to_position(parameter, current)
 	readout.to_value = func(position: float) -> float:
 		return _to_value(parameter, position)
@@ -6222,6 +6245,7 @@ func _dive_into(instance_id: String) -> void:
 		"name": document_name,
 		"unsaved": unsaved,
 		"history": undo_redo,
+		"home": _home_values,
 	})
 	undo_redo = UndoRedo.new()
 	_load_text(JSON.stringify(doc))
@@ -6249,6 +6273,7 @@ func _climb_up() -> void:
 	patch = frame["patch"]
 	undo_redo.free()
 	undo_redo = frame["history"]
+	_home_values = frame.get("home", {})
 	_set_document_name(str(frame["name"]))
 	unsaved = bool(frame["unsaved"])
 	if climb_button != null:
@@ -8008,6 +8033,7 @@ func _load_text(text: String) -> void:
 		_say("that file is not a patch")
 		return
 	patch = parsed
+	_home_values.clear()
 	# A freshly opened document has no unsaved changes in it by definition, and every
 	# way of opening one lands here — the examples menu, the file dialog, the browser
 	# file input and module import all call this.

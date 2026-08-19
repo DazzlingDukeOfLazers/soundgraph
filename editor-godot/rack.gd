@@ -193,6 +193,10 @@ var type_colours: Dictionary = {}
 ## nothing about the extension — it asks a question and gets numbers back, which is
 ## also what makes it testable without an audio device.
 var read_port: Callable = Callable()
+## Where a knob's double tap goes: (node_id, parameter_name, fallback) -> float,
+## answered by the editor from the values the node entered the document with. Left
+## unset, the descriptor's factory default stands.
+var home_lookup: Callable = Callable()
 var ink := Color(0.96, 0.96, 0.97)
 var ink_dim := Color(0.72, 0.74, 0.78)
 
@@ -1375,13 +1379,18 @@ class Knob extends Control:
 			return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				# The double tap sends it home: the descriptor's default, one undo
-				# step, reported the way every other gesture reports. Already home,
-				# it does nothing — a reset that writes an empty edit teaches undo
-				# to lie.
+				# The double tap sends it home: the value the node entered the
+				# document with, or the descriptor's factory default when the
+				# document never set one. One undo step, reported the way every
+				# other gesture reports. Already home, it does nothing — a reset
+				# that writes an empty edit teaches undo to lie.
 				if event.double_click:
 					var before := _position
-					set_value_silently(float(descriptor.get("default", value())))
+					var home: float = float(descriptor.get("default", value()))
+					if rack.home_lookup.is_valid():
+						home = float(rack.home_lookup.call(node_id,
+							str(descriptor["name"]), home))
+					set_value_silently(home)
 					if not is_equal_approx(before, _position):
 						rack.edit_started.emit()
 						rack.parameter_changed.emit(node_id,
