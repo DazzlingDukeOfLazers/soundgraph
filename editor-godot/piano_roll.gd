@@ -15,6 +15,7 @@ extends Control
 ## the playhead is a row index somebody else advances.
 
 signal cell_toggled(step: int, note: int)
+signal note_stretched(step: int, note: int, length: int)
 
 ## The document's sequence object, shared by reference. Empty means an empty roll.
 var sequence: Dictionary = {}
@@ -91,14 +92,64 @@ func step_at(y: float) -> int:
 	return clampi(row, 0, step_count() - 1)
 
 
+## The entry covering a cell — a long note answers for every row it holds.
+func _covering(step: int, note: int) -> Dictionary:
+	for entry: Dictionary in sequence.get("notes", []):
+		if int(entry.get("note", -1)) != note:
+			continue
+		var from := int(entry.get("step", 0))
+		if step >= from and step < from + maxi(1, int(entry.get("length", 1))):
+			return entry
+	return {}
+
+
+# The gesture in hand: press anchors a note, dragging upward stretches it, release
+# commits. A press that never travels stays a click, which is the toggle.
+var _drag_note := -1
+var _drag_anchor := -1
+var _drag_length := 1
+var _drag_moved := false
+
+
 func _gui_input(event: InputEvent) -> void:
+	var motion := event as InputEventMouseMotion
+	if motion != null and _drag_note >= 0:
+		# Upward only: the anchor is the note's own step, and time rises.
+		var row := step_at(motion.position.y)
+		var stretched: int = maxi(1, row - _drag_anchor + 1)
+		if stretched != _drag_length:
+			_drag_length = stretched
+			_drag_moved = _drag_moved or stretched > 1
+			queue_redraw()
+		accept_event()
+		return
 	var button := event as InputEventMouseButton
-	if button == null or button.button_index != MOUSE_BUTTON_LEFT or not button.pressed:
+	if button == null or button.button_index != MOUSE_BUTTON_LEFT:
 		return
-	var note := note_at(button.position.x)
-	if note < 0:
+	if button.pressed:
+		var note := note_at(button.position.x)
+		if note < 0:
+			return
+		var step := step_at(button.position.y)
+		# A press on a note's body grabs the whole note by its root, so a long
+		# note resizes from where it starts and a click anywhere on it is a click
+		# on it, not on the empty row underneath.
+		var held := _covering(step, note)
+		_drag_note = note
+		_drag_anchor = int(held.get("step", step))
+		_drag_length = 1
+		_drag_moved = false
+		accept_event()
 		return
-	cell_toggled.emit(step_at(button.position.y), note)
+	if _drag_note < 0:
+		return
+	# Release: a travelled press writes the stretched note; a click toggles.
+	if _drag_moved:
+		note_stretched.emit(_drag_anchor, _drag_note, _drag_length)
+	else:
+		cell_toggled.emit(_drag_anchor, _drag_note)
+	_drag_note = -1
+	queue_redraw()
 	accept_event()
 
 
@@ -150,3 +201,16 @@ func _draw() -> void:
 		var sounding: bool = playing_step >= step and playing_step < step + length
 		draw_rect(box, Color(Design.ACCENT, 0.9 if sounding else 0.55))
 		draw_rect(box, Color(Design.ACCENT, 1.0), false, 1.0)
+
+	# The note in hand, over everything: what release would write, drawn while the
+	# drag is still deciding it.
+	if _drag_note >= 0 and _drag_moved:
+		var held_span := lane(_drag_note)
+		if held_span.size.x > 0.0:
+			var held_top: float = size.y \
+				- float(mini(_drag_anchor + _drag_length, rows)) * row_height
+			var held_bottom: float = size.y - float(_drag_anchor) * row_height
+			var held_box := Rect2(held_span.position.x + 1.0, held_top + 1.0,
+				held_span.size.x - 2.0, held_bottom - held_top - 2.0)
+			draw_rect(held_box, Color(Design.ACCENT, 0.35))
+			draw_rect(held_box, Color(Design.ACCENT, 1.0), false, 2.0)

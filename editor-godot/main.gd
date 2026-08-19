@@ -4713,15 +4713,36 @@ func _set_roll_open(open: bool) -> void:
 func _on_roll_cell_toggled(step: int, note: int) -> void:
 	_begin_edit()
 	var notes: Array = _roll_sequence()["notes"]
+	# A long note answers for every row it holds, so a click anywhere on its body
+	# clears it — the roll anchors presses to the covering note's own step.
 	var removed := false
 	for index in range(notes.size() - 1, -1, -1):
 		var entry: Dictionary = notes[index]
-		if int(entry.get("step", -1)) == step and int(entry.get("note", -1)) == note:
+		if int(entry.get("note", -1)) != note:
+			continue
+		var from := int(entry.get("step", -1))
+		if step >= from and step < from + maxi(1, int(entry.get("length", 1))):
 			notes.remove_at(index)
 			removed = true
 	if not removed:
 		notes.append({"step": step, "note": note, "length": 1})
 	_commit_edit("roll: %s %s" % ["clear" if removed else "place", Keyboard.note_name(note)])
+	piano_roll.sequence = patch["sequence"]
+	piano_roll.queue_redraw()
+
+
+## A drag wrote a length: resize the note at that anchor, or place it held.
+func _on_roll_note_stretched(step: int, note: int, length: int) -> void:
+	_begin_edit()
+	var notes: Array = _roll_sequence()["notes"]
+	var found := false
+	for entry: Dictionary in notes:
+		if int(entry.get("step", -1)) == step and int(entry.get("note", -1)) == note:
+			entry["length"] = length
+			found = true
+	if not found:
+		notes.append({"step": step, "note": note, "length": length})
+	_commit_edit("roll: hold %s" % Keyboard.note_name(note))
 	piano_roll.sequence = patch["sequence"]
 	piano_roll.queue_redraw()
 
@@ -4828,6 +4849,7 @@ func _build_keyboard_dock() -> Control:
 	piano_roll.custom_minimum_size.y = Design.scale(150)
 	piano_roll.visible = false
 	piano_roll.cell_toggled.connect(_on_roll_cell_toggled)
+	piano_roll.note_stretched.connect(_on_roll_note_stretched)
 	column.add_child(piano_roll)
 
 	column.add_child(keyboard)

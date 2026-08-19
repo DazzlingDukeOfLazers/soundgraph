@@ -2669,13 +2669,19 @@ func _initialize() -> void:
 	check(main.piano_roll.note_at(lane_a3.get_center().x) == 57,
 		"and pointing into the lane names the note back")
 
-	var roll_cell := func() -> void:
+	# Press and release both: the roll commits on release now, so a click is the
+	# pair, and anything between them is a drag.
+	var roll_press := func(at: Vector2, down: bool) -> void:
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
-		click.pressed = true
-		click.position = Vector2(main.piano_roll.lane(57).get_center().x,
-			main.piano_roll.size.y - 4.0)
+		click.pressed = down
+		click.position = at
 		main.piano_roll._gui_input(click)
+	var roll_cell := func(y_offset: float = 4.0) -> void:
+		var at := Vector2(main.piano_roll.lane(57).get_center().x,
+			main.piano_roll.size.y - y_offset)
+		roll_press.call(at, true)
+		roll_press.call(at, false)
 	roll_cell.call()
 	for i in 3:
 		await process_frame
@@ -2693,6 +2699,31 @@ func _initialize() -> void:
 		await process_frame
 	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 1,
 		"and undo puts the note back")
+
+	# A drag stretches: press the note, travel three rows up, release. The pending
+	# length lands in the document as one edit.
+	var stretch_x: float = main.piano_roll.lane(57).get_center().x
+	roll_press.call(Vector2(stretch_x, main.piano_roll.size.y - 4.0), true)
+	var travel := InputEventMouseMotion.new()
+	travel.position = Vector2(stretch_x,
+		main.piano_roll.size.y - main.piano_roll._row_height() * 3.5)
+	main.piano_roll._gui_input(travel)
+	roll_press.call(travel.position, false)
+	for i in 3:
+		await process_frame
+	var stretched: Array = main.patch.get("sequence", {}).get("notes", [])
+	check(stretched.size() == 1 and int(stretched[0].get("length", 0)) == 4,
+		"dragging up holds the note for four steps (%s)" % str(stretched))
+	# A click on the note's body — not its root — still clears the whole note: a
+	# long note answers for every row it holds.
+	roll_cell.call(main.piano_roll._row_height() * 2.5)
+	for i in 3:
+		await process_frame
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).is_empty(),
+		"a click on the held note's body clears the whole note")
+	roll_cell.call()
+	for i in 3:
+		await process_frame
 
 	main.roll_play.button_pressed = true
 	# Primed to speak on the first breath: the smallest nudge lands step one.
