@@ -4,6 +4,7 @@
 // what a graph means.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -14,6 +15,12 @@
 #include "soundgraph/registry.h"
 
 namespace soundgraph {
+
+// The engine's polyphony ceiling. Sixteen is where the musical returns flatten — two
+// hands and a sustain pedal rarely keep more notes ringing — and it keeps the worst
+// case honest on the ESP32-class targets, where every voice is a full copy of the
+// note-driven part of the graph.
+inline constexpr int kMaxVoices = 16;
 
 // Static analysis of a patch. Requires no audio device, no sample rate, and no built
 // graph — an editor can run this on every keystroke.
@@ -148,6 +155,28 @@ private:
     std::vector<int> host_source_nodes_;
     std::vector<int> host_sink_nodes_;
     std::vector<int> note_receiver_nodes_;
+
+    // ---- polyphony -------------------------------------------------------------
+    // When a NoteInput asks for more than one voice, build replicates the note-driven
+    // cone of the graph once per voice and the allocator below routes each note to one
+    // copy. At one voice none of this engages and note events take the exact path they
+    // always took — that identity is what keeps every mono golden byte-stable.
+    struct VoiceState {
+        int note = -1;
+        bool held = false;
+        std::uint32_t stamp = 0;
+    };
+    int voice_count_ = 1;
+    std::uint32_t allocation_stamp_ = 0;
+    std::vector<VoiceState> voice_states_;
+    std::vector<std::vector<int>> voice_receivers_;  // note receivers, per voice
+    // For each node, its replicas in the other voices (empty for unreplicated nodes).
+    // A parameter set lands on the node somebody named and every copy of it, so one
+    // knob still means one value however many voices are running.
+    std::vector<std::vector<int>> replica_peers_;
+
+    void route_note(const NoteEvent& event);
+    void apply_parameter(int node_index, int parameter_index, float value);
 
     // One flat allocation; buffers are kBlockSize-sized windows into it. Keeping them
     // contiguous keeps the working set small, which matters on ESP32.

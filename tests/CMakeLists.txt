@@ -15,6 +15,7 @@ soundgraph_add_test(test_graph soundgraph::dsp)
 soundgraph_add_test(test_patch_io soundgraph::patch_io)
 soundgraph_add_test(test_golden soundgraph::patch_io soundgraph::wav)
 soundgraph_add_test(test_dx7_operator soundgraph::patch_io)
+soundgraph_add_test(test_polyphony soundgraph::dsp)
 
 # The sfxr oracle. Two tests, both cheap, both guarding something the port will depend on.
 #

@@ -41,6 +41,155 @@ std::string quote(const std::string& text) {
     return "'" + text + "'";
 }
 
+// ---------------------------------------------------------------------------------
+// Polyphony: voice-cone replication.
+//
+// A voice is a full copy of everything downstream of a NoteInput, up to the host
+// sinks where the copies sum — the shape every polysynth since the Prophet-5 has
+// had, applied to an arbitrary graph. Modulators that do not depend on notes (an
+// LFO, a Constant) stay single and fan out to every copy, which is the "global
+// LFO" of hardware. The replicas exist only inside build(): they are named with a
+// separator no sane document contains, they never round-trip to a file, and at one
+// voice the description passes through untouched — the mono path is not a special
+// case of the poly path, it is the absence of it.
+// ---------------------------------------------------------------------------------
+
+constexpr char kVoiceSeparator = '\x1f';
+
+int requested_voices(const GraphDescription& description) {
+    int voices = 1;
+    for (const NodeDescription& node : description.nodes) {
+        if (node.type != "NoteInput") {
+            continue;
+        }
+        for (const ParameterValue& parameter : node.parameters) {
+            if (parameter.name == "voices") {
+                voices = std::max(voices, static_cast<int>(parameter.value + 0.5));
+            }
+        }
+    }
+    return std::min(std::max(voices, 1), kMaxVoices);
+}
+
+// Every node reachable downstream from a NoteInput, stopping at host sinks. The
+// sinks are where the voices meet: their inputs sum, so N copies fanning into one
+// jack is the mix, with no mixer invented on anyone's behalf.
+std::set<std::string> voice_cone(const GraphDescription& description,
+                                 const NodeRegistry& registry) {
+    std::map<std::string, std::vector<std::string>> downstream;
+    for (const ConnectionDescription& connection : description.connections) {
+        downstream[connection.from_node].push_back(connection.to_node);
+    }
+    std::map<std::string, bool> is_sink;
+    for (const NodeDescription& node : description.nodes) {
+        const NodeTypeDescriptor* type = registry.find(node.type);
+        is_sink[node.id] = type != nullptr && type->role == NodeRole::HostAudioSink;
+    }
+    std::set<std::string> cone;
+    std::vector<std::string> frontier;
+    for (const NodeDescription& node : description.nodes) {
+        if (node.type == "NoteInput") {
+            cone.insert(node.id);
+            frontier.push_back(node.id);
+        }
+    }
+    while (!frontier.empty()) {
+        const std::string at = frontier.back();
+        frontier.pop_back();
+        for (const std::string& next : downstream[at]) {
+            if (is_sink[next] || cone.count(next) > 0) {
+                continue;
+            }
+            cone.insert(next);
+            frontier.push_back(next);
+        }
+    }
+    return cone;
+}
+
+std::string voice_name(const std::string& base, int voice) {
+    return base + kVoiceSeparator + std::to_string(voice);
+}
+
+// Expands `description` into `voiced` with the cone copied once per extra voice.
+// Returns the voice count; at 1 nothing is written and the caller keeps the original.
+int replicate_voices(const GraphDescription& description,
+                     const NodeRegistry& registry,
+                     GraphDescription& voiced,
+                     std::vector<Diagnostic>& diagnostics,
+                     bool& ok) {
+    ok = true;
+    const int voices = requested_voices(description);
+    if (voices <= 1) {
+        return 1;
+    }
+    const std::set<std::string> cone = voice_cone(description, registry);
+
+    voiced = description;
+    for (int voice = 1; voice < voices; ++voice) {
+        for (const NodeDescription& node : description.nodes) {
+            if (cone.count(node.id) == 0) {
+                continue;
+            }
+            NodeDescription copy = node;
+            copy.id = voice_name(node.id, voice);
+            voiced.nodes.push_back(copy);
+        }
+    }
+    for (const ConnectionDescription& connection : description.connections) {
+        const bool from_cone = cone.count(connection.from_node) > 0;
+        const bool to_cone = cone.count(connection.to_node) > 0;
+        if (!from_cone && !to_cone) {
+            continue;
+        }
+        if (from_cone && !to_cone) {
+            // The join. The target must sum, or the extra voices would silently
+            // fight over one jack; today that target is always a host sink, whose
+            // inputs do, but the rule is checked rather than assumed.
+            const NodeDescription* target = nullptr;
+            for (const NodeDescription& node : description.nodes) {
+                if (node.id == connection.to_node) {
+                    target = &node;
+                }
+            }
+            const NodeTypeDescriptor* type =
+                target != nullptr ? registry.find(target->type) : nullptr;
+            bool sums = false;
+            if (type != nullptr) {
+                for (int port = 0; port < type->inputs.size(); ++port) {
+                    if (connection.to_port == type->inputs[port].name) {
+                        sums = type->inputs[port].summing;
+                    }
+                }
+            }
+            if (!sums) {
+                Diagnostic diagnostic = error(
+                    "polyphony_needs_summing_join",
+                    "Voices meet at " + quote(connection.to_node) + "." +
+                        quote(connection.to_port) + ", which accepts one connection.",
+                    "Route the voices into an input that sums — an output jack or a "
+                    "mixer channel — or set voices back to 1.");
+                diagnostic.node_ids = {connection.to_node};
+                diagnostics.push_back(diagnostic);
+                ok = false;
+                continue;
+            }
+        }
+        for (int voice = 1; voice < voices; ++voice) {
+            ConnectionDescription copy = connection;
+            if (from_cone) {
+                copy.from_node = voice_name(connection.from_node, voice);
+            }
+            if (to_cone) {
+                copy.to_node = voice_name(connection.to_node, voice);
+            }
+            voiced.connections.push_back(copy);
+        }
+    }
+    return voices;
+}
+
+
 // Resolves node types and connection endpoints, reporting anything that cannot be
 // resolved. A connection that fails to resolve is dropped rather than half-applied, so
 // later passes only ever see well-formed edges.
@@ -584,29 +733,50 @@ bool Graph::build(const GraphDescription& description,
     control_queue_.clear();
     cost_ = ResourceCost{};
 
+    voice_count_ = 1;
+    voice_states_.clear();
+    voice_receivers_.clear();
+    replica_peers_.clear();
+    allocation_stamp_ = 0;
+
     if (!validate(description, registry, diagnostics)) {
         return false;
     }
 
+    // Polyphony expands after validation — the author's own graph is what gets
+    // diagnosed, and a valid graph replicated stays valid. At one voice the
+    // original description passes through untouched.
+    GraphDescription voiced;
+    bool voices_ok = true;
+    voice_count_ = replicate_voices(description, registry, voiced, diagnostics, voices_ok);
+    if (!voices_ok) {
+        return false;
+    }
+    const GraphDescription& active = voice_count_ > 1 ? voiced : description;
+
     // Validation already reported everything worth reporting; re-resolving here would
     // duplicate its warnings, so the second pass keeps its diagnostics to itself.
     std::vector<Diagnostic> discarded;
-    const Resolved resolved = resolve(description, registry, discarded);
+    const Resolved resolved = resolve(active, registry, discarded);
     if (!resolved.ok) {
         return false;
     }
 
     std::vector<bool> feedback;
-    if (!schedule(description, resolved, order_, feedback, discarded)) {
+    if (!schedule(active, resolved, order_, feedback, discarded)) {
         return false;
     }
 
     sample_rate_ = context.sample_rate;
 
     // ---- instantiate ---------------------------------------------------------------
-    nodes_.resize(description.nodes.size());
-    for (std::size_t i = 0; i < description.nodes.size(); ++i) {
-        const NodeDescription& node_description = description.nodes[i];
+    nodes_.resize(active.nodes.size());
+    voice_states_.resize(static_cast<std::size_t>(voice_count_));
+    voice_receivers_.resize(static_cast<std::size_t>(voice_count_));
+    replica_peers_.resize(active.nodes.size());
+    std::map<std::string, std::vector<int>> family;  // base id -> every voice's index
+    for (std::size_t i = 0; i < active.nodes.size(); ++i) {
+        const NodeDescription& node_description = active.nodes[i];
         const NodeTypeDescriptor* type = resolved.types[i];
 
         NodeSlot& slot = nodes_[i];
@@ -645,6 +815,29 @@ bool Graph::build(const GraphDescription& description,
         }
         if (type->receives_notes) {
             note_receiver_nodes_.push_back(static_cast<int>(i));
+        }
+
+        // Which voice a node belongs to, read back from the name the replicator
+        // gave it: the base copy is voice zero, and the family table remembers the
+        // siblings so a parameter set can reach all of them.
+        int voice = 0;
+        std::string base = node_description.id;
+        const std::size_t separator = node_description.id.find(kVoiceSeparator);
+        if (separator != std::string::npos) {
+            base = node_description.id.substr(0, separator);
+            voice = std::stoi(node_description.id.substr(separator + 1));
+        }
+        family[base].push_back(static_cast<int>(i));
+        if (type->receives_notes && voice >= 0 && voice < voice_count_) {
+            voice_receivers_[static_cast<std::size_t>(voice)].push_back(static_cast<int>(i));
+        }
+    }
+    for (const auto& kin : family) {
+        if (kin.second.size() < 2) {
+            continue;
+        }
+        for (int member : kin.second) {
+            replica_peers_[static_cast<std::size_t>(member)] = kin.second;
         }
     }
 
@@ -698,6 +891,10 @@ void Graph::reset() {
     std::fill(master_right_.begin(), master_right_.end(), 0.0f);
     pending_read_ = kBlockSize;
     control_queue_.clear();
+    for (VoiceState& state : voice_states_) {
+        state = VoiceState{};
+    }
+    allocation_stamp_ = 0;
 }
 
 void Graph::set_audio_input(const float* left, const float* right, int frames) {
@@ -711,15 +908,115 @@ void Graph::drain_control_events() {
     ControlEvent event;
     while (control_queue_.pop(event)) {
         if (event.kind == ControlEvent::Kind::Note) {
-            for (int index : note_receiver_nodes_) {
-                nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event.note);
-            }
+            route_note(event.note);
         } else {
-            if (event.node_index >= 0 && event.node_index < static_cast<int>(nodes_.size())) {
-                nodes_[static_cast<std::size_t>(event.node_index)]
-                    .node->set_parameter(event.parameter_index, event.value);
-            }
+            apply_parameter(event.node_index, event.parameter_index, event.value);
         }
+    }
+}
+
+
+// The voice allocator. At one voice it does not exist: every event goes to every
+// receiver exactly as it always has, which is what keeps NoteInput's own held-note
+// stack — and every mono golden — untouched. With more, a note-on lands on the voice
+// already singing that note (a retrigger), else the longest-released voice, else it
+// steals the longest-held one; a note-off goes only to the voices holding that note.
+void Graph::route_note(const NoteEvent& event) {
+    if (voice_count_ <= 1) {
+        for (int index : note_receiver_nodes_) {
+            nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
+        }
+        return;
+    }
+    switch (event.kind) {
+        case NoteEvent::Kind::NoteOn: {
+            int chosen = -1;
+            for (int voice = 0; voice < voice_count_; ++voice) {
+                VoiceState& state = voice_states_[static_cast<std::size_t>(voice)];
+                if (state.held && state.note == event.note) {
+                    chosen = voice;
+                }
+            }
+            if (chosen < 0) {
+                std::uint32_t oldest = 0;
+                for (int voice = 0; voice < voice_count_; ++voice) {
+                    const VoiceState& state = voice_states_[static_cast<std::size_t>(voice)];
+                    if (!state.held && (chosen < 0 || state.stamp < oldest)) {
+                        chosen = voice;
+                        oldest = state.stamp;
+                    }
+                }
+            }
+            if (chosen < 0) {
+                std::uint32_t oldest = 0;
+                for (int voice = 0; voice < voice_count_; ++voice) {
+                    const VoiceState& state = voice_states_[static_cast<std::size_t>(voice)];
+                    if (chosen < 0 || state.stamp < oldest) {
+                        chosen = voice;
+                        oldest = state.stamp;
+                    }
+                }
+            }
+            VoiceState& state = voice_states_[static_cast<std::size_t>(chosen)];
+            // A stolen voice lets go of its old note first, so its envelope
+            // retriggers rather than gliding from a note nobody released.
+            if (state.held && state.note != event.note) {
+                NoteEvent off;
+                off.kind = NoteEvent::Kind::NoteOff;
+                off.note = state.note;
+                for (int index : voice_receivers_[static_cast<std::size_t>(chosen)]) {
+                    nodes_[static_cast<std::size_t>(index)].node->handle_note_event(off);
+                }
+            }
+            state.note = event.note;
+            state.held = true;
+            state.stamp = ++allocation_stamp_;
+            for (int index : voice_receivers_[static_cast<std::size_t>(chosen)]) {
+                nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
+            }
+            return;
+        }
+        case NoteEvent::Kind::NoteOff: {
+            for (int voice = 0; voice < voice_count_; ++voice) {
+                VoiceState& state = voice_states_[static_cast<std::size_t>(voice)];
+                if (!state.held || state.note != event.note) {
+                    continue;
+                }
+                state.held = false;
+                state.stamp = ++allocation_stamp_;
+                for (int index : voice_receivers_[static_cast<std::size_t>(voice)]) {
+                    nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
+                }
+            }
+            return;
+        }
+        case NoteEvent::Kind::AllNotesOff: {
+            for (VoiceState& state : voice_states_) {
+                state.held = false;
+                state.note = -1;
+            }
+            for (int index : note_receiver_nodes_) {
+                nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
+            }
+            return;
+        }
+    }
+}
+
+
+// One knob, every copy: a set lands on the node somebody named and on each of its
+// voice replicas, so polyphony never makes a parameter mean sixteen things.
+void Graph::apply_parameter(int node_index, int parameter_index, float value) {
+    if (node_index < 0 || node_index >= static_cast<int>(nodes_.size())) {
+        return;
+    }
+    const std::vector<int>& peers = replica_peers_[static_cast<std::size_t>(node_index)];
+    if (peers.empty()) {
+        nodes_[static_cast<std::size_t>(node_index)].node->set_parameter(parameter_index, value);
+        return;
+    }
+    for (int member : peers) {
+        nodes_[static_cast<std::size_t>(member)].node->set_parameter(parameter_index, value);
     }
 }
 
@@ -925,9 +1222,7 @@ void Graph::all_notes_off() {
 }
 
 void Graph::dispatch_note(const NoteEvent& event) {
-    for (int index : note_receiver_nodes_) {
-        nodes_[static_cast<std::size_t>(index)].node->handle_note_event(event);
-    }
+    route_note(event);
 }
 
 int Graph::node_index(const std::string& id) const {

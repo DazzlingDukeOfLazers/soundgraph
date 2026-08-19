@@ -43,6 +43,12 @@ constexpr ParameterDescriptor kNoteParameters[] = {
     // would still have said the right number.
     {"transpose", "semitones", -96.0f, 96.0f, 0.0f, Scaling::Linear,
      "Shifts every incoming note. 12 is one octave up.", nullptr, 0},
+    // Read by the graph at build time, not by this node: the engine copies
+    // everything downstream of this input once per voice and routes each note to
+    // one copy. At 1 the graph is exactly the mono instrument it always was.
+    {"voices", "", 1.0f, 16.0f, 1.0f, Scaling::Linear,
+     "How many notes sound at once. Each voice is a full copy of everything "
+     "downstream of this input; takes effect when the graph rebuilds.", nullptr, 0},
 };
 
 class NoteInputNode final : public DspNode {
