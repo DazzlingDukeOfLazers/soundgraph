@@ -30,6 +30,25 @@ func rack_ready(main) -> void:
 ## Parameter rows used to be one parameter each and are two now, so a check that walked
 ## a node's children found lines where it expected cells — and reported "0 controls
 ## showing" on a node full of them.
+## The knob, slider or dropdown of one cell, wherever the cell keeps it — the
+## control sits inside a fixed-height centring zone now, one level down from the
+## cell itself, so scans that read the cell's direct children stopped seeing it.
+func _cell_controls(cell: Control) -> Array:
+	var found: Array = []
+	var queue: Array = [cell]
+	while not queue.is_empty():
+		var next: Control = queue.pop_front()
+		for child in next.get_children():
+			var control := child as Control
+			if control == null:
+				continue
+			if control is Rack.Knob or control is HSlider or control is OptionButton:
+				found.append(control)
+			else:
+				queue.append(control)
+	return found
+
+
 func _parameter_cells(node: GraphNode) -> Array:
 	var cells: Array = []
 	for child in node.get_children():
@@ -2028,9 +2047,8 @@ func _initialize() -> void:
 	var born_controls := 0
 	for id in main.widgets:
 		for row in _parameter_cells(main.widgets[id]):
-			for part in row.get_children():
-				if (part is Rack.Knob or part is HSlider or part is OptionButton) \
-						and (part as Control).is_visible_in_tree():
+			for part in _cell_controls(row):
+				if (part as Control).is_visible_in_tree():
 					born_controls += 1
 	check(born_controls > 0,
 		"and 30%% keeps the controls on the nodes (%d showing)" % born_controls)
@@ -2107,9 +2125,8 @@ func _initialize() -> void:
 			# Rule 2, per row: a visible control whose label is not reaching the reader.
 			for row in _parameter_cells(node):
 				var control_showing := false
-				for part in row.get_children():
-					if (part is Rack.Knob or part is HSlider or part is OptionButton) \
-							and (part as Control).is_visible_in_tree():
+				for part in _cell_controls(row):
+					if (part as Control).is_visible_in_tree():
 						control_showing = true
 				if not control_showing:
 					continue
@@ -2159,9 +2176,8 @@ func _initialize() -> void:
 			var node: GraphNode = main.widgets[id]
 			for row in _parameter_cells(node):
 				var showing := false
-				for part in row.get_children():
-					if (part is Rack.Knob or part is HSlider or part is OptionButton) \
-							and (part as Control).is_visible_in_tree():
+				for part in _cell_controls(row):
+					if (part as Control).is_visible_in_tree():
 						showing = true
 				if not showing:
 					continue
@@ -2262,9 +2278,8 @@ func _initialize() -> void:
 	var one_to_one_controls := 0
 	for id in main.widgets:
 		for row in _parameter_cells(main.widgets[id]):
-			for part in row.get_children():
-				if (part is Rack.Knob or part is HSlider or part is OptionButton) \
-						and (part as Control).is_visible_in_tree():
+			for part in _cell_controls(row):
+				if (part as Control).is_visible_in_tree():
 					one_to_one_controls += 1
 	check(one_to_one_controls > 0,
 		"with the controls still on the nodes (%d showing)" % one_to_one_controls)
@@ -2724,9 +2739,8 @@ func _initialize() -> void:
 	var fresh: GraphNode = main.widgets["filter"]
 	var fresh_controls := 0
 	for row in _parameter_cells(fresh):
-		for part in row.get_children():
-			if (part is Rack.Knob or part is HSlider or part is OptionButton) \
-					and (part as Control).is_visible_in_tree():
+		for part in _cell_controls(row):
+			if (part as Control).is_visible_in_tree():
 				fresh_controls += 1
 	check(fresh_controls == 0,
 		"rebuilding while zoomed out respects the level in force (%d controls showing)"

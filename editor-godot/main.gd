@@ -3851,6 +3851,26 @@ func _fit_row_height(line: Control) -> void:
 		line.visible = tall
 
 
+## One line of numerals, the height every cell's value slot shares.
+func _numeric_line_height() -> float:
+	var font := Design.numeric_font()
+	return font.get_height(Design.type(Design.SIZE_NUMERIC)) if font != null else 0.0
+
+
+## The top slot of every parameter cell: a fixed-height box with the control centred
+## in it. The height is the compact knob's whatever the control actually is — a
+## dropdown is shorter than a dial, and left to their own heights the two kinds of
+## cell floated at different centres with their captions on different lines, which
+## is the "nothing quite lines up" a mixed row used to show.
+func _control_zone(control: Control) -> Control:
+	var zone := CenterContainer.new()
+	zone.custom_minimum_size.y = maxf(Rack.knob_radius() * 2.0 + 8.0,
+		Design.scale(Design.HIT_TARGET))
+	zone.set_meta("control_zone", true)
+	zone.add_child(control)
+	return zone
+
+
 ## One parameter, as the rack's cell: dial on top, name under it, number under that.
 ##
 ## Stacked rather than laid out sideways, which is a reversal of the previous shape and
@@ -3971,9 +3991,18 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 			_commit_edit("set %s" % name))
 
 		options.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		row.add_child(_defocus(options))
+		row.add_child(_control_zone(_defocus(options)))
 		row.add_child(label)
-		row.add_child(chosen)
+		# The value line an enum cell would not otherwise have. Empty at full detail
+		# — the dropdown already says which option — but present, so an enum cell is
+		# the same three-line skeleton as a knob cell and a mixed row's captions sit
+		# on one baseline instead of each cell centring its own shorter stack.
+		var chosen_line := Control.new()
+		chosen_line.custom_minimum_size.y = _numeric_line_height()
+		chosen_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chosen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		chosen_line.add_child(chosen)
+		row.add_child(chosen_line)
 		row.set_meta("enum_value", chosen)
 		_remember_parameter_widget(node_id, name, options, null, parameter)
 		return row
@@ -4026,7 +4055,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# get the full width of the cell now rather than sharing a half-width line with the
 	# dial, which is also what stops a long name from crowding its own value out of the
 	# picture: "safety_limit" and its number no longer compete for the same strip.
-	row.add_child(_defocus(slider))
+	row.add_child(_control_zone(_defocus(slider)))
 	row.add_child(label)
 	row.add_child(readout)
 	row.set_meta("value_field", readout)
@@ -6780,7 +6809,9 @@ func _apply_cell_detail(cell: Control, full: bool) -> void:
 		var piece := part as Control
 		if piece == null:
 			continue
-		if piece is Rack.Knob or piece is HSlider or piece is OptionButton:
+		# The control zone goes as one piece — the centring box and the knob or
+		# dropdown inside it — so reduced detail releases the zone's height too.
+		if bool(piece.get_meta("control_zone", false)):
 			piece.visible = full
 		else:
 			piece.visible = true
