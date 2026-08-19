@@ -2193,7 +2193,13 @@ func _fill_graph_context() -> void:
 	# big patch silently pushed the keyboard dock below the bottom of the window. The
 	# strip shows the head of the order and folds the rest into one chip that opens the
 	# Outline, which is the view built for reading a big graph as a list.
-	var order: Array = info["nodes"]
+	# Voice replicas carry the engine's own separator in their names; the order strip
+	# shows each node once — the copies run the same code in the same order, and a
+	# chip per replica would be a census of an implementation detail.
+	var order: Array = []
+	for entry in info["nodes"]:
+		if not str(entry["id"]).contains(char(31)):
+			order.append(entry)
 	var shown: int = mini(order.size(), ORDER_CHIP_LIMIT)
 	if order.size() == ORDER_CHIP_LIMIT + 1:
 		shown = order.size()  # "+1 more" would take the space of the thing it hides
@@ -2210,14 +2216,29 @@ func _fill_graph_context() -> void:
 
 	if not info["feedback"].is_empty():
 		context_panel.add_child(_field("Feedback"))
+		var reported := {}
 		for edge in info["feedback"]:
-			context_panel.add_child(_value("%s to %s (previous block)"
-				% [edge["from"], edge["to"]], Design.WARNING))
+			# One line per loop, not per voice copy of it.
+			var line := "%s to %s (previous block)" % [
+				str(edge["from"]).get_slice(char(31), 0),
+				str(edge["to"]).get_slice(char(31), 0)]
+			if reported.has(line):
+				continue
+			reported[line] = true
+			context_panel.add_child(_value(line, Design.WARNING))
 
+	# The count and the cost stay the engine's own truth — a four-voice patch really
+	# does run four copies of the cone, and on an ESP32 that is the number that
+	# matters — with the voice count said out loud beside it.
+	var voice_count := 1
+	for node in patch.get("nodes", []):
+		voice_count = maxi(voice_count,
+			int(node.get("parameters", {}).get("voices", 1)))
 	var cost: Dictionary = info["cost"]
 	context_panel.add_child(_field("Cost"))
-	context_panel.add_child(_numeric("%d nodes · %d Hz"
-		% [int(info["node_count"]), int(info["sample_rate"])]))
+	context_panel.add_child(_numeric("%d nodes · %d Hz%s"
+		% [int(info["node_count"]), int(info["sample_rate"]),
+			" · %d voices" % voice_count if voice_count > 1 else ""]))
 	context_panel.add_child(_numeric("cpu %.1f units · state %d B · buffers %.1f KB"
 		% [cost["cpu"], int(cost["state_bytes"]), float(cost["heap_bytes"]) / 1024.0]))
 
@@ -4473,6 +4494,11 @@ func _format_value(value: float) -> String:
 ## records it in the document. Rebuilding would interrupt the sound, which is exactly what
 ## "patching should feel immediate" rules out.
 func _set_parameter(node_id: String, parameter: String, value: float) -> void:
+	# Voices is structural: the engine only grows or sheds voice copies on a
+	# rebuild, so the live set below cannot express it. The commit that ends this
+	# gesture rebuilds instead.
+	if parameter == "voices":
+		_voices_touched = true
 	# The engine runs the flattened graph, so an instance's exported knob reaches it
 	# by its inner name; the document records the value on the instance, because the
 	# facade is what the file says.
@@ -6975,14 +7001,24 @@ func _refresh_document_label() -> void:
 		Design.INK_NORMAL if unsaved else Design.INK_SECOND)
 
 
+var _voices_touched := false
+
+
 func _commit_edit(label: String) -> void:
 	if _pending_snapshot.is_empty():
 		return
 	var before := _pending_snapshot
 	_pending_snapshot = {}
 	var after := _snapshot()
+	var touched_voices := _voices_touched
+	_voices_touched = false
 	if JSON.stringify(before) == JSON.stringify(after):
 		return  # a drag that went nowhere is not an edit
+	if touched_voices:
+		# The gesture is over and the document really changed: this is the moment
+		# the voice count becomes real. Deferred, so the commit stays synchronous
+		# for UndoRedo while the engine catches up on its own frame.
+		_rebuild_and_apply.call_deferred()
 
 	unsaved = true
 	undo_redo.create_action(label)
@@ -6999,7 +7035,14 @@ func _differs_only_in_parameters(a: Dictionary, b: Dictionary) -> bool:
 	var without_parameters := func(document: Dictionary) -> String:
 		var copy: Dictionary = document.duplicate(true)
 		for node in copy.get("nodes", []):
-			node.erase("parameters")
+			# Voices survives the strip: it is structural — the engine grows a copy
+			# of the note-driven cone per voice — so undoing a voices change must
+			# take the rebuild path, not the moved-knob one.
+			var parameters: Dictionary = node.get("parameters", {})
+			if parameters.has("voices"):
+				node["parameters"] = {"voices": parameters["voices"]}
+			else:
+				node.erase("parameters")
 		return JSON.stringify(copy)
 	return without_parameters.call(a) == without_parameters.call(b)
 

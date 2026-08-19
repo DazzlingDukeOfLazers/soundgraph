@@ -2752,6 +2752,45 @@ func _initialize() -> void:
 		await process_frame
 	check(not main.piano_roll.visible, "folding the roll away hides the grid")
 
+	# ---- polyphony reaches the editor ---------------------------------------------
+	# Voices is a knob like any other to the hand, and structural to the engine: the
+	# commit that ends the gesture rebuilds the graph with the voice copies in it,
+	# and undo takes the same rebuild path back out.
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+	var mono_info: Dictionary = JSON.parse_string(main.engine.get_info_json())
+	var mono_count: int = int(mono_info["node_count"])
+	main._begin_edit()
+	main._set_parameter("note", "voices", 3.0)
+	main._commit_edit("set voices")
+	for i in 10:
+		await process_frame
+	var poly_info: Dictionary = JSON.parse_string(main.engine.get_info_json())
+	check(int(poly_info["node_count"]) > mono_count,
+		"committing a voices change rebuilds the engine with the copies (%d from %d)"
+			% [int(poly_info["node_count"]), mono_count])
+	var has_replicas := false
+	for entry in poly_info["nodes"]:
+		if str(entry["id"]).contains(char(31)):
+			has_replicas = true
+	check(has_replicas, "the running graph carries the voice replicas")
+
+	var with_more: Dictionary = main.patch.duplicate(true)
+	for node in with_more["nodes"]:
+		if str(node["id"]) == "note":
+			node["parameters"]["voices"] = 5
+	check(not main._differs_only_in_parameters(main.patch, with_more),
+		"a voices change is structural, not a moved knob")
+
+	await main._undo()
+	for i in 10:
+		await process_frame
+	var undone_info: Dictionary = JSON.parse_string(main.engine.get_info_json())
+	check(int(undone_info["node_count"]) == mono_count,
+		"undoing the voices change sheds the copies (%d)"
+			% int(undone_info["node_count"]))
+
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",
 			"Game: jump2", "DX7: algo-01"]:

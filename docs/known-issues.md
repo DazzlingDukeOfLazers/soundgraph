@@ -54,8 +54,8 @@ Open problems, ordered by how much they threaten the Knobcon demo.
   golden stable. Two consequences to know: audio from *outside* the cone that joins the
   note path before the sink fans into every voice copy and is heard once per voice
   (route such mixes into a summing jack after the voices instead), and changing
-  `voices` takes effect on rebuild, not live. Editor UI for the parameter is still to
-  come — today it is set like any other parameter value in the document.
+  `voices` takes effect on rebuild, not live — the editor knows this: committing a
+  voices knob gesture rebuilds the engine, and undo takes the rebuild path back.
 - **No parameter smoothing on `set_parameter`.** Immediate sets can zipper on large jumps.
   `Gain` and filter cutoff are the ones likely to need it first.
 - **No denormal protection.** Not observable on x64 with SSE flush-to-zero defaults, but
