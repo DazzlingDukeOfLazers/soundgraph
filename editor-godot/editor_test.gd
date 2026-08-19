@@ -2585,16 +2585,64 @@ func _initialize() -> void:
 	check(reborn_cell != null and bool(reborn_cell.get_meta("on_face", false)),
 		"and the rebuilt cell lights again")
 
-	var seam_widget: GraphNode = main.widgets["note"]
-	var plate_spot: Vector2 = main.graph_edit.get_global_rect().position \
-		+ (seam_widget.position_offset + seam_widget.get_output_port_position(0)) \
-		* main.graph_edit.zoom - main.graph_edit.scroll_offset
-	var ports_before: int = (main.patch.get("controls", []) as Array).size()
-	face_press.call(plate_spot)
-	for i in 4:
+	# Port clicks expose and trim seams: a bare port gains a seam named after it,
+	# wired in and glowing on the plates; the same click again unplugs it, and a
+	# seam left serving nothing leaves with its wire. One undo step each way, and
+	# any port on a seam node is a handle on the whole seam.
+	var filter_inputs: Array = main._port_list("filter", "inputs")
+	var mod_index := -1
+	for input_index in filter_inputs.size():
+		if str(filter_inputs[input_index]["name"]) == "cutoff_mod":
+			mod_index = input_index
+	check(mod_index >= 0, "the filter offers cutoff_mod to expose")
+	var mod_spot := func() -> Vector2:
+		var w: GraphNode = main.widgets["filter"]
+		return main.graph_edit.get_global_rect().position \
+			+ (w.position_offset + w.get_input_port_position(mod_index)) \
+			* main.graph_edit.zoom - main.graph_edit.scroll_offset
+	var seam_nodes_before: int = main.patch["nodes"].size()
+	face_press.call(mod_spot.call())
+	for i in 12:
 		await process_frame
-	check((main.patch.get("controls", []) as Array).size() == ports_before,
-		"a port press dresses nothing — plates ride their seams")
+	check(main.patch["nodes"].size() == seam_nodes_before + 1,
+		"clicking a bare port exposes a seam (%d nodes)" % main.patch["nodes"].size())
+	var exposed: Dictionary = main.patch["nodes"][-1]
+	check(str(exposed.get("type", "")) == "Input"
+			and str(exposed.get("id", "")) == "cutoff_mod",
+		"an Input seam named for the port (%s)" % str(exposed.get("id", "")))
+	var seam_wired := false
+	for connection in main.patch["connections"]:
+		if str(connection["from"]["node"]) == "cutoff_mod" \
+				and str(connection["to"]["node"]) == "filter" \
+				and str(connection["to"]["port"]) == "cutoff_mod":
+			seam_wired = true
+	check(seam_wired, "wired into the port that was clicked")
+	check(main.widgets.has("cutoff_mod")
+			and bool(main.widgets["cutoff_mod"].get_meta("face_seam", false)),
+		"and the new seam's ports are plate ports")
+	var filter_served: Dictionary = main.widgets["filter"].get_meta("face_served", {})
+	check(filter_served.has("left:%d" % mod_index),
+		"while the served port wears the ring (%s)" % str(filter_served))
+
+	face_press.call(mod_spot.call())
+	for i in 12:
+		await process_frame
+	check(main.patch["nodes"].size() == seam_nodes_before,
+		"the same click trims it again (%d nodes)" % main.patch["nodes"].size())
+	await main._undo()
+	for i in 12:
+		await process_frame
+	check(main.patch["nodes"].size() == seam_nodes_before + 1,
+		"undo brings the seam back")
+	var seam_jack: Vector2 = main.graph_edit.get_global_rect().position \
+		+ (main.widgets["cutoff_mod"].position_offset
+			+ main.widgets["cutoff_mod"].get_output_port_position(0)) \
+		* main.graph_edit.zoom - main.graph_edit.scroll_offset
+	face_press.call(seam_jack)
+	for i in 12:
+		await process_frame
+	check(main.patch["nodes"].size() == seam_nodes_before,
+		"a click on the seam's own jack takes the whole seam out")
 
 	main.face_edit_button.button_pressed = false
 	for i in 3:

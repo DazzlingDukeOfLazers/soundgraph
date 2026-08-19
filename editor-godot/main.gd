@@ -616,8 +616,7 @@ func _build_ui() -> void:
 	face_edit_button.toggled.connect(_set_face_edit)
 	graph_edit.get_menu_hbox().add_child(_defocus(face_edit_button))
 	graph_edit.face_cell_toggled.connect(_on_face_cell_toggled)
-	graph_edit.face_port_poked.connect(func() -> void:
-		_say("ports ride their seams — expose or trim them with the wand and the plates follow"))
+	graph_edit.face_port_toggled.connect(_on_face_port_toggled)
 	# And one button fewer. Arrange is in the toolbar menu now, so the icon beside the
 	# zoom controls was a second way to do a thing that already had a labelled one —
 	# the kind of duplication that makes a toolbar feel busy without adding anything.
@@ -3872,6 +3871,153 @@ func _on_face_cell_toggled(node_id: String, parameter_name: String) -> void:
 	_say("%s %s the face" % [parameter_name, "leaves" if removed else "joins"])
 
 
+## A port click in face edit exposes or trims a seam — the same toggle the knob
+## cells have, in plate terms. On a seam node any port is the seam itself: the
+## click takes the whole seam out, wires and all. On a regular node, a port a seam
+## is already serving gets unplugged from it (and a seam left serving nothing goes
+## too); a bare port gets a fresh seam named after it, wired in, placed beside the
+## node, unbound — the seam dock is where a binding is chosen. One undo step each.
+func _on_face_port_toggled(widget_name: String, side: String, index: int) -> void:
+	var node_id: String = ids.get(widget_name, "")
+	if node_id == "":
+		return
+	var node: Dictionary = {}
+	for candidate in patch.get("nodes", []):
+		if str(candidate.get("id", "")) == node_id:
+			node = candidate
+			break
+	var ports := _port_list(node_id, "inputs" if side == "left" else "outputs")
+	if index >= ports.size():
+		return
+	var port_name := str(ports[index]["name"])
+	var node_type := str(node.get("type", ""))
+
+	_begin_edit()
+	if node_type in ["Input", "Output"]:
+		_drop_seam(node_id)
+		_commit_edit("trim seam %s" % node_id)
+		_say("seam %s trimmed from the face" % node_id)
+	else:
+		var serving := _seam_serving(node_id, port_name, side)
+		if serving != "":
+			var trimmed := _unplug_seam(serving, node_id, port_name, side)
+			_commit_edit("trim seam %s" % serving)
+			_say("%s unplugged from %s%s" % [port_name, serving,
+				", and the empty seam went with it" if trimmed else ""])
+		else:
+			var seam_id := _expose_seam(node, port_name, side)
+			_commit_edit("expose %s" % port_name)
+			_say("%s exposed on the face as %s" % [port_name, seam_id])
+	await _rebuild_and_apply()
+	_refresh_face_edit_badges()
+
+
+## The seam wired to this exact port, or "".
+func _seam_serving(node_id: String, port_name: String, side: String) -> String:
+	var seam_ids := {}
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) in ["Input", "Output"]:
+			seam_ids[str(node["id"])] = true
+	for connection in patch.get("connections", []):
+		if side == "left" and str(connection["to"]["node"]) == node_id \
+				and str(connection["to"]["port"]) == port_name \
+				and seam_ids.has(str(connection["from"]["node"])):
+			return str(connection["from"]["node"])
+		if side == "right" and str(connection["from"]["node"]) == node_id \
+				and str(connection["from"]["port"]) == port_name \
+				and seam_ids.has(str(connection["to"]["node"])):
+			return str(connection["to"]["node"])
+	return ""
+
+
+## Takes a seam node out entirely, with every wire it carried.
+func _drop_seam(seam_id: String) -> void:
+	var kept_nodes: Array = []
+	for node in patch.get("nodes", []):
+		if str(node.get("id", "")) != seam_id:
+			kept_nodes.append(node)
+	patch["nodes"] = kept_nodes
+	var kept: Array = []
+	for connection in patch.get("connections", []):
+		if str(connection["from"]["node"]) != seam_id \
+				and str(connection["to"]["node"]) != seam_id:
+			kept.append(connection)
+	patch["connections"] = kept
+
+
+## Unplugs one port from the seam serving it; a seam left with no wires at all is
+## taken out too. Returns whether the seam itself went.
+func _unplug_seam(seam_id: String, node_id: String, port_name: String,
+		side: String) -> bool:
+	var kept: Array = []
+	for connection in patch.get("connections", []):
+		var mine: bool
+		if side == "left":
+			mine = str(connection["from"]["node"]) == seam_id \
+				and str(connection["to"]["node"]) == node_id \
+				and str(connection["to"]["port"]) == port_name
+		else:
+			mine = str(connection["to"]["node"]) == seam_id \
+				and str(connection["from"]["node"]) == node_id \
+				and str(connection["from"]["port"]) == port_name
+		if not mine:
+			kept.append(connection)
+	patch["connections"] = kept
+	for connection in patch["connections"]:
+		if str(connection["from"]["node"]) == seam_id \
+				or str(connection["to"]["node"]) == seam_id:
+			return false
+	_drop_seam(seam_id)
+	return true
+
+
+## A fresh seam for a bare port: named after the port, placed beside its node on
+## the grid, wired in. Returns the seam's id.
+func _expose_seam(node: Dictionary, port_name: String, side: String) -> String:
+	var taken := {}
+	for other in patch.get("nodes", []):
+		taken[str(other.get("id", ""))] = true
+	var seam_id := port_name
+	var suffix := 2
+	while taken.has(seam_id):
+		seam_id = "%s_%d" % [port_name, suffix]
+		suffix += 1
+	var at: Dictionary = node.get("position", {"x": 0.0, "y": 0.0})
+	var seam_x: float = float(at.get("x", 0.0)) + (-440.0 if side == "left" else 440.0)
+	var seam_y: float = float(at.get("y", 0.0))
+	# Not on top of somebody: a seam born exactly on another node reads as a fault.
+	# Positions are all the document records, so the dodge is coarse — step down a
+	# couple of rows until the nearest node is a comfortable stride away.
+	var crowded := true
+	while crowded:
+		crowded = false
+		for other in patch.get("nodes", []):
+			var spot: Dictionary = other.get("position", {})
+			if absf(float(spot.get("x", 1.0e9)) - seam_x) < 320.0 \
+					and absf(float(spot.get("y", 1.0e9)) - seam_y) < 200.0:
+				crowded = true
+				seam_y += 200.0
+				break
+	var seam := {
+		"id": seam_id,
+		"type": "Input" if side == "left" else "Output",
+		"position": {"x": seam_x, "y": seam_y},
+	}
+	patch["nodes"].append(seam)
+	var node_id := str(node.get("id", ""))
+	if side == "left":
+		patch["connections"].append({
+			"from": {"node": seam_id, "port": "out"},
+			"to": {"node": node_id, "port": port_name},
+		})
+	else:
+		patch["connections"].append({
+			"from": {"node": node_id, "port": port_name},
+			"to": {"node": seam_id, "port": "in"},
+		})
+	return seam_id
+
+
 ## A face control built from what the graph already knows: the parameter's own
 ## descriptor supplies the range and scaling, the node's current value becomes the
 ## default, and the id stays out of the way of every control already there.
@@ -3918,9 +4064,30 @@ func _refresh_face_edit_badges() -> void:
 	for node in patch.get("nodes", []):
 		if str(node.get("type", "")) in ["Input", "Output"]:
 			seams[str(node["id"])] = true
+	# The ports a seam is serving on regular nodes, as "left:N"/"right:N" per node,
+	# so the overlay rings exactly where the next click would trim.
+	var served := {}
+	for connection in patch.get("connections", []):
+		var from_id := str(connection["from"]["node"])
+		var to_id := str(connection["to"]["node"])
+		if seams.has(from_id) and not seams.has(to_id):
+			var inputs := _port_list(to_id, "inputs")
+			for index in inputs.size():
+				if str(inputs[index]["name"]) == str(connection["to"]["port"]):
+					if not served.has(to_id):
+						served[to_id] = {}
+					served[to_id]["left:%d" % index] = true
+		if seams.has(to_id) and not seams.has(from_id):
+			var outputs := _port_list(from_id, "outputs")
+			for index in outputs.size():
+				if str(outputs[index]["name"]) == str(connection["from"]["port"]):
+					if not served.has(from_id):
+						served[from_id] = {}
+					served[from_id]["right:%d" % index] = true
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
 		widget.set_meta("face_seam", seams.has(str(id)))
+		widget.set_meta("face_served", served.get(str(id), {}))
 		for child in widget.get_children():
 			var line := child as Control
 			if line == null or not line.has_meta("cells_box"):

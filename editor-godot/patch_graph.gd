@@ -204,7 +204,7 @@ var detail_mode: int = DetailMode.ONE_TO_ONE
 ## painting; what is actually on the face is main's knowledge, written onto the
 ## cells as an "on_face" meta and onto seam widgets as "face_seam".
 signal face_cell_toggled(node_id: String, parameter_name: String)
-signal face_port_poked
+signal face_port_toggled(widget_name: String, side: String, index: int)
 
 var face_edit := false:
 	set(value):
@@ -1595,7 +1595,13 @@ class WandOverlay extends Control:
 				continue
 			_frame_face_cells(node, origin)
 			if bool(node.get_meta("face_seam", false)):
-				_ring_face_ports(node, origin, scale)
+				_ring_face_ports(node, origin, scale, {})
+			else:
+				# A regular node rings only the ports a seam is serving — the ring
+				# sits exactly where the next click would trim.
+				var served: Dictionary = node.get_meta("face_served", {})
+				if not served.is_empty():
+					_ring_face_ports(node, origin, scale, served)
 
 	func _frame_face_cells(parent: Node, origin: Vector2) -> void:
 		for child in parent.get_children():
@@ -1617,14 +1623,22 @@ class WandOverlay extends Control:
 				continue
 			_frame_face_cells(control, origin)
 
-	func _ring_face_ports(node: GraphNode, origin: Vector2, scale: float) -> void:
+	## Rings ports. An empty `only` rings them all (a seam node, where every port is
+	## a plate port); otherwise `only` holds "left:N"/"right:N" keys for the ports a
+	## seam is serving on a regular node.
+	func _ring_face_ports(node: GraphNode, origin: Vector2, scale: float,
+			only: Dictionary) -> void:
 		var node_at: Vector2 = node.get_global_rect().position - origin
 		var radius: float = maxf(6.0, 9.0 * scale)
 		for index in node.get_input_port_count():
+			if not only.is_empty() and not only.has("left:%d" % index):
+				continue
 			var at: Vector2 = node_at + node.get_input_port_position(index) * scale
 			draw_circle(at, radius, Color(Design.ACCENT, 0.12))
 			draw_arc(at, radius, 0.0, TAU, 24, Color(Design.ACCENT, 0.9), 2.0)
 		for index in node.get_output_port_count():
+			if not only.is_empty() and not only.has("right:%d" % index):
+				continue
 			var at: Vector2 = node_at + node.get_output_port_position(index) * scale
 			draw_circle(at, radius, Color(Design.ACCENT, 0.12))
 			draw_arc(at, radius, 0.0, TAU, 24, Color(Design.ACCENT, 0.9), 2.0)
@@ -1880,7 +1894,8 @@ func _input(event: InputEvent) -> void:
 	if face_edit:
 		var poked_port := port_at(button.position - rect.position)
 		if not poked_port.is_empty():
-			face_port_poked.emit()
+			face_port_toggled.emit(str(poked_port["widget"]),
+				str(poked_port["side"]), int(poked_port["index"]))
 			get_viewport().set_input_as_handled()
 			return
 		var poked_cell := face_cell_at(button.position)
