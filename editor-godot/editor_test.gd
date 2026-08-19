@@ -409,6 +409,29 @@ func _initialize() -> void:
 				flat_readouts += 1
 		check(flat_readouts == 0,
 			"every readout claims its line of height (%d flat)" % flat_readouts)
+		# Knobs stack in columns: a column is as wide as its widest cell, so the row
+		# with the mode dropdown cannot pack its knobs off the axis of the all-knob
+		# row above it. The filter is the node with a mixed row, which is exactly
+		# where the columns used to fall out of register.
+		var column_widths := {}
+		var out_of_register := 0
+		for row_child in filter_widget.get_children():
+			var row_line := row_child as Control
+			var row_box: Control = row_line.get_meta("cells_box") \
+				if row_line != null and row_line.has_meta("cells_box") else null
+			if row_box == null:
+				continue
+			for index in row_box.get_child_count():
+				var sized_cell := row_box.get_child(index) as Control
+				if sized_cell == null:
+					continue
+				if not column_widths.has(index):
+					column_widths[index] = sized_cell.size.x
+				elif absf(float(column_widths[index]) - sized_cell.size.x) > 0.5:
+					out_of_register += 1
+		check(column_widths.size() > 1 and out_of_register == 0,
+			"cells in a column share its width (%d columns, %d off axis)"
+				% [column_widths.size(), out_of_register])
 		check(filter_widget.is_slot_enabled_left(0), "its audio input is a connectable slot")
 		check(filter_widget.is_slot_enabled_left(3), "its resonance input is a connectable slot")
 		check(filter_widget.is_slot_enabled_right(0), "and its output is a connectable slot")
@@ -6630,12 +6653,29 @@ func _initialize() -> void:
 	main._focus_node("filter")
 	for i in 6:
 		await process_frame
-	var floor_at: Vector2 = main.graph_edit._case_band_rect().position \
-		+ Vector2(30.0, 220.0)
-	check(main.graph_edit.get_child_count() > 0
-			and main.graph_edit._connection_at(
-				main.graph_edit._to_graph(floor_at)).is_empty(),
-		"the aimed-at point is bare canvas")
+	# Found rather than hardcoded: a fixed offset from the band was bare canvas only
+	# until the nodes were respaced, at which point it landed on the filter's out
+	# port and this test was clicking a jack while talking about the floor.
+	var floor_at := Vector2.ZERO
+	for floor_probe_y in [220.0, 260.0, 300.0, 180.0, 340.0]:
+		var floor_probe: Vector2 = main.graph_edit._case_band_rect().position \
+			+ Vector2(30.0, floor_probe_y)
+		var floor_graph: Vector2 = main.graph_edit._to_graph(floor_probe)
+		var floor_clear: bool = main.graph_edit._connection_at(floor_graph).is_empty()
+		if floor_clear:
+			main.graph_edit._update_hover(floor_probe)
+			floor_clear = main.graph_edit.hovered_port.is_empty()
+		if floor_clear:
+			for floor_id in main.widgets:
+				var floor_widget: GraphNode = main.widgets[floor_id]
+				if Rect2(floor_widget.position_offset, floor_widget.size) \
+						.grow(20.0).has_point(floor_graph):
+					floor_clear = false
+					break
+		if floor_clear:
+			floor_at = floor_probe
+			break
+	check(floor_at != Vector2.ZERO, "found bare canvas inside the case")
 	_press_graph(main, floor_at)
 	for i in 8:
 		await process_frame
@@ -6644,8 +6684,9 @@ func _initialize() -> void:
 	main._focus_node("filter")
 	for i in 6:
 		await process_frame
-	var sweep_from: Vector2 = main.graph_edit._case_band_rect().position \
-		+ Vector2(30.0, 220.0)
+	# The same bare point the floor click used — the view is re-focused on the same
+	# node, so it is still floor here.
+	var sweep_from: Vector2 = floor_at
 	_drag_graph(main, sweep_from, sweep_from + Vector2(160.0, 90.0))
 	for i in 8:
 		await process_frame

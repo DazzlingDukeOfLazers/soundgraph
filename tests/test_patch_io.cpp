@@ -173,7 +173,9 @@ TEST(editor_layout_is_carried_through_the_format) {
             // The filter sits in the third column of the signal chain. Its column is
             // structural and worth pinning; its exact row is the layout algorithm's
             // business and would make this test fail every time that is tuned.
-            CHECK_NEAR(node.x, 800.0, 0.001);
+            // Columns opened from 400 to 440 apart when the graph nodes learned to
+            // stack their knobs on shared axes and grew a few pixels doing it.
+            CHECK_NEAR(node.x, 880.0, 0.001);
         }
     }
     CHECK_MESSAGE(found, "the filter node should be in the example patch");

@@ -3592,6 +3592,10 @@ func _create_widget(node: Dictionary) -> void:
 	_add_ghost_ports(widget, str(node["id"]), descriptor)
 
 	graph_edit.add_child(widget)
+	# Deferred, because the honest minimums need the tree: an OptionButton measured
+	# before the theme reaches it reports the fallback theme's width, and a column
+	# sized to that lie is a column that falls back out of register one frame later.
+	_size_cell_columns.call_deferred(widget)
 	widgets[node["id"]] = widget
 	ids[widget.name] = node["id"]
 
@@ -3849,6 +3853,73 @@ func _fit_row_height(line: Control) -> void:
 	# case it stays whatever else happens, because a hidden row renumbers the cables.
 	if not bool(line.get_meta("has_slot", false)):
 		line.visible = tall
+
+
+## One width per column of cells, so the knobs stack on shared axes.
+##
+## A cell used to be as wide as its own contents, and each row centres its cells as
+## a group — so a row holding a wide dropdown packed its neighbour a few pixels
+## differently than the all-knob row below it, and the rate dial sat visibly off
+## the amount dial's axis. A column is as wide as its widest cell — per column, not
+## per node, so the node grows no wider than its widest row already made it — and
+## the centring zones and full-width captions absorb the difference inside each
+## cell.
+func _size_cell_columns(widget: GraphNode) -> void:
+	if not is_instance_valid(widget):
+		return
+	var columns: Array[float] = []
+	var rows: Array = []
+	# The flanks count as much as the cells: a row's knob group is centred in the
+	# room its port labels leave, so a row flanked by "rate Hz" and a row flanked by
+	# nothing centred their knobs over different spans — equal cell widths alone
+	# still left the dials off axis. Every cell row gets the widest flank on each
+	# side, so every row's group is centred over the same span.
+	var left_flank := 0.0
+	var right_flank := 0.0
+	var flanks: Array = []
+	for child in widget.get_children():
+		var line := child as Control
+		if line == null or not line.has_meta("cells_box"):
+			continue
+		var box: Control = line.get_meta("cells_box")
+		var cells: Array = box.get_children()
+		if cells.is_empty():
+			continue
+		rows.append(cells)
+		var before_cells := true
+		for part in line.get_children():
+			var side := part as Control
+			if side == box:
+				before_cells = false
+				continue
+			if side == null or not side.has_meta("port_label"):
+				continue
+			# Measured over the content, not over what a previous pass pinned — a
+			# rebuilt row must be able to shrink back as well as grow.
+			side.custom_minimum_size.x = 0.0
+			var side_need: float = side.get_combined_minimum_size().x
+			if before_cells:
+				left_flank = maxf(left_flank, side_need)
+			else:
+				right_flank = maxf(right_flank, side_need)
+			flanks.append([side, before_cells])
+		for index in cells.size():
+			var cell := cells[index] as Control
+			if cell == null:
+				continue
+			cell.custom_minimum_size.x = 0.0
+			var need: float = cell.get_combined_minimum_size().x
+			if index >= columns.size():
+				columns.append(need)
+			else:
+				columns[index] = maxf(columns[index], need)
+	for entry in flanks:
+		(entry[0] as Control).custom_minimum_size.x = left_flank if entry[1] else right_flank
+	for cells in rows:
+		for index in cells.size():
+			var cell := cells[index] as Control
+			if cell != null:
+				cell.custom_minimum_size.x = columns[index]
 
 
 ## One line of numerals, the height every cell's value slot shares.
