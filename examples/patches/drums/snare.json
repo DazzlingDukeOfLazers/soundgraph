@@ -11,8 +11,7 @@
         "x": 0,
         "y": 0
       },
-      "host": "note",
-      "name": "Keyboard"
+      "host": "note"
     },
     {
       "id": "tone1",
@@ -125,8 +124,7 @@
         "x": 1760,
         "y": 0
       },
-      "host": "stereo",
-      "name": "Output"
+      "host": "stereo"
     }
   ],
   "connections": [

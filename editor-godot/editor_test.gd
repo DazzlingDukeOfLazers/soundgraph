@@ -2984,6 +2984,19 @@ func _initialize() -> void:
 	check(kit_device != "" and main.module_mounts.has(kit_device)
 			and (main.module_mounts.get(kit_device) as Control) != null,
 		"the kick mounts as a device wearing its face")
+	# The regression that shipped silent: a trigger-only seam arrived as a port
+	# called "note" that auto-wire could not match, with wires from an outlet an
+	# unbound seam does not have. The port must carry the outlet's own name, the
+	# keyboard must find it, and the mounted drum must actually sound.
+	var kit_wired := false
+	for connection in main.patch["connections"]:
+		if str(connection["to"]["node"]) == kit_device \
+				and str(connection["to"]["port"]) == "trigger":
+			kit_wired = true
+	check(kit_wired, "auto-wire finds the kick's trigger by name")
+	var mounted_peak: float = await _struck_peak(main, 48)
+	check(mounted_peak > 0.01,
+		"and the mounted kick sounds when struck (peak %.3f)" % mounted_peak)
 
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",

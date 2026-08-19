@@ -11,8 +11,7 @@
         "x": 0,
         "y": 0
       },
-      "host": "note",
-      "name": "Keyboard"
+      "host": "note"
     },
     {
       "id": "pitch_env",
@@ -87,8 +86,7 @@
         "x": 1320,
         "y": 0
       },
-      "host": "stereo",
-      "name": "Output"
+      "host": "stereo"
     }
   ],
   "connections": [

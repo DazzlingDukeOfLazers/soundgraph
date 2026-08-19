@@ -685,8 +685,20 @@ static func _split_input_seams(source: Dictionary) -> Dictionary:
 					and not used.has(str(from.get("port", ""))):
 				used.append(str(from.get("port", "")))
 		if used.size() < 2:
-			# One outlet is already one port; leave the seam and its name alone.
+			# One outlet is already one port — but a bound seam's outlet has a name
+			# of its own ("trigger", "gate"), and an unbound seam speaks through
+			# "out". The port takes the outlet's name, so it still says what to
+			# plug in and the auto-wire can find its namesake on the keyboard, and
+			# the wires move to the seam's own mouth. Left alone, a trigger-only
+			# drum arrived as a port called "note" that nothing matched and a wire
+			# from an outlet that no longer existed: silent twice over.
 			node.erase("host")
+			if used.size() == 1 and str(used[0]) != "out":
+				node["name"] = str(used[0])
+				for wire in connections:
+					var from: Dictionary = wire.get("from", {})
+					if str(from.get("node", "")) == seam_id:
+						from["port"] = "out"
 			continue
 		nodes.remove_at(index)
 		for outlet: String in used:
