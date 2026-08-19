@@ -103,6 +103,10 @@ public:
     static constexpr int kTapSlots = 2;
     void set_tap(int slot, int node_index, int port_index, int ring_samples);
     void clear_tap(int slot);
+    // Rising edges through 0.5 seen by this tap since it was armed — the trigger
+    // counter. Counted here, where no pulse can be missed; exact for gates, and
+    // for audio a curiosity rather than a lie.
+    std::uint32_t tap_edges(int slot) const;
     // Copies the newest `samples` into `destination`, oldest first. Returns the
     // count actually copied.
     int read_tap(int slot, float* destination, int samples) const;
@@ -198,6 +202,8 @@ private:
         int node = -1;
         int port = -1;
         int write = 0;
+        float last = 0.0f;
+        std::uint32_t edges = 0;
         std::vector<float> ring;
     };
     Tap taps_[kTapSlots];

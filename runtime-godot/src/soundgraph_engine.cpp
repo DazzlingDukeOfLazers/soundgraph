@@ -72,6 +72,10 @@ void SoundGraphEngine::_bind_methods() {
                          &SoundGraphEngine::get_scope_tap);
     ClassDB::bind_method(D_METHOD("get_scope_gate", "samples"),
                          &SoundGraphEngine::get_scope_gate);
+    ClassDB::bind_method(D_METHOD("get_scope_tap_edges"),
+                         &SoundGraphEngine::get_scope_tap_edges);
+    ClassDB::bind_method(D_METHOD("get_scope_gate_edges"),
+                         &SoundGraphEngine::get_scope_gate_edges);
 }
 
 // -------------------------------------------------------------------------------------
@@ -376,6 +380,14 @@ PackedFloat32Array SoundGraphEngine::get_scope_tap(int samples) const {
 
 PackedFloat32Array SoundGraphEngine::get_scope_gate(int samples) const {
     return read_tap(1, samples);
+}
+
+int SoundGraphEngine::get_scope_tap_edges() const {
+    return static_cast<int>(graph_.tap_edges(0));
+}
+
+int SoundGraphEngine::get_scope_gate_edges() const {
+    return static_cast<int>(graph_.tap_edges(1));
 }
 
 void SoundGraphEngine::push_scope(const float* samples, int count) {

@@ -3172,6 +3172,38 @@ func _initialize() -> void:
 	main._let_go_note(57)
 	main.scope_probe.base_hz = 220.0
 	main.scope_probe.periods = 2
+
+	# The polyphonic trap the counter exposed: a fresh machine runs eight voices and
+	# the allocator rotates presses across them, so a probe on one replica of the
+	# keyboard's gate fired once per eight presses — "hit the key a bunch of times
+	# before it triggers". The tap reads the sum of every voice copy now, and the
+	# engine-side counter counts every press.
+	main._new_file()
+	for i in 10:
+		await process_frame
+	var poly_probe := -1
+	for index in main.scope_probe._sources.size():
+		var entry: Dictionary = main.scope_probe._sources[index]
+		if str(entry["node"]) == "note" and str(entry["port"]) == "gate":
+			poly_probe = index + 1
+	check(poly_probe > 0, "the fresh machine's gate wire is on the list")
+	main.scope_probe.source_pick.selected = poly_probe
+	main.scope_probe._on_source_picked(poly_probe)
+	main.scope_probe._on_gate_picked(0)
+	main.scope_probe.mode = main.scope_probe.Mode.LIVE
+	for press in 3:
+		main._hold_note(48 + press)
+		pump.call()
+		main._let_go_note(48 + press)
+		pump.call()
+	check(int(main.engine.get_scope_tap_edges()) == 3,
+		"three presses are three counted triggers through eight voices (%d)"
+			% int(main.engine.get_scope_tap_edges()))
+	main.scope_probe.capture()
+	check(main.scope_probe.locked, "and the merged gate locks the probe")
+	check(main.scope_probe.trigger_label.text == "trig 3",
+		"with the counter on the panel saying so (%s)"
+			% main.scope_probe.trigger_label.text)
 	pump_player.stop()
 	pump_player.stream = null
 	await process_frame

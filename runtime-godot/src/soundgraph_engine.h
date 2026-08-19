@@ -113,6 +113,9 @@ public:
     bool set_scope_gate(const godot::String& node_id, const godot::String& port);
     godot::PackedFloat32Array get_scope_tap(int samples) const;
     godot::PackedFloat32Array get_scope_gate(int samples) const;
+    // Rising edges each tap has seen since it was armed: the trigger counter.
+    int get_scope_tap_edges() const;
+    int get_scope_gate_edges() const;
 
 protected:
     static void _bind_methods();

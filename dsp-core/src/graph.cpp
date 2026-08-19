@@ -1116,18 +1116,47 @@ void Graph::process_block() {
 
     // The probe taps, fed here because this is the one place a block is a block:
     // every rendered frame passes exactly once, whatever sizes the host asks for.
+    // A tap on a voice-replicated node reads the sum of every copy — the document
+    // has one wire there, and the allocator rotates notes across the copies, so a
+    // probe on one replica alone would fire once per voice-count presses and read
+    // as a broken instrument. The sum is what reaches the mix. Rising edges
+    // through 0.5 are counted as they pass: the trigger counter, kept where no
+    // pulse can slip between two looks.
     for (Tap& tap : taps_) {
         if (tap.node < 0 || tap.ring.empty()) {
             continue;
         }
-        const float* signal = port_signal(tap.node, tap.port);
-        if (signal == nullptr) {
+        const float* sources[kMaxVoices];
+        int source_count = 0;
+        const std::vector<int>& peers = replica_peers_[static_cast<std::size_t>(tap.node)];
+        if (peers.empty()) {
+            const float* signal = port_signal(tap.node, tap.port);
+            if (signal != nullptr) {
+                sources[source_count++] = signal;
+            }
+        } else {
+            for (int member : peers) {
+                const float* signal = port_signal(member, tap.port);
+                if (signal != nullptr && source_count < kMaxVoices) {
+                    sources[source_count++] = signal;
+                }
+            }
+        }
+        if (source_count == 0) {
             continue;
         }
         const int capacity = static_cast<int>(tap.ring.size());
         for (int i = 0; i < frames; ++i) {
-            tap.ring[static_cast<std::size_t>(tap.write)] = signal[i];
+            float value = 0.0f;
+            for (int source = 0; source < source_count; ++source) {
+                value += sources[source][i];
+            }
+            tap.ring[static_cast<std::size_t>(tap.write)] = value;
             tap.write = (tap.write + 1) % capacity;
+            if (value >= 0.5f && tap.last < 0.5f) {
+                ++tap.edges;
+            }
+            tap.last = value;
         }
     }
 
@@ -1147,6 +1176,8 @@ void Graph::set_tap(int slot, int node_index, int port_index, int ring_samples) 
     tap.node = node_index;
     tap.port = port_index;
     tap.write = 0;
+    tap.last = 0.0f;
+    tap.edges = 0;
     tap.ring.assign(static_cast<std::size_t>(ring_samples), 0.0f);
 }
 
@@ -1157,8 +1188,17 @@ void Graph::clear_tap(int slot) {
     taps_[slot].node = -1;
     taps_[slot].port = -1;
     taps_[slot].write = 0;
+    taps_[slot].last = 0.0f;
+    taps_[slot].edges = 0;
     taps_[slot].ring.clear();
     taps_[slot].ring.shrink_to_fit();
+}
+
+std::uint32_t Graph::tap_edges(int slot) const {
+    if (slot < 0 || slot >= kTapSlots) {
+        return 0;
+    }
+    return taps_[slot].edges;
 }
 
 int Graph::read_tap(int slot, float* destination, int samples) const {

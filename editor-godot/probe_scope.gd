@@ -46,6 +46,7 @@ var base_field: ValueField
 var periods_field: ValueField
 var mode_button: Button
 var arm_button: Button
+var trigger_label: Label
 var display: Control
 
 
@@ -131,6 +132,14 @@ func _ready() -> void:
 		frozen = false
 		_refresh_words())
 	mode_row.add_child(_quiet(arm_button))
+	trigger_label = Label.new()
+	trigger_label.text = "trig 0"
+	trigger_label.tooltip_text = "Rising edges the trigger wire has fired since the " 		+ "probe was pointed — counted in the engine, where no pulse can be missed."
+	trigger_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	trigger_label.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	trigger_label.add_theme_color_override("font_color", Design.INK_SECOND)
+	mode_row.add_child(trigger_label)
 	add_child(mode_row)
 
 	display = ScopeDisplay.new()
@@ -297,6 +306,9 @@ func capture() -> void:
 			if start >= 0:
 				window = stream.slice(begin, begin + span)
 				locked = true
+	if trigger_label != null:
+		trigger_label.text = "trig %d" % (engine.get_scope_gate_edges()
+			if not gate.is_empty() else engine.get_scope_tap_edges())
 	if display != null:
 		display.queue_redraw()
 
