@@ -74,6 +74,22 @@ const KEY_STEP := 0.01
 const KEY_COARSE := 0.1
 
 
+## The height of the number this field exists to show.
+##
+## The inner label is anchored to fill the field, and anchored children contribute
+## nothing to a Control's minimum — so this field's minimum height was zero, and any
+## container entitled to take it at its word gave it no room at all. The text still
+## drew (nothing clips it), which is worse than vanishing: in a knob cell the value
+## painted straight across whatever sat below it, and on the node's last row it ran
+## off the bottom of the node. The field is exactly one line of numerals tall, so
+## that is what it declares.
+func _get_minimum_size() -> Vector2:
+	var font := Design.numeric_font()
+	if font == null:
+		return Vector2.ZERO
+	return Vector2(0.0, font.get_height(Design.type(Design.SIZE_NUMERIC)))
+
+
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_HSIZE

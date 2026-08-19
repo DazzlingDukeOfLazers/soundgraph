@@ -3515,7 +3515,6 @@ func _create_widget(node: Dictionary) -> void:
 	# its whole surface PARAMETERS_PER_LINE to a line, as it always did.
 	var parameters: Array = descriptor.get("parameters", [])
 	var grid: Array = descriptor.get("panel_rows", []).duplicate()
-	var shown := 0
 	if grid.is_empty():
 		var line: Array = []
 		for parameter: Dictionary in parameters:
@@ -3525,14 +3524,8 @@ func _create_widget(node: Dictionary) -> void:
 				line = []
 		if not line.is_empty():
 			grid.append(line)
-	for row_of: Array in grid:
-		shown += row_of.size()
 	var port_rows: int = maxi(inputs.size(), outputs.size())
 	var cell_lines: int = grid.size()
-	# Progressive complexity, counted in lines: a node shows its common case and says how
-	# much it is holding back rather than hiding it silently.
-	var always_visible: int = 1 if shown > 3 else cell_lines
-	var folded: Array[Control] = []
 
 	for row in maxi(port_rows, cell_lines):
 		var line := HBoxContainer.new()
@@ -3571,12 +3564,10 @@ func _create_widget(node: Dictionary) -> void:
 		line.add_child(right)
 		widget.add_child(line)
 
-		if cells.get_child_count() > 0 and row >= always_visible:
-			# Recorded, not just hidden. The zoom level-of-detail hides these too, and when
-			# it puts them back it must not un-collapse what the reader chose to fold away.
-			cells.visible = false
-			cells.set_meta("collapsed", true)
-			folded.append(cells)
+		# Every line stays visible. The old "progressive complexity" folded everything
+		# past the first line behind an "n more" click, which taxed every look at a
+		# freshly loaded patch — the way to see less of a module is to zoom out, not
+		# to unwrap it knob by knob.
 		_fit_row_height(line)
 
 		if row >= port_rows:
@@ -3599,7 +3590,6 @@ func _create_widget(node: Dictionary) -> void:
 			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
 
 	_add_ghost_ports(widget, str(node["id"]), descriptor)
-	_add_disclosure(widget, folded)
 
 	graph_edit.add_child(widget)
 	widgets[node["id"]] = widget
@@ -3859,50 +3849,6 @@ func _fit_row_height(line: Control) -> void:
 	# case it stays whatever else happens, because a hidden row renumbers the cables.
 	if not bool(line.get_meta("has_slot", false)):
 		line.visible = tall
-
-
-func _add_disclosure(widget: GraphNode, folded: Array[Control]) -> void:
-	if folded.is_empty():
-		return
-
-	# A quiet line of text, not a switch.
-	#
-	# A CheckButton draws a full-width filled bar with a sliding pill on it, which made
-	# the control for hiding two parameters heavier than either of the parameters it
-	# was hiding — the loudest thing in the node was the thing that mattered least.
-	# Flat, secondary ink, and a caret that says which way it goes.
-	var toggle := Button.new()
-	toggle.toggle_mode = true
-	toggle.flat = true
-	# Parameters, not lines. A line holds two of them, so "1 more" for two hidden knobs
-	# is simply untrue — and this label is the only thing telling the reader there is
-	# anything behind it.
-	var hidden_count := 0
-	for hidden_cells in folded:
-		hidden_count += (hidden_cells as Control).get_child_count()
-	toggle.text = "%d more" % hidden_count
-	toggle.icon = _icon(Icons.Kind.CARET_RIGHT, Design.INK_SECOND,
-		Design.SIZE_SECONDARY)
-	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	toggle.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-	toggle.add_theme_color_override("font_color", Design.INK_SECOND)
-	toggle.add_theme_color_override("font_hover_color", Design.INK_NORMAL)
-	toggle.add_theme_color_override("font_pressed_color", Design.INK_SECOND)
-	# The cells fold, not the rows. A folded row may still be carrying a port on each
-	# flank, and hiding it would take the cables with it — so what collapses is the knob
-	# box in the middle, and the row shrinks back to jack height around it.
-	toggle.toggled.connect(func(pressed: bool) -> void:
-		for cells in folded:
-			cells.set_meta("collapsed", not pressed)
-			cells.visible = pressed and graph_edit.detail == PatchGraph.Detail.FULL
-			var line := cells.get_parent() as Control
-			if line != null:
-				_fit_row_height(line)
-		toggle.text = "fewer" if pressed else "%d more" % hidden_count
-		toggle.icon = _icon(Icons.Kind.CARET_DOWN if pressed else Icons.Kind.CARET_RIGHT,
-			Design.INK_SECOND, Design.SIZE_SECONDARY))
-	toggle.set_meta("row", "disclosure")
-	widget.add_child(_defocus(toggle))
 
 
 ## One parameter, as the rack's cell: dial on top, name under it, number under that.
@@ -6892,19 +6838,14 @@ func _apply_detail(level: int) -> void:
 			if control == null:
 				continue
 			match str(control.get_meta("row", "")):
-				"disclosure":
-					# A control for secondary parameters, so it goes when they do.
-					control.visible = full
 				"module":
 					# One row, three jobs: a port on each flank and the knob cells between
-					# them. The cells fold; the row never does, because it is carrying the
-					# slot the cables are attached to.
+					# them. The cells go with the detail level; the row never does,
+					# because it is carrying the slot the cables are attached to.
 					var cells: Control = control.get_meta("cells_box") \
 						if control.has_meta("cells_box") else null
 					if cells != null:
-						cells.visible = show_rows \
-							and not bool(cells.get_meta("collapsed", false)) \
-							and cells.get_child_count() > 0
+						cells.visible = show_rows and cells.get_child_count() > 0
 						for cell_child in cells.get_children():
 							var cell := cell_child as Control
 							if cell != null:

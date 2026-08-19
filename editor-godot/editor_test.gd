@@ -368,8 +368,28 @@ func _initialize() -> void:
 	var filter_widget: GraphNode = main.widgets.get("filter")
 	check(filter_widget != null, "the filter node has a widget")
 	if filter_widget != null:
-		# Four port rows, then parameter rows, then the progressive-disclosure toggle.
-		check(filter_widget.get_child_count() > 4, "the filter widget carries parameter rows")
+		# Four port rows, then parameter rows — all of them visible, no fold.
+		var rows_with_cells := 0
+		for row_child in filter_widget.get_children():
+			var row_box: Control = (row_child as Control).get_meta("cells_box") \
+				if (row_child as Control) != null \
+					and (row_child as Control).has_meta("cells_box") else null
+			if row_box != null and row_box.get_child_count() > 0:
+				rows_with_cells += 1
+		check(rows_with_cells > 1,
+			"the filter widget carries parameter rows (%d)" % rows_with_cells)
+		# The number under each knob claims real height. The readout is a bare
+		# Control whose inner label is anchored full-rect, and anchored children add
+		# nothing to a minimum — so its height was zero, the cells under-reported
+		# theirs, and "0.800 Hz" painted straight across the knob of the row below.
+		var flat_readouts := 0
+		for cell_box in _parameter_cells(filter_widget):
+			var field: Control = cell_box.get_meta("value_field") \
+				if cell_box.has_meta("value_field") else null
+			if field != null and field.get_combined_minimum_size().y <= 0.0:
+				flat_readouts += 1
+		check(flat_readouts == 0,
+			"every readout claims its line of height (%d flat)" % flat_readouts)
 		check(filter_widget.is_slot_enabled_left(0), "its audio input is a connectable slot")
 		check(filter_widget.is_slot_enabled_left(3), "its resonance input is a connectable slot")
 		check(filter_widget.is_slot_enabled_right(0), "and its output is a connectable slot")
@@ -1746,7 +1766,9 @@ func _initialize() -> void:
 	main.graph_edit._update_hover(port_spot + Vector2(0, 11))
 	check(not main.graph_edit.hovered_port.is_empty(),
 		"a pointer 11px off centre still finds it, so the target is at least 22px across")
-	main.graph_edit._update_hover(port_spot + Vector2(0, 200))
+	# Above the node rather than below it: every row holds knob cells now, so 200px
+	# down the flank is another port's hotzone, not empty canvas.
+	main.graph_edit._update_hover(port_spot + Vector2(0, -400))
 	check(main.graph_edit.hovered_port.is_empty(),
 		"and a pointer nowhere near it finds nothing")
 
@@ -2391,12 +2413,10 @@ func _initialize() -> void:
 	for scale_choice in [Design.Scale.COMPACT, Design.Scale.COMFORTABLE,
 			Design.Scale.LARGE, Design.Scale.XL]:
 		Design.ui_scale = scale_choice
-		# Freshly loaded, because by this line the suite has opened disclosures and
-		# driven the level of detail all over the place, and a node with its "2 more"
-		# expanded is 84px taller than the one the file describes. Measured in that
-		# state this reported a 43px overlap in first-synth that no screenshot could
-		# find and that the file does not contain — the suite reading back its own
-		# earlier clicks.
+		# Freshly loaded, because by this line the suite has driven the level of
+		# detail all over the place, and measured mid-state this once reported a 43px
+		# overlap in first-synth that no screenshot could find and that the file does
+		# not contain — the suite reading back its own earlier clicks.
 		await main._load_example("First Synth")
 		# Generously, because a GraphNode's height is settled a frame *after* its rows
 		# are shown — the level-of-detail pass does the resize separately for exactly
@@ -2792,30 +2812,30 @@ func _initialize() -> void:
 		check(main.graph_edit.detail == main.PatchGraph.Detail.COMPACT,
 			"63%% is the compact band whether reached from %.2f or not" % approach)
 
-	# Zoom hides parameter rows and so does the "n more" disclosure. Coming back to full
-	# detail must not un-fold the rows the reader chose to hide — two features writing the
-	# same visible flag with no memory between them is how a node grows every time you zoom.
+	# Nothing folds any more. The "n more" disclosure that hid every line past the
+	# first is gone — a node is its whole surface, and a freshly loaded patch owes the
+	# reader every knob without a click per node. So coming back to full detail must
+	# show every knob box there is.
 	main.graph_edit.zoom = 1.0
 	main.graph_edit._update_detail()
 	main._apply_detail(main.graph_edit.detail)
 	await process_frame
-	var folded := 0
-	var unfolded_by_zoom := 0
+	var knob_boxes := 0
+	var hidden_boxes := 0
 	for child in node_widget.get_children():
 		var control := child as Control
 		if control == null:
 			continue
-		# The collapsed flag sits on the knob box, not on the row: a row may be carrying a
-		# port on each flank, so what folds is the middle of it.
 		var box: Control = control.get_meta("cells_box") \
 			if control.has_meta("cells_box") else null
-		if box != null and box.get_meta("collapsed", false):
-			folded += 1
-			if box.visible:
-				unfolded_by_zoom += 1
-	check(folded > 0, "the filter has folded-away parameters to check (%d)" % folded)
-	check(unfolded_by_zoom == 0,
-		"and zooming back in leaves them folded (%d reappeared)" % unfolded_by_zoom)
+		if box != null and box.get_child_count() > 0:
+			knob_boxes += 1
+			if not box.visible:
+				hidden_boxes += 1
+	check(knob_boxes > 1,
+		"the filter node carries several knob rows (%d)" % knob_boxes)
+	check(hidden_boxes == 0,
+		"and full detail shows every one of them (%d hidden)" % hidden_boxes)
 	check(node_widget.get_combined_minimum_size().y == full_height,
 		"so the node is the height it started at")
 
