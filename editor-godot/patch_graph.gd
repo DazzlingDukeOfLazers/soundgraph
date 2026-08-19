@@ -1595,32 +1595,47 @@ class WandOverlay extends Control:
 			draw_string(font, box.position + Vector2(pad, band * 0.7), str(module_name),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
 
+			# Chips derived from the band's own height, exactly as the turned-band
+			# chips below are: sized in screen constants they kept their full size
+			# while the band shrank with the zoom, overflowed it leftward at a
+			# fitted view, and buried the band's drag handle under FACE. What the
+			# eye reads may shrink; the hit rects grow back to a clickable size.
+			var chip_h: float = band * 0.72
+			var chip_font: int = maxi(6, int(round(chip_h * 0.60)))
+			var chip_pad: float = chip_h * 0.30
+			var chip_top: float = box.position.y + (band - chip_h) * 0.5
+			var chip_reach: float = maxf(0.0, (20.0 - chip_h) * 0.5)
+
 			var label := "Close"
-			var measured := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
+			var measured := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT,
+				-1.0, chip_font)
 			var button := Rect2(
-				Vector2(box.position.x + box.size.x - measured.x - pad * 2.0,
-					box.position.y + (band - measured.y - pad * 0.5) * 0.5),
-				measured + Vector2(pad, pad * 0.5) * 2.0)
+				Vector2(box.end.x - measured.x - chip_pad * 3.0, chip_top),
+				Vector2(measured.x + chip_pad * 2.0, chip_h))
 			draw_rect(button, Design.ACCENT)
-			draw_string(font, button.position + Vector2(pad, pad * 0.5 + measured.y * 0.8),
-				label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ON_ACCENT)
-			_close_hits_out[module_name] = button
+			draw_string(font,
+				Vector2(button.position.x + chip_pad,
+					button.position.y + (chip_h + font.get_ascent(chip_font)
+						- font.get_descent(chip_font)) * 0.5),
+				label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font, Design.ON_ACCENT)
+			_close_hits_out[module_name] = button.grow(chip_reach)
 
 			# This container's own flip, beside Close: each case turns independently,
 			# and the control for turning a thing lives on the thing.
 			var face_text := "FACE"
 			var face_measured := font.get_string_size(face_text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font)
 			var face_chip := Rect2(
-				Vector2(button.position.x - face_measured.x - pad * 3.0,
-					button.position.y),
-				face_measured + Vector2(pad, pad * 0.5) * 2.0)
+				Vector2(button.position.x - face_measured.x - chip_pad * 3.0, chip_top),
+				Vector2(face_measured.x + chip_pad * 2.0, chip_h))
 			draw_rect(face_chip, Color(Design.ACCENT, 0.16))
 			draw_rect(face_chip, Color(Design.ACCENT, 0.55), false, 1.0)
 			draw_string(font,
-				face_chip.position + Vector2(pad, pad * 0.5 + face_measured.y * 0.8),
-				face_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, Design.ACCENT)
-			_flip_hits_out[module_name] = face_chip
+				Vector2(face_chip.position.x + chip_pad,
+					face_chip.position.y + (chip_h + font.get_ascent(chip_font)
+						- font.get_descent(chip_font)) * 0.5),
+				face_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, chip_font, Design.ACCENT)
+			_flip_hits_out[module_name] = face_chip.grow(chip_reach)
 
 		# Turned containers: the members are hidden, so the band is drawn from the frame
 		# main recorded when it mounted the face. Name and the way back, nothing else —

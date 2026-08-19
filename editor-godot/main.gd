@@ -3695,46 +3695,11 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 		widget.set_meta("title_label", label)
 		break
 
-	var category := str(descriptor.get("category", ""))
-	if category == "":
-		return
-	var tag := Label.new()
-	# Sentence case, not capitals: the same argument as the section headings, and this one
-	# was the smallest text on the node while shouting the least important thing on it.
-	tag.text = category
-	tag.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
-	# Secondary, not heading. The tag shares a line with the node title and is the
-	# quieter of the two on purpose; when SIZE_HEADING grew to proper heading size the
-	# tag could not follow without arguing with the title six pixels to its left.
-	tag.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-	tag.add_theme_color_override("font_color", Design.INK_SECOND)
-	tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	# Right-aligned and last, which reserves that end of the header for node actions
-	# later without the category having to move when they arrive.
-	tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	# Metadata, and the first thing decluttering drops: it is the one piece of node text
-	# that is *not* pinned to a screen minimum, because the honest answer when there is
-	# no room for a category is to stop saying the category. The level of detail hides
-	# it below FULL rather than drawing it at nine pixels.
-	widget.set_meta("category_tag", tag)
-	titlebar.add_child(tag)
-
-	# A counterweight the same width as the tag, at the other end.
-	#
-	# Without it "centred" means centred in whatever half of the bar the tag left over,
-	# which is not centred over the node — the first attempt set the alignment, looked
-	# right in the code and came out plainly off-centre in the picture. Measured from the
-	# text rather than read back from the layout, so it is correct on the first frame.
-	var counterweight := Control.new()
-	counterweight.custom_minimum_size.x = tag.get_theme_font("font").get_string_size(
-		category, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
-		tag.get_theme_font_size("font_size")).x
-	counterweight.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	titlebar.add_child(counterweight)
-	titlebar.move_child(counterweight, 0)
-	# It exists to balance the tag, so it goes when the tag goes.
-	widget.set_meta("category_counterweight", counterweight)
+	# No category tag beside the title. It shared the bar as "KEYBOARD  Terminals",
+	# "ENVELOPE  Modulation" — the smallest text on the node saying the least
+	# important thing on it, and the reader asked for it gone. The category still
+	# does its work where somebody is choosing a node: the Add-node search and the
+	# descriptor keep it; the panel legend does not repeat it.
 
 
 ## A small texture per signal type, drawn once and shared.
@@ -6917,15 +6882,6 @@ func _apply_detail(level: int) -> void:
 	var show_port_names: bool = level != PatchGraph.Detail.TOPOLOGY
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
-		# Metadata goes first, and goes entirely: a category drawn at nine pixels is
-		# decoration, and there is no size at which it outranks a parameter name.
-		var tag: Label = widget.get_meta("category_tag") if widget.has_meta("category_tag") else null
-		if tag != null:
-			tag.visible = full
-		var counterweight: Control = widget.get_meta("category_counterweight") \
-			if widget.has_meta("category_counterweight") else null
-		if counterweight != null:
-			counterweight.visible = full
 		# The node gives back the height its controls were using.
 		#
 		# GraphNode keeps whatever size it was last given, so a compact node used to be a
