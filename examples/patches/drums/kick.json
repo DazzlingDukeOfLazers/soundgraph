@@ -170,8 +170,8 @@
         "node": "body",
         "parameter": "frequency"
       },
-      "min": 30,
-      "max": 90,
+      "min": 20,
+      "max": 160,
       "default": 52,
       "scaling": "exponential"
     },

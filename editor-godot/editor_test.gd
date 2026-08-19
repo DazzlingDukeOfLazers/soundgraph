@@ -2992,9 +2992,10 @@ func _initialize() -> void:
 			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
 
 	# The file face wears the author's curation, not the type's raw range. The
-	# kick's Tune is written as 30-90 around 52; the raw frequency parameter is
-	# 0.01-20000 around 440, and a knob built from that had the wrong sweep and
-	# sent the kick to 440 on the reset gesture.
+	# kick's Tune is written as 20-160 around 52 — three octaves, sub rumble to
+	# tuned-tom territory; the raw frequency parameter is 0.01-20000 around 440,
+	# and a knob built from that had the wrong sweep and sent the kick to 440 on
+	# the reset gesture.
 	var tune_knob = null
 	var face_queue: Array = [main.patch_face]
 	while not face_queue.is_empty():
@@ -3006,10 +3007,10 @@ func _initialize() -> void:
 				face_queue.append(face_child)
 	check(tune_knob != null, "the kit's face has the kick's Tune knob")
 	if tune_knob != null:
-		check(is_equal_approx(float(tune_knob.descriptor.get("min", 0.0)), 30.0)
-				and is_equal_approx(float(tune_knob.descriptor.get("max", 0.0)), 90.0)
+		check(is_equal_approx(float(tune_knob.descriptor.get("min", 0.0)), 20.0)
+				and is_equal_approx(float(tune_knob.descriptor.get("max", 0.0)), 160.0)
 				and is_equal_approx(float(tune_knob.descriptor.get("default", 0.0)), 52.0),
-			"and it wears the curated 30-90 range around 52 (%s..%s, home %s)" % [
+			"and it wears the curated 20-160 range around 52 (%s..%s, home %s)" % [
 				str(tune_knob.descriptor.get("min", "?")),
 				str(tune_knob.descriptor.get("max", "?")),
 				str(tune_knob.descriptor.get("default", "?"))])
