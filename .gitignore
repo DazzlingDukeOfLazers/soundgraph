@@ -27,7 +27,7 @@ editor-godot/.godot/
 editor-godot/.import/
 # Build output: the extension binary and the example patches mirrored in from examples/.
 editor-godot/bin/
-editor-godot/examples/
+editor-godot/examples-mirror/
 runtime-godot/build/
 runtime-godot/third_party/godot-cpp/
 

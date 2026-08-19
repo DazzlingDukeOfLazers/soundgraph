@@ -291,7 +291,7 @@ func ensure_sounds_loaded() -> void:
 
 	# The patches live with the other examples rather than inside the editor project: they
 	# are ordinary SoundGraph documents, openable in the Graph tab like anything else.
-	var folder := "res://examples/game"
+	var folder := "res://examples-mirror/game"
 	var loaded := sounds.load_folder(folder)
 	if loaded == 0:
 		folder = ProjectSettings.globalize_path("res://").path_join("../examples/patches/game")

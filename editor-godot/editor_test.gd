@@ -368,14 +368,14 @@ func _initialize() -> void:
 		% (not_a_type if not_a_type != "" else "none of %d" % offered.size()))
 
 	# ---- the graph view is generated from that vocabulary -----------------------------
-	var file := FileAccess.open("res://examples/first-synth.json", FileAccess.READ)
+	var file := FileAccess.open("res://examples-mirror/first-synth.json", FileAccess.READ)
 	if file == null:
-		# editor-godot/examples is build output. When it is missing, every check
+		# editor-godot/examples-mirror is build output. When it is missing, every check
 		# from here on is about a patch that was never loaded — and the null
 		# dereference that used to happen here left the process alive forever,
 		# because an error inside an awaiting _initialize never reaches quit().
 		# A run that hangs says less than one that fails.
-		print("  FAIL res://examples/first-synth.json is missing")
+		print("  FAIL res://examples-mirror/first-synth.json is missing")
 		print("       the examples are mirrored by the runtime-godot build; see its README")
 		quit(1)
 		return
@@ -671,7 +671,7 @@ func _initialize() -> void:
 		"and the crossing overlay is drawn immediately after it")
 
 	# ---- undo -------------------------------------------------------------------------
-	var file2 := FileAccess.open("res://examples/first-synth.json", FileAccess.READ)
+	var file2 := FileAccess.open("res://examples-mirror/first-synth.json", FileAccess.READ)
 	await main._load_text(file2.get_as_text())
 	await process_frame
 	await process_frame
@@ -3771,7 +3771,7 @@ func _initialize() -> void:
 	# here to make the fixture this section is about: a file with no panel at all,
 	# which is the state every hand-started patch begins in and the whole OPL2 bank
 	# still lives in.
-	var dx7 := FileAccess.open("res://examples/dx7/algo-02.json", FileAccess.READ)
+	var dx7 := FileAccess.open("res://examples-mirror/dx7/algo-02.json", FileAccess.READ)
 	if dx7 != null:
 		var parsed: Variant = JSON.parse_string(dx7.get_as_text())
 		dx7.close()
@@ -5741,7 +5741,7 @@ func _initialize() -> void:
 
 	# ---- adding a patch as a module ----------------------------------------------------
 	var before_import: int = main.patch["nodes"].size()
-	var delay_text := FileAccess.get_file_as_string("res://examples/delay-echo.json")
+	var delay_text := FileAccess.get_file_as_string("res://examples-mirror/delay-echo.json")
 	if delay_text.is_empty():
 		delay_text = FileAccess.get_file_as_string(
 			ProjectSettings.globalize_path("res://").path_join("../examples/patches/delay-echo.json"))
@@ -5823,7 +5823,7 @@ func _initialize() -> void:
 		await process_frame
 	check(int(main.patch.get("schema_version", 1)) == 1,
 		"First Synth is a schema 1 document (%s)" % str(main.patch.get("schema_version")))
-	var voice := FileAccess.open("res://examples/dx7/algo-01.json", FileAccess.READ)
+	var voice := FileAccess.open("res://examples-mirror/dx7/algo-01.json", FileAccess.READ)
 	var voice_text := voice.get_as_text()
 	voice.close()
 	main._import_module(voice_text, "dx7_algo_01")

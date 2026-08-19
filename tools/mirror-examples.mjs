@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Mirrors examples/patches into editor-godot/examples.
+// Mirrors examples/patches into editor-godot/examples-mirror.
 //
 // Godot cannot read outside res://, so the editor project needs its own copy. That is two
 // copies of the same files, which is a thing that goes wrong — and has, repeatedly:
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const source = join(root, 'examples', 'patches');
-const target = join(root, 'editor-godot', 'examples');
+const target = join(root, 'editor-godot', 'examples-mirror');
 
 function walk(directory) {
   const found = [];
@@ -51,7 +51,7 @@ for (const file of files) {
       mirrored = null;
     }
     if (mirrored === null || !mirrored.equals(contents)) {
-      console.error(`  stale: editor-godot/examples/${suffix.replace(/\\/g, '/')}`);
+      console.error(`  stale: editor-godot/examples-mirror/${suffix.replace(/\\/g, '/')}`);
       differences++;
     }
   } else {
@@ -66,7 +66,7 @@ const stragglers = walk(target)
   .map((file) => relative(target, file))
   .filter((suffix) => !files.some((file) => relative(source, file) === suffix));
 for (const suffix of stragglers) {
-  console.error(`  orphan: editor-godot/examples/${suffix.replace(/\\/g, '/')} ` +
+  console.error(`  orphan: editor-godot/examples-mirror/${suffix.replace(/\\/g, '/')} ` +
     'has no source in examples/patches');
   differences++;
 }
@@ -80,5 +80,5 @@ if (check) {
   console.log(`${files.length} examples mirrored correctly.`);
 } else {
   if (stragglers.length > 0) process.exit(1);
-  console.log(`${files.length} examples mirrored into editor-godot/examples.`);
+  console.log(`${files.length} examples mirrored into editor-godot/examples-mirror.`);
 }

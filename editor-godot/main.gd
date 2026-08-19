@@ -7672,7 +7672,7 @@ func _show_info() -> void:
 
 ## Where an example actually lives.
 ##
-## The copy under res://examples is mirrored in from examples/patches by the build, which
+## The copy under res://examples-mirror is mirrored in from examples/patches by the build, which
 ## means it goes stale the moment a patch is edited without rebuilding the extension —
 ## and the editor then quietly opens an old layout while the repository has a new one.
 ## That is a genuinely confusing failure, so the repository copy wins whenever it is
@@ -7701,7 +7701,7 @@ func _scan_examples() -> void:
 
 func _example_file_names(folder: String) -> Array:
 	var names: Array = []
-	for base: String in [_repository_examples(), "res://examples"]:
+	for base: String in [_repository_examples(), "res://examples-mirror"]:
 		if base == "":
 			continue
 		var directory := DirAccess.open(base.path_join(folder))
@@ -7727,7 +7727,7 @@ func _example_path(file_name: String) -> String:
 		.path_join("../examples/patches").path_join(file_name)
 	if FileAccess.file_exists(repository):
 		return repository
-	return "res://examples/" + file_name
+	return "res://examples-mirror/" + file_name
 
 
 func _load_example(name: String) -> void:

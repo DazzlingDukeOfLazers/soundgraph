@@ -110,9 +110,9 @@ endif()
 # Drop the built library where the Godot project expects it, and mirror the example
 # patches in. Godot cannot read outside res://, and committing a second copy of the
 # examples would be two files that eventually disagree — so they are copied, and
-# editor-godot/bin and editor-godot/examples are both build output.
+# editor-godot/bin and editor-godot/examples-mirror are both build output.
 set(SOUNDGRAPH_GODOT_BIN ${SOUNDGRAPH_ROOT}/editor-godot/bin)
-set(SOUNDGRAPH_GODOT_EXAMPLES ${SOUNDGRAPH_ROOT}/editor-godot/examples)
+set(SOUNDGRAPH_GODOT_EXAMPLES ${SOUNDGRAPH_ROOT}/editor-godot/examples-mirror)
 
 add_custom_command(TARGET soundgraph_godot POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${SOUNDGRAPH_GODOT_BIN}
@@ -124,7 +124,7 @@ add_custom_command(TARGET soundgraph_godot POST_BUILD
 # The example patches, mirrored on every build rather than after a link.
 #
 # These were copied by the POST_BUILD above, which only runs when the extension itself
-# relinks — so editing or regenerating a patch left editor-godot/examples holding the
+# relinks — so editing or regenerating a patch left editor-godot/examples-mirror holding the
 # previous one. Making it an always-run target fixed that here, and here is a separate
 # build directory that nobody runs when only a patch has changed: regenerating the sfxr
 # corpus left the mirror stale a second time, by a different route.
@@ -137,7 +137,7 @@ add_custom_command(TARGET soundgraph_godot POST_BUILD
 #
 # It used to call tools/mirror-examples.mjs and, when node was absent, print a warning and
 # mirror nothing — which leaves the editor project with no examples at all. That is not a
-# missing convenience: editor_test.gd loads res://examples/first-synth.json, and a Mac
+# missing convenience: editor_test.gd loads res://examples-mirror/first-synth.json, and a Mac
 # without node is a Mac where the Godot editor has nothing to open. Node is not a
 # prerequisite for building this, so it must not be one for the build's own output.
 #
@@ -155,7 +155,7 @@ add_custom_target(soundgraph_godot_examples ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${SOUNDGRAPH_ROOT}/examples/patches
             ${SOUNDGRAPH_GODOT_EXAMPLES}
-    COMMENT "Mirroring the example patches into editor-godot/examples"
+    COMMENT "Mirroring the example patches into editor-godot/examples-mirror"
 )
 
 # The build stamp: what the editor shows when asked what it is running.
