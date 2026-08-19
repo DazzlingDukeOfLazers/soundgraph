@@ -2492,6 +2492,115 @@ func _initialize() -> void:
 	# game sounds did: they were authored on 200-unit rows and the nodes they describe
 	# are 267 tall, so every one of them overlapped by 67px and had done since the day
 	# the parameter rows grew.
+	# ---- face edit: dressing the panel from the graph ---------------------------------
+	# A fitting room, not an editor of knobs: with the mode armed, a press on a knob
+	# cell puts that parameter on the document's face or takes it off, a press on a
+	# port only explains itself, and each change is one undo step. Driven through the
+	# graph's real press path so the knob underneath proves it never saw the click.
+	Design.ui_scale = Design.Scale.COMFORTABLE
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+	main.graph_edit.zoom = 1.0
+	main.graph_edit._update_detail()
+	main._apply_detail(main.graph_edit.detail)
+	for i in 6:
+		await process_frame
+	main.face_edit_button.button_pressed = true
+	for i in 3:
+		await process_frame
+	check(main.graph_edit.face_edit, "the toolbar button arms face edit")
+
+	var worn_cell: Control = null
+	for cell in _parameter_cells(main.widgets["filter"]):
+		if str((cell as Control).get_meta("parameter_name", "")) == "cutoff":
+			worn_cell = cell
+	var bare_cell: Control = null
+	for cell in _parameter_cells(main.widgets["lfo"]):
+		if str((cell as Control).get_meta("parameter_name", "")) == "offset":
+			bare_cell = cell
+	check(worn_cell != null and bool(worn_cell.get_meta("on_face", false)),
+		"the filter's cutoff cell knows it is on the face")
+	check(bare_cell != null and not bool(bare_cell.get_meta("on_face", true)),
+		"and the lfo's offset cell knows it is not")
+	check(bool(main.widgets["note"].get_meta("face_seam", false))
+			and bool(main.widgets["out"].get_meta("face_seam", false))
+			and not bool(main.widgets["filter"].get_meta("face_seam", true)),
+		"the seams alone carry plate ports")
+
+	var face_press := func(at: Vector2) -> void:
+		for down in [true, false]:
+			var click := InputEventMouseButton.new()
+			click.button_index = MOUSE_BUTTON_LEFT
+			click.pressed = down
+			click.position = at
+			main.graph_edit._input(click)
+
+	var dressed_before: int = (main.patch.get("controls", []) as Array).size()
+	var offset_before: Variant = (main.patch["nodes"].filter(
+		func(n): return n["id"] == "lfo")[0] as Dictionary) \
+		.get("parameters", {}).get("offset", null)
+	face_press.call(bare_cell.get_global_rect().get_center())
+	for i in 4:
+		await process_frame
+	var dressed: Array = main.patch.get("controls", [])
+	check(dressed.size() == dressed_before + 1,
+		"clicking a bare knob adds it to the face (%d controls)" % dressed.size())
+	var joined: Dictionary = dressed[dressed.size() - 1]
+	check(str(joined.get("target", {}).get("node", "")) == "lfo"
+			and str(joined.get("target", {}).get("parameter", "")) == "offset"
+			and joined.has("min") and joined.has("max") and joined.has("scaling"),
+		"aimed at the knob that was clicked, dressed from its descriptor (%s)"
+			% str(joined.get("id", "")))
+	check(bool(bare_cell.get_meta("on_face", false)), "and the cell lights")
+	check((main.patch["nodes"].filter(
+			func(n): return n["id"] == "lfo")[0] as Dictionary) \
+			.get("parameters", {}).get("offset", null) == offset_before,
+		"while the knob itself never saw the click")
+
+	face_press.call(worn_cell.get_global_rect().get_center())
+	for i in 4:
+		await process_frame
+	var still_worn := false
+	for control: Dictionary in main.patch.get("controls", []):
+		var aim: Dictionary = control.get("target", {})
+		if str(aim.get("node", "")) == "filter" and str(aim.get("parameter", "")) == "cutoff":
+			still_worn = true
+	check(not still_worn, "clicking a worn knob takes it off the face")
+	check(not bool(worn_cell.get_meta("on_face", true)), "and its frame goes quiet")
+
+	await main._undo()
+	for i in 10:
+		await process_frame
+	var worn_again := false
+	for control: Dictionary in main.patch.get("controls", []):
+		var aim: Dictionary = control.get("target", {})
+		if str(aim.get("node", "")) == "filter" and str(aim.get("parameter", "")) == "cutoff":
+			worn_again = true
+	check(worn_again, "undo puts the control back on the face")
+	var reborn_cell: Control = null
+	for cell in _parameter_cells(main.widgets["filter"]):
+		if str((cell as Control).get_meta("parameter_name", "")) == "cutoff":
+			reborn_cell = cell
+	check(reborn_cell != null and bool(reborn_cell.get_meta("on_face", false)),
+		"and the rebuilt cell lights again")
+
+	var seam_widget: GraphNode = main.widgets["note"]
+	var plate_spot: Vector2 = main.graph_edit.get_global_rect().position \
+		+ (seam_widget.position_offset + seam_widget.get_output_port_position(0)) \
+		* main.graph_edit.zoom - main.graph_edit.scroll_offset
+	var ports_before: int = (main.patch.get("controls", []) as Array).size()
+	face_press.call(plate_spot)
+	for i in 4:
+		await process_frame
+	check((main.patch.get("controls", []) as Array).size() == ports_before,
+		"a port press dresses nothing — plates ride their seams")
+
+	main.face_edit_button.button_pressed = false
+	for i in 3:
+		await process_frame
+	check(not main.graph_edit.face_edit, "the button disarms the mode")
+
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",
 			"Game: jump2", "DX7: algo-01"]:

@@ -199,6 +199,21 @@ enum DetailMode { ADAPTIVE, ONE_TO_ONE }
 
 var detail_mode: int = DetailMode.ONE_TO_ONE
 
+## Face edit: the mode where clicking a knob cell or a port nominates it for the
+## document's face instead of operating it. The graph does the pointing and the
+## painting; what is actually on the face is main's knowledge, written onto the
+## cells as an "on_face" meta and onto seam widgets as "face_seam".
+signal face_cell_toggled(node_id: String, parameter_name: String)
+signal face_port_poked
+
+var face_edit := false:
+	set(value):
+		face_edit = value
+		# One redraw on the way out too: the overlay's process loop only repaints
+		# while the mode is on, and the frames must not outlive it.
+		if _wand_overlay != null:
+			_wand_overlay.queue_redraw()
+
 var detail: int = Detail.FULL
 
 
@@ -1554,15 +1569,65 @@ class WandOverlay extends Control:
 		z_index = 101
 
 	func _process(_delta: float) -> void:
-		if graph != null and (graph.drawing or not graph.groups.is_empty()
+		if graph != null and (graph.drawing or graph.face_edit
+				or not graph.groups.is_empty()
 				or not graph.flip_frames.is_empty()):
 			queue_redraw()
 
 	func _draw() -> void:
 		if graph == null or graph.face_up:
 			return
+		if graph.face_edit:
+			_draw_face_edit()
 		_draw_groups()
 		_draw_band()
+
+	## Face edit's paint: a frame on every knob cell, lit when the knob is on the
+	## document's face and quiet when it is not, and a ring on every seam port,
+	## which is how a port gets onto the plates. What is on the face is main's
+	## knowledge, carried here as metas on the cells and the seam widgets.
+	func _draw_face_edit() -> void:
+		var origin: Vector2 = get_global_rect().position
+		var scale: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		for child in graph.get_children():
+			var node := child as GraphNode
+			if node == null or not node.visible:
+				continue
+			_frame_face_cells(node, origin)
+			if bool(node.get_meta("face_seam", false)):
+				_ring_face_ports(node, origin, scale)
+
+	func _frame_face_cells(parent: Node, origin: Vector2) -> void:
+		for child in parent.get_children():
+			var control := child as Control
+			if control == null or not control.is_visible_in_tree():
+				continue
+			if str(control.get_meta("cell", "")) == "parameter":
+				var box := Rect2(control.get_global_rect().position - origin,
+					control.get_global_rect().size)
+				if bool(control.get_meta("on_face", false)):
+					# Lit: a soft halo, a filled wash and a firm edge. First pass
+					# at the dress — tuned by looking, not by argument.
+					draw_rect(box.grow(4.0), Color(Design.ACCENT, 0.06))
+					draw_rect(box.grow(2.0), Color(Design.ACCENT, 0.12))
+					draw_rect(box, Color(Design.ACCENT, 0.10))
+					draw_rect(box, Color(Design.ACCENT, 0.9), false, 2.0)
+				else:
+					draw_rect(box, Color(1.0, 1.0, 1.0, 0.18), false, 1.0)
+				continue
+			_frame_face_cells(control, origin)
+
+	func _ring_face_ports(node: GraphNode, origin: Vector2, scale: float) -> void:
+		var node_at: Vector2 = node.get_global_rect().position - origin
+		var radius: float = maxf(6.0, 9.0 * scale)
+		for index in node.get_input_port_count():
+			var at: Vector2 = node_at + node.get_input_port_position(index) * scale
+			draw_circle(at, radius, Color(Design.ACCENT, 0.12))
+			draw_arc(at, radius, 0.0, TAU, 24, Color(Design.ACCENT, 0.9), 2.0)
+		for index in node.get_output_port_count():
+			var at: Vector2 = node_at + node.get_output_port_position(index) * scale
+			draw_circle(at, radius, Color(Design.ACCENT, 0.12))
+			draw_arc(at, radius, 0.0, TAU, 24, Color(Design.ACCENT, 0.9), 2.0)
 
 	## A dashed frame around the parts of an open module, with its name on it and a way to
 	## shut it again.
@@ -1807,6 +1872,24 @@ func _input(event: InputEvent) -> void:
 	if not rect.has_point(button.position):
 		return
 
+	# Face edit claims the press before the knobs can: in this mode a knob is not
+	# for turning but for pointing at, and the cell's own control must not see the
+	# click that nominated it. Only presses on a cell or a port are claimed — the
+	# canvas, the bands and their chips stay live so the graph can still be moved
+	# around while dressing the face.
+	if face_edit:
+		var poked_port := port_at(button.position - rect.position)
+		if not poked_port.is_empty():
+			face_port_poked.emit()
+			get_viewport().set_input_as_handled()
+			return
+		var poked_cell := face_cell_at(button.position)
+		if poked_cell != null:
+			face_cell_toggled.emit(str(poked_cell.get_meta("node_id", "")),
+				str(poked_cell.get_meta("parameter_name", "")))
+			get_viewport().set_input_as_handled()
+			return
+
 	# A frame's close button, before anything on the canvas under it.
 	for module_name in _close_hits:
 		if (_close_hits[module_name] as Rect2).has_point(button.position - rect.position):
@@ -1954,6 +2037,20 @@ func parameter_row_at(point: Vector2) -> Control:
 	for child in get_children():
 		var node := child as GraphNode
 		if node == null or not node.visible or not node.selected:
+			continue
+		var found := _row_at(node, point)
+		if found != null:
+			return found
+	return null
+
+
+## The cell under the pointer on any visible node — face edit's hit test. Unlike the
+## wand's `parameter_row_at` this does not ask for a selection: the face is dressed
+## from the whole graph, not from a nomination.
+func face_cell_at(point: Vector2) -> Control:
+	for child in get_children():
+		var node := child as GraphNode
+		if node == null or not node.visible:
 			continue
 		var found := _row_at(node, point)
 		if found != null:

@@ -160,6 +160,7 @@ var flipped_nodes := {}
 ## seams — and climbing writes the edits back into the host as one undo step.
 var dive_stack: Array = []
 var climb_button: Button
+var face_edit_button: Button
 var module_mounts := {}
 ## Where the face is mounted, in graph coordinates: the case's own corner at the moment
 ## it was turned over. The graph's camera does the rest.
@@ -605,6 +606,18 @@ func _build_ui() -> void:
 	# is the difference between "the parameters have gone" and "the parameters have
 	# gone because I am at 40%".
 	graph_edit.show_zoom_label = true
+	# Face edit, beside the zoom controls it shares a bar with: a mode, so a toggle,
+	# and it lives on the graph because the graph is where the pointing happens.
+	face_edit_button = Button.new()
+	face_edit_button.toggle_mode = true
+	face_edit_button.text = "Face edit"
+	face_edit_button.tooltip_text = "Dress the face from the graph: click a knob to put " \
+		+ "it on the panel, click it again to take it off. Lit frames are on the face."
+	face_edit_button.toggled.connect(_set_face_edit)
+	graph_edit.get_menu_hbox().add_child(_defocus(face_edit_button))
+	graph_edit.face_cell_toggled.connect(_on_face_cell_toggled)
+	graph_edit.face_port_poked.connect(func() -> void:
+		_say("ports ride their seams — expose or trim them with the wand and the plates follow"))
 	# And one button fewer. Arrange is in the toolbar menu now, so the icon beside the
 	# zoom controls was a second way to do a thing that already had a labelled one —
 	# the kind of duplication that makes a toolbar feel busy without adding anything.
@@ -2905,6 +2918,10 @@ func _rebuild_view() -> void:
 	_refresh_face()
 	_refresh_master()
 	_refresh_seam_dock()
+	# Freshly built widgets carry no face badges; while face edit is on, an undo or
+	# reload must not leave the overlay reading last document's dress.
+	if graph_edit != null and graph_edit.face_edit:
+		_refresh_face_edit_badges()
 
 
 # ---------------------------------------------------------------------------------
@@ -3820,6 +3837,102 @@ func _fit_row_height(line: Control) -> void:
 		line.visible = tall
 
 
+## ---- face edit ---------------------------------------------------------------------
+## The mode where the graph is a fitting room: clicking a knob cell puts that
+## parameter on the document's face or takes it off, and the overlay lights the
+## frames of what the face is wearing. Ports are shown but not toggled — a port is
+## on the plates because its seam exists, so the wand is the tool that moves them.
+
+func _set_face_edit(on: bool) -> void:
+	graph_edit.face_edit = on
+	if on:
+		_refresh_face_edit_badges()
+	_say("face edit: %s" % ("on — click a knob to dress the face" if on else "off"))
+
+
+func _on_face_cell_toggled(node_id: String, parameter_name: String) -> void:
+	if node_id == "" or parameter_name == "":
+		return
+	_begin_edit()
+	if not patch.has("controls"):
+		patch["controls"] = []
+	var controls: Array = patch["controls"]
+	var removed := false
+	for index in range(controls.size() - 1, -1, -1):
+		var target: Dictionary = (controls[index] as Dictionary).get("target", {})
+		if str(target.get("node", "")) == node_id \
+				and str(target.get("parameter", "")) == parameter_name:
+			controls.remove_at(index)
+			removed = true
+	if not removed:
+		controls.append(_face_control_entry(node_id, parameter_name))
+	_commit_edit("face: %s %s" % ["remove" if removed else "add", parameter_name])
+	rack.rebuild()
+	_refresh_face_edit_badges()
+	_say("%s %s the face" % [parameter_name, "leaves" if removed else "joins"])
+
+
+## A face control built from what the graph already knows: the parameter's own
+## descriptor supplies the range and scaling, the node's current value becomes the
+## default, and the id stays out of the way of every control already there.
+func _face_control_entry(node_id: String, parameter_name: String) -> Dictionary:
+	var node: Dictionary = {}
+	for candidate in patch.get("nodes", []):
+		if str(candidate.get("id", "")) == node_id:
+			node = candidate
+			break
+	var descriptor: Dictionary = {}
+	for parameter in registry.get(_type_key(node), {}).get("parameters", []):
+		if str(parameter.get("name", "")) == parameter_name:
+			descriptor = parameter
+			break
+	var taken := {}
+	for control: Dictionary in patch.get("controls", []):
+		taken[str(control.get("id", ""))] = true
+	var identity := "%s_%s" % [node_id, parameter_name]
+	var suffix := 2
+	while taken.has(identity):
+		identity = "%s_%s_%d" % [node_id, parameter_name, suffix]
+		suffix += 1
+	return {
+		"id": identity,
+		"label": parameter_name.capitalize(),
+		"kind": "knob",
+		"target": {"node": node_id, "parameter": parameter_name},
+		"min": descriptor.get("min", 0.0),
+		"max": descriptor.get("max", 1.0),
+		"default": node.get("parameters", {}).get(parameter_name,
+			descriptor.get("default", 0.0)),
+		"scaling": descriptor.get("scaling", "linear"),
+	}
+
+
+## Writes what the face is wearing onto the widgets, where the overlay reads it:
+## "on_face" on each knob cell, "face_seam" on the widgets whose ports are plates.
+func _refresh_face_edit_badges() -> void:
+	var worn := {}
+	for control: Dictionary in patch.get("controls", []):
+		var target: Dictionary = control.get("target", {})
+		worn["%s|%s" % [target.get("node", ""), target.get("parameter", "")]] = true
+	var seams := {}
+	for node in patch.get("nodes", []):
+		if str(node.get("type", "")) in ["Input", "Output"]:
+			seams[str(node["id"])] = true
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		widget.set_meta("face_seam", seams.has(str(id)))
+		for child in widget.get_children():
+			var line := child as Control
+			if line == null or not line.has_meta("cells_box"):
+				continue
+			for cell_child in (line.get_meta("cells_box") as Control).get_children():
+				var cell := cell_child as Control
+				if cell == null:
+					continue
+				cell.set_meta("on_face", worn.has("%s|%s"
+					% [id, cell.get_meta("parameter_name", "")]))
+
+
 ## One width per column of cells, so the knobs stack on shared axes.
 ##
 ## A cell used to be as wide as its own contents, and each row centres its cells as
@@ -3930,6 +4043,8 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# What the wand needs to name this knob once somebody points at it. The row is the
 	# thing with a rect; without this it is a rect with no idea what it controls.
 	row.set_meta("parameter_name", str(parameter["name"]))
+	# And whose knob it is, so face edit can name the target from the cell alone.
+	row.set_meta("node_id", str(node["id"]))
 	var name: String = parameter["name"]
 	var node_id: String = node["id"]
 	var current: float = float(node.get("parameters", {}).get(name, parameter["default"]))
