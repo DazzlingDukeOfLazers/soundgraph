@@ -673,6 +673,38 @@ TEST(note_input_falls_back_to_the_note_still_held) {
     CHECK_NEAR(harness.output("gate")[0], 1.0, 1e-6);
 }
 
+TEST(note_triggers_fire_their_lanes) {
+    NodeHarness harness("NoteTriggers", 256, kSampleRate);
+    auto strike = [&](int note) {
+        soundgraph::NoteEvent event;
+        event.kind = soundgraph::NoteEvent::Kind::NoteOn;
+        event.note = note;
+        event.velocity = 1.0f;
+        harness.node().handle_note_event(event);
+    };
+
+    strike(48);  // the default base: C3 fires the first lane and nothing else
+    harness.process();
+    CHECK_NEAR(harness.output("t1")[0], 1.0, 1e-6);
+    CHECK_NEAR(harness.output("t2")[0], 0.0, 1e-6);
+    CHECK_NEAR(harness.output("t8")[0], 0.0, 1e-6);
+    // A trigger is an edge, not a level: the pulse is over well inside the block.
+    CHECK_NEAR(harness.output("t1")[200], 0.0, 1e-6);
+
+    strike(55);  // seven semitones up: the last lane
+    strike(47);  // below the base: not for this node
+    strike(56);  // past the last lane: not for this node either
+    harness.process();
+    CHECK_NEAR(harness.output("t8")[0], 1.0, 1e-6);
+    CHECK_NEAR(harness.output("t1")[0], 0.0, 1e-6);
+    CHECK_NEAR(harness.output("t7")[0], 0.0, 1e-6);
+
+    harness.set("base", 60.0f);  // the knob moves the whole row of pads
+    strike(60);
+    harness.process();
+    CHECK_NEAR(harness.output("t1")[0], 1.0, 1e-6);
+}
+
 // The bug this guards: a one-shot patch played by jabbing at a key sounded once and then
 // went quiet. Two notes overlapping keep the gate high the whole way through, so an AHD
 // envelope watching the gate never sees a second rising edge. The trigger output exists to

@@ -38,6 +38,7 @@ extern const NodeTypeDescriptor kMultiply;
 
 // Terminals
 extern const NodeTypeDescriptor kNoteInput;
+extern const NodeTypeDescriptor kNoteTriggers;
 extern const NodeTypeDescriptor kAudioInput;
 extern const NodeTypeDescriptor kStereoOutput;
 

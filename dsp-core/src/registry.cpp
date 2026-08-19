@@ -122,6 +122,7 @@ int score_type(const NodeTypeDescriptor& type, const std::string& query) {
 NodeRegistry::NodeRegistry() {
     types_ = {
         &nodes::kNoteInput,
+        &nodes::kNoteTriggers,
         &nodes::kAudioInput,
         &nodes::kSineOscillator,
         &nodes::kSawOscillator,

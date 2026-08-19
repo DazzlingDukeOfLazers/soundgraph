@@ -258,6 +258,94 @@ std::unique_ptr<DspNode> make() {
 
 }  // namespace
 
+// ---------------------------------------------------------------------------------
+// Note triggers
+//
+// The drum-routing brain: eight trigger outlets, one per chromatic step up from a
+// base note, so the bottom of the keyboard becomes a row of drum pads and a piano
+// roll's lanes become drum lanes. A note outside the eight is simply not for this
+// node. The pulses are the same one-millisecond edge NoteInput's own trigger
+// carries, because a drum wants an edge, not a level.
+// ---------------------------------------------------------------------------------
+
+constexpr int kTriggerLanes = 8;
+
+constexpr PortDescriptor kNoteTriggersOutputs[] = {
+    {"t1", SignalType::Control, "", false, false, "Fires on the base note."},
+    {"t2", SignalType::Control, "", false, false, "Fires one semitone above the base."},
+    {"t3", SignalType::Control, "", false, false, "Fires two semitones above the base."},
+    {"t4", SignalType::Control, "", false, false, "Fires three semitones above the base."},
+    {"t5", SignalType::Control, "", false, false, "Fires four semitones above the base."},
+    {"t6", SignalType::Control, "", false, false, "Fires five semitones above the base."},
+    {"t7", SignalType::Control, "", false, false, "Fires six semitones above the base."},
+    {"t8", SignalType::Control, "", false, false, "Fires seven semitones above the base."},
+};
+
+constexpr ParameterDescriptor kNoteTriggersParameters[] = {
+    {"base", "note", 0.0f, 120.0f, 48.0f, Scaling::Linear,
+     "The note that fires the first outlet; each outlet above it is one semitone up. "
+     "48 is C3, where the keyboard opens.", nullptr, 0},
+};
+
+class NoteTriggersNode final : public DspNode {
+public:
+    enum Param { kBase = 0 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        reset();
+    }
+
+    void reset() override {
+        for (int lane = 0; lane < kTriggerLanes; ++lane) {
+            remaining_[lane] = 0;
+        }
+    }
+
+    void handle_note_event(const NoteEvent& event) override {
+        if (event.kind != NoteEvent::Kind::NoteOn) {
+            return;  // a trigger has no other side to let go of
+        }
+        const int lane = event.note - static_cast<int>(parameter(kBase) + 0.5f);
+        if (lane >= 0 && lane < kTriggerLanes) {
+            remaining_[lane] = pulse_samples();
+        }
+    }
+
+    void process(const ProcessContext& context) override {
+        for (int lane = 0; lane < kTriggerLanes; ++lane) {
+            float* out = context.outputs[lane];
+            for (int i = 0; i < context.frames; ++i) {
+                out[i] = remaining_[lane] > 0 ? 1.0f : 0.0f;
+                if (remaining_[lane] > 0) {
+                    --remaining_[lane];
+                }
+            }
+        }
+    }
+
+private:
+    int pulse_samples() const {
+        const int samples = static_cast<int>(sample_rate_ * 0.001f);
+        return samples > 1 ? samples : 1;
+    }
+
+    float sample_rate_ = 48000.0f;
+    int remaining_[kTriggerLanes] = {};
+};
+
+const NodeTypeDescriptor kNoteTriggers = {
+    "NoteTriggers", "Note Triggers", "Terminals",
+    "Eight triggers from eight chromatic notes: the keyboard as a row of drum pads.",
+    "trigger|drum|pad|kit|split|map|note to trigger|drum machine",
+    Slice<PortDescriptor>(),
+    Slice<PortDescriptor>(kNoteTriggersOutputs),
+    Slice<ParameterDescriptor>(kNoteTriggersParameters),
+    false, NodeRole::Processor, true,
+    ResourceCost{0.5f, 64, 0},
+    &make<NoteTriggersNode>,
+};
+
 const NodeTypeDescriptor kNoteInput = {
     "NoteInput", "Note Input", "Terminals",
     "Turns played notes into pitch, gate and velocity signals.",

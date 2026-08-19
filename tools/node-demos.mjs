@@ -137,6 +137,29 @@ const DEMOS = {
       ],
     }),
   },
+  NoteTriggers: {
+    summary: 'Eight chromatic notes become eight triggers: the keyboard as drum pads.',
+    try: 'Strike the base note for the first trigger and walk up by semitones for the '
+      + 'rest. Notes outside the eight lanes are simply not for this node — wire each '
+      + 'outlet to a different drum and the bottom of the keyboard is a kit.',
+    build: () => ({
+      nodes: [
+        keyboard(0),
+        // Based at middle C so the demo render's own strikes land on the first pad.
+        node('pads', 'NoteTriggers', { base: 60 }, 1, 1),
+        node('tone', 'SineOscillator', { frequency: 220 }, 1, 0),
+        envelope(2),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('pads', 't1', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('tone', 'out', 'amp', 'in'),
+        wire('amp', 'out', 'out', 'left'),
+      ],
+    }),
+  },
   AudioInput: {
     summary: 'Live audio from the host — a microphone, an instrument, a DAW track.',
     // The one demo that is silent when rendered offline, and correctly so.
@@ -559,6 +582,8 @@ const DEMOS = {
 // so that a node nobody thought about is distinguishable from one somebody did.
 const PROBES = {
   NoteInput: { node: 'kb', parameter: 'transpose', value: 12 },
+  // Moving the base one semitone makes every strike miss its pad: silence, total.
+  NoteTriggers: { node: 'pads', parameter: 'base', value: 61 },
   AudioInput: { probeless: 'silent offline; there is no host input to change the sound of' },
   StereoOutput: { parameter: 'level', value: 0.25 },
 
