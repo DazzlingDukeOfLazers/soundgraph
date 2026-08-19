@@ -83,6 +83,7 @@ const SeamDock := preload("res://seam_dock.gd")
 const PatchFace := preload("res://patch_face.gd")
 const ModuleFace := preload("res://module_face.gd")
 const PianoRoll := preload("res://piano_roll.gd")
+const MidiImport := preload("res://midi_import.gd")
 
 const EXAMPLE_GROUPS := {
 	"": "",
@@ -169,6 +170,8 @@ var piano_roll: PianoRoll
 var roll_button: Button
 var roll_play: Button
 var roll_tempo: ValueField
+var roll_zoom: Button
+var midi_dialog: FileDialog
 var roll_open := false
 var roll_playing := false
 var _roll_clock := 0.0
@@ -882,6 +885,13 @@ func _build_ui() -> void:
 	file_dialog.file_selected.connect(_on_file_selected)
 	add_child(file_dialog)
 
+	midi_dialog = FileDialog.new()
+	midi_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	midi_dialog.add_filter("*.mid,*.midi", "Standard MIDI file")
+	midi_dialog.title = "Import MIDI into the piano roll"
+	midi_dialog.file_selected.connect(_import_midi_file)
+	add_child(midi_dialog)
+
 	if _on_web():
 		_install_web_file_bridge()
 
@@ -1115,6 +1125,7 @@ func _build_toolbar() -> Control:
 	file_popup.add_item("Open…", 0)
 	file_popup.add_item("Add module…", 1)
 	file_popup.add_item("Add module as definition…", 3)
+	file_popup.add_item("Import MIDI…", 5)
 	file_popup.add_item("Save as…", 2)
 	# By index, via the id. set_item_tooltip takes a position and these were being handed
 	# an id: item 3 does not exist in a four-item menu, so Godot logged an out-of-bounds
@@ -1380,6 +1391,12 @@ const CASE_WIDTHS := [0, 84, 104, 168]
 func _on_file_menu(id: int) -> void:
 	if id == 4:
 		_new_file()
+		return
+	if id == 5:
+		if _on_web():
+			_say("MIDI import is desktop-only for now")
+			return
+		midi_dialog.popup_centered_ratio(0.6)
 		return
 	_importing_module = id == 1
 	_importing_definition = id == 3
@@ -4728,6 +4745,7 @@ func _set_roll_open(open: bool) -> void:
 	piano_roll.visible = open and keyboard_expanded
 	roll_play.visible = open
 	roll_tempo.visible = open
+	roll_zoom.visible = open
 	Settings.store("piano_roll", open)
 	piano_roll.sequence = patch.get("sequence", {})
 	_refresh_roll_tempo_text()
@@ -4752,6 +4770,7 @@ func _on_roll_cell_toggled(step: int, note: int) -> void:
 			removed = true
 	if not removed:
 		notes.append({"step": step, "note": note, "length": 1})
+		_grow_roll_to(step + 1)
 	_commit_edit("roll: %s %s" % ["clear" if removed else "place", Keyboard.note_name(note)])
 	piano_roll.sequence = patch["sequence"]
 	piano_roll.queue_redraw()
@@ -4768,6 +4787,7 @@ func _on_roll_note_stretched(step: int, note: int, length: int) -> void:
 			found = true
 	if not found:
 		notes.append({"step": step, "note": note, "length": length})
+	_grow_roll_to(step + length)
 	_commit_edit("roll: hold %s" % Keyboard.note_name(note))
 	piano_roll.sequence = patch["sequence"]
 	piano_roll.queue_redraw()
@@ -4805,6 +4825,40 @@ func _refresh_roll_tempo_text() -> void:
 	var tempo: float = float(patch.get("sequence", {}).get("tempo", 120.0))
 	roll_tempo.text = "%d bpm" % int(round(tempo))
 	roll_tempo.position_now = roll_tempo.to_position.call(tempo)
+
+
+## The piece grows a bar at a time under notes placed past its end: the window can
+## look sixteen bars out, and a click out there is a request for more piece, not a
+## mistake to clamp away.
+func _grow_roll_to(needed_steps: int) -> void:
+	var sequence: Dictionary = _roll_sequence()
+	if needed_steps > int(sequence.get("steps", 16)):
+		sequence["steps"] = clampi(ceili(float(needed_steps) / 16.0) * 16, 16,
+			PianoRoll.MAX_STEPS)
+
+
+## A Standard MIDI File lands in the roll: notes and tempo through the reader,
+## quantised to sixteenths, first sixteen bars. One undo step, roll opened on it.
+func _import_midi_file(path: String) -> void:
+	var sung: Dictionary = MidiImport.read(path)
+	if sung.is_empty():
+		_say("that file is not a MIDI tune this reader can hold")
+		return
+	_begin_edit()
+	patch["sequence"] = {"tempo": sung["tempo"], "steps": sung["steps"],
+		"notes": sung["notes"]}
+	_commit_edit("import midi")
+	if not roll_open:
+		roll_button.button_pressed = true
+	piano_roll.sequence = patch["sequence"]
+	piano_roll.scroll_step = 0
+	_refresh_roll_tempo_text()
+	piano_roll.queue_redraw()
+	var bars := ceili(float(int(sung["steps"])) / 16.0)
+	_say("%d notes over %d bars at %d bpm%s" % [(sung["notes"] as Array).size(), bars,
+		int(round(float(sung["tempo"]))),
+		" — %d notes past bar sixteen stayed behind" % int(sung["dropped"])
+			if int(sung["dropped"]) > 0 else ""])
 
 
 func _advance_roll(delta: float) -> void:
@@ -4980,6 +5034,15 @@ func _build_keyboard_bar() -> Control:
 	roll_tempo.value_submitted.connect(_set_roll_tempo)
 	roll_tempo.visible = false
 	bar.add_child(roll_tempo)
+	roll_zoom = Button.new()
+	roll_zoom.text = "1 bar"
+	roll_zoom.tooltip_text = "How much of the piece the roll shows at once. " 		+ "The wheel walks through the rest, and the view follows the playhead."
+	roll_zoom.visible = false
+	roll_zoom.pressed.connect(func() -> void:
+		var next: int = {16: 32, 32: 64, 64: 16}[piano_roll.view_rows]
+		piano_roll.set_view_rows(next)
+		roll_zoom.text = "%d bar%s" % [next / 16, "s" if next > 16 else ""])
+	bar.add_child(_defocus(roll_zoom))
 
 	# The keyboard's own jacks, on the keyboard. This is where the cables into the patch
 	# come from — see seam_dock.gd for why they cannot be drawn by GraphEdit.

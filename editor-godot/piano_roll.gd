@@ -23,11 +23,28 @@ var sequence: Dictionary = {}
 ## The keyboard this roll sits above: range and key geometry come from it.
 var keyboard: Control
 
-## The row the clock is on, or -1 when stopped. Drawn as a wash over the row.
+## The row the clock is on, or -1 when stopped. Drawn as a wash over the row, and
+## followed: when the playhead leaves the window, the window turns the page.
 var playing_step := -1:
 	set(value):
 		playing_step = value
+		if playing_step >= 0 and (playing_step < scroll_step
+				or playing_step >= scroll_step + view_rows):
+			scroll_step = playing_step - playing_step % view_rows
 		queue_redraw()
+
+## The window onto a longer piece: how many rows are on screen, and which absolute
+## step sits at the bottom. A sequence is up to sixteen bars; the view shows one,
+## two or four of them, and the wheel walks the rest.
+const MAX_STEPS := 256
+var view_rows := 16
+var scroll_step := 0
+
+
+func set_view_rows(rows: int) -> void:
+	view_rows = clampi(rows, 16, 64)
+	scroll_step = clampi(scroll_step, 0, MAX_STEPS - view_rows)
+	queue_redraw()
 
 
 func _ready() -> void:
@@ -39,7 +56,7 @@ func step_count() -> int:
 
 
 func _row_height() -> float:
-	return size.y / float(step_count())
+	return size.y / float(view_rows)
 
 
 ## The horizontal span of a note's lane, or a zero-width rect when the note is off
@@ -86,10 +103,12 @@ func note_at(x: float) -> int:
 	return -1
 
 
-## The step under a y position. The bottom row is step zero — time rises.
+## The step under a y position. The bottom of the window is `scroll_step` — time
+## rises, and the window may be looking anywhere in the piece.
 func step_at(y: float) -> int:
 	var row := int((size.y - y) / _row_height())
-	return clampi(row, 0, step_count() - 1)
+	return clampi(scroll_step + row, scroll_step,
+		mini(scroll_step + view_rows - 1, MAX_STEPS - 1))
 
 
 ## The entry covering a cell — a long note answers for every row it holds.
@@ -112,6 +131,16 @@ var _drag_moved := false
 
 
 func _gui_input(event: InputEvent) -> void:
+	var wheel := event as InputEventMouseButton
+	if wheel != null and wheel.pressed and _drag_note < 0 \
+			and wheel.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		# The wheel walks the piece a beat at a time: up is later, the way the
+		# notes already read.
+		var walked := 4 if wheel.button_index == MOUSE_BUTTON_WHEEL_UP else -4
+		scroll_step = clampi(scroll_step + walked, 0, MAX_STEPS - view_rows)
+		queue_redraw()
+		accept_event()
+		return
 	var motion := event as InputEventMouseMotion
 	if motion != null and _drag_note >= 0:
 		# Upward only: the anchor is the note's own step, and time rises.
@@ -153,26 +182,43 @@ func _gui_input(event: InputEvent) -> void:
 	accept_event()
 
 
+## The y of an absolute step's bottom edge, in the current window.
+func _step_bottom(step: int) -> float:
+	return size.y - float(step - scroll_step) * _row_height()
+
+
 func _draw() -> void:
 	if keyboard == null:
 		return
-	var rows := step_count()
 	var row_height := _row_height()
 	var first: int = keyboard.first_note
 	var octave_count: int = keyboard.octaves
+	var window_end := scroll_step + view_rows
 
 	# The ground: black lanes shaded the full height, so the keyboard's geography
 	# carries up through the grid.
 	for note in range(first, first + octave_count * 12):
 		if (note - first) % 12 in Keyboard.BLACK_OFFSETS:
 			draw_rect(lane(note), Color(0.0, 0.0, 0.0, 0.22))
+	# Steps past the piece's current end are dimmed, not fenced: a click out there
+	# grows the piece, and the wash says "room" rather than "wall".
+	if step_count() < window_end:
+		var frontier: float = _step_bottom(step_count())
+		if frontier > 0.0:
+			draw_rect(Rect2(0.0, 0.0, size.x, frontier), Color(0.0, 0.0, 0.0, 0.25))
 
-	# Row lines, with the beat every four steps a shade firmer.
-	for row in rows + 1:
+	# Row lines: the beat every four steps a shade firmer, the bar every sixteen
+	# firmer still — a long piece needs the eye to land on bars, not count rows.
+	for row in view_rows + 1:
+		var absolute := scroll_step + row
 		var y: float = size.y - row * row_height
-		var beat: bool = row % 4 == 0
+		var alpha := 0.05
+		if absolute % 16 == 0:
+			alpha = 0.24
+		elif absolute % 4 == 0:
+			alpha = 0.12
 		draw_line(Vector2(0.0, y), Vector2(size.x, y),
-			Color(1.0, 1.0, 1.0, 0.14 if beat else 0.05), 1.0)
+			Color(1.0, 1.0, 1.0, alpha), 1.0)
 	# Octave seams, so the eye can count columns without counting keys.
 	var white_width: float = size.x / float(octave_count * Keyboard.WHITE_OFFSETS.size())
 	for octave in octave_count + 1:
@@ -180,11 +226,11 @@ func _draw() -> void:
 		draw_line(Vector2(x, 0.0), Vector2(x, size.y), Color(1.0, 1.0, 1.0, 0.10), 1.0)
 
 	# The playhead, under the notes: the row being spoken.
-	if playing_step >= 0 and playing_step < rows:
-		var top: float = size.y - (playing_step + 1) * row_height
+	if playing_step >= scroll_step and playing_step < window_end:
+		var top: float = _step_bottom(playing_step + 1)
 		draw_rect(Rect2(0.0, top, size.x, row_height), Color(Design.ACCENT, 0.10))
 
-	# The notes themselves.
+	# The notes themselves, clipped to the window.
 	for entry: Dictionary in sequence.get("notes", []):
 		var note := int(entry.get("note", -1))
 		var span := lane(note)
@@ -192,10 +238,10 @@ func _draw() -> void:
 			continue
 		var step := int(entry.get("step", 0))
 		var length := maxi(1, int(entry.get("length", 1)))
-		var top: float = size.y - float(mini(step + length, rows)) * row_height
-		var bottom: float = size.y - float(step) * row_height
-		if bottom <= 0.0 or step >= rows:
+		if step >= window_end or step + length <= scroll_step:
 			continue
+		var top: float = maxf(0.0, _step_bottom(mini(step + length, window_end)))
+		var bottom: float = minf(size.y, _step_bottom(maxi(step, scroll_step)))
 		var box := Rect2(span.position.x + 1.0, top + 1.0,
 			span.size.x - 2.0, bottom - top - 2.0)
 		var sounding: bool = playing_step >= step and playing_step < step + length
@@ -207,9 +253,10 @@ func _draw() -> void:
 	if _drag_note >= 0 and _drag_moved:
 		var held_span := lane(_drag_note)
 		if held_span.size.x > 0.0:
-			var held_top: float = size.y \
-				- float(mini(_drag_anchor + _drag_length, rows)) * row_height
-			var held_bottom: float = size.y - float(_drag_anchor) * row_height
+			var held_top: float = maxf(0.0,
+				_step_bottom(mini(_drag_anchor + _drag_length, window_end)))
+			var held_bottom: float = minf(size.y,
+				_step_bottom(maxi(_drag_anchor, scroll_step)))
 			var held_box := Rect2(held_span.position.x + 1.0, held_top + 1.0,
 				held_span.size.x - 2.0, held_bottom - held_top - 2.0)
 			draw_rect(held_box, Color(Design.ACCENT, 0.35))
