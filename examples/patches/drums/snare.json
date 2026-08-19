@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "808 Snare"
+  },
+  "nodes": [
+    {
+      "id": "note",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note",
+      "name": "Keyboard"
+    },
+    {
+      "id": "tone1",
+      "type": "SineOscillator",
+      "position": {
+        "x": 440,
+        "y": 0
+      },
+      "name": "Skin",
+      "parameters": {
+        "frequency": 185
+      }
+    },
+    {
+      "id": "tone2",
+      "type": "SineOscillator",
+      "position": {
+        "x": 440,
+        "y": 400
+      },
+      "name": "Shell",
+      "parameters": {
+        "frequency": 330
+      }
+    },
+    {
+      "id": "tone_env",
+      "type": "ADSR",
+      "position": {
+        "x": 0,
+        "y": 400
+      },
+      "name": "Body",
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "tone_amp",
+      "type": "Gain",
+      "position": {
+        "x": 880,
+        "y": 0
+      },
+      "name": "Tone",
+      "parameters": {
+        "gain": 0.6
+      }
+    },
+    {
+      "id": "noise",
+      "type": "Noise",
+      "position": {
+        "x": 440,
+        "y": 800
+      },
+      "name": "Rattle",
+      "parameters": {
+        "colour": 0
+      }
+    },
+    {
+      "id": "snap_filter",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 880,
+        "y": 800
+      },
+      "name": "Voice",
+      "parameters": {
+        "cutoff": 1800,
+        "resonance": 0.3,
+        "mode": 2
+      }
+    },
+    {
+      "id": "noise_env",
+      "type": "ADSR",
+      "position": {
+        "x": 0,
+        "y": 800
+      },
+      "name": "Snap",
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.18,
+        "sustain": 0.0,
+        "release": 0.18
+      }
+    },
+    {
+      "id": "noise_amp",
+      "type": "Gain",
+      "position": {
+        "x": 1320,
+        "y": 800
+      },
+      "name": "Snappy",
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 1760,
+        "y": 0
+      },
+      "host": "stereo",
+      "name": "Output"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "note",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "tone_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "noise_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "tone1",
+        "port": "out"
+      },
+      "to": {
+        "node": "tone_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "tone2",
+        "port": "out"
+      },
+      "to": {
+        "node": "tone_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "tone_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "tone_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "noise",
+        "port": "out"
+      },
+      "to": {
+        "node": "snap_filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "snap_filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "noise_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "noise_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "noise_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "tone_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "noise_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "tone1",
+        "parameter": "frequency"
+      },
+      "min": 120,
+      "max": 300,
+      "default": 185,
+      "scaling": "exponential"
+    },
+    {
+      "id": "tone",
+      "label": "Tone",
+      "kind": "knob",
+      "target": {
+        "node": "tone_amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.6,
+      "scaling": "linear"
+    },
+    {
+      "id": "snappy",
+      "label": "Snappy",
+      "kind": "knob",
+      "target": {
+        "node": "noise_amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 1.0,
+      "scaling": "linear"
+    },
+    {
+      "id": "snap",
+      "label": "Snap",
+      "kind": "knob",
+      "target": {
+        "node": "noise_env",
+        "parameter": "decay"
+      },
+      "min": 0.05,
+      "max": 0.4,
+      "default": 0.18,
+      "scaling": "exponential"
+    }
+  ],
+  "sequence": {
+    "tempo": 120.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 4,
+        "note": 50,
+        "length": 1
+      },
+      {
+        "step": 12,
+        "note": 50,
+        "length": 1
+      }
+    ]
+  }
+}

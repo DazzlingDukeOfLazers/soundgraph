@@ -232,6 +232,33 @@ func _press_graph(main, at: Vector2) -> void:
 
 
 ## The engine's peak over a short render, for checks that something is heard.
+## The peak of a one-shot. The engine's get_peak() is the *last fill's* peak, not
+## a running maximum — right for a meter, and exactly wrong for a drum, which is
+## over long before the final fill. Read after every fill and keep the loudest;
+## measured once as "the drums are silent" when the drums were fine.
+func _struck_peak(main, note: int) -> float:
+	var generator := AudioStreamGenerator.new()
+	generator.buffer_length = 0.5
+	var player := AudioStreamPlayer.new()
+	player.stream = generator
+	root.add_child(player)
+	player.play()
+	await process_frame
+	var playback: AudioStreamGeneratorPlayback = player.get_stream_playback()
+	var peak := 0.0
+	main._hold_note(note)
+	for i in 20:
+		main.engine.fill_playback(playback, 1024)
+		peak = maxf(peak, main.engine.get_peak())
+		await process_frame
+	main._let_go_note(note)
+	player.stop()
+	player.stream = null
+	await process_frame
+	player.queue_free()
+	return peak
+
+
 func _device_peak(main) -> float:
 	var generator := AudioStreamGenerator.new()
 	generator.buffer_length = 0.5
@@ -2934,6 +2961,29 @@ func _initialize() -> void:
 	main.roll_button.button_pressed = false
 	for i in 3:
 		await process_frame
+
+	# ---- the 808 kit -----------------------------------------------------------------
+	# Four drum voices as device patches: trigger-driven, face-wearing, each with a
+	# pattern baked into its sequence so opening one and pressing Play is a demo.
+	# The checks are audible ones: a drum that validates but does not sound is a
+	# picture of a drum.
+	for kit_label in ["808: kick", "808: snare", "808: hat-closed", "808: hat-open"]:
+		await main._load_example(kit_label)
+		for i in 8:
+			await process_frame
+		var kit_peak: float = await _struck_peak(main, 48)
+		check(kit_peak > 0.01, "%s sounds when struck (peak %.3f)" % [kit_label, kit_peak])
+		check(not (main.patch.get("sequence", {}).get("notes", []) as Array).is_empty(),
+			"and ships its pattern in the roll")
+	main._new_file()
+	for i in 8:
+		await process_frame
+	var kit_device: String = await main._add_device("808: kick", Vector2(600.0, 0.0))
+	for i in 8:
+		await process_frame
+	check(kit_device != "" and main.module_mounts.has(kit_device)
+			and (main.module_mounts.get(kit_device) as Control) != null,
+		"the kick mounts as a device wearing its face")
 
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",

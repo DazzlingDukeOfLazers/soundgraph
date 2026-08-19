@@ -91,6 +91,7 @@ const EXAMPLE_GROUPS := {
 	"nodes": "Node",
 	"fm": "FM",
 	"dx7": "DX7",
+	"drums": "808",
 }
 
 ## Groups this big become submenus rather than flat entries — a bank has a shape, and
