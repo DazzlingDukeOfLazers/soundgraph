@@ -84,6 +84,7 @@ const PatchFace := preload("res://patch_face.gd")
 const ModuleFace := preload("res://module_face.gd")
 const PianoRoll := preload("res://piano_roll.gd")
 const MidiImport := preload("res://midi_import.gd")
+const ProbeScope := preload("res://probe_scope.gd")
 
 const EXAMPLE_GROUPS := {
 	"": "",
@@ -219,6 +220,8 @@ var side_panel_open := true
 
 var split: HSplitContainer
 var side_panel: VBoxContainer
+var side_tabs: TabBar
+var scope_probe: ProbeScope
 var side_panel_body: VBoxContainer
 var side_panel_toggle: Button
 ## Buttons carrying per-instance styles, which a theme rebuild cannot reach.
@@ -1674,6 +1677,16 @@ func show_view(title: String) -> bool:
 ## every drag started from a garbage baseline, which is why the divider had a dead zone
 ## hundreds of pixels wide and only tracked the mouse through the minimum-size clamp
 ## chasing it one event behind.
+## Which side view is out: the panel that plays the file, or the scope that
+## troubleshoots it. The probe only spends engine time while it is the one showing.
+func _on_side_tab(tab: int) -> void:
+	var panel_body := side_panel.find_child("PanelBody", true, false)
+	if panel_body != null:
+		panel_body.visible = tab == 0
+	if scope_probe != null:
+		scope_probe.visible = tab == 1
+
+
 func _fit_side_panel() -> void:
 	if split == null or views == null:
 		return
@@ -1761,6 +1774,20 @@ func _build_side_panel() -> Control:
 		inset.add_theme_constant_override("margin_" + edge, Design.scale(Design.SPACE_M))
 	side_panel.add_child(inset)
 
+	# The panel and the probe scope share the side column: the panel is what the
+	# file is for, the scope is the bench instrument you clip onto a wire when a
+	# signal is not doing what it should. Tabs, because they are different jobs.
+	var side_column := VBoxContainer.new()
+	side_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side_column.add_theme_constant_override("separation", Design.SPACE_S)
+	inset.add_child(side_column)
+	side_tabs = TabBar.new()
+	side_tabs.add_tab("Panel")
+	side_tabs.add_tab("Scope")
+	side_tabs.focus_mode = Control.FOCUS_NONE
+	side_tabs.tab_changed.connect(_on_side_tab)
+	side_column.add_child(side_tabs)
+
 	# The collapse control sits *under* everything, and never moves: the faces lead the
 	# panel and used to pay a strip of the most valuable row on screen for a button that
 	# is pressed a few times an hour. Outside the body on purpose, so the way back is
@@ -1786,9 +1813,15 @@ func _build_side_panel() -> Control:
 	# silently stopped moving and the drag went dead in the hand. SHOW_NEVER keeps the
 	# bar away and lets content clip instead of taking the divider hostage.
 	var body_scroll := ScrollContainer.new()
+	body_scroll.name = "PanelBody"
 	body_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	inset.add_child(body_scroll)
+	side_column.add_child(body_scroll)
+
+	scope_probe = ProbeScope.new()
+	scope_probe.visible = false
+	scope_probe.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side_column.add_child(scope_probe)
 
 	side_panel_body = VBoxContainer.new()
 	side_panel_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -2977,6 +3010,20 @@ func _rebuild_view() -> void:
 	# reload must not leave the overlay reading last document's dress.
 	if graph_edit != null and graph_edit.face_edit:
 		_refresh_face_edit_badges()
+	# The probe scope's wire list follows the document, and its taps re-resolve in
+	# the engine on every load — a probe pointing at a deleted node goes quiet.
+	if scope_probe != null:
+		scope_probe.engine = engine
+		var probe_sources: Array = []
+		var probe_gates: Array = []
+		for node in patch.get("nodes", []):
+			var node_id := str(node.get("id", ""))
+			for outlet: Dictionary in _port_list(node_id, "outputs"):
+				var entry := {"node": node_id, "port": str(outlet.get("name", ""))}
+				probe_sources.append(entry)
+				if str(outlet.get("type", "")) != "audio":
+					probe_gates.append(entry)
+		scope_probe.refresh_sources(probe_sources, probe_gates)
 	# The roll reads the document by reference, and the document was just replaced.
 	if piano_roll != null:
 		piano_roll.sequence = patch.get("sequence", {})

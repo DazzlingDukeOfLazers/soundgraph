@@ -15,6 +15,9 @@ namespace {
 
 constexpr int kMaxFillFrames = 4096;
 constexpr int kScopeSamples = 4096;
+// The probe rings: long enough for eight periods of a 30 Hz wave with pre-trigger
+// context to spare. Editor-side memory, never on a small target.
+constexpr int kTapSamples = 32768;
 
 std::string to_utf8(const String& text) {
     const CharString utf8 = text.utf8();
@@ -60,6 +63,14 @@ void SoundGraphEngine::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_scope", "samples"), &SoundGraphEngine::get_scope);
     ClassDB::bind_method(D_METHOD("get_port_signal", "node_id", "port"),
                          &SoundGraphEngine::get_port_signal);
+    ClassDB::bind_method(D_METHOD("set_scope_tap", "node_id", "port"),
+                         &SoundGraphEngine::set_scope_tap);
+    ClassDB::bind_method(D_METHOD("set_scope_gate", "node_id", "port"),
+                         &SoundGraphEngine::set_scope_gate);
+    ClassDB::bind_method(D_METHOD("get_scope_tap", "samples"),
+                         &SoundGraphEngine::get_scope_tap);
+    ClassDB::bind_method(D_METHOD("get_scope_gate", "samples"),
+                         &SoundGraphEngine::get_scope_gate);
 }
 
 // -------------------------------------------------------------------------------------
@@ -219,6 +230,7 @@ bool SoundGraphEngine::load_patch(const String& patch_json, double sample_rate) 
     info_json_ = info;
 
     loaded_ = true;
+    resolve_taps();
     return true;
 }
 
@@ -267,7 +279,40 @@ int SoundGraphEngine::fill_playback(const Ref<AudioStreamGeneratorPlayback>& pla
         return 0;
     }
 
-    graph_.render(left_.data(), right_.data(), frames);
+    if (tap_index_ >= 0 || gate_index_ >= 0) {
+        // Block-wise, so the taps capture every block the graph renders — one render
+        // for the whole request would leave only the final block visible to a probe,
+        // and a waveform cannot be reassembled from every sixteenth block.
+        const int block = graph_.port_signal_length();
+        int done = 0;
+        while (done < frames) {
+            const int step = std::min(block, frames - done);
+            graph_.render(left_.data() + done, right_.data() + done, step);
+            if (tap_index_ >= 0) {
+                const float* signal = graph_.port_signal(tap_index_, tap_port_index_);
+                if (signal != nullptr) {
+                    for (int i = 0; i < step; ++i) {
+                        tap_ring_[static_cast<std::size_t>(tap_write_)] =
+                            signal[block - step + i];
+                        tap_write_ = (tap_write_ + 1) % kTapSamples;
+                    }
+                }
+            }
+            if (gate_index_ >= 0) {
+                const float* signal = graph_.port_signal(gate_index_, gate_port_index_);
+                if (signal != nullptr) {
+                    for (int i = 0; i < step; ++i) {
+                        gate_ring_[static_cast<std::size_t>(gate_write_)] =
+                            signal[block - step + i];
+                        gate_write_ = (gate_write_ + 1) % kTapSamples;
+                    }
+                }
+            }
+            done += step;
+        }
+    } else {
+        graph_.render(left_.data(), right_.data(), frames);
+    }
 
     float peak = 0.0f;
     for (int i = 0; i < frames; ++i) {
@@ -286,6 +331,78 @@ int SoundGraphEngine::fill_playback(const Ref<AudioStreamGeneratorPlayback>& pla
         playback->push_buffer(slice);
     }
     return frames;
+}
+
+// Re-aims the probes at the current graph. A tap keeps its name across reloads and
+// simply goes quiet (-1) while the name has nothing to point at.
+void SoundGraphEngine::resolve_taps() {
+    tap_index_ = -1;
+    tap_port_index_ = -1;
+    gate_index_ = -1;
+    gate_port_index_ = -1;
+    if (!tap_node_.empty()) {
+        const int index = graph_.node_index(tap_node_);
+        const soundgraph::NodeTypeDescriptor* type = graph_.node_type(index);
+        if (index >= 0 && type != nullptr) {
+            const int port = type->find_output(tap_port_name_.c_str());
+            if (port >= 0) {
+                tap_index_ = index;
+                tap_port_index_ = port;
+            }
+        }
+    }
+    if (!gate_node_.empty()) {
+        const int index = graph_.node_index(gate_node_);
+        const soundgraph::NodeTypeDescriptor* type = graph_.node_type(index);
+        if (index >= 0 && type != nullptr) {
+            const int port = type->find_output(gate_port_name_.c_str());
+            if (port >= 0) {
+                gate_index_ = index;
+                gate_port_index_ = port;
+            }
+        }
+    }
+}
+
+bool SoundGraphEngine::set_scope_tap(const String& node_id, const String& port) {
+    tap_node_ = to_utf8(node_id);
+    tap_port_name_ = to_utf8(port);
+    tap_ring_.assign(kTapSamples, 0.0f);
+    tap_write_ = 0;
+    resolve_taps();
+    return tap_node_.empty() || tap_index_ >= 0;
+}
+
+bool SoundGraphEngine::set_scope_gate(const String& node_id, const String& port) {
+    gate_node_ = to_utf8(node_id);
+    gate_port_name_ = to_utf8(port);
+    gate_ring_.assign(kTapSamples, 0.0f);
+    gate_write_ = 0;
+    resolve_taps();
+    return gate_node_.empty() || gate_index_ >= 0;
+}
+
+PackedFloat32Array SoundGraphEngine::read_tap(const std::vector<float>& ring, int write,
+                                              int samples) const {
+    PackedFloat32Array result;
+    if (ring.empty()) {
+        return result;
+    }
+    const int count = std::min(std::max(samples, 0), kTapSamples);
+    result.resize(count);
+    for (int i = 0; i < count; ++i) {
+        const int index = (write - count + i + kTapSamples * 2) % kTapSamples;
+        result[i] = ring[static_cast<std::size_t>(index)];
+    }
+    return result;
+}
+
+PackedFloat32Array SoundGraphEngine::get_scope_tap(int samples) const {
+    return read_tap(tap_ring_, tap_write_, samples);
+}
+
+PackedFloat32Array SoundGraphEngine::get_scope_gate(int samples) const {
+    return read_tap(gate_ring_, gate_write_, samples);
 }
 
 void SoundGraphEngine::push_scope(const float* samples, int count) {

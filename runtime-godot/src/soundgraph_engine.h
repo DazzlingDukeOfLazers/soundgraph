@@ -103,11 +103,25 @@ public:
     godot::PackedFloat32Array get_port_signal(const godot::String& node_id,
                                               const godot::String& port) const;
 
+    // ---- the probe scope -------------------------------------------------------------
+    // An external instrument: point the tap at any output port and the fill loop
+    // captures a contiguous ring of that wire, block by block — get_port_signal alone
+    // only ever shows the latest block, which cannot hold a waveform. The gate is a
+    // second tap for triggered capture. An empty node id puts a probe away. Taps
+    // survive a reload: the names are kept and re-resolved against the new graph.
+    bool set_scope_tap(const godot::String& node_id, const godot::String& port);
+    bool set_scope_gate(const godot::String& node_id, const godot::String& port);
+    godot::PackedFloat32Array get_scope_tap(int samples) const;
+    godot::PackedFloat32Array get_scope_gate(int samples) const;
+
 protected:
     static void _bind_methods();
 
 private:
     void push_scope(const float* samples, int count);
+    void resolve_taps();
+    godot::PackedFloat32Array read_tap(const std::vector<float>& ring, int write,
+                                       int samples) const;
 
     soundgraph::Graph graph_;
     soundgraph::GraphDescription description_;
@@ -125,6 +139,18 @@ private:
     // Ring of recent output for the scope display.
     std::vector<float> scope_;
     int scope_write_ = 0;
+
+    // The probe scope's taps: names as the user gave them, indices as the current
+    // graph resolves them (-1 when unset or unresolvable), and the capture rings.
+    std::string tap_node_, tap_port_name_, gate_node_, gate_port_name_;
+    int tap_index_ = -1;
+    int tap_port_index_ = -1;
+    int gate_index_ = -1;
+    int gate_port_index_ = -1;
+    std::vector<float> tap_ring_;
+    std::vector<float> gate_ring_;
+    int tap_write_ = 0;
+    int gate_write_ = 0;
 };
 
 }  // namespace soundgraph_godot

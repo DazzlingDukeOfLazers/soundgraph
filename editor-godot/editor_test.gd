@@ -3033,6 +3033,100 @@ func _initialize() -> void:
 	check(kit_mounted_peak > 0.01,
 		"and the mounted kit drums on C3 (peak %.3f)" % kit_mounted_peak)
 
+	# ---- the probe scope --------------------------------------------------------------
+	# The bench instrument: clip the probe onto any wire, trigger like a real scope,
+	# and freeze what you caught. Driven against the saw oscillator at A3, whose
+	# rising edge is the easiest thing in the world to trigger on.
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+	check(main.side_tabs.tab_count == 2, "the side column carries Panel and Scope tabs")
+	main.side_tabs.current_tab = 1
+	for i in 3:
+		await process_frame
+	check(main.scope_probe.visible, "the Scope tab shows the probe")
+
+	var probe_index := -1
+	for index in main.scope_probe._sources.size():
+		var entry: Dictionary = main.scope_probe._sources[index]
+		if str(entry["node"]) == "osc" and str(entry["port"]) == "out":
+			probe_index = index + 1
+	check(probe_index > 0, "the wire list offers osc.out")
+	main.scope_probe.source_pick.selected = probe_index
+	main.scope_probe._on_source_picked(probe_index)
+
+	var pump_generator := AudioStreamGenerator.new()
+	pump_generator.buffer_length = 0.5
+	var pump_player := AudioStreamPlayer.new()
+	pump_player.stream = pump_generator
+	root.add_child(pump_player)
+	pump_player.play()
+	await process_frame
+	var pump_back: AudioStreamGeneratorPlayback = pump_player.get_stream_playback()
+	var pump := func() -> void:
+		for i in 12:
+			main.engine.fill_playback(pump_back, 1024)
+
+	main._hold_note(57)  # A3: 220 Hz, the probe's default timebase
+	pump.call()
+	main.scope_probe.capture()
+	check(main.scope_probe.locked, "the trigger locks onto the saw")
+	check(main.scope_probe.window.size() == main.scope_probe.window_span(),
+		"and the window is the asked-for span (%d)" % main.scope_probe.window.size())
+	var crossings := 0
+	for sample_index in range(1, main.scope_probe.window.size()):
+		if main.scope_probe.window[sample_index] >= 0.0 \
+				and main.scope_probe.window[sample_index - 1] < 0.0:
+			crossings += 1
+	check(crossings >= 1 and crossings <= 3,
+		"two periods of a saw cross upward about twice (%d)" % crossings)
+
+	main.scope_probe._flip_base_mode()
+	check(main.scope_probe.note_mode
+			and main.scope_probe.base_field.text == Keyboard.note_name(57)
+			and absf(main.scope_probe.base_frequency() - 220.0) < 1.0,
+		"the timebase flips to notes and lands on A3 (%s)"
+			% main.scope_probe.base_field.text)
+
+	main.scope_probe.mode = main.scope_probe.Mode.FREEZE_FIRST
+	main.scope_probe.frozen = false
+	main.scope_probe.capture()
+	check(main.scope_probe.frozen, "freeze-first holds the first locked capture")
+	var held_picture: PackedFloat32Array = main.scope_probe.window.duplicate()
+	main._let_go_note(57)
+	pump.call()
+	main.scope_probe.capture()
+	check(main.scope_probe.window == held_picture,
+		"and the picture survives the signal dying")
+	main.scope_probe.arm_button.pressed.emit()
+	check(not main.scope_probe.frozen, "Arm lets go of the freeze")
+
+	var gate_index := -1
+	for index in main.scope_probe._gates.size():
+		var entry: Dictionary = main.scope_probe._gates[index]
+		if str(entry["node"]) == "note" and str(entry["port"]) == "gate":
+			gate_index = index + 1
+	check(gate_index > 0, "the trigger list offers the keyboard's gate")
+	main.scope_probe.gate_pick.selected = gate_index
+	main.scope_probe._on_gate_picked(gate_index)
+	main.scope_probe.mode = main.scope_probe.Mode.LIVE
+	pump.call()
+	main.scope_probe.capture()
+	check(not main.scope_probe.locked,
+		"with no note down the external gate offers no trigger")
+	main._hold_note(57)
+	pump.call()
+	main.scope_probe.capture()
+	check(main.scope_probe.locked, "and the gate's rising edge locks the capture")
+	main._let_go_note(57)
+	pump_player.stop()
+	pump_player.stream = null
+	await process_frame
+	pump_player.queue_free()
+	main.side_tabs.current_tab = 0
+	for i in 3:
+		await process_frame
+
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",
 			"Game: jump2", "DX7: algo-01"]:
