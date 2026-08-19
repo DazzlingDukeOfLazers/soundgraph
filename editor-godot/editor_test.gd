@@ -2791,6 +2791,48 @@ func _initialize() -> void:
 		"undoing the voices change sheds the copies (%d)"
 			% int(undone_info["node_count"]))
 
+	# ---- the roll plays chords ------------------------------------------------------
+	# Polyphony reached the roll for free — its clock already holds every note on a
+	# step — so the seam to check is the machine: a fresh file's keyboard asks for
+	# eight voices out of the box, the engine grows the copies, and a chord placed
+	# on one row all sounds through the keys' own path.
+	main._new_file()
+	for i in 10:
+		await process_frame
+	var fresh_keyboard: Dictionary = {}
+	for node in main.patch["nodes"]:
+		if str(node["id"]) == "note":
+			fresh_keyboard = node
+	check(int(fresh_keyboard.get("parameters", {}).get("voices", 1)) == 8,
+		"a fresh machine's keyboard asks for eight voices")
+	var fresh_info: Dictionary = JSON.parse_string(main.engine.get_info_json())
+	var fresh_replicas := false
+	for entry in fresh_info["nodes"]:
+		if str(entry["id"]).contains(char(31)):
+			fresh_replicas = true
+	check(fresh_replicas, "and the fresh engine runs the voice copies")
+
+	main.roll_button.button_pressed = true
+	for i in 3:
+		await process_frame
+	main._on_roll_cell_toggled(0, 57)
+	main._on_roll_cell_toggled(0, 60)
+	main._on_roll_cell_toggled(0, 64)
+	for i in 3:
+		await process_frame
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 3,
+		"a chord fits on one row of the roll")
+	main.roll_play.button_pressed = true
+	main._advance_roll(0.001)
+	check(main.held_notes.has(57) and main.held_notes.has(60)
+			and main.held_notes.has(64),
+		"and the clock holds all three notes at once (%s)" % str(main.held_notes.keys()))
+	main.roll_play.button_pressed = false
+	check(main.held_notes.is_empty(), "stopping lets the chord go")
+	main.roll_button.button_pressed = false
+	for i in 3:
+		await process_frame
+
 	Design.ui_scale = Design.Scale.COMFORTABLE
 	for example_name in ["First Synth", "Game: coin", "Game: explode", "Game: powerup",
 			"Game: jump2", "DX7: algo-01"]:

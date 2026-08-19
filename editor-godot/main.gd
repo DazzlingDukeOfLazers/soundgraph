@@ -7866,7 +7866,12 @@ func _new_file() -> void:
 		"schema_version": 1,
 		"metadata": {"name": ""},
 		"nodes": [
+			# Eight voices out of the box: enough for two hands or a piano-roll
+			# chord with tails, and the knob turns it down for a lean MCU deploy.
+			# Shipped examples stay mono — their goldens are byte-pinned — but a
+			# fresh machine should play a chord without reading the manual.
 			{"id": "note", "type": "Input", "host": "note", "name": "Keyboard",
+				"parameters": {"voices": 8},
 				"position": {"x": 0.0, "y": 0.0}},
 			{"id": "mix", "type": "Mixer",
 				"position": {"x": 1600.0, "y": 0.0}},
