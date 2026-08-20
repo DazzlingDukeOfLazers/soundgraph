@@ -29,6 +29,20 @@ godot=${SOUNDGRAPH_GODOT:-$(git config --get soundgraph.godot || true)}
 
 say() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
+# ---- the stale-extension trap, closed ------------------------------------------------
+# The Godot tests load editor-godot/bin/soundgraph_godot.dll, and a green suite against
+# an old binary proves nothing about the code being pushed. The repository's notes call
+# this the trap that fails nowhere near the cause; here it fails exactly at the cause.
+dll="editor-godot/bin/soundgraph_godot.dll"
+if [ -f "$dll" ]; then
+    stale=$(find dsp-core/src dsp-core/include patch-io/src runtime-godot/src         \( -name '*.cpp' -o -name '*.h' \) -newer "$dll" 2>/dev/null | head -1)
+    if [ -n "$stale" ]; then
+        echo "the Godot extension is stale: $stale is newer than $dll" >&2
+        echo "run tools/rebuild-extensions.sh, then push again" >&2
+        exit 1
+    fi
+fi
+
 # ---- build ---------------------------------------------------------------------------
 # Before ctest, because ctest against binaries older than the source is a suite that
 # reports on a program nobody is pushing.

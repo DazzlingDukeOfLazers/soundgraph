@@ -267,7 +267,6 @@ var diagnostics_heading: Label
 var context_heading: Label
 var context_panel: VBoxContainer
 var scope: Control
-var status_label: Label
 var search_popup: PopupPanel
 var search_field: LineEdit
 var search_results: VBoxContainer
@@ -337,12 +336,11 @@ var toolbar: Control
 ## gone, because Ctrl+Z does not need a button to exist.
 enum Rung {
 	FULL,       ## everything
-	STATUS,     ## the status words go; the transport dot and its tooltip stay
 	EDIT,       ## undo and redo go; Ctrl+Z and Ctrl+Y do not
 	IDENTITY,   ## the product name goes; the document name stays
 	VERB,       ## Add node keeps only its +; the hamburger survives every rung
 }
-const RUNG_COUNT := 5
+const RUNG_COUNT := 4
 
 var toolbar_identity: VBoxContainer
 var toolbar_title: Label
@@ -1407,11 +1405,6 @@ func _show_toolbar_group(group: HBoxContainer, shown: bool) -> void:
 ## and the product name on another, and nobody could learn what a narrow window costs.
 func _apply_toolbar_rung(rung: int) -> void:
 	toolbar_rung = clampi(rung, Rung.FULL, RUNG_COUNT - 1)
-	if status_label != null:
-		# The dot survives every rung. It is the part that answers "is this running" at a
-		# glance, it is the only part that is legible from across a table, and it costs
-		# fourteen pixels; the words it stands in for are on its tooltip.
-		status_label.visible = toolbar_rung < Rung.STATUS
 	if toolbar_title != null:
 		toolbar_title.visible = toolbar_rung < Rung.IDENTITY
 	if toolbar_identity != null:
