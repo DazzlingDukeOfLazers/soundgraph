@@ -184,6 +184,29 @@ const DEMOS = {
       ],
     }),
   },
+  Drive: {
+    summary: 'A tanh soft clip: warmth low, growl high. The acid pedal.',
+    try: 'Turn drive up and the saw grows teeth without getting louder — the '
+      + 'clip is normalised, so the Level knob after it keeps its one job.',
+    build: () => ({
+      nodes: [
+        keyboard(0),
+        node('osc', 'SawOscillator', { frequency: 110 }, 1, 0),
+        node('demo', 'Drive', { drive: 6 }, 2, 0),
+        envelope(1, 1),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('kb', 'gate', 'env', 'gate'),
+        wire('osc', 'out', 'demo', 'in'),
+        wire('demo', 'out', 'amp', 'in'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('amp', 'out', 'out', 'left'),
+      ],
+    }),
+  },
   AudioInput: {
     summary: 'Live audio from the host — a microphone, an instrument, a DAW track.',
     // The one demo that is silent when rendered offline, and correctly so.
@@ -609,6 +632,7 @@ const PROBES = {
   // Moving the base one semitone makes every strike miss its pad: silence, total.
   NoteTriggers: { node: 'pads', parameter: 'base', value: 61 },
   TriggerBus: { parameter: 'shift', value: 8 },  // the wrong bank hears nothing
+  Drive: { parameter: 'drive', value: 30 },
   AudioInput: { probeless: 'silent offline; there is no host input to change the sound of' },
   StereoOutput: { parameter: 'level', value: 0.25 },
 

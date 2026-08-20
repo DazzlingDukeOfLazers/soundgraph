@@ -3603,6 +3603,28 @@ func _initialize() -> void:
 	check(is_equal_approx(quack, 0.92),
 		"and turning there raises the resonance to quack (%.2f)" % quack)
 
+	# The Mallard: the acid box a few decades on — sub, Drive pedal, hop
+	# arpeggio, echo, and the Quack knob no hardware ever dared.
+	await main._load_example("Synth: mallard")
+	for i in 8:
+		await process_frame
+	var mallard_peak: float = await _struck_peak(main, 33)
+	check(mallard_peak > 0.01, "the Mallard speaks A1 (peak %.3f)" % mallard_peak)
+	var pond_names: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check(pond_names.size() == 6 and "Angry Mallard" in pond_names,
+		"and its six pages include Angry Mallard (%s)" % str(pond_names))
+	var mother := pond_names.find("Mother Duck")
+	main.patch_face._turn_to(mother)
+	for i in 8:
+		await process_frame
+	var quack_up: float = -1.0
+	for pond_node in main.patch["nodes"]:
+		if str(pond_node["id"]) == "quack_amt":
+			quack_up = float(pond_node.get("parameters", {}).get("gain", -1.0))
+	check(is_equal_approx(quack_up, 0.8),
+		"Mother Duck opens the Quack knob (%.1f)" % quack_up)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:

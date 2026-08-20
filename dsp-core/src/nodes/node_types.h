@@ -35,6 +35,7 @@ extern const NodeTypeDescriptor kMixer;
 extern const NodeTypeDescriptor kAdsr;
 extern const NodeTypeDescriptor kAdd;
 extern const NodeTypeDescriptor kMultiply;
+extern const NodeTypeDescriptor kDrive;
 
 // Terminals
 extern const NodeTypeDescriptor kNoteInput;

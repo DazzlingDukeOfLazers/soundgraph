@@ -745,6 +745,32 @@ TEST(note_triggers_ride_a_shifted_bank) {
     CHECK_NEAR(harness.output("bus")[0], 5.0, 1e-6);
 }
 
+TEST(drive_saturates_and_keeps_full_scale) {
+    // The normalisation contract: whatever the drive, a full-scale input comes
+    // out full scale — the knob shapes the wave, the Level knob after it sets
+    // the loudness. At low drive a half-scale input passes nearly linear; at
+    // high drive it is slammed to the rail.
+    NodeHarness gentle("Drive", 64, kSampleRate);
+    gentle.set("drive", 1.0f);
+    gentle.connect("in", 0.5f);
+    gentle.process();
+    CHECK_NEAR(gentle.output("out")[0], std::tanh(0.5) / std::tanh(1.0), 1e-5);
+
+    NodeHarness slammed("Drive", 64, kSampleRate);
+    slammed.set("drive", 30.0f);
+    slammed.connect("in", 0.5f);
+    slammed.process();
+    CHECK_NEAR(slammed.output("out")[0], 1.0, 1e-4);
+
+    // The control input replaces the parameter while connected.
+    NodeHarness pedalled("Drive", 64, kSampleRate);
+    pedalled.set("drive", 1.0f);
+    pedalled.connect("in", 0.5f);
+    pedalled.connect("drive", 30.0f);
+    pedalled.process();
+    CHECK_NEAR(pedalled.output("out")[0], 1.0, 1e-4);
+}
+
 TEST(trigger_bus_splits_its_lanes) {
     NodeHarness harness("TriggerBus", 64, kSampleRate);
     harness.connect("bus", 5.0f);  // lanes one and three

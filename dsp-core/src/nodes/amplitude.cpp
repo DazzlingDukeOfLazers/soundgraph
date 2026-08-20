@@ -415,5 +415,68 @@ const NodeTypeDescriptor kMultiply = {
     &make<MultiplyNode>,
 };
 
+// ---------------------------------------------------------------------------------
+// Drive
+//
+// The pedal on the floor of every acid recording: a tanh soft clip. Normalised so
+// a full-scale input stays full scale at any drive — the knob changes the shape of
+// the wave, and the Level after it changes the loudness. Two knobs, two jobs.
+// ---------------------------------------------------------------------------------
+
+constexpr PortDescriptor kDriveInputs[] = {
+    {"in", SignalType::Audio, "", false, false, "The signal to saturate."},
+    {"drive", SignalType::Control, "", false, false,
+     "Drive amount. Replaces the drive parameter while connected, so an envelope "
+     "can lean on the pedal."},
+};
+
+constexpr PortDescriptor kDriveOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "The saturated signal."},
+};
+
+constexpr ParameterDescriptor kDriveParameters[] = {
+    {"drive", "", 1.0f, 30.0f, 4.0f, Scaling::Exponential,
+     "How hard the signal leans on the clip. 1 is a warm-up, 30 is a wall.",
+     nullptr, 0},
+};
+
+class DriveNode final : public DspNode {
+public:
+    enum Param { kDrive = 0 };
+
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        const float* drive_in = context.inputs[1];
+        float* out = context.outputs[0];
+        if (in == nullptr) {
+            for (int i = 0; i < context.frames; ++i) {
+                out[i] = 0.0f;
+            }
+            return;
+        }
+        // Sampled once per block, like the filter's modulation and for the same
+        // reason: it keeps the transcendental pair out of the audible math only
+        // where it cannot be heard moving.
+        float drive = drive_in != nullptr ? drive_in[0] : parameter(kDrive);
+        drive = drive < 1.0f ? 1.0f : (drive > 30.0f ? 30.0f : drive);
+        const float makeup = 1.0f / std::tanh(drive);
+        for (int i = 0; i < context.frames; ++i) {
+            out[i] = std::tanh(in[i] * drive) * makeup;
+        }
+    }
+};
+
+const NodeTypeDescriptor kDrive = {
+    "Drive", "Drive", "Amplitude",
+    "Saturates the signal: warmth low, growl high. The pedal every acid line steps on.",
+    "drive|overdrive|distortion|saturate|clip|fuzz|warm|growl|pedal|amp",
+    Slice<PortDescriptor>(kDriveInputs),
+    Slice<PortDescriptor>(kDriveOutputs),
+    Slice<ParameterDescriptor>(kDriveParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{3.0f, 0, 0},
+    &make<DriveNode>,
+};
+
 }  // namespace nodes
 }  // namespace soundgraph

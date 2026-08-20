@@ -147,6 +147,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kConstant,
         &nodes::kAdd,
         &nodes::kMultiply,
+        &nodes::kDrive,
         &nodes::kStereoOutput,
     };
 }
