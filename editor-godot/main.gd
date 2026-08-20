@@ -349,6 +349,7 @@ var toolbar_title: Label
 var toolbar_edit_group: HBoxContainer
 var toolbar_menu_button: MenuButton
 var toolbar_identity_margin: MarginContainer
+var toolbar_menu_popup: PopupMenu
 var toolbar_add_button: Button
 var toolbar_rung := Rung.FULL
 ## Which VSeparator introduces which group, so hiding a group takes its rule with it.
@@ -1027,15 +1028,39 @@ func _build_toolbar() -> Control:
 	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	identity.add_child(title)
 
-	# At least a character of air on either side. The wordmark sat flush against the
-	# window edge, and a name with no margin reads as a label that happened to be first.
+	# At least a character of air on either side, and the same air between the QR
+	# and the name. The code points at mutantfactory.net/soundgraph — the door into
+	# this program, standing where a logo would.
 	var identity_margin := MarginContainer.new()
 	toolbar_identity_margin = identity_margin
 	identity_margin.add_theme_constant_override("margin_left",
 		Design.type(Design.SIZE_APP_TITLE))
 	identity_margin.add_theme_constant_override("margin_right",
 		Design.type(Design.SIZE_APP_TITLE))
-	identity_margin.add_child(identity)
+	var identity_row := HBoxContainer.new()
+	identity_row.add_theme_constant_override("separation",
+		Design.type(Design.SIZE_APP_TITLE))
+	var qr := TextureRect.new()
+	var qr_image := Image.load_from_file(
+		ProjectSettings.globalize_path("res://soundgraph_qr.png"))
+	if qr_image != null:
+		qr.texture = ImageTexture.create_from_image(qr_image)
+	# Ignore the texture's own size or the bar becomes 396px of quiet zone.
+	qr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	qr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	# Nearest, or the modules smear into grey and the phone gives up.
+	qr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	qr.custom_minimum_size = Vector2(Design.scale(Design.HIT_TARGET),
+		Design.scale(Design.HIT_TARGET))
+	qr.tooltip_text = "mutantfactory.net/soundgraph — click for a scannable size"
+	qr.mouse_filter = Control.MOUSE_FILTER_STOP
+	qr.gui_input.connect(func(event: InputEvent) -> void:
+		var click := event as InputEventMouseButton
+		if click != null and click.pressed and click.button_index == MOUSE_BUTTON_LEFT:
+			_show_qr_large())
+	identity_row.add_child(qr)
+	identity_row.add_child(identity)
+	identity_margin.add_child(identity_row)
 	bar.add_child(identity_margin)
 
 	# The menus that are visited rather than lived in — Examples, File, View,
@@ -1282,21 +1307,14 @@ func _build_toolbar() -> Control:
 	# "Graph valid" at the top of the inspector, and the rate buried in the cost
 	# readout. Read together they answer "is this thing working" at a glance; scattered,
 	# each one on its own looked like an afterthought.
+	# The words moved into the menu; the dot stays, because it is the one part
+	# legible from across a table and its tooltip still says the whole sentence.
 	var status_group := _toolbar_group(bar)
 	status_group.add_theme_constant_override("separation", Design.SPACE_S)
 
 	transport_dot = TextureRect.new()
 	transport_dot.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 	status_group.add_child(transport_dot)
-
-	status_label = Label.new()
-	status_label.text = "starting…"
-	status_label.add_theme_font_override("font", Design.numeric_font())
-	status_label.add_theme_font_size_override("font_size",
-		Design.type(Design.SIZE_SECONDARY))
-	status_label.add_theme_color_override("font_color", Design.INK_SECOND)
-	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	status_group.add_child(status_label)
 
 	# ---- the hamburger, upper right --------------------------------------------
 	# Everything visited rather than lived in, behind one drawn glyph. Examples,
@@ -1306,7 +1324,9 @@ func _build_toolbar() -> Control:
 	var burger := MenuButton.new()
 	toolbar_menu_button = burger
 	burger.icon = _icon(Icons.Kind.HAMBURGER, Design.INK_NORMAL)
-	burger.flat = false
+	# Borderless: the glyph is the button. A frame around three bars read as a tiny
+	# window that had lost its contents.
+	burger.flat = true
 	burger.tooltip_text = "Examples, file, view, arrange — the menus"
 	var burger_popup := burger.get_popup()
 	burger_popup.add_child(examples_popup)
@@ -1326,6 +1346,12 @@ func _build_toolbar() -> Control:
 	burger_popup.set_item_tooltip(burger_popup.get_item_index(101),
 		"Silence the output without changing the patch — the same mute as the "
 		+ "keyboard's. Escape still stops every sounding note.")
+	burger_popup.add_separator()
+	burger_popup.add_item("Audio starting…", 102)
+	burger_popup.set_item_disabled(burger_popup.get_item_index(102), true)
+	burger_popup.add_item("Graph valid", 103)
+	burger_popup.set_item_disabled(burger_popup.get_item_index(103), true)
+	toolbar_menu_popup = burger_popup
 	burger_popup.about_to_popup.connect(func() -> void:
 		burger_popup.set_item_checked(burger_popup.get_item_index(101), muted))
 	burger_popup.id_pressed.connect(func(id: int) -> void:
@@ -1342,7 +1368,13 @@ func _build_toolbar() -> Control:
 	margin.add_theme_constant_override("margin_right", Design.SPACE_M)
 	bar.add_child(margin)
 	bar.resized.connect(_fit_toolbar)
-	return bar
+	# Air above and below: buttons pressed against the bar's edges read as cramped
+	# in a way no amount of horizontal order repairs.
+	var vertical := MarginContainer.new()
+	vertical.add_theme_constant_override("margin_top", Design.SPACE_S)
+	vertical.add_theme_constant_override("margin_bottom", Design.SPACE_S)
+	vertical.add_child(bar)
+	return vertical
 
 
 ## Shows or hides a toolbar group along with the rule that introduces it.
@@ -8123,9 +8155,28 @@ func _say(message: String) -> void:
 ## Rebuilt from state rather than written at each event, so it cannot end up saying
 ## "saved" while the graph is broken — which the old single label could, because whichever
 ## thing happened last owned the whole line.
+## The QR at a size a phone across the room can actually read.
+func _show_qr_large() -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = "mutantfactory.net/soundgraph"
+	var big := TextureRect.new()
+	var image := Image.load_from_file(
+		ProjectSettings.globalize_path("res://soundgraph_qr.png"))
+	if image != null:
+		big.texture = ImageTexture.create_from_image(image)
+	big.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	big.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	big.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	big.custom_minimum_size = Vector2(Design.scale(396), Design.scale(396))
+	dialog.add_child(big)
+	add_child(dialog)
+	dialog.popup_centered()
+	dialog.visibility_changed.connect(func() -> void:
+		if not dialog.visible:
+			dialog.queue_free())
+
+
 func _refresh_status() -> void:
-	if status_label == null:
-		return
 	var running: bool = engine != null and bool(engine.is_loaded())
 	var valid := _problem_count == 0
 
@@ -8146,13 +8197,9 @@ func _refresh_status() -> void:
 	# once changed while somebody watched belongs in the tooltip — and the sidebar's Cost
 	# line says "48000 Hz" in full a few inches away. Two copies of a constant were paying
 	# for themselves in toolbar width, on a bar with eight pixels of room left.
-	status_label.text = "  ·  ".join(parts)
-	status_label.tooltip_text = _status_sentence(running, valid)
-	status_label.add_theme_color_override("font_color",
-		Design.INK_SECOND if valid else Design.ERROR)
-	# The words just changed width, and on a bar this full that can be the difference
-	# between fitting and forcing the window open.
-	_fit_toolbar()
+	if toolbar_menu_popup != null:
+		toolbar_menu_popup.set_item_text(toolbar_menu_popup.get_item_index(102), parts[0])
+		toolbar_menu_popup.set_item_text(toolbar_menu_popup.get_item_index(103), parts[1])
 
 
 ## The status strip spelled out, for whichever of its two parts is left to hover.
