@@ -340,13 +340,16 @@ enum Rung {
 	STATUS,     ## the status words go; the transport dot and its tooltip stay
 	EDIT,       ## undo and redo go; Ctrl+Z and Ctrl+Y do not
 	IDENTITY,   ## the product name goes; the document name stays
+	VERB,       ## Add node keeps only its +; the hamburger survives every rung
 }
-const RUNG_COUNT := 4
+const RUNG_COUNT := 5
 
 var toolbar_identity: VBoxContainer
 var toolbar_title: Label
 var toolbar_edit_group: HBoxContainer
 var toolbar_menu_button: MenuButton
+var toolbar_identity_margin: MarginContainer
+var toolbar_add_button: Button
 var toolbar_rung := Rung.FULL
 ## Which VSeparator introduces which group, so hiding a group takes its rule with it.
 ## A group that vanishes and leaves its divider behind reads as an empty slot.
@@ -1027,6 +1030,7 @@ func _build_toolbar() -> Control:
 	# At least a character of air on either side. The wordmark sat flush against the
 	# window edge, and a name with no margin reads as a label that happened to be first.
 	var identity_margin := MarginContainer.new()
+	toolbar_identity_margin = identity_margin
 	identity_margin.add_theme_constant_override("margin_left",
 		Design.type(Design.SIZE_APP_TITLE))
 	identity_margin.add_theme_constant_override("margin_right",
@@ -1084,6 +1088,7 @@ func _build_toolbar() -> Control:
 	# thirteen controls to find the one that matters.
 	var graph_group := _toolbar_group(bar, true)
 	var add_button := Button.new()
+	toolbar_add_button = add_button
 	add_button.text = "+  Add node"
 	add_button.tooltip_text = "Search by what you want, not only by name (Ctrl+Space)"
 	add_button.pressed.connect(_open_search)
@@ -1369,6 +1374,18 @@ func _apply_toolbar_rung(rung: int) -> void:
 		# nothing and giving the name up buys the bar exactly zero.
 		toolbar_identity.custom_minimum_size.x = Design.scale(
 			120 if toolbar_rung < Rung.IDENTITY else 72)
+	if toolbar_identity_margin != null:
+		# The wordmark's air goes with the wordmark. Margins that outlive their title
+		# are two characters of nothing on the narrowest bar there is.
+		var air := Design.type(Design.SIZE_APP_TITLE) \
+			if toolbar_rung < Rung.IDENTITY else Design.SPACE_XS
+		toolbar_identity_margin.add_theme_constant_override("margin_left", air)
+		toolbar_identity_margin.add_theme_constant_override("margin_right", air)
+	if toolbar_add_button != null:
+		# The verb keeps its meaning and gives up its words; the tooltip still says
+		# them. The hamburger is never on the ladder at all — since the menus moved
+		# inside it, it is the one control whose loss would strand the user.
+		toolbar_add_button.text = "+  Add node" if toolbar_rung < Rung.VERB else "+"
 	_show_toolbar_group(toolbar_edit_group, toolbar_rung < Rung.EDIT)
 
 
@@ -5378,7 +5395,20 @@ func _build_keyboard_dock() -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Design.SPACE_S)
 	keyboard_dock.add_child(column)
-	column.add_child(_build_keyboard_bar())
+	# The strip clips rather than insisting. Its natural width was the widest thing
+	# in the editor — 874px of buttons — which meant every window narrower than that
+	# overflowed the whole column and cropped the top row's right edge, hamburger
+	# included. Clipped, the column can follow the window down; the strip loses its
+	# own right end on a tiny window instead, which is the honest trade until this
+	# row's own redesign reaches it.
+	var strip := ScrollContainer.new()
+	strip.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	strip.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var keyboard_bar := _build_keyboard_bar()
+	keyboard_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	strip.add_child(keyboard_bar)
+	strip.custom_minimum_size.y = keyboard_bar.get_combined_minimum_size().y
+	column.add_child(strip)
 
 	keyboard = Keyboard.new()
 	keyboard.note_pressed.connect(_on_keyboard_pressed)

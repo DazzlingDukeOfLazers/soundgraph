@@ -4745,6 +4745,21 @@ func _initialize() -> void:
 		if not (button as Button).is_visible_in_tree():
 			kept = false
 	check(kept, "and keeps Add node and the menu at every width")
+
+	# A phone-shaped window. The hamburger is the only route to File and Examples
+	# now, so a bar that crops it has locked the front door: at the bottom rung the
+	# whole bar must fit 420px with the menu still on screen.
+	main._fit_toolbar(420.0)
+	await process_frame
+	# The toolbar row, not the whole column: the column's floor belongs to the
+	# keyboard dock, which gets its own responsiveness when its row's turn comes.
+	# What this pins is that the top row never crops its own right edge — the
+	# hamburger is the only route to File and Examples now.
+	check(main.toolbar.get_combined_minimum_size().x <= 420.0,
+		"the top row fits a 420px window (rung %d, needs %.0f)"
+			% [main.toolbar_rung, main.toolbar.get_combined_minimum_size().x])
+	check(main.toolbar_menu_button.is_visible_in_tree(),
+		"and the hamburger is still on screen there")
 	# Given room again it takes it back, so a maximised window is not stuck narrow.
 	main._fit_toolbar(2000.0)
 	await process_frame
