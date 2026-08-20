@@ -3302,6 +3302,96 @@ func _initialize() -> void:
 			check(is_equal_approx(a_cutoff, 520.0),
 				"picking deck A turns the page to Punch Bass (%.0f)" % a_cutoff)
 
+	# The rename: a preset's name is a performance direction, and saving lands
+	# straight in the name field — shape the sound, press plus, type where it
+	# points. Enter renames; Escape leaves the old name standing.
+	main._save_preset(main.patch_face._snapshot_values(), main.patch_face, "")
+	for i in 6:
+		await process_frame
+	var fog_field: LineEdit = null
+	var fog_queue: Array = [main.patch_face]
+	while not fog_queue.is_empty():
+		var fog_next: Node = fog_queue.pop_front()
+		for fog_child in fog_next.get_children():
+			if fog_child is LineEdit and fog_child.has_meta("preset_rename"):
+				fog_field = fog_child
+			else:
+				fog_queue.append(fog_child)
+	check(fog_field != null, "saving opens the name field on the fresh page")
+	if fog_field != null:
+		fog_field.text_submitted.emit("Stage Fog")
+		for i in 6:
+			await process_frame
+		var fog_bank: Array = main.patch.get("presets", [])
+		check(str((fog_bank.back() as Dictionary).get("name", "")) == "Stage Fog",
+			"typing names the page (%s)" % str((fog_bank.back() as Dictionary)
+				.get("name", "")))
+		await main._undo()
+		for i in 6:
+			await process_frame
+		var unfogged: Array = main.patch.get("presets", [])
+		check(str((unfogged.back() as Dictionary).get("name", "")).begins_with("Preset"),
+			"and one undo takes the name back (%s)"
+				% str((unfogged.back() as Dictionary).get("name", "")))
+
+	# Escape leaves the old name alone.
+	main.patch_face.rename_showing()
+	for i in 4:
+		await process_frame
+	var esc_field: LineEdit = null
+	var esc_queue: Array = [main.patch_face]
+	while not esc_queue.is_empty():
+		var esc_next: Node = esc_queue.pop_front()
+		for esc_child in esc_next.get_children():
+			if esc_child is LineEdit and esc_child.has_meta("preset_rename"):
+				esc_field = esc_child
+			else:
+				esc_queue.append(esc_child)
+	check(esc_field != null, "the … button's path opens the field too")
+	if esc_field != null:
+		var esc_was: String = str((main.patch["presets"]
+			[main.patch_face.preset_index] as Dictionary).get("name", ""))
+		var esc_key := InputEventKey.new()
+		esc_key.pressed = true
+		esc_key.keycode = KEY_ESCAPE
+		esc_field.gui_input.emit(esc_key)
+		for i in 4:
+			await process_frame
+		check(str((main.patch["presets"][main.patch_face.preset_index]
+				as Dictionary).get("name", "")) == esc_was,
+			"Escape leaves the name standing (%s)" % esc_was)
+
+	# A device's rename lands in the module definition, where every instance
+	# of the device reads it.
+	var rename_device: String = await main._add_device("Synth: duo-lead",
+		Vector2(900.0, 900.0))
+	for i in 10:
+		await process_frame
+	var duo_mount = main.module_mounts.get(rename_device, null)
+	if duo_mount is PatchFace:
+		duo_mount.rename_showing()
+		for i in 4:
+			await process_frame
+		var mount_field: LineEdit = null
+		var mount_queue: Array = [duo_mount]
+		while not mount_queue.is_empty():
+			var mount_next: Node = mount_queue.pop_front()
+			for mount_child in mount_next.get_children():
+				if mount_child is LineEdit and mount_child.has_meta("preset_rename"):
+					mount_field = mount_child
+				else:
+					mount_queue.append(mount_child)
+		check(mount_field != null, "a mounted device's strip opens the field")
+		if mount_field != null:
+			mount_field.text_submitted.emit("Club Stock")
+			for i in 6:
+				await process_frame
+			var club: String = str((main.patch.get("modules", {}).get("duo-lead", {})
+				.get("presets", [])[duo_mount.preset_index] as Dictionary)
+				.get("name", ""))
+			check(club == "Club Stock",
+				"and the new name lands in the definition (%s)" % club)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:

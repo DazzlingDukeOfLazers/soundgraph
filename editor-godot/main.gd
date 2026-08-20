@@ -1874,6 +1874,9 @@ func _build_side_panel() -> Control:
 	patch_face.morph_started.connect(func() -> void: _begin_edit())
 	patch_face.preset_morphed.connect(_write_morph)
 	patch_face.morph_finished.connect(func() -> void: _commit_edit("morph"))
+	patch_face.preset_renamed.connect(
+		func(index: int, wanted: String) -> void:
+			_rename_preset(index, wanted, patch_face, ""))
 	panel.add_child(patch_face)
 
 	module_face = ModuleFace.new()
@@ -2112,6 +2115,9 @@ func _device_panel_for(instance_id: String, module_name: String,
 		strip_face.morph_started.connect(func() -> void: _begin_edit())
 		strip_face.preset_morphed.connect(_write_morph)
 		strip_face.morph_finished.connect(func() -> void: _commit_edit("morph"))
+		strip_face.preset_renamed.connect(
+			func(index: int, wanted: String) -> void:
+				_rename_preset(index, wanted, strip_face, module_name))
 	var panel := mount as PatchFace
 	panel.preset_index = int(preset_pages.get(module_name, -1))
 	var overrides: Dictionary = {}
@@ -4687,6 +4693,25 @@ func _write_morph(writes: Array) -> void:
 			str(write.get("parameter", "")), float(write.get("value", 0.0)))
 
 
+## Gives one page of a bank a new name — the patch's own bank, or the module
+## definition's for a device. A name is a performance direction, and this is
+## how a bank stops being a list of Preset 7s.
+func _rename_preset(index: int, wanted: String, face: Control, bank_module: String) -> void:
+	var store: Dictionary = patch if bank_module == "" 		else patch.get("modules", {}).get(bank_module, {})
+	var presets: Array = store.get("presets", [])
+	if wanted == "" or index < 0 or index >= presets.size():
+		return
+	var was := str((presets[index] as Dictionary).get("name", ""))
+	if wanted == was:
+		return
+	_begin_edit()
+	(presets[index] as Dictionary)["name"] = wanted
+	_commit_edit("rename preset to %s" % wanted)
+	_apply_flips()
+	_refresh_face()
+	_say("preset renamed: %s" % wanted)
+
+
 ## Writes a face's current positions into its bank as a new page — the patch's
 ## own bank, or the module definition's when the face belongs to a device.
 func _save_preset(values: Dictionary, face: Control, bank_module: String) -> void:
@@ -4704,6 +4729,10 @@ func _save_preset(values: Dictionary, face: Control, bank_module: String) -> voi
 	face.preset_index = (store["presets"] as Array).size() - 1
 	_apply_flips()
 	_refresh_face()
+	# Straight into the name field: a fresh page called "Preset 7" is a map
+	# with no street name, and the moment of saving is the moment the sound's
+	# direction is clearest in the mind of whoever shaped it.
+	face.rename_showing()
 	_say("saved preset %d" % page)
 
 

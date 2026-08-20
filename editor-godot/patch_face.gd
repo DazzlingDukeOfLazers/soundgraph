@@ -74,6 +74,11 @@ var preset_index := -1
 var morph_b := -1
 var morph_b_picked := false
 
+## The strip and its deck A control, kept so a rename can swap a name field in
+## where the picker stands. Rebuilt with every strip.
+var _strip: Control = null
+var _deck_a: Control = null
+
 ## What the case wears: the instrument's name, from main. On the case rather than above
 ## it because a name floating over a set of plates says less than a name *on* the thing
 ## the plates are mounted in.
@@ -167,6 +172,9 @@ signal preset_morphed(writes: Array)
 ## The morph drag's undo bracket: one gesture, one step.
 signal morph_started()
 signal morph_finished()
+
+## A page wants a new name. The face only asks; main owns the document.
+signal preset_renamed(index: int, name: String)
 
 var _cells: Array = []          # Control per cell, panel first then the offers
 var _ids: Array = []            # the control ids, panel cells only
@@ -357,6 +365,8 @@ func _ready() -> void:
 ## the bank, which is the lesson of every patcher that shipped without one.
 func _preset_strip() -> Control:
 	var strip := HBoxContainer.new()
+	_strip = strip
+	_deck_a = null
 	strip.set_meta("preset_strip", true)
 	strip.add_theme_constant_override("separation", Design.SPACE_S)
 	var presets: Array = patch.get("presets", [])
@@ -409,6 +419,7 @@ func _preset_strip() -> Control:
 		deck_a.item_selected.connect(func(picked: int) -> void:
 			_turn_to(picked))
 		strip.add_child(deck_a)
+		_deck_a = deck_a
 
 	var next := Button.new()
 	next.text = ">"
@@ -479,7 +490,66 @@ func _preset_strip() -> Control:
 	keep.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	keep.pressed.connect(func() -> void: preset_saved.emit(_snapshot_values()))
 	strip.add_child(keep)
+
+	# The rename: a preset's name is a performance direction — "darker",
+	# "chorus lift" — and a bank of Preset 7s is a map with no street names.
+	if preset_index >= 0 and not presets.is_empty():
+		var rename := Button.new()
+		rename.text = "…"
+		rename.tooltip_text = "Rename this preset"
+		rename.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		rename.pressed.connect(func() -> void: rename_showing())
+		strip.add_child(rename)
 	return strip
+
+
+## Opens a name field where deck A stands, holding the showing page's name.
+## Enter renames; Escape or clicking away leaves it alone. Also the landing
+## spot right after a save, so the gesture is: shape the sound, press plus,
+## type the direction.
+func rename_showing() -> void:
+	var presets: Array = patch.get("presets", [])
+	if _strip == null or _deck_a == null 			or preset_index < 0 or preset_index >= presets.size():
+		return
+	var index := preset_index
+	var field := LineEdit.new()
+	field.text = str((presets[index] as Dictionary).get("name", ""))
+	field.max_length = 64
+	field.custom_minimum_size.x = Design.scale(140)
+	field.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+	field.tooltip_text = "Enter renames the preset; Escape leaves it alone."
+	field.set_meta("preset_rename", true)
+	_strip.add_child(field)
+	_strip.move_child(field, _deck_a.get_index())
+	_deck_a.visible = false
+	field.select_all()
+	field.grab_focus()
+	var closing := [false]
+	var deck := _deck_a
+	field.text_submitted.connect(func(text: String) -> void:
+		if closing[0]:
+			return
+		closing[0] = true
+		var wanted := text.strip_edges()
+		field.queue_free()
+		if is_instance_valid(deck):
+			deck.visible = true
+		if wanted != "":
+			preset_renamed.emit(index, wanted))
+	field.focus_exited.connect(func() -> void:
+		if closing[0]:
+			return
+		closing[0] = true
+		field.queue_free()
+		if is_instance_valid(deck):
+			deck.visible = true)
+	field.gui_input.connect(func(event: InputEvent) -> void:
+		var pressed := event as InputEventKey
+		if pressed != null and pressed.pressed and pressed.keycode == KEY_ESCAPE 				and not closing[0]:
+			closing[0] = true
+			field.queue_free()
+			if is_instance_valid(deck):
+				deck.visible = true)
 
 
 ## Resolves one page of the bank into writes and announces it. Through _wire,
