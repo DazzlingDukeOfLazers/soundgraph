@@ -2061,10 +2061,17 @@ func _apply_flips() -> void:
 		if shown is PatchFace:
 			wanted = (shown as PatchFace).full_width()
 		shown.size = Vector2(maxf(wanted, widget.size.x), natural.y)
-		shown.set_meta("anchor", widget.position_offset)
+		# The band is a title bar, not a wash over the face's first row: the face
+		# mounts one band-height lower and the frame wraps band and face both.
+		# Overlapped, the band's drag handle claimed every press on the face's top
+		# row — the preset strip — ahead of the GUI pass, so the strip's arrows
+		# only answered on the sliver that poked out below the band.
+		var band_height := float(Design.scale(26.0))
+		shown.set_meta("anchor", widget.position_offset + Vector2(0.0, band_height))
 		# The band is keyed by instance so two of the same device turn independently —
 		# the key is plumbing, not a label.
-		graph_edit.flip_frames[str(instance_id)] = Rect2(widget.position_offset, shown.size)
+		graph_edit.flip_frames[str(instance_id)] = Rect2(widget.position_offset,
+			shown.size + Vector2(0.0, band_height))
 		graph_edit.flip_labels[str(instance_id)] = band_label
 		graph_edit.flip_deletable[str(instance_id)] = true
 
