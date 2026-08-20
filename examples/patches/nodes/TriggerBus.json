@@ -35,6 +35,9 @@
       "position": {
         "x": 1120,
         "y": 360
+      },
+      "parameters": {
+        "shift": 0
       }
     },
     {

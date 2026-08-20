@@ -286,20 +286,24 @@ constexpr PortDescriptor kNoteTriggersOutputs[] = {
     {"t7", SignalType::Control, "", false, false, "Fires six semitones above the base."},
     {"t8", SignalType::Control, "", false, false, "Fires seven semitones above the base."},
     {"bus", SignalType::Control, "", false, false,
-     "All eight lanes on one wire: lane n rides as bit n, so simultaneous hits sum "
-     "cleanly and a scope reads which pad fired by the pulse's height. Feed it to a "
-     "Trigger Bus to split the lanes back out."},
+     "All eight lanes on one wire: pad n rides as bit n plus the shift, so "
+     "simultaneous hits sum cleanly and a scope reads which pad fired by the "
+     "pulse's height. Two shifted routers chained bus-to-bus put sixteen lanes "
+     "on one wire; a Trigger Bus with the matching shift splits them back out."},
 };
 
 constexpr ParameterDescriptor kNoteTriggersParameters[] = {
     {"base", "note", 0.0f, 120.0f, 48.0f, Scaling::Linear,
      "The note that fires the first outlet; each outlet above it is one semitone up. "
      "48 is C3, where the keyboard opens.", nullptr, 0},
+    {"shift", "lanes", 0.0f, 8.0f, 0.0f, Scaling::Linear,
+     "Which bank of the bus this router's lanes ride: pad n lands on bit n plus the "
+     "shift. Two cards share one ribbon by parking the second at 8.", nullptr, 0},
 };
 
 class NoteTriggersNode final : public DspNode {
 public:
-    enum Param { kBase = 0 };
+    enum Param { kBase = 0, kShift = 1 };
 
     void prepare(const PrepareContext& context) override {
         sample_rate_ = static_cast<float>(context.sample_rate);
@@ -324,17 +328,21 @@ public:
 
     void process(const ProcessContext& context) override {
         const float* bus_in = context.inputs[0];
+        int shift = static_cast<int>(parameter(kShift) + 0.5f);
+        shift = shift < 0 ? 0 : (shift > kTriggerLanes ? kTriggerLanes : shift);
         for (int i = 0; i < context.frames; ++i) {
             int mask = bus_in != nullptr ? static_cast<int>(bus_in[i] + 0.5f) : 0;
             for (int lane = 0; lane < kTriggerLanes; ++lane) {
                 const bool firing = remaining_[lane] > 0;
                 context.outputs[lane][i] = firing ? 1.0f : 0.0f;
                 if (firing) {
-                    mask |= 1 << lane;
+                    mask |= 1 << (lane + shift);
                     --remaining_[lane];
                 }
             }
-            context.outputs[kTriggerLanes][i] = static_cast<float>(mask & 0xff);
+            // Sixteen bits, not eight: a shifted router's lanes live in the high
+            // bank, and a float carries the mask exactly to well past that.
+            context.outputs[kTriggerLanes][i] = static_cast<float>(mask & 0xffff);
         }
     }
 
@@ -375,7 +383,8 @@ constexpr PortDescriptor kTriggerBusInputs[] = {
     // Not required: a kit's ribbon socket sits unplugged until something drives
     // it, and an unplugged ribbon is a quiet ribbon, not an invalid patch.
     {"bus", SignalType::Control, "", false, false,
-     "A trigger bus: eight lanes riding one wire, lane n as bit n."},
+     "A trigger bus: lanes riding one wire as bits. The shift picks which bank "
+     "of eight this splitter listens to."},
 };
 
 constexpr PortDescriptor kTriggerBusOutputs[] = {
@@ -389,12 +398,24 @@ constexpr PortDescriptor kTriggerBusOutputs[] = {
     {"t8", SignalType::Control, "", false, false, "The bus's eighth lane."},
 };
 
+constexpr ParameterDescriptor kTriggerBusParameters[] = {
+    {"shift", "lanes", 0.0f, 8.0f, 0.0f, Scaling::Linear,
+     "Which bank of the bus to split: t1 reads bit zero plus the shift. Match the "
+     "router that owns this card's lanes.", nullptr, 0},
+};
+
 class TriggerBusNode final : public DspNode {
 public:
+    enum Param { kShift = 0 };
+
     void process(const ProcessContext& context) override {
         const float* bus = context.inputs[0];
+        int shift = static_cast<int>(parameter(kShift) + 0.5f);
+        shift = shift < 0 ? 0 : (shift > kTriggerLanes ? kTriggerLanes : shift);
         for (int i = 0; i < context.frames; ++i) {
-            const int mask = bus != nullptr ? (static_cast<int>(bus[i] + 0.5f) & 0xff) : 0;
+            const int mask = bus != nullptr
+                ? ((static_cast<int>(bus[i] + 0.5f) >> shift) & 0xff)
+                : 0;
             for (int lane = 0; lane < kTriggerLanes; ++lane) {
                 context.outputs[lane][i] = (mask & (1 << lane)) != 0 ? 1.0f : 0.0f;
             }
@@ -408,7 +429,7 @@ const NodeTypeDescriptor kTriggerBus = {
     "bus|demux|ribbon|split|trigger|drum|lanes",
     Slice<PortDescriptor>(kTriggerBusInputs),
     Slice<PortDescriptor>(kTriggerBusOutputs),
-    Slice<ParameterDescriptor>(),
+    Slice<ParameterDescriptor>(kTriggerBusParameters),
     false, NodeRole::Processor, false,
     ResourceCost{0.3f, 0, 0},
     &make<TriggerBusNode>,

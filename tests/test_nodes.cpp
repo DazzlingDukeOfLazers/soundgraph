@@ -726,9 +726,44 @@ TEST(note_triggers_carry_a_bus) {
     CHECK_NEAR(harness.output("bus")[0], 2.0, 1e-6);
 }
 
+TEST(note_triggers_ride_a_shifted_bank) {
+    // The second card's lanes park eight bits up, so two routers chained
+    // bus-to-bus put sixteen distinct lanes on one wire.
+    NodeHarness harness("NoteTriggers", 128, kSampleRate);
+    harness.set("shift", 8.0f);
+    soundgraph::NoteEvent event;
+    event.kind = soundgraph::NoteEvent::Kind::NoteOn;
+    event.note = 48;
+    event.velocity = 1.0f;
+    harness.node().handle_note_event(event);
+    harness.process();
+    CHECK_NEAR(harness.output("t1")[0], 1.0, 1e-6);  // the pad itself is unshifted
+    CHECK_NEAR(harness.output("bus")[0], 256.0, 1e-6);  // bit eight, the high bank
+    // A low-bank bus from the first router rides through untouched.
+    harness.connect("bus", 5.0f);
+    harness.process();
+    CHECK_NEAR(harness.output("bus")[0], 5.0, 1e-6);
+}
+
 TEST(trigger_bus_splits_its_lanes) {
     NodeHarness harness("TriggerBus", 64, kSampleRate);
     harness.connect("bus", 5.0f);  // lanes one and three
+    harness.process();
+    CHECK_NEAR(harness.output("t1")[0], 1.0, 1e-6);
+    CHECK_NEAR(harness.output("t2")[0], 0.0, 1e-6);
+    CHECK_NEAR(harness.output("t3")[0], 1.0, 1e-6);
+    CHECK_NEAR(harness.output("t8")[0], 0.0, 1e-6);
+}
+
+TEST(a_shifted_trigger_bus_reads_the_high_bank) {
+    // One wire, two banks: bits 8 and 10 are the second card's lanes one and
+    // three, and the low bank's bits must not bleed through.
+    NodeHarness harness("TriggerBus", 64, kSampleRate);
+    harness.set("shift", 8.0f);
+    // 2 + 4 + 256 + 1024: the banks deliberately disagree — low holds lanes two
+    // and three, high holds lanes one and three — so a splitter that ignores its
+    // shift reads the wrong pattern and fails, not the same one by luck.
+    harness.connect("bus", 1286.0f);
     harness.process();
     CHECK_NEAR(harness.output("t1")[0], 1.0, 1e-6);
     CHECK_NEAR(harness.output("t2")[0], 0.0, 1e-6);

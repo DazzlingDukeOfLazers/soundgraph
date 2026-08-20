@@ -12,7 +12,8 @@
         "y": 0
       },
       "parameters": {
-        "base": 56
+        "base": 56,
+        "shift": 8
       }
     },
     {
@@ -29,6 +30,9 @@
       "position": {
         "x": 440,
         "y": 400
+      },
+      "parameters": {
+        "shift": 8
       }
     },
     {

@@ -3050,6 +3050,58 @@ func _initialize() -> void:
 		"and the card's groove ships in the roll (%d notes)"
 			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
 
+	# One ribbon, sixteen lanes, both cards. Two routers chained bus-to-bus — the
+	# second parked in the high bank by its shift — and the combined wire fanned
+	# to the kit and the toms card. The router bases sit at C5 and C6, far from
+	# either card's own pads, so when a strike makes a drum sound the only road
+	# it can have taken is router, chain, ribbon, splitter, gate.
+	main._new_file()
+	for i in 8:
+		await process_frame
+	var ribbon_kit: String = await main._add_device("808: kit", Vector2(600.0, 0.0))
+	for i in 8:
+		await process_frame
+	var ribbon_toms: String = await main._add_device("808: toms", Vector2(600.0, 600.0))
+	for i in 8:
+		await process_frame
+	var router_low: String = await main._add_node("NoteTriggers", Vector2(100.0, 200.0))
+	for i in 6:
+		await process_frame
+	var router_high: String = await main._add_node("NoteTriggers", Vector2(100.0, 800.0))
+	for i in 6:
+		await process_frame
+	check(ribbon_kit != "" and ribbon_toms != "" and router_low != "" and router_high != "",
+		"both cards and both routers land in the host")
+	main._begin_edit()
+	for host_node in main.patch["nodes"]:
+		if str(host_node["id"]) == router_low:
+			host_node["parameters"] = {"base": 72}
+		elif str(host_node["id"]) == router_high:
+			host_node["parameters"] = {"base": 84, "shift": 8}
+	main.patch["connections"].append({
+		"from": {"node": router_low, "port": "bus"},
+		"to": {"node": router_high, "port": "bus"}})
+	main.patch["connections"].append({
+		"from": {"node": router_high, "port": "bus"},
+		"to": {"node": ribbon_kit, "port": "bus"}})
+	main.patch["connections"].append({
+		"from": {"node": router_high, "port": "bus"},
+		"to": {"node": ribbon_toms, "port": "bus"}})
+	main._commit_edit("one ribbon, two cards")
+	await main._rebuild_and_apply()
+	for i in 8:
+		await process_frame
+	var chained_kick: float = await _struck_peak(main, 72)
+	check(chained_kick > 0.01,
+		"C5 rides the chained ribbon's low bank into the kit's kick (peak %.3f)"
+			% chained_kick)
+	var chained_tom: float = await _struck_peak(main, 86)
+	check(chained_tom > 0.01,
+		"D6 rides the high bank into the card's high tom (peak %.3f)" % chained_tom)
+	var off_ribbon: float = await _struck_peak(main, 80)
+	check(off_ribbon < 0.005,
+		"a note neither router owns stays silent (peak %.3f)" % off_ribbon)
+
 	main._new_file()
 	for i in 8:
 		await process_frame
