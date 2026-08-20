@@ -357,6 +357,13 @@ func _ready() -> void:
 			"That writes editor-godot/bin/, then reopen this project.")
 		return
 
+	# Hardware MIDI in: the OS's ports open here, and InputEventMIDI arrives in
+	# _input like any other event. Nothing to configure — plug in and play.
+	OS.open_midi_inputs()
+	var midi_inputs := OS.get_connected_midi_inputs()
+	if not midi_inputs.is_empty():
+		print("MIDI in: ", ", ".join(midi_inputs))
+
 	engine = ClassDB.instantiate("SoundGraphEngine")
 	var registry_json: Variant = JSON.parse_string(engine.get_registry_json())
 	if typeof(registry_json) != TYPE_DICTIONARY:
@@ -4988,14 +4995,36 @@ func _on_keyboard_released(note: int) -> void:
 	_let_go_note(note)
 
 
+## Hardware MIDI. Notes ride the same funnel the on-screen keys use, so the
+## screen lights up with what the hands are doing; program change turns the
+## preset strip to that page — the message patch buttons and pedal program
+## knobs have sent since the DX7 put pages behind a button row. A program past
+## the bank's last page is ignored rather than wrapped: asking for page 90 of
+## an eight-page bank means the pedal is set up for some other instrument.
+func _on_midi(event: InputEventMIDI) -> void:
+	match event.message:
+		MIDI_MESSAGE_NOTE_ON:
+			# Note-on at velocity zero is the wire's other spelling of note-off.
+			if event.velocity > 0:
+				_hold_note(event.pitch, float(event.velocity) / 127.0)
+			else:
+				_let_go_note(event.pitch)
+		MIDI_MESSAGE_NOTE_OFF:
+			_let_go_note(event.pitch)
+		MIDI_MESSAGE_PROGRAM_CHANGE:
+			var presets: Array = patch.get("presets", [])
+			if event.instrument >= 0 and event.instrument < presets.size():
+				patch_face._turn_to(event.instrument)
+
+
 ## Every note goes through these two, whether a mouse or a computer key started it. The
 ## on-screen keyboard lights up from held_notes rather than from its own clicks, so what
 ## you see is what the engine was actually told.
-func _hold_note(note: int) -> void:
+func _hold_note(note: int, velocity: float = 0.9) -> void:
 	if engine == null or held_notes.has(note):
 		return
 	held_notes[note] = true
-	engine.note_on(note, 0.9)
+	engine.note_on(note, velocity)
 	if keyboard != null:
 		keyboard.set_held_notes(held_notes)
 
@@ -6784,6 +6813,12 @@ func _drop_face_socket(at: Vector2) -> void:
 ## the drag begins and Godot delivers the button-up to whatever is under the cursor. `_input`
 ## sees it first, which is the same trick the wand uses on knobs.
 func _input(event: InputEvent) -> void:
+	# Hardware MIDI, first and unconditionally: it is never part of a mouse
+	# gesture, and a pedal mid-drag still means what it means.
+	var midi := event as InputEventMIDI
+	if midi != null:
+		_on_midi(midi)
+		return
 	if not dragging_face_socket.is_empty():
 		var pull := event as InputEventMouseMotion
 		if pull != null:

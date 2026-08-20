@@ -3471,6 +3471,42 @@ func _initialize() -> void:
 	check(ep_peak > 0.01,
 		"turning to EP HARD still plays (peak %.3f)" % ep_peak)
 
+	# Hardware program change turns the page: program 2 on any channel lands on
+	# the bank's third page, a program past the bank is ignored, and notes ride
+	# the keyboard's own funnel with their played velocity.
+	var pedal := InputEventMIDI.new()
+	pedal.message = MIDI_MESSAGE_PROGRAM_CHANGE
+	pedal.instrument = 2
+	main._on_midi(pedal)
+	for i in 8:
+		await process_frame
+	check(main.patch_face.preset_index == 2,
+		"program change 2 turns to the third page (%d)"
+			% main.patch_face.preset_index)
+	var too_far := InputEventMIDI.new()
+	too_far.message = MIDI_MESSAGE_PROGRAM_CHANGE
+	too_far.instrument = 90
+	main._on_midi(too_far)
+	for i in 4:
+		await process_frame
+	check(main.patch_face.preset_index == 2,
+		"a program past the bank is ignored (%d)" % main.patch_face.preset_index)
+	var key_down := InputEventMIDI.new()
+	key_down.message = MIDI_MESSAGE_NOTE_ON
+	key_down.pitch = 57
+	key_down.velocity = 100
+	main._on_midi(key_down)
+	for i in 2:
+		await process_frame
+	check(main.held_notes.has(57), "a MIDI note-on holds the note")
+	var key_up := InputEventMIDI.new()
+	key_up.message = MIDI_MESSAGE_NOTE_OFF
+	key_up.pitch = 57
+	main._on_midi(key_up)
+	for i in 2:
+		await process_frame
+	check(not main.held_notes.has(57), "and its note-off lets go")
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:
