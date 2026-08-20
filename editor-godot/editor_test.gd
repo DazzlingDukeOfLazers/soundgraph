@@ -3625,6 +3625,38 @@ func _initialize() -> void:
 	check(is_equal_approx(quack_up, 0.8),
 		"Mother Duck opens the Quack knob (%.1f)" % quack_up)
 
+	# The 909: the second machine on the wall, same card architecture as the
+	# 808 — pads from C3, ribbon socket, Add-merged gates — with the driven
+	# kick that IS a warehouse after midnight. Silence checked first, before
+	# the open hat is rung; its half-second tail taught us that with the toms.
+	await main._load_example("909: kit")
+	for i in 8:
+		await process_frame
+	var below_909: float = await _struck_peak(main, 47)
+	check(below_909 < 0.005,
+		"a key below the 909's base strikes nothing (peak %.3f)" % below_909)
+	for pad_909 in [48, 49, 50, 51, 52, 53, 54, 55]:
+		var peak_909: float = await _struck_peak(main, pad_909)
+		check(peak_909 > 0.01,
+			"909 pad %d strikes its drum (peak %.3f)" % [pad_909, peak_909])
+	var floor_names: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check(floor_names.size() == 4 and "Gabber" in floor_names,
+		"and the bank runs Stock to Gabber (%s)" % str(floor_names))
+	var gabber := floor_names.find("Gabber")
+	main.patch_face._turn_to(gabber)
+	for i in 8:
+		await process_frame
+	var slammed: float = -1.0
+	for floor_node in main.patch["nodes"]:
+		if str(floor_node["id"]) == "k_drive":
+			slammed = float(floor_node.get("parameters", {}).get("drive", -1.0))
+	check(is_equal_approx(slammed, 28.0),
+		"Gabber slams the kick's Drive to 28 (%.0f)" % slammed)
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 20,
+		"and four-to-the-floor ships in the roll (%d notes)"
+			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:

@@ -424,7 +424,7 @@ const NodeTypeDescriptor kMultiply = {
 // ---------------------------------------------------------------------------------
 
 constexpr PortDescriptor kDriveInputs[] = {
-    {"in", SignalType::Audio, "", false, false, "The signal to saturate."},
+    {"in", SignalType::Audio, "", true, true, "The signal to saturate."},
     {"drive", SignalType::Control, "", false, false,
      "Drive amount. Replaces the drive parameter while connected, so an envelope "
      "can lean on the pedal."},
