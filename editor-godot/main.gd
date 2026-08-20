@@ -302,6 +302,14 @@ var _home_values: Dictionary = {}
 ## same bank can be open on two mountings — the side panel and a flipped case —
 ## and two faces disagreeing about the page is how "next" turns to the wrong one.
 var preset_pages: Dictionary = {}
+
+## MIDI learn state: the control id waiting for the next CC, or empty.
+var _learning: Dictionary = {}
+
+## The CC undo bracket: a hardware sweep is dozens of events with no gesture
+## end, so the edit opens on the first and commits after a beat of silence.
+var _cc_editing := false
+var _cc_commit: Timer = null
 var _pending_snapshot: Dictionary = {}
 var toolbar: Control
 
@@ -360,6 +368,11 @@ func _ready() -> void:
 	# Hardware MIDI in: the OS's ports open here, and InputEventMIDI arrives in
 	# _input like any other event. Nothing to configure — plug in and play.
 	OS.open_midi_inputs()
+	_cc_commit = Timer.new()
+	_cc_commit.one_shot = true
+	_cc_commit.wait_time = 0.6
+	_cc_commit.timeout.connect(_commit_cc)
+	add_child(_cc_commit)
 	var midi_inputs := OS.get_connected_midi_inputs()
 	if not midi_inputs.is_empty():
 		print("MIDI in: ", ", ".join(midi_inputs))
@@ -836,6 +849,7 @@ func _build_ui() -> void:
 	rack.ink = INK
 	rack.ink_dim = INK_DIM
 	rack.home_lookup = _knob_home
+	rack.learn_requested.connect(_on_learn_requested)
 	rack.parameter_changed.connect(_on_rack_parameter_changed)
 	rack.edit_started.connect(func() -> void: _begin_edit())
 	rack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
@@ -4995,6 +5009,93 @@ func _on_keyboard_released(note: int) -> void:
 	_let_go_note(note)
 
 
+## The full descriptor a control means: the registry's parameter overlaid with
+## the control's own curation — the same rule the face's knobs draw by, needed
+## here so a CC's 0..127 maps through the right range and scaling.
+func _control_descriptor(control: Dictionary) -> Dictionary:
+	var target: Dictionary = control.get("target", {})
+	var descriptor: Dictionary = {}
+	for node in patch.get("nodes", []):
+		if str(node["id"]) != str(target.get("node", "")):
+			continue
+		for parameter in registry.get(Seams.registry_key(node), {}).get("parameters", []):
+			if str(parameter["name"]) == str(target.get("parameter", "")):
+				descriptor = (parameter as Dictionary).duplicate(true)
+		break
+	if descriptor.is_empty():
+		return {}
+	for curated in ["min", "max", "default", "scaling"]:
+		if control.has(curated):
+			descriptor[curated] = control[curated]
+	return descriptor
+
+
+## Ctrl-click on a face knob landed here: arm the learn, if the knob is on the
+## file's face. The next CC the hardware sends becomes the binding.
+func _on_learn_requested(node_id: String, parameter: String) -> void:
+	for control in patch.get("controls", []):
+		var target: Dictionary = control.get("target", {})
+		if str(target.get("node", "")) == node_id \
+				and str(target.get("parameter", "")) == parameter:
+			_learning = {"id": str(control.get("id", ""))}
+			_say("MIDI learn: move a controller knob to bind %s — Escape cancels"
+				% str(control.get("label", control.get("id", ""))))
+			return
+	_say("that knob is not on the file's face, so there is nothing to bind")
+
+
+## The armed learn meets its CC: the binding is written into the control, as
+## one undo step, in the schema's own `binding.midi_cc` field.
+func _bind_learned(cc: int) -> void:
+	var wanted := str(_learning.get("id", ""))
+	_learning = {}
+	for control in patch.get("controls", []):
+		if str(control.get("id", "")) != wanted:
+			continue
+		_begin_edit()
+		control["binding"] = {"midi_cc": cc}
+		_commit_edit("bind CC %d" % cc)
+		_say("CC %d drives %s now" % [cc, str(control.get("label", wanted))])
+		return
+
+
+## A CC arrives for whatever controls claim it. 0..127 maps through each
+## control's own range and scaling — the same curve its knob sweeps — and the
+## write rides the knob path so engine, document and widgets move together.
+func _apply_cc(event: InputEventMIDI) -> void:
+	for control in patch.get("controls", []):
+		var binding: Dictionary = control.get("binding", {})
+		if int(binding.get("midi_cc", -1)) != event.controller_number:
+			continue
+		if binding.has("midi_channel") \
+				and int(binding["midi_channel"]) != event.channel + 1:
+			continue
+		var descriptor := _control_descriptor(control)
+		if descriptor.is_empty():
+			continue
+		var value := _to_value(descriptor, float(event.controller_value) / 127.0)
+		_cc_touch()
+		var target: Dictionary = control.get("target", {})
+		_on_rack_parameter_changed(str(target.get("node", "")),
+			str(target.get("parameter", "")), value)
+
+
+func _cc_touch() -> void:
+	if not _cc_editing:
+		_begin_edit()
+		_cc_editing = true
+	if _cc_commit != null:
+		_cc_commit.start()
+
+
+## The beat of silence after a CC sweep: the whole sweep lands as one undo step.
+func _commit_cc() -> void:
+	if not _cc_editing:
+		return
+	_cc_editing = false
+	_commit_edit("midi cc")
+
+
 ## Hardware MIDI. Notes ride the same funnel the on-screen keys use, so the
 ## screen lights up with what the hands are doing; program change turns the
 ## preset strip to that page — the message patch buttons and pedal program
@@ -5015,6 +5116,11 @@ func _on_midi(event: InputEventMIDI) -> void:
 			var presets: Array = patch.get("presets", [])
 			if event.instrument >= 0 and event.instrument < presets.size():
 				patch_face._turn_to(event.instrument)
+		MIDI_MESSAGE_CONTROL_CHANGE:
+			if not _learning.is_empty():
+				_bind_learned(event.controller_number)
+			else:
+				_apply_cc(event)
 
 
 ## Every note goes through these two, whether a mouse or a computer key started it. The
@@ -8375,6 +8481,10 @@ func _load_text(text: String) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key == null or key.echo or engine == null:
+		return
+	if not _learning.is_empty() and key.pressed and key.keycode == KEY_ESCAPE:
+		_learning = {}
+		_say("learn cancelled")
 		return
 	if search_popup.visible:
 		return

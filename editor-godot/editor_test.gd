@@ -3507,6 +3507,76 @@ func _initialize() -> void:
 		await process_frame
 	check(not main.held_notes.has(57), "and its note-off lets go")
 
+	# CC-to-knob: Ctrl-click arms the learn, the next CC binds, and from then
+	# on that CC sweeps the knob through its own range and scaling. A sweep is
+	# one undo step, committed after a beat of silence.
+	await main._load_example("Synth: poly-five")
+	for i in 8:
+		await process_frame
+	main._on_learn_requested("filter", "cutoff")
+	var learn_cc := InputEventMIDI.new()
+	learn_cc.message = MIDI_MESSAGE_CONTROL_CHANGE
+	learn_cc.controller_number = 74
+	learn_cc.controller_value = 0
+	main._on_midi(learn_cc)
+	for i in 4:
+		await process_frame
+	var bound := -1
+	var cutoff_control: Dictionary = {}
+	for cc_control in main.patch.get("controls", []):
+		if str(cc_control.get("id", "")) == "cutoff":
+			cutoff_control = cc_control
+			bound = int(cc_control.get("binding", {}).get("midi_cc", -1))
+	check(bound == 74, "the armed learn binds the next CC (%d)" % bound)
+	var sweep_cc := InputEventMIDI.new()
+	sweep_cc.message = MIDI_MESSAGE_CONTROL_CHANGE
+	sweep_cc.controller_number = 74
+	sweep_cc.controller_value = 64
+	main._on_midi(sweep_cc)
+	for i in 4:
+		await process_frame
+	var cc_expected: float = main._to_value(
+		main._control_descriptor(cutoff_control), 64.0 / 127.0)
+	var swept_cc: float = -1.0
+	for cc_node in main.patch["nodes"]:
+		if str(cc_node["id"]) == "filter":
+			swept_cc = float(cc_node.get("parameters", {}).get("cutoff", -1.0))
+	check(absf(swept_cc - cc_expected) < 0.5,
+		"CC 64 lands mid-sweep on the control's own curve (%.1f ~ %.1f)"
+			% [swept_cc, cc_expected])
+	main._commit_cc()
+	for i in 4:
+		await process_frame
+	await main._undo()
+	for i in 4:
+		await process_frame
+	var cc_undone: float = -1.0
+	for cc_node in main.patch["nodes"]:
+		if str(cc_node["id"]) == "filter":
+			cc_undone = float(cc_node.get("parameters", {}).get("cutoff", -1.0))
+	check(is_equal_approx(cc_undone, 900.0),
+		"the whole sweep is one undo step (%.0f)" % cc_undone)
+	# A channel-bound control ignores traffic from other channels. Re-fetched:
+	# the undo replaced the document, so the old dictionary is a museum piece.
+	for cc_control in main.patch.get("controls", []):
+		if str(cc_control.get("id", "")) == "cutoff":
+			cc_control["binding"] = {"midi_cc": 74, "midi_channel": 2}
+	var wrong_channel := InputEventMIDI.new()
+	wrong_channel.message = MIDI_MESSAGE_CONTROL_CHANGE
+	wrong_channel.controller_number = 74
+	wrong_channel.controller_value = 127
+	wrong_channel.channel = 0
+	main._on_midi(wrong_channel)
+	for i in 4:
+		await process_frame
+	var cc_still: float = -1.0
+	for cc_node in main.patch["nodes"]:
+		if str(cc_node["id"]) == "filter":
+			cc_still = float(cc_node.get("parameters", {}).get("cutoff", -1.0))
+	check(is_equal_approx(cc_still, 900.0),
+		"a channel-bound control ignores other channels (%.0f)" % cc_still)
+	main._commit_cc()
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:

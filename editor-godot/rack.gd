@@ -22,6 +22,9 @@ const Layout := preload("res://layout.gd")
 
 signal parameter_changed(node_id: String, parameter: String, value: float)
 signal edit_started()
+
+## Ctrl-click on a knob: bind the next MIDI CC the hardware sends to it.
+signal learn_requested(node_id: String, parameter: String)
 signal edit_finished(label: String)
 signal node_selected(node_id: String)
 
@@ -1379,6 +1382,13 @@ class Knob extends Control:
 			return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
+				# Ctrl-click arms MIDI learn: the next CC the hardware sends
+				# becomes this knob's. Checked before the double tap, so a
+				# quick Ctrl-double-click does not also send the knob home.
+				if event.ctrl_pressed:
+					rack.learn_requested.emit(node_id, str(descriptor["name"]))
+					accept_event()
+					return
 				# The double tap sends it home: the value the node entered the
 				# document with, or the descriptor's factory default when the
 				# document never set one. One undo step, reported the way every
