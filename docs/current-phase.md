@@ -202,6 +202,33 @@ gesture. Synthetic events do not lift that; only a person clicking does.
 - The Waveshare board's ES7210 microphone array is described in its board profile but not
   driven by the firmware.
 
+## Next features, in order (agreed 2026-08-20)
+
+The vocabulary audit against Max/Pure Data settled a shortlist, ranked by leverage.
+Landed so far from it: the maths family (Clip, Abs, MinMax, Compare, SampleHold — with
+Random deliberately rejected as two spellings of things the vocabulary already says) and
+the Clock node (bpm, note divisions with triplets and dots, MPC-style swing, a bar
+downbeat output, and a run gate that rewinds — patches share a tempo by sharing a value,
+not through a global transport).
+
+Still to do, in this order:
+
+1. **Scale quantizer** — snap a control signal to a chosen scale. Tiny node, multiplies
+   what exists: Noise → SampleHold → Quantizer is instant generative melody in key.
+2. **Step sequencer with parameter locks** — the Elektron trick: any knob settable
+   per-step. The preset-morph machinery is conceptually halfway there; p-locks are morph
+   values with a step index instead of a crossfader. The Knobcon-class showpiece, but a
+   feature, so it waits for the freeze to lift.
+3. **Comb and Allpass primitives, then reverb as a shipped module** — the
+   flatten-to-identical-audio guarantee is what makes a module reverb honest. `Crush`
+   (bit/rate reduction) rides along in this batch.
+4. **Compressor with a sidechain input** — mix glue and the EDM pump in one node.
+
+On the bench behind those: an editor oscilloscope (editor work, not DSP), euclidean
+rhythms and probability gates for the generative crowd, and a shipped Karplus-Strong
+plucked-string module if feedback through Delay already permits it — worth ten minutes
+of patching to find out before building anything.
+
 ## Remaining before the show
 
 Per `KNOBCon_2026.md`, none of it is code: landing page, README pass, QR, getting-started,

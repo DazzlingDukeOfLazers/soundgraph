@@ -1325,6 +1325,82 @@ TEST(retrigger_fires_at_the_stated_rate_starting_immediately) {
     CHECK(harness.output()[0] >= 0.5f);
 }
 
+namespace {
+std::vector<int> rising_edge_positions(const std::vector<float>& samples) {
+    std::vector<int> edges;
+    bool was_high = false;
+    for (int i = 0; i < static_cast<int>(samples.size()); ++i) {
+        const bool high = samples[static_cast<std::size_t>(i)] >= 0.5f;
+        if (high && !was_high) edges.push_back(i);
+        was_high = high;
+    }
+    return edges;
+}
+}  // namespace
+
+TEST(clock_pulses_at_its_division_from_the_first_sample) {
+    NodeHarness harness("Clock", kOneSecond, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("bpm", 120.0f);
+    harness.set("division", 4.0f);  // 1/16: four per beat, eight per second at 120
+    harness.process();
+
+    const std::vector<int> edges = rising_edge_positions(harness.output("gate"));
+    CHECK(static_cast<int>(edges.size()) == 8);
+    CHECK(edges.front() == 0);
+}
+
+TEST(clock_swing_delays_every_second_step_toward_the_triplet) {
+    NodeHarness harness("Clock", kOneSecond, kSampleRate);
+    harness.set("bpm", 120.0f);
+    harness.set("division", 3.0f);  // 1/8: interval 12000 samples at 48k
+    harness.set("swing", 1.0f);
+    harness.process();
+
+    const std::vector<int> edges = rising_edge_positions(harness.output("gate"));
+    CHECK(static_cast<int>(edges.size()) == 4);
+    // Even steps stay on the grid; odd steps land a third of a step late.
+    CHECK_NEAR(edges[0], 0, 2);
+    CHECK_NEAR(edges[1], 16000, 2);
+    CHECK_NEAR(edges[2], 24000, 2);
+    CHECK_NEAR(edges[3], 40000, 2);
+}
+
+TEST(clock_marks_the_bar_downbeat) {
+    const int frames = 2 * kOneSecond;
+    NodeHarness harness("Clock", frames, kSampleRate);
+    harness.set("bpm", 120.0f);
+    harness.set("beats_per_bar", 2.0f);  // a bar each second at 120
+    harness.process();
+
+    const std::vector<int> edges = rising_edge_positions(harness.output("bar"));
+    CHECK(static_cast<int>(edges.size()) == 2);
+    CHECK(edges.front() == 0);
+    CHECK_NEAR(edges[1], kOneSecond, 2);
+}
+
+TEST(clock_run_gate_stops_and_rewinds_to_the_downbeat) {
+    NodeHarness harness("Clock", kOneSecond, kSampleRate);
+    harness.set("bpm", 120.0f);
+    harness.set("division", 4.0f);
+    std::vector<float>& run = harness.input("run");
+    // Held low for the first half second, opened for the rest.
+    for (int i = kOneSecond / 2; i < kOneSecond; ++i) {
+        run[static_cast<std::size_t>(i)] = 1.0f;
+    }
+    harness.process();
+
+    const std::vector<float>& gate = harness.output("gate");
+    bool silent_while_stopped = true;
+    for (int i = 0; i < kOneSecond / 2; ++i) {
+        silent_while_stopped = silent_while_stopped && gate[static_cast<std::size_t>(i)] < 0.5f;
+    }
+    CHECK(silent_while_stopped);
+    // The first running sample is an edge — the start is a downbeat, not mid-bar.
+    CHECK(gate[kOneSecond / 2] >= 0.5f);
+    CHECK(harness.output("bar")[kOneSecond / 2] >= 0.5f);
+}
+
 TEST(retrigger_restarts_an_envelope_it_is_wired_to) {
     // The two nodes together are what "stutter" means; neither says it alone.
     NodeHarness retrigger("Retrigger", kOneSecond, kSampleRate);

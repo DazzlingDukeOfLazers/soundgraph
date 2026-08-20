@@ -143,6 +143,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kSlide,
         &nodes::kArpeggio,
         &nodes::kRetrigger,
+        &nodes::kClock,
         &nodes::kLfo,
         &nodes::kConstant,
         &nodes::kAdd,

@@ -530,6 +530,127 @@ private:
     float elapsed_ = 0.0f;
 };
 
+// ---------------------------------------------------------------------------------
+// Clock
+//
+// Musical time as a node: a pulse train described in bpm and note divisions rather than
+// hertz, with swing, a bar output for the downbeat, and a run gate that rewinds. This is
+// what Retrigger is not — Retrigger says "8 times a second", Clock says "sixteenths at
+// 128". There is deliberately no global transport hiding in the engine: patches share a
+// tempo by sharing a value, one Constant wired to several Clocks' bpm inputs, and
+// identical Clocks stay sample-locked because nothing about them is random.
+// ---------------------------------------------------------------------------------
+
+constexpr const char* kClockDivisionLabels[] = {
+    "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/8T", "1/16T", "1/8.", "1/16.",
+};
+
+// Pulses per quarter-note beat for each label above. Triplets pack three in the space
+// of two; dots stretch a division by half, so its rate drops to two-thirds.
+constexpr float kClockPulsesPerBeat[] = {
+    0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 3.0f, 6.0f, 4.0f / 3.0f, 8.0f / 3.0f,
+};
+
+constexpr PortDescriptor kClockInputs[] = {
+    {"bpm", SignalType::Control, "BPM", false, false,
+     "Tempo. Replaces the bpm parameter while connected — wire one Constant to several "
+     "Clocks and they share it."},
+    {"run", SignalType::Control, "", false, false,
+     "Transport. At or above 0.5 the clock runs; below, it stops and rewinds to the "
+     "downbeat, so the next start begins the bar cleanly. Unconnected means running."},
+};
+
+constexpr PortDescriptor kClockOutputs[] = {
+    {"gate", SignalType::Control, "", false, false,
+     "A pulse per division step. Connect to any gate input."},
+    {"bar", SignalType::Control, "", false, false,
+     "A pulse on the first beat of each bar."},
+};
+
+constexpr ParameterDescriptor kClockParameters[] = {
+    {"bpm", "BPM", 20.0f, 300.0f, 120.0f, Scaling::Linear,
+     "Beats per minute. A beat is a quarter note.", nullptr, 0},
+    {"division", "", 0.0f, 9.0f, 4.0f, Scaling::Linear,
+     "The step length, as a fraction of a bar of 4/4.", kClockDivisionLabels, 10},
+    {"swing", "", 0.0f, 1.0f, 0.0f, Scaling::Linear,
+     "Delays every second step. 0 is straight; 1 lands on the triplet, the full "
+     "MPC-style shuffle.", nullptr, 0},
+    {"width", "ms", 0.1f, 100.0f, 5.0f, Scaling::Logarithmic,
+     "How long each pulse stays up. Only its rising edge matters to most nodes.",
+     nullptr, 0},
+    {"beats_per_bar", "", 1.0f, 16.0f, 4.0f, Scaling::Linear,
+     "How many beats the bar output counts before firing again.", nullptr, 0},
+};
+
+class ClockNode final : public DspNode {
+public:
+    enum Param { kBpm = 0, kDivision = 1, kSwing = 2, kWidth = 3, kBeatsPerBar = 4 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        reset();
+    }
+
+    // Position 0 is a rising edge on both outputs, for the same reason Retrigger starts
+    // at one: a clock that stayed silent for its first step would delay everything it
+    // drives, and the run gate rewinds to here so every start is a downbeat.
+    void reset() override {
+        pulse_pos_ = 0.0;
+        bar_pos_ = 0.0;
+        off_step_ = false;
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* bpm_in = context.inputs[0];
+        const float* run = context.inputs[1];
+        float* gate = context.outputs[0];
+        float* bar = context.outputs[1];
+
+        const int division =
+            static_cast<int>(dsp::clampf(parameter(kDivision) + 0.5f, 0.0f, 9.0f));
+        const float pulses_per_beat = kClockPulsesPerBeat[division];
+        const float swing_start = parameter(kSwing) / 3.0f;
+        const float width_s = parameter(kWidth) * 0.001f;
+        const float beats_per_bar = parameter(kBeatsPerBar);
+
+        for (int i = 0; i < context.frames; ++i) {
+            if (run != nullptr && run[i] < 0.5f) {
+                reset();
+                gate[i] = 0.0f;
+                bar[i] = 0.0f;
+                continue;
+            }
+            const float bpm =
+                dsp::clampf(bpm_in != nullptr ? bpm_in[i] : parameter(kBpm), 20.0f, 300.0f);
+            const float beats_per_second = bpm / 60.0f;
+
+            // Both positions are phases — the step one in units of a step, the bar one
+            // in beats — kept by subtraction rather than fmod, which is slow on the ESP32.
+            const float start = off_step_ ? swing_start : 0.0f;
+            const float width_steps = width_s * beats_per_second * pulses_per_beat;
+            gate[i] = (pulse_pos_ >= start && pulse_pos_ < start + width_steps) ? 1.0f : 0.0f;
+            bar[i] = bar_pos_ < width_s * beats_per_second ? 1.0f : 0.0f;
+
+            const double beat_increment = static_cast<double>(beats_per_second) / sample_rate_;
+            pulse_pos_ += beat_increment * pulses_per_beat;
+            if (pulse_pos_ >= 1.0) {
+                pulse_pos_ -= 1.0;
+                off_step_ = !off_step_;
+            }
+            bar_pos_ += beat_increment;
+            if (bar_pos_ >= beats_per_bar) {
+                bar_pos_ -= beats_per_bar;
+            }
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    double pulse_pos_ = 0.0;
+    double bar_pos_ = 0.0;
+    bool off_step_ = false;
+};
+
 template <typename T>
 std::unique_ptr<DspNode> make() {
     return std::unique_ptr<DspNode>(new T());
@@ -597,6 +718,19 @@ const NodeTypeDescriptor kRetrigger = {
     false, NodeRole::Processor, false,
     ResourceCost{2.0f, 12, 0},
     &make<RetriggerNode>,
+};
+
+const NodeTypeDescriptor kClock = {
+    "Clock", "Clock", "Modulation",
+    "Musical time: pulses at a bpm and note division, with swing and a bar downbeat.",
+    "clock|tempo|bpm|metro|metronome|transport|division|sixteenth|eighth|swing|shuffle|"
+    "groove|sync|downbeat|bar|beat",
+    Slice<PortDescriptor>(kClockInputs),
+    Slice<PortDescriptor>(kClockOutputs),
+    Slice<ParameterDescriptor>(kClockParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{3.0f, 24, 0},
+    &make<ClockNode>,
 };
 
 }  // namespace nodes

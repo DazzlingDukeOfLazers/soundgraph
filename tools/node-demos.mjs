@@ -712,6 +712,37 @@ const DEMOS = {
       ],
     }),
   },
+  Clock: {
+    summary: 'Musical time: pulses at a bpm and note division, with swing and a bar downbeat.',
+    try: 'This one plays on its own — sixteenths up top, the bar output thumping the '
+      + 'downbeat below. Raise swing and the sixteenths shuffle; change bpm and both '
+      + 'lines move together, because they are the same clock.',
+    build: () => ({
+      nodes: [
+        node('demo', 'Clock', { bpm: 128, division: 4, swing: 0, width: 5 }, 0, 0),
+        node('osc', 'SquareOscillator', { frequency: 660 }, 1, 0),
+        node('env', 'AhdEnvelope', { attack: 0, hold: 0.01, decay: 0.06, punch: 0.5 }, 1, 1),
+        node('blip', 'Gain', { gain: 0.5 }, 2, 0),
+        node('bass', 'SineOscillator', { frequency: 82.5 }, 1, 2),
+        node('benv', 'AhdEnvelope', { attack: 0, hold: 0.02, decay: 0.25, punch: 1 }, 1, 3),
+        node('thump', 'Gain', { gain: 0.9 }, 2, 2),
+        node('mix', 'Mixer', { level1: 0.7, level2: 1 }, 3, 0),
+        out(4),
+      ],
+      connections: [
+        wire('demo', 'gate', 'env', 'gate'),
+        wire('env', 'out', 'blip', 'gain'),
+        wire('osc', 'out', 'blip', 'in'),
+        wire('demo', 'bar', 'benv', 'gate'),
+        wire('benv', 'out', 'thump', 'gain'),
+        wire('bass', 'out', 'thump', 'in'),
+        wire('blip', 'out', 'mix', 'in1'),
+        wire('thump', 'out', 'mix', 'in2'),
+        wire('mix', 'out', 'out', 'left'),
+        wire('mix', 'out', 'out', 'right'),
+      ],
+    }),
+  },
   SampleHold: {
     summary: 'Freezes its input each time the trigger fires, and holds it until the next.',
     try: 'A smooth slow wave, sampled six times a second, comes out as a staircase of '
@@ -791,6 +822,7 @@ const PROBES = {
   MinMax: { parameter: 'mode', value: 0 },
   Compare: { parameter: 'threshold', value: 0.9 },
   SampleHold: { node: 'clock', parameter: 'rate', value: 1.5 },
+  Clock: { parameter: 'bpm', value: 40 },
 };
 
 function render(type, demo) {

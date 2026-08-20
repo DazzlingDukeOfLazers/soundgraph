@@ -26,6 +26,7 @@ extern const NodeTypeDescriptor kAhdEnvelope;
 extern const NodeTypeDescriptor kSlide;
 extern const NodeTypeDescriptor kArpeggio;
 extern const NodeTypeDescriptor kRetrigger;
+extern const NodeTypeDescriptor kClock;
 
 // Amplitude and maths
 extern const NodeTypeDescriptor kGain;
