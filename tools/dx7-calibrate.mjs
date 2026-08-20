@@ -14,7 +14,7 @@
 // comment.
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,9 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const bin = join(root, 'build', 'bin');
 const scratch = mkdtempSync(join(tmpdir(), 'dx7-calibrate-'));
+// The scratch dir dies with the process: two thousand of these
+// leaked across a day of gate runs once filled the disk to zero.
+process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
 
 function probeBank({ rates, levels }) {
   const bank = new Uint8Array(4096);

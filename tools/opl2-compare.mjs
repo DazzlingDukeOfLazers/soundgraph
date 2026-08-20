@@ -20,7 +20,7 @@
 // exactly the waveform family that taught this repo (three times) how crossings lie.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, mkdtempSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { readWav, held, scoreAt, fundamental as sharedFundamental, sharePeriodicity,
   octaveFolded, rms } from './lib/audio-compare.mjs';
 import { tmpdir } from 'node:os';
@@ -32,6 +32,9 @@ const instruments = join(root, 'tools', 'opl2', 'instruments');
 const patches = join(root, 'examples', 'patches', 'fm');
 const bin = join(root, 'build', 'bin');
 const scratch = mkdtempSync(join(tmpdir(), 'opl2-compare-'));
+// The scratch dir dies with the process: two thousand of these
+// leaked across a day of gate runs once filled the disk to zero.
+process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
 const verbose = process.argv.includes('--verbose');
 
 // 220 Hz = MIDI 57. The oracle takes hertz and sg-render takes note numbers; these two

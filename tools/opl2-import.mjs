@@ -30,7 +30,7 @@
 // ADSR. tools/opl2-compare.mjs holds every import to the oracle's pitch and presence
 // in ctest, which is what keeps this list honest.
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { drawDefinitionPorts } from './seams.mjs';
@@ -391,6 +391,9 @@ if (process.argv.includes('--modular-check')) {
   const { mkdtempSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const scratch = mkdtempSync(join(tmpdir(), 'opl2-modular-'));
+  // The scratch dir dies with the process: two thousand of these
+  // leaked across a day of gate runs once filled the disk to zero.
+  process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
   const bin = join(root, 'build', 'bin');
   let differing = 0;
   let factored = 0;

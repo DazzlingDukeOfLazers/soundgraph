@@ -11,7 +11,7 @@
 // periods of detuned pairs can be legitimately longer.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, mkdtempSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { readWav, fundamental as sharedFundamental, sharePeriodicity, octaveFolded,
   rms } from './lib/audio-compare.mjs';
 import { tmpdir } from 'node:os';
@@ -23,6 +23,9 @@ const banks = join(root, 'tools', 'dx7', 'banks');
 const patches = join(root, 'examples', 'patches', 'dx7');
 const bin = join(root, 'build', 'bin');
 const scratch = mkdtempSync(join(tmpdir(), 'dx7-compare-'));
+// The scratch dir dies with the process: two thousand of these
+// leaked across a day of gate runs once filled the disk to zero.
+process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
 const verbose = process.argv.includes('--verbose');
 
 const NOTE = 57;

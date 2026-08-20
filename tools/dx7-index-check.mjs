@@ -24,7 +24,7 @@
 // agree within TOLERANCE_DB.
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -189,6 +189,9 @@ cases.push({ algorithm: 31, feedback: 0, name: 'VEL', kind: 'velocity',
   ops: { 6: { coarse: 1, level: 80, vel: 7 } } });
 
 const scratch = mkdtempSync(join(tmpdir(), 'dx7-index-'));
+// The scratch dir dies with the process: two thousand of these
+// leaked across a day of gate runs once filled the disk to zero.
+process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
 const bankDir = join(scratch, 'banks');
 const patchDir = join(scratch, 'patches');
 mkdirSync(bankDir);

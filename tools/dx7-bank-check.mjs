@@ -11,7 +11,7 @@
 //   node tools/dx7-bank-check.mjs
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const patches = join(root, 'examples', 'patches', 'dx7');
 const bin = join(root, 'build', 'bin');
 const scratch = mkdtempSync(join(tmpdir(), 'dx7-bank-'));
+// The scratch dir dies with the process: two thousand of these
+// leaked across a day of gate runs once filled the disk to zero.
+process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
 
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   .replace(/^-|-$/g, '') || 'unnamed';
