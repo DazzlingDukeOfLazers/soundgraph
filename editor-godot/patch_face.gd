@@ -346,6 +346,12 @@ func _preset_strip() -> Control:
 	strip.set_meta("preset_strip", true)
 	strip.add_theme_constant_override("separation", Design.SPACE_S)
 	var presets: Array = patch.get("presets", [])
+	# Before anyone turns the page, the strip still knows what it is looking at:
+	# if the knobs stand exactly where some page put them — which is every fresh
+	# mount, since the authored values are the Stock page — that page's name
+	# shows. A dash appears only for a surface no page describes.
+	if preset_index < 0:
+		preset_index = _matching_page()
 
 	var prev := Button.new()
 	prev.text = "<"
@@ -412,6 +418,29 @@ func _turn_to(index: int) -> void:
 			"parameter": str((wired[1] as Dictionary).get("name", "")),
 			"value": float(values[control_id])})
 	preset_applied.emit(index, writes)
+
+
+## The page whose values the surface currently stands at, or -1 when no page
+## describes it. Only the values a page carries are compared: a page that says
+## nothing about a knob is not contradicted by it.
+func _matching_page() -> int:
+	var presets: Array = patch.get("presets", [])
+	if presets.is_empty():
+		return -1
+	var standing := _snapshot_values()
+	for index in presets.size():
+		var values: Dictionary = (presets[index] as Dictionary).get("values", {})
+		if values.is_empty():
+			continue
+		var matches := true
+		for control_id in values:
+			if not standing.has(control_id) 					or not is_equal_approx(float(standing[control_id]),
+						float(values[control_id])):
+				matches = false
+				break
+		if matches:
+			return index
+	return -1
 
 
 ## The surface as it stands, control id -> value, for saving a new page.

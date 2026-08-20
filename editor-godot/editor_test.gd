@@ -3230,6 +3230,27 @@ func _initialize() -> void:
 		check(landed,
 			"turning the mounted bank writes Dark Pad through the instance's export")
 
+	# A fresh mount's knobs stand exactly where the Stock page put them, and the
+	# strip says so instead of showing a dash for a sound it can name.
+	var duo_device: String = await main._add_device("Synth: duo-lead",
+		Vector2(600.0, 700.0))
+	for i in 10:
+		await process_frame
+	var duo_face = main.module_mounts.get(duo_device, null)
+	var duo_label: Label = null
+	if duo_face is PatchFace:
+		var label_queue: Array = [duo_face]
+		while not label_queue.is_empty():
+			var label_next: Node = label_queue.pop_front()
+			for label_child in label_next.get_children():
+				if label_child is Label and label_child.has_meta("preset_name"):
+					duo_label = label_child
+				else:
+					label_queue.append(label_child)
+	check(duo_label != null and str(duo_label.text) == "Stock",
+		"a fresh mount's strip names the Stock page (%s)"
+			% (str(duo_label.text) if duo_label != null else "<no label>"))
+
 	main._new_file()
 	for i in 8:
 		await process_frame
