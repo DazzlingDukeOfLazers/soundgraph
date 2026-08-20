@@ -2968,7 +2968,8 @@ func _initialize() -> void:
 	# The checks are audible ones: a drum that validates but does not sound is a
 	# picture of a drum.
 	for kit_label in ["808: kick", "808: snare", "808: hat-closed", "808: hat-open",
-			"808: clap", "808: rimshot", "808: cowbell", "808: clave"]:
+			"808: clap", "808: rimshot", "808: cowbell", "808: clave",
+			"808: tom", "808: conga", "808: maracas", "808: cymbal"]:
 		await main._load_example(kit_label)
 		for i in 8:
 			await process_frame
@@ -2991,6 +2992,7 @@ func _initialize() -> void:
 	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 20,
 		"and the beat ships in the roll (%d notes)"
 			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
+
 
 	# The file face wears the author's curation, not the type's raw range. The
 	# kick's Tune is written as 20-160 around 52 — three octaves, sub rumble to
@@ -3029,6 +3031,24 @@ func _initialize() -> void:
 				tune_home = float(face_node.get("parameters", {}).get("frequency", -999.0))
 		check(is_equal_approx(tune_home, 52.0),
 			"a double tap on the face's Tune stays at the kick's 52 Hz (%.1f)" % tune_home)
+
+	# The second voice card: toms, congas, maracas and cymbal on pads based one
+	# row above the kit — G#3 up — so both cards sit on one keyboard without
+	# treading on each other. The below-base key is checked first: the cymbal
+	# rings for over a second, and a silence test taken in its tail hears it.
+	await main._load_example("808: toms")
+	for i in 8:
+		await process_frame
+	var below_card: float = await _struck_peak(main, 55)
+	check(below_card < 0.005,
+		"a key below the card's base strikes nothing (peak %.3f)" % below_card)
+	for card_note in [56, 57, 58, 59, 60, 61, 62, 63]:
+		var card_peak: float = await _struck_peak(main, card_note)
+		check(card_peak > 0.01,
+			"toms pad %d strikes its drum (peak %.3f)" % [card_note, card_peak])
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 15,
+		"and the card's groove ships in the roll (%d notes)"
+			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
 
 	main._new_file()
 	for i in 8:

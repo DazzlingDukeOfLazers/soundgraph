@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "808 Cymbal"
+  },
+  "nodes": [
+    {
+      "id": "note",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note"
+    },
+    {
+      "id": "sheet1",
+      "type": "SquareOscillator",
+      "position": {
+        "x": 440,
+        "y": 0
+      },
+      "name": "Sheet",
+      "parameters": {
+        "frequency": 540,
+        "pulse_width": 0.5
+      }
+    },
+    {
+      "id": "sheet2",
+      "type": "SquareOscillator",
+      "position": {
+        "x": 440,
+        "y": 400
+      },
+      "name": "Shimmer",
+      "parameters": {
+        "frequency": 800,
+        "pulse_width": 0.5
+      }
+    },
+    {
+      "id": "wash",
+      "type": "Noise",
+      "position": {
+        "x": 440,
+        "y": 800
+      },
+      "name": "Wash",
+      "parameters": {
+        "colour": 0
+      }
+    },
+    {
+      "id": "edge",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 880,
+        "y": 0
+      },
+      "name": "Edge",
+      "parameters": {
+        "cutoff": 6800,
+        "resonance": 0.35,
+        "mode": 1
+      }
+    },
+    {
+      "id": "crash_env",
+      "type": "ADSR",
+      "position": {
+        "x": 0,
+        "y": 400
+      },
+      "name": "Ring",
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 1.4,
+        "sustain": 0.0,
+        "release": 1.4
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "position": {
+        "x": 1320,
+        "y": 0
+      },
+      "name": "Level",
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 1760,
+        "y": 0
+      },
+      "host": "stereo"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "note",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "crash_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "sheet1",
+        "port": "out"
+      },
+      "to": {
+        "node": "edge",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "sheet2",
+        "port": "out"
+      },
+      "to": {
+        "node": "edge",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "wash",
+        "port": "out"
+      },
+      "to": {
+        "node": "edge",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "edge",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "crash_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "tone",
+      "label": "Tone",
+      "kind": "knob",
+      "target": {
+        "node": "edge",
+        "parameter": "cutoff"
+      },
+      "min": 3000,
+      "max": 12000,
+      "default": 6800,
+      "scaling": "exponential"
+    },
+    {
+      "id": "ring",
+      "label": "Ring",
+      "kind": "knob",
+      "target": {
+        "node": "crash_env",
+        "parameter": "decay"
+      },
+      "min": 0.3,
+      "max": 3.0,
+      "default": 1.4,
+      "scaling": "exponential"
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.5,
+      "scaling": "linear"
+    }
+  ],
+  "sequence": {
+    "tempo": 120.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 0,
+        "note": 63,
+        "length": 1
+      }
+    ]
+  }
+}
