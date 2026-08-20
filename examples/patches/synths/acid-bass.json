@@ -1,0 +1,775 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Acid Bass"
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note"
+    },
+    {
+      "id": "glide",
+      "type": "OnePoleFilter",
+      "position": {
+        "x": 340,
+        "y": 0
+      },
+      "name": "Glide",
+      "parameters": {
+        "cutoff": 8,
+        "mode": 0
+      }
+    },
+    {
+      "id": "saw",
+      "type": "SawOscillator",
+      "position": {
+        "x": 680,
+        "y": 0
+      },
+      "name": "Saw",
+      "parameters": {
+        "frequency": 110
+      }
+    },
+    {
+      "id": "sq",
+      "type": "SquareOscillator",
+      "position": {
+        "x": 680,
+        "y": 400
+      },
+      "name": "Square",
+      "parameters": {
+        "frequency": 110,
+        "pulse_width": 0.5
+      }
+    },
+    {
+      "id": "saw_amp",
+      "type": "Gain",
+      "position": {
+        "x": 1020,
+        "y": 0
+      },
+      "name": "Saw Level",
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "sq_amp",
+      "type": "Gain",
+      "position": {
+        "x": 1020,
+        "y": 400
+      },
+      "name": "Square Level",
+      "parameters": {
+        "gain": 0.0
+      }
+    },
+    {
+      "id": "cut",
+      "type": "Constant",
+      "position": {
+        "x": 1020,
+        "y": 800
+      },
+      "name": "Cutoff",
+      "parameters": {
+        "value": 380
+      }
+    },
+    {
+      "id": "res",
+      "type": "Constant",
+      "position": {
+        "x": 1020,
+        "y": 1200
+      },
+      "name": "Resonance",
+      "parameters": {
+        "value": 0.75
+      }
+    },
+    {
+      "id": "filter1",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 1360,
+        "y": 0
+      },
+      "name": "Pole Pair A",
+      "parameters": {
+        "cutoff": 380,
+        "resonance": 0.75,
+        "mode": 0
+      }
+    },
+    {
+      "id": "filter2",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 1700,
+        "y": 0
+      },
+      "name": "Pole Pair B",
+      "parameters": {
+        "cutoff": 380,
+        "resonance": 0.75,
+        "mode": 0
+      }
+    },
+    {
+      "id": "fenv",
+      "type": "ADSR",
+      "position": {
+        "x": 340,
+        "y": 800
+      },
+      "name": "Filter Env",
+      "parameters": {
+        "attack": 0.003,
+        "decay": 0.16,
+        "sustain": 0.0,
+        "release": 0.16
+      }
+    },
+    {
+      "id": "envmod",
+      "type": "Multiply",
+      "position": {
+        "x": 680,
+        "y": 800
+      },
+      "name": "Env Mod",
+      "parameters": {
+        "factor": 2.2
+      }
+    },
+    {
+      "id": "acc",
+      "type": "Multiply",
+      "position": {
+        "x": 680,
+        "y": 1200
+      },
+      "name": "Accent Cross",
+      "parameters": {
+        "factor": 1.0
+      }
+    },
+    {
+      "id": "acc_amt",
+      "type": "Gain",
+      "position": {
+        "x": 1020,
+        "y": 1600
+      },
+      "name": "Accent",
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "mod_sum",
+      "type": "Add",
+      "position": {
+        "x": 1360,
+        "y": 800
+      },
+      "name": "Mod Sum"
+    },
+    {
+      "id": "aenv",
+      "type": "ADSR",
+      "position": {
+        "x": 1700,
+        "y": 400
+      },
+      "name": "Amp Env",
+      "parameters": {
+        "attack": 0.001,
+        "decay": 1.2,
+        "sustain": 0.7,
+        "release": 0.03
+      }
+    },
+    {
+      "id": "vca",
+      "type": "Gain",
+      "position": {
+        "x": 2040,
+        "y": 0
+      },
+      "name": "VCA",
+      "parameters": {
+        "gain": 0.35
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 2380,
+        "y": 0
+      },
+      "host": "stereo"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "glide",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "glide",
+        "port": "out"
+      },
+      "to": {
+        "node": "saw",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "glide",
+        "port": "out"
+      },
+      "to": {
+        "node": "sq",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "saw",
+        "port": "out"
+      },
+      "to": {
+        "node": "saw_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "sq",
+        "port": "out"
+      },
+      "to": {
+        "node": "sq_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "saw_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter1",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "sq_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter1",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "cut",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter1",
+        "port": "cutoff"
+      }
+    },
+    {
+      "from": {
+        "node": "cut",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter2",
+        "port": "cutoff"
+      }
+    },
+    {
+      "from": {
+        "node": "res",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter1",
+        "port": "resonance"
+      }
+    },
+    {
+      "from": {
+        "node": "res",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter2",
+        "port": "resonance"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "fenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "aenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "fenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "envmod",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "fenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "acc",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "velocity"
+      },
+      "to": {
+        "node": "acc",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "envmod",
+        "port": "out"
+      },
+      "to": {
+        "node": "mod_sum",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "acc",
+        "port": "out"
+      },
+      "to": {
+        "node": "acc_amt",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "acc_amt",
+        "port": "out"
+      },
+      "to": {
+        "node": "mod_sum",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "mod_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter1",
+        "port": "cutoff_mod"
+      }
+    },
+    {
+      "from": {
+        "node": "mod_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter2",
+        "port": "cutoff_mod"
+      }
+    },
+    {
+      "from": {
+        "node": "filter1",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter2",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "filter2",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "aenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "cutoff",
+      "label": "Cutoff",
+      "kind": "knob",
+      "target": {
+        "node": "cut",
+        "parameter": "value"
+      },
+      "min": 100,
+      "max": 4000,
+      "default": 380,
+      "scaling": "exponential"
+    },
+    {
+      "id": "resonance",
+      "label": "Resonance",
+      "kind": "knob",
+      "target": {
+        "node": "res",
+        "parameter": "value"
+      },
+      "min": 0,
+      "max": 0.95,
+      "default": 0.75,
+      "scaling": "linear"
+    },
+    {
+      "id": "envmod",
+      "label": "Env Mod",
+      "kind": "knob",
+      "target": {
+        "node": "envmod",
+        "parameter": "factor"
+      },
+      "min": 0,
+      "max": 4,
+      "default": 2.2,
+      "scaling": "linear"
+    },
+    {
+      "id": "decay",
+      "label": "Decay",
+      "kind": "knob",
+      "target": {
+        "node": "fenv",
+        "parameter": "decay"
+      },
+      "min": 0.03,
+      "max": 1,
+      "default": 0.16,
+      "scaling": "exponential"
+    },
+    {
+      "id": "accent",
+      "label": "Accent",
+      "kind": "knob",
+      "target": {
+        "node": "acc_amt",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 3,
+      "default": 1.0,
+      "scaling": "linear"
+    },
+    {
+      "id": "glide",
+      "label": "Glide",
+      "kind": "knob",
+      "target": {
+        "node": "glide",
+        "parameter": "cutoff"
+      },
+      "min": 0.5,
+      "max": 30,
+      "default": 8,
+      "scaling": "exponential"
+    },
+    {
+      "id": "saw",
+      "label": "Saw",
+      "kind": "knob",
+      "target": {
+        "node": "saw_amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 1.0,
+      "scaling": "linear"
+    },
+    {
+      "id": "square",
+      "label": "Square",
+      "kind": "knob",
+      "target": {
+        "node": "sq_amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "scaling": "linear"
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "vca",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.35,
+      "scaling": "linear"
+    }
+  ],
+  "sequence": {
+    "tempo": 132.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 0,
+        "note": 33,
+        "length": 1
+      },
+      {
+        "step": 1,
+        "note": 33,
+        "length": 1
+      },
+      {
+        "step": 2,
+        "note": 45,
+        "length": 1
+      },
+      {
+        "step": 3,
+        "note": 33,
+        "length": 1
+      },
+      {
+        "step": 4,
+        "note": 36,
+        "length": 1
+      },
+      {
+        "step": 5,
+        "note": 33,
+        "length": 1
+      },
+      {
+        "step": 6,
+        "note": 31,
+        "length": 2
+      },
+      {
+        "step": 8,
+        "note": 33,
+        "length": 1
+      },
+      {
+        "step": 9,
+        "note": 45,
+        "length": 1
+      },
+      {
+        "step": 10,
+        "note": 33,
+        "length": 1
+      },
+      {
+        "step": 11,
+        "note": 36,
+        "length": 1
+      },
+      {
+        "step": 12,
+        "note": 40,
+        "length": 1
+      },
+      {
+        "step": 13,
+        "note": 38,
+        "length": 1
+      },
+      {
+        "step": 14,
+        "note": 31,
+        "length": 1
+      },
+      {
+        "step": 15,
+        "note": 45,
+        "length": 1
+      }
+    ]
+  },
+  "presets": [
+    {
+      "name": "Stock",
+      "values": {
+        "cutoff": 380,
+        "resonance": 0.75,
+        "envmod": 2.2,
+        "decay": 0.16,
+        "accent": 1.0,
+        "glide": 8,
+        "saw": 1,
+        "square": 0,
+        "level": 0.35
+      }
+    },
+    {
+      "name": "Ducks",
+      "values": {
+        "cutoff": 300,
+        "resonance": 0.92,
+        "envmod": 2.8,
+        "decay": 0.12,
+        "accent": 1.6,
+        "glide": 4,
+        "saw": 1,
+        "square": 0,
+        "level": 0.22
+      }
+    },
+    {
+      "name": "Squelch",
+      "values": {
+        "cutoff": 220,
+        "resonance": 0.88,
+        "envmod": 3.4,
+        "decay": 0.3,
+        "accent": 1.2,
+        "glide": 8,
+        "saw": 1,
+        "square": 0,
+        "level": 0.25
+      }
+    },
+    {
+      "name": "Rubber",
+      "values": {
+        "cutoff": 500,
+        "resonance": 0.8,
+        "envmod": 1.6,
+        "decay": 0.09,
+        "accent": 0.8,
+        "glide": 2.5,
+        "saw": 0,
+        "square": 1,
+        "level": 0.35
+      }
+    },
+    {
+      "name": "Deep",
+      "values": {
+        "cutoff": 150,
+        "resonance": 0.7,
+        "envmod": 1.8,
+        "decay": 0.5,
+        "accent": 0.6,
+        "glide": 8,
+        "saw": 1,
+        "square": 0,
+        "level": 0.45
+      }
+    },
+    {
+      "name": "Screech",
+      "values": {
+        "cutoff": 900,
+        "resonance": 0.95,
+        "envmod": 3.8,
+        "decay": 0.25,
+        "accent": 2.0,
+        "glide": 12,
+        "saw": 0.7,
+        "square": 0.5,
+        "level": 0.5
+      }
+    }
+  ]
+}

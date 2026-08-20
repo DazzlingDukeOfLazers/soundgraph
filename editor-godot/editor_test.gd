@@ -3577,6 +3577,32 @@ func _initialize() -> void:
 		"a channel-bound control ignores other channels (%.0f)" % cc_still)
 	main._commit_cc()
 
+	# The acid box: one oscillator into a four-pole squelch, six pages deep,
+	# with Ducks the page the whole machine exists for.
+	await main._load_example("Synth: acid-bass")
+	for i in 8:
+		await process_frame
+	var acid_peak: float = await _struck_peak(main, 33)
+	check(acid_peak > 0.01, "the acid box speaks A1 (peak %.3f)" % acid_peak)
+	check((main.patch.get("presets", []) as Array).size() == 6,
+		"and carries a six-page bank")
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 15,
+		"and ships its line in the roll")
+	var ducks_page := -1
+	for page_index in (main.patch.get("presets", []) as Array).size():
+		if str((main.patch["presets"][page_index] as Dictionary).get("name", "")) 				== "Ducks":
+			ducks_page = page_index
+	check(ducks_page >= 0, "the bank has Ducks")
+	main.patch_face._turn_to(ducks_page)
+	for i in 8:
+		await process_frame
+	var quack: float = -1.0
+	for acid_node in main.patch["nodes"]:
+		if str(acid_node["id"]) == "res":
+			quack = float(acid_node.get("parameters", {}).get("value", -1.0))
+	check(is_equal_approx(quack, 0.92),
+		"and turning there raises the resonance to quack (%.2f)" % quack)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:
