@@ -347,6 +347,9 @@ constexpr float kMaxCombSeconds = 0.1f;
 
 constexpr PortDescriptor kCombInputs[] = {
     {"in", SignalType::Audio, "", true, true, "Signal to comb."},
+    {"frequency", SignalType::Control, "Hz", false, false,
+     "Tunes the loop to a pitch: the time becomes one period of this frequency. "
+     "Wire the keyboard here and the comb is a string."},
     {"feedback", SignalType::Control, "", false, false,
      "Loop gain, 0 to 0.98. Replaces the feedback parameter while connected."},
     {"damp", SignalType::Control, "", false, false,
@@ -389,8 +392,9 @@ public:
 
     void process(const ProcessContext& context) override {
         const float* in = context.inputs[0];
-        const float* feedback_in = context.inputs[1];
-        const float* damp_in = context.inputs[2];
+        const float* frequency_in = context.inputs[1];
+        const float* feedback_in = context.inputs[2];
+        const float* damp_in = context.inputs[3];
         float* out = context.outputs[0];
 
         if (line_.empty()) {
@@ -403,10 +407,17 @@ public:
         const int capacity = static_cast<int>(line_.size());
         // An integer delay, unlike Delay's interpolated one: a comb's time is part of
         // a tuning, not a performance gesture, and interpolation dulls the loop.
-        const int delay_samples = static_cast<int>(dsp::clampf(
-            parameter(kTime) * sample_rate_, 1.0f, static_cast<float>(capacity - 1)));
+        const float max_samples = static_cast<float>(capacity - 1);
+        int delay_samples = static_cast<int>(
+            dsp::clampf(parameter(kTime) * sample_rate_, 1.0f, max_samples));
 
         for (int i = 0; i < context.frames; ++i) {
+            if (frequency_in != nullptr) {
+                // The loop tuned as a pitch: one period of the incoming frequency.
+                // This is Karplus-Strong's string, and the keyboard wires straight in.
+                delay_samples = static_cast<int>(dsp::clampf(
+                    sample_rate_ / std::max(frequency_in[i], 10.0f), 1.0f, max_samples));
+            }
             const float feedback = dsp::clampf(
                 feedback_in != nullptr ? feedback_in[i] : parameter(kFeedback), 0.0f, 0.98f);
             const float damp =
@@ -561,7 +572,8 @@ const NodeTypeDescriptor kDelay = {
 const NodeTypeDescriptor kComb = {
     "Comb", "Comb", "Time",
     "A feedback delay with damping in the loop: the piece reverbs are built from.",
-    "comb|comb filter|flutter|metallic|resonator|karplus|tuned delay|reverb part|loop",
+    "comb|comb filter|flutter|metallic|resonator|karplus|string|pluck|guitar|"
+    "tuned delay|reverb part|loop",
     Slice<PortDescriptor>(kCombInputs),
     Slice<PortDescriptor>(kCombOutputs),
     Slice<ParameterDescriptor>(kCombParameters),

@@ -1,0 +1,295 @@
+{
+  "schema_version": 2,
+  "metadata": {
+    "name": "Plucked String",
+    "description": "Karplus-Strong as four nodes: a noise burst into a comb tuned by the keyboard. Damp is the difference between nylon and steel; sustain is how long the room keeps it.",
+    "tags": [
+      "synth",
+      "string",
+      "module",
+      "karplus-strong"
+    ]
+  },
+  "modules": {
+    "string": {
+      "description": "A plucked string: a few milliseconds of noise into a comb whose loop is one period of the note. Sustain is the loop gain, damp is how fast the top fades - fingernail to felt - and pick is how long the noise burst lasts.",
+      "nodes": [
+        {
+          "id": "burstenv",
+          "type": "AhdEnvelope",
+          "parameters": {
+            "attack": 0.0,
+            "hold": 0.003,
+            "decay": 0.001
+          }
+        },
+        {
+          "id": "noise",
+          "type": "Noise",
+          "parameters": {}
+        },
+        {
+          "id": "burst",
+          "type": "Gain",
+          "parameters": {
+            "gain": 0.9
+          }
+        },
+        {
+          "id": "string",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.005,
+            "feedback": 0.975,
+            "damp": 0.35
+          }
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "node": "burstenv",
+            "port": "out"
+          },
+          "to": {
+            "node": "burst",
+            "port": "gain"
+          }
+        },
+        {
+          "from": {
+            "node": "noise",
+            "port": "out"
+          },
+          "to": {
+            "node": "burst",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "burst",
+            "port": "out"
+          },
+          "to": {
+            "node": "string",
+            "port": "in"
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "name": "gate",
+          "node": "burstenv",
+          "port": "gate"
+        },
+        {
+          "name": "frequency",
+          "node": "string",
+          "port": "frequency"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "node": "string",
+          "port": "out"
+        }
+      ],
+      "parameters": [
+        {
+          "name": "sustain",
+          "node": "string",
+          "parameter": "feedback"
+        },
+        {
+          "name": "damp",
+          "node": "string",
+          "parameter": "damp"
+        },
+        {
+          "name": "pick",
+          "node": "burstenv",
+          "parameter": "hold"
+        }
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note",
+      "parameters": {
+        "voices": 1
+      }
+    },
+    {
+      "id": "pluck",
+      "type": "module",
+      "position": {
+        "x": 560,
+        "y": 0
+      },
+      "module": "string",
+      "name": "String"
+    },
+    {
+      "id": "echo",
+      "type": "Delay",
+      "position": {
+        "x": 1120,
+        "y": 360
+      },
+      "parameters": {
+        "time": 0.28,
+        "feedback": 0.3,
+        "mix": 0.25
+      }
+    },
+    {
+      "id": "level",
+      "type": "Gain",
+      "position": {
+        "x": 1680,
+        "y": 0
+      },
+      "parameters": {
+        "gain": 0.8
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 2240,
+        "y": 0
+      },
+      "host": "stereo",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "pluck",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "pluck",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "pluck",
+        "port": "out"
+      },
+      "to": {
+        "node": "echo",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "echo",
+        "port": "out"
+      },
+      "to": {
+        "node": "level",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "level",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "level",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "sustain",
+      "label": "Sustain",
+      "kind": "knob",
+      "target": {
+        "node": "pluck",
+        "parameter": "sustain"
+      },
+      "min": 0.9,
+      "max": 0.98,
+      "default": 0.975,
+      "scaling": "linear"
+    },
+    {
+      "id": "damp",
+      "label": "Damp",
+      "kind": "knob",
+      "target": {
+        "node": "pluck",
+        "parameter": "damp"
+      },
+      "min": 0.0,
+      "max": 0.8,
+      "default": 0.35,
+      "scaling": "linear"
+    },
+    {
+      "id": "pick",
+      "label": "Pick",
+      "kind": "knob",
+      "target": {
+        "node": "pluck",
+        "parameter": "pick"
+      },
+      "min": 0.001,
+      "max": 0.02,
+      "default": 0.003,
+      "scaling": "exponential"
+    },
+    {
+      "id": "echo",
+      "label": "Echo",
+      "kind": "knob",
+      "target": {
+        "node": "echo",
+        "parameter": "mix"
+      },
+      "min": 0.0,
+      "max": 0.6,
+      "default": 0.25,
+      "scaling": "linear"
+    }
+  ]
+}

@@ -1508,6 +1508,21 @@ TEST(comb_echoes_at_its_period_and_decays_by_its_feedback) {
     CHECK_NEAR(harness.output()[479], 0.0, 1e-6);
 }
 
+TEST(comb_frequency_input_tunes_the_loop_to_a_period) {
+    const int frames = 2000;
+    NodeHarness harness("Comb", frames, kSampleRate);
+    harness.set("time", 0.09f);  // would be 4320 samples; the input overrides it
+    harness.set("feedback", 0.5f);
+    harness.set("damp", 0.0f);
+    harness.connect("frequency", 1000.0f);  // one period = 48 samples at 48k
+    std::vector<float>& in = harness.input("in");
+    in[0] = 1.0f;
+    harness.process();
+    CHECK_NEAR(harness.output()[48], 1.0, 1e-6);
+    CHECK_NEAR(harness.output()[96], 0.5, 1e-6);
+    CHECK_NEAR(harness.output()[47], 0.0, 1e-6);
+}
+
 TEST(comb_damp_darkens_each_pass) {
     const int frames = 1000;
     NodeHarness harness("Comb", frames, kSampleRate);

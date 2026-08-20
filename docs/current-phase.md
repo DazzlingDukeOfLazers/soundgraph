@@ -231,10 +231,18 @@ meets the kick except through the sidechain, pumping. **The whole audited shortl
 landed**: the vocabulary went from 25 node types to 40 in one pass, every one with a
 jig, a machine-verified demo, and both Godot extensions rebuilt.
 
-On the bench for a next pass: an editor oscilloscope (editor work, not DSP), euclidean
-rhythms and probability gates for the generative crowd, and a shipped Karplus-Strong
-plucked-string module if feedback through Delay already permits it — worth ten minutes
-of patching to find out before building anything. The bigger items from the original
+The Karplus-Strong experiment ran, and both halves answered. Graph feedback through
+Delay works exactly as documented: the cycle validates, rings for seconds, and its
+period is the delay plus one 64-sample block, measured within a sample of prediction.
+But that route cannot track a keyboard (nothing computes 1/f), so the shipped
+instrument uses the Comb instead — whose loop is already Karplus-Strong, sample-exact —
+via a new `frequency` input that tunes the loop to one period of the incoming signal.
+`examples/patches/plucked-string.json` is the whole 1983 paper as four nodes in a
+module: noise burst into a tuned comb, in tune to a tenth of a hertz, with Sustain,
+Damp, Pick and Echo knobs.
+
+On the bench for a next pass: an editor oscilloscope (editor work, not DSP), and
+euclidean rhythms and probability gates for the generative crowd. The bigger items from the original
 audit — the sampler and its buffer schema, tempo-synced delay times, a stereo field —
 deserve their own planning conversation after the show.
 
