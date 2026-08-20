@@ -3702,6 +3702,32 @@ func _initialize() -> void:
 	check(is_equal_approx(fifth_tune, 82.0),
 		"Power Fifths retunes the second pad to the fifth (%.0f)" % fifth_tune)
 
+	# The axe: every eighties guitar that was actually a synthesizer. One key
+	# is a power chord — the fifth oscillator rides the pitch wire at 1.5x —
+	# and the bank runs from Palm Mute to Hair Solo.
+	await main._load_example("Synth: axe")
+	for i in 8:
+		await process_frame
+	var axe_peak: float = await _struck_peak(main, 28)
+	check(axe_peak > 0.01, "the axe chugs low E (peak %.3f)" % axe_peak)
+	var axe_names: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check(axe_names.size() == 6 and "Palm Mute" in axe_names
+			and "Hair Solo" in axe_names,
+		"and the bank runs Palm Mute to Hair Solo (%s)" % str(axe_names))
+	var mute_page := axe_names.find("Palm Mute")
+	main.patch_face._turn_to(mute_page)
+	for i in 8:
+		await process_frame
+	var muted: float = -1.0
+	for axe_node in main.patch["nodes"]:
+		if str(axe_node["id"]) == "aenv":
+			muted = float(axe_node.get("parameters", {}).get("decay", -1.0))
+	check(is_equal_approx(muted, 0.12),
+		"Palm Mute chokes the strum to 120 ms (%.2f)" % muted)
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 8,
+		"and the riff ships as eight power chords")
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:
