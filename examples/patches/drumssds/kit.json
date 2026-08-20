@@ -1,0 +1,2149 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Hex Toms"
+  },
+  "nodes": [
+    {
+      "id": "pads",
+      "type": "NoteTriggers",
+      "position": {
+        "x": 440,
+        "y": 0
+      },
+      "parameters": {
+        "base": 48
+      }
+    },
+    {
+      "id": "bus",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 400
+      }
+    },
+    {
+      "id": "split",
+      "type": "TriggerBus",
+      "position": {
+        "x": 440,
+        "y": 400
+      }
+    },
+    {
+      "id": "thwack",
+      "type": "Noise",
+      "position": {
+        "x": 880,
+        "y": 0
+      },
+      "parameters": {
+        "colour": 0
+      }
+    },
+    {
+      "id": "thwack_bp",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 1320,
+        "y": 0
+      },
+      "parameters": {
+        "cutoff": 2000,
+        "resonance": 0.4,
+        "mode": 2
+      }
+    },
+    {
+      "id": "mix",
+      "type": "Mixer",
+      "position": {
+        "x": 2860,
+        "y": 0
+      },
+      "parameters": {
+        "level1": 0.85,
+        "level2": 0.8,
+        "level3": 0.75,
+        "level4": 0.7
+      }
+    },
+    {
+      "id": "mix2",
+      "type": "Mixer",
+      "position": {
+        "x": 2860,
+        "y": 2400
+      },
+      "parameters": {
+        "level1": 0.65,
+        "level2": 0.6,
+        "level3": 0.55,
+        "level4": 0.5
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 3300,
+        "y": 0
+      },
+      "host": "stereo"
+    },
+    {
+      "id": "t1_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 400
+      }
+    },
+    {
+      "id": "t1_penv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 400
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "t1_drop",
+      "type": "Multiply",
+      "position": {
+        "x": 1320,
+        "y": 400
+      },
+      "parameters": {
+        "factor": 1.4
+      }
+    },
+    {
+      "id": "t1_osc",
+      "type": "SineOscillator",
+      "position": {
+        "x": 1760,
+        "y": 400
+      },
+      "parameters": {
+        "frequency": 55
+      }
+    },
+    {
+      "id": "t1_env",
+      "type": "ADSR",
+      "position": {
+        "x": 1320,
+        "y": 750
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.6,
+        "sustain": 0.0,
+        "release": 0.6
+      }
+    },
+    {
+      "id": "t1_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 400
+      },
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "t1_click",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 750
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "t2_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 1100
+      }
+    },
+    {
+      "id": "t2_penv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 1100
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "t2_drop",
+      "type": "Multiply",
+      "position": {
+        "x": 1320,
+        "y": 1100
+      },
+      "parameters": {
+        "factor": 1.4
+      }
+    },
+    {
+      "id": "t2_osc",
+      "type": "SineOscillator",
+      "position": {
+        "x": 1760,
+        "y": 1100
+      },
+      "parameters": {
+        "frequency": 72
+      }
+    },
+    {
+      "id": "t2_env",
+      "type": "ADSR",
+      "position": {
+        "x": 1320,
+        "y": 1450
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.52,
+        "sustain": 0.0,
+        "release": 0.52
+      }
+    },
+    {
+      "id": "t2_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 1100
+      },
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "t2_click",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 1450
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "t3_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 1800
+      }
+    },
+    {
+      "id": "t3_penv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 1800
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "t3_drop",
+      "type": "Multiply",
+      "position": {
+        "x": 1320,
+        "y": 1800
+      },
+      "parameters": {
+        "factor": 1.4
+      }
+    },
+    {
+      "id": "t3_osc",
+      "type": "SineOscillator",
+      "position": {
+        "x": 1760,
+        "y": 1800
+      },
+      "parameters": {
+        "frequency": 92
+      }
+    },
+    {
+      "id": "t3_env",
+      "type": "ADSR",
+      "position": {
+        "x": 1320,
+        "y": 2150
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.46,
+        "sustain": 0.0,
+        "release": 0.46
+      }
+    },
+    {
+      "id": "t3_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 1800
+      },
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "t3_click",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 2150
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "t4_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 2500
+      }
+    },
+    {
+      "id": "t4_penv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 2500
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "t4_drop",
+      "type": "Multiply",
+      "position": {
+        "x": 1320,
+        "y": 2500
+      },
+      "parameters": {
+        "factor": 1.4
+      }
+    },
+    {
+      "id": "t4_osc",
+      "type": "SineOscillator",
+      "position": {
+        "x": 1760,
+        "y": 2500
+      },
+      "parameters": {
+        "frequency": 118
+      }
+    },
+    {
+      "id": "t4_env",
+      "type": "ADSR",
+      "position": {
+        "x": 1320,
+        "y": 2850
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.4,
+        "sustain": 0.0,
+        "release": 0.4
+      }
+    },
+    {
+      "id": "t4_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 2500
+      },
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "t4_click",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 2850
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "t5_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 3200
+      }
+    },
+    {
+      "id": "t5_penv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 3200
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "t5_drop",
+      "type": "Multiply",
+      "position": {
+        "x": 1320,
+        "y": 3200
+      },
+      "parameters": {
+        "factor": 1.4
+      }
+    },
+    {
+      "id": "t5_osc",
+      "type": "SineOscillator",
+      "position": {
+        "x": 1760,
+        "y": 3200
+      },
+      "parameters": {
+        "frequency": 150
+      }
+    },
+    {
+      "id": "t5_env",
+      "type": "ADSR",
+      "position": {
+        "x": 1320,
+        "y": 3550
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.35,
+        "sustain": 0.0,
+        "release": 0.35
+      }
+    },
+    {
+      "id": "t5_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 3200
+      },
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "t5_click",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 3550
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "t6_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 3900
+      }
+    },
+    {
+      "id": "t6_penv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 3900
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "t6_drop",
+      "type": "Multiply",
+      "position": {
+        "x": 1320,
+        "y": 3900
+      },
+      "parameters": {
+        "factor": 1.4
+      }
+    },
+    {
+      "id": "t6_osc",
+      "type": "SineOscillator",
+      "position": {
+        "x": 1760,
+        "y": 3900
+      },
+      "parameters": {
+        "frequency": 190
+      }
+    },
+    {
+      "id": "t6_env",
+      "type": "ADSR",
+      "position": {
+        "x": 1320,
+        "y": 4250
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.3,
+        "sustain": 0.0,
+        "release": 0.3
+      }
+    },
+    {
+      "id": "t6_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 3900
+      },
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "t6_click",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 4250
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "t7_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 4600
+      }
+    },
+    {
+      "id": "t7_penv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 4600
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "t7_drop",
+      "type": "Multiply",
+      "position": {
+        "x": 1320,
+        "y": 4600
+      },
+      "parameters": {
+        "factor": 1.4
+      }
+    },
+    {
+      "id": "t7_osc",
+      "type": "SineOscillator",
+      "position": {
+        "x": 1760,
+        "y": 4600
+      },
+      "parameters": {
+        "frequency": 240
+      }
+    },
+    {
+      "id": "t7_env",
+      "type": "ADSR",
+      "position": {
+        "x": 1320,
+        "y": 4950
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.27,
+        "sustain": 0.0,
+        "release": 0.27
+      }
+    },
+    {
+      "id": "t7_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 4600
+      },
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "t7_click",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 4950
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "t8_gate",
+      "type": "Add",
+      "position": {
+        "x": 660,
+        "y": 5300
+      }
+    },
+    {
+      "id": "t8_penv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 5300
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "t8_drop",
+      "type": "Multiply",
+      "position": {
+        "x": 1320,
+        "y": 5300
+      },
+      "parameters": {
+        "factor": 1.4
+      }
+    },
+    {
+      "id": "t8_osc",
+      "type": "SineOscillator",
+      "position": {
+        "x": 1760,
+        "y": 5300
+      },
+      "parameters": {
+        "frequency": 300
+      }
+    },
+    {
+      "id": "t8_env",
+      "type": "ADSR",
+      "position": {
+        "x": 1320,
+        "y": 5650
+      },
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.24,
+        "sustain": 0.0,
+        "release": 0.24
+      }
+    },
+    {
+      "id": "t8_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 5300
+      },
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "t8_click",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 5650
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "bus",
+        "port": "out"
+      },
+      "to": {
+        "node": "split",
+        "port": "bus"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack",
+        "port": "out"
+      },
+      "to": {
+        "node": "thwack_bp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "pads",
+        "port": "t1"
+      },
+      "to": {
+        "node": "t1_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t1"
+      },
+      "to": {
+        "node": "t1_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t1_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t1_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t1_drop",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_drop",
+        "port": "out"
+      },
+      "to": {
+        "node": "t1_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "t1_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "t1_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "t1_click",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t1_click",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "t1_click",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "pads",
+        "port": "t2"
+      },
+      "to": {
+        "node": "t2_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t2"
+      },
+      "to": {
+        "node": "t2_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t2_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t2_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t2_drop",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_drop",
+        "port": "out"
+      },
+      "to": {
+        "node": "t2_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "t2_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "t2_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "t2_click",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t2_click",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "t2_click",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "pads",
+        "port": "t3"
+      },
+      "to": {
+        "node": "t3_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t3"
+      },
+      "to": {
+        "node": "t3_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t3_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t3_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t3_drop",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_drop",
+        "port": "out"
+      },
+      "to": {
+        "node": "t3_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "t3_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "t3_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "t3_click",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t3_click",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "t3_click",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "pads",
+        "port": "t4"
+      },
+      "to": {
+        "node": "t4_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t4"
+      },
+      "to": {
+        "node": "t4_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t4_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t4_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t4_drop",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_drop",
+        "port": "out"
+      },
+      "to": {
+        "node": "t4_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "t4_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "t4_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "t4_click",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t4_click",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in4"
+      }
+    },
+    {
+      "from": {
+        "node": "t4_click",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in4"
+      }
+    },
+    {
+      "from": {
+        "node": "pads",
+        "port": "t5"
+      },
+      "to": {
+        "node": "t5_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t5"
+      },
+      "to": {
+        "node": "t5_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t5_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t5_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t5_drop",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_drop",
+        "port": "out"
+      },
+      "to": {
+        "node": "t5_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "t5_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "t5_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "t5_click",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t5_click",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "t5_click",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "pads",
+        "port": "t6"
+      },
+      "to": {
+        "node": "t6_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t6"
+      },
+      "to": {
+        "node": "t6_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t6_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t6_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t6_drop",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_drop",
+        "port": "out"
+      },
+      "to": {
+        "node": "t6_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "t6_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "t6_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "t6_click",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t6_click",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "t6_click",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "pads",
+        "port": "t7"
+      },
+      "to": {
+        "node": "t7_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t7"
+      },
+      "to": {
+        "node": "t7_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t7_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t7_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t7_drop",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_drop",
+        "port": "out"
+      },
+      "to": {
+        "node": "t7_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "t7_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "t7_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "t7_click",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t7_click",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "t7_click",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "pads",
+        "port": "t8"
+      },
+      "to": {
+        "node": "t8_gate",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "split",
+        "port": "t8"
+      },
+      "to": {
+        "node": "t8_gate",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t8_penv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_gate",
+        "port": "out"
+      },
+      "to": {
+        "node": "t8_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t8_drop",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_drop",
+        "port": "out"
+      },
+      "to": {
+        "node": "t8_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "t8_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "t8_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thwack_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "t8_click",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_penv",
+        "port": "out"
+      },
+      "to": {
+        "node": "t8_click",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in4"
+      }
+    },
+    {
+      "from": {
+        "node": "t8_click",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in4"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    },
+    {
+      "from": {
+        "node": "mix2",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "mix2",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "base",
+      "label": "Base",
+      "kind": "knob",
+      "target": {
+        "node": "pads",
+        "parameter": "base"
+      },
+      "min": 0,
+      "max": 120,
+      "default": 48,
+      "scaling": "linear",
+      "group": "pads"
+    },
+    {
+      "id": "t1_tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "t1_osc",
+        "parameter": "frequency"
+      },
+      "min": 30,
+      "max": 99,
+      "default": 55,
+      "scaling": "exponential",
+      "group": "pad 1"
+    },
+    {
+      "id": "t1_level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "mix",
+        "parameter": "level1"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.85,
+      "scaling": "linear",
+      "group": "pad 1"
+    },
+    {
+      "id": "t2_tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "t2_osc",
+        "parameter": "frequency"
+      },
+      "min": 39,
+      "max": 129,
+      "default": 72,
+      "scaling": "exponential",
+      "group": "pad 2"
+    },
+    {
+      "id": "t2_level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "mix",
+        "parameter": "level2"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.7999999999999999,
+      "scaling": "linear",
+      "group": "pad 2"
+    },
+    {
+      "id": "t3_tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "t3_osc",
+        "parameter": "frequency"
+      },
+      "min": 50,
+      "max": 165,
+      "default": 92,
+      "scaling": "exponential",
+      "group": "pad 3"
+    },
+    {
+      "id": "t3_level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "mix",
+        "parameter": "level3"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.75,
+      "scaling": "linear",
+      "group": "pad 3"
+    },
+    {
+      "id": "t4_tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "t4_osc",
+        "parameter": "frequency"
+      },
+      "min": 64,
+      "max": 212,
+      "default": 118,
+      "scaling": "exponential",
+      "group": "pad 4"
+    },
+    {
+      "id": "t4_level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "mix",
+        "parameter": "level4"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.7,
+      "scaling": "linear",
+      "group": "pad 4"
+    },
+    {
+      "id": "t5_tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "t5_osc",
+        "parameter": "frequency"
+      },
+      "min": 82,
+      "max": 270,
+      "default": 150,
+      "scaling": "exponential",
+      "group": "pad 5"
+    },
+    {
+      "id": "t5_level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "mix2",
+        "parameter": "level1"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.65,
+      "scaling": "linear",
+      "group": "pad 5"
+    },
+    {
+      "id": "t6_tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "t6_osc",
+        "parameter": "frequency"
+      },
+      "min": 104,
+      "max": 342,
+      "default": 190,
+      "scaling": "exponential",
+      "group": "pad 6"
+    },
+    {
+      "id": "t6_level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "mix2",
+        "parameter": "level2"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.6,
+      "scaling": "linear",
+      "group": "pad 6"
+    },
+    {
+      "id": "t7_tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "t7_osc",
+        "parameter": "frequency"
+      },
+      "min": 132,
+      "max": 432,
+      "default": 240,
+      "scaling": "exponential",
+      "group": "pad 7"
+    },
+    {
+      "id": "t7_level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "mix2",
+        "parameter": "level3"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.55,
+      "scaling": "linear",
+      "group": "pad 7"
+    },
+    {
+      "id": "t8_tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "t8_osc",
+        "parameter": "frequency"
+      },
+      "min": 165,
+      "max": 540,
+      "default": 300,
+      "scaling": "exponential",
+      "group": "pad 8"
+    },
+    {
+      "id": "t8_level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "mix2",
+        "parameter": "level4"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.5,
+      "scaling": "linear",
+      "group": "pad 8"
+    }
+  ],
+  "sequence": {
+    "tempo": 118.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 0,
+        "note": 55,
+        "length": 1
+      },
+      {
+        "step": 2,
+        "note": 54,
+        "length": 1
+      },
+      {
+        "step": 4,
+        "note": 53,
+        "length": 1
+      },
+      {
+        "step": 6,
+        "note": 52,
+        "length": 1
+      },
+      {
+        "step": 8,
+        "note": 51,
+        "length": 1
+      },
+      {
+        "step": 9,
+        "note": 50,
+        "length": 1
+      },
+      {
+        "step": 10,
+        "note": 49,
+        "length": 1
+      },
+      {
+        "step": 11,
+        "note": 48,
+        "length": 1
+      },
+      {
+        "step": 12,
+        "note": 48,
+        "length": 1
+      },
+      {
+        "step": 14,
+        "note": 50,
+        "length": 1
+      },
+      {
+        "step": 15,
+        "note": 52,
+        "length": 1
+      }
+    ]
+  },
+  "presets": [
+    {
+      "name": "Stock Hex",
+      "values": {
+        "base": 48,
+        "t1_tune": 55.0,
+        "t1_level": 0.85,
+        "t2_tune": 72.0,
+        "t2_level": 0.7999999999999999,
+        "t3_tune": 92.0,
+        "t3_level": 0.75,
+        "t4_tune": 118.0,
+        "t4_level": 0.7,
+        "t5_tune": 150.0,
+        "t5_level": 0.65,
+        "t6_tune": 190.0,
+        "t6_level": 0.6,
+        "t7_tune": 240.0,
+        "t7_level": 0.55,
+        "t8_tune": 300.0,
+        "t8_level": 0.5
+      }
+    },
+    {
+      "name": "Deep Dish",
+      "values": {
+        "base": 48,
+        "t1_tune": 39.6,
+        "t1_level": 0.85,
+        "t2_tune": 51.8,
+        "t2_level": 0.7999999999999999,
+        "t3_tune": 66.2,
+        "t3_level": 0.75,
+        "t4_tune": 85.0,
+        "t4_level": 0.7,
+        "t5_tune": 108.0,
+        "t5_level": 0.65,
+        "t6_tune": 136.8,
+        "t6_level": 0.6,
+        "t7_tune": 172.8,
+        "t7_level": 0.55,
+        "t8_tune": 216.0,
+        "t8_level": 0.5
+      }
+    },
+    {
+      "name": "High Wire",
+      "values": {
+        "base": 48,
+        "t1_tune": 79.8,
+        "t1_level": 0.85,
+        "t2_tune": 104.4,
+        "t2_level": 0.7999999999999999,
+        "t3_tune": 133.4,
+        "t3_level": 0.75,
+        "t4_tune": 171.1,
+        "t4_level": 0.7,
+        "t5_tune": 217.5,
+        "t5_level": 0.65,
+        "t6_tune": 275.5,
+        "t6_level": 0.6,
+        "t7_tune": 348.0,
+        "t7_level": 0.55,
+        "t8_tune": 435.0,
+        "t8_level": 0.5
+      }
+    },
+    {
+      "name": "Power Fifths",
+      "values": {
+        "base": 48,
+        "t1_tune": 55,
+        "t1_level": 0.85,
+        "t2_tune": 82,
+        "t2_level": 0.7999999999999999,
+        "t3_tune": 123,
+        "t3_level": 0.75,
+        "t4_tune": 185,
+        "t4_level": 0.7,
+        "t5_tune": 110,
+        "t5_level": 0.65,
+        "t6_tune": 165,
+        "t6_level": 0.6,
+        "t7_tune": 247,
+        "t7_level": 0.55,
+        "t8_tune": 370,
+        "t8_level": 0.5
+      }
+    }
+  ]
+}

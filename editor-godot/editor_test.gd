@@ -3657,6 +3657,51 @@ func _initialize() -> void:
 		"and four-to-the-floor ships in the roll (%d notes)"
 			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
 
+	# The 606: seven voices, because the machine had seven — pad eight staying
+	# quiet is the honest spelling of that. Silence first, cymbal last: the
+	# cymbal's wash rings for most of a second.
+	await main._load_example("606: kit")
+	for i in 8:
+		await process_frame
+	var below_606: float = await _struck_peak(main, 47)
+	check(below_606 < 0.005,
+		"a key below the 606's base strikes nothing (peak %.3f)" % below_606)
+	var silent_pad: float = await _struck_peak(main, 55)
+	check(silent_pad < 0.005,
+		"and pad eight stays quiet, as the hardware would (peak %.3f)" % silent_pad)
+	for pad_606 in [48, 49, 50, 51, 52, 53, 54]:
+		var peak_606: float = await _struck_peak(main, pad_606)
+		check(peak_606 > 0.01,
+			"606 pad %d strikes its drum (peak %.3f)" % [pad_606, peak_606])
+	check((main.patch.get("presets", []) as Array).size() == 3,
+		"and its bank holds three rooms")
+
+	# The hex toms: eight dishes down the rack, and the mandatory fill.
+	await main._load_example("SDS: kit")
+	for i in 8:
+		await process_frame
+	var below_sds: float = await _struck_peak(main, 47)
+	check(below_sds < 0.005,
+		"a key below the hex rack strikes nothing (peak %.3f)" % below_sds)
+	for pad_sds in [48, 49, 50, 51, 52, 53, 54, 55]:
+		var peak_sds: float = await _struck_peak(main, pad_sds)
+		check(peak_sds > 0.01,
+			"hex pad %d dishes (peak %.3f)" % [pad_sds, peak_sds])
+	var hex_names: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check("Deep Dish" in hex_names and "Power Fifths" in hex_names,
+		"and the tunings include Deep Dish and Power Fifths (%s)" % str(hex_names))
+	var fifths := hex_names.find("Power Fifths")
+	main.patch_face._turn_to(fifths)
+	for i in 8:
+		await process_frame
+	var fifth_tune: float = -1.0
+	for hex_node in main.patch["nodes"]:
+		if str(hex_node["id"]) == "t2_osc":
+			fifth_tune = float(hex_node.get("parameters", {}).get("frequency", -1.0))
+	check(is_equal_approx(fifth_tune, 82.0),
+		"Power Fifths retunes the second pad to the fifth (%.0f)" % fifth_tune)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:
