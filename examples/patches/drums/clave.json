@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "808 Clave"
+  },
+  "nodes": [
+    {
+      "id": "note",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note"
+    },
+    {
+      "id": "ping",
+      "type": "SineOscillator",
+      "position": {
+        "x": 440,
+        "y": 0
+      },
+      "name": "Ping",
+      "parameters": {
+        "frequency": 2500
+      }
+    },
+    {
+      "id": "clave_env",
+      "type": "ADSR",
+      "position": {
+        "x": 0,
+        "y": 400
+      },
+      "name": "Tap",
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.045,
+        "sustain": 0.0,
+        "release": 0.045
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "position": {
+        "x": 880,
+        "y": 0
+      },
+      "name": "Level",
+      "parameters": {
+        "gain": 0.6
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 1320,
+        "y": 0
+      },
+      "host": "stereo"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "note",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "clave_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "ping",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "clave_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "ping",
+        "parameter": "frequency"
+      },
+      "min": 1500,
+      "max": 3500,
+      "default": 2500,
+      "scaling": "exponential"
+    },
+    {
+      "id": "tap",
+      "label": "Tap",
+      "kind": "knob",
+      "target": {
+        "node": "clave_env",
+        "parameter": "decay"
+      },
+      "min": 0.02,
+      "max": 0.12,
+      "default": 0.045,
+      "scaling": "exponential"
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.6,
+      "scaling": "linear"
+    }
+  ],
+  "sequence": {
+    "tempo": 120.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 0,
+        "note": 55,
+        "length": 1
+      },
+      {
+        "step": 3,
+        "note": 55,
+        "length": 1
+      },
+      {
+        "step": 6,
+        "note": 55,
+        "length": 1
+      },
+      {
+        "step": 10,
+        "note": 55,
+        "length": 1
+      },
+      {
+        "step": 12,
+        "note": 55,
+        "length": 1
+      }
+    ]
+  }
+}

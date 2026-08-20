@@ -2967,7 +2967,8 @@ func _initialize() -> void:
 	# pattern baked into its sequence so opening one and pressing Play is a demo.
 	# The checks are audible ones: a drum that validates but does not sound is a
 	# picture of a drum.
-	for kit_label in ["808: kick", "808: snare", "808: hat-closed", "808: hat-open"]:
+	for kit_label in ["808: kick", "808: snare", "808: hat-closed", "808: hat-open",
+			"808: clap", "808: rimshot", "808: cowbell", "808: clave"]:
 		await main._load_example(kit_label)
 		for i in 8:
 			await process_frame
@@ -2980,14 +2981,14 @@ func _initialize() -> void:
 	await main._load_example("808: kit")
 	for i in 8:
 		await process_frame
-	for pad_note in [48, 49, 50, 51]:
+	for pad_note in [48, 49, 50, 51, 52, 53, 54, 55]:
 		var pad_peak: float = await _struck_peak(main, pad_note)
 		check(pad_peak > 0.01,
 			"pad %d strikes its drum (peak %.3f)" % [pad_note, pad_peak])
 	var off_pad: float = await _struck_peak(main, 47)
 	check(off_pad < 0.005,
 		"a key below the base strikes nothing (peak %.3f)" % off_pad)
-	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 16,
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 20,
 		"and the beat ships in the roll (%d notes)"
 			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
 
