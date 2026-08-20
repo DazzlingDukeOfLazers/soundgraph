@@ -3800,6 +3800,31 @@ func _initialize() -> void:
 	check(is_equal_approx(bell_up, 1.0),
 		"and turning to it brings the bell forward (level %.2f)" % bell_up)
 
+	# The Capture button: draw drums on the roll, press it, and the chopper's buffer
+	# becomes the bar you drew. The hybrid kit ships chopping a bar of the Euclid
+	# groove; capture must replace it with a render of the kit's own roll — different
+	# bytes, same one-bar shape — and leave the engine loaded and playable.
+	await main._load_example("Kit Chopper")
+	for i in 8:
+		await process_frame
+	var shipped_data: String = str(((main.patch.get("buffers", {}) as Dictionary)
+		.get("capture", {}) as Dictionary).get("data", ""))
+	check(shipped_data != "", "the hybrid kit ships with a capture buffer")
+	main._capture_roll()
+	for i in 8:
+		await process_frame
+	var captured_data: String = str(((main.patch.get("buffers", {}) as Dictionary)
+		.get("capture", {}) as Dictionary).get("data", ""))
+	check(captured_data != "" and captured_data != shipped_data,
+		"Capture replaces the shipped bar with the roll's own render")
+	check(int(main.patch.get("schema_version", 1)) >= 3,
+		"and the document declares the version that says buffers exist")
+	check(main.engine != null and main.engine.is_loaded(),
+		"and the engine is still standing afterwards")
+	var chopped_peak: float = await _struck_peak(main, 48)
+	check(chopped_peak > 0.005,
+		"the kit still strikes over the captured chop (peak %.3f)" % chopped_peak)
+
 	# The bank travels with the face. Mounted as a device, the poly's strip must
 	# hold the same five pages its file shipped — every device's strip said "no
 	# presets yet" once, because the instance face was built without the bank.
@@ -6824,8 +6849,8 @@ func _initialize() -> void:
 	await process_frame
 	check(not main.muted, "and unmuting puts it back")
 
-	check(buttons == 9,
-		"with nine buttons on it: collapse, mute, roll, play, zoom, two octave, two width (%d)"
+	check(buttons == 10,
+		"with ten buttons on it: collapse, mute, roll, play, capture, zoom, two octave, two width (%d)"
 		% buttons)
 
 	# The dock. The keyboard was the brightest, heaviest thing on screen and the eye

@@ -57,6 +57,8 @@ void SoundGraphEngine::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_parameter", "node_id", "parameter", "value"),
                          &SoundGraphEngine::set_parameter);
 
+    ClassDB::bind_method(D_METHOD("render_block", "frames"),
+                         &SoundGraphEngine::render_block);
     ClassDB::bind_method(D_METHOD("fill_playback", "playback", "max_frames"),
                          &SoundGraphEngine::fill_playback);
     ClassDB::bind_method(D_METHOD("get_peak"), &SoundGraphEngine::get_peak);
@@ -273,6 +275,28 @@ bool SoundGraphEngine::set_parameter(const String& node_id, const String& parame
 // -------------------------------------------------------------------------------------
 // Audio
 // -------------------------------------------------------------------------------------
+
+// Offline pull for anything that is not the speakers: the roll capture renders a bar
+// through a second engine instance with this, block by block between note events, and
+// never touches the one the audio thread is filling. Mono, folded like the goldens.
+PackedFloat32Array SoundGraphEngine::render_block(int frames) {
+    PackedFloat32Array out;
+    if (!loaded_ || frames <= 0) {
+        return out;
+    }
+    out.resize(frames);
+    int written = 0;
+    while (written < frames) {
+        const int chunk = std::min(frames - written, kMaxFillFrames);
+        graph_.render(left_.data(), right_.data(), chunk);
+        for (int i = 0; i < chunk; ++i) {
+            out[written + i] = 0.5f * (left_[static_cast<std::size_t>(i)] +
+                                       right_[static_cast<std::size_t>(i)]);
+        }
+        written += chunk;
+    }
+    return out;
+}
 
 int SoundGraphEngine::fill_playback(const Ref<AudioStreamGeneratorPlayback>& playback,
                                     int max_frames) {

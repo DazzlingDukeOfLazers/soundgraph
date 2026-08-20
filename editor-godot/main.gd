@@ -176,6 +176,7 @@ var face_edit_button: Button
 var piano_roll: PianoRoll
 var roll_button: Button
 var roll_play: Button
+var roll_capture: Button
 var roll_tempo: ValueField
 var roll_zoom: Button
 var midi_dialog: FileDialog
@@ -5166,6 +5167,7 @@ func _set_roll_open(open: bool) -> void:
 	roll_open = open
 	piano_roll.visible = open and keyboard_expanded
 	roll_play.visible = open
+	roll_capture.visible = open
 	roll_tempo.visible = open
 	roll_zoom.visible = open
 	Settings.store("piano_roll", open)
@@ -5232,6 +5234,71 @@ func _roll_step_seconds() -> float:
 	var tempo: float = float(patch.get("sequence", {}).get("tempo", 120.0))
 	# Sixteenth notes: four steps to the beat.
 	return 60.0 / clampf(tempo, 40.0, 240.0) / 4.0
+
+
+## The roll, rendered instead of played: a second engine walks the same steps the
+## Play transport would, offline, and the bar lands in the patch as the "capture"
+## buffer. Draw drums, press this, and a Sampler with slices chops your own playing --
+## the hybrid the drum kit and the break chopper make together.
+func _capture_roll() -> void:
+	var sequence: Dictionary = patch.get("sequence", {})
+	var notes: Array = sequence.get("notes", [])
+	if notes.is_empty():
+		_say("the roll is empty — draw some drums first")
+		return
+	var text := JSON.stringify(patch, "  ")
+	var offline: Object = ClassDB.instantiate("SoundGraphEngine")
+	var report: Variant = JSON.parse_string(offline.validate_patch(text))
+	if typeof(report) != TYPE_DICTIONARY or not report["ok"]:
+		_say("the patch does not validate, so there is nothing true to capture")
+		return
+	offline.load_patch(text, 48000.0)
+	if not offline.is_loaded():
+		_say("the offline engine refused the patch")
+		return
+	var steps: int = maxi(1, int(sequence.get("steps", 16)))
+	var step_frames := int(round(_roll_step_seconds() * 48000.0))
+	var pcm := PackedByteArray()
+	var sounding: Dictionary = {}
+	for step in steps:
+		# The same order Play uses: what ends on this step lets go before what
+		# begins on it, so back-to-back retriggers survive the capture too.
+		var still: Dictionary = {}
+		for note in sounding:
+			var remaining: int = int(sounding[note]) - 1
+			if remaining <= 0:
+				offline.note_off(int(note))
+			else:
+				still[note] = remaining
+		sounding = still
+		for entry: Dictionary in notes:
+			if int(entry.get("step", -1)) != step:
+				continue
+			var note := int(entry.get("note", -1))
+			if note >= 0 and not sounding.has(note):
+				offline.note_on(note, 0.9)
+				sounding[note] = maxi(1, int(entry.get("length", 1)))
+		var block: PackedFloat32Array = offline.render_block(step_frames)
+		for sample in block:
+			var value := int(round(clampf(sample, -1.0, 1.0) * 32767.0))
+			pcm.append(value & 0xFF)
+			pcm.append((value >> 8) & 0xFF)
+	_begin_edit()
+	if int(patch.get("schema_version", 1)) < 3:
+		patch["schema_version"] = 3
+	var buffers: Dictionary = patch.get("buffers", {})
+	buffers["capture"] = {"sample_rate": 48000, "channels": 1, "format": "pcm16",
+		"data": Marshalls.raw_to_base64(pcm)}
+	patch["buffers"] = buffers
+	_commit_edit("capture roll")
+	_apply()
+	var bars := ceili(float(steps) / 16.0)
+	var plays_it := false
+	for node: Dictionary in patch.get("nodes", []):
+		if str(node.get("buffer", "")) == "capture":
+			plays_it = true
+	_say("captured %d bar%s of the roll%s" % [bars, "s" if bars > 1 else "",
+		"" if plays_it else " — add a Sampler with buffer \"capture\" to play it"])
 
 
 func _set_roll_tempo(value: float) -> void:
@@ -5443,6 +5510,14 @@ func _build_keyboard_bar() -> Control:
 	roll_play.visible = false
 	roll_play.toggled.connect(_set_roll_playing)
 	bar.add_child(_defocus(roll_play))
+	roll_capture = Button.new()
+	roll_capture.text = "Capture"
+	roll_capture.tooltip_text = "Render the roll into the patch's \"capture\" buffer " \
+		+ "— one pass, offline, exactly as Play sounds it. A Sampler whose buffer is " \
+		+ "\"capture\" starts chopping what you drew."
+	roll_capture.visible = false
+	roll_capture.pressed.connect(_capture_roll)
+	bar.add_child(_defocus(roll_capture))
 	roll_tempo = ValueField.new()
 	roll_tempo.centred = true
 	roll_tempo.custom_minimum_size.x = Design.scale(84)

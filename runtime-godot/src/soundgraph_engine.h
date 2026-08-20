@@ -88,6 +88,7 @@ public:
     // Renders into the playback buffer and returns how many frames were pushed. Call it
     // from _process with get_frames_available(); the buffer plumbing stays in C++ so
     // GDScript never touches a sample.
+    godot::PackedFloat32Array render_block(int frames);
     int fill_playback(const godot::Ref<godot::AudioStreamGeneratorPlayback>& playback,
                       int max_frames);
 
