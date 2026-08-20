@@ -1629,6 +1629,75 @@ TEST(step_sequencer_reset_returns_to_step_one) {
     CHECK_NEAR(harness.output()[6], 0.2, 1e-6);
 }
 
+TEST(euclid_three_in_eight_is_the_tresillo) {
+    const int frames = 16;
+    NodeHarness harness("Euclid", frames, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("steps", 8.0f);
+    harness.set("fill", 3.0f);
+    std::vector<float>& clock = harness.input("clock");
+    for (int i = 0; i < frames; i += 2) {
+        clock[static_cast<std::size_t>(i)] = 1.0f;  // eight pulses, one per two samples
+    }
+    harness.process();
+    // ((step * 3) mod 8) < 3 puts the hits on 1, 4 and 7 of the eight: x..x..x.
+    const std::vector<float>& gate = harness.output("gate");
+    const std::vector<float>& rest = harness.output("rest");
+    bool pattern_ok = true;
+    for (int step = 0; step < 8; ++step) {
+        const bool expected = step == 0 || step == 3 || step == 6;
+        pattern_ok = pattern_ok && (gate[static_cast<std::size_t>(step * 2)] >= 0.5f) == expected;
+        // The rest output is the exact complement, on the pulses.
+        pattern_ok = pattern_ok && (rest[static_cast<std::size_t>(step * 2)] >= 0.5f) == !expected;
+    }
+    CHECK(pattern_ok);
+    // Between pulses both outputs are low: the clock's width is the pulse width.
+    CHECK(gate[1] < 0.5f);
+    CHECK(rest[1] < 0.5f);
+}
+
+TEST(euclid_fill_bounds_are_silence_and_every_step) {
+    NodeHarness none("Euclid", 8, kSampleRate);
+    none.set("steps", 4.0f);
+    none.set("fill", 0.0f);
+    std::vector<float>& clock_none = none.input("clock");
+    for (int i = 0; i < 8; i += 2) clock_none[static_cast<std::size_t>(i)] = 1.0f;
+    none.process();
+    bool silent = true;
+    for (float sample : none.output("gate")) silent = silent && sample < 0.5f;
+    CHECK(silent);
+
+    NodeHarness all("Euclid", 8, kSampleRate);
+    all.set("steps", 4.0f);
+    all.set("fill", 16.0f);  // clamps to steps
+    std::vector<float>& clock_all = all.input("clock");
+    for (int i = 0; i < 8; i += 2) clock_all[static_cast<std::size_t>(i)] = 1.0f;
+    all.process();
+    bool every = true;
+    for (int i = 0; i < 8; i += 2) every = every && all.output("gate")[static_cast<std::size_t>(i)] >= 0.5f;
+    CHECK(every);
+}
+
+TEST(euclid_rotate_moves_the_downbeat) {
+    const int frames = 16;
+    NodeHarness harness("Euclid", frames, kSampleRate);
+    harness.set("steps", 8.0f);
+    harness.set("fill", 3.0f);
+    harness.set("rotate", 1.0f);
+    std::vector<float>& clock = harness.input("clock");
+    for (int i = 0; i < frames; i += 2) clock[static_cast<std::size_t>(i)] = 1.0f;
+    harness.process();
+    // Rotated by one, the hits sit where steps 1, 4 and 7 of the unrotated necklace
+    // were: steps 2, 5 and 7 of the pattern as played.
+    const std::vector<float>& gate = harness.output("gate");
+    bool pattern_ok = true;
+    for (int step = 0; step < 8; ++step) {
+        const bool expected = ((step + 1) * 3) % 8 < 3;
+        pattern_ok = pattern_ok && (gate[static_cast<std::size_t>(step * 2)] >= 0.5f) == expected;
+    }
+    CHECK(pattern_ok);
+}
+
 TEST(retrigger_restarts_an_envelope_it_is_wired_to) {
     // The two nodes together are what "stutter" means; neither says it alone.
     NodeHarness retrigger("Retrigger", kOneSecond, kSampleRate);

@@ -148,6 +148,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kClock,
         &nodes::kScaleQuantizer,
         &nodes::kStepSequencer,
+        &nodes::kEuclid,
         &nodes::kLfo,
         &nodes::kConstant,
         &nodes::kAdd,

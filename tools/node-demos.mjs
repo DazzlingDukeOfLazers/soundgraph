@@ -882,6 +882,41 @@ const DEMOS = {
       ],
     }),
   },
+  Euclid: {
+    summary: 'Spreads hits as evenly as they will go across the steps. The rest output '
+      + 'is the offbeats, ready-made.',
+    try: 'Three hits in eight steps is the tresillo — the kick plays it, and the hats '
+      + 'play everything it leaves empty, from the same node. Raise fill and the kick '
+      + 'crowds in as the hats thin out; rotate turns the whole necklace.',
+    build: () => ({
+      nodes: [
+        node('clock', 'Clock', { bpm: 120, division: 3, swing: 0, width: 5 }, 0, 0),
+        node('demo', 'Euclid', { steps: 8, fill: 3, rotate: 0 }, 1, 0),
+        node('kickosc', 'SineOscillator', { frequency: 55 }, 1, 2),
+        node('kickenv', 'AhdEnvelope', { attack: 0, hold: 0.02, decay: 0.15, punch: 1 }, 2, 1),
+        node('kick', 'Gain', { gain: 1 }, 2, 2),
+        node('hatnoise', 'Noise', {}, 1, 3),
+        node('hatenv', 'AhdEnvelope', { attack: 0, hold: 0.004, decay: 0.03 }, 2, 3),
+        node('hat', 'Gain', { gain: 0.25 }, 2, 4),
+        node('mix', 'Mixer', { level1: 1, level2: 1 }, 3, 0),
+        out(4),
+      ],
+      connections: [
+        wire('clock', 'gate', 'demo', 'clock'),
+        wire('clock', 'bar', 'demo', 'reset'),
+        wire('demo', 'gate', 'kickenv', 'gate'),
+        wire('kickenv', 'out', 'kick', 'gain'),
+        wire('kickosc', 'out', 'kick', 'in'),
+        wire('demo', 'rest', 'hatenv', 'gate'),
+        wire('hatenv', 'out', 'hat', 'gain'),
+        wire('hatnoise', 'out', 'hat', 'in'),
+        wire('kick', 'out', 'mix', 'in1'),
+        wire('hat', 'out', 'mix', 'in2'),
+        wire('mix', 'out', 'out', 'left'),
+        wire('mix', 'out', 'out', 'right'),
+      ],
+    }),
+  },
   StepSequencer: {
     summary: 'One lane of a step sequencer: sixteen values walked by a clock. A second '
       + 'lane on the same clock locks any knob per step.',
@@ -1011,6 +1046,7 @@ const PROBES = {
   ScaleQuantizer: { parameter: 'scale', value: 0 },
   // A lock appearing where there was none: step 5 of the filter lane opens up.
   StepSequencer: { node: 'locks', parameter: 'step5', value: 2 },
+  Euclid: { parameter: 'fill', value: 7 },
 };
 
 function render(type, demo) {

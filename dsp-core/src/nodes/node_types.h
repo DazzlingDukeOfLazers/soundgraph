@@ -31,6 +31,7 @@ extern const NodeTypeDescriptor kRetrigger;
 extern const NodeTypeDescriptor kClock;
 extern const NodeTypeDescriptor kScaleQuantizer;
 extern const NodeTypeDescriptor kStepSequencer;
+extern const NodeTypeDescriptor kEuclid;
 
 // Amplitude and maths
 extern const NodeTypeDescriptor kGain;

@@ -241,8 +241,10 @@ via a new `frequency` input that tunes the loop to one period of the incoming si
 module: noise burst into a tuned comb, in tune to a tenth of a hertz, with Sustain,
 Damp, Pick and Echo knobs.
 
-On the bench for a next pass: an editor oscilloscope (editor work, not DSP), and
-euclidean rhythms and probability gates for the generative crowd. The bigger items from the original
+Euclid landed too: hits spread as evenly as they will go, a gate output for the hits
+and a rest output for the offbeats, so a kick and its hats come from one node. On the
+bench for a next pass: an editor oscilloscope (editor work, not DSP), and probability
+gates. The bigger items from the original
 audit — the sampler and its buffer schema, tempo-synced delay times, a stereo field —
 deserve their own planning conversation after the show.
 

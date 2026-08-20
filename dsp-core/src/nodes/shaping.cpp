@@ -862,6 +862,91 @@ private:
     bool reset_was_open_ = false;
 };
 
+// ---------------------------------------------------------------------------------
+// Euclid
+//
+// Spreads a number of hits as evenly as they will go across a number of steps: three
+// in eight is the tresillo, five in eight the cinquillo, and most of the traditional
+// rhythms of the world fall out of small numbers. The test is ((step * fill) mod
+// steps) < fill, which lands the same necklace as Bjorklund's algorithm with a hit on
+// the downbeat, and rotate turns the necklace.
+//
+// Two outputs on purpose: the gate fires on the hits, the rest fires on the steps
+// between - a kick on one and hats on the other is a groove from a single node. Both
+// pass the clock pulse through as-is, so pulse width is the clock's decision and the
+// same-sample coherence rule holds: the edge and the step it lands on share a sample.
+// ---------------------------------------------------------------------------------
+
+constexpr PortDescriptor kEuclidInputs[] = {
+    {"clock", SignalType::Control, "", true, false,
+     "Advances one step per rising edge. The Clock node's gate is the natural wire."},
+    {"reset", SignalType::Control, "", false, false,
+     "Returns to step 1 on a rising edge, so the pattern re-anchors on a downbeat."},
+};
+
+constexpr PortDescriptor kEuclidOutputs[] = {
+    {"gate", SignalType::Control, "", false, false,
+     "The clock's pulse, passed through on the pattern's hits."},
+    {"rest", SignalType::Control, "", false, false,
+     "The clock's pulse on the steps between the hits: the offbeats, ready-made."},
+};
+
+constexpr ParameterDescriptor kEuclidParameters[] = {
+    {"steps", "", 1.0f, 16.0f, 8.0f, Scaling::Linear,
+     "How many steps the pattern spreads across.", nullptr, 0},
+    {"fill", "", 0.0f, 16.0f, 3.0f, Scaling::Linear,
+     "How many of them are hits. Three in eight is already a rhythm.", nullptr, 0},
+    {"rotate", "", 0.0f, 15.0f, 0.0f, Scaling::Linear,
+     "Turns the necklace: which step carries the downbeat.", nullptr, 0},
+};
+
+class EuclidNode final : public DspNode {
+public:
+    enum Param { kSteps = 0, kFill = 1, kRotate = 2 };
+
+    void reset() override {
+        index_ = -1;
+        clock_was_open_ = false;
+        reset_was_open_ = false;
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* clock = context.inputs[0];
+        const float* reset_in = context.inputs[1];
+        float* gate = context.outputs[0];
+        float* rest = context.outputs[1];
+
+        const int steps = static_cast<int>(dsp::clampf(parameter(kSteps) + 0.5f, 1.0f, 16.0f));
+        const int fill = static_cast<int>(dsp::clampf(parameter(kFill) + 0.5f, 0.0f,
+                                                      static_cast<float>(steps)));
+        const int rotate = static_cast<int>(dsp::clampf(parameter(kRotate) + 0.5f, 0.0f, 15.0f));
+
+        for (int i = 0; i < context.frames; ++i) {
+            const bool reset_open = gate_open(reset_in, i);
+            if (reset_open && !reset_was_open_) {
+                index_ = -1;
+            }
+            reset_was_open_ = reset_open;
+
+            const bool clock_open = gate_open(clock, i);
+            if (clock_open && !clock_was_open_) {
+                index_ = (index_ + 1) % steps;
+            }
+            clock_was_open_ = clock_open;
+
+            const int step = (index_ < 0 ? 0 : index_) % steps;
+            const bool hit = ((step + rotate) % steps) * fill % steps < fill;
+            gate[i] = clock_open && hit ? 1.0f : 0.0f;
+            rest[i] = clock_open && !hit ? 1.0f : 0.0f;
+        }
+    }
+
+private:
+    int index_ = -1;
+    bool clock_was_open_ = false;
+    bool reset_was_open_ = false;
+};
+
 template <typename T>
 std::unique_ptr<DspNode> make() {
     return std::unique_ptr<DspNode>(new T());
@@ -970,6 +1055,20 @@ const NodeTypeDescriptor kStepSequencer = {
     false, NodeRole::Processor, false,
     ResourceCost{2.0f, 16, 0},
     &make<StepSequencerNode>,
+};
+
+const NodeTypeDescriptor kEuclid = {
+    "Euclid", "Euclid", "Modulation",
+    "Spreads hits as evenly as they will go across the steps. Three in eight is "
+    "already a rhythm; the rest output is the offbeats, ready-made.",
+    "euclid|euclidean|bjorklund|rhythm|tresillo|cinquillo|world rhythm|polyrhythm|"
+    "fill|rotate|groove|offbeat",
+    Slice<PortDescriptor>(kEuclidInputs),
+    Slice<PortDescriptor>(kEuclidOutputs),
+    Slice<ParameterDescriptor>(kEuclidParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{2.0f, 12, 0},
+    &make<EuclidNode>,
 };
 
 }  // namespace nodes
