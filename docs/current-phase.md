@@ -244,7 +244,8 @@ Damp, Pick and Echo knobs.
 Euclid landed too: hits spread as evenly as they will go, a gate output for the hits
 and a rest output for the offbeats, so a kick and its hats come from one node. On the
 bench for a next pass: an editor oscilloscope (editor work, not DSP), and probability
-gates. The sampler now has its plan:
+gates. The sampler's stage one is landed — schema buffers, the Sampler node, the chunk-identity
+exit test — per its plan:
 docs/sampler-design.md — buffers inline like modules, one Sampler node whose slice
 input makes it the slicer, generated breaks rather than recorded ones, four stages
 with an exit test each, all post-freeze. Tempo-synced delay times and a stereo field

@@ -508,6 +508,115 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------------
+// Sampler
+//
+// Plays a buffer the patch carries: the first node whose sound is data rather than
+// mathematics. The buffer arrives resolved through PrepareContext - the node's JSON
+// names it, the graph owns it, and this node just holds the pointer. Stage 1 of
+// docs/sampler-design.md: gate-triggered playback at the recording's own pitch, with
+// the frequency and slice inputs staged behind it.
+//
+// The read head moves at buffer_rate / engine_rate and interpolates linearly, so a
+// 44.1 k recording plays at true speed in a 48 k graph and the golden vectors define
+// the exactness per target, as they do for everything.
+// ---------------------------------------------------------------------------------
+
+constexpr const char* kSamplerLoopLabels[] = {"off", "loop"};
+
+constexpr PortDescriptor kSamplerInputs[] = {
+    {"gate", SignalType::Control, "", true, false,
+     "Rises above 0.5 to play the buffer from its start. Retrigger restarts it."},
+};
+
+constexpr PortDescriptor kSamplerOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "The recording."},
+};
+
+constexpr ParameterDescriptor kSamplerParameters[] = {
+    {"level", "", 0.0f, 1.0f, 0.8f, Scaling::Linear,
+     "Playback level.", nullptr, 0},
+    {"loop", "", 0.0f, 1.0f, 0.0f, Scaling::Linear,
+     "Whether the end wraps back to the start while the buffer keeps playing.",
+     kSamplerLoopLabels, 2},
+};
+
+class SamplerNode final : public DspNode {
+public:
+    enum Param { kLevel = 0, kLoop = 1 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        data_ = context.buffer_data;
+        frames_ = context.buffer_frames;
+        step_ = context.buffer_sample_rate > 0.0
+                    ? static_cast<float>(context.buffer_sample_rate / context.sample_rate)
+                    : 1.0f;
+        reset();
+    }
+
+    void reset() override {
+        position_ = 0.0;
+        playing_ = false;
+        gate_was_open_ = false;
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* gate = context.inputs[0];
+        float* out = context.outputs[0];
+
+        // A node without a buffer is silent, not an error: the harness jig and a
+        // half-edited patch both meet this path, and neither deserves a crash.
+        if (data_ == nullptr || frames_ < 2) {
+            for (int i = 0; i < context.frames; ++i) {
+                out[i] = 0.0f;
+            }
+            return;
+        }
+
+        const float level = parameter(kLevel);
+        const bool loop = parameter(kLoop) >= 0.5f;
+        const double last = static_cast<double>(frames_ - 1);
+
+        for (int i = 0; i < context.frames; ++i) {
+            const bool open = gate != nullptr && gate[i] >= 0.5f;
+            if (open && !gate_was_open_) {
+                position_ = 0.0;
+                playing_ = true;
+            }
+            gate_was_open_ = open;
+
+            if (!playing_) {
+                out[i] = 0.0f;
+                continue;
+            }
+
+            const int index = static_cast<int>(position_);
+            const float fraction = static_cast<float>(position_ - index);
+            const float sample = data_[index] * (1.0f - fraction) + data_[index + 1] * fraction;
+            out[i] = sample * level;
+
+            position_ += step_;
+            if (position_ >= last) {
+                if (loop) {
+                    position_ -= last;
+                } else {
+                    playing_ = false;
+                }
+            }
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    const float* data_ = nullptr;
+    int frames_ = 0;
+    float step_ = 1.0f;
+    double position_ = 0.0;
+    bool playing_ = false;
+    bool gate_was_open_ = false;
+};
+
 template <typename T>
 std::unique_ptr<DspNode> make() {
     return std::unique_ptr<DspNode>(new T());
@@ -574,6 +683,19 @@ const NodeTypeDescriptor kNoiseOscillator = {
     false, NodeRole::Processor, false,
     ResourceCost{2.0f, 288, 0},
     &make<NoiseOscillator>,
+};
+
+const NodeTypeDescriptor kSampler = {
+    "Sampler", "Sampler", "Sources",
+    "Plays a recording the patch carries. The buffer travels inside the file, like "
+    "a module does.",
+    "sampler|sample|play recording|wav|one-shot|hit|break|loop|playback|audio file",
+    Slice<PortDescriptor>(kSamplerInputs),
+    Slice<PortDescriptor>(kSamplerOutputs),
+    Slice<ParameterDescriptor>(kSamplerParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{3.0f, 32, 0},
+    &make<SamplerNode>,
 };
 
 const NodeTypeDescriptor kLfo = {

@@ -12,11 +12,12 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "description": "Incremented only for breaking changes. A runtime must refuse a patch whose schema_version it does not implement. Version 2 adds modules; a document without modules stays version 1.",
+      "description": "Incremented only for breaking changes. A runtime must refuse a patch whose schema_version it does not implement. Version 2 adds modules; version 3 adds buffers; a document using neither stays version 1.",
       "type": "integer",
       "enum": [
         1,
-        2
+        2,
+        3
       ]
     },
     "modules": {
@@ -148,6 +149,41 @@
       "items": {
         "$ref": "#/$defs/preset"
       }
+    },
+    "buffers": {
+      "description": "Recorded audio the patch carries, keyed by id. A patch that plays a break carries the break - the same self-containment rule modules established. Requires schema_version 3.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "sample_rate": {
+            "type": "number",
+            "minimum": 1,
+            "description": "The recording's own rate; playback resamples to the graph's."
+          },
+          "channels": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Mono in this version."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "pcm16"
+            ]
+          },
+          "data": {
+            "type": "string",
+            "description": "Base64 of little-endian 16-bit PCM. Decoded size is budgeted: a warning past 1 MB, an error past 4 MB."
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "$defs": {
@@ -231,6 +267,10 @@
             "audio",
             "stereo"
           ]
+        },
+        "buffer": {
+          "type": "string",
+          "description": "Which of the patch's buffers this node plays. Only meaningful on types that play audio data, such as Sampler."
         }
       }
     },

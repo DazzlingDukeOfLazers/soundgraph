@@ -17,15 +17,28 @@ inline constexpr int kSchemaVersion = 1;
 // refuses loudly instead of misreading. Module-free documents stay version 1 forever.
 inline constexpr int kSchemaVersionModules = 2;
 
+// Documents that carry audio buffers declare this version, for the same reason.
+inline constexpr int kSchemaVersionBuffers = 3;
+
 struct ParameterValue {
     std::string name;
     double value = 0.0;
+};
+
+// Recorded audio carried by the patch, decoded: patch-io turns base64 PCM into these
+// floats, and dsp-core only ever sees the floats. A patch that plays a break carries
+// the break — the same self-containment rule modules established.
+struct BufferDescription {
+    std::string id;
+    double sample_rate = 48000.0;
+    std::vector<float> samples;  // mono
 };
 
 struct NodeDescription {
     std::string id;      // stable identity; connections refer to this
     std::string type;    // registry type name, or "module" for an instance
     std::string module;  // when type == "module": which definition this instantiates
+    std::string buffer;  // when set: which of the patch's buffers this node plays
     // When type is "Input" or "Output": which side of the machine this seam is on.
     // Empty means a module's own edge — a port, spliced out by expansion. Set means the
     // patch's edge, and the seam becomes the terminal that already speaks to that host.
@@ -172,6 +185,7 @@ struct GraphDescription {
     std::vector<ConnectionDescription> connections;
     std::vector<ControlDescription> controls;
     std::vector<AutomationLane> automation;
+    std::vector<BufferDescription> buffers;
 
     // Modules, and the document as authored. When `modules` is non-empty, the vectors
     // above hold the *flattened* view — instances expanded into plain nodes, which is
@@ -188,6 +202,7 @@ struct GraphDescription {
 
     bool has_modules() const { return !modules.empty(); }
     const ModuleDescription* find_module(const std::string& module_name) const;
+    const BufferDescription* find_buffer(const std::string& buffer_id) const;
     const NodeDescription* find_node(const std::string& node_id) const;
     std::string metadata_value(const std::string& key) const;
     void set_metadata(const std::string& key, const std::string& value);

@@ -1274,3 +1274,173 @@ TEST(a_module_may_not_reach_itself_through_another) {
     }
     CHECK(named_the_path);
 }
+
+// ---- buffers ------------------------------------------------------------------------
+
+TEST(buffers_decode_from_base64_pcm16) {
+    // Two samples, little-endian: 0x4000 is 16384 -> 0.5, 0xC000 is -16384 -> -0.5.
+    const std::string text = R"({
+        "schema_version": 3,
+        "buffers": {
+            "clip": { "sample_rate": 24000, "channels": 1, "format": "pcm16",
+                      "data": "AEAAwA==" }
+        },
+        "nodes": [
+            { "id": "gate", "type": "Constant", "parameters": { "value": 1 } },
+            { "id": "play", "type": "Sampler", "buffer": "clip" },
+            { "id": "out", "type": "StereoOutput" }
+        ],
+        "connections": [
+            { "from": { "node": "gate", "port": "out" }, "to": { "node": "play", "port": "gate" } },
+            { "from": { "node": "play", "port": "out" }, "to": { "node": "out", "port": "left" } }
+        ]
+    })";
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, graph, diagnostics));
+    CHECK(graph.buffers.size() == 1);
+    CHECK(graph.buffers[0].id == "clip");
+    CHECK_NEAR(graph.buffers[0].sample_rate, 24000.0, 1e-9);
+    CHECK(graph.buffers[0].samples.size() == 2);
+    CHECK_NEAR(graph.buffers[0].samples[0], 0.5, 1e-6);
+    CHECK_NEAR(graph.buffers[0].samples[1], -0.5, 1e-6);
+    CHECK(graph.find_node("play")->buffer == "clip");
+}
+
+TEST(buffers_survive_the_round_trip_bit_for_bit) {
+    GraphDescription original;
+    original.schema_version = soundgraph::kSchemaVersionBuffers;
+    soundgraph::BufferDescription clip;
+    clip.id = "ramp";
+    clip.sample_rate = 48000.0;
+    for (int i = 0; i < 200; ++i) {
+        clip.samples.push_back(static_cast<float>(i - 100) / 128.0f);
+    }
+    original.buffers.push_back(clip);
+    soundgraph::NodeDescription gate;
+    gate.id = "gate";
+    gate.type = "Constant";
+    original.nodes.push_back(gate);
+    soundgraph::NodeDescription play;
+    play.id = "play";
+    play.type = "Sampler";
+    play.buffer = "ramp";
+    original.nodes.push_back(play);
+    soundgraph::NodeDescription out;
+    out.id = "out";
+    out.type = "StereoOutput";
+    original.nodes.push_back(out);
+    original.connections.push_back(soundgraph::ConnectionDescription{
+        "gate", "out", "play", "gate"});
+    original.connections.push_back(soundgraph::ConnectionDescription{
+        "play", "out", "out", "left"});
+
+    const std::string text = soundgraph::write_patch(original, true);
+    GraphDescription reloaded;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, reloaded, diagnostics));
+    CHECK(reloaded.buffers.size() == 1);
+    CHECK(reloaded.buffers[0].samples.size() == original.buffers[0].samples.size());
+    // 32768 on the way out and 32768 on the way back makes the pcm16 grid a fixed
+    // point: what decodes re-encodes to the same bytes, so text is stable too.
+    CHECK(soundgraph::write_patch(reloaded, true) == text);
+}
+
+TEST(buffer_references_and_version_are_checked) {
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    const std::string wrong_version = R"({
+        "schema_version": 1,
+        "buffers": { "clip": { "data": "AEAAwA==" } },
+        "nodes": [ { "id": "out", "type": "StereoOutput" } ],
+        "connections": []
+    })";
+    CHECK(!soundgraph::parse_patch(wrong_version, graph, diagnostics));
+    CHECK(has_code(diagnostics, "buffers_require_v3"));
+
+    diagnostics.clear();
+    const std::string missing = R"({
+        "schema_version": 3,
+        "nodes": [
+            { "id": "play", "type": "Sampler", "buffer": "ghost" },
+            { "id": "out", "type": "StereoOutput" }
+        ],
+        "connections": []
+    })";
+    CHECK(!soundgraph::parse_patch(missing, graph, diagnostics));
+    CHECK(has_code(diagnostics, "unknown_buffer"));
+
+    diagnostics.clear();
+    const std::string unreferenced = R"({
+        "schema_version": 3,
+        "buffers": { "clip": { "data": "AEAAwA==" } },
+        "nodes": [ { "id": "out", "type": "StereoOutput" } ],
+        "connections": []
+    })";
+    CHECK(soundgraph::parse_patch(unreferenced, graph, diagnostics));
+    CHECK(has_code(diagnostics, "buffer_unreferenced"));
+}
+
+TEST(the_sampler_plays_its_buffer_whatever_the_host_chunk_size) {
+    // The stage-one exit test from docs/sampler-design.md: a buffer-carrying patch
+    // renders byte-identical however the host slices its calls.
+    GraphDescription graph;
+    graph.schema_version = soundgraph::kSchemaVersionBuffers;
+    soundgraph::BufferDescription clip;
+    clip.id = "clip";
+    clip.sample_rate = 48000.0;
+    for (int i = 0; i < 1000; ++i) {
+        clip.samples.push_back(0.25f + 0.5f * static_cast<float>(i % 7) / 7.0f);
+    }
+    graph.buffers.push_back(clip);
+    soundgraph::NodeDescription gate;
+    gate.id = "gate";
+    gate.type = "Constant";
+    graph.nodes.push_back(gate);
+    soundgraph::NodeDescription play;
+    play.id = "play";
+    play.type = "Sampler";
+    play.buffer = "clip";
+    graph.nodes.push_back(play);
+    soundgraph::NodeDescription out;
+    out.id = "out";
+    out.type = "StereoOutput";
+    graph.nodes.push_back(out);
+    graph.connections.push_back(soundgraph::ConnectionDescription{"gate", "out", "play", "gate"});
+    graph.connections.push_back(soundgraph::ConnectionDescription{"play", "out", "out", "left"});
+
+    auto render = [&graph](int chunk) {
+        soundgraph::Graph runtime;
+        std::vector<Diagnostic> diagnostics;
+        const bool built = runtime.build(graph, soundgraph::NodeRegistry::builtin(),
+                                         soundgraph::PrepareContext(), diagnostics);
+        std::string complaint;
+        for (const Diagnostic& diagnostic : diagnostics) {
+            complaint += diagnostic.code + " ";
+        }
+        CHECK_MESSAGE(built, "build failed: " + complaint);
+        std::vector<float> output(4800, 0.0f);
+        int written = 0;
+        while (written < 4800) {
+            const int frames = chunk < 4800 - written ? chunk : 4800 - written;
+            runtime.render(output.data() + written, nullptr, frames);
+            written += frames;
+        }
+        return output;
+    };
+
+    const std::vector<float> whole = render(4800);
+    const std::vector<float> blocks = render(64);
+    const std::vector<float> odd = render(37);
+    CHECK(whole == blocks);
+    CHECK(whole == odd);
+
+    // And it is actually the recording: the sampler's default level and the output's
+    // are 0.8 each. The read head stops one sample early — interpolation needs a
+    // neighbour — so the last playable sample is 998.
+    CHECK_NEAR(whole[0], clip.samples[0] * 0.8f * 0.8f, 1e-6);
+    CHECK_NEAR(whole[998], clip.samples[998] * 0.8f * 0.8f, 1e-6);
+    // Past the end, loop off: silence.
+    CHECK_NEAR(whole[999], 0.0, 1e-9);
+    CHECK_NEAR(whole[2000], 0.0, 1e-9);
+}

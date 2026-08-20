@@ -47,6 +47,14 @@ struct ResourceCost {
 struct PrepareContext {
     double sample_rate = 48000.0;
     int max_block_size = kBlockSize;
+
+    // The buffer this node's description names, resolved by the graph before prepare().
+    // Null for every node without one. The graph owns the storage and keeps it alive
+    // for as long as the node, so the node may hold the pointer instead of copying —
+    // one copy serves every voice.
+    const float* buffer_data = nullptr;
+    int buffer_frames = 0;
+    double buffer_sample_rate = 0.0;
 };
 
 // Everything a node is allowed to touch during processing.

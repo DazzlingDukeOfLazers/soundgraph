@@ -651,11 +651,15 @@ bool validate(const GraphDescription& description,
               std::vector<Diagnostic>& diagnostics) {
     bool ok = true;
 
-    if (description.schema_version != kSchemaVersion) {
+    // patch-io hands the engine a flattened version-1 view; a hand-built description
+    // may declare up to the buffers version, which the engine itself understands.
+    if (description.schema_version < kSchemaVersion ||
+        description.schema_version > kSchemaVersionBuffers) {
         diagnostics.push_back(error(
             "unsupported_schema_version",
             "This patch declares schema_version " + std::to_string(description.schema_version) +
-                "; this build implements " + std::to_string(kSchemaVersion) + ".",
+                "; this build implements " + std::to_string(kSchemaVersion) + " through " +
+                std::to_string(kSchemaVersionBuffers) + ".",
             "Open it in a matching build rather than guessing at the differences."));
         return false;
     }
@@ -730,6 +734,7 @@ bool Graph::build(const GraphDescription& description,
     note_receiver_nodes_.clear();
     buffer_pool_.clear();
     buffer_count_ = 0;
+    sample_buffers_ = description.buffers;
     control_queue_.clear();
     cost_ = ResourceCost{};
 
@@ -815,6 +820,24 @@ bool Graph::build(const GraphDescription& description,
 
         PrepareContext node_context = context;
         node_context.max_block_size = kBlockSize;
+        if (!node_description.buffer.empty()) {
+            for (const BufferDescription& sample : sample_buffers_) {
+                if (sample.id == node_description.buffer) {
+                    node_context.buffer_data = sample.samples.data();
+                    node_context.buffer_frames = static_cast<int>(sample.samples.size());
+                    node_context.buffer_sample_rate = sample.sample_rate;
+                    break;
+                }
+            }
+            if (node_context.buffer_data == nullptr) {
+                Diagnostic diagnostic = error("unknown_buffer",
+                    "Node " + quote(node_description.id) + " names buffer " +
+                    quote(node_description.buffer) + ", which this patch does not carry.");
+                diagnostic.node_ids = {node_description.id};
+                diagnostics.push_back(diagnostic);
+                return false;
+            }
+        }
         slot.node->prepare(node_context);
 
         slot.inputs.resize(static_cast<std::size_t>(type->inputs.size()));

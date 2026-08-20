@@ -130,6 +130,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kSquareOscillator,
         &nodes::kNoise,
         &nodes::kNoiseOscillator,
+        &nodes::kSampler,
         &nodes::kStateVariableFilter,
         &nodes::kOnePoleFilter,
         &nodes::kDelay,

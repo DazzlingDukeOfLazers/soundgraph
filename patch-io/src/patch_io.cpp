@@ -28,6 +28,210 @@ Diagnostic warning(std::string code, std::string message, std::string suggestion
     return diagnostic;
 }
 
+// ---- buffers ------------------------------------------------------------------------
+// Base64, the plain RFC alphabet, no line breaks. Hand-rolled for the same reason the
+// JSON reader is: patch-io depends on nothing, on four targets.
+
+const char kBase64Alphabet[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+std::string base64_encode(const std::vector<unsigned char>& bytes) {
+    std::string out;
+    out.reserve((bytes.size() + 2) / 3 * 4);
+    std::size_t i = 0;
+    while (i + 3 <= bytes.size()) {
+        const unsigned int chunk = (static_cast<unsigned int>(bytes[i]) << 16) |
+                                   (static_cast<unsigned int>(bytes[i + 1]) << 8) |
+                                   static_cast<unsigned int>(bytes[i + 2]);
+        out.push_back(kBase64Alphabet[(chunk >> 18) & 63]);
+        out.push_back(kBase64Alphabet[(chunk >> 12) & 63]);
+        out.push_back(kBase64Alphabet[(chunk >> 6) & 63]);
+        out.push_back(kBase64Alphabet[chunk & 63]);
+        i += 3;
+    }
+    const std::size_t remainder = bytes.size() - i;
+    if (remainder == 1) {
+        const unsigned int chunk = static_cast<unsigned int>(bytes[i]) << 16;
+        out.push_back(kBase64Alphabet[(chunk >> 18) & 63]);
+        out.push_back(kBase64Alphabet[(chunk >> 12) & 63]);
+        out.push_back('=');
+        out.push_back('=');
+    } else if (remainder == 2) {
+        const unsigned int chunk = (static_cast<unsigned int>(bytes[i]) << 16) |
+                                   (static_cast<unsigned int>(bytes[i + 1]) << 8);
+        out.push_back(kBase64Alphabet[(chunk >> 18) & 63]);
+        out.push_back(kBase64Alphabet[(chunk >> 12) & 63]);
+        out.push_back(kBase64Alphabet[(chunk >> 6) & 63]);
+        out.push_back('=');
+    }
+    return out;
+}
+
+bool base64_decode(const std::string& text, std::vector<unsigned char>& out) {
+    int table[256];
+    for (int i = 0; i < 256; ++i) {
+        table[i] = -1;
+    }
+    for (int i = 0; i < 64; ++i) {
+        table[static_cast<unsigned char>(kBase64Alphabet[i])] = i;
+    }
+    out.clear();
+    out.reserve(text.size() / 4 * 3);
+    unsigned int accumulator = 0;
+    int bits = 0;
+    for (char character : text) {
+        if (character == '=' || character == '\n' || character == '\r') {
+            continue;
+        }
+        const int value = table[static_cast<unsigned char>(character)];
+        if (value < 0) {
+            return false;
+        }
+        accumulator = (accumulator << 6) | static_cast<unsigned int>(value);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out.push_back(static_cast<unsigned char>((accumulator >> bits) & 0xFF));
+        }
+    }
+    return true;
+}
+
+// The budget: a warning when a buffer is heavy, an error when it cannot be honest
+// about fitting anywhere. Decoded bytes, since base64 inflates by a third.
+constexpr std::size_t kBufferWarnBytes = 1u << 20;   // 1 MB
+constexpr std::size_t kBufferErrorBytes = 4u << 20;  // 4 MB
+
+bool read_buffers(const json::Value& root,
+                  GraphDescription& out,
+                  std::vector<Diagnostic>& diagnostics) {
+    // The cross-checks below run even without a buffers block: a node naming a buffer
+    // in a patch that carries none is exactly the mistake they exist to catch.
+    const json::Value* buffers = root.find("buffers");
+    if (buffers != nullptr && !buffers->is_object()) {
+        diagnostics.push_back(error("buffers_not_an_object",
+                                    "\"buffers\" must be an object of named buffers."));
+        return false;
+    }
+    bool ok = true;
+    if (buffers != nullptr)
+    for (const auto& entry : buffers->object()) {
+        BufferDescription buffer;
+        buffer.id = entry.first;
+        const json::Value& body = entry.second;
+        if (!body.is_object()) {
+            diagnostics.push_back(error("buffer_not_an_object",
+                                        "Buffer '" + buffer.id + "' is not an object."));
+            ok = false;
+            continue;
+        }
+        if (const json::Value* rate = body.find("sample_rate")) {
+            buffer.sample_rate = rate->as_number(48000.0);
+        }
+        if (buffer.sample_rate <= 0.0) {
+            diagnostics.push_back(error("buffer_bad_sample_rate",
+                "Buffer '" + buffer.id + "' has a sample_rate that is not positive."));
+            ok = false;
+            continue;
+        }
+        const json::Value* channels = body.find("channels");
+        if (channels != nullptr && static_cast<int>(channels->as_number(1.0)) != 1) {
+            diagnostics.push_back(error("buffer_not_mono",
+                "Buffer '" + buffer.id + "' declares more than one channel.",
+                "Buffers are mono in this version; mix down before embedding."));
+            ok = false;
+            continue;
+        }
+        const json::Value* format = body.find("format");
+        if (format != nullptr && format->as_string() != "pcm16") {
+            diagnostics.push_back(error("buffer_unknown_format",
+                "Buffer '" + buffer.id + "' declares format '" + format->as_string() + "'.",
+                "Only \"pcm16\" exists so far."));
+            ok = false;
+            continue;
+        }
+        const json::Value* data = body.find("data");
+        if (data == nullptr || !data->is_string()) {
+            diagnostics.push_back(error("buffer_missing_data",
+                "Buffer '" + buffer.id + "' has no \"data\" string."));
+            ok = false;
+            continue;
+        }
+        std::vector<unsigned char> bytes;
+        if (!base64_decode(data->as_string(), bytes) || bytes.size() % 2 != 0) {
+            diagnostics.push_back(error("buffer_bad_data",
+                "Buffer '" + buffer.id + "' does not decode as base64 16-bit PCM."));
+            ok = false;
+            continue;
+        }
+        if (bytes.size() > kBufferErrorBytes) {
+            diagnostics.push_back(error("buffer_over_budget",
+                "Buffer '" + buffer.id + "' decodes to " + std::to_string(bytes.size()) +
+                    " bytes, over the 4 MB ceiling.",
+                "A patch is one self-contained file that runs on four targets; trim or "
+                "downsample the audio."));
+            ok = false;
+            continue;
+        }
+        if (bytes.size() > kBufferWarnBytes) {
+            diagnostics.push_back(warning("buffer_heavy",
+                "Buffer '" + buffer.id + "' decodes to " + std::to_string(bytes.size()) +
+                    " bytes; small boards may refuse this patch."));
+        }
+        buffer.samples.reserve(bytes.size() / 2);
+        for (std::size_t i = 0; i + 1 < bytes.size(); i += 2) {
+            int value = static_cast<int>(bytes[i]) | (static_cast<int>(bytes[i + 1]) << 8);
+            if (value >= 32768) {
+                value -= 65536;
+            }
+            buffer.samples.push_back(static_cast<float>(value) / 32768.0f);
+        }
+        out.buffers.push_back(std::move(buffer));
+    }
+
+    // Cross-checks, in the same breath: a node's buffer must exist, dead weight is
+    // called out, and the document must declare the version that says buffers exist.
+    bool any_named = false;
+    for (const NodeDescription& node : out.nodes) {
+        if (node.buffer.empty()) {
+            continue;
+        }
+        any_named = true;
+        if (out.find_buffer(node.buffer) == nullptr) {
+            diagnostics.push_back(error("unknown_buffer",
+                "Node '" + node.id + "' names buffer '" + node.buffer +
+                    "', which this patch does not carry."));
+            ok = false;
+        }
+    }
+    for (const BufferDescription& buffer : out.buffers) {
+        bool referenced = false;
+        for (const NodeDescription& node : out.nodes) {
+            referenced = referenced || node.buffer == buffer.id;
+        }
+        for (const ModuleDescription& definition : out.modules) {
+            for (const NodeDescription& node : definition.nodes) {
+                referenced = referenced || node.buffer == buffer.id;
+            }
+        }
+        if (!referenced) {
+            diagnostics.push_back(warning("buffer_unreferenced",
+                "Buffer '" + buffer.id + "' is carried but nothing plays it."));
+        }
+    }
+    if ((!out.buffers.empty() || any_named) &&
+        out.schema_version < kSchemaVersionBuffers) {
+        diagnostics.push_back(error("buffers_require_v3",
+            "This patch carries buffers but declares schema_version " +
+                std::to_string(out.schema_version) + ".",
+            "Documents that carry buffers must declare \"schema_version\": 3 so that "
+            "runtimes which predate them refuse loudly instead of misreading."));
+        ok = false;
+    }
+    return ok;
+}
+
+
 bool read_endpoint(const json::Value& value,
                    const char* which,
                    std::size_t index,
@@ -168,6 +372,11 @@ bool read_node(const json::Value& entry,
     if (const json::Value* name = entry.find("name")) {
         if (name->is_string()) {
             node.name = name->as_string();
+        }
+    }
+    if (const json::Value* buffer = entry.find("buffer")) {
+        if (buffer->is_string()) {
+            node.buffer = buffer->as_string();
         }
     }
     if (const json::Value* parameters = entry.find("parameters")) {
@@ -1273,6 +1482,10 @@ bool parse_patch(const std::string& text,
         }
     }
 
+    if (!read_buffers(root, out, diagnostics)) {
+        ok = false;
+    }
+
     // Last, once controls and automation exist to remap: instances become plain
     // nodes, the authored document moves aside for write_patch, and the engine gets
     // the version-1 view it always got.
@@ -1317,6 +1530,9 @@ json::Value write_node_entry(const NodeDescription& node) {
     }
     if (!node.name.empty()) {
         entry.set("name", json::Value(node.name));
+    }
+    if (!node.buffer.empty()) {
+        entry.set("buffer", json::Value(node.buffer));
     }
     if (!node.parameters.empty()) {
         json::Value parameters = json::Value::make_object();
@@ -1391,11 +1607,15 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
         reproduce_authored ? description.authored_automation : description.automation;
 
     json::Value root = json::Value::make_object();
-    root.set("schema_version", json::Value(modular
+    int written_version = modular
         ? (description.authored_schema_version > kSchemaVersionModules
                ? description.authored_schema_version
                : kSchemaVersionModules)
-        : description.schema_version));
+        : description.schema_version;
+    if (!description.buffers.empty() && written_version < kSchemaVersionBuffers) {
+        written_version = kSchemaVersionBuffers;
+    }
+    root.set("schema_version", json::Value(written_version));
 
     if (!description.arrangement.empty()) {
         json::Value arrangement = json::Value::make_object();
@@ -1499,6 +1719,31 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
         connections.push_back(write_connection_entry(connection));
     }
     root.set("connections", std::move(connections));
+
+    if (!description.buffers.empty()) {
+        json::Value buffer_table = json::Value::make_object();
+        for (const BufferDescription& buffer : description.buffers) {
+            std::vector<unsigned char> bytes;
+            bytes.reserve(buffer.samples.size() * 2);
+            for (float sample : buffer.samples) {
+                // 32768 both directions, clamped at the top, so that a decoded patch
+                // re-encodes to the exact bytes it arrived with.
+                float scaled = sample * 32768.0f;
+                if (scaled > 32767.0f) scaled = 32767.0f;
+                if (scaled < -32768.0f) scaled = -32768.0f;
+                const int value = static_cast<int>(scaled < 0.0f ? scaled - 0.5f : scaled + 0.5f);
+                bytes.push_back(static_cast<unsigned char>(value & 0xFF));
+                bytes.push_back(static_cast<unsigned char>((value >> 8) & 0xFF));
+            }
+            json::Value entry = json::Value::make_object();
+            entry.set("sample_rate", json::Value(buffer.sample_rate));
+            entry.set("channels", json::Value(1.0));
+            entry.set("format", json::Value(std::string("pcm16")));
+            entry.set("data", json::Value(base64_encode(bytes)));
+            buffer_table.set(buffer.id, std::move(entry));
+        }
+        root.set("buffers", std::move(buffer_table));
+    }
 
     if (!controls_out.empty()) {
         json::Value controls = json::Value::make_array();

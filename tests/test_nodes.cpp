@@ -1451,6 +1451,22 @@ TEST(scale_quantizer_wraps_across_the_octave) {
     CHECK_NEAR(harness.output()[1], 1.0, 1e-6);
 }
 
+TEST(sampler_without_a_buffer_is_silent_not_broken) {
+    // The harness prepares nodes with no buffer bound, which is exactly the state of
+    // a Sampler dropped into a patch before anyone gives it audio: silent, gate and
+    // all, and never a crash. Playback with real audio is proven at the graph level
+    // in test_patch_io, where a buffer can actually arrive.
+    NodeHarness harness("Sampler", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.connect("gate", 1.0f);
+    harness.process();
+    bool silent = true;
+    for (float sample : harness.output()) {
+        silent = silent && sample == 0.0f;
+    }
+    CHECK(silent);
+}
+
 TEST(compressor_holds_loud_signals_down_by_its_ratio) {
     const int frames = 48000;
     NodeHarness harness("Compressor", frames, kSampleRate);

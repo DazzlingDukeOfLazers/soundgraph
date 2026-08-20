@@ -57,6 +57,15 @@ const ModuleDescription* GraphDescription::find_module(const std::string& module
     return nullptr;
 }
 
+const BufferDescription* GraphDescription::find_buffer(const std::string& buffer_id) const {
+    for (const BufferDescription& entry : buffers) {
+        if (entry.id == buffer_id) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 const NodeDescription* GraphDescription::find_node(const std::string& node_id) const {
     for (const NodeDescription& node : nodes) {
         if (node.id == node_id) {

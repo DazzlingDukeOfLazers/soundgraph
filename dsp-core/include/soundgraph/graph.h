@@ -216,6 +216,10 @@ private:
     std::vector<float> buffer_pool_;
     int buffer_count_ = 0;
 
+    // The patch's recorded audio, copied out of the description at build so that nodes
+    // may point into it for the graph's whole life. One copy serves every voice.
+    std::vector<BufferDescription> sample_buffers_;
+
     // The graph always runs whole kBlockSize blocks and hands the host whatever it asked
     // for out of this FIFO. Without it, a host using a buffer size that is not a multiple
     // of the block size would shift every block-rate decision — and golden vectors would

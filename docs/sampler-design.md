@@ -79,6 +79,13 @@ grey-area Amen, and it keeps every golden vector reproducible from source.
 
 ## Staged plan, an exit test per stage
 
+Stage 1 landed 2026-08-20: `buffers` in patch-io with the budget enforced, the Sampler
+with gate-triggered resampling playback, the engine binding buffers through
+PrepareContext with the graph owning the storage, and the exit test passing — a
+buffer-carrying patch renders byte-identical in 4800, 64 and 37 frame chunks. The
+demo's drum hit is synthesized by the generator itself, so the first shipped buffer is
+already owned the way every golden is.
+
 1. **Schema and playback.** `buffers` in patch-io, the Sampler with `gate`/`root`
    only, a generated test buffer small enough to embed in a golden. Exit: a
    buffer-carrying patch renders byte-identical in 4800, 64 and 37 frame chunks, and
