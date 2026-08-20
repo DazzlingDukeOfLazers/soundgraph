@@ -1859,6 +1859,8 @@ func _build_side_panel() -> Control:
 	patch_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	patch_face.reordered.connect(_on_panel_reordered)
 	patch_face.offered.connect(_toggle_control)
+	patch_face.preset_applied.connect(_on_preset_applied)
+	patch_face.preset_saved.connect(_on_preset_saved)
 	panel.add_child(patch_face)
 
 	module_face = ModuleFace.new()
@@ -4602,6 +4604,56 @@ func _set_parameter(node_id: String, parameter: String, value: float) -> void:
 				node["parameters"] = {}
 			node["parameters"][parameter] = value
 			return
+
+
+## The value a control's target currently holds in the document, for the bank.
+func _current_parameter(node_id: String, parameter: String, fallback: float) -> float:
+	for node in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			return float(node.get("parameters", {}).get(parameter, fallback))
+	return fallback
+
+
+## Turns the bank to one page: writes the preset's values through the controls
+## that name them, as one undo step. A control the preset does not mention keeps
+## its position, the way hardware leaves unswept knobs where they stand.
+func _on_preset_applied(index: int) -> void:
+	var presets: Array = patch.get("presets", [])
+	if index < 0 or index >= presets.size():
+		return
+	var preset: Dictionary = presets[index]
+	var values: Dictionary = preset.get("values", {})
+	_begin_edit()
+	for control in patch.get("controls", []):
+		var control_id := str(control.get("id", ""))
+		if not values.has(control_id):
+			continue
+		var target: Dictionary = control.get("target", {})
+		_set_parameter(str(target.get("node", "")), str(target.get("parameter", "")),
+			float(values[control_id]))
+	_commit_edit("preset %s" % str(preset.get("name", "preset")))
+	patch_face.preset_index = index
+	await _rebuild_view()
+	_say("preset: %s" % str(preset.get("name", "")))
+
+
+## Writes the surface's current positions into the bank as a new page.
+func _on_preset_saved() -> void:
+	var values := {}
+	for control in patch.get("controls", []):
+		var target: Dictionary = control.get("target", {})
+		values[str(control.get("id", ""))] = _current_parameter(
+			str(target.get("node", "")), str(target.get("parameter", "")),
+			float(control.get("default", 0.0)))
+	_begin_edit()
+	if not patch.has("presets"):
+		patch["presets"] = []
+	var page := (patch["presets"] as Array).size() + 1
+	patch["presets"].append({"name": "Preset %d" % page, "values": values})
+	_commit_edit("save preset")
+	patch_face.preset_index = (patch["presets"] as Array).size() - 1
+	patch_face.rebuild()
+	_say("saved preset %d" % page)
 
 
 func _port_list(node_id: String, key: String) -> Array:

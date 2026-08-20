@@ -63,6 +63,11 @@ var patch: Dictionary = {}
 var registry: Dictionary = {}
 var rack: Control = null
 
+## Which page of the bank the surface is showing, -1 before anyone turns it.
+## Runtime state, deliberately not written to the file: the file stores the
+## knob values themselves, and which page they came from is a session memory.
+var preset_index := -1
+
 ## What the case wears: the instrument's name, from main. On the case rather than above
 ## it because a name floating over a set of plates says less than a name *on* the thing
 ## the plates are mounted in.
@@ -138,6 +143,13 @@ var offer_node := "":
 ## through main._toggle_control, which is a toggle: the panel is the one place a control is
 ## listed, so putting one on and taking it off are the same edit run twice.
 signal offered(node_id: String, parameter: String)
+
+## The bank turned its page: apply preset `index` to the surface. The face only
+## asks; main owns the document and the undo step.
+signal preset_applied(index: int)
+
+## The current knob positions want to become a new page of the bank.
+signal preset_saved()
 
 var _cells: Array = []          # Control per cell, panel first then the offers
 var _ids: Array = []            # the control ids, panel cells only
@@ -323,6 +335,60 @@ func _ready() -> void:
 	add_theme_constant_override("separation", Design.SPACE_S)
 
 
+## The bank's page-turner: previous, name, next, and a plus that saves the
+## current knobs as a new page. Structure lives in the graph and character in
+## the bank, which is the lesson of every patcher that shipped without one.
+func _preset_strip() -> Control:
+	var strip := HBoxContainer.new()
+	strip.set_meta("preset_strip", true)
+	strip.add_theme_constant_override("separation", Design.SPACE_S)
+	var presets: Array = patch.get("presets", [])
+
+	var prev := Button.new()
+	prev.text = "<"
+	prev.disabled = presets.is_empty()
+	prev.tooltip_text = "Previous preset"
+	prev.pressed.connect(func() -> void:
+		var count: int = (patch.get("presets", []) as Array).size()
+		if count > 0:
+			preset_applied.emit(count - 1 if preset_index < 0
+				else (preset_index - 1 + count) % count))
+	strip.add_child(prev)
+
+	var name := Label.new()
+	var showing: String = "no presets yet" if presets.is_empty() 		else ("—" if preset_index < 0 or preset_index >= presets.size()
+			else str((presets[preset_index] as Dictionary).get("name", "—")))
+	name.text = showing
+	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name.custom_minimum_size.x = Design.scale(140)
+	name.clip_text = true
+	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+	name.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+	name.add_theme_color_override("font_color",
+		Design.INK_SECOND if presets.is_empty() else Design.INK_NORMAL)
+	name.tooltip_text = "" if presets.is_empty() 		else "Preset %d of %d" % [preset_index + 1, presets.size()]
+	name.set_meta("preset_name", true)
+	strip.add_child(name)
+
+	var next := Button.new()
+	next.text = ">"
+	next.disabled = presets.is_empty()
+	next.tooltip_text = "Next preset"
+	next.pressed.connect(func() -> void:
+		var count: int = (patch.get("presets", []) as Array).size()
+		if count > 0:
+			preset_applied.emit((preset_index + 1) % count))
+	strip.add_child(next)
+
+	var keep := Button.new()
+	keep.text = "+"
+	keep.tooltip_text = "Save the current knobs as a new preset"
+	keep.pressed.connect(func() -> void: preset_saved.emit())
+	strip.add_child(keep)
+	return strip
+
+
 ## The parameter descriptor a control points at, or empty when it points at nothing —
 ## which happens to a file somebody hand-edited, and to one whose node was deleted.
 func _descriptor_for(target: Dictionary) -> Dictionary:
@@ -420,6 +486,11 @@ func rebuild() -> void:
 	# graph and one instrument on the panel, and only the document's author knows which
 	# gains belong to which operators. Panel organization, never graph semantics — the
 	# schema says so in as many words.
+	# The sound bank, worn the way hardware wears it: a name between two arrows.
+	# On any authored panel, even before a bank exists — saving is how one starts.
+	if not derived and not controls.is_empty():
+		add_child(_preset_strip())
+
 	var runs: Array = []
 	var on_panel := {}
 	for index in controls.size():

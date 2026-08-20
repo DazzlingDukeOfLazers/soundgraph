@@ -581,5 +581,72 @@
         "length": 2
       }
     ]
-  }
+  },
+  "presets": [
+    {
+      "name": "Stock",
+      "values": {
+        "detune": 0.009,
+        "ring": 0.0,
+        "vibrato": 0.02,
+        "cutoff": 1400,
+        "resonance": 0.55,
+        "sweep": 3.0,
+        "wobble": 0.0,
+        "level": 0.45
+      }
+    },
+    {
+      "name": "Acid Line",
+      "values": {
+        "detune": 0.005,
+        "ring": 0.0,
+        "vibrato": 0.0,
+        "cutoff": 320,
+        "resonance": 0.85,
+        "sweep": 4.2,
+        "wobble": 0.0,
+        "level": 0.55
+      }
+    },
+    {
+      "name": "Ring Bell",
+      "values": {
+        "detune": 0.03,
+        "ring": 0.9,
+        "vibrato": 0.01,
+        "cutoff": 4200,
+        "resonance": 0.3,
+        "sweep": 1.0,
+        "wobble": 0.0,
+        "level": 0.4
+      }
+    },
+    {
+      "name": "Sci-Fi Wobble",
+      "values": {
+        "detune": 0.012,
+        "ring": 0.25,
+        "vibrato": 0.03,
+        "cutoff": 900,
+        "resonance": 0.7,
+        "sweep": 2.0,
+        "wobble": 1.6,
+        "level": 0.5
+      }
+    },
+    {
+      "name": "Screamer",
+      "values": {
+        "detune": 0.018,
+        "ring": 0.0,
+        "vibrato": 0.08,
+        "cutoff": 2600,
+        "resonance": 0.65,
+        "sweep": 3.5,
+        "wobble": 0.0,
+        "level": 0.5
+      }
+    }
+  ]
 }

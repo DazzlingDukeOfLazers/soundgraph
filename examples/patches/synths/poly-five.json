@@ -421,5 +421,67 @@
         "length": 4
       }
     ]
-  }
+  },
+  "presets": [
+    {
+      "name": "Stock",
+      "values": {
+        "detune": 0.007,
+        "cutoff": 900,
+        "resonance": 0.35,
+        "sweep": 2.5,
+        "attack": 0.01,
+        "release": 0.45,
+        "level": 0.45
+      }
+    },
+    {
+      "name": "Velvet Strings",
+      "values": {
+        "detune": 0.014,
+        "cutoff": 1600,
+        "resonance": 0.15,
+        "sweep": 1.2,
+        "attack": 0.6,
+        "release": 1.8,
+        "level": 0.5
+      }
+    },
+    {
+      "name": "Brass Section",
+      "values": {
+        "detune": 0.006,
+        "cutoff": 750,
+        "resonance": 0.3,
+        "sweep": 3.6,
+        "attack": 0.04,
+        "release": 0.3,
+        "level": 0.5
+      }
+    },
+    {
+      "name": "Dark Pad",
+      "values": {
+        "detune": 0.02,
+        "cutoff": 380,
+        "resonance": 0.45,
+        "sweep": 1.6,
+        "attack": 1.2,
+        "release": 2.6,
+        "level": 0.55
+      }
+    },
+    {
+      "name": "Punch Bass",
+      "values": {
+        "detune": 0.004,
+        "cutoff": 520,
+        "resonance": 0.5,
+        "sweep": 2.8,
+        "attack": 0.001,
+        "release": 0.15,
+        "level": 0.6
+      }
+    }
+  ]
 }

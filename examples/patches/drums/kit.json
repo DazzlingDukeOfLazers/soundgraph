@@ -1684,5 +1684,103 @@
         "length": 1
       }
     ]
-  }
+  },
+  "presets": [
+    {
+      "name": "Stock",
+      "values": {
+        "base": 48,
+        "k_tune": 52,
+        "k_decay": 0.5,
+        "k_level": 0.9,
+        "s_tune": 185,
+        "s_snap": 0.18,
+        "s_level": 0.8,
+        "c_decay": 0.06,
+        "c_level": 0.5,
+        "o_decay": 0.45,
+        "o_level": 0.5,
+        "cl_tail": 0.09,
+        "cl_level": 0.7,
+        "r_tune": 505,
+        "r_level": 0.6,
+        "b_ring": 0.3,
+        "b_level": 0.55,
+        "v_tune": 2500,
+        "v_level": 0.5
+      }
+    },
+    {
+      "name": "Trap Night",
+      "values": {
+        "base": 48,
+        "k_tune": 38,
+        "k_decay": 1.3,
+        "k_level": 1.0,
+        "s_tune": 210,
+        "s_snap": 0.1,
+        "s_level": 0.7,
+        "c_decay": 0.03,
+        "c_level": 0.6,
+        "o_decay": 0.3,
+        "o_level": 0.4,
+        "cl_tail": 0.12,
+        "cl_level": 0.8,
+        "r_tune": 505,
+        "r_level": 0.4,
+        "b_ring": 0.15,
+        "b_level": 0.2,
+        "v_tune": 2500,
+        "v_level": 0.3
+      }
+    },
+    {
+      "name": "Dust & Tape",
+      "values": {
+        "base": 48,
+        "k_tune": 60,
+        "k_decay": 0.35,
+        "k_level": 0.8,
+        "s_tune": 165,
+        "s_snap": 0.25,
+        "s_level": 0.85,
+        "c_decay": 0.08,
+        "c_level": 0.45,
+        "o_decay": 0.6,
+        "o_level": 0.45,
+        "cl_tail": 0.2,
+        "cl_level": 0.6,
+        "r_tune": 420,
+        "r_level": 0.5,
+        "b_ring": 0.4,
+        "b_level": 0.45,
+        "v_tune": 2100,
+        "v_level": 0.4
+      }
+    },
+    {
+      "name": "More Cowbell",
+      "values": {
+        "base": 48,
+        "k_tune": 52,
+        "k_decay": 0.5,
+        "k_level": 0.7,
+        "s_tune": 185,
+        "s_snap": 0.18,
+        "s_level": 0.6,
+        "c_decay": 0.06,
+        "c_level": 0.4,
+        "o_decay": 0.45,
+        "o_level": 0.35,
+        "cl_tail": 0.09,
+        "cl_level": 0.5,
+        "r_tune": 505,
+        "r_level": 0.5,
+        "b_ring": 0.55,
+        "b_level": 1.0,
+        "v_tune": 2500,
+        "v_level": 0.45
+      }
+    }
+  ]
 }

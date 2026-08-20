@@ -3123,6 +3123,79 @@ func _initialize() -> void:
 		"and ships its riff (%d notes)"
 			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
 
+	# ---- the preset strip ------------------------------------------------------------
+	# The bank: named snapshots of the surface, applied by control id so the
+	# graph can be rearranged without breaking a single page. One page-turn is
+	# one undo step; the plus writes the current knobs as a new page.
+	await main._load_example("Synth: poly-five")
+	for i in 8:
+		await process_frame
+	check((main.patch.get("presets", []) as Array).size() == 5,
+		"the poly ships a five-page factory bank")
+	var strip: Control = null
+	var strip_queue: Array = [main.patch_face]
+	while not strip_queue.is_empty():
+		var strip_next: Node = strip_queue.pop_front()
+		for strip_child in strip_next.get_children():
+			if strip_child is Control and strip_child.has_meta("preset_strip"):
+				strip = strip_child
+			else:
+				strip_queue.append(strip_child)
+	check(strip != null, "and the face wears the preset strip")
+	var dark_pad := -1
+	for preset_index in (main.patch.get("presets", []) as Array).size():
+		if str((main.patch["presets"][preset_index] as Dictionary).get("name", "")) == "Dark Pad":
+			dark_pad = preset_index
+	check(dark_pad >= 0, "the bank holds Dark Pad")
+	await main._on_preset_applied(dark_pad)
+	for i in 6:
+		await process_frame
+	var swept: float = -1.0
+	for preset_node in main.patch["nodes"]:
+		if str(preset_node["id"]) == "filter":
+			swept = float(preset_node.get("parameters", {}).get("cutoff", -1.0))
+	check(is_equal_approx(swept, 380.0),
+		"turning to Dark Pad closes the filter to 380 (%.0f)" % swept)
+	await main._undo()
+	for i in 6:
+		await process_frame
+	var swept_back: float = -1.0
+	for preset_node in main.patch["nodes"]:
+		if str(preset_node["id"]) == "filter":
+			swept_back = float(preset_node.get("parameters", {}).get("cutoff", -1.0))
+	check(is_equal_approx(swept_back, 900.0),
+		"and one undo turns the page back (%.0f)" % swept_back)
+	await main._on_preset_applied(dark_pad)
+	for i in 6:
+		await process_frame
+	main._on_preset_saved()
+	for i in 6:
+		await process_frame
+	var bank_now: Array = main.patch.get("presets", [])
+	check(bank_now.size() == 6
+			and is_equal_approx(float((bank_now[5] as Dictionary)
+				.get("values", {}).get("cutoff", -1.0)), 380.0),
+		"the plus saves the current knobs as page six (%d pages)" % bank_now.size())
+
+	# And the kit's obligatory page.
+	await main._load_example("808: kit")
+	for i in 8:
+		await process_frame
+	var cowbell_page := -1
+	for preset_index in (main.patch.get("presets", []) as Array).size():
+		if str((main.patch["presets"][preset_index] as Dictionary).get("name", "")) 				== "More Cowbell":
+			cowbell_page = preset_index
+	check(cowbell_page >= 0, "the kit's bank has More Cowbell")
+	await main._on_preset_applied(cowbell_page)
+	for i in 6:
+		await process_frame
+	var bell_up: float = -1.0
+	for preset_node in main.patch["nodes"]:
+		if str(preset_node["id"]) == "mix2":
+			bell_up = float(preset_node.get("parameters", {}).get("level3", -1.0))
+	check(is_equal_approx(bell_up, 1.0),
+		"and turning to it brings the bell forward (level %.2f)" % bell_up)
+
 	main._new_file()
 	for i in 8:
 		await process_frame

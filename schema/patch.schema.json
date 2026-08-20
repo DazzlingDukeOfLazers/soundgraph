@@ -141,6 +141,13 @@
           }
         }
       }
+    },
+    "presets": {
+      "description": "Named snapshots of the performance surface: the sound bank. A preset stores values by control id, never by node, so the graph can be rearranged without breaking the bank. Structure lives in nodes and connections; character lives here. The lesson of every patcher without this key is that it cannot be an afterthought.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/preset"
+      }
     }
   },
   "$defs": {
@@ -537,6 +544,35 @@
           "additionalProperties": {
             "type": "string"
           }
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "required": [
+        "name",
+        "values"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "author": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "values": {
+          "description": "Control id to the value its target takes.",
+          "type": "object",
+          "additionalProperties": true
         }
       }
     }
