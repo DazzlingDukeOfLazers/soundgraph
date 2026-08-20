@@ -3728,6 +3728,29 @@ func _initialize() -> void:
 	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 8,
 		"and the riff ships as eight power chords")
 
+	# The gated snare: the drum sound of the decade, which was never a drum
+	# sound — a noise gate slamming shut on a huge room. The AHD envelope is
+	# the gate; the suite checks the room dies where the gate says.
+	await main._load_example("Gated: snare")
+	for i in 8:
+		await process_frame
+	var gated_peak: float = await _struck_peak(main, 50)
+	check(gated_peak > 0.01, "the gated snare lands (peak %.3f)" % gated_peak)
+	var gate_names: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check(gate_names.size() == 5 and "In The Air" in gate_names,
+		"and the bank includes In The Air (%s)" % str(gate_names))
+	var air := gate_names.find("In The Air")
+	main.patch_face._turn_to(air)
+	for i in 8:
+		await process_frame
+	var gate_held: float = -1.0
+	for gate_node in main.patch["nodes"]:
+		if str(gate_node["id"]) == "gate_env":
+			gate_held = float(gate_node.get("parameters", {}).get("hold", -1.0))
+	check(is_equal_approx(gate_held, 0.3),
+		"In The Air holds the gate for 300 ms before the slam (%.2f)" % gate_held)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:

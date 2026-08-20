@@ -96,6 +96,7 @@ const EXAMPLE_GROUPS := {
 	"drums909": "909",
 	"drums606": "606",
 	"drumssds": "SDS",
+	"drumsgated": "Gated",
 	"synths": "Synth",
 }
 

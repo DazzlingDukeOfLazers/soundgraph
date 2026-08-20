@@ -1,0 +1,684 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Gated Snare"
+  },
+  "nodes": [
+    {
+      "id": "note",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note"
+    },
+    {
+      "id": "s_t1",
+      "type": "SineOscillator",
+      "position": {
+        "x": 440,
+        "y": 0
+      },
+      "name": "Skin",
+      "parameters": {
+        "frequency": 190
+      }
+    },
+    {
+      "id": "s_t2",
+      "type": "SineOscillator",
+      "position": {
+        "x": 440,
+        "y": 400
+      },
+      "name": "Shell",
+      "parameters": {
+        "frequency": 320
+      }
+    },
+    {
+      "id": "s_tenv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 0
+      },
+      "name": "Body",
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.09,
+        "sustain": 0.0,
+        "release": 0.09
+      }
+    },
+    {
+      "id": "s_tamp",
+      "type": "Gain",
+      "position": {
+        "x": 1320,
+        "y": 0
+      },
+      "name": "Tone",
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "s_noise",
+      "type": "Noise",
+      "position": {
+        "x": 440,
+        "y": 800
+      },
+      "name": "Rattle",
+      "parameters": {
+        "colour": 0
+      }
+    },
+    {
+      "id": "s_filter",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 880,
+        "y": 800
+      },
+      "name": "Voice",
+      "parameters": {
+        "cutoff": 2400,
+        "resonance": 0.25,
+        "mode": 2
+      }
+    },
+    {
+      "id": "s_nenv",
+      "type": "ADSR",
+      "position": {
+        "x": 880,
+        "y": 1200
+      },
+      "name": "Snap",
+      "parameters": {
+        "attack": 0.0005,
+        "decay": 0.16,
+        "sustain": 0.0,
+        "release": 0.16
+      }
+    },
+    {
+      "id": "s_namp",
+      "type": "Gain",
+      "position": {
+        "x": 1320,
+        "y": 800
+      },
+      "name": "Snappy",
+      "parameters": {
+        "gain": 1.2
+      }
+    },
+    {
+      "id": "s_sum",
+      "type": "Gain",
+      "position": {
+        "x": 1760,
+        "y": 0
+      },
+      "name": "Drum",
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "verb",
+      "type": "Delay",
+      "position": {
+        "x": 1760,
+        "y": 800
+      },
+      "name": "Room",
+      "parameters": {
+        "time": 0.045,
+        "feedback": 0.6,
+        "mix": 0.85
+      }
+    },
+    {
+      "id": "verb_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 800
+      },
+      "name": "Reflections",
+      "parameters": {
+        "gain": 0.8
+      }
+    },
+    {
+      "id": "wash",
+      "type": "Noise",
+      "position": {
+        "x": 1320,
+        "y": 1600
+      },
+      "name": "Air",
+      "parameters": {
+        "colour": 0
+      }
+    },
+    {
+      "id": "wash_bp",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 1760,
+        "y": 1600
+      },
+      "name": "Room Tone",
+      "parameters": {
+        "cutoff": 1800,
+        "resonance": 0.25,
+        "mode": 2
+      }
+    },
+    {
+      "id": "wash_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 1600
+      },
+      "name": "Wash",
+      "parameters": {
+        "gain": 0.9
+      }
+    },
+    {
+      "id": "gate_env",
+      "type": "AhdEnvelope",
+      "position": {
+        "x": 1760,
+        "y": 1200
+      },
+      "name": "The Gate",
+      "parameters": {
+        "attack": 0.005,
+        "hold": 0.18,
+        "decay": 0.012
+      }
+    },
+    {
+      "id": "dry_amp",
+      "type": "Gain",
+      "position": {
+        "x": 2200,
+        "y": 0
+      },
+      "name": "Dry",
+      "parameters": {
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "slam",
+      "type": "Drive",
+      "position": {
+        "x": 2640,
+        "y": 0
+      },
+      "name": "Desk",
+      "parameters": {
+        "drive": 2.5
+      }
+    },
+    {
+      "id": "master",
+      "type": "Gain",
+      "position": {
+        "x": 3080,
+        "y": 0
+      },
+      "name": "Level",
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 3520,
+        "y": 0
+      },
+      "host": "stereo"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "note",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "s_tenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "s_nenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "gate_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "s_t1",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_tamp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "s_t2",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_tamp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "s_tenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_tamp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "s_noise",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "s_filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_namp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "s_nenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_namp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "s_tamp",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_sum",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "s_namp",
+        "port": "out"
+      },
+      "to": {
+        "node": "s_sum",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "s_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "dry_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "s_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "verb",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "verb",
+        "port": "out"
+      },
+      "to": {
+        "node": "verb_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "gate_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "verb_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "wash",
+        "port": "out"
+      },
+      "to": {
+        "node": "wash_bp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "wash_bp",
+        "port": "out"
+      },
+      "to": {
+        "node": "wash_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "gate_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "wash_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "dry_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "slam",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "verb_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "slam",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "wash_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "slam",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "slam",
+        "port": "out"
+      },
+      "to": {
+        "node": "master",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "master",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "master",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "tune",
+      "label": "Tune",
+      "kind": "knob",
+      "target": {
+        "node": "s_t1",
+        "parameter": "frequency"
+      },
+      "min": 140,
+      "max": 280,
+      "default": 190,
+      "scaling": "exponential"
+    },
+    {
+      "id": "snap",
+      "label": "Snap",
+      "kind": "knob",
+      "target": {
+        "node": "s_nenv",
+        "parameter": "decay"
+      },
+      "min": 0.05,
+      "max": 0.3,
+      "default": 0.16,
+      "scaling": "exponential"
+    },
+    {
+      "id": "room",
+      "label": "Room",
+      "kind": "knob",
+      "target": {
+        "node": "wash_amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.9,
+      "scaling": "linear"
+    },
+    {
+      "id": "verb",
+      "label": "Verb",
+      "kind": "knob",
+      "target": {
+        "node": "verb_amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.8,
+      "scaling": "linear"
+    },
+    {
+      "id": "gate",
+      "label": "Gate",
+      "kind": "knob",
+      "target": {
+        "node": "gate_env",
+        "parameter": "hold"
+      },
+      "min": 0.05,
+      "max": 0.6,
+      "default": 0.18,
+      "scaling": "exponential"
+    },
+    {
+      "id": "slam",
+      "label": "Slam",
+      "kind": "knob",
+      "target": {
+        "node": "slam",
+        "parameter": "drive"
+      },
+      "min": 1,
+      "max": 12,
+      "default": 2.5,
+      "scaling": "exponential"
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "master",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.5,
+      "scaling": "linear"
+    }
+  ],
+  "sequence": {
+    "tempo": 96.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 4,
+        "note": 50,
+        "length": 1
+      },
+      {
+        "step": 12,
+        "note": 50,
+        "length": 1
+      },
+      {
+        "step": 13,
+        "note": 50,
+        "length": 1
+      },
+      {
+        "step": 14,
+        "note": 50,
+        "length": 1
+      },
+      {
+        "step": 15,
+        "note": 50,
+        "length": 1
+      }
+    ]
+  },
+  "presets": [
+    {
+      "name": "Stock",
+      "values": {
+        "tune": 190,
+        "snap": 0.16,
+        "room": 0.9,
+        "verb": 0.8,
+        "gate": 0.18,
+        "slam": 2.5,
+        "level": 0.5
+      }
+    },
+    {
+      "name": "In The Air",
+      "values": {
+        "tune": 175,
+        "snap": 0.2,
+        "room": 1.3,
+        "verb": 1.0,
+        "gate": 0.3,
+        "slam": 4,
+        "level": 0.45
+      }
+    },
+    {
+      "name": "Tight Pop",
+      "values": {
+        "tune": 210,
+        "snap": 0.1,
+        "room": 0.5,
+        "verb": 0.5,
+        "gate": 0.08,
+        "slam": 6,
+        "level": 0.5
+      }
+    },
+    {
+      "name": "Cavern",
+      "values": {
+        "tune": 165,
+        "snap": 0.22,
+        "room": 1.6,
+        "verb": 1.4,
+        "gate": 0.5,
+        "slam": 3,
+        "level": 0.38
+      }
+    },
+    {
+      "name": "Dry Backbeat",
+      "values": {
+        "tune": 200,
+        "snap": 0.12,
+        "room": 0.15,
+        "verb": 0.3,
+        "gate": 0.1,
+        "slam": 5,
+        "level": 0.55
+      }
+    }
+  ]
+}
