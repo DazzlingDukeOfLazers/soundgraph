@@ -330,6 +330,189 @@ private:
     int write_index_ = 0;
 };
 
+// ---------------------------------------------------------------------------------
+// Comb
+//
+// A delay line with feedback and a damping filter inside the loop: the lowpass-feedback
+// comb that reverbs are built from. Eight of these in parallel at prime-ish times are
+// the body of a room; one alone is a flutter echo or a resonant metallic pitch.
+//
+// The feedback and damp inputs exist for the module case: a reverb wants one Size knob
+// across all its combs, and an exported module input can reach only one port - so a bus
+// node inside the module fans one signal out to every comb's feedback input. Connected
+// inputs replace the parameters, the same contract as everywhere else.
+// ---------------------------------------------------------------------------------
+
+constexpr float kMaxCombSeconds = 0.1f;
+
+constexpr PortDescriptor kCombInputs[] = {
+    {"in", SignalType::Audio, "", true, true, "Signal to comb."},
+    {"feedback", SignalType::Control, "", false, false,
+     "Loop gain, 0 to 0.98. Replaces the feedback parameter while connected."},
+    {"damp", SignalType::Control, "", false, false,
+     "Loop darkness, 0 to 1. Replaces the damp parameter while connected."},
+};
+
+constexpr PortDescriptor kCombOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "The delayed, recirculating signal."},
+};
+
+constexpr ParameterDescriptor kCombParameters[] = {
+    {"time", "s", 0.001f, kMaxCombSeconds, 0.03f, Scaling::Exponential,
+     "The loop length. Short is a pitch, long is an echo.", nullptr, 0},
+    {"feedback", "", 0.0f, 0.98f, 0.84f, Scaling::Linear,
+     "How much survives each pass. This is a reverb's room size.", nullptr, 0},
+    {"damp", "", 0.0f, 1.0f, 0.2f, Scaling::Linear,
+     "A lowpass inside the loop: each pass gets darker, the way air makes it.",
+     nullptr, 0},
+};
+
+class CombNode final : public DspNode {
+public:
+    enum Param { kTime = 0, kFeedback = 1, kDamp = 2 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        const int capacity = static_cast<int>(sample_rate_ * kMaxCombSeconds) + 4;
+        line_.assign(static_cast<std::size_t>(capacity), 0.0f);
+        write_index_ = 0;
+        lowpass_ = 0.0f;
+    }
+
+    void reset() override {
+        for (float& sample : line_) {
+            sample = 0.0f;
+        }
+        write_index_ = 0;
+        lowpass_ = 0.0f;
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        const float* feedback_in = context.inputs[1];
+        const float* damp_in = context.inputs[2];
+        float* out = context.outputs[0];
+
+        if (line_.empty()) {
+            for (int i = 0; i < context.frames; ++i) {
+                out[i] = 0.0f;
+            }
+            return;
+        }
+
+        const int capacity = static_cast<int>(line_.size());
+        // An integer delay, unlike Delay's interpolated one: a comb's time is part of
+        // a tuning, not a performance gesture, and interpolation dulls the loop.
+        const int delay_samples = static_cast<int>(dsp::clampf(
+            parameter(kTime) * sample_rate_, 1.0f, static_cast<float>(capacity - 1)));
+
+        for (int i = 0; i < context.frames; ++i) {
+            const float feedback = dsp::clampf(
+                feedback_in != nullptr ? feedback_in[i] : parameter(kFeedback), 0.0f, 0.98f);
+            const float damp =
+                dsp::clampf(damp_in != nullptr ? damp_in[i] : parameter(kDamp), 0.0f, 1.0f);
+
+            int read_index = write_index_ - delay_samples;
+            if (read_index < 0) {
+                read_index += capacity;
+            }
+            const float delayed = line_[static_cast<std::size_t>(read_index)];
+            lowpass_ = delayed * (1.0f - damp) + lowpass_ * damp;
+            line_[static_cast<std::size_t>(write_index_)] =
+                (in != nullptr ? in[i] : 0.0f) + lowpass_ * feedback;
+            write_index_ = (write_index_ + 1) % capacity;
+            out[i] = delayed;
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    std::vector<float> line_;
+    int write_index_ = 0;
+    float lowpass_ = 0.0f;
+};
+
+// ---------------------------------------------------------------------------------
+// Allpass
+//
+// Passes every frequency at equal level and still smears time: the diffuser. A click
+// through one comes out a "tsh"; three or four in series after a bank of combs is what
+// turns discrete echoes into reverb. On its own it is nearly inaudible on steady tones
+// - that is the all-pass part - and dramatic on transients, which is the point.
+// ---------------------------------------------------------------------------------
+
+constexpr float kMaxAllpassSeconds = 0.05f;
+
+constexpr PortDescriptor kAllpassInputs[] = {
+    {"in", SignalType::Audio, "", true, true, "Signal to diffuse."},
+};
+
+constexpr PortDescriptor kAllpassOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "Same spectrum, smeared time."},
+};
+
+constexpr ParameterDescriptor kAllpassParameters[] = {
+    {"time", "s", 0.0005f, kMaxAllpassSeconds, 0.005f, Scaling::Exponential,
+     "The smear length.", nullptr, 0},
+    {"gain", "", 0.0f, 0.95f, 0.5f, Scaling::Linear,
+     "How much recirculates. 0 is a plain delay; around 0.5 diffuses.", nullptr, 0},
+};
+
+class AllpassNode final : public DspNode {
+public:
+    enum Param { kTime = 0, kGain = 1 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        const int capacity = static_cast<int>(sample_rate_ * kMaxAllpassSeconds) + 4;
+        line_.assign(static_cast<std::size_t>(capacity), 0.0f);
+        write_index_ = 0;
+    }
+
+    void reset() override {
+        for (float& sample : line_) {
+            sample = 0.0f;
+        }
+        write_index_ = 0;
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        float* out = context.outputs[0];
+
+        if (line_.empty()) {
+            for (int i = 0; i < context.frames; ++i) {
+                out[i] = 0.0f;
+            }
+            return;
+        }
+
+        const int capacity = static_cast<int>(line_.size());
+        const int delay_samples = static_cast<int>(dsp::clampf(
+            parameter(kTime) * sample_rate_, 1.0f, static_cast<float>(capacity - 1)));
+        const float gain = parameter(kGain);
+
+        // The canonical Schroeder section: v[n] = x[n] + g v[n-D]; y[n] = -g v[n] + v[n-D].
+        // The line stores v, and the identity keeps the magnitude response flat exactly.
+        for (int i = 0; i < context.frames; ++i) {
+            int read_index = write_index_ - delay_samples;
+            if (read_index < 0) {
+                read_index += capacity;
+            }
+            const float delayed = line_[static_cast<std::size_t>(read_index)];
+            const float feedforward = (in != nullptr ? in[i] : 0.0f) + gain * delayed;
+            line_[static_cast<std::size_t>(write_index_)] = feedforward;
+            write_index_ = (write_index_ + 1) % capacity;
+            out[i] = -gain * feedforward + delayed;
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    std::vector<float> line_;
+    int write_index_ = 0;
+};
+
 template <typename T>
 std::unique_ptr<DspNode> make() {
     return std::unique_ptr<DspNode>(new T());
@@ -373,6 +556,30 @@ const NodeTypeDescriptor kDelay = {
     true, NodeRole::Processor, false,
     ResourceCost{5.0f, 16, static_cast<int>(48000 * kMaxDelaySeconds * 4)},
     &make<DelayNode>,
+};
+
+const NodeTypeDescriptor kComb = {
+    "Comb", "Comb", "Time",
+    "A feedback delay with damping in the loop: the piece reverbs are built from.",
+    "comb|comb filter|flutter|metallic|resonator|karplus|tuned delay|reverb part|loop",
+    Slice<PortDescriptor>(kCombInputs),
+    Slice<PortDescriptor>(kCombOutputs),
+    Slice<ParameterDescriptor>(kCombParameters),
+    true, NodeRole::Processor, false,
+    ResourceCost{4.0f, 12, static_cast<int>(48000 * kMaxCombSeconds * 4) + 16},
+    &make<CombNode>,
+};
+
+const NodeTypeDescriptor kAllpass = {
+    "Allpass", "Allpass", "Time",
+    "Smears time without touching the spectrum: the diffuser inside every reverb.",
+    "allpass|all-pass|diffuse|diffuser|smear|disperse|reverb part|schroeder",
+    Slice<PortDescriptor>(kAllpassInputs),
+    Slice<PortDescriptor>(kAllpassOutputs),
+    Slice<ParameterDescriptor>(kAllpassParameters),
+    true, NodeRole::Processor, false,
+    ResourceCost{3.0f, 8, static_cast<int>(48000 * kMaxAllpassSeconds * 4) + 16},
+    &make<AllpassNode>,
 };
 
 }  // namespace nodes

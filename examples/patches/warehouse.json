@@ -1,0 +1,841 @@
+{
+  "schema_version": 2,
+  "metadata": {
+    "name": "Warehouse",
+    "description": "A stab in a big room: the reverb is a module built from Comb and Allpass, with Size and Damp arriving as signals. Play staccato and listen to what the room does after you stop.",
+    "tags": [
+      "effect",
+      "reverb",
+      "module"
+    ]
+  },
+  "modules": {
+    "reverb": {
+      "description": "Schroeder reverb: eight damped combs in parallel, four allpasses in series. Feed size and damp as signals - a Constant each is the usual thing - because unconnected they would read as zero, not as the combs' own defaults.",
+      "nodes": [
+        {
+          "id": "inbus",
+          "type": "Gain",
+          "parameters": {
+            "gain": 1.0
+          }
+        },
+        {
+          "id": "sizebus",
+          "type": "Gain",
+          "parameters": {
+            "gain": 1.0
+          }
+        },
+        {
+          "id": "dampbus",
+          "type": "Gain",
+          "parameters": {
+            "gain": 1.0
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.0253,
+            "feedback": 0.84,
+            "damp": 0.2
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.0269,
+            "feedback": 0.84,
+            "damp": 0.2
+          }
+        },
+        {
+          "id": "c3",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.029,
+            "feedback": 0.84,
+            "damp": 0.2
+          }
+        },
+        {
+          "id": "c4",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.0307,
+            "feedback": 0.84,
+            "damp": 0.2
+          }
+        },
+        {
+          "id": "c5",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.0322,
+            "feedback": 0.84,
+            "damp": 0.2
+          }
+        },
+        {
+          "id": "c6",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.0338,
+            "feedback": 0.84,
+            "damp": 0.2
+          }
+        },
+        {
+          "id": "c7",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.0353,
+            "feedback": 0.84,
+            "damp": 0.2
+          }
+        },
+        {
+          "id": "c8",
+          "type": "Comb",
+          "parameters": {
+            "time": 0.0367,
+            "feedback": 0.84,
+            "damp": 0.2
+          }
+        },
+        {
+          "id": "sum",
+          "type": "Gain",
+          "parameters": {
+            "gain": 0.125
+          }
+        },
+        {
+          "id": "a1",
+          "type": "Allpass",
+          "parameters": {
+            "time": 0.0126,
+            "gain": 0.5
+          }
+        },
+        {
+          "id": "a2",
+          "type": "Allpass",
+          "parameters": {
+            "time": 0.01,
+            "gain": 0.5
+          }
+        },
+        {
+          "id": "a3",
+          "type": "Allpass",
+          "parameters": {
+            "time": 0.0077,
+            "gain": 0.5
+          }
+        },
+        {
+          "id": "a4",
+          "type": "Allpass",
+          "parameters": {
+            "time": 0.0051,
+            "gain": 0.5
+          }
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "node": "inbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c1",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sizebus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c1",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "dampbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c1",
+            "port": "damp"
+          }
+        },
+        {
+          "from": {
+            "node": "c1",
+            "port": "out"
+          },
+          "to": {
+            "node": "sum",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "inbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c2",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sizebus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c2",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "dampbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c2",
+            "port": "damp"
+          }
+        },
+        {
+          "from": {
+            "node": "c2",
+            "port": "out"
+          },
+          "to": {
+            "node": "sum",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "inbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c3",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sizebus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c3",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "dampbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c3",
+            "port": "damp"
+          }
+        },
+        {
+          "from": {
+            "node": "c3",
+            "port": "out"
+          },
+          "to": {
+            "node": "sum",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "inbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c4",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sizebus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c4",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "dampbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c4",
+            "port": "damp"
+          }
+        },
+        {
+          "from": {
+            "node": "c4",
+            "port": "out"
+          },
+          "to": {
+            "node": "sum",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "inbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c5",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sizebus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c5",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "dampbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c5",
+            "port": "damp"
+          }
+        },
+        {
+          "from": {
+            "node": "c5",
+            "port": "out"
+          },
+          "to": {
+            "node": "sum",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "inbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c6",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sizebus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c6",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "dampbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c6",
+            "port": "damp"
+          }
+        },
+        {
+          "from": {
+            "node": "c6",
+            "port": "out"
+          },
+          "to": {
+            "node": "sum",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "inbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c7",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sizebus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c7",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "dampbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c7",
+            "port": "damp"
+          }
+        },
+        {
+          "from": {
+            "node": "c7",
+            "port": "out"
+          },
+          "to": {
+            "node": "sum",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "inbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c8",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sizebus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c8",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "dampbus",
+            "port": "out"
+          },
+          "to": {
+            "node": "c8",
+            "port": "damp"
+          }
+        },
+        {
+          "from": {
+            "node": "c8",
+            "port": "out"
+          },
+          "to": {
+            "node": "sum",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sum",
+            "port": "out"
+          },
+          "to": {
+            "node": "a1",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "a1",
+            "port": "out"
+          },
+          "to": {
+            "node": "a2",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "a2",
+            "port": "out"
+          },
+          "to": {
+            "node": "a3",
+            "port": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "a3",
+            "port": "out"
+          },
+          "to": {
+            "node": "a4",
+            "port": "in"
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "name": "in",
+          "node": "inbus",
+          "port": "in"
+        },
+        {
+          "name": "size",
+          "node": "sizebus",
+          "port": "in"
+        },
+        {
+          "name": "damp",
+          "node": "dampbus",
+          "port": "in"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "node": "a4",
+          "port": "out"
+        }
+      ],
+      "parameters": []
+    }
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note",
+      "parameters": {
+        "voices": 4
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "position": {
+        "x": 560,
+        "y": 0
+      },
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "env",
+      "type": "AhdEnvelope",
+      "position": {
+        "x": 560,
+        "y": 360
+      },
+      "parameters": {
+        "attack": 0.001,
+        "hold": 0.02,
+        "decay": 0.12,
+        "punch": 0.5
+      }
+    },
+    {
+      "id": "vca",
+      "type": "Gain",
+      "position": {
+        "x": 1120,
+        "y": 0
+      },
+      "parameters": {
+        "gain": 0.8
+      }
+    },
+    {
+      "id": "size",
+      "type": "Constant",
+      "position": {
+        "x": 1120,
+        "y": 720
+      },
+      "parameters": {
+        "value": 0.84
+      }
+    },
+    {
+      "id": "damp",
+      "type": "Constant",
+      "position": {
+        "x": 1120,
+        "y": 1080
+      },
+      "parameters": {
+        "value": 0.2
+      }
+    },
+    {
+      "id": "verb",
+      "type": "module",
+      "position": {
+        "x": 1680,
+        "y": 360
+      },
+      "name": "Warehouse Reverb",
+      "module": "reverb"
+    },
+    {
+      "id": "dry",
+      "type": "Gain",
+      "position": {
+        "x": 2240,
+        "y": 0
+      },
+      "parameters": {
+        "gain": 0.6
+      }
+    },
+    {
+      "id": "wet",
+      "type": "Gain",
+      "position": {
+        "x": 2240,
+        "y": 360
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 2800,
+        "y": 0
+      },
+      "host": "stereo",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "dry",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "verb",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "size",
+        "port": "out"
+      },
+      "to": {
+        "node": "verb",
+        "port": "size"
+      }
+    },
+    {
+      "from": {
+        "node": "damp",
+        "port": "out"
+      },
+      "to": {
+        "node": "verb",
+        "port": "damp"
+      }
+    },
+    {
+      "from": {
+        "node": "verb",
+        "port": "out"
+      },
+      "to": {
+        "node": "wet",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "dry",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "dry",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    },
+    {
+      "from": {
+        "node": "wet",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "wet",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "size",
+      "label": "Size",
+      "kind": "knob",
+      "target": {
+        "node": "size",
+        "parameter": "value"
+      },
+      "min": 0.5,
+      "max": 0.97,
+      "default": 0.84,
+      "scaling": "linear"
+    },
+    {
+      "id": "damp",
+      "label": "Damp",
+      "kind": "knob",
+      "target": {
+        "node": "damp",
+        "parameter": "value"
+      },
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.2,
+      "scaling": "linear"
+    },
+    {
+      "id": "wet",
+      "label": "Wet",
+      "kind": "knob",
+      "target": {
+        "node": "wet",
+        "parameter": "gain"
+      },
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5,
+      "scaling": "linear"
+    },
+    {
+      "id": "stab",
+      "label": "Stab",
+      "kind": "knob",
+      "target": {
+        "node": "env",
+        "parameter": "decay"
+      },
+      "min": 0.05,
+      "max": 0.6,
+      "default": 0.12,
+      "scaling": "exponential"
+    }
+  ]
+}

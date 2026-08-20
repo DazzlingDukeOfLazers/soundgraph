@@ -324,6 +324,72 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------------
+// Crush
+//
+// Digital degradation on purpose: fewer bits, and a sample rate held below the
+// engine's. Drive is the analog pedal; this is the 12-bit sampler and the toy
+// keyboard. The two dimensions are independent - bits alone is grit, rate alone is
+// aliased shimmer, together they are 1988.
+// ---------------------------------------------------------------------------------
+
+constexpr PortDescriptor kCrushInputs[] = {
+    {"in", SignalType::Audio, "", true, true, "Signal to degrade."},
+};
+
+constexpr PortDescriptor kCrushOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "The degraded signal."},
+};
+
+constexpr ParameterDescriptor kCrushParameters[] = {
+    {"bits", "", 1.0f, 16.0f, 16.0f, Scaling::Linear,
+     "Resolution. 16 is untouched; 8 is a vintage sampler; 3 is gravel.", nullptr, 0},
+    {"rate", "Hz", 500.0f, 48000.0f, 48000.0f, Scaling::Exponential,
+     "The rate the signal is held at. Below the note's harmonics it aliases, which is "
+     "the sound this knob is for.", nullptr, 0},
+};
+
+class CrushNode final : public DspNode {
+public:
+    enum Param { kBits = 0, kRate = 1 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        reset();
+    }
+
+    void reset() override {
+        phase_ = 1.0f;  // so the first sample is captured, not a stale zero
+        held_ = 0.0f;
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        float* out = context.outputs[0];
+
+        const float increment =
+            dsp::clampf(parameter(kRate), 500.0f, sample_rate_) / sample_rate_;
+        // Half steps rather than 2^(bits-1) levels each side: quantising to the
+        // midpoints keeps full scale reachable at every depth.
+        const float levels = std::pow(2.0f, parameter(kBits) - 1.0f);
+
+        for (int i = 0; i < context.frames; ++i) {
+            phase_ += increment;
+            if (phase_ >= 1.0f) {
+                phase_ -= std::floor(phase_);
+                const float x = in != nullptr ? in[i] : 0.0f;
+                held_ = std::floor(x * levels + 0.5f) / levels;
+            }
+            out[i] = held_;
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    float phase_ = 1.0f;
+    float held_ = 0.0f;
+};
+
 template <typename T>
 std::unique_ptr<DspNode> make() {
     return std::unique_ptr<DspNode>(new T());
@@ -476,6 +542,19 @@ const NodeTypeDescriptor kDrive = {
     false, NodeRole::Processor, false,
     ResourceCost{3.0f, 0, 0},
     &make<DriveNode>,
+};
+
+const NodeTypeDescriptor kCrush = {
+    "Crush", "Crush", "Amplitude",
+    "Bit depth and sample rate, reduced on purpose. The 12-bit sampler as an effect.",
+    "crush|bitcrush|bit crush|degrade|decimate|lofi|lo-fi|aliasing|8-bit|12-bit|"
+    "sampler grit|chiptune",
+    Slice<PortDescriptor>(kCrushInputs),
+    Slice<PortDescriptor>(kCrushOutputs),
+    Slice<ParameterDescriptor>(kCrushParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{2.0f, 8, 0},
+    &make<CrushNode>,
 };
 
 }  // namespace nodes

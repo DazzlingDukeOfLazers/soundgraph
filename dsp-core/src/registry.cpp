@@ -133,6 +133,8 @@ NodeRegistry::NodeRegistry() {
         &nodes::kStateVariableFilter,
         &nodes::kOnePoleFilter,
         &nodes::kDelay,
+        &nodes::kComb,
+        &nodes::kAllpass,
         &nodes::kPhaser,
         &nodes::kGain,
         &nodes::kLevel,
@@ -156,6 +158,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kCompare,
         &nodes::kSampleHold,
         &nodes::kDrive,
+        &nodes::kCrush,
         &nodes::kStereoOutput,
     };
 }

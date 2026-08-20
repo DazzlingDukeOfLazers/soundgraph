@@ -19,6 +19,8 @@ extern const NodeTypeDescriptor kConstant;
 extern const NodeTypeDescriptor kStateVariableFilter;
 extern const NodeTypeDescriptor kOnePoleFilter;
 extern const NodeTypeDescriptor kDelay;
+extern const NodeTypeDescriptor kComb;
+extern const NodeTypeDescriptor kAllpass;
 extern const NodeTypeDescriptor kPhaser;
 
 // Shaping: envelopes, pitch movement and retriggering
@@ -38,6 +40,7 @@ extern const NodeTypeDescriptor kMixer;
 extern const NodeTypeDescriptor kAdsr;
 extern const NodeTypeDescriptor kAdd;
 extern const NodeTypeDescriptor kMultiply;
+extern const NodeTypeDescriptor kCrush;
 extern const NodeTypeDescriptor kClip;
 extern const NodeTypeDescriptor kAbs;
 extern const NodeTypeDescriptor kMinMax;

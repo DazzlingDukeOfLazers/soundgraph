@@ -1451,6 +1451,77 @@ TEST(scale_quantizer_wraps_across_the_octave) {
     CHECK_NEAR(harness.output()[1], 1.0, 1e-6);
 }
 
+TEST(comb_echoes_at_its_period_and_decays_by_its_feedback) {
+    const int frames = 2000;
+    NodeHarness harness("Comb", frames, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("time", 480.0f / kSampleRate);
+    harness.set("feedback", 0.5f);
+    harness.set("damp", 0.0f);
+    std::vector<float>& in = harness.input("in");
+    in[0] = 1.0f;
+    harness.process();
+    CHECK_NEAR(harness.output()[480], 1.0, 1e-6);
+    CHECK_NEAR(harness.output()[960], 0.5, 1e-6);
+    CHECK_NEAR(harness.output()[1440], 0.25, 1e-6);
+    CHECK_NEAR(harness.output()[479], 0.0, 1e-6);
+}
+
+TEST(comb_damp_darkens_each_pass) {
+    const int frames = 1000;
+    NodeHarness harness("Comb", frames, kSampleRate);
+    harness.set("time", 480.0f / kSampleRate);
+    harness.set("feedback", 0.5f);
+    harness.set("damp", 0.5f);
+    std::vector<float>& in = harness.input("in");
+    in[0] = 1.0f;
+    harness.process();
+    // The first return is untouched; the recirculated copy has been through the
+    // loop's lowpass once, so it comes back at half the undamped level.
+    CHECK_NEAR(harness.output()[480], 1.0, 1e-6);
+    CHECK_NEAR(harness.output()[960], 0.25, 1e-6);
+}
+
+TEST(allpass_smears_time_but_keeps_all_the_energy) {
+    const int frames = 48000;
+    NodeHarness harness("Allpass", frames, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("time", 0.005f);
+    harness.set("gain", 0.5f);
+    std::vector<float>& in = harness.input("in");
+    in[0] = 1.0f;
+    harness.process();
+    // An impulse comes out scattered across many echoes — but a true allpass has a
+    // flat magnitude response, so the impulse response carries exactly unit energy.
+    double energy = 0.0;
+    for (float sample : harness.output()) {
+        energy += static_cast<double>(sample) * sample;
+    }
+    CHECK_NEAR(energy, 1.0, 1e-3);
+    CHECK_NEAR(harness.output()[0], -0.5, 1e-6);  // the direct -g path
+}
+
+TEST(crush_quantises_and_holds) {
+    const int frames = 40;
+    NodeHarness harness("Crush", frames, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("bits", 2.0f);   // levels at halves: -1, -0.5, 0, 0.5, 1
+    harness.set("rate", kSampleRate / 10.0f);
+    std::vector<float>& in = harness.input("in");
+    for (int i = 0; i < frames; ++i) {
+        in[static_cast<std::size_t>(i)] = 0.6f;
+    }
+    harness.process();
+    // 0.6 lands on the 0.5 step, and each captured value holds for ten samples.
+    CHECK_NEAR(harness.output()[0], 0.5, 1e-6);
+    CHECK_NEAR(harness.output()[9], 0.5, 1e-6);
+    int changes = 0;
+    for (int i = 1; i < frames; ++i) {
+        changes += harness.output()[i] != harness.output()[i - 1] ? 1 : 0;
+    }
+    CHECK(changes == 0);  // a constant input crushes to a constant output
+}
+
 TEST(step_sequencer_advances_on_clock_edges_and_wraps) {
     NodeHarness harness("StepSequencer", 8, kSampleRate);
     CHECK(harness.valid());

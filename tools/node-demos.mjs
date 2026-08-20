@@ -615,6 +615,81 @@ const DEMOS = {
       ],
     }),
   },
+  Comb: {
+    summary: 'A feedback delay with damping in the loop: the piece reverbs are built from.',
+    try: 'One comb alone is a flutter echo with a metallic pitch. Shorten time and the '
+      + 'flutter becomes a tone of its own; raise damp and each pass comes back darker. '
+      + 'Eight of these in parallel are a room — open the Warehouse patch to hear that.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('osc', 'SawOscillator', { frequency: 220 }, 1, 0),
+        envelope(1, 1),
+        node('vca', 'Gain', { gain: 0.7 }, 2, 0),
+        node('demo', 'Comb', { time: 0.03, feedback: 0.7, damp: 0.2 }, 3, 0),
+        node('mix', 'Mixer', { level1: 0.8, level2: 0.5 }, 4, 0),
+        out(5),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('kb', 'trigger', 'env', 'gate'),
+        wire('env', 'out', 'vca', 'gain'),
+        wire('osc', 'out', 'vca', 'in'),
+        wire('vca', 'out', 'mix', 'in1'),
+        wire('vca', 'out', 'demo', 'in'),
+        wire('demo', 'out', 'mix', 'in2'),
+        wire('mix', 'out', 'out', 'left'),
+        wire('mix', 'out', 'out', 'right'),
+      ],
+    }),
+  },
+  Allpass: {
+    summary: 'Smears time without touching the spectrum: the diffuser inside every reverb.',
+    try: 'The retrigger fires bare clicks. Through the allpass each click comes out a '
+      + 'small "tsh" — same spectrum, smeared time. Take gain to 0 and it is a plain '
+      + 'delay again: the clicks return to being clicks.',
+    build: () => ({
+      nodes: [
+        node('trig', 'Retrigger', { rate: 3, width: 1 }, 0, 0),
+        node('click', 'AhdEnvelope', { attack: 0, hold: 0.001, decay: 0.002 }, 1, 0),
+        node('noise', 'Noise', {}, 0, 1),
+        node('vca', 'Gain', { gain: 0.8 }, 2, 0),
+        node('demo', 'Allpass', { time: 0.02, gain: 0.6 }, 3, 0),
+        amp(4),
+        out(5),
+      ],
+      connections: [
+        wire('trig', 'gate', 'click', 'gate'),
+        wire('click', 'out', 'vca', 'gain'),
+        wire('noise', 'out', 'vca', 'in'),
+        wire('vca', 'out', 'demo', 'in'),
+        wire('demo', 'out', 'amp', 'in'),
+        wire('amp', 'out', 'out', 'left'),
+        wire('amp', 'out', 'out', 'right'),
+      ],
+    }),
+  },
+  Crush: {
+    summary: 'Bit depth and sample rate, reduced on purpose. The 12-bit sampler as an effect.',
+    try: 'Play up the keyboard: as notes rise, the held-down sample rate stops keeping '
+      + 'up and aliased partials fold back down — the sound this node is for. Lower '
+      + 'bits and the quiet tail of each note turns to gravel first.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('osc', 'SawOscillator', { frequency: 220 }, 1, 0),
+        node('demo', 'Crush', { bits: 8, rate: 6000 }, 2, 0),
+        envelope(2, 1),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('osc', 'out', 'demo', 'in'),
+        ...tail('demo'),
+      ],
+    }),
+  },
   Clip: {
     summary: 'Keeps a signal between a floor and a ceiling. The hard limit as a building block.',
     try: 'The vibrato is wide, but the clip holds its top at a semitone above centre. '
@@ -871,6 +946,9 @@ const PROBES = {
 
   Delay: { parameter: 'feedback', value: 0.05 },
   Phaser: { parameter: 'sweep', value: 0 },
+  Comb: { parameter: 'time', value: 0.004 },
+  Allpass: { parameter: 'gain', value: 0 },
+  Crush: { parameter: 'bits', value: 2 },
 
   Gain: { parameter: 'gain', value: 0.15 },
   Level: { parameter: 'level', value: 0.15 },

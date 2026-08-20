@@ -219,12 +219,15 @@ bar output on the reset input keeps odd-length lanes bar-locked polymeters inste
 accidents; kMaxParameters went 8 → 24 to make room for honest one-knob-per-step
 parameters).
 
-Still to do, in this order:
+Also landed: Comb and Allpass primitives with Crush riding along, and the reverb as a
+shipped module — `examples/patches/warehouse.json` defines a Schroeder reverb inline
+(eight damped combs, four allpasses) with Size and Damp arriving as signals through bus
+nodes, because an exported module input reaches one port. Feedback 0.84 over 30 ms
+combs measures a 1.2 s t60, and the Size knob reaches 0.97 for six-plus seconds.
 
-1. **Comb and Allpass primitives, then reverb as a shipped module** — the
-   flatten-to-identical-audio guarantee is what makes a module reverb honest. `Crush`
-   (bit/rate reduction) rides along in this batch.
-2. **Compressor with a sidechain input** — mix glue and the EDM pump in one node.
+Still to do:
+
+1. **Compressor with a sidechain input** — mix glue and the EDM pump in one node.
 
 On the bench behind those: an editor oscilloscope (editor work, not DSP), euclidean
 rhythms and probability gates for the generative crowd, and a shipped Karplus-Strong
