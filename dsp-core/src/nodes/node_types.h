@@ -35,6 +35,11 @@ extern const NodeTypeDescriptor kMixer;
 extern const NodeTypeDescriptor kAdsr;
 extern const NodeTypeDescriptor kAdd;
 extern const NodeTypeDescriptor kMultiply;
+extern const NodeTypeDescriptor kClip;
+extern const NodeTypeDescriptor kAbs;
+extern const NodeTypeDescriptor kMinMax;
+extern const NodeTypeDescriptor kCompare;
+extern const NodeTypeDescriptor kSampleHold;
 extern const NodeTypeDescriptor kDrive;
 
 // Terminals

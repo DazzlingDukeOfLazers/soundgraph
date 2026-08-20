@@ -385,6 +385,94 @@ TEST(constant_holds_its_value) {
     CHECK_NEAR(harness.output()[15], -2.5, 1e-6);
 }
 
+TEST(clip_keeps_the_signal_between_its_limits) {
+    NodeHarness harness("Clip", 5, kSampleRate);
+    std::vector<float>& in = harness.input("in");
+    in = {-2.0f, -0.3f, 0.0f, 0.3f, 2.0f};
+    harness.set("floor", -0.5f);
+    harness.set("ceiling", 0.5f);
+    harness.process();
+    CHECK_NEAR(harness.output()[0], -0.5, 1e-6);
+    CHECK_NEAR(harness.output()[1], -0.3, 1e-6);
+    CHECK_NEAR(harness.output()[3], 0.3, 1e-6);
+    CHECK_NEAR(harness.output()[4], 0.5, 1e-6);
+}
+
+TEST(clip_survives_a_floor_dragged_past_the_ceiling) {
+    NodeHarness harness("Clip", 3, kSampleRate);
+    harness.connect("in", 0.0f);
+    harness.set("floor", 2.0f);
+    harness.set("ceiling", -2.0f);
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 2.0, 1e-6);
+}
+
+TEST(abs_folds_negative_upward) {
+    NodeHarness harness("Abs", 4, kSampleRate);
+    std::vector<float>& in = harness.input("in");
+    in = {-1.5f, -0.25f, 0.0f, 0.75f};
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 1.5, 1e-6);
+    CHECK_NEAR(harness.output()[1], 0.25, 1e-6);
+    CHECK_NEAR(harness.output()[2], 0.0, 1e-6);
+    CHECK_NEAR(harness.output()[3], 0.75, 1e-6);
+}
+
+TEST(minmax_picks_a_side_and_falls_back) {
+    NodeHarness max_side("MinMax", 4, kSampleRate);
+    max_side.connect("a", 0.2f);
+    max_side.connect("b", 0.8f);
+    max_side.set("mode", 1.0f);
+    max_side.process();
+    CHECK_NEAR(max_side.output()[0], 0.8, 1e-6);
+
+    NodeHarness min_side("MinMax", 4, kSampleRate);
+    min_side.connect("a", 0.2f);
+    min_side.connect("b", 0.8f);
+    min_side.set("mode", 0.0f);
+    min_side.process();
+    CHECK_NEAR(min_side.output()[0], 0.2, 1e-6);
+
+    NodeHarness fallback("MinMax", 4, kSampleRate);
+    fallback.connect("a", -0.4f);
+    fallback.set("mode", 1.0f);
+    fallback.set("other", 0.0f);
+    fallback.process();
+    CHECK_NEAR(fallback.output()[0], 0.0, 1e-6);
+}
+
+TEST(compare_turns_a_crossing_into_a_gate) {
+    NodeHarness harness("Compare", 4, kSampleRate);
+    std::vector<float>& in = harness.input("a");
+    in = {-1.0f, 0.29f, 0.3f, 1.0f};
+    harness.set("threshold", 0.3f);
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 0.0, 1e-6);
+    CHECK_NEAR(harness.output()[1], 0.0, 1e-6);
+    CHECK_NEAR(harness.output()[2], 1.0, 1e-6);
+    CHECK_NEAR(harness.output()[3], 1.0, 1e-6);
+}
+
+TEST(samplehold_freezes_on_the_rising_edge_only) {
+    NodeHarness harness("SampleHold", 8, kSampleRate);
+    std::vector<float>& in = harness.input("in");
+    in = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f};
+    std::vector<float>& trigger = harness.input("trigger");
+    // One edge at frame 1, held through frame 3 — a held gate must not re-sample —
+    // then a second edge at frame 5.
+    trigger = {0.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 0.0, 1e-6);
+    CHECK_NEAR(harness.output()[1], 0.2, 1e-6);
+    CHECK_NEAR(harness.output()[3], 0.2, 1e-6);
+    CHECK_NEAR(harness.output()[4], 0.2, 1e-6);
+    CHECK_NEAR(harness.output()[5], 0.6, 1e-6);
+    CHECK_NEAR(harness.output()[7], 0.6, 1e-6);
+}
+
+
+
+
 // ---- envelope -----------------------------------------------------------------------
 
 TEST(adsr_moves_through_its_stages) {

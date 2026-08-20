@@ -147,6 +147,11 @@ NodeRegistry::NodeRegistry() {
         &nodes::kConstant,
         &nodes::kAdd,
         &nodes::kMultiply,
+        &nodes::kClip,
+        &nodes::kAbs,
+        &nodes::kMinMax,
+        &nodes::kCompare,
+        &nodes::kSampleHold,
         &nodes::kDrive,
         &nodes::kStereoOutput,
     };

@@ -23,6 +23,7 @@ set(SOUNDGRAPH_DSP_SOURCES
     src/nodes/sources.cpp
     src/nodes/filters.cpp
     src/nodes/amplitude.cpp
+    src/nodes/maths.cpp
     src/nodes/terminals.cpp
     src/nodes/shaping.cpp
 )

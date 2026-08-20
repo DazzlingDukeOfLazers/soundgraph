@@ -615,6 +615,128 @@ const DEMOS = {
       ],
     }),
   },
+  Clip: {
+    summary: 'Keeps a signal between a floor and a ceiling. The hard limit as a building block.',
+    try: 'The vibrato is wide, but the clip holds its top at a semitone above centre. '
+      + 'Raise ceiling and the upward swings come back; lower it to zero and the pitch '
+      + 'can only dip.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('lfo', 'LFO', { rate: 4, shape: 0, amount: 0.12, offset: 0 }, 1, 2),
+        node('demo', 'Clip', { floor: -0.12, ceiling: 0.02 }, 2, 2),
+        node('osc', 'SawOscillator', { frequency: 220 }, 2, 0),
+        envelope(2, 1),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('lfo', 'out', 'demo', 'in'),
+        wire('demo', 'out', 'osc', 'fm'),
+        ...tail('osc'),
+      ],
+    }),
+  },
+  Abs: {
+    summary: 'Folds a signal upward: negative parts become positive.',
+    try: 'The LFO swings both ways, but the pitch only ever rises — twice per cycle, '
+      + 'because the fold turns each downward swing into another upward one. Move the '
+      + 'cable straight from the LFO to the fm input to hear the difference the fold makes.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('lfo', 'LFO', { rate: 1.5, shape: 0, amount: 0.15, offset: 0 }, 1, 2),
+        node('demo', 'Abs', {}, 2, 2),
+        node('osc', 'SawOscillator', { frequency: 220 }, 2, 0),
+        envelope(2, 1),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('lfo', 'out', 'demo', 'in'),
+        wire('demo', 'out', 'osc', 'fm'),
+        ...tail('osc'),
+      ],
+    }),
+  },
+  MinMax: {
+    summary: 'Passes the smaller or the larger of two signals.',
+    try: 'Set to maximum against zero, it passes only the vibrato\'s upward half: the '
+      + 'pitch lifts, rests, lifts. Flip mode to minimum and the same wave can only dip.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('lfo', 'LFO', { rate: 1.2, shape: 0, amount: 0.2, offset: 0 }, 1, 2),
+        node('demo', 'MinMax', { mode: 1, other: 0 }, 2, 2),
+        node('osc', 'SawOscillator', { frequency: 220 }, 2, 0),
+        envelope(2, 1),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('lfo', 'out', 'demo', 'a'),
+        wire('demo', 'out', 'osc', 'fm'),
+        ...tail('osc'),
+      ],
+    }),
+  },
+  Compare: {
+    summary: 'Outputs a gate: 1 while the input is at or above the threshold, 0 below.',
+    try: 'The LFO is invisible until the compare turns it into a rhythm: open above the '
+      + 'threshold, shut below. Raise threshold towards 1 and the note shrinks to clicks '
+      + 'at the very peaks.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('lfo', 'LFO', { rate: 3, shape: 0, amount: 1, offset: 0 }, 1, 2),
+        node('demo', 'Compare', { threshold: 0 }, 2, 2),
+        node('osc', 'SawOscillator', { frequency: 220 }, 2, 0),
+        envelope(2, 1),
+        node('gate', 'Gain', { gain: 1 }, 3, 1),
+        amp(3),
+        out(5),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('kb', 'trigger', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('osc', 'out', 'amp', 'in'),
+        wire('lfo', 'out', 'demo', 'a'),
+        wire('amp', 'out', 'gate', 'in'),
+        wire('demo', 'out', 'gate', 'gain'),
+        wire('gate', 'out', 'out', 'left'),
+        wire('gate', 'out', 'out', 'right'),
+      ],
+    }),
+  },
+  SampleHold: {
+    summary: 'Freezes its input each time the trigger fires, and holds it until the next.',
+    try: 'A smooth slow wave, sampled six times a second, comes out as a staircase of '
+      + 'pitches. Slow the clock LFO\'s rate and the steps stretch; swap the source for '
+      + 'a Noise node and the staircase turns random.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('source', 'LFO', { rate: 0.4, shape: 0, amount: 0.5, offset: 0 }, 1, 2),
+        node('clock', 'LFO', { rate: 6, shape: 3, amount: 1, offset: 0 }, 1, 3),
+        node('demo', 'SampleHold', {}, 2, 2),
+        node('osc', 'SawOscillator', { frequency: 220 }, 2, 0),
+        envelope(2, 1),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('source', 'out', 'demo', 'in'),
+        wire('clock', 'out', 'demo', 'trigger'),
+        wire('demo', 'out', 'osc', 'fm'),
+        ...tail('osc'),
+      ],
+    }),
+  },
 };
 
 // The `try` sentence above, written so a machine can check it is true.
@@ -663,6 +785,12 @@ const PROBES = {
 
   Add: { parameter: 'offset', value: 1.0 },
   Multiply: { parameter: 'factor', value: 0 },
+
+  Clip: { parameter: 'ceiling', value: 0.12 },
+  Abs: { probeless: 'it has no parameters; the demo asks you to move its cable instead' },
+  MinMax: { parameter: 'mode', value: 0 },
+  Compare: { parameter: 'threshold', value: 0.9 },
+  SampleHold: { node: 'clock', parameter: 'rate', value: 1.5 },
 };
 
 function render(type, demo) {
