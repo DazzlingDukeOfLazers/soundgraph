@@ -390,6 +390,85 @@ private:
     float held_ = 0.0f;
 };
 
+// ---------------------------------------------------------------------------------
+// Compressor
+//
+// Loud parts held down, quiet parts left alone: mix glue. A feed-forward design - an
+// attack/release follower tracks the level, and above the threshold the output rises
+// at one-ratio-th the rate of the input, with makeup gain after.
+//
+// The sidechain input is the reason this node earns its place over a hand-patched
+// follower: connected, the detector listens to it INSTEAD of the input, and whatever
+// plays through the compressor ducks to it. A kick on the sidechain and a pad through
+// the body is the pumping heartbeat of thirty years of dance records.
+// ---------------------------------------------------------------------------------
+
+constexpr PortDescriptor kCompressorInputs[] = {
+    {"in", SignalType::Audio, "", true, true, "Signal to compress."},
+    {"sidechain", SignalType::Audio, "", false, true,
+     "When connected, the level detector listens here instead of the input: the "
+     "signal ducks to whatever this carries."},
+};
+
+constexpr PortDescriptor kCompressorOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "The levelled signal."},
+};
+
+constexpr ParameterDescriptor kCompressorParameters[] = {
+    {"threshold", "", 0.01f, 1.0f, 0.5f, Scaling::Logarithmic,
+     "The level where compression begins, as linear amplitude.", nullptr, 0},
+    {"ratio", "", 1.0f, 20.0f, 4.0f, Scaling::Exponential,
+     "How firmly the loud parts are held. 1 does nothing; 4 is glue; 20 is a limiter "
+     "in all but name.", nullptr, 0},
+    {"attack", "s", 0.0005f, 0.1f, 0.005f, Scaling::Logarithmic,
+     "How fast the grip closes when the level rises.", nullptr, 0},
+    {"release", "s", 0.01f, 1.0f, 0.12f, Scaling::Logarithmic,
+     "How fast it lets go when the level falls. This knob is the pump.", nullptr, 0},
+    {"makeup", "", 0.25f, 4.0f, 1.0f, Scaling::Logarithmic,
+     "Gain after compression, to bring the held-down signal back up.", nullptr, 0},
+};
+
+class CompressorNode final : public DspNode {
+public:
+    enum Param { kThreshold = 0, kRatio = 1, kAttack = 2, kRelease = 3, kMakeup = 4 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        reset();
+    }
+
+    void reset() override { envelope_ = 0.0f; }
+
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        const float* sidechain = context.inputs[1];
+        float* out = context.outputs[0];
+
+        const float threshold = parameter(kThreshold);
+        // (env/threshold)^(1/ratio - 1) is the gain that makes output level rise at
+        // one-ratio-th the input's rate above the threshold.
+        const float exponent = 1.0f / parameter(kRatio) - 1.0f;
+        const float attack_coef = std::exp(-1.0f / (parameter(kAttack) * sample_rate_));
+        const float release_coef = std::exp(-1.0f / (parameter(kRelease) * sample_rate_));
+        const float makeup = parameter(kMakeup);
+        const float* detector = sidechain != nullptr ? sidechain : in;
+
+        for (int i = 0; i < context.frames; ++i) {
+            const float level = std::fabs(detector != nullptr ? detector[i] : 0.0f);
+            const float coef = level > envelope_ ? attack_coef : release_coef;
+            envelope_ = level + coef * (envelope_ - level);
+
+            const float gain =
+                envelope_ > threshold ? std::pow(envelope_ / threshold, exponent) : 1.0f;
+            out[i] = (in != nullptr ? in[i] : 0.0f) * gain * makeup;
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    float envelope_ = 0.0f;
+};
+
 template <typename T>
 std::unique_ptr<DspNode> make() {
     return std::unique_ptr<DspNode>(new T());
@@ -555,6 +634,20 @@ const NodeTypeDescriptor kCrush = {
     false, NodeRole::Processor, false,
     ResourceCost{2.0f, 8, 0},
     &make<CrushNode>,
+};
+
+const NodeTypeDescriptor kCompressor = {
+    "Compressor", "Compressor", "Amplitude",
+    "Holds the loud parts down: mix glue. Wire a kick to the sidechain and everything "
+    "through it pumps.",
+    "compressor|compression|limiter|dynamics|glue|duck|ducking|sidechain|side chain|"
+    "pump|pumping|squash|level",
+    Slice<PortDescriptor>(kCompressorInputs),
+    Slice<PortDescriptor>(kCompressorOutputs),
+    Slice<ParameterDescriptor>(kCompressorParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{6.0f, 8, 0},
+    &make<CompressorNode>,
 };
 
 }  // namespace nodes

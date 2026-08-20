@@ -615,6 +615,41 @@ const DEMOS = {
       ],
     }),
   },
+  Compressor: {
+    summary: 'Holds the loud parts down. Wire a kick to the sidechain and everything '
+      + 'through it pumps.',
+    try: 'The pad is a steady drone; the kick never touches it except through the '
+      + 'sidechain — every hit, the pad breathes out of its way and swells back. '
+      + 'Slow release deepens the pump; ratio 1 switches it off entirely.',
+    build: () => ({
+      nodes: [
+        node('clock', 'Clock', { bpm: 124, division: 2, swing: 0, width: 5 }, 0, 0),
+        node('kickosc', 'SineOscillator', { frequency: 60 }, 0, 1),
+        node('kickenv', 'AhdEnvelope', { attack: 0, hold: 0.02, decay: 0.12, punch: 1 }, 1, 0),
+        node('kick', 'Gain', { gain: 1 }, 1, 1),
+        node('pad1', 'SawOscillator', { frequency: 110 }, 0, 2),
+        node('pad2', 'SawOscillator', { frequency: 110.7 }, 0, 3),
+        node('pads', 'Gain', { gain: 0.3 }, 1, 2),
+        node('demo', 'Compressor',
+          { threshold: 0.1, ratio: 8, attack: 0.002, release: 0.25, makeup: 1.2 }, 2, 2),
+        node('mix', 'Mixer', { level1: 1, level2: 0.9 }, 3, 0),
+        out(4),
+      ],
+      connections: [
+        wire('clock', 'gate', 'kickenv', 'gate'),
+        wire('kickenv', 'out', 'kick', 'gain'),
+        wire('kickosc', 'out', 'kick', 'in'),
+        wire('pad1', 'out', 'pads', 'in'),
+        wire('pad2', 'out', 'pads', 'in'),
+        wire('pads', 'out', 'demo', 'in'),
+        wire('kick', 'out', 'demo', 'sidechain'),
+        wire('kick', 'out', 'mix', 'in1'),
+        wire('demo', 'out', 'mix', 'in2'),
+        wire('mix', 'out', 'out', 'left'),
+        wire('mix', 'out', 'out', 'right'),
+      ],
+    }),
+  },
   Comb: {
     summary: 'A feedback delay with damping in the loop: the piece reverbs are built from.',
     try: 'One comb alone is a flutter echo with a metallic pitch. Shorten time and the '
@@ -946,6 +981,7 @@ const PROBES = {
 
   Delay: { parameter: 'feedback', value: 0.05 },
   Phaser: { parameter: 'sweep', value: 0 },
+  Compressor: { parameter: 'ratio', value: 1 },
   Comb: { parameter: 'time', value: 0.004 },
   Allpass: { parameter: 'gain', value: 0 },
   Crush: { parameter: 'bits', value: 2 },

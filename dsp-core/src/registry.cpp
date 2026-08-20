@@ -159,6 +159,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kSampleHold,
         &nodes::kDrive,
         &nodes::kCrush,
+        &nodes::kCompressor,
         &nodes::kStereoOutput,
     };
 }

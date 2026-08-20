@@ -41,6 +41,7 @@ extern const NodeTypeDescriptor kAdsr;
 extern const NodeTypeDescriptor kAdd;
 extern const NodeTypeDescriptor kMultiply;
 extern const NodeTypeDescriptor kCrush;
+extern const NodeTypeDescriptor kCompressor;
 extern const NodeTypeDescriptor kClip;
 extern const NodeTypeDescriptor kAbs;
 extern const NodeTypeDescriptor kMinMax;

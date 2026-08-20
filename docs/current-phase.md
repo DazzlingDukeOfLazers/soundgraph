@@ -225,14 +225,18 @@ shipped module — `examples/patches/warehouse.json` defines a Schroeder reverb 
 nodes, because an exported module input reaches one port. Feedback 0.84 over 30 ms
 combs measures a 1.2 s t60, and the Size knob reaches 0.97 for six-plus seconds.
 
-Still to do:
+And the Compressor closed the list: feed-forward, with a sidechain input that the
+detector listens to instead of the input when connected — its demo is a pad that never
+meets the kick except through the sidechain, pumping. **The whole audited shortlist has
+landed**: the vocabulary went from 25 node types to 40 in one pass, every one with a
+jig, a machine-verified demo, and both Godot extensions rebuilt.
 
-1. **Compressor with a sidechain input** — mix glue and the EDM pump in one node.
-
-On the bench behind those: an editor oscilloscope (editor work, not DSP), euclidean
+On the bench for a next pass: an editor oscilloscope (editor work, not DSP), euclidean
 rhythms and probability gates for the generative crowd, and a shipped Karplus-Strong
 plucked-string module if feedback through Delay already permits it — worth ten minutes
-of patching to find out before building anything.
+of patching to find out before building anything. The bigger items from the original
+audit — the sampler and its buffer schema, tempo-synced delay times, a stereo field —
+deserve their own planning conversation after the show.
 
 ## Remaining before the show
 

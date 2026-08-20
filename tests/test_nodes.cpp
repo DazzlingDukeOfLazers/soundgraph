@@ -1451,6 +1451,47 @@ TEST(scale_quantizer_wraps_across_the_octave) {
     CHECK_NEAR(harness.output()[1], 1.0, 1e-6);
 }
 
+TEST(compressor_holds_loud_signals_down_by_its_ratio) {
+    const int frames = 48000;
+    NodeHarness harness("Compressor", frames, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("threshold", 0.2f);
+    harness.set("ratio", 4.0f);
+    harness.set("attack", 0.001f);
+    harness.set("release", 0.05f);
+    harness.connect("in", 0.8f);
+    harness.process();
+    // 0.8 is 4x over the 0.2 threshold; at ratio 4 the output rises to only
+    // 4^(1/4) over it: 0.2 * 4^0.25 = 0.283.
+    CHECK_NEAR(harness.output()[frames - 1], 0.2 * std::pow(4.0, 0.25), 0.005);
+}
+
+TEST(compressor_leaves_quiet_signals_alone) {
+    const int frames = 4800;
+    NodeHarness harness("Compressor", frames, kSampleRate);
+    harness.set("threshold", 0.2f);
+    harness.set("ratio", 4.0f);
+    harness.connect("in", 0.1f);
+    harness.process();
+    CHECK_NEAR(harness.output()[frames - 1], 0.1, 1e-4);
+}
+
+TEST(compressor_ducks_to_the_sidechain) {
+    const int frames = 48000;
+    NodeHarness harness("Compressor", frames, kSampleRate);
+    harness.set("threshold", 0.2f);
+    harness.set("ratio", 4.0f);
+    harness.set("attack", 0.001f);
+    // 0.3 through the body is under the threshold and would pass untouched — but the
+    // sidechain is loud, and the detector listens there instead.
+    harness.connect("in", 0.3f);
+    harness.connect("sidechain", 0.9f);
+    harness.process();
+    const double expected = 0.3 * std::pow(0.9 / 0.2, 1.0 / 4.0 - 1.0);
+    CHECK_NEAR(harness.output()[frames - 1], expected, 0.005);
+    CHECK(harness.output()[frames - 1] < 0.15);
+}
+
 TEST(comb_echoes_at_its_period_and_decays_by_its_feedback) {
     const int frames = 2000;
     NodeHarness harness("Comb", frames, kSampleRate);
