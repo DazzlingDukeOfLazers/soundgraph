@@ -743,6 +743,35 @@ const DEMOS = {
       ],
     }),
   },
+  ScaleQuantizer: {
+    summary: 'Snaps a pitch signal to the nearest note of a scale. Random in, melody out.',
+    try: 'Nothing here chooses notes — noise does, sampled on the eighths — yet every '
+      + 'one lands in minor pentatonic. Set scale to chromatic to hear what the '
+      + 'quantizer was saving you from, or change root to move the whole melody.',
+    build: () => ({
+      nodes: [
+        node('clock', 'Clock', { bpm: 120, division: 3, swing: 0, width: 5 }, 0, 0),
+        node('noise', 'Noise', {}, 0, 2),
+        node('snh', 'SampleHold', {}, 1, 2),
+        node('demo', 'ScaleQuantizer', { scale: 7, root: 0 }, 2, 2),
+        node('osc', 'SawOscillator', { frequency: 220 }, 2, 0),
+        node('env', 'AhdEnvelope', { attack: 0.002, hold: 0.03, decay: 0.18 }, 1, 1),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('clock', 'gate', 'snh', 'trigger'),
+        wire('noise', 'out', 'snh', 'in'),
+        wire('snh', 'out', 'demo', 'in'),
+        wire('demo', 'out', 'osc', 'fm'),
+        wire('clock', 'gate', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('osc', 'out', 'amp', 'in'),
+        wire('amp', 'out', 'out', 'left'),
+        wire('amp', 'out', 'out', 'right'),
+      ],
+    }),
+  },
   SampleHold: {
     summary: 'Freezes its input each time the trigger fires, and holds it until the next.',
     try: 'A smooth slow wave, sampled six times a second, comes out as a staircase of '
@@ -823,6 +852,7 @@ const PROBES = {
   Compare: { parameter: 'threshold', value: 0.9 },
   SampleHold: { node: 'clock', parameter: 'rate', value: 1.5 },
   Clock: { parameter: 'bpm', value: 40 },
+  ScaleQuantizer: { parameter: 'scale', value: 0 },
 };
 
 function render(type, demo) {

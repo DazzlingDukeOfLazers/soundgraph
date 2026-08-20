@@ -27,6 +27,7 @@ extern const NodeTypeDescriptor kSlide;
 extern const NodeTypeDescriptor kArpeggio;
 extern const NodeTypeDescriptor kRetrigger;
 extern const NodeTypeDescriptor kClock;
+extern const NodeTypeDescriptor kScaleQuantizer;
 
 // Amplitude and maths
 extern const NodeTypeDescriptor kGain;

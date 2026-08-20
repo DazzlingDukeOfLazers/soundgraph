@@ -1401,6 +1401,56 @@ TEST(clock_run_gate_stops_and_rewinds_to_the_downbeat) {
     CHECK(harness.output("bar")[kOneSecond / 2] >= 0.5f);
 }
 
+TEST(scale_quantizer_passes_scale_notes_untouched) {
+    NodeHarness harness("ScaleQuantizer", 4, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("scale", 1.0f);  // major
+    harness.set("root", 0.0f);   // C
+    std::vector<float>& in = harness.input("in");
+    in = {0.0f, 2.0f / 12.0f, 7.0f / 12.0f, 1.0f};
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 0.0, 1e-6);
+    CHECK_NEAR(harness.output()[1], 2.0 / 12.0, 1e-6);
+    CHECK_NEAR(harness.output()[2], 7.0 / 12.0, 1e-6);
+    CHECK_NEAR(harness.output()[3], 1.0, 1e-6);
+}
+
+TEST(scale_quantizer_snaps_between_notes_and_resolves_ties_downward) {
+    NodeHarness harness("ScaleQuantizer", 3, kSampleRate);
+    harness.set("scale", 1.0f);  // major, root C
+    std::vector<float>& in = harness.input("in");
+    // C# sits exactly between C and D; F# exactly between F and G. Both resolve down.
+    // 4.4 semitones is simply nearest to E.
+    in = {1.0f / 12.0f, 6.0f / 12.0f, 4.4f / 12.0f};
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 0.0, 1e-6);
+    CHECK_NEAR(harness.output()[1], 5.0 / 12.0, 1e-6);
+    CHECK_NEAR(harness.output()[2], 4.0 / 12.0, 1e-6);
+}
+
+TEST(scale_quantizer_respects_the_root) {
+    NodeHarness harness("ScaleQuantizer", 2, kSampleRate);
+    harness.set("scale", 2.0f);  // natural minor
+    harness.set("root", 9.0f);   // A: A minor is the white keys
+    std::vector<float>& in = harness.input("in");
+    // A# is a semitone off either way from A and B; the tie resolves down to A.
+    in = {10.0f / 12.0f, 9.0f / 12.0f};
+    harness.process();
+    CHECK_NEAR(harness.output()[0], 9.0 / 12.0, 1e-6);
+    CHECK_NEAR(harness.output()[1], 9.0 / 12.0, 1e-6);
+}
+
+TEST(scale_quantizer_wraps_across_the_octave) {
+    NodeHarness harness("ScaleQuantizer", 2, kSampleRate);
+    harness.set("scale", 1.0f);  // major, root C
+    std::vector<float>& in = harness.input("in");
+    // Just below C snaps to the B beneath it; just below the octave snaps up to it.
+    in = {-0.6f / 12.0f, 11.6f / 12.0f};
+    harness.process();
+    CHECK_NEAR(harness.output()[0], -1.0 / 12.0, 1e-6);
+    CHECK_NEAR(harness.output()[1], 1.0, 1e-6);
+}
+
 TEST(retrigger_restarts_an_envelope_it_is_wired_to) {
     // The two nodes together are what "stutter" means; neither says it alone.
     NodeHarness retrigger("Retrigger", kOneSecond, kSampleRate);

@@ -206,23 +206,24 @@ gesture. Synthetic events do not lift that; only a person clicking does.
 
 The vocabulary audit against Max/Pure Data settled a shortlist, ranked by leverage.
 Landed so far from it: the maths family (Clip, Abs, MinMax, Compare, SampleHold — with
-Random deliberately rejected as two spellings of things the vocabulary already says) and
+Random deliberately rejected as two spellings of things the vocabulary already says),
 the Clock node (bpm, note divisions with triplets and dots, MPC-style swing, a bar
 downbeat output, and a run gate that rewinds — patches share a tempo by sharing a value,
-not through a global transport).
+not through a global transport), and the ScaleQuantizer (twelve scales, twelve roots,
+speaking octaves like the fm wire; nearest-semitone-then-nearest-degree, ties resolving
+down — its demo is Noise → SampleHold → Quantizer on the Clock's eighths, the generative
+melody the shortlist promised).
 
 Still to do, in this order:
 
-1. **Scale quantizer** — snap a control signal to a chosen scale. Tiny node, multiplies
-   what exists: Noise → SampleHold → Quantizer is instant generative melody in key.
-2. **Step sequencer with parameter locks** — the Elektron trick: any knob settable
+1. **Step sequencer with parameter locks** — the Elektron trick: any knob settable
    per-step. The preset-morph machinery is conceptually halfway there; p-locks are morph
    values with a step index instead of a crossfader. The Knobcon-class showpiece, but a
    feature, so it waits for the freeze to lift.
-3. **Comb and Allpass primitives, then reverb as a shipped module** — the
+2. **Comb and Allpass primitives, then reverb as a shipped module** — the
    flatten-to-identical-audio guarantee is what makes a module reverb honest. `Crush`
    (bit/rate reduction) rides along in this batch.
-4. **Compressor with a sidechain input** — mix glue and the EDM pump in one node.
+3. **Compressor with a sidechain input** — mix glue and the EDM pump in one node.
 
 On the bench behind those: an editor oscilloscope (editor work, not DSP), euclidean
 rhythms and probability gates for the generative crowd, and a shipped Karplus-Strong

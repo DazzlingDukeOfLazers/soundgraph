@@ -144,6 +144,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kArpeggio,
         &nodes::kRetrigger,
         &nodes::kClock,
+        &nodes::kScaleQuantizer,
         &nodes::kLfo,
         &nodes::kConstant,
         &nodes::kAdd,

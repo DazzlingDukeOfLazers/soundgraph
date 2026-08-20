@@ -651,6 +651,120 @@ private:
     bool off_step_ = false;
 };
 
+// ---------------------------------------------------------------------------------
+// ScaleQuantizer
+//
+// Snaps a pitch signal to the nearest degree of a scale, so that whatever drives it —
+// stepped random, a wobbling LFO, a knob — can only land on notes that belong. This is
+// the node that turns Noise → SampleHold into a melody rather than a tuning accident.
+//
+// It speaks octaves, the unit of the fm wire, because that is where pitch modulation
+// travels: a quantized signal into an oscillator's fm input transposes the played note
+// by scale intervals. Snapping is to the nearest semitone first, then to the nearest
+// scale member, ties resolving downward — deterministic, and stateless per sample.
+// ---------------------------------------------------------------------------------
+
+constexpr const char* kScaleLabels[] = {
+    "chromatic", "major", "minor", "harmonic minor", "dorian", "mixolydian",
+    "major pentatonic", "minor pentatonic", "blues", "whole tone", "fifths", "octaves",
+};
+
+// One bit per semitone above the root, bit 0 the root itself.
+constexpr unsigned kScaleMasks[] = {
+    0xFFFu,                                                          // chromatic
+    (1u << 0) | (1u << 2) | (1u << 4) | (1u << 5) | (1u << 7) | (1u << 9) | (1u << 11),
+    (1u << 0) | (1u << 2) | (1u << 3) | (1u << 5) | (1u << 7) | (1u << 8) | (1u << 10),
+    (1u << 0) | (1u << 2) | (1u << 3) | (1u << 5) | (1u << 7) | (1u << 8) | (1u << 11),
+    (1u << 0) | (1u << 2) | (1u << 3) | (1u << 5) | (1u << 7) | (1u << 9) | (1u << 10),
+    (1u << 0) | (1u << 2) | (1u << 4) | (1u << 5) | (1u << 7) | (1u << 9) | (1u << 10),
+    (1u << 0) | (1u << 2) | (1u << 4) | (1u << 7) | (1u << 9),       // major pentatonic
+    (1u << 0) | (1u << 3) | (1u << 5) | (1u << 7) | (1u << 10),      // minor pentatonic
+    (1u << 0) | (1u << 3) | (1u << 5) | (1u << 6) | (1u << 7) | (1u << 10),  // blues
+    (1u << 0) | (1u << 2) | (1u << 4) | (1u << 6) | (1u << 8) | (1u << 10),  // whole tone
+    (1u << 0) | (1u << 7),                                           // fifths
+    (1u << 0),                                                       // octaves
+};
+
+constexpr const char* kRootLabels[] = {
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+};
+
+constexpr PortDescriptor kScaleQuantizerInputs[] = {
+    {"in", SignalType::Control, "octaves", false, true,
+     "Pitch to snap, in octaves — the unit the fm wire speaks."},
+};
+
+constexpr PortDescriptor kScaleQuantizerOutputs[] = {
+    {"out", SignalType::Control, "octaves", false, false,
+     "The nearest note the scale allows."},
+};
+
+constexpr ParameterDescriptor kScaleQuantizerParameters[] = {
+    {"scale", "", 0.0f, 11.0f, 7.0f, Scaling::Linear,
+     "Which notes are allowed.", kScaleLabels, 12},
+    {"root", "", 0.0f, 11.0f, 0.0f, Scaling::Linear,
+     "The note the scale is built on, relative to whatever plays the patch.",
+     kRootLabels, 12},
+};
+
+class ScaleQuantizerNode final : public DspNode {
+public:
+    enum Param { kScale = 0, kRoot = 1 };
+
+    void prepare(const PrepareContext&) override { rebuild(); }
+
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        float* out = context.outputs[0];
+        for (int i = 0; i < context.frames; ++i) {
+            const float semitones = (in != nullptr ? in[i] : 0.0f) * 12.0f - root_;
+            // Nearest semitone first, then the precomputed nudge to the nearest
+            // scale member. floor(x + 0.5) rather than round(): it resolves the
+            // halfway case downward on both sides of zero, and it is one
+            // instruction where round() is a libm call on some targets.
+            const float rounded = std::floor(semitones + 0.5f);
+            const int slot = static_cast<int>(rounded - std::floor(rounded / 12.0f) * 12.0f);
+            out[i] = (rounded + nudge_[slot] + root_) * (1.0f / 12.0f);
+        }
+    }
+
+protected:
+    void on_parameter_changed(int) override { rebuild(); }
+
+private:
+    // nudge_[s] is how far chromatic slot s must move to reach the nearest allowed
+    // degree, ties resolving downward, the octave wrap included. At most 12 × 12
+    // candidate checks, done only when a knob turns.
+    void rebuild() {
+        const int scale =
+            static_cast<int>(dsp::clampf(parameter(kScale) + 0.5f, 0.0f, 11.0f));
+        root_ = std::floor(dsp::clampf(parameter(kRoot) + 0.5f, 0.0f, 11.0f));
+        const unsigned mask = kScaleMasks[scale];
+        for (int slot = 0; slot < 12; ++slot) {
+            int best = 0;
+            int best_distance = 99;
+            for (int degree = 0; degree < 12; ++degree) {
+                if ((mask & (1u << degree)) == 0u) {
+                    continue;
+                }
+                for (int wrap = -12; wrap <= 12; wrap += 12) {
+                    const int delta = degree + wrap - slot;
+                    const int distance = delta < 0 ? -delta : delta;
+                    if (distance < best_distance ||
+                        (distance == best_distance && delta < best)) {
+                        best = delta;
+                        best_distance = distance;
+                    }
+                }
+            }
+            nudge_[slot] = static_cast<float>(best);
+        }
+    }
+
+    float root_ = 0.0f;
+    float nudge_[12] = {};
+};
+
 template <typename T>
 std::unique_ptr<DspNode> make() {
     return std::unique_ptr<DspNode>(new T());
@@ -731,6 +845,19 @@ const NodeTypeDescriptor kClock = {
     false, NodeRole::Processor, false,
     ResourceCost{3.0f, 24, 0},
     &make<ClockNode>,
+};
+
+const NodeTypeDescriptor kScaleQuantizer = {
+    "ScaleQuantizer", "Scale Quantizer", "Modulation",
+    "Snaps a pitch signal to the nearest note of a scale. Random in, melody out.",
+    "quantize|quantizer|scale|key|in key|snap|pitch snap|degree|pentatonic|blues|"
+    "mode|tonic|root|never wrong",
+    Slice<PortDescriptor>(kScaleQuantizerInputs),
+    Slice<PortDescriptor>(kScaleQuantizerOutputs),
+    Slice<ParameterDescriptor>(kScaleQuantizerParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{2.0f, 64, 0},
+    &make<ScaleQuantizerNode>,
 };
 
 }  // namespace nodes
