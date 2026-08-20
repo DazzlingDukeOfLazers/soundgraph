@@ -1,0 +1,910 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Ooops All Rave Stabs"
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note",
+      "parameters": {
+        "voices": 4
+      }
+    },
+    {
+      "id": "saw_r",
+      "type": "SawOscillator",
+      "position": {
+        "x": 560,
+        "y": 0
+      },
+      "name": "Root Saw",
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "sq_r",
+      "type": "SquareOscillator",
+      "position": {
+        "x": 560,
+        "y": 400
+      },
+      "name": "Root Square",
+      "parameters": {
+        "frequency": 220,
+        "pulse_width": 0.35
+      }
+    },
+    {
+      "id": "detune",
+      "type": "Constant",
+      "position": {
+        "x": 120,
+        "y": 400
+      },
+      "name": "Detune",
+      "parameters": {
+        "value": 0.007
+      }
+    },
+    {
+      "id": "bend",
+      "type": "Add",
+      "position": {
+        "x": 340,
+        "y": 400
+      },
+      "name": "Bend"
+    },
+    {
+      "id": "third_mul",
+      "type": "Multiply",
+      "position": {
+        "x": 340,
+        "y": 800
+      },
+      "name": "The Third",
+      "parameters": {
+        "factor": 1.1892
+      }
+    },
+    {
+      "id": "third_osc",
+      "type": "SawOscillator",
+      "position": {
+        "x": 560,
+        "y": 800
+      },
+      "name": "Third",
+      "parameters": {
+        "frequency": 262
+      }
+    },
+    {
+      "id": "fifth_mul",
+      "type": "Multiply",
+      "position": {
+        "x": 340,
+        "y": 1200
+      },
+      "name": "The Fifth",
+      "parameters": {
+        "factor": 1.5
+      }
+    },
+    {
+      "id": "fifth_osc",
+      "type": "SawOscillator",
+      "position": {
+        "x": 560,
+        "y": 1200
+      },
+      "name": "Fifth",
+      "parameters": {
+        "frequency": 330
+      }
+    },
+    {
+      "id": "oct_mul",
+      "type": "Multiply",
+      "position": {
+        "x": 340,
+        "y": 1600
+      },
+      "name": "The Octave",
+      "parameters": {
+        "factor": 2.0
+      }
+    },
+    {
+      "id": "oct_osc",
+      "type": "SawOscillator",
+      "position": {
+        "x": 560,
+        "y": 1600
+      },
+      "name": "Octave",
+      "parameters": {
+        "frequency": 440
+      }
+    },
+    {
+      "id": "oct_amp",
+      "type": "Gain",
+      "position": {
+        "x": 840,
+        "y": 1600
+      },
+      "name": "Octave Level",
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "scoop_env",
+      "type": "ADSR",
+      "position": {
+        "x": 120,
+        "y": 2000
+      },
+      "name": "Scoop Env",
+      "parameters": {
+        "attack": 0.001,
+        "decay": 0.08,
+        "sustain": 0.0,
+        "release": 0.08
+      }
+    },
+    {
+      "id": "scoop_amt",
+      "type": "Multiply",
+      "position": {
+        "x": 340,
+        "y": 2000
+      },
+      "name": "Scoop",
+      "parameters": {
+        "factor": -0.55
+      }
+    },
+    {
+      "id": "filter",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 1120,
+        "y": 0
+      },
+      "name": "Filter",
+      "parameters": {
+        "cutoff": 2200,
+        "resonance": 0.35,
+        "mode": 0
+      }
+    },
+    {
+      "id": "fenv",
+      "type": "ADSR",
+      "position": {
+        "x": 560,
+        "y": 2400
+      },
+      "name": "Filter Env",
+      "parameters": {
+        "attack": 0.002,
+        "decay": 0.28,
+        "sustain": 0.1,
+        "release": 0.28
+      }
+    },
+    {
+      "id": "sweep",
+      "type": "Multiply",
+      "position": {
+        "x": 840,
+        "y": 2400
+      },
+      "name": "Sweep",
+      "parameters": {
+        "factor": 2.0
+      }
+    },
+    {
+      "id": "crunch",
+      "type": "Drive",
+      "position": {
+        "x": 1400,
+        "y": 0
+      },
+      "name": "Crunch",
+      "parameters": {
+        "drive": 3
+      }
+    },
+    {
+      "id": "aenv",
+      "type": "ADSR",
+      "position": {
+        "x": 1400,
+        "y": 400
+      },
+      "name": "Stab",
+      "parameters": {
+        "attack": 0.005,
+        "decay": 0.35,
+        "sustain": 0.15,
+        "release": 0.2
+      }
+    },
+    {
+      "id": "vca",
+      "type": "Gain",
+      "position": {
+        "x": 1680,
+        "y": 0
+      },
+      "name": "VCA",
+      "parameters": {
+        "gain": 0.3
+      }
+    },
+    {
+      "id": "shimmer",
+      "type": "Phaser",
+      "position": {
+        "x": 1960,
+        "y": 0
+      },
+      "name": "Shimmer",
+      "parameters": {
+        "offset": 2.0,
+        "sweep": 18.0,
+        "depth": 0.4
+      }
+    },
+    {
+      "id": "echo",
+      "type": "Delay",
+      "position": {
+        "x": 2240,
+        "y": 0
+      },
+      "name": "Warehouse",
+      "parameters": {
+        "time": 0.32,
+        "feedback": 0.4,
+        "mix": 0.25
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 2520,
+        "y": 0
+      },
+      "host": "stereo"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "saw_r",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "sq_r",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "detune",
+        "port": "out"
+      },
+      "to": {
+        "node": "bend",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "bend",
+        "port": "out"
+      },
+      "to": {
+        "node": "sq_r",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "third_mul",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "third_mul",
+        "port": "out"
+      },
+      "to": {
+        "node": "third_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "fifth_mul",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "fifth_mul",
+        "port": "out"
+      },
+      "to": {
+        "node": "fifth_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "oct_mul",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "oct_mul",
+        "port": "out"
+      },
+      "to": {
+        "node": "oct_osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "oct_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "oct_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "scoop_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "fenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "aenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "scoop_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "scoop_amt",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "scoop_amt",
+        "port": "out"
+      },
+      "to": {
+        "node": "saw_r",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "scoop_amt",
+        "port": "out"
+      },
+      "to": {
+        "node": "bend",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "scoop_amt",
+        "port": "out"
+      },
+      "to": {
+        "node": "third_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "scoop_amt",
+        "port": "out"
+      },
+      "to": {
+        "node": "fifth_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "scoop_amt",
+        "port": "out"
+      },
+      "to": {
+        "node": "oct_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "saw_r",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "sq_r",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "third_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "fifth_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "oct_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "fenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "sweep",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "sweep",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "cutoff_mod"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "crunch",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "crunch",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "aenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "shimmer",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "shimmer",
+        "port": "out"
+      },
+      "to": {
+        "node": "echo",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "echo",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "echo",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "mood",
+      "label": "Mood",
+      "kind": "knob",
+      "target": {
+        "node": "third_mul",
+        "parameter": "factor"
+      },
+      "min": 1.15,
+      "max": 1.27,
+      "default": 1.1892,
+      "scaling": "linear"
+    },
+    {
+      "id": "octave",
+      "label": "Octave",
+      "kind": "knob",
+      "target": {
+        "node": "oct_amp",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.5,
+      "scaling": "linear"
+    },
+    {
+      "id": "scoop",
+      "label": "Scoop",
+      "kind": "knob",
+      "target": {
+        "node": "scoop_amt",
+        "parameter": "factor"
+      },
+      "min": -1.2,
+      "max": 0,
+      "default": -0.55,
+      "scaling": "linear"
+    },
+    {
+      "id": "bright",
+      "label": "Bright",
+      "kind": "knob",
+      "target": {
+        "node": "filter",
+        "parameter": "cutoff"
+      },
+      "min": 400,
+      "max": 6000,
+      "default": 2200,
+      "scaling": "exponential"
+    },
+    {
+      "id": "sweep",
+      "label": "Sweep",
+      "kind": "knob",
+      "target": {
+        "node": "sweep",
+        "parameter": "factor"
+      },
+      "min": 0,
+      "max": 4,
+      "default": 2.0,
+      "scaling": "linear"
+    },
+    {
+      "id": "stab",
+      "label": "Stab",
+      "kind": "knob",
+      "target": {
+        "node": "aenv",
+        "parameter": "decay"
+      },
+      "min": 0.08,
+      "max": 1.0,
+      "default": 0.35,
+      "scaling": "exponential"
+    },
+    {
+      "id": "crunch",
+      "label": "Crunch",
+      "kind": "knob",
+      "target": {
+        "node": "crunch",
+        "parameter": "drive"
+      },
+      "min": 1,
+      "max": 20,
+      "default": 3,
+      "scaling": "exponential"
+    },
+    {
+      "id": "shimmer",
+      "label": "Shimmer",
+      "kind": "knob",
+      "target": {
+        "node": "shimmer",
+        "parameter": "depth"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.4,
+      "scaling": "linear"
+    },
+    {
+      "id": "echo",
+      "label": "Echo",
+      "kind": "knob",
+      "target": {
+        "node": "echo",
+        "parameter": "mix"
+      },
+      "min": 0,
+      "max": 0.6,
+      "default": 0.25,
+      "scaling": "linear"
+    },
+    {
+      "id": "detune",
+      "label": "Detune",
+      "kind": "knob",
+      "target": {
+        "node": "detune",
+        "parameter": "value"
+      },
+      "min": 0,
+      "max": 0.05,
+      "default": 0.007,
+      "scaling": "linear"
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "vca",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.3,
+      "scaling": "linear"
+    }
+  ],
+  "sequence": {
+    "tempo": 142.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 2,
+        "note": 57,
+        "length": 1
+      },
+      {
+        "step": 6,
+        "note": 57,
+        "length": 1
+      },
+      {
+        "step": 10,
+        "note": 55,
+        "length": 1
+      },
+      {
+        "step": 12,
+        "note": 45,
+        "length": 2
+      },
+      {
+        "step": 14,
+        "note": 60,
+        "length": 1
+      }
+    ]
+  },
+  "presets": [
+    {
+      "name": "Ooops",
+      "values": {
+        "mood": 1.1892,
+        "octave": 0.5,
+        "scoop": -0.55,
+        "bright": 2200,
+        "sweep": 2.0,
+        "stab": 0.35,
+        "crunch": 3,
+        "shimmer": 0.4,
+        "echo": 0.25,
+        "detune": 0.007,
+        "level": 0.3
+      }
+    },
+    {
+      "name": "Hoover",
+      "values": {
+        "mood": 1.1892,
+        "octave": 0.7,
+        "scoop": -1.1,
+        "bright": 3000,
+        "sweep": 1.2,
+        "stab": 0.5,
+        "crunch": 6,
+        "shimmer": 0.6,
+        "echo": 0.3,
+        "detune": 0.012,
+        "level": 0.26
+      }
+    },
+    {
+      "name": "Dominator",
+      "values": {
+        "mood": 1.26,
+        "octave": 0.6,
+        "scoop": -0.9,
+        "bright": 3800,
+        "sweep": 2.8,
+        "stab": 0.3,
+        "crunch": 9,
+        "shimmer": 0.3,
+        "echo": 0.2,
+        "detune": 0.01,
+        "level": 0.24
+      }
+    },
+    {
+      "name": "Piano Riff",
+      "values": {
+        "mood": 1.1892,
+        "octave": 0.35,
+        "scoop": 0.0,
+        "bright": 4200,
+        "sweep": 3.2,
+        "stab": 0.22,
+        "crunch": 1.5,
+        "shimmer": 0.25,
+        "echo": 0.35,
+        "detune": 0.004,
+        "level": 0.32
+      }
+    },
+    {
+      "name": "Happy Core",
+      "values": {
+        "mood": 1.26,
+        "octave": 0.85,
+        "scoop": -0.3,
+        "bright": 5000,
+        "sweep": 3.0,
+        "stab": 0.18,
+        "crunch": 4,
+        "shimmer": 0.5,
+        "echo": 0.4,
+        "detune": 0.01,
+        "level": 0.28
+      }
+    },
+    {
+      "name": "Dark Warehouse",
+      "values": {
+        "mood": 1.15,
+        "octave": 0.3,
+        "scoop": -0.4,
+        "bright": 1400,
+        "sweep": 1.5,
+        "stab": 0.6,
+        "crunch": 7,
+        "shimmer": 0.5,
+        "echo": 0.5,
+        "detune": 0.012,
+        "level": 0.3
+      }
+    }
+  ]
+}

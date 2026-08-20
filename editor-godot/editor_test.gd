@@ -3751,6 +3751,30 @@ func _initialize() -> void:
 	check(is_equal_approx(gate_held, 0.3),
 		"In The Air holds the gate for 300 ms before the slam (%.2f)" % gate_held)
 
+	# Ooops All Rave Stabs: every key is the whole chord — third, fifth and
+	# octave riding the pitch wire — and the Mood knob sweeps the third from
+	# minor to major, which no sampler of 1992 could do mid-riff.
+	await main._load_example("Synth: ooops-all-rave-stabs")
+	for i in 8:
+		await process_frame
+	var stab_peak: float = await _struck_peak(main, 45)
+	check(stab_peak > 0.01, "one finger is 1992 (peak %.3f)" % stab_peak)
+	var rave_names: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check(rave_names.size() == 6 and "Hoover" in rave_names
+			and "Happy Core" in rave_names,
+		"and the bank runs Ooops to Dark Warehouse (%s)" % str(rave_names))
+	var hoover_page := rave_names.find("Hoover")
+	main.patch_face._turn_to(hoover_page)
+	for i in 8:
+		await process_frame
+	var scooped: float = 1.0
+	for rave_node in main.patch["nodes"]:
+		if str(rave_node["id"]) == "scoop_amt":
+			scooped = float(rave_node.get("parameters", {}).get("factor", 1.0))
+	check(is_equal_approx(scooped, -1.1),
+		"Hoover hauls the chord up from an octave below (%.1f)" % scooped)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:
