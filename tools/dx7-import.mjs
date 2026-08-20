@@ -781,6 +781,20 @@ function readBank(path) {
   return voices;
 }
 
+// One page of a bank: the values a voice's own patch puts on its controls. Read
+// back through the controls rather than re-derived, so a page is by construction
+// the face's view of that voice.
+function controlValues(patch) {
+  const byId = new Map(patch.nodes.map((node) => [node.id, node]));
+  const values = {};
+  for (const control of patch.controls ?? []) {
+    const node = byId.get(control.target.node);
+    const value = node?.parameters?.[control.target.parameter];
+    if (typeof value === 'number') values[control.id] = value;
+  }
+  return values;
+}
+
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   .replace(/^-|-$/g, '') || 'unnamed';
 
@@ -1059,17 +1073,7 @@ let written = 0;
 for (const bank of banks) {
   const voices = readBank(join(source, bank));
   const used = new Set();
-  voices.forEach((voice, index) => {
-    // Stage 4 of docs/modules-design.md: the importer emits what it knows. A voice is
-    // one operator module and six instances, so that is what the file says —
-    // modularize() is proven byte-identical against the flat form by --modular-check,
-    // which still builds both. A voice with nothing to factor (all fixed-frequency
-    // operators) stays flat, which a mixed library is allowed to be.
-    const flat = buildPatch(voice, bank, index);
-    const patch = modularize(flat) ?? flat;
-    let name = slug(voice.name || `voice-${index + 1}`);
-    while (used.has(name)) name = `${name}-${index + 1}`;
-    used.add(name);
+  const emit = (name, patch) => {
     const text = JSON.stringify(patch, null, 2) + '\n';
     const out = join(target, `${name}.json`);
     written += 1;
@@ -1083,7 +1087,60 @@ for (const bank of banks) {
     } else {
       writeFileSync(out, text);
     }
+  };
+  // A cartridge is also a set of families: voices sharing an algorithm share a
+  // graph, so they can be pages of one instrument. Collected while the voices
+  // are emitted, merged after.
+  const families = new Map();
+  voices.forEach((voice, index) => {
+    // Stage 4 of docs/modules-design.md: the importer emits what it knows. A voice is
+    // one operator module and six instances, so that is what the file says —
+    // modularize() is proven byte-identical against the flat form by --modular-check,
+    // which still builds both. A voice with nothing to factor (all fixed-frequency
+    // operators) stays flat, which a mixed library is allowed to be.
+    const flat = buildPatch(voice, bank, index);
+    const modular = modularize(flat);
+    const patch = modular ?? flat;
+    // Every voice file carries its own one-page bank, so the face's strip names
+    // the voice it is showing.
+    if (patch.controls?.length) {
+      patch.presets = [{ name: (voice.name || `voice ${index + 1}`).trim(),
+        values: controlValues(patch) }];
+    }
+    let name = slug(voice.name || `voice-${index + 1}`);
+    while (used.has(name)) name = `${name}-${index + 1}`;
+    used.add(name);
+    emit(name, patch);
+    if (modular) {
+      if (!families.has(voice.algorithm)) families.set(voice.algorithm, []);
+      families.get(voice.algorithm).push({ voice, patch: modular });
+    }
   });
+
+  // The merged banks: one patch per family, its pages the voices. The per-voice
+  // files above stay — they are the exact, oracle-held imports — and the merged
+  // bank is the same cartridge re-filed as an instrument with pages. A page
+  // carries what the face's controls cover (ratios, levels, envelopes,
+  // feedback); a voice that also differs in detune or LFO from the family's
+  // first lands close rather than exact, which dx7-bank-check.mjs measures for
+  // the banks this repository ships.
+  for (const [algorithm, members] of [...families.entries()].sort((a, b) => a[0] - b[0])) {
+    if (members.length < 2) continue;
+    const base = JSON.parse(JSON.stringify(members[0].patch));
+    base.presets = members.map(({ voice, patch }) => ({
+      name: (voice.name || 'voice').trim(),
+      values: controlValues(patch),
+    }));
+    const words = members.map((m) => (m.voice.name || '').trim().split(/\s+/)[0]);
+    const shared = words.every((word) => word && word === words[0]);
+    const familyName = shared ? `${words[0]} BANK`
+      : `ALGO ${String(algorithm + 1).padStart(2, '0')} BANK`;
+    base.metadata = { ...base.metadata, name: familyName };
+    let name = slug(familyName);
+    while (used.has(name)) name = `${name}-${algorithm + 1}`;
+    used.add(name);
+    emit(name, base);
+  }
 }
 
 if (check) {

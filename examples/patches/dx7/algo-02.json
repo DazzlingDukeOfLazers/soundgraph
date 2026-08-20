@@ -1059,5 +1059,50 @@
         "parameter": "level"
       }
     }
+  ],
+  "presets": [
+    {
+      "name": "ALGO 02",
+      "values": {
+        "op6_ratio": 1,
+        "op6_index_5_gain": 0.4585,
+        "op6_attack": 0.0017,
+        "op6_decay": 2.132,
+        "op6_sustain": 0.125,
+        "op6_release": 0.1677,
+        "op5_ratio": 1,
+        "op5_index_4_gain": 0.3856,
+        "op5_attack": 0.0017,
+        "op5_decay": 2.132,
+        "op5_sustain": 0.125,
+        "op5_release": 0.1677,
+        "op4_ratio": 2,
+        "op4_index_3_gain": 0.3242,
+        "op4_attack": 0.0017,
+        "op4_decay": 2.132,
+        "op4_sustain": 0.125,
+        "op4_release": 0.1677,
+        "op3_ratio": 5,
+        "op3_level_gain": 0.1363,
+        "op3_attack": 0.0017,
+        "op3_decay": 2.132,
+        "op3_sustain": 0.125,
+        "op3_release": 0.1677,
+        "op2_ratio": 1,
+        "op2_feedback": 0.25,
+        "op2_index_1_gain": 2,
+        "op2_attack": 0.001,
+        "op2_decay": 1.5889,
+        "op2_sustain": 0.4585,
+        "op2_release": 0.1036,
+        "op1_ratio": 7,
+        "op1_level_gain": 1,
+        "op1_attack": 0.001,
+        "op1_decay": 1.5889,
+        "op1_sustain": 0.4585,
+        "op1_release": 0.1036,
+        "mix_out": 0.704
+      }
+    }
   ]
 }

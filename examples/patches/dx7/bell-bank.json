@@ -1,0 +1,1409 @@
+{
+  "schema_version": 2,
+  "metadata": {
+    "name": "BELL BANK",
+    "description": "BELL SMALL — DX7 voice, algorithm 3, imported by tools/dx7-import.mjs from family-demos.syx.",
+    "author": "SoundGraph dx7-import (mapping)",
+    "tags": [
+      "fm",
+      "dx7",
+      "imported",
+      "algorithm-3"
+    ],
+    "source": "tools/dx7/banks/family-demos.syx"
+  },
+  "modules": {
+    "dx7_operator": {
+      "description": "One DX7 operator: pitch ratio, sine, envelope, VCA.",
+      "nodes": [
+        {
+          "id": "pitch",
+          "type": "Multiply",
+          "parameters": {
+            "factor": 1
+          }
+        },
+        {
+          "id": "osc",
+          "type": "SineOscillator",
+          "parameters": {}
+        },
+        {
+          "id": "env",
+          "type": "ADSR",
+          "parameters": {}
+        },
+        {
+          "id": "vca",
+          "type": "Multiply",
+          "parameters": {}
+        },
+        {
+          "id": "fbscale",
+          "type": "Multiply",
+          "parameters": {}
+        },
+        {
+          "id": "note",
+          "type": "Input"
+        },
+        {
+          "id": "gate",
+          "type": "Input"
+        },
+        {
+          "id": "pm",
+          "type": "Input"
+        },
+        {
+          "id": "fm",
+          "type": "Input"
+        },
+        {
+          "id": "fb_mod",
+          "type": "Input"
+        },
+        {
+          "id": "out",
+          "type": "Output"
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "node": "pitch",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "frequency"
+          }
+        },
+        {
+          "from": {
+            "node": "osc",
+            "port": "out"
+          },
+          "to": {
+            "node": "vca",
+            "port": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "env",
+            "port": "out"
+          },
+          "to": {
+            "node": "vca",
+            "port": "b"
+          }
+        },
+        {
+          "from": {
+            "node": "env",
+            "port": "out"
+          },
+          "to": {
+            "node": "fbscale",
+            "port": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "fbscale",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "feedback"
+          }
+        },
+        {
+          "from": {
+            "node": "note",
+            "port": "out"
+          },
+          "to": {
+            "node": "pitch",
+            "port": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "gate",
+            "port": "out"
+          },
+          "to": {
+            "node": "env",
+            "port": "gate"
+          }
+        },
+        {
+          "from": {
+            "node": "pm",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "pm"
+          }
+        },
+        {
+          "from": {
+            "node": "fm",
+            "port": "out"
+          },
+          "to": {
+            "node": "osc",
+            "port": "fm"
+          }
+        },
+        {
+          "from": {
+            "node": "fb_mod",
+            "port": "out"
+          },
+          "to": {
+            "node": "fbscale",
+            "port": "b"
+          }
+        },
+        {
+          "from": {
+            "node": "vca",
+            "port": "out"
+          },
+          "to": {
+            "node": "out",
+            "port": "in"
+          }
+        }
+      ],
+      "parameters": [
+        {
+          "name": "ratio",
+          "node": "pitch",
+          "parameter": "factor"
+        },
+        {
+          "name": "feedback",
+          "node": "osc",
+          "parameter": "feedback"
+        },
+        {
+          "name": "attack",
+          "node": "env",
+          "parameter": "attack"
+        },
+        {
+          "name": "decay",
+          "node": "env",
+          "parameter": "decay"
+        },
+        {
+          "name": "sustain",
+          "node": "env",
+          "parameter": "sustain"
+        },
+        {
+          "name": "release",
+          "node": "env",
+          "parameter": "release"
+        }
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "note",
+      "type": "Input",
+      "host": "note",
+      "name": "Keyboard",
+      "parameters": {}
+    },
+    {
+      "id": "op6",
+      "type": "module",
+      "module": "dx7_operator",
+      "name": "OP6 modulator · feedback",
+      "parameters": {
+        "ratio": 14,
+        "attack": 0.001,
+        "decay": 3.1943,
+        "sustain": 0,
+        "release": 0.2713,
+        "feedback": 0.00852
+      }
+    },
+    {
+      "id": "op5",
+      "type": "module",
+      "module": "dx7_operator",
+      "name": "OP5 modulator",
+      "parameters": {
+        "ratio": 3,
+        "attack": 0.001,
+        "decay": 3.1943,
+        "sustain": 0,
+        "release": 0.2713
+      }
+    },
+    {
+      "id": "op4",
+      "type": "module",
+      "module": "dx7_operator",
+      "name": "OP4 carrier",
+      "parameters": {
+        "ratio": 1,
+        "attack": 0.0009,
+        "decay": 4.701,
+        "sustain": 0,
+        "release": 0.2713
+      }
+    },
+    {
+      "id": "op3",
+      "type": "module",
+      "module": "dx7_operator",
+      "name": "OP3 modulator",
+      "parameters": {
+        "ratio": 7,
+        "attack": 0.001,
+        "decay": 3.1943,
+        "sustain": 0,
+        "release": 0.2713
+      }
+    },
+    {
+      "id": "op2",
+      "type": "module",
+      "module": "dx7_operator",
+      "name": "OP2 modulator",
+      "parameters": {
+        "ratio": 2,
+        "attack": 0.001,
+        "decay": 3.1943,
+        "sustain": 0,
+        "release": 0.2713
+      }
+    },
+    {
+      "id": "op1",
+      "type": "module",
+      "module": "dx7_operator",
+      "name": "OP1 carrier",
+      "parameters": {
+        "ratio": 1,
+        "attack": 0.0009,
+        "decay": 4.701,
+        "sustain": 0,
+        "release": 0.2713
+      }
+    },
+    {
+      "id": "op6_index_5",
+      "type": "Gain",
+      "name": "OP6 → OP5",
+      "parameters": {
+        "gain": 0.0682
+      }
+    },
+    {
+      "id": "op5_index_4",
+      "type": "Gain",
+      "name": "OP5 → OP4",
+      "parameters": {
+        "gain": 0.0442
+      }
+    },
+    {
+      "id": "op3_index_2",
+      "type": "Gain",
+      "name": "OP3 → OP2",
+      "parameters": {
+        "gain": 0.1051
+      }
+    },
+    {
+      "id": "op2_index_1",
+      "type": "Gain",
+      "name": "OP2 → OP1",
+      "parameters": {
+        "gain": 0.0573
+      }
+    },
+    {
+      "id": "op4_level",
+      "type": "Gain",
+      "name": "OP4 level",
+      "parameters": {
+        "gain": 1
+      }
+    },
+    {
+      "id": "op1_level",
+      "type": "Gain",
+      "name": "OP1 level",
+      "parameters": {
+        "gain": 1
+      }
+    },
+    {
+      "id": "carrier_sum_1",
+      "type": "Add",
+      "name": "Carrier mix",
+      "parameters": {}
+    },
+    {
+      "id": "mix",
+      "type": "Gain",
+      "name": "Mix",
+      "parameters": {}
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "host": "stereo",
+      "parameters": {
+        "level": 0.4
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op6",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op6",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op5",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op5",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op4",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op4",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op3",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op3",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op2",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op2",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "op1",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "note",
+        "port": "gate"
+      },
+      "to": {
+        "node": "op1",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "op6",
+        "port": "out"
+      },
+      "to": {
+        "node": "op6_index_5",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op6_index_5",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op5",
+        "port": "out"
+      },
+      "to": {
+        "node": "op5_index_4",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op5_index_4",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op3",
+        "port": "out"
+      },
+      "to": {
+        "node": "op3_index_2",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op3_index_2",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op2",
+        "port": "out"
+      },
+      "to": {
+        "node": "op2_index_1",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op2_index_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "op4",
+        "port": "out"
+      },
+      "to": {
+        "node": "op4_level",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op1",
+        "port": "out"
+      },
+      "to": {
+        "node": "op1_level",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "op4_level",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier_sum_1",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "op1_level",
+        "port": "out"
+      },
+      "to": {
+        "node": "carrier_sum_1",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "carrier_sum_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "op6_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op6_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op6_index_5_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op6",
+      "target": {
+        "node": "op6_index_5",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op6_attack",
+      "kind": "slider",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op6_decay",
+      "kind": "slider",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op6_sustain",
+      "kind": "slider",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op6_release",
+      "kind": "slider",
+      "group": "op6",
+      "target": {
+        "node": "op6",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op5_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op5_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op5_index_4_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op5",
+      "target": {
+        "node": "op5_index_4",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op5_attack",
+      "kind": "slider",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op5_decay",
+      "kind": "slider",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op5_sustain",
+      "kind": "slider",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op5_release",
+      "kind": "slider",
+      "group": "op5",
+      "target": {
+        "node": "op5",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op4_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op4_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op4_level_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op4",
+      "target": {
+        "node": "op4_level",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op4_attack",
+      "kind": "slider",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op4_decay",
+      "kind": "slider",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op4_sustain",
+      "kind": "slider",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op4_release",
+      "kind": "slider",
+      "group": "op4",
+      "target": {
+        "node": "op4",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op3_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op3_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op3_index_2_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op3",
+      "target": {
+        "node": "op3_index_2",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op3_attack",
+      "kind": "slider",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op3_decay",
+      "kind": "slider",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op3_sustain",
+      "kind": "slider",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op3_release",
+      "kind": "slider",
+      "group": "op3",
+      "target": {
+        "node": "op3",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op2_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op2_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op2_index_1_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op2",
+      "target": {
+        "node": "op2_index_1",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op2_attack",
+      "kind": "slider",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op2_decay",
+      "kind": "slider",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op2_sustain",
+      "kind": "slider",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op2_release",
+      "kind": "slider",
+      "group": "op2",
+      "target": {
+        "node": "op2",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "op1_ratio",
+      "label": "ratio",
+      "kind": "knob",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "ratio"
+      }
+    },
+    {
+      "id": "op1_feedback",
+      "label": "fb",
+      "kind": "knob",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "feedback"
+      }
+    },
+    {
+      "id": "op1_level_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "op1",
+      "target": {
+        "node": "op1_level",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "op1_attack",
+      "kind": "slider",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "attack"
+      }
+    },
+    {
+      "id": "op1_decay",
+      "kind": "slider",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "decay"
+      }
+    },
+    {
+      "id": "op1_sustain",
+      "kind": "slider",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "sustain"
+      }
+    },
+    {
+      "id": "op1_release",
+      "kind": "slider",
+      "group": "op1",
+      "target": {
+        "node": "op1",
+        "parameter": "release"
+      }
+    },
+    {
+      "id": "mix_gain",
+      "label": "level",
+      "kind": "knob",
+      "group": "mix",
+      "target": {
+        "node": "mix",
+        "parameter": "gain"
+      }
+    },
+    {
+      "id": "mix_out",
+      "label": "out",
+      "kind": "knob",
+      "group": "mix",
+      "target": {
+        "node": "out",
+        "parameter": "level"
+      }
+    }
+  ],
+  "presets": [
+    {
+      "name": "BELL SMALL",
+      "values": {
+        "op6_ratio": 14,
+        "op6_feedback": 0.00852,
+        "op6_index_5_gain": 0.0682,
+        "op6_attack": 0.001,
+        "op6_decay": 3.1943,
+        "op6_sustain": 0,
+        "op6_release": 0.2713,
+        "op5_ratio": 3,
+        "op5_index_4_gain": 0.0442,
+        "op5_attack": 0.001,
+        "op5_decay": 3.1943,
+        "op5_sustain": 0,
+        "op5_release": 0.2713,
+        "op4_ratio": 1,
+        "op4_level_gain": 1,
+        "op4_attack": 0.0009,
+        "op4_decay": 4.701,
+        "op4_sustain": 0,
+        "op4_release": 0.2713,
+        "op3_ratio": 7,
+        "op3_index_2_gain": 0.1051,
+        "op3_attack": 0.001,
+        "op3_decay": 3.1943,
+        "op3_sustain": 0,
+        "op3_release": 0.2713,
+        "op2_ratio": 2,
+        "op2_index_1_gain": 0.0573,
+        "op2_attack": 0.001,
+        "op2_decay": 3.1943,
+        "op2_sustain": 0,
+        "op2_release": 0.2713,
+        "op1_ratio": 1,
+        "op1_level_gain": 1,
+        "op1_attack": 0.0009,
+        "op1_decay": 4.701,
+        "op1_sustain": 0,
+        "op1_release": 0.2713,
+        "mix_out": 0.4
+      }
+    },
+    {
+      "name": "BELL DEEP",
+      "values": {
+        "op6_ratio": 9,
+        "op6_feedback": 0.00276,
+        "op6_index_5_gain": 0.0442,
+        "op6_attack": 0.001,
+        "op6_decay": 3.1943,
+        "op6_sustain": 0,
+        "op6_release": 0.2713,
+        "op5_ratio": 2,
+        "op5_index_4_gain": 0.0287,
+        "op5_attack": 0.001,
+        "op5_decay": 3.1943,
+        "op5_sustain": 0,
+        "op5_release": 0.2713,
+        "op4_ratio": 1,
+        "op4_level_gain": 1,
+        "op4_attack": 0.0009,
+        "op4_decay": 5.4948,
+        "op4_sustain": 0,
+        "op4_release": 0.2713,
+        "op3_ratio": 5,
+        "op3_index_2_gain": 0.0682,
+        "op3_attack": 0.001,
+        "op3_decay": 3.1943,
+        "op3_sustain": 0,
+        "op3_release": 0.2713,
+        "op2_ratio": 3,
+        "op2_index_1_gain": 0.0341,
+        "op2_attack": 0.001,
+        "op2_decay": 3.1943,
+        "op2_sustain": 0,
+        "op2_release": 0.2713,
+        "op1_ratio": 1,
+        "op1_level_gain": 1,
+        "op1_attack": 0.0009,
+        "op1_decay": 5.4948,
+        "op1_sustain": 0,
+        "op1_release": 0.2713,
+        "mix_out": 0.4
+      }
+    },
+    {
+      "name": "BELL GLASS",
+      "values": {
+        "op6_ratio": 14,
+        "op6_feedback": 0.03408,
+        "op6_index_5_gain": 0.1363,
+        "op6_attack": 0.001,
+        "op6_decay": 3.1943,
+        "op6_sustain": 0,
+        "op6_release": 0.2713,
+        "op5_ratio": 5,
+        "op5_index_4_gain": 0.0682,
+        "op5_attack": 0.001,
+        "op5_decay": 3.1943,
+        "op5_sustain": 0,
+        "op5_release": 0.2713,
+        "op4_ratio": 2,
+        "op4_level_gain": 1,
+        "op4_attack": 0.0009,
+        "op4_decay": 4.4051,
+        "op4_sustain": 0,
+        "op4_release": 0.2713,
+        "op3_ratio": 9,
+        "op3_index_2_gain": 0.1621,
+        "op3_attack": 0.001,
+        "op3_decay": 3.1943,
+        "op3_sustain": 0,
+        "op3_release": 0.2713,
+        "op2_ratio": 2,
+        "op2_index_1_gain": 0.0682,
+        "op2_attack": 0.001,
+        "op2_decay": 3.1943,
+        "op2_sustain": 0,
+        "op2_release": 0.2713,
+        "op1_ratio": 1,
+        "op1_level_gain": 1,
+        "op1_attack": 0.0009,
+        "op1_decay": 4.4051,
+        "op1_sustain": 0,
+        "op1_release": 0.2713,
+        "mix_out": 0.4
+      }
+    },
+    {
+      "name": "BELL FAR",
+      "values": {
+        "op6_ratio": 11,
+        "op6_feedback": 0.00038,
+        "op6_index_5_gain": 0.012,
+        "op6_attack": 0.001,
+        "op6_decay": 3.1943,
+        "op6_sustain": 0,
+        "op6_release": 0.2713,
+        "op5_ratio": 3,
+        "op5_index_4_gain": 0.0101,
+        "op5_attack": 0.001,
+        "op5_decay": 3.1943,
+        "op5_sustain": 0,
+        "op5_release": 0.2713,
+        "op4_ratio": 1,
+        "op4_level_gain": 1,
+        "op4_attack": 0.0009,
+        "op4_decay": 6.0222,
+        "op4_sustain": 0,
+        "op4_release": 0.2713,
+        "op3_ratio": 7,
+        "op3_index_2_gain": 0.0186,
+        "op3_attack": 0.001,
+        "op3_decay": 3.1943,
+        "op3_sustain": 0,
+        "op3_release": 0.2713,
+        "op2_ratio": 2,
+        "op2_index_1_gain": 0.012,
+        "op2_attack": 0.001,
+        "op2_decay": 3.1943,
+        "op2_sustain": 0,
+        "op2_release": 0.2713,
+        "op1_ratio": 1,
+        "op1_level_gain": 1,
+        "op1_attack": 0.0009,
+        "op1_decay": 6.0222,
+        "op1_sustain": 0,
+        "op1_release": 0.2713,
+        "mix_out": 0.4
+      }
+    },
+    {
+      "name": "BELL NEAR",
+      "values": {
+        "op6_ratio": 13,
+        "op6_feedback": 0.04819,
+        "op6_index_5_gain": 0.1928,
+        "op6_attack": 0.001,
+        "op6_decay": 3.1943,
+        "op6_sustain": 0,
+        "op6_release": 0.2713,
+        "op5_ratio": 4,
+        "op5_index_4_gain": 0.0964,
+        "op5_attack": 0.001,
+        "op5_decay": 3.1943,
+        "op5_sustain": 0,
+        "op5_release": 0.2713,
+        "op4_ratio": 1,
+        "op4_level_gain": 1,
+        "op4_attack": 0.0009,
+        "op4_decay": 4.1609,
+        "op4_sustain": 0,
+        "op4_release": 0.2713,
+        "op3_ratio": 9,
+        "op3_index_2_gain": 0.2293,
+        "op3_attack": 0.001,
+        "op3_decay": 3.1943,
+        "op3_sustain": 0,
+        "op3_release": 0.2713,
+        "op2_ratio": 3,
+        "op2_index_1_gain": 0.0884,
+        "op2_attack": 0.001,
+        "op2_decay": 3.1943,
+        "op2_sustain": 0,
+        "op2_release": 0.2713,
+        "op1_ratio": 1,
+        "op1_level_gain": 1,
+        "op1_attack": 0.0009,
+        "op1_decay": 4.1609,
+        "op1_sustain": 0,
+        "op1_release": 0.2713,
+        "mix_out": 0.4
+      }
+    },
+    {
+      "name": "BELL DARK",
+      "values": {
+        "op6_ratio": 7,
+        "op6_feedback": 0.0009,
+        "op6_index_5_gain": 0.0287,
+        "op6_attack": 0.001,
+        "op6_decay": 3.1943,
+        "op6_sustain": 0,
+        "op6_release": 0.2713,
+        "op5_ratio": 2,
+        "op5_index_4_gain": 0.0186,
+        "op5_attack": 0.001,
+        "op5_decay": 3.1943,
+        "op5_sustain": 0,
+        "op5_release": 0.2713,
+        "op4_ratio": 1,
+        "op4_level_gain": 1,
+        "op4_attack": 0.0009,
+        "op4_decay": 5.7458,
+        "op4_sustain": 0,
+        "op4_release": 0.2713,
+        "op3_ratio": 5,
+        "op3_index_2_gain": 0.0341,
+        "op3_attack": 0.001,
+        "op3_decay": 3.1943,
+        "op3_sustain": 0,
+        "op3_release": 0.2713,
+        "op2_ratio": 2,
+        "op2_index_1_gain": 0.0203,
+        "op2_attack": 0.001,
+        "op2_decay": 3.1943,
+        "op2_sustain": 0,
+        "op2_release": 0.2713,
+        "op1_ratio": 1,
+        "op1_level_gain": 1,
+        "op1_attack": 0.0009,
+        "op1_decay": 5.7458,
+        "op1_sustain": 0,
+        "op1_release": 0.2713,
+        "mix_out": 0.4
+      }
+    },
+    {
+      "name": "BELL TINY",
+      "values": {
+        "op6_ratio": 14,
+        "op6_feedback": 0.01013,
+        "op6_index_5_gain": 0.0811,
+        "op6_attack": 0.001,
+        "op6_decay": 3.1943,
+        "op6_sustain": 0,
+        "op6_release": 0.2713,
+        "op5_ratio": 7,
+        "op5_index_4_gain": 0.0573,
+        "op5_attack": 0.001,
+        "op5_decay": 3.1943,
+        "op5_sustain": 0,
+        "op5_release": 0.2713,
+        "op4_ratio": 3,
+        "op4_level_gain": 1,
+        "op4_attack": 0.0009,
+        "op4_decay": 3.7934,
+        "op4_sustain": 0,
+        "op4_release": 0.2713,
+        "op3_ratio": 10,
+        "op3_index_2_gain": 0.1146,
+        "op3_attack": 0.001,
+        "op3_decay": 3.1943,
+        "op3_sustain": 0,
+        "op3_release": 0.2713,
+        "op2_ratio": 5,
+        "op2_index_1_gain": 0.0682,
+        "op2_attack": 0.001,
+        "op2_decay": 3.1943,
+        "op2_sustain": 0,
+        "op2_release": 0.2713,
+        "op1_ratio": 2,
+        "op1_level_gain": 1,
+        "op1_attack": 0.0009,
+        "op1_decay": 3.7934,
+        "op1_sustain": 0,
+        "op1_release": 0.2713,
+        "mix_out": 0.4
+      }
+    },
+    {
+      "name": "BELL LONG",
+      "values": {
+        "op6_ratio": 10,
+        "op6_feedback": 0.00358,
+        "op6_index_5_gain": 0.0573,
+        "op6_attack": 0.001,
+        "op6_decay": 3.1943,
+        "op6_sustain": 0,
+        "op6_release": 0.2713,
+        "op5_ratio": 3,
+        "op5_index_4_gain": 0.0341,
+        "op5_attack": 0.001,
+        "op5_decay": 3.1943,
+        "op5_sustain": 0,
+        "op5_release": 0.2713,
+        "op4_ratio": 1,
+        "op4_level_gain": 1,
+        "op4_attack": 0.0009,
+        "op4_decay": 6.6615,
+        "op4_sustain": 0,
+        "op4_release": 0.2713,
+        "op3_ratio": 6,
+        "op3_index_2_gain": 0.0811,
+        "op3_attack": 0.001,
+        "op3_decay": 3.1943,
+        "op3_sustain": 0,
+        "op3_release": 0.2713,
+        "op2_ratio": 2,
+        "op2_index_1_gain": 0.0405,
+        "op2_attack": 0.001,
+        "op2_decay": 3.1943,
+        "op2_sustain": 0,
+        "op2_release": 0.2713,
+        "op1_ratio": 1,
+        "op1_level_gain": 1,
+        "op1_attack": 0.0009,
+        "op1_decay": 6.6615,
+        "op1_sustain": 0,
+        "op1_release": 0.2713,
+        "mix_out": 0.4
+      }
+    }
+  ]
+}

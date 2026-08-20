@@ -99,6 +99,13 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/dx7-import.mjs --check)
 endif()
 
+# The merged DX7 banks are re-filings, not arrangements: every page must render
+# byte-identical to the exact per-voice import it names.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME dx7_banks_match_their_voices
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/dx7-bank-check.mjs)
+endif()
+
 # The modulation-index scale, held spectrally: synthetic 2-op voices sweep the
 # index ladder and a lone carrier sweeps feedback, and every audible harmonic must
 # match the oracle within 2 dB. The margins are two orders looser than the observed

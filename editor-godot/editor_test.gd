@@ -3449,6 +3449,28 @@ func _initialize() -> void:
 			% (main.patch.get("presets", []) as Array).size())
 	main.patch_face.bank_open = false
 
+	# A DX7 cartridge surfaces as banks: voices sharing an algorithm become
+	# pages of one instrument, named as the cartridge named them. The per-voice
+	# files stay — exact and oracle-held — and the merged bank is the same
+	# cartridge re-filed for playing.
+	await main._load_example("DX7: ep-bank")
+	for i in 10:
+		await process_frame
+	check((main.patch.get("presets", []) as Array).size() == 8,
+		"the EP family is an eight-page bank (%d)"
+			% (main.patch.get("presets", []) as Array).size())
+	var ep_names: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check("EP GLASS" in ep_names and "EP FELT" in ep_names,
+		"and the pages wear the cartridge's own names (%s)" % str(ep_names))
+	var ep_hard := ep_names.find("EP HARD")
+	main.patch_face._turn_to(ep_hard)
+	for i in 8:
+		await process_frame
+	var ep_peak: float = await _struck_peak(main, 57)
+	check(ep_peak > 0.01,
+		"turning to EP HARD still plays (peak %.3f)" % ep_peak)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:
