@@ -74,6 +74,10 @@ var preset_index := -1
 var morph_b := -1
 var morph_b_picked := false
 
+## Whether the bank list is unfolded under the strip. Session state, kept
+## across rebuilds so a reorder does not fold the list mid-gesture.
+var bank_open := false
+
 ## The strip and its deck A control, kept so a rename can swap a name field in
 ## where the picker stands. Rebuilt with every strip.
 var _strip: Control = null
@@ -175,6 +179,12 @@ signal morph_finished()
 
 ## A page wants a new name. The face only asks; main owns the document.
 signal preset_renamed(index: int, name: String)
+
+## A page was dragged to a new slot in the bank.
+signal preset_reordered(from_index: int, to_index: int)
+
+## A page was struck from the bank.
+signal preset_deleted(index: int)
 
 var _cells: Array = []          # Control per cell, panel first then the offers
 var _ids: Array = []            # the control ids, panel cells only
@@ -500,7 +510,84 @@ func _preset_strip() -> Control:
 		rename.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 		rename.pressed.connect(func() -> void: rename_showing())
 		strip.add_child(rename)
+
+	# The bank unfolded: rows to drag into set order and strike from.
+	if not presets.is_empty():
+		var unfold := Button.new()
+		unfold.text = "BANK"
+		unfold.tooltip_text = "Show the bank: drag pages into set order; x removes one"
+		unfold.toggle_mode = true
+		unfold.button_pressed = bank_open
+		unfold.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		unfold.toggled.connect(func(open: bool) -> void:
+			bank_open = open
+			rebuild())
+		strip.add_child(unfold)
 	return strip
+
+
+## The bank as rows: a drag grip, the page's name, and its x. Dragging uses the
+## engine's own drag-and-drop, so a row travels with a preview and lands where
+## it is dropped; clicking a name turns the page there.
+func _bank_list() -> Control:
+	var presets: Array = patch.get("presets", [])
+	var list := VBoxContainer.new()
+	list.set_meta("bank_list", true)
+	list.add_theme_constant_override("separation", 2)
+	for index in presets.size():
+		var row := HBoxContainer.new()
+		row.set_meta("bank_row", index)
+		row.add_theme_constant_override("separation", Design.SPACE_S)
+		row.mouse_filter = Control.MOUSE_FILTER_STOP
+		var row_index := index
+
+		var grip := Label.new()
+		grip.text = "::"
+		grip.add_theme_color_override("font_color", Design.INK_SECOND)
+		grip.tooltip_text = "Drag to reorder"
+		row.add_child(grip)
+
+		var name := Label.new()
+		name.text = str((presets[index] as Dictionary).get("name", ""))
+		name.custom_minimum_size.x = Design.scale(150)
+		name.clip_text = true
+		name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		name.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+		name.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+		name.add_theme_color_override("font_color",
+			Design.ACCENT if index == preset_index else Design.INK_NORMAL)
+		name.mouse_filter = Control.MOUSE_FILTER_STOP
+		name.gui_input.connect(func(event: InputEvent) -> void:
+			var press := event as InputEventMouseButton
+			if press != null and press.pressed \
+					and press.button_index == MOUSE_BUTTON_LEFT:
+				_turn_to(row_index))
+		row.add_child(name)
+
+		var strike := Button.new()
+		strike.text = "x"
+		strike.tooltip_text = "Remove this preset from the bank"
+		strike.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		strike.pressed.connect(func() -> void: preset_deleted.emit(row_index))
+		row.add_child(strike)
+
+		row.set_drag_forwarding(
+			func(_at: Vector2) -> Variant:
+				var preview := Label.new()
+				var bank_now: Array = patch.get("presets", [])
+				preview.text = str((bank_now[row_index] as Dictionary)
+					.get("name", "")) if row_index < bank_now.size() else ""
+				preview.add_theme_color_override("font_color", Design.ACCENT)
+				row.set_drag_preview(preview)
+				return {"bank_row": row_index},
+			func(_at: Vector2, data: Variant) -> bool:
+				return data is Dictionary and (data as Dictionary).has("bank_row"),
+			func(_at: Vector2, data: Variant) -> void:
+				var from := int((data as Dictionary)["bank_row"])
+				if from != row_index:
+					preset_reordered.emit(from, row_index))
+		list.add_child(row)
+	return list
 
 
 ## Opens a name field where deck A stands, holding the showing page's name.
@@ -739,6 +826,8 @@ func rebuild() -> void:
 	# On any authored panel, even before a bank exists — saving is how one starts.
 	if not derived and not controls.is_empty():
 		add_child(_preset_strip())
+		if bank_open and not (patch.get("presets", []) as Array).is_empty():
+			add_child(_bank_list())
 
 	var runs: Array = []
 	var on_panel := {}

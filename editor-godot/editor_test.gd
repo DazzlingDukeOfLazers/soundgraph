@@ -3392,6 +3392,63 @@ func _initialize() -> void:
 			check(club == "Club Stock",
 				"and the new name lands in the definition (%s)" % club)
 
+	# The bank unfolds into rows: drag one to reorder the set, strike one out.
+	# Both are one undo step, and the showing page follows the sound it names.
+	main.patch_face.bank_open = true
+	main.patch_face.rebuild()
+	for i in 4:
+		await process_frame
+	var bank_rows: Array = []
+	var rows_queue: Array = [main.patch_face]
+	while not rows_queue.is_empty():
+		var rows_next: Node = rows_queue.pop_front()
+		for rows_child in rows_next.get_children():
+			if rows_child is Control and rows_child.has_meta("bank_row"):
+				bank_rows.append(rows_child)
+			else:
+				rows_queue.append(rows_child)
+	check(bank_rows.size() == (main.patch.get("presets", []) as Array).size(),
+		"the unfolded bank shows one row per page (%d)" % bank_rows.size())
+	var order_before: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	main.patch_face._turn_to(0)
+	for i in 6:
+		await process_frame
+	main._reorder_preset(0, 2, main.patch_face, "")
+	for i in 4:
+		await process_frame
+	var order_after: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check(str(order_after[2]) == str(order_before[0])
+			and str(order_after[0]) == str(order_before[1]),
+		"dragging the first page to slot three moves it there (%s)"
+			% str(order_after))
+	check(main.patch_face.preset_index == 2,
+		"and the showing page follows the sound it names (%d)"
+			% main.patch_face.preset_index)
+	await main._undo()
+	for i in 4:
+		await process_frame
+	var order_undone: Array = (main.patch.get("presets", []) as Array).map(
+		func(preset): return str((preset as Dictionary).get("name", "")))
+	check(str(order_undone[0]) == str(order_before[0]),
+		"one undo puts the set back (%s)" % str(order_undone[0]))
+
+	var pages_before: int = (main.patch.get("presets", []) as Array).size()
+	main._delete_preset(1, main.patch_face, "")
+	for i in 4:
+		await process_frame
+	check((main.patch.get("presets", []) as Array).size() == pages_before - 1,
+		"striking a page removes it (%d left)"
+			% (main.patch.get("presets", []) as Array).size())
+	await main._undo()
+	for i in 4:
+		await process_frame
+	check((main.patch.get("presets", []) as Array).size() == pages_before,
+		"and one undo restores the bank (%d)"
+			% (main.patch.get("presets", []) as Array).size())
+	main.patch_face.bank_open = false
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:

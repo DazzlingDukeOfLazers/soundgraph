@@ -1877,6 +1877,12 @@ func _build_side_panel() -> Control:
 	patch_face.preset_renamed.connect(
 		func(index: int, wanted: String) -> void:
 			_rename_preset(index, wanted, patch_face, ""))
+	patch_face.preset_reordered.connect(
+		func(from_index: int, to_index: int) -> void:
+			_reorder_preset(from_index, to_index, patch_face, ""))
+	patch_face.preset_deleted.connect(
+		func(index: int) -> void:
+			_delete_preset(index, patch_face, ""))
 	panel.add_child(patch_face)
 
 	module_face = ModuleFace.new()
@@ -2118,6 +2124,12 @@ func _device_panel_for(instance_id: String, module_name: String,
 		strip_face.preset_renamed.connect(
 			func(index: int, wanted: String) -> void:
 				_rename_preset(index, wanted, strip_face, module_name))
+		strip_face.preset_reordered.connect(
+			func(from_index: int, to_index: int) -> void:
+				_reorder_preset(from_index, to_index, strip_face, module_name))
+		strip_face.preset_deleted.connect(
+			func(index: int) -> void:
+				_delete_preset(index, strip_face, module_name))
 	var panel := mount as PatchFace
 	panel.preset_index = int(preset_pages.get(module_name, -1))
 	var overrides: Dictionary = {}
@@ -4710,6 +4722,70 @@ func _rename_preset(index: int, wanted: String, face: Control, bank_module: Stri
 	_apply_flips()
 	_refresh_face()
 	_say("preset renamed: %s" % wanted)
+
+
+## Where an index lands after a page moves from one slot to another.
+func _index_after_move(tracked: int, from_index: int, to_index: int) -> int:
+	if tracked == from_index:
+		return to_index
+	if from_index < tracked and tracked <= to_index:
+		return tracked - 1
+	if to_index <= tracked and tracked < from_index:
+		return tracked + 1
+	return tracked
+
+
+## Moves one page to a new slot: the set order, in the set's own hands. The
+## showing page and deck B both follow the page they were pointing at.
+func _reorder_preset(from_index: int, to_index: int, face: Control,
+		bank_module: String) -> void:
+	var store: Dictionary = patch if bank_module == "" \
+		else patch.get("modules", {}).get(bank_module, {})
+	var presets: Array = store.get("presets", [])
+	if from_index == to_index or from_index < 0 or to_index < 0 \
+			or from_index >= presets.size() or to_index >= presets.size():
+		return
+	_begin_edit()
+	var moving: Dictionary = presets.pop_at(from_index)
+	presets.insert(to_index, moving)
+	_commit_edit("move %s in the bank" % str(moving.get("name", "preset")))
+	var showing := int(preset_pages.get(bank_module, -1))
+	if showing >= 0:
+		preset_pages[bank_module] = _index_after_move(showing, from_index, to_index)
+	face.preset_index = int(preset_pages.get(bank_module, face.preset_index))
+	if int(face.morph_b) >= 0:
+		face.morph_b = _index_after_move(int(face.morph_b), from_index, to_index)
+	_apply_flips()
+	_refresh_face()
+	_say("moved %s" % str(moving.get("name", "")))
+
+
+## Strikes one page from the bank, as one undo step. The showing page slides
+## to keep naming the same sound; striking the showing page leaves no page
+## showing, which is the truth.
+func _delete_preset(index: int, face: Control, bank_module: String) -> void:
+	var store: Dictionary = patch if bank_module == "" \
+		else patch.get("modules", {}).get(bank_module, {})
+	var presets: Array = store.get("presets", [])
+	if index < 0 or index >= presets.size():
+		return
+	_begin_edit()
+	var gone: Dictionary = presets.pop_at(index)
+	_commit_edit("remove %s from the bank" % str(gone.get("name", "preset")))
+	var showing := int(preset_pages.get(bank_module, -1))
+	if showing == index:
+		preset_pages[bank_module] = -1
+	elif showing > index:
+		preset_pages[bank_module] = showing - 1
+	face.preset_index = int(preset_pages.get(bank_module, -1))
+	if int(face.morph_b) == index:
+		face.morph_b = -1
+		face.morph_b_picked = false
+	elif int(face.morph_b) > index:
+		face.morph_b = int(face.morph_b) - 1
+	_apply_flips()
+	_refresh_face()
+	_say("removed %s" % str(gone.get("name", "")))
 
 
 ## Writes a face's current positions into its bank as a new page — the patch's
