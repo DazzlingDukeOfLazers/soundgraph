@@ -3223,6 +3223,85 @@ func _initialize() -> void:
 		check(is_equal_approx(unwound, 380.0),
 			"one undo unwinds the whole sweep (%.0f)" % unwound)
 
+	# The decks: A is the showing page's own picker — choosing there turns the
+	# page — and B picks where the crossfader lands, anywhere in the bank.
+	main.patch_face._turn_to(dark_pad)
+	for i in 8:
+		await process_frame
+	var deck_b: OptionButton = null
+	var deck_a: OptionButton = null
+	var deck_queue: Array = [main.patch_face]
+	while not deck_queue.is_empty():
+		var deck_next: Node = deck_queue.pop_front()
+		for deck_child in deck_next.get_children():
+			if deck_child is OptionButton and deck_child.has_meta("preset_b"):
+				deck_b = deck_child
+			elif deck_child is OptionButton and deck_child.has_meta("preset_name"):
+				deck_a = deck_child
+			else:
+				deck_queue.append(deck_child)
+	check(deck_a != null and deck_b != null, "the strip carries both deck pickers")
+	if deck_a != null and deck_b != null:
+		var stock_page := -1
+		for page_index in (main.patch.get("presets", []) as Array).size():
+			if str((main.patch["presets"][page_index] as Dictionary)
+					.get("name", "")) == "Stock":
+				stock_page = page_index
+		deck_b.selected = stock_page
+		deck_b.item_selected.emit(stock_page)
+		for i in 4:
+			await process_frame
+		var ab_slider: HSlider = null
+		var ab_queue: Array = [main.patch_face]
+		while not ab_queue.is_empty():
+			var ab_next: Node = ab_queue.pop_front()
+			for ab_child in ab_next.get_children():
+				if ab_child is HSlider and ab_child.has_meta("preset_morph"):
+					ab_slider = ab_child
+				else:
+					ab_queue.append(ab_child)
+		check(ab_slider != null, "and the crossfader still stands between them")
+		if ab_slider != null:
+			ab_slider.drag_started.emit()
+			ab_slider.value = 0.5
+			for i in 4:
+				await process_frame
+			ab_slider.drag_ended.emit(true)
+			for i in 4:
+				await process_frame
+			var ab_cutoff: float = -1.0
+			for ab_node in main.patch["nodes"]:
+				if str(ab_node["id"]) == "filter":
+					ab_cutoff = float(ab_node.get("parameters", {}).get("cutoff", -1.0))
+			check(absf(ab_cutoff - sqrt(380.0 * 900.0)) < 1.0,
+				"half a fade from Dark Pad to deck B's Stock (%.1f ~ %.1f)"
+					% [ab_cutoff, sqrt(380.0 * 900.0)])
+		# And deck A is a page turn wearing a picker's clothes.
+		var punch_page := -1
+		for page_index in (main.patch.get("presets", []) as Array).size():
+			if str((main.patch["presets"][page_index] as Dictionary)
+					.get("name", "")) == "Punch Bass":
+				punch_page = page_index
+		var deck_a_now: OptionButton = null
+		var a_queue: Array = [main.patch_face]
+		while not a_queue.is_empty():
+			var a_next: Node = a_queue.pop_front()
+			for a_child in a_next.get_children():
+				if a_child is OptionButton and a_child.has_meta("preset_name"):
+					deck_a_now = a_child
+				else:
+					a_queue.append(a_child)
+		if deck_a_now != null:
+			deck_a_now.item_selected.emit(punch_page)
+			for i in 6:
+				await process_frame
+			var a_cutoff: float = -1.0
+			for a_node in main.patch["nodes"]:
+				if str(a_node["id"]) == "filter":
+					a_cutoff = float(a_node.get("parameters", {}).get("cutoff", -1.0))
+			check(is_equal_approx(a_cutoff, 520.0),
+				"picking deck A turns the page to Punch Bass (%.0f)" % a_cutoff)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:
@@ -3283,13 +3362,13 @@ func _initialize() -> void:
 	for i in 10:
 		await process_frame
 	var duo_face = main.module_mounts.get(duo_device, null)
-	var duo_label: Label = null
+	var duo_label: Control = null
 	if duo_face is PatchFace:
 		var label_queue: Array = [duo_face]
 		while not label_queue.is_empty():
 			var label_next: Node = label_queue.pop_front()
 			for label_child in label_next.get_children():
-				if label_child is Label and label_child.has_meta("preset_name"):
+				if label_child is Control and label_child.has_meta("preset_name"):
 					duo_label = label_child
 				else:
 					label_queue.append(label_child)

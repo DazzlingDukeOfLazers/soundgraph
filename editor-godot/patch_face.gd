@@ -68,6 +68,12 @@ var rack: Control = null
 ## knob values themselves, and which page they came from is a session memory.
 var preset_index := -1
 
+## Deck B: where the morph lands. Deck A is the showing page itself — the name
+## in the strip is a picker, and picking is turning — so only B needs a home of
+## its own. It shadows the page after A until somebody picks it deliberately.
+var morph_b := -1
+var morph_b_picked := false
+
 ## What the case wears: the instrument's name, from main. On the case rather than above
 ## it because a name floating over a set of plates says less than a name *on* the thing
 ## the plates are mounted in.
@@ -377,21 +383,32 @@ func _preset_strip() -> Control:
 				else (preset_index - 1 + count) % count))
 	strip.add_child(prev)
 
-	var name := Label.new()
-	var showing: String = "no presets yet" if presets.is_empty() 		else ("—" if preset_index < 0 or preset_index >= presets.size()
-			else str((presets[preset_index] as Dictionary).get("name", "—")))
-	name.text = showing
-	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name.custom_minimum_size.x = Design.scale(140)
-	name.clip_text = true
-	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	name.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
-	name.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
-	name.add_theme_color_override("font_color",
-		Design.INK_SECOND if presets.is_empty() else Design.INK_NORMAL)
-	name.tooltip_text = "" if presets.is_empty() 		else "Preset %d of %d" % [preset_index + 1, presets.size()]
-	name.set_meta("preset_name", true)
-	strip.add_child(name)
+	if presets.is_empty():
+		var name := Label.new()
+		name.text = "no presets yet"
+		name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name.custom_minimum_size.x = Design.scale(140)
+		name.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+		name.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+		name.add_theme_color_override("font_color", Design.INK_SECOND)
+		name.set_meta("preset_name", true)
+		strip.add_child(name)
+	else:
+		# Deck A: the showing page's name, and a picker — choosing here IS
+		# turning the page, so the arrows, the name and deck A can never
+		# disagree about where the bank stands.
+		var deck_a := OptionButton.new()
+		deck_a.fit_to_longest_item = false
+		deck_a.custom_minimum_size.x = Design.scale(140)
+		deck_a.clip_text = true
+		for preset in presets:
+			deck_a.add_item(str((preset as Dictionary).get("name", "")))
+		deck_a.selected = preset_index
+		deck_a.tooltip_text = "Deck A — preset %d of %d; picking turns the page" 			% [preset_index + 1, presets.size()] if preset_index >= 0 			else "Deck A — pick a preset"
+		deck_a.set_meta("preset_name", true)
+		deck_a.item_selected.connect(func(picked: int) -> void:
+			_turn_to(picked))
+		strip.add_child(deck_a)
 
 	var next := Button.new()
 	next.text = ">"
@@ -411,6 +428,9 @@ func _preset_strip() -> Control:
 	# through its low end. The slider only appears once a page is showing and
 	# there is somewhere to morph to.
 	if preset_index >= 0 and presets.size() >= 2:
+		# Deck B shadows the page after A until somebody picks it on purpose.
+		if not morph_b_picked or morph_b < 0 or morph_b >= presets.size():
+			morph_b = (preset_index + 1) % presets.size()
 		var morph := HSlider.new()
 		morph.custom_minimum_size.x = Design.scale(96)
 		morph.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -422,15 +442,36 @@ func _preset_strip() -> Control:
 		# bracket that makes a morph one undo step.
 		morph.scrollable = false
 		morph.focus_mode = Control.FOCUS_NONE
-		var toward: String = str((presets[(preset_index + 1) % presets.size()]
-			as Dictionary).get("name", ""))
-		morph.tooltip_text = "Morph toward %s" % toward
+		morph.tooltip_text = "Morph from %s toward %s" % [
+			str((presets[preset_index] as Dictionary).get("name", "")),
+			str((presets[morph_b] as Dictionary).get("name", ""))]
 		morph.set_meta("preset_morph", true)
 		morph.drag_started.connect(func() -> void: morph_started.emit())
 		morph.value_changed.connect(func(fraction: float) -> void:
 			preset_morphed.emit(_morph_writes(fraction)))
 		morph.drag_ended.connect(func(_changed: bool) -> void: morph_finished.emit())
 		strip.add_child(morph)
+
+		# Deck B: the other end of the crossfader. Picking it writes nothing —
+		# the next slider move is what plays it.
+		var deck_b := OptionButton.new()
+		deck_b.fit_to_longest_item = false
+		deck_b.custom_minimum_size.x = Design.scale(110)
+		deck_b.clip_text = true
+		for preset in presets:
+			deck_b.add_item(str((preset as Dictionary).get("name", "")))
+		deck_b.selected = morph_b
+		deck_b.tooltip_text = "Deck B — where the morph lands"
+		deck_b.set_meta("preset_b", true)
+		deck_b.item_selected.connect(func(picked: int) -> void:
+			morph_b = picked
+			morph_b_picked = true
+			morph.tooltip_text = "Morph from %s toward %s" % [
+				str((patch.get("presets", [])[preset_index]
+					as Dictionary).get("name", "")),
+				str((patch.get("presets", [])[picked]
+					as Dictionary).get("name", ""))])
+		strip.add_child(deck_b)
 
 	var keep := Button.new()
 	keep.text = "+"
@@ -493,9 +534,9 @@ func _morph_writes(fraction: float) -> Array:
 	var presets: Array = patch.get("presets", [])
 	if presets.size() < 2 or preset_index < 0 or preset_index >= presets.size():
 		return []
+	var landing := morph_b if morph_b >= 0 and morph_b < presets.size() 		else (preset_index + 1) % presets.size()
 	var here: Dictionary = (presets[preset_index] as Dictionary).get("values", {})
-	var there: Dictionary = (presets[(preset_index + 1) % presets.size()]
-		as Dictionary).get("values", {})
+	var there: Dictionary = (presets[landing] as Dictionary).get("values", {})
 	var writes: Array = []
 	for control in patch.get("controls", []):
 		var control_id := str(control.get("id", ""))

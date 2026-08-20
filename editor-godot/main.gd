@@ -8149,10 +8149,12 @@ func _load_text(text: String) -> void:
 		patch["connections"] = []
 	_modernize_stereo_outputs()
 	inspecting = {}
-	# A fresh document starts on no page of anyone's bank.
+	# A fresh document starts on no page of anyone's bank, with deck B unpicked.
 	preset_pages.clear()
 	if patch_face != null:
 		patch_face.preset_index = -1
+		patch_face.morph_b = -1
+		patch_face.morph_b_picked = false
 
 	# Snap whatever arrives onto the grid. A patch written by another editor, or by hand,
 	# lands on arbitrary pixels, and then every alignment cue in the canvas is off by a
