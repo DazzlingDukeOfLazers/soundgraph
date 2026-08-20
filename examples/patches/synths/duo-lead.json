@@ -1,0 +1,585 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Duo Lead"
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note",
+      "parameters": {
+        "voices": 2
+      }
+    },
+    {
+      "id": "osc_1",
+      "type": "SawOscillator",
+      "position": {
+        "x": 560,
+        "y": 0
+      },
+      "name": "Osc 1",
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "osc_2",
+      "type": "SquareOscillator",
+      "position": {
+        "x": 560,
+        "y": 400
+      },
+      "name": "Osc 2",
+      "parameters": {
+        "frequency": 220,
+        "pulse_width": 0.5
+      }
+    },
+    {
+      "id": "detune",
+      "type": "Constant",
+      "position": {
+        "x": 120,
+        "y": 400
+      },
+      "name": "Detune",
+      "parameters": {
+        "value": 0.009
+      }
+    },
+    {
+      "id": "bend",
+      "type": "Add",
+      "position": {
+        "x": 340,
+        "y": 600
+      },
+      "name": "Bend"
+    },
+    {
+      "id": "vibrato",
+      "type": "LFO",
+      "position": {
+        "x": 120,
+        "y": 800
+      },
+      "name": "Vibrato",
+      "parameters": {
+        "rate": 5.5,
+        "shape": 0,
+        "amount": 0.02,
+        "offset": 0
+      }
+    },
+    {
+      "id": "ring",
+      "type": "Multiply",
+      "position": {
+        "x": 1120,
+        "y": 400
+      },
+      "name": "Ring",
+      "parameters": {
+        "factor": 1.0
+      }
+    },
+    {
+      "id": "ring_amt",
+      "type": "Gain",
+      "position": {
+        "x": 1400,
+        "y": 400
+      },
+      "name": "Ring Amount",
+      "parameters": {
+        "gain": 0.0
+      }
+    },
+    {
+      "id": "filter",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 1680,
+        "y": 0
+      },
+      "name": "Filter",
+      "parameters": {
+        "cutoff": 1400,
+        "resonance": 0.55,
+        "mode": 0
+      }
+    },
+    {
+      "id": "fenv",
+      "type": "ADSR",
+      "position": {
+        "x": 560,
+        "y": 1200
+      },
+      "name": "Filter Env",
+      "parameters": {
+        "attack": 0.003,
+        "decay": 0.25,
+        "sustain": 0.2,
+        "release": 0.3
+      }
+    },
+    {
+      "id": "sweep",
+      "type": "Multiply",
+      "position": {
+        "x": 1120,
+        "y": 1200
+      },
+      "name": "Env Depth",
+      "parameters": {
+        "factor": 3.0
+      }
+    },
+    {
+      "id": "wobble",
+      "type": "LFO",
+      "position": {
+        "x": 1120,
+        "y": 1600
+      },
+      "name": "Wobble",
+      "parameters": {
+        "rate": 6.0,
+        "shape": 4,
+        "amount": 0.0,
+        "offset": 0
+      }
+    },
+    {
+      "id": "mod_sum",
+      "type": "Add",
+      "position": {
+        "x": 1400,
+        "y": 1200
+      },
+      "name": "Mod Sum"
+    },
+    {
+      "id": "aenv",
+      "type": "ADSR",
+      "position": {
+        "x": 1680,
+        "y": 400
+      },
+      "name": "Amp Env",
+      "parameters": {
+        "attack": 0.003,
+        "decay": 0.15,
+        "sustain": 0.6,
+        "release": 0.25
+      }
+    },
+    {
+      "id": "vca",
+      "type": "Gain",
+      "position": {
+        "x": 2240,
+        "y": 0
+      },
+      "name": "VCA",
+      "parameters": {
+        "gain": 0.45
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 2800,
+        "y": 0
+      },
+      "host": "stereo"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc_1",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc_2",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "osc_1",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "detune",
+        "port": "out"
+      },
+      "to": {
+        "node": "bend",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vibrato",
+        "port": "out"
+      },
+      "to": {
+        "node": "bend",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "bend",
+        "port": "out"
+      },
+      "to": {
+        "node": "osc_2",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "fenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "aenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "osc_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "osc_2",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "osc_1",
+        "port": "out"
+      },
+      "to": {
+        "node": "ring",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "osc_2",
+        "port": "out"
+      },
+      "to": {
+        "node": "ring",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "ring",
+        "port": "out"
+      },
+      "to": {
+        "node": "ring_amt",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "ring_amt",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "fenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "sweep",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "sweep",
+        "port": "out"
+      },
+      "to": {
+        "node": "mod_sum",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "wobble",
+        "port": "out"
+      },
+      "to": {
+        "node": "mod_sum",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "mod_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "cutoff_mod"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "aenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "detune",
+      "label": "Detune",
+      "kind": "knob",
+      "target": {
+        "node": "detune",
+        "parameter": "value"
+      },
+      "min": 0,
+      "max": 0.05,
+      "default": 0.009,
+      "scaling": "linear"
+    },
+    {
+      "id": "ring",
+      "label": "Ring",
+      "kind": "knob",
+      "target": {
+        "node": "ring_amt",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "scaling": "linear"
+    },
+    {
+      "id": "vibrato",
+      "label": "Vibrato",
+      "kind": "knob",
+      "target": {
+        "node": "vibrato",
+        "parameter": "amount"
+      },
+      "min": 0,
+      "max": 0.2,
+      "default": 0.02,
+      "scaling": "linear"
+    },
+    {
+      "id": "cutoff",
+      "label": "Cutoff",
+      "kind": "knob",
+      "target": {
+        "node": "filter",
+        "parameter": "cutoff"
+      },
+      "min": 100,
+      "max": 8000,
+      "default": 1400,
+      "scaling": "exponential"
+    },
+    {
+      "id": "resonance",
+      "label": "Resonance",
+      "kind": "knob",
+      "target": {
+        "node": "filter",
+        "parameter": "resonance"
+      },
+      "min": 0,
+      "max": 0.9,
+      "default": 0.55,
+      "scaling": "linear"
+    },
+    {
+      "id": "sweep",
+      "label": "Sweep",
+      "kind": "knob",
+      "target": {
+        "node": "sweep",
+        "parameter": "factor"
+      },
+      "min": 0,
+      "max": 5,
+      "default": 3.0,
+      "scaling": "linear"
+    },
+    {
+      "id": "wobble",
+      "label": "Wobble",
+      "kind": "knob",
+      "target": {
+        "node": "wobble",
+        "parameter": "amount"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.0,
+      "scaling": "linear"
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "vca",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.45,
+      "scaling": "linear"
+    }
+  ],
+  "sequence": {
+    "tempo": 120.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 0,
+        "note": 48,
+        "length": 2
+      },
+      {
+        "step": 2,
+        "note": 60,
+        "length": 2
+      },
+      {
+        "step": 4,
+        "note": 55,
+        "length": 2
+      },
+      {
+        "step": 6,
+        "note": 63,
+        "length": 2
+      },
+      {
+        "step": 8,
+        "note": 58,
+        "length": 2
+      },
+      {
+        "step": 10,
+        "note": 60,
+        "length": 2
+      },
+      {
+        "step": 12,
+        "note": 51,
+        "length": 2
+      },
+      {
+        "step": 14,
+        "note": 55,
+        "length": 2
+      },
+      {
+        "step": 14,
+        "note": 62,
+        "length": 2
+      }
+    ]
+  }
+}

@@ -1,0 +1,425 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Poly Five"
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "Input",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "host": "note",
+      "parameters": {
+        "voices": 5
+      }
+    },
+    {
+      "id": "osc_a",
+      "type": "SawOscillator",
+      "position": {
+        "x": 560,
+        "y": 0
+      },
+      "name": "Osc A",
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "osc_b",
+      "type": "SquareOscillator",
+      "position": {
+        "x": 560,
+        "y": 400
+      },
+      "name": "Osc B",
+      "parameters": {
+        "frequency": 220,
+        "pulse_width": 0.5
+      }
+    },
+    {
+      "id": "detune",
+      "type": "Constant",
+      "position": {
+        "x": 120,
+        "y": 400
+      },
+      "name": "Detune",
+      "parameters": {
+        "value": 0.007
+      }
+    },
+    {
+      "id": "filter",
+      "type": "StateVariableFilter",
+      "position": {
+        "x": 1120,
+        "y": 0
+      },
+      "name": "Filter",
+      "parameters": {
+        "cutoff": 900,
+        "resonance": 0.35,
+        "mode": 0
+      }
+    },
+    {
+      "id": "fenv",
+      "type": "ADSR",
+      "position": {
+        "x": 560,
+        "y": 800
+      },
+      "name": "Filter Env",
+      "parameters": {
+        "attack": 0.005,
+        "decay": 0.4,
+        "sustain": 0.25,
+        "release": 0.5
+      }
+    },
+    {
+      "id": "sweep",
+      "type": "Multiply",
+      "position": {
+        "x": 1120,
+        "y": 800
+      },
+      "name": "Env Depth",
+      "parameters": {
+        "factor": 2.5
+      }
+    },
+    {
+      "id": "aenv",
+      "type": "ADSR",
+      "position": {
+        "x": 1120,
+        "y": 400
+      },
+      "name": "Amp Env",
+      "parameters": {
+        "attack": 0.01,
+        "decay": 0.2,
+        "sustain": 0.75,
+        "release": 0.45
+      }
+    },
+    {
+      "id": "vca",
+      "type": "Gain",
+      "position": {
+        "x": 1680,
+        "y": 0
+      },
+      "name": "VCA",
+      "parameters": {
+        "gain": 0.45
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 2240,
+        "y": 0
+      },
+      "host": "stereo"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc_a",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc_b",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "detune",
+        "port": "out"
+      },
+      "to": {
+        "node": "osc_b",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "fenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "aenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "osc_a",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "osc_b",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "fenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "sweep",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "sweep",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "cutoff_mod"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "aenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "detune",
+      "label": "Detune",
+      "kind": "knob",
+      "target": {
+        "node": "detune",
+        "parameter": "value"
+      },
+      "min": 0,
+      "max": 0.05,
+      "default": 0.007,
+      "scaling": "linear"
+    },
+    {
+      "id": "cutoff",
+      "label": "Cutoff",
+      "kind": "knob",
+      "target": {
+        "node": "filter",
+        "parameter": "cutoff"
+      },
+      "min": 100,
+      "max": 8000,
+      "default": 900,
+      "scaling": "exponential"
+    },
+    {
+      "id": "resonance",
+      "label": "Resonance",
+      "kind": "knob",
+      "target": {
+        "node": "filter",
+        "parameter": "resonance"
+      },
+      "min": 0,
+      "max": 0.9,
+      "default": 0.35,
+      "scaling": "linear"
+    },
+    {
+      "id": "sweep",
+      "label": "Sweep",
+      "kind": "knob",
+      "target": {
+        "node": "sweep",
+        "parameter": "factor"
+      },
+      "min": 0,
+      "max": 5,
+      "default": 2.5,
+      "scaling": "linear"
+    },
+    {
+      "id": "attack",
+      "label": "Attack",
+      "kind": "knob",
+      "target": {
+        "node": "aenv",
+        "parameter": "attack"
+      },
+      "min": 0.001,
+      "max": 2,
+      "default": 0.01,
+      "scaling": "exponential"
+    },
+    {
+      "id": "release",
+      "label": "Release",
+      "kind": "knob",
+      "target": {
+        "node": "aenv",
+        "parameter": "release"
+      },
+      "min": 0.05,
+      "max": 3,
+      "default": 0.45,
+      "scaling": "exponential"
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "vca",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 2,
+      "default": 0.45,
+      "scaling": "linear"
+    }
+  ],
+  "sequence": {
+    "tempo": 100.0,
+    "steps": 16,
+    "notes": [
+      {
+        "step": 0,
+        "note": 60,
+        "length": 4
+      },
+      {
+        "step": 0,
+        "note": 63,
+        "length": 4
+      },
+      {
+        "step": 0,
+        "note": 67,
+        "length": 4
+      },
+      {
+        "step": 4,
+        "note": 56,
+        "length": 4
+      },
+      {
+        "step": 4,
+        "note": 60,
+        "length": 4
+      },
+      {
+        "step": 4,
+        "note": 63,
+        "length": 4
+      },
+      {
+        "step": 8,
+        "note": 63,
+        "length": 4
+      },
+      {
+        "step": 8,
+        "note": 67,
+        "length": 4
+      },
+      {
+        "step": 8,
+        "note": 70,
+        "length": 4
+      },
+      {
+        "step": 12,
+        "note": 58,
+        "length": 4
+      },
+      {
+        "step": 12,
+        "note": 62,
+        "length": 4
+      },
+      {
+        "step": 12,
+        "note": 65,
+        "length": 4
+      }
+    ]
+  }
+}

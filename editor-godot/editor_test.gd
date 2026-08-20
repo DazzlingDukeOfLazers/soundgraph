@@ -3102,6 +3102,27 @@ func _initialize() -> void:
 	check(off_ribbon < 0.005,
 		"a note neither router owns stays silent (peak %.3f)" % off_ribbon)
 
+	# ---- the synth ports -------------------------------------------------------------
+	# Generic dress on two classic layouts: the five-voice two-oscillator poly
+	# with its filter envelope, and the fighty duophonic lead with ring mod and
+	# a sample-and-hold wobble. Each ships a face and a phrase in the roll.
+	await main._load_example("Synth: poly-five")
+	for i in 8:
+		await process_frame
+	var poly_peak: float = await _struck_peak(main, 60)
+	check(poly_peak > 0.01, "the poly sings middle C (peak %.3f)" % poly_peak)
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 12,
+		"and ships its pad progression (%d notes)"
+			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
+	await main._load_example("Synth: duo-lead")
+	for i in 8:
+		await process_frame
+	var duo_peak: float = await _struck_peak(main, 60)
+	check(duo_peak > 0.01, "the duo bites middle C (peak %.3f)" % duo_peak)
+	check((main.patch.get("sequence", {}).get("notes", []) as Array).size() == 9,
+		"and ships its riff (%d notes)"
+			% (main.patch.get("sequence", {}).get("notes", []) as Array).size())
+
 	main._new_file()
 	for i in 8:
 		await process_frame
