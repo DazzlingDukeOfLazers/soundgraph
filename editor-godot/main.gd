@@ -350,6 +350,7 @@ var toolbar_edit_group: HBoxContainer
 var toolbar_menu_button: MenuButton
 var toolbar_identity_margin: MarginContainer
 var toolbar_menu_popup: PopupMenu
+var toolbar_qr: TextureRect
 var toolbar_add_button: Button
 var toolbar_rung := Rung.FULL
 ## Which VSeparator introduces which group, so hiding a group takes its rule with it.
@@ -1041,6 +1042,8 @@ func _build_toolbar() -> Control:
 	identity_row.add_theme_constant_override("separation",
 		Design.type(Design.SIZE_APP_TITLE))
 	var qr := TextureRect.new()
+	toolbar_qr = qr
+	qr.visible = bool(Settings.fetch("qr_visible", true))
 	var qr_image := Image.load_from_file(
 		ProjectSettings.globalize_path("res://soundgraph_qr.png"))
 	if qr_image != null:
@@ -1343,6 +1346,10 @@ func _build_toolbar() -> Control:
 		"Draw a rectangle round some nodes. What is wholly inside it becomes a "
 		+ "module, left open so you can see and arrange its parts.")
 	burger_popup.add_check_item("Mute", 101)
+	burger_popup.add_check_item("QR code", 104)
+	burger_popup.set_item_tooltip(burger_popup.get_item_index(104),
+		"The door into the program: mutantfactory.net/soundgraph, beside the "
+		+ "wordmark. Untick to work without it watching.")
 	burger_popup.set_item_tooltip(burger_popup.get_item_index(101),
 		"Silence the output without changing the patch — the same mute as the "
 		+ "keyboard's. Escape still stops every sounding note.")
@@ -1353,7 +1360,9 @@ func _build_toolbar() -> Control:
 	burger_popup.set_item_disabled(burger_popup.get_item_index(103), true)
 	toolbar_menu_popup = burger_popup
 	burger_popup.about_to_popup.connect(func() -> void:
-		burger_popup.set_item_checked(burger_popup.get_item_index(101), muted))
+		burger_popup.set_item_checked(burger_popup.get_item_index(101), muted)
+		burger_popup.set_item_checked(burger_popup.get_item_index(104),
+			toolbar_qr != null and toolbar_qr.visible))
 	burger_popup.id_pressed.connect(func(id: int) -> void:
 		if id == 100:
 			_begin_module_region()
@@ -1361,7 +1370,11 @@ func _build_toolbar() -> Control:
 			if master_mute != null:
 				master_mute.button_pressed = not muted
 			else:
-				_set_muted(not muted))
+				_set_muted(not muted)
+		elif id == 104:
+			if toolbar_qr != null:
+				toolbar_qr.visible = not toolbar_qr.visible
+				Settings.store("qr_visible", toolbar_qr.visible))
 	bar.add_child(_defocus(burger))
 
 	var margin := MarginContainer.new()
