@@ -520,6 +520,13 @@
         },
         "panel": {
           "$ref": "#/$defs/module_panel"
+        },
+        "presets": {
+          "description": "The definition's sound bank, keyed by its controls' ids. Travels with the face when a patch becomes a device.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/preset"
+          }
         }
       }
     },

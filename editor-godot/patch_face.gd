@@ -144,12 +144,15 @@ var offer_node := "":
 ## listed, so putting one on and taking it off are the same edit run twice.
 signal offered(node_id: String, parameter: String)
 
-## The bank turned its page: apply preset `index` to the surface. The face only
-## asks; main owns the document and the undo step.
-signal preset_applied(index: int)
+## The bank turned its page. `writes` is the resolved list of
+## {node, parameter, value} the page means — resolved *here*, because only the
+## face knows whether a control writes to its own node or through an instance's
+## export. Main owns the document and the undo step.
+signal preset_applied(index: int, writes: Array)
 
-## The current knob positions want to become a new page of the bank.
-signal preset_saved()
+## The current knob positions want to become a new page of the bank. `values`
+## is control id -> value, read from this face's own document.
+signal preset_saved(values: Dictionary)
 
 var _cells: Array = []          # Control per cell, panel first then the offers
 var _ids: Array = []            # the control ids, panel cells only
@@ -351,7 +354,7 @@ func _preset_strip() -> Control:
 	prev.pressed.connect(func() -> void:
 		var count: int = (patch.get("presets", []) as Array).size()
 		if count > 0:
-			preset_applied.emit(count - 1 if preset_index < 0
+			_turn_to(count - 1 if preset_index < 0
 				else (preset_index - 1 + count) % count))
 	strip.add_child(prev)
 
@@ -378,15 +381,47 @@ func _preset_strip() -> Control:
 	next.pressed.connect(func() -> void:
 		var count: int = (patch.get("presets", []) as Array).size()
 		if count > 0:
-			preset_applied.emit((preset_index + 1) % count))
+			_turn_to((preset_index + 1) % count))
 	strip.add_child(next)
 
 	var keep := Button.new()
 	keep.text = "+"
 	keep.tooltip_text = "Save the current knobs as a new preset"
-	keep.pressed.connect(func() -> void: preset_saved.emit())
+	keep.pressed.connect(func() -> void: preset_saved.emit(_snapshot_values()))
 	strip.add_child(keep)
 	return strip
+
+
+## Resolves one page of the bank into writes and announces it. Through _wire,
+## the same remap every knob uses: on the file's own face a control writes its
+## target node, and on a mounted device it writes the instance's export.
+func _turn_to(index: int) -> void:
+	var presets: Array = patch.get("presets", [])
+	if index < 0 or index >= presets.size():
+		return
+	var values: Dictionary = (presets[index] as Dictionary).get("values", {})
+	var writes: Array = []
+	for control in patch.get("controls", []):
+		var control_id := str(control.get("id", ""))
+		if not values.has(control_id):
+			continue
+		var target: Dictionary = control.get("target", {})
+		var wired := _wire(str(target.get("node", "")), str(target.get("parameter", "")),
+			{"name": str(target.get("parameter", ""))})
+		writes.append({"node": wired[0],
+			"parameter": str((wired[1] as Dictionary).get("name", "")),
+			"value": float(values[control_id])})
+	preset_applied.emit(index, writes)
+
+
+## The surface as it stands, control id -> value, for saving a new page.
+func _snapshot_values() -> Dictionary:
+	var values := {}
+	for control in patch.get("controls", []):
+		var target: Dictionary = control.get("target", {})
+		values[str(control.get("id", ""))] = _value_of(str(target.get("node", "")),
+			str(target.get("parameter", "")), float(control.get("default", 0.0)))
+	return values
 
 
 ## The parameter descriptor a control points at, or empty when it points at nothing —

@@ -3147,8 +3147,8 @@ func _initialize() -> void:
 		if str((main.patch["presets"][preset_index] as Dictionary).get("name", "")) == "Dark Pad":
 			dark_pad = preset_index
 	check(dark_pad >= 0, "the bank holds Dark Pad")
-	await main._on_preset_applied(dark_pad)
-	for i in 6:
+	main.patch_face._turn_to(dark_pad)
+	for i in 8:
 		await process_frame
 	var swept: float = -1.0
 	for preset_node in main.patch["nodes"]:
@@ -3165,10 +3165,10 @@ func _initialize() -> void:
 			swept_back = float(preset_node.get("parameters", {}).get("cutoff", -1.0))
 	check(is_equal_approx(swept_back, 900.0),
 		"and one undo turns the page back (%.0f)" % swept_back)
-	await main._on_preset_applied(dark_pad)
-	for i in 6:
+	main.patch_face._turn_to(dark_pad)
+	for i in 8:
 		await process_frame
-	main._on_preset_saved()
+	await main._save_preset(main.patch_face._snapshot_values(), main.patch_face, "")
 	for i in 6:
 		await process_frame
 	var bank_now: Array = main.patch.get("presets", [])
@@ -3186,8 +3186,8 @@ func _initialize() -> void:
 		if str((main.patch["presets"][preset_index] as Dictionary).get("name", "")) 				== "More Cowbell":
 			cowbell_page = preset_index
 	check(cowbell_page >= 0, "the kit's bank has More Cowbell")
-	await main._on_preset_applied(cowbell_page)
-	for i in 6:
+	main.patch_face._turn_to(cowbell_page)
+	for i in 8:
 		await process_frame
 	var bell_up: float = -1.0
 	for preset_node in main.patch["nodes"]:
@@ -3195,6 +3195,40 @@ func _initialize() -> void:
 			bell_up = float(preset_node.get("parameters", {}).get("level3", -1.0))
 	check(is_equal_approx(bell_up, 1.0),
 		"and turning to it brings the bell forward (level %.2f)" % bell_up)
+
+	# The bank travels with the face. Mounted as a device, the poly's strip must
+	# hold the same five pages its file shipped — every device's strip said "no
+	# presets yet" once, because the instance face was built without the bank.
+	main._new_file()
+	for i in 8:
+		await process_frame
+	var preset_device: String = await main._add_device("Synth: poly-five",
+		Vector2(600.0, 0.0))
+	for i in 10:
+		await process_frame
+	var device_bank: Array = main.patch.get("modules", {}) 		.get("poly-five", {}).get("presets", [])
+	check(device_bank.size() == 5,
+		"the imported definition carries the five-page bank (%d)" % device_bank.size())
+	var device_face = main.module_mounts.get(preset_device, null)
+	check(device_face is PatchFace
+			and (device_face.patch.get("presets", []) as Array).size() == 5,
+		"and the mounted face sees it")
+	if device_face is PatchFace:
+		var device_dark := -1
+		for page_index in device_bank.size():
+			if str((device_bank[page_index] as Dictionary).get("name", "")) == "Dark Pad":
+				device_dark = page_index
+		device_face._turn_to(device_dark)
+		for i in 8:
+			await process_frame
+		var landed := false
+		for host_node in main.patch["nodes"]:
+			if str(host_node["id"]) == preset_device:
+				for export_key in host_node.get("parameters", {}):
+					if is_equal_approx(float(host_node["parameters"][export_key]), 380.0):
+						landed = true
+		check(landed,
+			"turning the mounted bank writes Dark Pad through the instance's export")
 
 	main._new_file()
 	for i in 8:

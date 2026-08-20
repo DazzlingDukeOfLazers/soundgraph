@@ -849,6 +849,11 @@ static func from_patch(patch: Dictionary, foreign: Dictionary, name_hint: String
 		definition["parameters"] = exported
 	if not faces.is_empty():
 		definition["controls"] = faces
+	# The bank travels with the face: presets are keyed by control id, and the
+	# controls just rode along unchanged, so every page still names real knobs.
+	var bank: Array = (foreign.get("presets", []) as Array).duplicate(true)
+	if not bank.is_empty():
+		definition["presets"] = bank
 	out["modules"][result.module_name] = definition
 
 	result.instance_id = _unique_name(result.module_name,

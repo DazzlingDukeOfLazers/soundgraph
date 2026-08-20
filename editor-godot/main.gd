@@ -1859,8 +1859,12 @@ func _build_side_panel() -> Control:
 	patch_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	patch_face.reordered.connect(_on_panel_reordered)
 	patch_face.offered.connect(_toggle_control)
-	patch_face.preset_applied.connect(_on_preset_applied)
-	patch_face.preset_saved.connect(_on_preset_saved)
+	patch_face.preset_applied.connect(
+		func(index: int, writes: Array) -> void:
+			_apply_preset(index, writes, patch_face))
+	patch_face.preset_saved.connect(
+		func(values: Dictionary) -> void:
+			_save_preset(values, patch_face, ""))
 	panel.add_child(patch_face)
 
 	module_face = ModuleFace.new()
@@ -2079,6 +2083,16 @@ func _device_panel_for(instance_id: String, module_name: String,
 		mount.z_index = 50
 		graph_edit.add_child(mount)
 		module_mounts[instance_id] = mount
+		# The mounted face's bank lives in the module definition, so its pages
+		# are saved there — every instance of the device shares one bank, the
+		# way every unit of a hardware run ships the same ROM.
+		var strip_face := mount as PatchFace
+		strip_face.preset_applied.connect(
+			func(index: int, writes: Array) -> void:
+				_apply_preset(index, writes, strip_face))
+		strip_face.preset_saved.connect(
+			func(values: Dictionary) -> void:
+				_save_preset(values, strip_face, module_name))
 	var panel := mount as PatchFace
 	var overrides: Dictionary = {}
 	for node in patch.get("nodes", []):
@@ -2090,6 +2104,10 @@ func _device_panel_for(instance_id: String, module_name: String,
 		"nodes": (definition.get("nodes", []) as Array).duplicate(true),
 		"connections": definition.get("connections", []),
 		"controls": definition.get("controls", []),
+		# The bank came along with the face when the device was imported; without
+		# this line every mounted device's strip said "no presets yet" while the
+		# file it came from held five pages.
+		"presets": definition.get("presets", []),
 	}
 	var writes := {}
 	for binding in definition.get("parameters", []):
@@ -4614,45 +4632,40 @@ func _current_parameter(node_id: String, parameter: String, fallback: float) -> 
 	return fallback
 
 
-## Turns the bank to one page: writes the preset's values through the controls
-## that name them, as one undo step. A control the preset does not mention keeps
-## its position, the way hardware leaves unswept knobs where they stand.
-func _on_preset_applied(index: int) -> void:
-	var presets: Array = patch.get("presets", [])
+## Turns the bank to one page: the face resolved which parameters the page
+## means — its own nodes or an instance's exports — and this writes them, as
+## one undo step. A control the preset does not mention keeps its position, the
+## way hardware leaves unswept knobs where they stand.
+func _apply_preset(index: int, writes: Array, face: Control) -> void:
+	var presets: Array = face.patch.get("presets", [])
 	if index < 0 or index >= presets.size():
 		return
-	var preset: Dictionary = presets[index]
-	var values: Dictionary = preset.get("values", {})
+	var name := str((presets[index] as Dictionary).get("name", "preset"))
 	_begin_edit()
-	for control in patch.get("controls", []):
-		var control_id := str(control.get("id", ""))
-		if not values.has(control_id):
-			continue
-		var target: Dictionary = control.get("target", {})
-		_set_parameter(str(target.get("node", "")), str(target.get("parameter", "")),
-			float(values[control_id]))
-	_commit_edit("preset %s" % str(preset.get("name", "preset")))
-	patch_face.preset_index = index
+	for write in writes:
+		_set_parameter(str(write.get("node", "")), str(write.get("parameter", "")),
+			float(write.get("value", 0.0)))
+	_commit_edit("preset %s" % name)
+	face.preset_index = index
 	await _rebuild_view()
-	_say("preset: %s" % str(preset.get("name", "")))
+	_say("preset: %s" % name)
 
 
-## Writes the surface's current positions into the bank as a new page.
-func _on_preset_saved() -> void:
-	var values := {}
-	for control in patch.get("controls", []):
-		var target: Dictionary = control.get("target", {})
-		values[str(control.get("id", ""))] = _current_parameter(
-			str(target.get("node", "")), str(target.get("parameter", "")),
-			float(control.get("default", 0.0)))
+## Writes a face's current positions into its bank as a new page — the patch's
+## own bank, or the module definition's when the face belongs to a device.
+func _save_preset(values: Dictionary, face: Control, bank_module: String) -> void:
 	_begin_edit()
-	if not patch.has("presets"):
-		patch["presets"] = []
-	var page := (patch["presets"] as Array).size() + 1
-	patch["presets"].append({"name": "Preset %d" % page, "values": values})
+	var store: Dictionary = patch if bank_module == "" 		else patch.get("modules", {}).get(bank_module, {})
+	if store.is_empty():
+		_commit_edit("save preset")
+		return
+	if not store.has("presets"):
+		store["presets"] = []
+	var page := (store["presets"] as Array).size() + 1
+	store["presets"].append({"name": "Preset %d" % page, "values": values})
 	_commit_edit("save preset")
-	patch_face.preset_index = (patch["presets"] as Array).size() - 1
-	patch_face.rebuild()
+	face.preset_index = (store["presets"] as Array).size() - 1
+	await _rebuild_view()
 	_say("saved preset %d" % page)
 
 
@@ -8097,6 +8110,9 @@ func _load_text(text: String) -> void:
 		patch["connections"] = []
 	_modernize_stereo_outputs()
 	inspecting = {}
+	# A fresh document starts on no page of anyone's bank.
+	if patch_face != null:
+		patch_face.preset_index = -1
 
 	# Snap whatever arrives onto the grid. A patch written by another editor, or by hand,
 	# lands on arbitrary pixels, and then every alignment cue in the canvas is off by a
