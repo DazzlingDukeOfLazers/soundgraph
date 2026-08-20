@@ -151,7 +151,6 @@ var graph_edit: GraphEdit
 ## ids rather than against widgets, because a rebuild throws every widget away and renames
 ## the ones it makes — picks that survive a rebuild are the whole reason this is not just
 ## a list of Controls.
-var make_module_button: Button
 ## The container turned over: the file's face, full size, in the Graph tab's slot.
 ## Same class as the side panel's face — one face, two mountings.
 var big_face: PatchFace
@@ -347,7 +346,7 @@ const RUNG_COUNT := 4
 var toolbar_identity: VBoxContainer
 var toolbar_title: Label
 var toolbar_edit_group: HBoxContainer
-var toolbar_performance_group: HBoxContainer
+var toolbar_menu_button: MenuButton
 var toolbar_rung := Rung.FULL
 ## Which VSeparator introduces which group, so hiding a group takes its rule with it.
 ## A group that vanishes and leaves its divider behind reads as an empty slot.
@@ -674,6 +673,15 @@ func _build_ui() -> void:
 		+ "it on the panel, click it again to take it off. Lit frames are on the face."
 	face_edit_button.toggled.connect(_set_face_edit)
 	graph_edit.get_menu_hbox().add_child(_defocus(face_edit_button))
+	# Fit, beside the zoom controls: framing is a camera move, so it lives with the
+	# camera. It spent time in the toolbar and before that in the Arrange menu; this
+	# strip is the first home where its neighbours are also about looking.
+	var fit_button := Button.new()
+	fit_button.text = "Fit"
+	fit_button.tooltip_text = "Zoom and scroll so the whole patch is visible, clear of " \
+		+ "the minimap and the zoom controls."
+	fit_button.pressed.connect(func() -> void: graph_edit.fit_graph())
+	graph_edit.get_menu_hbox().add_child(_defocus(fit_button))
 	graph_edit.face_cell_toggled.connect(_on_face_cell_toggled)
 	graph_edit.face_port_toggled.connect(_on_face_port_toggled)
 	# And one button fewer. Arrange is in the toolbar menu now, so the icon beside the
@@ -1016,22 +1024,23 @@ func _build_toolbar() -> Control:
 	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	identity.add_child(title)
 
+	# At least a character of air on either side. The wordmark sat flush against the
+	# window edge, and a name with no margin reads as a label that happened to be first.
+	var identity_margin := MarginContainer.new()
+	identity_margin.add_theme_constant_override("margin_left",
+		Design.type(Design.SIZE_APP_TITLE))
+	identity_margin.add_theme_constant_override("margin_right",
+		Design.type(Design.SIZE_APP_TITLE))
+	identity_margin.add_child(identity)
+	bar.add_child(identity_margin)
 
-	bar.add_child(identity)
-
-	var project := _toolbar_group(bar, true)
-	# A menu, not a dropdown showing its last selection.
-	#
-	# As an OptionButton it sat in the toolbar reading "Delay Echo" while the document
-	# name two inches to the left read "first-synth.json" — because an OptionButton
-	# shows what was last picked from it, which stops being true the moment anything
-	# else opens a file. Two labels disagreeing about what is open is worse than one
-	# label; now the identity block is the only thing that answers that question.
-	var examples := MenuButton.new()
-	examples.text = "Examples"
-	examples.flat = false
+	# The menus that are visited rather than lived in — Examples, File, View,
+	# Arrange, Make module, Mute — are built here as plain popups and gathered into
+	# the hamburger at the bar's right end, where the eye starts. The toolbar keeps
+	# only what is reached for constantly: the verb, undo, and the truth strip.
 	_scan_examples()
-	var examples_popup := examples.get_popup()
+	var examples_popup := PopupMenu.new()
+	examples_popup.name = "ExamplesMenu"
 	# Large groups become submenus so the curated top level survives the banks. Grouping
 	# is by the label prefix _scan_examples already assigns, and the submenu wiring is
 	# per-group so a second bank costs a table entry, not a copy of this code.
@@ -1068,13 +1077,12 @@ func _build_toolbar() -> Control:
 			_load_example(str(chosen[id])))
 	examples_popup.id_pressed.connect(func(id: int) -> void:
 		_load_example(str(top_names[id])))
-	project.add_child(_defocus(examples))
 
 	# ---- graph: the core verb, and the two that tidy up after it -----------------
 	# Add node is what this application is for, so it is the one filled button in the
 	# chrome and it comes first. Everything having equal weight meant reading all
 	# thirteen controls to find the one that matters.
-	var graph_group := _toolbar_group(bar)
+	var graph_group := _toolbar_group(bar, true)
 	var add_button := Button.new()
 	add_button.text = "+  Add node"
 	add_button.tooltip_text = "Search by what you want, not only by name (Ctrl+Space)"
@@ -1085,10 +1093,8 @@ func _build_toolbar() -> Control:
 	# Auto-place and Arrange selection behind one menu, for the same reason. Both are
 	# occasional; the second is usually unavailable anyway, and a permanently greyed
 	# button is chrome that has never done anything for anyone.
-	var arrange_menu := MenuButton.new()
-	arrange_menu.text = "Arrange"
-	arrange_menu.flat = false
-	arrange_popup = arrange_menu.get_popup()
+	arrange_popup = PopupMenu.new()
+	arrange_popup.name = "ArrangeMenu"
 	arrange_popup.add_item("Auto-place everything", 0)
 	arrange_popup.add_item("Arrange selection", 1)
 	arrange_popup.add_item("Collapse selection into module", 2)
@@ -1107,34 +1113,6 @@ func _build_toolbar() -> Control:
 			_arrange_selection()
 		elif id == 2:
 			_collapse_selection())
-	graph_group.add_child(_defocus(arrange_menu))
-
-	# Collapse is in the Arrange menu because it is a rearrangement of the document;
-	# this is out here because it is a gesture, and a gesture buried in a menu is a
-	# gesture nobody finds.
-	make_module_button = Button.new()
-	make_module_button.text = "Make module"
-	make_module_button.tooltip_text = "Draw a rectangle round some nodes. What is wholly inside it becomes a module, left open so you can see and arrange its parts."
-	make_module_button.pressed.connect(func() -> void: _begin_module_region())
-	graph_group.add_child(_defocus(make_module_button))
-
-	# Fit comes out of that menu and sits beside it, spelled out.
-	#
-	# It was filed under Arrange, which is where it looks like it belongs and is not where
-	# anybody goes for it: arranging moves nodes and is a change to the document, framing
-	# moves the camera and changes nothing. One is undoable and the other has nothing to
-	# undo. Grouping them meant the recovery move — "I have lost the graph, show me it" —
-	# was two clicks inside a menu of edits.
-	#
-	# A word rather than a glyph. There is no icon for "fit" that anybody reads correctly
-	# without a tooltip, and this editor has already paid once for symbols that turned out
-	# to be missing from the font.
-	var fit_button := Button.new()
-	fit_button.text = "Fit"
-	fit_button.tooltip_text = "Zoom and scroll so the whole patch is visible, clear of " \
-		+ "the minimap and the zoom controls."
-	fit_button.pressed.connect(func() -> void: graph_edit.fit_graph())
-	graph_group.add_child(_defocus(fit_button))
 
 	# ---- edit --------------------------------------------------------------------
 	# Visible buttons as well as the shortcut: an undo you cannot see is an undo a first
@@ -1165,10 +1143,8 @@ func _build_toolbar() -> Control:
 	# was forced wider than the window and the inspector hung off the right-hand edge
 	# with its text cut in half. These three are reached once per session; Add node is
 	# reached constantly. Only one of them earns permanent space.
-	var file_menu := MenuButton.new()
-	file_menu.text = "File"
-	file_menu.flat = false
-	var file_popup := file_menu.get_popup()
+	var file_popup := PopupMenu.new()
+	file_popup.name = "FileMenu"
 	file_popup.add_item("New", 4)
 	file_popup.add_item("Open…", 0)
 	file_popup.add_item("Add module…", 1)
@@ -1189,16 +1165,9 @@ func _build_toolbar() -> Control:
 		+ "prefixed; its own inputs and outputs are left out, because those belong to a "
 		+ "finished patch rather than to a module.")
 	file_popup.id_pressed.connect(_on_file_menu)
-	project.add_child(_defocus(file_menu))
 
-	var view_group := _toolbar_group(bar)
-	# Cable style is the A/B for Knobcon and the case width is set once per patch, so
-	# both are radio groups in one menu rather than two dropdowns holding 266px of bar
-	# open all the time.
-	var view_menu := MenuButton.new()
-	view_menu.text = "View"
-	view_menu.flat = false
-	view_popup = view_menu.get_popup()
+	view_popup = PopupMenu.new()
+	view_popup.name = "ViewMenu"
 	view_popup.add_radio_check_item("Cables: catenary", 0)
 	view_popup.add_radio_check_item("Cables: PCB", 1)
 	view_popup.set_item_checked(0, true)
@@ -1268,7 +1237,6 @@ func _build_toolbar() -> Control:
 	view_popup.add_item(_build_description(), 60)
 	view_popup.set_item_disabled(view_popup.get_item_index(60), true)
 	view_popup.id_pressed.connect(_on_view_menu)
-	view_group.add_child(_defocus(view_menu))
 
 	# ---- performance, pinned to the right ----------------------------------------
 	# The gap that pins the performance group right is also where passing remarks go.
@@ -1299,41 +1267,6 @@ func _build_toolbar() -> Control:
 		Design.type(Design.SIZE_SECONDARY))
 	message_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	bar.add_child(message_label)
-	var performance := _toolbar_group(bar)
-	toolbar_performance_group = performance
-
-	var retrigger := Button.new()
-	# "Fire" was a personality word that only reads as one if you already know what it
-	# does. "Audition" is what this is: play the patch once so you can hear it, without
-	# committing to holding a key down.
-	retrigger.text = "Audition"
-	retrigger.icon = _icon(Icons.Kind.PLAY, Design.INK_NORMAL)
-	retrigger.tooltip_text = "Play a one-shot patch again from the start. Does nothing " 		+ "audible to a patch that waits for notes."
-	retrigger.pressed.connect(func() -> void:
-		if engine == null or not engine.is_loaded():
-			return
-		# Both, because there are two kinds of one-shot. A patch gated by a NoteInput needs
-		# a note; a patch gated by a constant needs the graph put back to its start. Doing
-		# one and not the other made the button work for half the examples.
-		engine.reset()
-		_let_go_note(60)
-		_hold_note(60)
-		_say("fired"))
-	performance.add_child(_defocus(retrigger))
-
-	# The panic control. Everything else in this bar can be hunted for; this one
-	# cannot, because the reason you want it is that something is already wrong and
-	# loud. So it is the only error-coloured thing in the chrome, it carries a stop
-	# glyph, and it is pinned to the right edge — a fixed place, not a position that
-	# depends on how many other buttons happen to be showing.
-	var panic := Button.new()
-	panic.text = "Silence"
-	panic.icon = _icon(Icons.Kind.STOP, Design.PANIC)
-	panic.tooltip_text = "Stop every sounding note immediately (Escape)"
-	panic.pressed.connect(_all_notes_off)
-	_panic_buttons.append(panic)
-	performance.add_child(Design.make_panic(_defocus(panic) as Button))
-
 	# ---- status ------------------------------------------------------------------
 	# One short line rather than prose: what state the engine is in, and whether the
 	# graph is valid. Set from _refresh_status().
@@ -1359,6 +1292,46 @@ func _build_toolbar() -> Control:
 	status_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	status_group.add_child(status_label)
+
+	# ---- the hamburger, upper right --------------------------------------------
+	# Everything visited rather than lived in, behind one drawn glyph. Examples,
+	# File, View and Arrange keep their whole menus as submenus; Make module keeps
+	# its gesture; Mute presses the keyboard's own mute so there is one mute state,
+	# not two. Audition is gone — reset-and-strike lives on the keys it imitated.
+	var burger := MenuButton.new()
+	toolbar_menu_button = burger
+	burger.icon = _icon(Icons.Kind.HAMBURGER, Design.INK_NORMAL)
+	burger.flat = false
+	burger.tooltip_text = "Examples, file, view, arrange — the menus"
+	var burger_popup := burger.get_popup()
+	burger_popup.add_child(examples_popup)
+	burger_popup.add_submenu_item("Examples", "ExamplesMenu")
+	burger_popup.add_child(file_popup)
+	burger_popup.add_submenu_item("File", "FileMenu")
+	burger_popup.add_child(view_popup)
+	burger_popup.add_submenu_item("View", "ViewMenu")
+	burger_popup.add_child(arrange_popup)
+	burger_popup.add_submenu_item("Arrange", "ArrangeMenu")
+	burger_popup.add_separator()
+	burger_popup.add_item("Make module", 100)
+	burger_popup.set_item_tooltip(burger_popup.get_item_index(100),
+		"Draw a rectangle round some nodes. What is wholly inside it becomes a "
+		+ "module, left open so you can see and arrange its parts.")
+	burger_popup.add_check_item("Mute", 101)
+	burger_popup.set_item_tooltip(burger_popup.get_item_index(101),
+		"Silence the output without changing the patch — the same mute as the "
+		+ "keyboard's. Escape still stops every sounding note.")
+	burger_popup.about_to_popup.connect(func() -> void:
+		burger_popup.set_item_checked(burger_popup.get_item_index(101), muted))
+	burger_popup.id_pressed.connect(func(id: int) -> void:
+		if id == 100:
+			_begin_module_region()
+		elif id == 101:
+			if master_mute != null:
+				master_mute.button_pressed = not muted
+			else:
+				_set_muted(not muted))
+	bar.add_child(_defocus(burger))
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_right", Design.SPACE_M)

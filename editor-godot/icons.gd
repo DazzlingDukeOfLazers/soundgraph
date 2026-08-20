@@ -36,6 +36,7 @@ enum Kind {
 	ARROW_RIGHT,    ## signal flow
 	UNDO,           ## curved arrow, left
 	REDO,           ## curved arrow, right
+	HAMBURGER,      ## the everything-else menu
 }
 
 
@@ -76,6 +77,12 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				Vector2(middle + reach * 0.4, middle), colour)
 			_stroke(image, Vector2(middle + reach * 0.4, middle),
 				Vector2(middle - reach * 0.4, middle + reach), colour)
+		Kind.HAMBURGER:
+			# Three bars, evenly spaced: the one glyph whose reading predates tooltips.
+			for row: int in [-1, 0, 1]:
+				var y := middle + reach * 0.7 * float(row)
+				_stroke(image, Vector2(middle - reach, y), Vector2(middle + reach, y),
+					colour)
 		Kind.ARROW_RIGHT:
 			_stroke(image, Vector2(middle - reach, middle), Vector2(middle + reach, middle),
 				colour)

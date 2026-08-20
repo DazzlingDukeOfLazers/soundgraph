@@ -4740,11 +4740,11 @@ func _initialize() -> void:
 	check(head_first.is_empty(),
 		"no label drops its first words instead of its last (%d of %d: %s)"
 			% [head_first.size(), trimming.size(), str(head_first)])
-	var kept: bool = main.toolbar_performance_group.visible
+	var kept: bool = main.toolbar_menu_button.is_visible_in_tree()
 	for button in main._primary_buttons:
 		if not (button as Button).is_visible_in_tree():
 			kept = false
-	check(kept, "and keeps Add node, Audition and Silence at every width")
+	check(kept, "and keeps Add node and the menu at every width")
 	# Given room again it takes it back, so a maximised window is not stuck narrow.
 	main._fit_toolbar(2000.0)
 	await process_frame
@@ -6706,7 +6706,9 @@ func _initialize() -> void:
 		if control.get_combined_minimum_size().y < Design.scale(Design.HIT_TARGET) - 0.5:
 			small_targets.append("%s(%.0f)" % [str(control.get("text")),
 				control.get_combined_minimum_size().y])
-	check(bar_controls.size() >= 8 and small_targets.size() == 0,
+	# Four, since the hamburger: Add node, undo, redo, and the menu. The floor is a
+	# tripwire against the bar losing controls by accident, not a quota to fill.
+	check(bar_controls.size() >= 4 and small_targets.size() == 0,
 		"the %d toolbar controls all reach the 44px hit target (%s)"
 			% [bar_controls.size(),
 				", ".join(small_targets) if small_targets.size() > 0 else "all of them"])
