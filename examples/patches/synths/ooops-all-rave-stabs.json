@@ -156,7 +156,7 @@
       "name": "Scoop Env",
       "parameters": {
         "attack": 0.001,
-        "decay": 0.08,
+        "decay": 0.15,
         "sustain": 0.0,
         "release": 0.08
       }
@@ -498,7 +498,7 @@
         "port": "out"
       },
       "to": {
-        "node": "filter",
+        "node": "crunch",
         "port": "in"
       }
     },
@@ -508,7 +508,7 @@
         "port": "out"
       },
       "to": {
-        "node": "filter",
+        "node": "crunch",
         "port": "in"
       }
     },
@@ -518,7 +518,7 @@
         "port": "out"
       },
       "to": {
-        "node": "filter",
+        "node": "crunch",
         "port": "in"
       }
     },
@@ -528,7 +528,7 @@
         "port": "out"
       },
       "to": {
-        "node": "filter",
+        "node": "crunch",
         "port": "in"
       }
     },
@@ -538,7 +538,7 @@
         "port": "out"
       },
       "to": {
-        "node": "filter",
+        "node": "crunch",
         "port": "in"
       }
     },
@@ -560,26 +560,6 @@
       "to": {
         "node": "filter",
         "port": "cutoff_mod"
-      }
-    },
-    {
-      "from": {
-        "node": "filter",
-        "port": "out"
-      },
-      "to": {
-        "node": "crunch",
-        "port": "in"
-      }
-    },
-    {
-      "from": {
-        "node": "crunch",
-        "port": "out"
-      },
-      "to": {
-        "node": "vca",
-        "port": "in"
       }
     },
     {
@@ -631,6 +611,26 @@
         "node": "out",
         "port": "right"
       }
+    },
+    {
+      "from": {
+        "node": "crunch",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "vca",
+        "port": "in"
+      }
     }
   ],
   "controls": [
@@ -672,6 +672,19 @@
       "max": 0,
       "default": -0.55,
       "scaling": "linear"
+    },
+    {
+      "id": "swoop",
+      "label": "Swoop",
+      "kind": "knob",
+      "target": {
+        "node": "scoop_env",
+        "parameter": "decay"
+      },
+      "min": 0.05,
+      "max": 0.6,
+      "default": 0.15,
+      "scaling": "exponential"
     },
     {
       "id": "bright",
@@ -816,8 +829,9 @@
         "mood": 1.1892,
         "octave": 0.5,
         "scoop": -0.55,
+        "swoop": 0.12,
         "bright": 2200,
-        "sweep": 2.0,
+        "sweep": 1.4,
         "stab": 0.35,
         "crunch": 3,
         "shimmer": 0.4,
@@ -832,9 +846,10 @@
         "mood": 1.1892,
         "octave": 0.7,
         "scoop": -1.1,
-        "bright": 3000,
-        "sweep": 1.2,
-        "stab": 0.5,
+        "swoop": 0.45,
+        "bright": 2600,
+        "sweep": 0.8,
+        "stab": 0.75,
         "crunch": 6,
         "shimmer": 0.6,
         "echo": 0.3,
@@ -845,17 +860,18 @@
     {
       "name": "Dominator",
       "values": {
-        "mood": 1.26,
+        "mood": 1.2599,
         "octave": 0.6,
         "scoop": -0.9,
-        "bright": 3800,
-        "sweep": 2.8,
+        "swoop": 0.2,
+        "bright": 1800,
+        "sweep": 1.2,
         "stab": 0.3,
-        "crunch": 9,
+        "crunch": 14,
         "shimmer": 0.3,
         "echo": 0.2,
         "detune": 0.01,
-        "level": 0.24
+        "level": 0.22
       }
     },
     {
@@ -864,26 +880,28 @@
         "mood": 1.1892,
         "octave": 0.35,
         "scoop": 0.0,
+        "swoop": 0.05,
         "bright": 4200,
-        "sweep": 3.2,
+        "sweep": 2.2,
         "stab": 0.22,
-        "crunch": 1.5,
-        "shimmer": 0.25,
+        "crunch": 1,
+        "shimmer": 0.15,
         "echo": 0.35,
         "detune": 0.004,
-        "level": 0.32
+        "level": 0.34
       }
     },
     {
       "name": "Happy Core",
       "values": {
-        "mood": 1.26,
+        "mood": 1.2599,
         "octave": 0.85,
         "scoop": -0.3,
+        "swoop": 0.08,
         "bright": 5000,
-        "sweep": 3.0,
-        "stab": 0.18,
-        "crunch": 4,
+        "sweep": 2.6,
+        "stab": 0.15,
+        "crunch": 1.5,
         "shimmer": 0.5,
         "echo": 0.4,
         "detune": 0.01,
@@ -896,10 +914,11 @@
         "mood": 1.15,
         "octave": 0.3,
         "scoop": -0.4,
-        "bright": 1400,
-        "sweep": 1.5,
+        "swoop": 0.3,
+        "bright": 900,
+        "sweep": 0.5,
         "stab": 0.6,
-        "crunch": 7,
+        "crunch": 8,
         "shimmer": 0.5,
         "echo": 0.5,
         "detune": 0.012,

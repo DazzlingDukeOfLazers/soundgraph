@@ -3774,6 +3774,12 @@ func _initialize() -> void:
 			scooped = float(rave_node.get("parameters", {}).get("factor", 1.0))
 	check(is_equal_approx(scooped, -1.1),
 		"Hoover hauls the chord up from an octave below (%.1f)" % scooped)
+	var swooped: float = 0.0
+	for rave_node in main.patch["nodes"]:
+		if str(rave_node["id"]) == "scoop_env":
+			swooped = float(rave_node.get("parameters", {}).get("decay", 0.0))
+	check(is_equal_approx(swooped, 0.45),
+		"and takes its time doing it — the swoop is the hoover (%.2fs)" % swooped)
 
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
