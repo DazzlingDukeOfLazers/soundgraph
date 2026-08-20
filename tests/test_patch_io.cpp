@@ -1381,6 +1381,176 @@ TEST(buffer_references_and_version_are_checked) {
     CHECK(has_code(diagnostics, "buffer_unreferenced"));
 }
 
+namespace {
+
+// A graph with one Sampler playing one buffer, driven by a constant gate, rendered
+// mono. The stage-two tests all want this shape with different knobs.
+std::vector<float> render_sampler(const std::vector<float>& samples,
+                                  const std::vector<soundgraph::ParameterValue>& parameters,
+                                  int frames,
+                                  double gate_value = 1.0) {
+    GraphDescription graph;
+    graph.schema_version = soundgraph::kSchemaVersionBuffers;
+    soundgraph::BufferDescription clip;
+    clip.id = "clip";
+    clip.sample_rate = 48000.0;
+    clip.samples = samples;
+    graph.buffers.push_back(clip);
+    soundgraph::NodeDescription gate;
+    gate.id = "gate";
+    gate.type = "Constant";
+    gate.parameters.push_back(soundgraph::ParameterValue{"value", gate_value});
+    graph.nodes.push_back(gate);
+    soundgraph::NodeDescription play;
+    play.id = "play";
+    play.type = "Sampler";
+    play.buffer = "clip";
+    play.parameters = parameters;
+    play.parameters.push_back(soundgraph::ParameterValue{"level", 1.0});
+    graph.nodes.push_back(play);
+    soundgraph::NodeDescription out;
+    out.id = "out";
+    out.type = "StereoOutput";
+    out.parameters.push_back(soundgraph::ParameterValue{"level", 1.0});
+    graph.nodes.push_back(out);
+    graph.connections.push_back(soundgraph::ConnectionDescription{"gate", "out", "play", "gate"});
+    graph.connections.push_back(soundgraph::ConnectionDescription{"play", "out", "out", "left"});
+
+    soundgraph::Graph runtime;
+    std::vector<Diagnostic> diagnostics;
+    runtime.build(graph, soundgraph::NodeRegistry::builtin(),
+                  soundgraph::PrepareContext(), diagnostics);
+    std::vector<float> output(static_cast<std::size_t>(frames), 0.0f);
+    runtime.render(output.data(), nullptr, frames);
+    return output;
+}
+
+std::vector<float> counting_ramp(int frames) {
+    std::vector<float> samples;
+    for (int i = 0; i < frames; ++i) {
+        samples.push_back(static_cast<float>(i) / static_cast<float>(frames));
+    }
+    return samples;
+}
+
+}  // namespace
+
+TEST(sampler_slice_input_picks_the_piece_on_the_gate_edge) {
+    // 800 frames in 4 slices of 200. A Constant drives the slice input as well as the
+    // gate would be circular, so the slice arrives via its parameter-free default of a
+    // wired constant: build a variant graph inline instead.
+    GraphDescription graph;
+    graph.schema_version = soundgraph::kSchemaVersionBuffers;
+    soundgraph::BufferDescription clip;
+    clip.id = "clip";
+    clip.sample_rate = 48000.0;
+    clip.samples = counting_ramp(800);
+    graph.buffers.push_back(clip);
+    soundgraph::NodeDescription gate;
+    gate.id = "gate";
+    gate.type = "Constant";
+    graph.nodes.push_back(gate);
+    soundgraph::NodeDescription which;
+    which.id = "which";
+    which.type = "Constant";
+    which.parameters.push_back(soundgraph::ParameterValue{"value", 0.5});
+    graph.nodes.push_back(which);
+    soundgraph::NodeDescription play;
+    play.id = "play";
+    play.type = "Sampler";
+    play.buffer = "clip";
+    play.parameters.push_back(soundgraph::ParameterValue{"slices", 4.0});
+    play.parameters.push_back(soundgraph::ParameterValue{"level", 1.0});
+    graph.nodes.push_back(play);
+    soundgraph::NodeDescription out;
+    out.id = "out";
+    out.type = "StereoOutput";
+    out.parameters.push_back(soundgraph::ParameterValue{"level", 1.0});
+    graph.nodes.push_back(out);
+    graph.connections.push_back(soundgraph::ConnectionDescription{"gate", "out", "play", "gate"});
+    graph.connections.push_back(soundgraph::ConnectionDescription{"which", "out", "play", "slice"});
+    graph.connections.push_back(soundgraph::ConnectionDescription{"play", "out", "out", "left"});
+
+    soundgraph::Graph runtime;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, soundgraph::NodeRegistry::builtin(),
+                        soundgraph::PrepareContext(), diagnostics));
+    std::vector<float> output(400, 0.0f);
+    runtime.render(output.data(), nullptr, 400);
+    // 0.5 of four slices is the third: playback starts at frame 400 of the buffer.
+    CHECK_NEAR(output[0], clip.samples[400], 1e-6);
+    CHECK_NEAR(output[150], clip.samples[550], 1e-6);
+    // And stops at the slice's end, not the buffer's: 200 frames, then silence.
+    CHECK_NEAR(output[250], 0.0, 1e-9);
+}
+
+TEST(sampler_start_and_length_trim_within_the_slice) {
+    const std::vector<float> output = render_sampler(
+        counting_ramp(800),
+        {{"slices", 4.0}, {"start", 0.5}, {"length", 0.25}}, 200);
+    // Slice one of four is frames 0..199; start 0.5 begins at 100, length 0.25 plays
+    // 50 frames.
+    CHECK_NEAR(output[0], 100.0 / 800.0, 1e-6);
+    CHECK_NEAR(output[30], 130.0 / 800.0, 1e-6);
+    CHECK_NEAR(output[60], 0.0, 1e-9);
+}
+
+TEST(sampler_frequency_input_repitches_relative_to_root) {
+    GraphDescription graph;
+    graph.schema_version = soundgraph::kSchemaVersionBuffers;
+    soundgraph::BufferDescription clip;
+    clip.id = "clip";
+    clip.sample_rate = 48000.0;
+    clip.samples = counting_ramp(4800);
+    graph.buffers.push_back(clip);
+    soundgraph::NodeDescription gate;
+    gate.id = "gate";
+    gate.type = "Constant";
+    graph.nodes.push_back(gate);
+    soundgraph::NodeDescription pitch;
+    pitch.id = "pitch";
+    pitch.type = "Constant";
+    pitch.parameters.push_back(soundgraph::ParameterValue{"value", 400.0});
+    graph.nodes.push_back(pitch);
+    soundgraph::NodeDescription play;
+    play.id = "play";
+    play.type = "Sampler";
+    play.buffer = "clip";
+    play.parameters.push_back(soundgraph::ParameterValue{"root", 100.0});
+    play.parameters.push_back(soundgraph::ParameterValue{"level", 1.0});
+    graph.nodes.push_back(play);
+    soundgraph::NodeDescription out;
+    out.id = "out";
+    out.type = "StereoOutput";
+    out.parameters.push_back(soundgraph::ParameterValue{"level", 1.0});
+    graph.nodes.push_back(out);
+    graph.connections.push_back(soundgraph::ConnectionDescription{"gate", "out", "play", "gate"});
+    graph.connections.push_back(soundgraph::ConnectionDescription{"pitch", "out", "play", "frequency"});
+    graph.connections.push_back(soundgraph::ConnectionDescription{"play", "out", "out", "left"});
+
+    soundgraph::Graph runtime;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, soundgraph::NodeRegistry::builtin(),
+                        soundgraph::PrepareContext(), diagnostics));
+    std::vector<float> output(1000, 0.0f);
+    runtime.render(output.data(), nullptr, 1000);
+    // 400 Hz against a root of 100 is two octaves up: the read head moves at 4x, so
+    // 100 frames in, the output reads 400 frames into the recording — exactly, which
+    // is well inside the design's within-a-cent exit criterion.
+    CHECK_NEAR(output[100], clip.samples[400], 1e-6);
+    CHECK_NEAR(output[900], clip.samples[3600], 1e-6);
+}
+
+TEST(sampler_loop_wraps_the_slice_not_the_buffer) {
+    const std::vector<float> output = render_sampler(
+        counting_ramp(800),
+        {{"slices", 4.0}, {"loop", 1.0}}, 500);
+    // Slice one loops with period 200: the value 60 frames in recurs at 260 and 460.
+    CHECK_NEAR(output[60], output[260], 1e-6);
+    CHECK_NEAR(output[60], output[460], 1e-6);
+    CHECK_NEAR(output[60], 60.0 / 800.0, 1e-6);
+}
+
 TEST(the_sampler_plays_its_buffer_whatever_the_host_chunk_size) {
     // The stage-one exit test from docs/sampler-design.md: a buffer-carrying patch
     // renders byte-identical however the host slices its calls.

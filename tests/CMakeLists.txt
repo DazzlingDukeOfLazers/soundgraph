@@ -154,6 +154,10 @@ if(SOUNDGRAPH_NODE)
     add_test(NAME node_demos_do_what_they_say
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/node-demos.mjs
                 --verify $<TARGET_FILE:sg-render>)
+    # The chopper's break regenerates from the Euclid demo; if either drifts, this says so.
+    add_test(NAME the_break_matches_its_source
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/make-break.mjs --check
+                $<TARGET_FILE:sg-render>)
 endif()
 
 # The design system's own claims: that the surface levels are a measurable ladder rather

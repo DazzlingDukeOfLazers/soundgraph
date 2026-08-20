@@ -526,7 +526,14 @@ constexpr const char* kSamplerLoopLabels[] = {"off", "loop"};
 
 constexpr PortDescriptor kSamplerInputs[] = {
     {"gate", SignalType::Control, "", true, false,
-     "Rises above 0.5 to play the buffer from its start. Retrigger restarts it."},
+     "Rises above 0.5 to play. Each edge restarts the current slice from its start."},
+    {"frequency", SignalType::Control, "Hz", false, false,
+     "Repitches playback: the recording plays at frequency / root speed. Wire the "
+     "keyboard here and the recording follows it."},
+    {"slice", SignalType::Control, "", false, false,
+     "Where in the recording to play, 0 to 1, read on the gate edge. With eight "
+     "slices, 0.5 is the fifth — a StepSequencer lane wired here chops the break, "
+     "and every step can lock a different piece."},
 };
 
 constexpr PortDescriptor kSamplerOutputs[] = {
@@ -537,32 +544,46 @@ constexpr ParameterDescriptor kSamplerParameters[] = {
     {"level", "", 0.0f, 1.0f, 0.8f, Scaling::Linear,
      "Playback level.", nullptr, 0},
     {"loop", "", 0.0f, 1.0f, 0.0f, Scaling::Linear,
-     "Whether the end wraps back to the start while the buffer keeps playing.",
-     kSamplerLoopLabels, 2},
+     "Whether the slice's end wraps back to its start while the gate has not fired "
+     "again.", kSamplerLoopLabels, 2},
+    {"root", "Hz", 8.0f, 8000.0f, 261.63f, Scaling::Exponential,
+     "The pitch the recording is considered to be. At this frequency it plays at "
+     "true speed; an octave up plays double.", nullptr, 0},
+    {"slices", "", 1.0f, 16.0f, 1.0f, Scaling::Linear,
+     "How many equal pieces the recording divides into. 1 is the whole thing.",
+     nullptr, 0},
+    {"start", "", 0.0f, 1.0f, 0.0f, Scaling::Linear,
+     "Where playback begins, as a fraction of the slice.", nullptr, 0},
+    {"length", "", 0.0f, 1.0f, 1.0f, Scaling::Linear,
+     "How much of the slice plays, from start.", nullptr, 0},
 };
 
 class SamplerNode final : public DspNode {
 public:
-    enum Param { kLevel = 0, kLoop = 1 };
+    enum Param { kLevel = 0, kLoop = 1, kRoot = 2, kSlices = 3, kStart = 4, kLength = 5 };
 
     void prepare(const PrepareContext& context) override {
         sample_rate_ = static_cast<float>(context.sample_rate);
         data_ = context.buffer_data;
         frames_ = context.buffer_frames;
-        step_ = context.buffer_sample_rate > 0.0
-                    ? static_cast<float>(context.buffer_sample_rate / context.sample_rate)
-                    : 1.0f;
+        rate_step_ = context.buffer_sample_rate > 0.0
+                         ? static_cast<float>(context.buffer_sample_rate / context.sample_rate)
+                         : 1.0f;
         reset();
     }
 
     void reset() override {
         position_ = 0.0;
+        play_begin_ = 0.0;
+        play_end_ = 0.0;
         playing_ = false;
         gate_was_open_ = false;
     }
 
     void process(const ProcessContext& context) override {
         const float* gate = context.inputs[0];
+        const float* frequency_in = context.inputs[1];
+        const float* slice_in = context.inputs[2];
         float* out = context.outputs[0];
 
         // A node without a buffer is silent, not an error: the harness jig and a
@@ -576,13 +597,30 @@ public:
 
         const float level = parameter(kLevel);
         const bool loop = parameter(kLoop) >= 0.5f;
+        const float root = parameter(kRoot);
+        const int slices = static_cast<int>(dsp::clampf(parameter(kSlices) + 0.5f, 1.0f, 16.0f));
+        const float start = dsp::clampf(parameter(kStart), 0.0f, 1.0f);
+        const float length = dsp::clampf(parameter(kLength), 0.0f, 1.0f);
         const double last = static_cast<double>(frames_ - 1);
+        const double slice_frames = static_cast<double>(frames_) / slices;
 
         for (int i = 0; i < context.frames; ++i) {
             const bool open = gate != nullptr && gate[i] >= 0.5f;
             if (open && !gate_was_open_) {
-                position_ = 0.0;
-                playing_ = true;
+                // The slice is read on the edge and held for the whole hit, so a lane
+                // that has already moved on cannot bend a note it started earlier.
+                int slice = 0;
+                if (slice_in != nullptr) {
+                    slice = static_cast<int>(dsp::clampf(slice_in[i], 0.0f, 1.0f) *
+                                             static_cast<float>(slices));
+                    slice = slice >= slices ? slices - 1 : slice;
+                }
+                const double begin = slice * slice_frames;
+                play_begin_ = begin + start * slice_frames;
+                play_end_ = begin + dsp::clampf(start + length, 0.0f, 1.0f) * slice_frames;
+                play_end_ = play_end_ > last ? last : play_end_;
+                position_ = play_begin_;
+                playing_ = play_end_ > play_begin_;
             }
             gate_was_open_ = open;
 
@@ -596,10 +634,14 @@ public:
             const float sample = data_[index] * (1.0f - fraction) + data_[index + 1] * fraction;
             out[i] = sample * level;
 
-            position_ += step_;
-            if (position_ >= last) {
+            // frequency / root is the repitch; the recording's own rate is the base.
+            const float pitch = frequency_in != nullptr
+                                    ? dsp::clampf(frequency_in[i], 0.0f, 24000.0f) / root
+                                    : 1.0f;
+            position_ += static_cast<double>(rate_step_ * pitch);
+            if (position_ >= play_end_) {
                 if (loop) {
-                    position_ -= last;
+                    position_ = play_begin_ + (position_ - play_end_);
                 } else {
                     playing_ = false;
                 }
@@ -611,8 +653,10 @@ private:
     float sample_rate_ = 48000.0f;
     const float* data_ = nullptr;
     int frames_ = 0;
-    float step_ = 1.0f;
+    float rate_step_ = 1.0f;
     double position_ = 0.0;
+    double play_begin_ = 0.0;
+    double play_end_ = 0.0;
     bool playing_ = false;
     bool gate_was_open_ = false;
 };
@@ -689,7 +733,8 @@ const NodeTypeDescriptor kSampler = {
     "Sampler", "Sampler", "Sources",
     "Plays a recording the patch carries. The buffer travels inside the file, like "
     "a module does.",
-    "sampler|sample|play recording|wav|one-shot|hit|break|loop|playback|audio file",
+    "sampler|sample|play recording|wav|one-shot|hit|break|loop|playback|audio file|"
+    "slice|slicer|chop|jungle|repitch",
     Slice<PortDescriptor>(kSamplerInputs),
     Slice<PortDescriptor>(kSamplerOutputs),
     Slice<ParameterDescriptor>(kSamplerParameters),
