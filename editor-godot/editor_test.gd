@@ -3177,6 +3177,52 @@ func _initialize() -> void:
 				.get("values", {}).get("cutoff", -1.0)), 380.0),
 		"the plus saves the current knobs as page six (%d pages)" % bank_now.size())
 
+	# The morph: half a slider between Dark Pad and Punch Bass lands the cutoff
+	# on their geometric midpoint — exponential controls morph by octaves, the
+	# same rule their knobs sweep by — and the whole drag is one undo step.
+	main.patch_face._turn_to(dark_pad)
+	for i in 8:
+		await process_frame
+	var morph_slider: HSlider = null
+	var morph_queue: Array = [main.patch_face]
+	while not morph_queue.is_empty():
+		var morph_next: Node = morph_queue.pop_front()
+		for morph_child in morph_next.get_children():
+			if morph_child is HSlider and morph_child.has_meta("preset_morph"):
+				morph_slider = morph_child
+			else:
+				morph_queue.append(morph_child)
+	check(morph_slider != null, "a showing page offers the morph slider")
+	if morph_slider != null:
+		morph_slider.drag_started.emit()
+		morph_slider.value = 0.5
+		for i in 4:
+			await process_frame
+		morph_slider.drag_ended.emit(true)
+		for i in 4:
+			await process_frame
+		var mid_cutoff: float = -1.0
+		var mid_resonance: float = -1.0
+		for morph_node in main.patch["nodes"]:
+			if str(morph_node["id"]) == "filter":
+				mid_cutoff = float(morph_node.get("parameters", {}).get("cutoff", -1.0))
+				mid_resonance = float(morph_node.get("parameters", {})
+					.get("resonance", -1.0))
+		check(absf(mid_cutoff - sqrt(380.0 * 520.0)) < 1.0,
+			"half a morph puts the cutoff at the geometric midpoint (%.1f ~ %.1f)"
+				% [mid_cutoff, sqrt(380.0 * 520.0)])
+		check(is_equal_approx(mid_resonance, 0.475),
+			"and a linear control at the arithmetic one (%.3f)" % mid_resonance)
+		await main._undo()
+		for i in 6:
+			await process_frame
+		var unwound: float = -1.0
+		for morph_node in main.patch["nodes"]:
+			if str(morph_node["id"]) == "filter":
+				unwound = float(morph_node.get("parameters", {}).get("cutoff", -1.0))
+		check(is_equal_approx(unwound, 380.0),
+			"one undo unwinds the whole sweep (%.0f)" % unwound)
+
 	# And the kit's obligatory page.
 	await main._load_example("808: kit")
 	for i in 8:

@@ -1871,6 +1871,9 @@ func _build_side_panel() -> Control:
 	patch_face.preset_saved.connect(
 		func(values: Dictionary) -> void:
 			_save_preset(values, patch_face, ""))
+	patch_face.morph_started.connect(func() -> void: _begin_edit())
+	patch_face.preset_morphed.connect(_write_morph)
+	patch_face.morph_finished.connect(func() -> void: _commit_edit("morph"))
 	panel.add_child(patch_face)
 
 	module_face = ModuleFace.new()
@@ -2106,6 +2109,9 @@ func _device_panel_for(instance_id: String, module_name: String,
 		strip_face.preset_saved.connect(
 			func(values: Dictionary) -> void:
 				_save_preset(values, strip_face, module_name))
+		strip_face.morph_started.connect(func() -> void: _begin_edit())
+		strip_face.preset_morphed.connect(_write_morph)
+		strip_face.morph_finished.connect(func() -> void: _commit_edit("morph"))
 	var panel := mount as PatchFace
 	panel.preset_index = int(preset_pages.get(module_name, -1))
 	var overrides: Dictionary = {}
@@ -4671,6 +4677,14 @@ func _apply_preset(index: int, writes: Array, face: Control, bank: String) -> vo
 	_apply_flips()
 	_refresh_face()
 	_say("preset: %s" % name)
+
+
+## The morph slider mid-drag: the interpolated surface, written live through
+## the knob path. The undo bracket is the drag's, so a whole sweep is one step.
+func _write_morph(writes: Array) -> void:
+	for write in writes:
+		_on_rack_parameter_changed(str(write.get("node", "")),
+			str(write.get("parameter", "")), float(write.get("value", 0.0)))
 
 
 ## Writes a face's current positions into its bank as a new page — the patch's

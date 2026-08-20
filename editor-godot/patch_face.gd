@@ -154,6 +154,14 @@ signal preset_applied(index: int, writes: Array)
 ## is control id -> value, read from this face's own document.
 signal preset_saved(values: Dictionary)
 
+## The morph slider moved: `writes` is the surface interpolated between the
+## current page and the next, resolved like every other write.
+signal preset_morphed(writes: Array)
+
+## The morph drag's undo bracket: one gesture, one step.
+signal morph_started()
+signal morph_finished()
+
 var _cells: Array = []          # Control per cell, panel first then the offers
 var _ids: Array = []            # the control ids, panel cells only
 ## {cell index: {"node", "parameter"}} for the offers, and for the panel's own cells, so a
@@ -396,6 +404,34 @@ func _preset_strip() -> Control:
 			_turn_to((preset_index + 1) % count))
 	strip.add_child(next)
 
+	# The morph: the strip's right-hand third is a slider whose left end is the
+	# page showing and whose right end is the next page in the bank — the
+	# pattrstorage trick, worn like a crossfader. Exponential controls morph
+	# geometrically, so a filter sweep glides by octaves instead of lurching
+	# through its low end. The slider only appears once a page is showing and
+	# there is somewhere to morph to.
+	if preset_index >= 0 and presets.size() >= 2:
+		var morph := HSlider.new()
+		morph.custom_minimum_size.x = Design.scale(96)
+		morph.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		morph.min_value = 0.0
+		morph.max_value = 1.0
+		morph.step = 0.001
+		morph.value = 0.0
+		# Drag only: the wheel and the arrow keys would write without the drag
+		# bracket that makes a morph one undo step.
+		morph.scrollable = false
+		morph.focus_mode = Control.FOCUS_NONE
+		var toward: String = str((presets[(preset_index + 1) % presets.size()]
+			as Dictionary).get("name", ""))
+		morph.tooltip_text = "Morph toward %s" % toward
+		morph.set_meta("preset_morph", true)
+		morph.drag_started.connect(func() -> void: morph_started.emit())
+		morph.value_changed.connect(func(fraction: float) -> void:
+			preset_morphed.emit(_morph_writes(fraction)))
+		morph.drag_ended.connect(func(_changed: bool) -> void: morph_finished.emit())
+		strip.add_child(morph)
+
 	var keep := Button.new()
 	keep.text = "+"
 	keep.tooltip_text = "Save the current knobs as a new preset"
@@ -448,6 +484,37 @@ func _matching_page() -> int:
 		if matches:
 			return index
 	return -1
+
+
+## The surface interpolated between the current page and the next, as writes.
+## Linear controls lerp; exponential ones morph geometrically, which is the
+## same "equal turns are equal musical steps" rule their knobs follow.
+func _morph_writes(fraction: float) -> Array:
+	var presets: Array = patch.get("presets", [])
+	if presets.size() < 2 or preset_index < 0 or preset_index >= presets.size():
+		return []
+	var here: Dictionary = (presets[preset_index] as Dictionary).get("values", {})
+	var there: Dictionary = (presets[(preset_index + 1) % presets.size()]
+		as Dictionary).get("values", {})
+	var writes: Array = []
+	for control in patch.get("controls", []):
+		var control_id := str(control.get("id", ""))
+		if not here.has(control_id) or not there.has(control_id):
+			continue
+		var from_value := float(here[control_id])
+		var to_value := float(there[control_id])
+		var value: float
+		if str(control.get("scaling", "linear")) == "exponential" 				and from_value > 0.0 and to_value > 0.0:
+			value = from_value * pow(to_value / from_value, fraction)
+		else:
+			value = lerpf(from_value, to_value, fraction)
+		var target: Dictionary = control.get("target", {})
+		var wired := _wire(str(target.get("node", "")), str(target.get("parameter", "")),
+			{"name": str(target.get("parameter", ""))})
+		writes.append({"node": wired[0],
+			"parameter": str((wired[1] as Dictionary).get("name", "")),
+			"value": value})
+	return writes
 
 
 ## The surface as it stands, control id -> value, for saving a new page.
