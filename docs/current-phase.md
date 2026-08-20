@@ -212,18 +212,19 @@ downbeat output, and a run gate that rewinds — patches share a tempo by sharin
 not through a global transport), and the ScaleQuantizer (twelve scales, twelve roots,
 speaking octaves like the fm wire; nearest-semitone-then-nearest-degree, ties resolving
 down — its demo is Noise → SampleHold → Quantizer on the Clock's eighths, the generative
-melody the shortlist promised).
+melody the shortlist promised), and the StepSequencer (one sixteen-step lane per node —
+wire a second lane from the same Clock into any knob's modulation input and every step
+locks it, which is the Elektron trick said in cables rather than bolted on; the Clock's
+bar output on the reset input keeps odd-length lanes bar-locked polymeters instead of
+accidents; kMaxParameters went 8 → 24 to make room for honest one-knob-per-step
+parameters).
 
 Still to do, in this order:
 
-1. **Step sequencer with parameter locks** — the Elektron trick: any knob settable
-   per-step. The preset-morph machinery is conceptually halfway there; p-locks are morph
-   values with a step index instead of a crossfader. The Knobcon-class showpiece, but a
-   feature, so it waits for the freeze to lift.
-2. **Comb and Allpass primitives, then reverb as a shipped module** — the
+1. **Comb and Allpass primitives, then reverb as a shipped module** — the
    flatten-to-identical-audio guarantee is what makes a module reverb honest. `Crush`
    (bit/rate reduction) rides along in this batch.
-3. **Compressor with a sidechain input** — mix glue and the EDM pump in one node.
+2. **Compressor with a sidechain input** — mix glue and the EDM pump in one node.
 
 On the bench behind those: an editor oscilloscope (editor work, not DSP), euclidean
 rhythms and probability gates for the generative crowd, and a shipped Karplus-Strong

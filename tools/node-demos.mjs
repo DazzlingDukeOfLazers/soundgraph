@@ -772,6 +772,48 @@ const DEMOS = {
       ],
     }),
   },
+  StepSequencer: {
+    summary: 'One lane of a step sequencer: sixteen values walked by a clock. A second '
+      + 'lane on the same clock locks any knob per step.',
+    try: 'Two lanes, one clock. The first walks the pitch through the quantizer; the '
+      + 'second locks the filter per step — steps 3, 6 and 8 snap it open. Turn any '
+      + 'step knob on either lane and only that step changes. That is a parameter lock.',
+    build: () => ({
+      nodes: [
+        node('clock', 'Clock', { bpm: 132, division: 4, swing: 0, width: 5 }, 0, 0),
+        node('osc', 'SawOscillator', { frequency: 110 }, 0, 2),
+        // Each lane gets a column to itself: seventeen knobs make a tall node, and
+        // nothing should sit underneath one in a generated layout.
+        node('demo', 'StepSequencer', {
+          length: 8, step2: 0, step3: 0.25, step4: 0.58,
+          step6: 0.83, step7: 0.25, step8: 1.0,
+        }, 1, 0),
+        node('locks', 'StepSequencer', {
+          length: 8, step3: 1.6, step5: 0, step6: 1.0, step8: 2.0,
+        }, 2, 0),
+        node('quant', 'ScaleQuantizer', { scale: 7, root: 0 }, 3, 0),
+        node('env', 'AhdEnvelope', { attack: 0.001, hold: 0.02, decay: 0.14, punch: 0.3 }, 3, 1),
+        node('filter', 'StateVariableFilter', { cutoff: 400, resonance: 0.7, mode: 0 }, 4, 0),
+        amp(5),
+        out(6),
+      ],
+      connections: [
+        wire('clock', 'gate', 'demo', 'clock'),
+        wire('clock', 'gate', 'locks', 'clock'),
+        wire('clock', 'bar', 'demo', 'reset'),
+        wire('clock', 'bar', 'locks', 'reset'),
+        wire('demo', 'out', 'quant', 'in'),
+        wire('quant', 'out', 'osc', 'fm'),
+        wire('locks', 'out', 'filter', 'cutoff_mod'),
+        wire('clock', 'gate', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('osc', 'out', 'filter', 'in'),
+        wire('filter', 'out', 'amp', 'in'),
+        wire('amp', 'out', 'out', 'left'),
+        wire('amp', 'out', 'out', 'right'),
+      ],
+    }),
+  },
   SampleHold: {
     summary: 'Freezes its input each time the trigger fires, and holds it until the next.',
     try: 'A smooth slow wave, sampled six times a second, comes out as a staircase of '
@@ -853,6 +895,8 @@ const PROBES = {
   SampleHold: { node: 'clock', parameter: 'rate', value: 1.5 },
   Clock: { parameter: 'bpm', value: 40 },
   ScaleQuantizer: { parameter: 'scale', value: 0 },
+  // A lock appearing where there was none: step 5 of the filter lane opens up.
+  StepSequencer: { node: 'locks', parameter: 'step5', value: 2 },
 };
 
 function render(type, demo) {

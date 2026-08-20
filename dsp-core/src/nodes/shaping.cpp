@@ -765,6 +765,103 @@ private:
     float nudge_[12] = {};
 };
 
+// ---------------------------------------------------------------------------------
+// StepSequencer
+//
+// One lane of a step sequencer: sixteen values, a step counter, a clock. Each rising
+// edge on the clock advances the counter and the output becomes that step's value, on
+// the same sample — so an envelope fired by the same pulse opens onto the new step,
+// never the old one.
+//
+// A lane, deliberately, rather than a whole sequencer. Wire one lane through the
+// ScaleQuantizer into an oscillator's fm and it walks a melody; wire a second lane
+// from the same clock into the filter's cutoff_mod and every step can set the filter
+// as well as the note — which is a parameter lock, said in cables. Any knob a signal
+// can reach, a lane can lock, and lanes on one clock cannot drift apart.
+//
+// The reset input returns the lane to its first step: wire the Clock's bar output
+// there and the pattern is bar-locked no matter what length it runs at, which is how
+// a 5-step lane over 16th notes stays a polymeter instead of an accident.
+// ---------------------------------------------------------------------------------
+
+constexpr PortDescriptor kStepSequencerInputs[] = {
+    {"clock", SignalType::Control, "", true, false,
+     "Advances one step on each rising edge. The Clock node's gate output is the "
+     "natural thing to wire here."},
+    {"reset", SignalType::Control, "", false, false,
+     "Returns to step 1 on a rising edge. The Clock's bar output keeps the pattern "
+     "on the downbeat."},
+};
+
+constexpr PortDescriptor kStepSequencerOutputs[] = {
+    {"out", SignalType::Control, "", false, false,
+     "The current step's value, held until the next step."},
+};
+
+constexpr ParameterDescriptor kStepSequencerParameters[] = {
+    {"length", "", 1.0f, 16.0f, 8.0f, Scaling::Linear,
+     "How many steps play before the lane wraps.", nullptr, 0},
+    {"step1", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 1.", nullptr, 0},
+    {"step2", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 2.", nullptr, 0},
+    {"step3", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 3.", nullptr, 0},
+    {"step4", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 4.", nullptr, 0},
+    {"step5", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 5.", nullptr, 0},
+    {"step6", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 6.", nullptr, 0},
+    {"step7", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 7.", nullptr, 0},
+    {"step8", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 8.", nullptr, 0},
+    {"step9", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 9.", nullptr, 0},
+    {"step10", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 10.", nullptr, 0},
+    {"step11", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 11.", nullptr, 0},
+    {"step12", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 12.", nullptr, 0},
+    {"step13", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 13.", nullptr, 0},
+    {"step14", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 14.", nullptr, 0},
+    {"step15", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 15.", nullptr, 0},
+    {"step16", "", -2.0f, 2.0f, 0.0f, Scaling::Linear, "Step 16.", nullptr, 0},
+};
+
+class StepSequencerNode final : public DspNode {
+public:
+    enum Param { kLength = 0, kFirstStep = 1 };
+
+    // Armed before the first edge: the first clock pulse lands on step 1 rather than
+    // skipping past it, and reset re-arms the same way, so a downbeat is a downbeat.
+    void reset() override {
+        index_ = -1;
+        clock_was_open_ = false;
+        reset_was_open_ = false;
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* clock = context.inputs[0];
+        const float* reset_in = context.inputs[1];
+        float* out = context.outputs[0];
+
+        const int length =
+            static_cast<int>(dsp::clampf(parameter(kLength) + 0.5f, 1.0f, 16.0f));
+
+        for (int i = 0; i < context.frames; ++i) {
+            const bool reset_open = gate_open(reset_in, i);
+            if (reset_open && !reset_was_open_) {
+                index_ = -1;
+            }
+            reset_was_open_ = reset_open;
+
+            const bool clock_open = gate_open(clock, i);
+            if (clock_open && !clock_was_open_) {
+                index_ = (index_ + 1) % length;
+            }
+            clock_was_open_ = clock_open;
+
+            out[i] = parameter(kFirstStep + (index_ < 0 ? 0 : index_));
+        }
+    }
+
+private:
+    int index_ = -1;
+    bool clock_was_open_ = false;
+    bool reset_was_open_ = false;
+};
+
 template <typename T>
 std::unique_ptr<DspNode> make() {
     return std::unique_ptr<DspNode>(new T());
@@ -858,6 +955,21 @@ const NodeTypeDescriptor kScaleQuantizer = {
     false, NodeRole::Processor, false,
     ResourceCost{2.0f, 64, 0},
     &make<ScaleQuantizerNode>,
+};
+
+const NodeTypeDescriptor kStepSequencer = {
+    "StepSequencer", "Step Sequencer", "Modulation",
+    "One lane of a step sequencer: sixteen values walked by a clock. Wire a second "
+    "lane from the same clock into any knob and every step locks it — parameter "
+    "locks, said in cables.",
+    "step sequencer|sequencer|steps|pattern|lane|p-lock|parameter lock|plock|"
+    "acid|303|x0x|melody|bassline|program",
+    Slice<PortDescriptor>(kStepSequencerInputs),
+    Slice<PortDescriptor>(kStepSequencerOutputs),
+    Slice<ParameterDescriptor>(kStepSequencerParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{2.0f, 16, 0},
+    &make<StepSequencerNode>,
 };
 
 }  // namespace nodes

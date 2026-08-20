@@ -145,6 +145,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kRetrigger,
         &nodes::kClock,
         &nodes::kScaleQuantizer,
+        &nodes::kStepSequencer,
         &nodes::kLfo,
         &nodes::kConstant,
         &nodes::kAdd,

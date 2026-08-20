@@ -15,7 +15,9 @@ namespace soundgraph {
 // and so that golden vectors do not depend on the host's buffer size.
 inline constexpr int kBlockSize = 64;
 
-inline constexpr int kMaxParameters = 8;
+// 24 rather than 8 since the StepSequencer: sixteen step values and a length is
+// seventeen parameters, and they are the honest kind — a knob each, no encoding.
+inline constexpr int kMaxParameters = 24;
 inline constexpr int kMaxInputs = 8;
 // Twelve, and the number is load-bearing: process() receives pointer arrays this
 // long on the stack, so a node declaring more outputs than this corrupts memory

@@ -1451,6 +1451,57 @@ TEST(scale_quantizer_wraps_across_the_octave) {
     CHECK_NEAR(harness.output()[1], 1.0, 1e-6);
 }
 
+TEST(step_sequencer_advances_on_clock_edges_and_wraps) {
+    NodeHarness harness("StepSequencer", 8, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("length", 3.0f);
+    harness.set("step1", 0.1f);
+    harness.set("step2", 0.2f);
+    harness.set("step3", 0.3f);
+    std::vector<float>& clock = harness.input("clock");
+    // A pulse every second sample: edges at 0, 2, 4, 6.
+    clock = {1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f};
+    harness.process();
+    // The edge and the new value share a sample, and the fourth edge wraps.
+    CHECK_NEAR(harness.output()[0], 0.1, 1e-6);
+    CHECK_NEAR(harness.output()[2], 0.2, 1e-6);
+    CHECK_NEAR(harness.output()[4], 0.3, 1e-6);
+    CHECK_NEAR(harness.output()[6], 0.1, 1e-6);
+    // Between edges the value holds.
+    CHECK_NEAR(harness.output()[3], 0.2, 1e-6);
+}
+
+TEST(step_sequencer_first_edge_lands_on_step_one) {
+    NodeHarness harness("StepSequencer", 4, kSampleRate);
+    harness.set("step1", 0.7f);
+    harness.set("step2", -0.7f);
+    std::vector<float>& clock = harness.input("clock");
+    clock = {0.0f, 0.0f, 1.0f, 1.0f};
+    harness.process();
+    // Before any edge the lane already shows step 1; the edge enters it, and a held
+    // gate does not advance further.
+    CHECK_NEAR(harness.output()[0], 0.7, 1e-6);
+    CHECK_NEAR(harness.output()[2], 0.7, 1e-6);
+    CHECK_NEAR(harness.output()[3], 0.7, 1e-6);
+}
+
+TEST(step_sequencer_reset_returns_to_step_one) {
+    NodeHarness harness("StepSequencer", 8, kSampleRate);
+    harness.set("length", 4.0f);
+    harness.set("step1", 0.1f);
+    harness.set("step2", 0.2f);
+    harness.set("step3", 0.3f);
+    std::vector<float>& clock = harness.input("clock");
+    clock = {1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f};
+    std::vector<float>& reset = harness.input("reset");
+    // Reset fires with the third clock edge: that edge is step 1 again, not step 3.
+    reset = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f};
+    harness.process();
+    CHECK_NEAR(harness.output()[2], 0.2, 1e-6);
+    CHECK_NEAR(harness.output()[4], 0.1, 1e-6);
+    CHECK_NEAR(harness.output()[6], 0.2, 1e-6);
+}
+
 TEST(retrigger_restarts_an_envelope_it_is_wired_to) {
     // The two nodes together are what "stutter" means; neither says it alone.
     NodeHarness retrigger("Retrigger", kOneSecond, kSampleRate);
