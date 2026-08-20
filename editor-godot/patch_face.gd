@@ -357,6 +357,11 @@ func _preset_strip() -> Control:
 	prev.text = "<"
 	prev.disabled = presets.is_empty()
 	prev.tooltip_text = "Previous preset"
+	# The arrows act on the down edge, like a hardware panel switch. It is also
+	# armour: turning a page rebuilds this strip in place, and a button that
+	# waits for its release can be freed between press and release — the click
+	# then simply vanishes, which is what an inconsistent arrow is made of.
+	prev.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	prev.pressed.connect(func() -> void:
 		var count: int = (patch.get("presets", []) as Array).size()
 		if count > 0:
@@ -384,6 +389,7 @@ func _preset_strip() -> Control:
 	next.text = ">"
 	next.disabled = presets.is_empty()
 	next.tooltip_text = "Next preset"
+	next.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	next.pressed.connect(func() -> void:
 		var count: int = (patch.get("presets", []) as Array).size()
 		if count > 0:
@@ -393,6 +399,7 @@ func _preset_strip() -> Control:
 	var keep := Button.new()
 	keep.text = "+"
 	keep.tooltip_text = "Save the current knobs as a new preset"
+	keep.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	keep.pressed.connect(func() -> void: preset_saved.emit(_snapshot_values()))
 	strip.add_child(keep)
 	return strip
