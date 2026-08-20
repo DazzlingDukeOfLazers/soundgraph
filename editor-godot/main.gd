@@ -296,6 +296,12 @@ var undo_redo := UndoRedo.new()
 ## wrong origin. Recorded once per node and never overwritten, so twiddling does
 ## not drag home along; cleared on load and carried across a dive like the history.
 var _home_values: Dictionary = {}
+
+## Which page of each bank is showing, keyed "" for the file's own bank and by
+## module name for a device's. Held here rather than on the faces because the
+## same bank can be open on two mountings — the side panel and a flipped case —
+## and two faces disagreeing about the page is how "next" turns to the wrong one.
+var preset_pages: Dictionary = {}
 var _pending_snapshot: Dictionary = {}
 var toolbar: Control
 
@@ -1861,7 +1867,7 @@ func _build_side_panel() -> Control:
 	patch_face.offered.connect(_toggle_control)
 	patch_face.preset_applied.connect(
 		func(index: int, writes: Array) -> void:
-			_apply_preset(index, writes, patch_face))
+			_apply_preset(index, writes, patch_face, ""))
 	patch_face.preset_saved.connect(
 		func(values: Dictionary) -> void:
 			_save_preset(values, patch_face, ""))
@@ -2089,11 +2095,12 @@ func _device_panel_for(instance_id: String, module_name: String,
 		var strip_face := mount as PatchFace
 		strip_face.preset_applied.connect(
 			func(index: int, writes: Array) -> void:
-				_apply_preset(index, writes, strip_face))
+				_apply_preset(index, writes, strip_face, module_name))
 		strip_face.preset_saved.connect(
 			func(values: Dictionary) -> void:
 				_save_preset(values, strip_face, module_name))
 	var panel := mount as PatchFace
+	panel.preset_index = int(preset_pages.get(module_name, -1))
 	var overrides: Dictionary = {}
 	for node in patch.get("nodes", []):
 		if str(node["id"]) == instance_id:
@@ -4636,18 +4643,26 @@ func _current_parameter(node_id: String, parameter: String, fallback: float) -> 
 ## means — its own nodes or an instance's exports — and this writes them, as
 ## one undo step. A control the preset does not mention keeps its position, the
 ## way hardware leaves unswept knobs where they stand.
-func _apply_preset(index: int, writes: Array, face: Control) -> void:
+func _apply_preset(index: int, writes: Array, face: Control, bank: String) -> void:
 	var presets: Array = face.patch.get("presets", [])
 	if index < 0 or index >= presets.size():
 		return
 	var name := str((presets[index] as Dictionary).get("name", "preset"))
 	_begin_edit()
 	for write in writes:
-		_set_parameter(str(write.get("node", "")), str(write.get("parameter", "")),
-			float(write.get("value", 0.0)))
+		# The knob path, not a bare document write: engine, document and the
+		# graph view's widgets all move together.
+		_on_rack_parameter_changed(str(write.get("node", "")),
+			str(write.get("parameter", "")), float(write.get("value", 0.0)))
 	_commit_edit("preset %s" % name)
+	preset_pages[bank] = index
 	face.preset_index = index
-	await _rebuild_view()
+	# A page turn changes values, never structure, so the faces refresh in place.
+	# The full view rebuild this used to do put an async gap between click and
+	# strip, and a second click in that gap landed on a freed button — which is
+	# what "next doesn't work consistently" feels like from the chair.
+	_apply_flips()
+	_refresh_face()
 	_say("preset: %s" % name)
 
 
@@ -4664,8 +4679,10 @@ func _save_preset(values: Dictionary, face: Control, bank_module: String) -> voi
 	var page := (store["presets"] as Array).size() + 1
 	store["presets"].append({"name": "Preset %d" % page, "values": values})
 	_commit_edit("save preset")
+	preset_pages[bank_module] = (store["presets"] as Array).size() - 1
 	face.preset_index = (store["presets"] as Array).size() - 1
-	await _rebuild_view()
+	_apply_flips()
+	_refresh_face()
 	_say("saved preset %d" % page)
 
 
@@ -6843,6 +6860,7 @@ func _refresh_face() -> void:
 			module_face.rebuild()
 	patch_face.visible = showing == ""
 	if patch_face.visible:
+		patch_face.preset_index = int(preset_pages.get("", patch_face.preset_index))
 		patch_face.patch = patch
 		patch_face.registry = registry
 		patch_face.rack = rack
@@ -8111,6 +8129,7 @@ func _load_text(text: String) -> void:
 	_modernize_stereo_outputs()
 	inspecting = {}
 	# A fresh document starts on no page of anyone's bank.
+	preset_pages.clear()
 	if patch_face != null:
 		patch_face.preset_index = -1
 

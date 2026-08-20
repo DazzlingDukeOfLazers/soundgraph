@@ -3168,7 +3168,7 @@ func _initialize() -> void:
 	main.patch_face._turn_to(dark_pad)
 	for i in 8:
 		await process_frame
-	await main._save_preset(main.patch_face._snapshot_values(), main.patch_face, "")
+	main._save_preset(main.patch_face._snapshot_values(), main.patch_face, "")
 	for i in 6:
 		await process_frame
 	var bank_now: Array = main.patch.get("presets", [])
@@ -3250,6 +3250,41 @@ func _initialize() -> void:
 	check(duo_label != null and str(duo_label.text) == "Stock",
 		"a fresh mount's strip names the Stock page (%s)"
 			% (str(duo_label.text) if duo_label != null else "<no label>"))
+
+	# Six presses of the next arrow walk the bank in order and wrap around. The
+	# strip is rebuilt in place on every turn, so each press re-finds the button;
+	# a turn that rebuilt the whole view left an async gap where the second press
+	# landed on a freed button, which read as "next works sometimes".
+	var tour_names := ["Acid Line", "Ring Bell", "Sci-Fi Wobble", "Screamer",
+		"Stock", "Acid Line"]
+	var tour_cutoffs := [320.0, 4200.0, 900.0, 2600.0, 1400.0, 320.0]
+	for stop in tour_names.size():
+		var next_button: Button = null
+		var tour_queue: Array = [main.module_mounts.get(duo_device, null)]
+		while not tour_queue.is_empty():
+			var tour_next: Node = tour_queue.pop_front()
+			if tour_next == null:
+				continue
+			for tour_child in tour_next.get_children():
+				if tour_child is Button and str(tour_child.text) == ">":
+					next_button = tour_child
+				else:
+					tour_queue.append(tour_child)
+		check(next_button != null, "press %d finds the next arrow" % (stop + 1))
+		if next_button == null:
+			break
+		next_button.pressed.emit()
+		for i in 4:
+			await process_frame
+		var toured: float = -1.0
+		for tour_node in main.patch["nodes"]:
+			if str(tour_node["id"]) == duo_device:
+				for tour_key in tour_node.get("parameters", {}):
+					if is_equal_approx(float(tour_node["parameters"][tour_key]),
+							float(tour_cutoffs[stop])):
+						toured = float(tour_node["parameters"][tour_key])
+		check(is_equal_approx(toured, float(tour_cutoffs[stop])),
+			"press %d turns to %s (cutoff %.0f)" % [stop + 1, tour_names[stop], toured])
 
 	main._new_file()
 	for i in 8:
