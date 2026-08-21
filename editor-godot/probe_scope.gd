@@ -47,6 +47,12 @@ var periods_field: ValueField
 var mode_button: Button
 var arm_button: Button
 var trigger_label: Label
+var level_field: ValueField
+var level_auto: Button
+## Where the trigger sits, in signal units. INF is auto — midway between the wire's
+## own floor and ceiling, which is right until the moment it is not: a drum bus wants
+## the trigger above the hats, and only a hand knows that.
+var trigger_level := INF
 var display: Control
 
 
@@ -140,6 +146,38 @@ func _ready() -> void:
 		Design.type(Design.SIZE_SECONDARY))
 	trigger_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	mode_row.add_child(trigger_label)
+	level_field = ValueField.new()
+	level_field.centred = true
+	level_field.custom_minimum_size.x = Design.scale(84)
+	level_field.text = "level auto"
+	level_field.default_value = 0.0
+	level_field.position_now = 0.5
+	level_field.to_value = func(position: float) -> float:
+		return -1.2 + 2.4 * clampf(position, 0.0, 1.0)
+	level_field.to_position = func(value: float) -> float:
+		return clampf((value + 1.2) / 2.4, 0.0, 1.0)
+	level_field.value_submitted.connect(func(value: float) -> void:
+		trigger_level = clampf(value, -1.2, 1.2)
+		level_field.text = "level %.2f" % trigger_level
+		level_auto.visible = true
+		if display != null:
+			display.queue_redraw())
+	level_field.tooltip_text = "Where the trigger sits, in signal units. Drag to set " \
+		+ "it by hand; auto keeps it midway between the wire's own floor and ceiling."
+	mode_row.add_child(level_field)
+	level_auto = Button.new()
+	level_auto.flat = true
+	level_auto.text = "auto"
+	level_auto.visible = false
+	level_auto.tooltip_text = "Back to the automatic level."
+	level_auto.pressed.connect(func() -> void:
+		trigger_level = INF
+		level_field.text = "level auto"
+		level_field.position_now = 0.5
+		level_auto.visible = false
+		if display != null:
+			display.queue_redraw())
+	mode_row.add_child(_quiet(level_auto))
 	add_child(mode_row)
 
 	display = ScopeDisplay.new()
@@ -285,7 +323,8 @@ func capture() -> void:
 		# right for audio and never right for a gate, which spends its whole life
 		# at or above zero — hunting a zero crossing, the scope only ever caught a
 		# gate when free-run happened to align. A flat wire offers no edge at all.
-		var level := _trigger_level(stream)
+		var level := trigger_level if is_finite(trigger_level) \
+			else _trigger_level(stream)
 		if is_finite(level):
 			start = _last_edge(stream, span, level)
 	# The trigger sits a quarter of the way in, the way a bench scope parks it:
@@ -384,6 +423,20 @@ class ScopeDisplay extends Control:
 		if unipolar:
 			draw_line(Vector2(0.0, size.y * 0.88), Vector2(size.x, size.y * 0.88),
 				Color(1.0, 1.0, 1.0, 0.10), 1.0)
+		if is_finite(panel.trigger_level):
+			# The hand-set trigger, drawn where it actually cuts the trace.
+			var mark: float
+			if unipolar:
+				mark = size.y * 0.88 - clampf(panel.trigger_level, 0.0, 1.2) \
+					* size.y * 0.76
+			else:
+				mark = size.y * 0.5 - clampf(panel.trigger_level, -1.2, 1.2) \
+					* size.y * 0.42
+			draw_line(Vector2(0.0, mark), Vector2(size.x, mark),
+				Color(Design.WARNING.r, Design.WARNING.g, Design.WARNING.b, 0.55), 1.0)
+			draw_string(Design.numeric_font(), Vector2(Design.scale(4), mark - 3.0),
+				"T", HORIZONTAL_ALIGNMENT_LEFT, -1.0, Design.scale(10),
+				Color(Design.WARNING.r, Design.WARNING.g, Design.WARNING.b, 0.8))
 		draw_polyline(points, Design.ACCENT, 1.5, true)
 		# The lock lamp: lit when a trigger anchored this picture.
 		draw_circle(Vector2(size.x - Design.scale(12), Design.scale(12)),

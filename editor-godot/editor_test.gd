@@ -4051,6 +4051,20 @@ func _initialize() -> void:
 	check(main.scope_probe.visible,
 		"the side column is the probe scope, standing without tabs")
 
+	# The trigger level: auto until a hand sets it, and honest both ways. A drum bus
+	# wants the trigger above the hats, and only a hand knows that.
+	check(not is_finite(main.scope_probe.trigger_level),
+		"the trigger level starts on auto")
+	main.scope_probe.level_field.value_submitted.emit(0.3)
+	check(is_equal_approx(main.scope_probe.trigger_level, 0.3),
+		"dragging the level field sets it by hand (%.2f)"
+			% main.scope_probe.trigger_level)
+	check(main.scope_probe.level_auto.visible,
+		"and the way back to auto appears")
+	main.scope_probe.level_auto.pressed.emit()
+	check(not is_finite(main.scope_probe.trigger_level),
+		"which puts the trigger back on auto")
+
 	var probe_index := -1
 	for index in main.scope_probe._sources.size():
 		var entry: Dictionary = main.scope_probe._sources[index]
