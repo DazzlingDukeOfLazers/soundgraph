@@ -88,6 +88,7 @@ const ModuleFace := preload("res://module_face.gd")
 const PianoRoll := preload("res://piano_roll.gd")
 const RollPitch := preload("res://roll_pitch.gd")
 const StepGrid := preload("res://step_grid.gd")
+const DeviceBlurbs := preload("res://device_blurbs.gd")
 const MidiImport := preload("res://midi_import.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
@@ -5490,9 +5491,10 @@ func _addable(names: PackedStringArray) -> PackedStringArray:
 func _build_result_row(type_name: String) -> Control:
 	var descriptor: Dictionary = registry.get(type_name, {})
 	if type_name.begins_with("device:"):
+		var device_label := type_name.trim_prefix("device:")
 		descriptor = {
-			"display_name": type_name.trim_prefix("device:"),
-			"summary": "device — a whole patch as one node",
+			"display_name": device_label,
+			"summary": DeviceBlurbs.blurb(device_label),
 			"category": "Devices",
 		}
 
@@ -5592,7 +5594,7 @@ func _family_devices(prefixes: Array, query: String) -> Array:
 				in_family = true
 		if not in_family:
 			continue
-		var lowered := text.to_lower()
+		var lowered := ("%s %s" % [text, DeviceBlurbs.blurb(text)]).to_lower()
 		var all_words := true
 		for word in words:
 			if not lowered.contains(str(word)):
@@ -5708,7 +5710,8 @@ func _matching_devices(query: String) -> Array:
 		return []
 	var matches: Array = []
 	for label in _examples:
-		var lowered := str(label).to_lower()
+		var lowered := "%s %s" % [str(label), DeviceBlurbs.blurb(str(label))]
+		lowered = lowered.to_lower()
 		var all_words := true
 		for word in words:
 			if not lowered.contains(str(word)):

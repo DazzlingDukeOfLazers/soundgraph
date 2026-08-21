@@ -425,6 +425,24 @@ func _initialize() -> void:
 	check(dx7_rows >= 60, "the DX7 chip lays out the whole bank (%d rows)" % dx7_rows)
 	main._set_search_tag("dx7")
 	check(main._search_tag == "", "choosing the chosen chip returns to everything")
+	# Every shelf row introduces itself now instead of reciting the definition of
+	# the word "device". Curated labels must actually exist — a blurb keyed to a
+	# label nobody generates is a blurb nobody reads.
+	var blurbs := preload("res://device_blurbs.gd")
+	for curated: String in blurbs.BY_LABEL:
+		check(main._examples.has(curated),
+			"the blurb for '%s' names a real example" % curated)
+	check(str(blurbs.blurb("808: kick")).contains("55 Hz"),
+		"the 808 kick's blurb knows its tuning")
+	check(str(blurbs.blurb("DX7: algo-32")).contains("carriers"),
+		"algorithm 32's blurb knows what makes it special")
+	check(str(blurbs.blurb("FM: accordion")).contains("GENMIDI"),
+		"the FM bank credits its source")
+	check(str(blurbs.blurb("Node: Abs")).contains("Abs"),
+		"a node demo's blurb names its node")
+	check(main._matching_devices("jungle").has("Break Chopper"),
+		"the blurbs are searchable: 'jungle' finds the Break Chopper")
+
 	main._toggle_loved("SineOscillator")
 	main._toggle_loved("Comb")
 	main._set_search_tag("favorites")
