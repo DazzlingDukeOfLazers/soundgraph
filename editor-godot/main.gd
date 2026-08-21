@@ -86,6 +86,7 @@ const SeamDock := preload("res://seam_dock.gd")
 const PatchFace := preload("res://patch_face.gd")
 const ModuleFace := preload("res://module_face.gd")
 const PianoRoll := preload("res://piano_roll.gd")
+const RollPitch := preload("res://roll_pitch.gd")
 const MidiImport := preload("res://midi_import.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
@@ -175,6 +176,10 @@ var face_edit_button: Button
 # The piano roll and its transport. The clock lives here with the engine; the roll
 # itself only draws and points.
 var piano_roll: PianoRoll
+var roll_row: HBoxContainer
+var roll_scroll: VScrollBar
+var roll_pitch: Control
+var _roll_scroll_syncing := false
 var roll_button: MenuButton
 var roll_play: Button
 var roll_capture: Button
@@ -2405,6 +2410,20 @@ func _exit_tree() -> void:
 
 func _process(_delta: float) -> void:
 	_watch_for_quit_request(_delta)
+	# The roll's scrollbar follows the roll however the roll moved — wheel, page
+	# turn, a menu changing the window. Guarded, because resizing the range can
+	# clamp the value and echo back as a user gesture.
+	if roll_scroll != null and roll_scroll.is_visible_in_tree() and piano_roll != null:
+		_roll_scroll_syncing = true
+		var reach := maxi(piano_roll.step_count() + 16,
+			piano_roll.scroll_step + piano_roll.view_rows)
+		roll_scroll.max_value = reach
+		roll_scroll.page = piano_roll.view_rows
+		var want := float(reach - piano_roll.view_rows - piano_roll.scroll_step)
+		if absf(roll_scroll.value - want) > 0.5:
+			roll_scroll.set_value_no_signal(want)
+		_roll_scroll_syncing = false
+
 	# The slider follows the view when zoom changes by any other hand — Ctrl+wheel,
 	# the graph's own buttons, a fitted case. Cheap, and quiet: no_signal, so the
 	# follow never argues with the drag.
@@ -4634,7 +4653,7 @@ func _roll_sequence() -> Dictionary:
 
 func _set_roll_open(open: bool) -> void:
 	roll_open = open
-	piano_roll.visible = open and keyboard_expanded
+	roll_row.visible = open and keyboard_expanded
 	roll_play.visible = open
 	roll_capture.visible = open
 	roll_tempo.visible = open
@@ -4688,6 +4707,8 @@ func _on_roll_note_stretched(step: int, note: int, length: int) -> void:
 
 func _set_roll_playing(playing: bool) -> void:
 	roll_playing = playing
+	if roll_play != null:
+		roll_play.icon = _icon(Icons.Kind.PAUSE if playing else Icons.Kind.PLAY)
 	if playing:
 		# Primed so the very first tick speaks step zero rather than a beat of silence.
 		_roll_step = -1
@@ -4894,14 +4915,34 @@ func _build_keyboard_dock() -> Control:
 	keyboard.note_released.connect(_on_keyboard_released)
 
 	# The roll sits between the bar and the keys, folded away until asked for, its
-	# lanes borrowed live from the keyboard below it.
+	# lanes borrowed live from the keyboard below it. It shares its row with two
+	# gutters on the left: a scrollbar up the piece while the roll stands upright,
+	# and a sliver of piano marking the pitches while it lies flat.
+	roll_row = HBoxContainer.new()
+	roll_row.add_theme_constant_override("separation", Design.SPACE_XS)
+	roll_row.visible = false
+
+	roll_scroll = VScrollBar.new()
+	roll_scroll.min_value = 0.0
+	roll_scroll.tooltip_text = "Where in the piece the roll is looking. " \
+		+ "Up is later, the way the notes read."
+	roll_scroll.value_changed.connect(_on_roll_scroll)
+	roll_row.add_child(roll_scroll)
+
 	piano_roll = PianoRoll.new()
 	piano_roll.keyboard = keyboard
 	piano_roll.custom_minimum_size.y = Design.scale(150)
-	piano_roll.visible = false
+	piano_roll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	piano_roll.cell_toggled.connect(_on_roll_cell_toggled)
 	piano_roll.note_stretched.connect(_on_roll_note_stretched)
-	column.add_child(piano_roll)
+
+	roll_pitch = RollPitch.new()
+	roll_pitch.keyboard = keyboard
+	roll_pitch.visible = false
+	roll_row.add_child(roll_pitch)
+
+	roll_row.add_child(piano_roll)
+	column.add_child(roll_row)
 
 	column.add_child(keyboard)
 	# The stored fold, through the same door the menu uses.
@@ -4928,7 +4969,24 @@ func _set_roll_orientation(which: String) -> void:
 	if piano_roll != null:
 		piano_roll.orientation = which
 		piano_roll.queue_redraw()
+	# Standing, the piece needs a scrollbar; lying flat, the pitches need naming.
+	if roll_scroll != null:
+		roll_scroll.visible = which == "vertical"
+	if roll_pitch != null:
+		roll_pitch.visible = which == "horizontal"
+		roll_pitch.queue_redraw()
 	_sync_roll_menu()
+
+
+## The scrollbar speaks top-down and the roll bottom-up, so the value inverts:
+## the thumb at the top is the far end of the piece.
+func _on_roll_scroll(value: float) -> void:
+	if _roll_scroll_syncing or piano_roll == null:
+		return
+	piano_roll.scroll_step = clampi(
+		int(roll_scroll.max_value - piano_roll.view_rows - value),
+		0, PianoRoll.MAX_STEPS - piano_roll.view_rows)
+	piano_roll.queue_redraw()
 
 
 ## The Roll menu's radios say what the roll is doing: Hide when it is away, and
@@ -4966,7 +5024,7 @@ func _set_keyboard_mode(mode: String) -> void:
 		keyboard.visible = keyboard_expanded
 		keyboard.custom_minimum_size.y = Design.scale(112 if mode == "full" else 56)
 		if piano_roll != null:
-			piano_roll.visible = keyboard_expanded and roll_open
+			roll_row.visible = keyboard_expanded and roll_open
 		if not keyboard_expanded:
 			_release_all_notes()
 	if keyboard_toggle != null:
@@ -5065,10 +5123,10 @@ func _build_keyboard_bar() -> Control:
 	roll_menu.set_item_checked(2, true)
 	roll_menu.add_separator()
 	roll_bars_menu = PopupMenu.new()
-	for rows: int in [16, 32, 64]:
-		roll_bars_menu.add_radio_check_item(
-			"%d bar%s" % [rows / 16, "s" if rows > 16 else ""], rows)
-	roll_bars_menu.set_item_checked(0, true)
+	for rows: int in [8, 16, 32, 64, 128]:
+		roll_bars_menu.add_radio_check_item("½ bar" if rows == 8
+			else "%d bar%s" % [rows / 16, "s" if rows > 16 else ""], rows)
+	roll_bars_menu.set_item_checked(1, true)
 	roll_bars_menu.id_pressed.connect(_set_roll_bars)
 	roll_menu.add_submenu_node_item("Bars", roll_bars_menu)
 	roll_menu.id_pressed.connect(func(id: int) -> void:
@@ -5080,7 +5138,9 @@ func _build_keyboard_bar() -> Control:
 	bar.add_child(_defocus(roll_button))
 	roll_play = Button.new()
 	roll_play.toggle_mode = true
-	roll_play.text = "Play"
+	# The transport pair every recorder since tape has taught: a triangle to run,
+	# two uprights to rest. The word "Play" said less in more room.
+	roll_play.icon = _icon(Icons.Kind.PLAY)
 	roll_play.tooltip_text = "Loop the roll through the patch, exactly as the keys play."
 	roll_play.visible = false
 	roll_play.toggled.connect(_set_roll_playing)
@@ -5182,6 +5242,11 @@ func _build_keyboard_bar() -> Control:
 		return _defocus(button) as Button
 
 	bar.add_child(range_label)
+	# The readout is prose and the ±8va pair is machinery; a thumb's width apart,
+	# or the label reads as the buttons' caption.
+	var range_gap := Control.new()
+	range_gap.custom_minimum_size.x = Design.scale(Design.SPACE_M)
+	bar.add_child(range_gap)
 	bar.add_child(make.call("−8va", "Down an octave  (Z)",
 		func() -> void: _shift_octave(-1)))
 	bar.add_child(make.call("+8va", "Up an octave  (X)",

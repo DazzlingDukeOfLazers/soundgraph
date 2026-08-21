@@ -37,6 +37,7 @@ enum Kind {
 	UNDO,           ## curved arrow, left
 	REDO,           ## curved arrow, right
 	HAMBURGER,      ## the everything-else menu
+	PAUSE,          ## the roll mid-run: press again to rest
 }
 
 
@@ -83,6 +84,12 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				var y := middle + reach * 0.7 * float(row)
 				_stroke(image, Vector2(middle - reach, y), Vector2(middle + reach, y),
 					colour)
+		Kind.PAUSE:
+			# Two uprights, the play triangle's opposite number.
+			for side: int in [-1, 1]:
+				var x := middle + reach * 0.45 * float(side)
+				_stroke(image, Vector2(x, middle - reach * 0.75),
+					Vector2(x, middle + reach * 0.75), colour)
 		Kind.ARROW_RIGHT:
 			_stroke(image, Vector2(middle - reach, middle), Vector2(middle + reach, middle),
 				colour)

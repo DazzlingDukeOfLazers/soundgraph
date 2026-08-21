@@ -2717,11 +2717,11 @@ func _initialize() -> void:
 	await main._load_example("First Synth")
 	for i in 6:
 		await process_frame
-	check(not main.piano_roll.visible, "the roll starts folded away")
+	check(not main.roll_row.visible, "the roll starts folded away")
 	main.roll_button.get_popup().id_pressed.emit(0)
 	for i in 3:
 		await process_frame
-	check(main.piano_roll.visible and main.roll_play.visible,
+	check(main.roll_row.visible and main.roll_play.visible,
 		"Roll unfolds the grid and its transport")
 
 	var lane_a3: Rect2 = main.piano_roll.lane(57)
@@ -2810,7 +2810,7 @@ func _initialize() -> void:
 	main.roll_button.get_popup().id_pressed.emit(2)
 	for i in 3:
 		await process_frame
-	check(not main.piano_roll.visible, "folding the roll away hides the grid")
+	check(not main.roll_row.visible, "folding the roll away hides the grid")
 
 	# ---- polyphony reaches the editor ---------------------------------------------
 	# Voices is a knob like any other to the hand, and structural to the engine: the
@@ -2944,7 +2944,7 @@ func _initialize() -> void:
 	check(int(main.patch.get("sequence", {}).get("steps", 0)) == 128
 			and (main.patch.get("sequence", {}).get("notes", []) as Array).size() == 30,
 		"importing writes the tune into the document")
-	check(main.piano_roll.visible, "and opens the roll on it")
+	check(main.roll_row.visible, "and opens the roll on it")
 	await main._undo()
 	for i in 6:
 		await process_frame
@@ -2965,6 +2965,12 @@ func _initialize() -> void:
 	main.roll_bars_menu.id_pressed.emit(16)
 	check(main.piano_roll.view_rows == 16, "and back to one")
 
+	main.roll_bars_menu.id_pressed.emit(8)
+	check(main.piano_roll.view_rows == 8, "half a bar for a close look")
+	main.roll_bars_menu.id_pressed.emit(128)
+	check(main.piano_roll.view_rows == 128, "eight bars for the whole shape")
+	main.roll_bars_menu.id_pressed.emit(16)
+
 	# The same grid lying the other way: time runs rightward, the low notes hang at
 	# the bottom, and the pointer's two axes swap to match.
 	main.roll_button.get_popup().id_pressed.emit(1)
@@ -2975,9 +2981,38 @@ func _initialize() -> void:
 	var flat_span: Vector2 = main.piano_roll._pitch_span(57)
 	check(main.piano_roll.note_at(flat_span.x + flat_span.y * 0.5) == 57,
 		"and a lane still answers to its note along the pitch axis")
+	check(main.roll_pitch.visible and not main.roll_scroll.visible,
+		"lying flat, a sliver of piano names the pitches and the scrollbar rests")
+	# Lying flat the wheel is a scroll, and a scroll pulls the page the other way.
+	var lean := InputEventMouseButton.new()
+	lean.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	lean.pressed = true
+	lean.position = main.piano_roll.size * 0.5
+	main.piano_roll._gui_input(lean)
+	check(main.piano_roll.scroll_step == 4,
+		"flat, wheel-down leans later into the piece (%d)"
+			% main.piano_roll.scroll_step)
+	var lean_out := InputEventMouseButton.new()
+	lean_out.button_index = MOUSE_BUTTON_WHEEL_UP
+	lean_out.pressed = true
+	lean_out.position = main.piano_roll.size * 0.5
+	main.piano_roll._gui_input(lean_out)
+	check(main.piano_roll.scroll_step == 0, "and wheel-up leans back out")
 	main.roll_button.get_popup().id_pressed.emit(0)
 	check(main.piano_roll.orientation == "vertical",
 		"and Vertical stands it back up")
+	check(main.roll_scroll.visible and not main.roll_pitch.visible,
+		"standing, the scrollbar returns and the pitch sliver rests")
+	# The scrollbar speaks top-down and the roll bottom-up: the thumb at the very
+	# top is the far end of the piece.
+	main.roll_scroll.max_value = 32
+	main.roll_scroll.page = 16
+	main._on_roll_scroll(0.0)
+	check(main.piano_roll.scroll_step == 16,
+		"the thumb at the top looks at the later bar (%d)"
+			% main.piano_roll.scroll_step)
+	main._on_roll_scroll(16.0)
+	check(main.piano_roll.scroll_step == 0, "and at the bottom, the first")
 	var walk := InputEventMouseButton.new()
 	walk.button_index = MOUSE_BUTTON_WHEEL_UP
 	walk.pressed = true

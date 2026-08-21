@@ -44,14 +44,14 @@ var playing_step := -1:
 
 ## The window onto a longer piece: how many rows are on screen, and which absolute
 ## step sits at the window's start. A sequence is up to sixteen bars; the view shows
-## one, two or four of them, and the wheel walks the rest.
+## from half of one up to eight of them, and the wheel walks the rest.
 const MAX_STEPS := 256
 var view_rows := 16
 var scroll_step := 0
 
 
 func set_view_rows(rows: int) -> void:
-	view_rows = clampi(rows, 16, 64)
+	view_rows = clampi(rows, 8, 128)
 	scroll_step = clampi(scroll_step, 0, MAX_STEPS - view_rows)
 	queue_redraw()
 
@@ -185,9 +185,14 @@ func _gui_input(event: InputEvent) -> void:
 	var wheel := event as InputEventMouseButton
 	if wheel != null and wheel.pressed and _drag_note < 0 \
 			and wheel.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-		# The wheel walks the piece a beat at a time: up is later, whichever way
-		# later happens to point on screen.
-		var walked := 4 if wheel.button_index == MOUSE_BUTTON_WHEEL_UP else -4
+		# The wheel walks the piece a beat at a time. Standing up, wheel-up is
+		# later — the direction the notes already read. Lying flat the same gesture
+		# is a scroll, and a scroll pulls the page the other way: wheel-down leans
+		# into the piece.
+		var toward_later := wheel.button_index == MOUSE_BUTTON_WHEEL_UP
+		if orientation == "horizontal":
+			toward_later = not toward_later
+		var walked := 4 if toward_later else -4
 		scroll_step = clampi(scroll_step + walked, 0, MAX_STEPS - view_rows)
 		queue_redraw()
 		accept_event()
