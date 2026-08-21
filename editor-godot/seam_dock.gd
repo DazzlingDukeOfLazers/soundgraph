@@ -66,30 +66,25 @@ class Jacks extends Control:
 	func _size() -> int:
 		return Design.type(Design.SIZE_SECONDARY)
 
-	## Room for the widest name under each socket, so the row never crowds itself.
+	## Ring beside name, one text line tall: the first cut of this stacked the name
+	## under the ring, which stood two storeys high in a row of one-storey buttons
+	## and read as a misalignment rather than as a device.
 	func _get_minimum_size() -> Vector2:
 		if ports.is_empty():
 			return Vector2.ZERO
 		var font := _font()
 		var size := _size()
 		var width := 0.0
-		var tallest := 0.0
+		var tallest := Design.scale(SOCKET) * 2.0
 		for port: Dictionary in ports:
 			var measured := font.get_string_size(str(port.get("label", port["port"])),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
-			width += maxf(measured.x, Design.scale(SOCKET) * 2.0) \
-				+ Design.scale(Design.SPACE_M)
+			width += Design.scale(SOCKET) * 2.0 + Design.scale(LABEL_GAP) 				+ measured.x + Design.scale(Design.SPACE_M)
 			tallest = maxf(tallest, measured.y)
-		return Vector2(width, Design.scale(SOCKET) * 2.0
-			+ Design.scale(LABEL_GAP) + tallest)
+		return Vector2(width, tallest)
 
-	## The row is usually taller than the jacks need; centring is what keeps the
-	## socket ring whole instead of shaving its top on the strip's edge.
-	func _top() -> float:
-		return maxf(0.0, (size.y - _get_minimum_size().y) * 0.5)
-
-
-	## Where one socket sits, in this control's own coordinates.
+	## Where one socket sits, in this control's own coordinates: centred in whatever
+	## height the row gives, so the ring never shaves itself on the strip's edge.
 	func _slot(index: int) -> Vector2:
 		var font := _font()
 		var size_px := _size()
@@ -97,10 +92,9 @@ class Jacks extends Control:
 		for i in ports.size():
 			var measured := font.get_string_size(str(ports[i].get("label", ports[i]["port"])),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px)
-			var cell: float = maxf(measured.x, Design.scale(SOCKET) * 2.0)
 			if i == index:
-				return Vector2(x + cell * 0.5, _top() + Design.scale(SOCKET))
-			x += cell + Design.scale(Design.SPACE_M)
+				return Vector2(x + Design.scale(SOCKET), size.y * 0.5)
+			x += Design.scale(SOCKET) * 2.0 + Design.scale(LABEL_GAP) 				+ measured.x + Design.scale(Design.SPACE_M)
 		return Vector2.ZERO
 
 	## The same point in viewport space, which is what draws a cable to it. Matched on the
@@ -129,9 +123,8 @@ class Jacks extends Control:
 				colour if live else Color(colour, 0.35), 2.0, true)
 			var text := str(ports[i].get("label", ports[i]["port"]))
 			var measured := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
-			draw_string(font, Vector2(at.x - measured.x * 0.5,
-				at.y + Design.scale(SOCKET) + Design.scale(LABEL_GAP)
-					+ measured.y * 0.8),
+			draw_string(font, Vector2(at.x + Design.scale(SOCKET) + Design.scale(LABEL_GAP),
+				at.y + measured.y * 0.32),
 				text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size,
 				ink if live else Color(ink, 0.45))
 

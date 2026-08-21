@@ -5043,16 +5043,24 @@ func _build_keyboard_bar() -> Control:
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(gap)
 
-	# And the output's, opening the right-hand half: signal leaves the instrument on
-	# the right, the same direction it travels through every graph and rack here, and
-	# the room controls that govern that signal — volume, mute — sit just past it.
-	output_jacks = SeamDock.Jacks.new()
-	output_jacks.type_colours = TYPE_COLOURS
-	output_jacks.ink = INK
-	output_jacks.jack_grabbed.connect(_on_jack_grabbed)
-	output_jacks.tooltip_text = "Drag onto an Output port to listen to it, " \
-		+ "or off the graph to unplug it."
-	bar.add_child(output_jacks)
+	# Master volume and mute, on the instrument rather than in the chrome.
+	#
+	# The volume knob is not a new idea either: it drives the output node's own `level`,
+	# the same parameter the panel's Master knob drives when a patch has put one there.
+	# What it adds is that the instrument has a volume control whether or not somebody
+	# thought to put one on the panel, which is true of every instrument anybody has ever
+	# played and was not true of this one.
+	#
+	# Mute is the exception that does not touch the document. Muting is a thing you do to
+	# a room, not to a patch — it should not make the file unsaved, it should not be
+	# undoable, and it must not be saved and handed to somebody else silent. So it sets
+	# the engine's parameter directly and leaves `level` where it was.
+	master_mute = Button.new()
+	master_mute.toggle_mode = true
+	master_mute.text = "Mute"
+	master_mute.tooltip_text = "Silence the output without changing the patch. Nothing " 		+ "about the file changes and the level stays where you left it."
+	master_mute.toggled.connect(func(pressed: bool) -> void: _set_muted(pressed))
+	bar.add_child(_defocus(master_mute))
 
 	master_knob = Rack.Knob.new()
 	master_knob.rack = rack
@@ -5077,24 +5085,16 @@ func _build_keyboard_bar() -> Control:
 	master_label.add_theme_color_override("font_color", Design.INK_SECOND)
 	bar.add_child(master_label)
 
-	# Master volume and mute, on the instrument rather than in the chrome.
-	#
-	# The volume knob is not a new idea either: it drives the output node's own `level`,
-	# the same parameter the panel's Master knob drives when a patch has put one there.
-	# What it adds is that the instrument has a volume control whether or not somebody
-	# thought to put one on the panel, which is true of every instrument anybody has ever
-	# played and was not true of this one.
-	#
-	# Mute is the exception that does not touch the document. Muting is a thing you do to
-	# a room, not to a patch — it should not make the file unsaved, it should not be
-	# undoable, and it must not be saved and handed to somebody else silent. So it sets
-	# the engine's parameter directly and leaves `level` where it was.
-	master_mute = Button.new()
-	master_mute.toggle_mode = true
-	master_mute.text = "Mute"
-	master_mute.tooltip_text = "Silence the output without changing the patch. Nothing " 		+ "about the file changes and the level stays where you left it."
-	master_mute.toggled.connect(func(pressed: bool) -> void: _set_muted(pressed))
-	bar.add_child(_defocus(master_mute))
+	# And the output's, past the room controls: mute, then volume, then the jack the
+	# signal actually leaves through — the same direction it travels through every
+	# graph and rack in this application.
+	output_jacks = SeamDock.Jacks.new()
+	output_jacks.type_colours = TYPE_COLOURS
+	output_jacks.ink = INK
+	output_jacks.jack_grabbed.connect(_on_jack_grabbed)
+	output_jacks.tooltip_text = "Drag onto an Output port to listen to it, " \
+		+ "or off the graph to unplug it."
+	bar.add_child(output_jacks)
 
 	var range_label := Label.new()
 	range_label.name = "KeyboardRange"
