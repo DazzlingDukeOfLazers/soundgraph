@@ -87,6 +87,7 @@ const PatchFace := preload("res://patch_face.gd")
 const ModuleFace := preload("res://module_face.gd")
 const PianoRoll := preload("res://piano_roll.gd")
 const RollPitch := preload("res://roll_pitch.gd")
+const StepGrid := preload("res://step_grid.gd")
 const MidiImport := preload("res://midi_import.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
@@ -3239,6 +3240,14 @@ func _create_widget(node: Dictionary) -> void:
 	# its whole surface PARAMETERS_PER_LINE to a line, as it always did.
 	var parameters: Array = descriptor.get("parameters", [])
 	var grid: Array = descriptor.get("panel_rows", []).duplicate()
+	# The Step Sequencer wears a bar of piano roll instead of sixteen number
+	# cells: length keeps its cell up here, the steps become the grid appended
+	# below the port rows. See step_grid.gd for why.
+	var step_lane: bool = str(node.get("type", "")) == "StepSequencer" and grid.is_empty()
+	if step_lane:
+		for parameter: Dictionary in parameters:
+			if str(parameter["name"]) == "length":
+				grid = [[parameter]]
 	if grid.is_empty():
 		var line: Array = []
 		for parameter: Dictionary in parameters:
@@ -3312,6 +3321,34 @@ func _create_widget(node: Dictionary) -> void:
 			widget.set_slot_custom_icon_left(row, _port_icon(inputs[row]["type"]))
 		if has_output:
 			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
+
+	if step_lane:
+		var lane_line := HBoxContainer.new()
+		# Its own row kind, not "module": the detail pass runs _fit_row_height over
+		# module rows, and that helper hides any slotless row without parameter
+		# cells — which is this row exactly, and its whole job is what it carries.
+		lane_line.set_meta("row", "steps")
+		lane_line.set_meta("has_slot", false)
+		var lane := StepGrid.new()
+		lane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var lane_id := str(node["id"])
+		lane.read = func() -> Dictionary:
+			for entry: Dictionary in patch.get("nodes", []):
+				if str(entry["id"]) == lane_id:
+					var held: Dictionary = entry.get("parameters", {})
+					var values: Array = []
+					for i in StepGrid.STEPS:
+						values.append(float(held.get("step%d" % (i + 1), 0.0)))
+					return {"length": float(held.get("length", 8.0)), "values": values}
+			return {"length": 8.0, "values": []}
+		lane.paint_started.connect(func() -> void: _begin_edit())
+		lane.step_painted.connect(func(index: int, value: float) -> void:
+			_set_parameter(lane_id, "step%d" % (index + 1), value))
+		lane.paint_finished.connect(func() -> void: _commit_edit("draw steps"))
+		lane_line.add_child(lane)
+		widget.add_child(lane_line)
+		# Not through _fit_row_height: that helper hides any slotless row without
+		# parameter cells, and this row's whole job is to be the thing it carries.
 
 	_add_ghost_ports(widget, str(node["id"]), descriptor)
 

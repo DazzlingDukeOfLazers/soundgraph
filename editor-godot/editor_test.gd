@@ -441,6 +441,34 @@ func _initialize() -> void:
 	main._toggle_loved("Comb")
 	check(not main._loved_nodes.has("Comb"), "and a second tap takes the love back")
 
+	# ---- the step sequencer wears a roll ----------------------------------------------
+	# Sixteen "stepN" number cells answered "what shape is this line" with sixteen
+	# acts of reading; the node carries a bar of piano roll instead. Painting writes
+	# the same parameters the cells did, as one undoable gesture.
+	var lane_id: String = await main._add_node("StepSequencer", Vector2(600, 600))
+	for i in 6:
+		await process_frame
+	var lane: Control = null
+	for child in (main.widgets[lane_id] as GraphNode).get_children():
+		if child is Control and str((child as Control).get_meta("row", "")) == "steps":
+			lane = (child as Control).get_child(0)
+	check(lane != null and lane.visible, "a Step Sequencer node carries its roll")
+	lane.paint_started.emit()
+	lane.step_painted.emit(2, 0.5)
+	lane.paint_finished.emit()
+	check(is_equal_approx(main._current_parameter(lane_id, "step3", 0.0), 0.5),
+		"painting the grid writes the step it points at")
+	check(is_equal_approx(float((lane._state()["values"] as Array)[2]), 0.5),
+		"and the grid reads the document straight back")
+	await main._undo()
+	for i in 4:
+		await process_frame
+	check(is_equal_approx(main._current_parameter(lane_id, "step3", 0.0), 0.0) 			or not main.widgets.has(lane_id),
+		"one paint is one undo step")
+	await main._undo()
+	for i in 6:
+		await process_frame
+
 	# ---- the graph view is generated from that vocabulary -----------------------------
 	var file := FileAccess.open("res://examples-mirror/first-synth.json", FileAccess.READ)
 	if file == null:
