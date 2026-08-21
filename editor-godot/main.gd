@@ -228,6 +228,9 @@ var side_panel_open := true
 var split: HSplitContainer
 var side_panel: VBoxContainer
 var side_tabs: TabBar
+var view_zoom_slider: HSlider
+var view_zoom_readout: Label
+var _zoom_slider_syncing := false
 var scope_probe: ProbeScope
 var side_panel_body: VBoxContainer
 var side_panel_toggle: Button
@@ -838,6 +841,31 @@ func _build_ui() -> void:
 	crumb_row.offset_right = -float(Design.scale(Design.SPACE_M))
 	crumb_row.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	crumb_row.add_theme_constant_override("separation", Design.SPACE_S)
+	# The zoom, as furniture: Ctrl+wheel exists, but a gesture nobody is told about
+	# is a feature that does not exist, and the strip beside the tabs is where the
+	# eye already is when choosing how to look. One slider serves whichever view is
+	# in front — the graph and the rack each keep their own value and range.
+	view_zoom_slider = HSlider.new()
+	view_zoom_slider.custom_minimum_size = Vector2(Design.scale(110), 0)
+	view_zoom_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	view_zoom_slider.step = 0.01
+	view_zoom_slider.visible = false
+	view_zoom_slider.tooltip_text = "How close you stand to this view. The graph and " \
+		+ "the rack each remember their own distance."
+	view_zoom_slider.value_changed.connect(_on_view_zoom_slider)
+	# Not through _defocus: its 44px hit floor would make this the tallest thing in
+	# a strip of tabs and shove the row over the canvas. The strip is the target.
+	view_zoom_slider.focus_mode = Control.FOCUS_NONE
+	crumb_row.add_child(view_zoom_slider)
+	view_zoom_readout = Label.new()
+	view_zoom_readout.add_theme_font_override("font", Design.numeric_font())
+	view_zoom_readout.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	view_zoom_readout.add_theme_color_override("font_color", Design.INK_SECOND)
+	view_zoom_readout.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	view_zoom_readout.custom_minimum_size.x = Design.scale(44)
+	view_zoom_readout.visible = false
+	crumb_row.add_child(view_zoom_readout)
 	crumb_row.add_child(document_label)
 	climb_button = Button.new()
 	climb_button.visible = false
@@ -946,12 +974,17 @@ func _build_ui() -> void:
 	# is first shown — before that it has no size to flow modules into.
 	views.tab_changed.connect(func(_index: int) -> void:
 		rack.rebuild()
+		_refresh_view_zoom_slider()
 		if sandbox != null and sandbox.is_visible_in_tree():
 			sandbox.ensure_sounds_loaded())
 	split.add_child(views)
 
 	split.add_child(_build_side_panel())
 	_set_side_panel_open(true)
+	# Once, at the end of construction: before this the slider has no range, and a
+	# range being set fires value_changed — which must not be allowed to zoom the
+	# graph to the slider's uninitialised floor.
+	_refresh_view_zoom_slider.call_deferred()
 
 	# Under the tabs rather than inside one: the graph and the rack are two views of the
 	# same running patch, and the thing that plays it belongs to neither.
@@ -1026,6 +1059,49 @@ func _apply_toolbar_rung(rung: int) -> void:
 
 func _fit_toolbar(width: float = -1.0) -> void:
 	toolbar._fit_toolbar(width)
+
+
+## Which of the zoomable views is in front, or "" when the front view has no zoom.
+func _zoomable_view() -> String:
+	if views == null:
+		return ""
+	var title := views.get_tab_title(views.current_tab)
+	return title if title == "Graph" or title == "Rack" else ""
+
+
+## Points the slider at the front view's range and value. Hidden on views with no
+## zoom, because a control that does nothing teaches that the whole strip does nothing.
+func _refresh_view_zoom_slider() -> void:
+	if view_zoom_slider == null:
+		return
+	# Range setters clamp, and clamping emits value_changed: without the flag,
+	# pointing the slider at a view zooms that view to the slider's old floor.
+	_zoom_slider_syncing = true
+	var which := _zoomable_view()
+	view_zoom_slider.visible = which != ""
+	view_zoom_readout.visible = which != ""
+	if which == "Graph":
+		view_zoom_slider.min_value = graph_edit.zoom_min
+		view_zoom_slider.max_value = graph_edit.zoom_max
+		view_zoom_slider.set_value_no_signal(graph_edit.zoom)
+	elif which == "Rack":
+		view_zoom_slider.min_value = 0.25
+		view_zoom_slider.max_value = 1.0
+		view_zoom_slider.set_value_no_signal(rack.view_zoom)
+	if which != "":
+		view_zoom_readout.text = "%d%%" % roundi(view_zoom_slider.value * 100.0)
+	_zoom_slider_syncing = false
+
+
+func _on_view_zoom_slider(value: float) -> void:
+	if view_zoom_readout == null or _zoom_slider_syncing:
+		return
+	var which := _zoomable_view()
+	if which == "Graph":
+		graph_edit.zoom = value
+	elif which == "Rack":
+		rack.view_zoom = value
+	view_zoom_readout.text = "%d%%" % roundi(value * 100.0)
 
 
 func _on_file_menu(id: int) -> void:
@@ -2535,6 +2611,16 @@ func _exit_tree() -> void:
 
 func _process(_delta: float) -> void:
 	_watch_for_quit_request(_delta)
+	# The slider follows the view when zoom changes by any other hand — Ctrl+wheel,
+	# the graph's own buttons, a fitted case. Cheap, and quiet: no_signal, so the
+	# follow never argues with the drag.
+	if view_zoom_slider != null and view_zoom_slider.visible:
+		var which := _zoomable_view()
+		var actual: float = graph_edit.zoom if which == "Graph" \
+			else (rack.view_zoom if which == "Rack" else -1.0)
+		if actual > 0.0 and absf(actual - view_zoom_slider.value) > 0.005:
+			view_zoom_slider.set_value_no_signal(actual)
+			view_zoom_readout.text = "%d%%" % roundi(actual * 100.0)
 	# Before the early return: the dock's cables have to follow the graph as it scrolls,
 	# zooms and has nodes dragged under them, and none of that waits for an engine.
 	_refresh_seam_cables()

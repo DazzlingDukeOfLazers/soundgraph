@@ -8646,6 +8646,33 @@ func _initialize() -> void:
 		"and fitting the window spreads them far wider than that (free %.0f vs cased %.0f)"
 			% [widest_free, widest_cased])
 
+	# The strip's zoom slider: one control, two views, two memories. It stands beside
+	# the tabs because Ctrl+wheel is a gesture nobody is told about, and it must point
+	# at whichever view is in front without the two values bleeding into each other.
+	main.views.current_tab = 0
+	await process_frame
+	main._refresh_view_zoom_slider()
+	check(main.view_zoom_slider.visible,
+		"the zoom slider shows for the graph view")
+	main._on_view_zoom_slider(0.5)
+	check(is_equal_approx(main.graph_edit.zoom, 0.5),
+		"and dragging it zooms the graph (%.2f)" % main.graph_edit.zoom)
+	main.views.current_tab = 1
+	await process_frame
+	main._refresh_view_zoom_slider()
+	main._on_view_zoom_slider(0.4)
+	check(is_equal_approx(main.rack.view_zoom, 0.4)
+			and is_equal_approx(main.graph_edit.zoom, 0.5),
+		"on the rack tab it zooms the rack and leaves the graph's distance alone")
+	main.views.current_tab = 0
+	await process_frame
+	main._refresh_view_zoom_slider()
+	check(absf(main.view_zoom_slider.value - 0.5) < 0.01,
+		"and coming back, the slider remembers the graph's own value (%.2f)"
+			% main.view_zoom_slider.value)
+	main.rack.view_zoom = 1.0
+	main.rack.case_hp = 0
+
 	main.rack.case_hp = 0
 
 	# ---- every example in the menu actually opens ---------------------------------------
