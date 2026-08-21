@@ -1035,6 +1035,8 @@ func _build_ui() -> void:
 	_set_keyboard_mode(str(Settings.fetch("keyboard_mode", "full")))
 	_set_key_hints(bool(Settings.fetch("keyboard_hints", true)))
 	_set_roll_orientation(str(Settings.fetch("roll_orientation", "vertical")))
+	for key in Settings.fetch("loved_nodes", []):
+		_loved_nodes[str(key)] = true
 	# The dock has its own vertical ladder, and the window resizing is its signal —
 	# same reasoning as the toolbar's: the dock's own size stops changing exactly
 	# when the window gets too short for it.
@@ -5369,7 +5371,7 @@ func _on_graph_popup_request(at_position: Vector2) -> void:
 
 func _build_search_popup() -> void:
 	search_popup = PopupPanel.new()
-	search_popup.size = Vector2i(560, 420)
+	search_popup.size = Vector2i(600, 540)
 
 	var box := VBoxContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -5379,6 +5381,27 @@ func _build_search_popup() -> void:
 	search_field.text_changed.connect(_on_search_changed)
 	search_field.text_submitted.connect(func(_text: String) -> void: _add_first_result())
 	box.add_child(search_field)
+
+	# The shelves. Search answers "I know what I want"; the chips answer "show me
+	# what there is" — the banks a person actually thinks in, plus the heart, which
+	# is the shelf they curate themselves by loving nodes below.
+	var chip_row := HBoxContainer.new()
+	chip_row.add_theme_constant_override("separation", Design.SPACE_S)
+	for tag: Array in [["favorites", ""], ["synth", "Synth"], ["drums", "Drums"],
+			["dx7", "DX7"], ["clones", "Clones"], ["nodes", "Nodes"]]:
+		var chip := Button.new()
+		chip.toggle_mode = true
+		if str(tag[1]) == "":
+			chip.icon = _icon(Icons.Kind.HEART, Design.ACCENT)
+			chip.tooltip_text = "Only what you have loved. Love a node with the " \
+				+ "heart on its row."
+		else:
+			chip.text = str(tag[1])
+		chip.toggled.connect(func(_on: bool) -> void:
+			_set_search_tag(str(tag[0])))
+		search_tag_chips[str(tag[0])] = chip
+		chip_row.add_child(_defocus(chip))
+	box.add_child(chip_row)
 
 	# A list of rows rather than an ItemList: every result carries its own Add button.
 	# Relying on double-click alone hid the one action the dialog exists for.
@@ -5457,6 +5480,16 @@ func _build_result_row(type_name: String) -> Control:
 
 	line.add_child(text)
 
+	var heart := Button.new()
+	heart.flat = true
+	heart.icon = _icon(Icons.Kind.HEART,
+		Design.ACCENT if _loved_nodes.has(type_name) else Color(Design.INK_SECOND, 0.35))
+	heart.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	heart.tooltip_text = "Love it. Loved nodes gather under the heart chip and " \
+		+ "surface first when browsing."
+	heart.pressed.connect(func() -> void: _toggle_loved(type_name))
+	line.add_child(_defocus(heart))
+
 	var add := Button.new()
 	add.text = "Add"
 	add.custom_minimum_size = Vector2(72, 40)
@@ -5473,6 +5506,65 @@ var _search_spawn := Vector2.ZERO
 var _search_top_result := ""
 var _added_since_open := 0
 
+## Which shelf of the vocabulary the dialog is showing: "" is everything, the rest
+## are the chips across its top. The families are the example banks' own prefixes.
+var _search_tag := ""
+var search_tag_chips: Dictionary = {}
+const SEARCH_TAG_FAMILIES := {
+	"synth": ["Synth:"],
+	"drums": ["808:", "909:", "606:", "SDS:", "Gated:"],
+	"dx7": ["DX7:"],
+	"clones": ["FM:", "909:", "606:", "SDS:", "Gated:"],
+}
+
+## type names and device labels somebody has loved, key -> true. Loves persist:
+## a vocabulary this size needs the reader's own dog-ears.
+var _loved_nodes: Dictionary = {}
+
+
+## One shelf at a time: choosing a chip puts the others back, choosing the chosen
+## one returns to everything.
+func _set_search_tag(tag: String) -> void:
+	_search_tag = "" if _search_tag == tag else tag
+	for key in search_tag_chips:
+		(search_tag_chips[key] as Button).set_pressed_no_signal(str(key) == _search_tag)
+	_on_search_changed(search_field.text)
+
+
+## Toggles a love and remembers it. The heart is the reader's own mark: it never
+## changes what a node does, only how fast its owner can find it again.
+func _toggle_loved(key: String) -> void:
+	if _loved_nodes.has(key):
+		_loved_nodes.erase(key)
+	else:
+		_loved_nodes[key] = true
+	Settings.store("loved_nodes", _loved_nodes.keys())
+	_on_search_changed(search_field.text)
+
+
+## Device labels under the given family prefixes whose text holds every query word.
+## No cap: a chip is a request to browse the whole shelf, and the list scrolls.
+func _family_devices(prefixes: Array, query: String) -> Array:
+	var words := query.to_lower().split(" ", false)
+	var matches: Array = []
+	for label in _examples:
+		var text := str(label)
+		var in_family := prefixes.is_empty()
+		for prefix: String in prefixes:
+			if text.begins_with(prefix):
+				in_family = true
+		if not in_family:
+			continue
+		var lowered := text.to_lower()
+		var all_words := true
+		for word in words:
+			if not lowered.contains(str(word)):
+				all_words = false
+		if all_words:
+			matches.append(text)
+	matches.sort()
+	return matches
+
 
 func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:
 	_search_spawn = at_position
@@ -5488,18 +5580,50 @@ func _on_search_changed(query: String) -> void:
 		search_results.remove_child(child)
 		child.queue_free()
 
+	var trimmed := query.strip_edges()
+	var names := PackedStringArray()
+
 	# The ranking is the core's, so "make quieter" finds the same node here, in the
-	# browser, and on the command line.
-	var names: PackedStringArray = engine.search_nodes(query) if query.strip_edges() != "" \
-		else PackedStringArray(registry.keys())
-	names = _addable(names)
+	# browser, and on the command line. Atomic nodes appear on every shelf except
+	# the device banks' own.
+	if _search_tag in ["", "nodes", "favorites"]:
+		var node_names: PackedStringArray = engine.search_nodes(query) if trimmed != "" \
+			else PackedStringArray(registry.keys())
+		names = _addable(node_names)
 
 	# Devices beside nodes, because the main way to build is mixing them: a whole patch
 	# — a DX7 voice, an effect — drops in as one module node, wired like anything else.
-	# Matched by name against the example library, and only on a real query: browsing
-	# two hundred devices under an empty search would bury the node vocabulary.
-	for label in _matching_devices(query):
-		names.append("device:%s" % label)
+	# Under no chip they appear only on a real query, since browsing two hundred
+	# devices under an empty search would bury the node vocabulary — which is exactly
+	# what the chips are for: a bank chip lays out its whole shelf.
+	if _search_tag == "":
+		for label in _matching_devices(query):
+			names.append("device:%s" % label)
+	elif _search_tag == "favorites":
+		for label in _family_devices([], trimmed):
+			names.append("device:%s" % label)
+	elif SEARCH_TAG_FAMILIES.has(_search_tag):
+		for label in _family_devices(SEARCH_TAG_FAMILIES[_search_tag], trimmed):
+			names.append("device:%s" % label)
+
+	if _search_tag == "favorites":
+		var kept := PackedStringArray()
+		for name in names:
+			if _loved_nodes.has(str(name)):
+				kept.append(name)
+		names = kept
+	elif trimmed == "":
+		# Browsing, not searching: what you love surfaces first, the way a worn
+		# tool drifts to the top of the box.
+		var loved := PackedStringArray()
+		var rest := PackedStringArray()
+		for name in names:
+			if _loved_nodes.has(str(name)):
+				loved.append(name)
+			else:
+				rest.append(name)
+		loved.append_array(rest)
+		names = loved
 
 	_search_top_result = names[0] if names.size() > 0 else ""
 	for type_name in names:

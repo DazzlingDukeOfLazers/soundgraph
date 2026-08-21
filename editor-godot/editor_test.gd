@@ -417,6 +417,30 @@ func _initialize() -> void:
 		"and nothing in it is a shape rather than a type (%s)"
 		% (not_a_type if not_a_type != "" else "none of %d" % offered.size()))
 
+	# ---- the palette's shelves and hearts ---------------------------------------------
+	# The chips lay out whole banks the plain search deliberately caps; the heart is
+	# the shelf the reader curates, persisted, gathered under its own chip.
+	main._set_search_tag("dx7")
+	var dx7_rows: int = main.search_results.get_child_count()
+	check(dx7_rows >= 60, "the DX7 chip lays out the whole bank (%d rows)" % dx7_rows)
+	main._set_search_tag("dx7")
+	check(main._search_tag == "", "choosing the chosen chip returns to everything")
+	main._toggle_loved("SineOscillator")
+	main._toggle_loved("Comb")
+	main._set_search_tag("favorites")
+	check(main.search_results.get_child_count() == 2,
+		"the heart chip shows exactly what is loved (%d)"
+			% main.search_results.get_child_count())
+	main._set_search_tag("favorites")
+	main._on_search_changed("")
+	var first_title := main.search_results.get_child(0).get_child(0) 		.get_child(0).get_child(0) as Label
+	check(first_title != null and first_title.text in ["Sine Oscillator", "Comb"],
+		"browsing surfaces the loved rows first (%s)"
+			% ("null" if first_title == null else first_title.text))
+	main._toggle_loved("SineOscillator")
+	main._toggle_loved("Comb")
+	check(not main._loved_nodes.has("Comb"), "and a second tap takes the love back")
+
 	# ---- the graph view is generated from that vocabulary -----------------------------
 	var file := FileAccess.open("res://examples-mirror/first-synth.json", FileAccess.READ)
 	if file == null:

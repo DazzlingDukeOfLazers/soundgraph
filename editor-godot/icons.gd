@@ -38,6 +38,7 @@ enum Kind {
 	REDO,           ## curved arrow, right
 	HAMBURGER,      ## the everything-else menu
 	PAUSE,          ## the roll mid-run: press again to rest
+	HEART,          ## loved — the reader's own mark, not the program's
 }
 
 
@@ -84,6 +85,14 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				var y := middle + reach * 0.7 * float(row)
 				_stroke(image, Vector2(middle - reach, y), Vector2(middle + reach, y),
 					colour)
+		Kind.HEART:
+			# Two lobes and a point — drawn, like everything here, because a font's
+			# heart is the tofu incident waiting for its sequel.
+			var lobe := reach * 0.52
+			_disc(image, Vector2(middle - lobe * 0.92, middle - reach * 0.30), lobe, colour)
+			_disc(image, Vector2(middle + lobe * 0.92, middle - reach * 0.30), lobe, colour)
+			_triangle(image, Vector2(middle, middle + reach * 0.05), reach * 1.08,
+				PI * 0.5, colour)
 		Kind.PAUSE:
 			# Two uprights, the play triangle's opposite number.
 			for side: int in [-1, 1]:
