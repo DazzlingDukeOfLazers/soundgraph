@@ -535,7 +535,9 @@ const NodeTypeDescriptor kStateVariableFilter = {
     "StateVariableFilter", "Filter", "Filters",
     "Removes part of the spectrum. Lowpass is the classic way to make a sound darker.",
     "filter|lowpass|low pass|highpass|high pass|bandpass|notch|svf|cutoff|resonance|"
-    "remove high frequencies|remove low frequencies|make darker|make brighter|muffle|tone",
+    "remove high frequencies|remove low frequencies|make darker|make brighter|muffle|tone|"
+    "wah|acid filter|eq|equaliser|equalizer|dark|bright|dull|telephone|underwater|"
+    "treble|bass|sweep",
     Slice<PortDescriptor>(kFilterInputs),
     Slice<PortDescriptor>(kFilterOutputs),
     Slice<ParameterDescriptor>(kFilterParameters),
@@ -548,7 +550,8 @@ const NodeTypeDescriptor kOnePoleFilter = {
     "OnePoleFilter", "One-pole Filter", "Filters",
     "A gentle filter, half the slope of the other one. Warms or thins without carving.",
     "one pole|onepole|6db|gentle filter|tilt|shelf|dc block|dc blocker|rumble|"
-    "warm|thin|soften|take the edge off|remove rumble|high pass gentle|low pass gentle",
+    "warm|thin|soften|take the edge off|remove rumble|high pass gentle|low pass gentle|"
+    "smooth|lag|tone knob|hi cut|low cut",
     Slice<PortDescriptor>(kOnePoleInputs),
     Slice<PortDescriptor>(kOnePoleOutputs),
     Slice<ParameterDescriptor>(kOnePoleParameters),
@@ -560,7 +563,8 @@ const NodeTypeDescriptor kOnePoleFilter = {
 const NodeTypeDescriptor kDelay = {
     "Delay", "Delay", "Time",
     "Repeats the signal after a set time. Feed it back for echoes.",
-    "delay|echo|repeat|slapback|feedback|reverb-ish|space|doubling",
+    "delay|echo|repeat|slapback|feedback|reverb-ish|space|doubling|echoes|tape delay|"
+    "dub|throw",
     Slice<PortDescriptor>(kDelayInputs),
     Slice<PortDescriptor>(kDelayOutputs),
     Slice<ParameterDescriptor>(kDelayParameters),
@@ -573,7 +577,7 @@ const NodeTypeDescriptor kComb = {
     "Comb", "Comb", "Time",
     "A feedback delay with damping in the loop: the piece reverbs are built from.",
     "comb|comb filter|flutter|metallic|resonator|karplus|string|pluck|guitar|"
-    "tuned delay|reverb part|loop",
+    "tuned delay|reverb part|loop|plucked string|physical model|harp",
     Slice<PortDescriptor>(kCombInputs),
     Slice<PortDescriptor>(kCombOutputs),
     Slice<ParameterDescriptor>(kCombParameters),
@@ -585,7 +589,8 @@ const NodeTypeDescriptor kComb = {
 const NodeTypeDescriptor kAllpass = {
     "Allpass", "Allpass", "Time",
     "Smears time without touching the spectrum: the diffuser inside every reverb.",
-    "allpass|all-pass|diffuse|diffuser|smear|disperse|reverb part|schroeder",
+    "allpass|all-pass|diffuse|diffuser|smear|disperse|reverb part|schroeder|phase|"
+    "dispersion",
     Slice<PortDescriptor>(kAllpassInputs),
     Slice<PortDescriptor>(kAllpassOutputs),
     Slice<ParameterDescriptor>(kAllpassParameters),

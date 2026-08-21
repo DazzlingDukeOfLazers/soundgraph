@@ -479,7 +479,8 @@ std::unique_ptr<DspNode> make() {
 const NodeTypeDescriptor kGain = {
     "Gain", "Gain", "Amplitude",
     "Makes a signal louder or quieter. Connect an envelope to shape it over time.",
-    "gain|volume|level|amplitude|amp|vca|make quieter|make louder|turn down|turn up",
+    "gain|volume|level|amplitude|amp|vca|make quieter|make louder|turn down|turn up|"
+    "boost|quiet|loud|fade|attenuate|volume control",
     Slice<PortDescriptor>(kGainInputs),
     Slice<PortDescriptor>(kGainOutputs),
     Slice<ParameterDescriptor>(kGainParameters),
@@ -491,7 +492,7 @@ const NodeTypeDescriptor kGain = {
 const NodeTypeDescriptor kLevel = {
     "Level", "Level", "Amplitude",
     "Trims a signal by a fixed amount. What a port's own level becomes in the flat graph.",
-    "level|trim|attenuate|port level|output level|master",
+    "level|trim|attenuate|port level|output level|master|pad|volume|gain trim",
     Slice<PortDescriptor>(kLevelInputs),
     Slice<PortDescriptor>(kLevelOutputs),
     Slice<ParameterDescriptor>(kLevelParameters),
@@ -503,7 +504,7 @@ const NodeTypeDescriptor kLevel = {
 const NodeTypeDescriptor kStereoLevel = {
     "StereoLevel", "Stereo Level", "Amplitude",
     "Trims a stereo pair by one fixed amount, keeping the channels apart.",
-    "stereo level|stereo trim|pair|balance level|output level",
+    "stereo level|stereo trim|pair|balance level|output level|stereo volume|stereo gain",
     Slice<PortDescriptor>(kStereoLevelInputs),
     Slice<PortDescriptor>(kStereoLevelOutputs),
     Slice<ParameterDescriptor>(kStereoLevelParameters),
@@ -515,7 +516,8 @@ const NodeTypeDescriptor kStereoLevel = {
 const NodeTypeDescriptor kMixer = {
     "Mixer", "Mixer", "Amplitude",
     "Combines up to four signals at independent levels.",
-    "mixer|mix|sum|combine|blend|add signals|layer",
+    "mixer|mix|sum|combine|blend|add signals|layer|merge|crossfade|bus|submix|"
+    "four channel|junction",
     Slice<PortDescriptor>(kMixerInputs),
     Slice<PortDescriptor>(kMixerOutputs),
     Slice<ParameterDescriptor>(kMixerParameters),
@@ -527,7 +529,8 @@ const NodeTypeDescriptor kMixer = {
 const NodeTypeDescriptor kAdsr = {
     "ADSR", "Envelope", "Modulation",
     "Shapes how a sound starts, holds and fades when a note is played.",
-    "adsr|envelope|eg|attack|decay|sustain|release|fade in|fade out|pluck|swell|shape",
+    "adsr|envelope|eg|attack|decay|sustain|release|fade in|fade out|pluck|swell|shape|"
+    "amp envelope|filter envelope|soft attack|slow attack|pad|articulation",
     Slice<PortDescriptor>(kAdsrInputs),
     Slice<PortDescriptor>(kAdsrOutputs),
     Slice<ParameterDescriptor>(kAdsrParameters),
@@ -538,8 +541,9 @@ const NodeTypeDescriptor kAdsr = {
 
 const NodeTypeDescriptor kAdd = {
     "Add", "Add", "Maths",
-    "Adds two control signals together.",
-    "add|plus|sum|offset|combine controls",
+    "Adds two control signals together. In octaves, that is a transpose.",
+    "add|plus|sum|offset|combine controls|transpose|octave up|octave down|semitone|"
+    "shift pitch|detune",
     Slice<PortDescriptor>(kBinaryInputs),
     Slice<PortDescriptor>(kControlOutput),
     Slice<ParameterDescriptor>(kAddParameters),
@@ -551,7 +555,8 @@ const NodeTypeDescriptor kAdd = {
 const NodeTypeDescriptor kMultiply = {
     "Multiply", "Multiply", "Maths",
     "Multiplies two control signals. Use it to scale modulation depth.",
-    "multiply|times|scale|depth|attenuate|ring|product",
+    "multiply|times|scale|depth|attenuate|ring|product|ring mod|ring modulation|"
+    "amplitude modulation|am|multiplier|scaler|vca",
     Slice<PortDescriptor>(kBinaryInputs),
     Slice<PortDescriptor>(kControlOutput),
     Slice<ParameterDescriptor>(kMultiplyParameters),
@@ -614,7 +619,8 @@ public:
 const NodeTypeDescriptor kDrive = {
     "Drive", "Drive", "Amplitude",
     "Saturates the signal: warmth low, growl high. The pedal every acid line steps on.",
-    "drive|overdrive|distortion|saturate|clip|fuzz|warm|growl|pedal|amp",
+    "drive|overdrive|distortion|saturate|clip|fuzz|warm|growl|pedal|amp|grit|crunch|"
+    "tube|dirty|dirt|analog warmth",
     Slice<PortDescriptor>(kDriveInputs),
     Slice<PortDescriptor>(kDriveOutputs),
     Slice<ParameterDescriptor>(kDriveParameters),
@@ -626,8 +632,8 @@ const NodeTypeDescriptor kDrive = {
 const NodeTypeDescriptor kCrush = {
     "Crush", "Crush", "Amplitude",
     "Bit depth and sample rate, reduced on purpose. The 12-bit sampler as an effect.",
-    "crush|bitcrush|bit crush|degrade|decimate|lofi|lo-fi|aliasing|8-bit|12-bit|"
-    "sampler grit|chiptune",
+    "crush|bitcrush|bit crush|degrade|decimate|lofi|lo-fi|aliasing|8-bit|8bit|12-bit|"
+    "sampler grit|chiptune|downsample|redux|retro|vinyl|bitrate",
     Slice<PortDescriptor>(kCrushInputs),
     Slice<PortDescriptor>(kCrushOutputs),
     Slice<ParameterDescriptor>(kCrushParameters),
@@ -641,7 +647,7 @@ const NodeTypeDescriptor kCompressor = {
     "Holds the loud parts down: mix glue. Wire a kick to the sidechain and everything "
     "through it pumps.",
     "compressor|compression|limiter|dynamics|glue|duck|ducking|sidechain|side chain|"
-    "pump|pumping|squash|level",
+    "pump|pumping|squash|level|punch|tighten|makeup|control dynamics",
     Slice<PortDescriptor>(kCompressorInputs),
     Slice<PortDescriptor>(kCompressorOutputs),
     Slice<ParameterDescriptor>(kCompressorParameters),

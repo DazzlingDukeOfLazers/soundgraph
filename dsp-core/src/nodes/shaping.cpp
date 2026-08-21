@@ -958,7 +958,7 @@ const NodeTypeDescriptor kAhdEnvelope = {
     "AhdEnvelope", "AHD Envelope", "Modulation",
     "A one-shot envelope for sounds that are over before you let go: hits, coins, jumps.",
     "envelope|percussive|one shot|oneshot|attack hold decay|ahd|ad|punch|hit|coin|jump|"
-    "drum|no sustain|game sound|blip",
+    "drum|no sustain|game sound|blip|snappy|transient|perc|click",
     Slice<PortDescriptor>(kAhdInputs),
     Slice<PortDescriptor>(kAhdOutputs),
     Slice<ParameterDescriptor>(kAhdParameters),
@@ -970,8 +970,8 @@ const NodeTypeDescriptor kAhdEnvelope = {
 const NodeTypeDescriptor kSlide = {
     "Slide", "Slide", "Modulation",
     "Bends a frequency over time. Falling makes a laser, rising makes a powerup.",
-    "slide|glide|portamento|bend|sweep|pitch drop|pitch rise|laser|zap|powerup|siren|"
-    "falling|rising|whoop",
+    "slide|glide|portamento|bend|sweep|pitch drop|pitch rise|laser|lazer|zap|powerup|"
+    "siren|falling|rising|whoop|riser|drop|pew|doppler|tape stop",
     Slice<PortDescriptor>(kSlideInputs),
     Slice<PortDescriptor>(kSlideOutputs),
     Slice<ParameterDescriptor>(kSlideParameters),
@@ -995,7 +995,8 @@ const NodeTypeDescriptor kArpeggio = {
 const NodeTypeDescriptor kPhaser = {
     "Phaser", "Phaser", "Time",
     "A short swept delay added to the signal. The whoosh on an explosion.",
-    "phaser|flanger|whoosh|sweep|comb|jet|swirl|explosion|laser|space",
+    "phaser|flanger|whoosh|sweep|comb|jet|swirl|explosion|laser|space|chorus|"
+    "phase shifter|swoosh|movement",
     Slice<PortDescriptor>(kPhaserInputs),
     Slice<PortDescriptor>(kPhaserOutputs),
     Slice<ParameterDescriptor>(kPhaserParameters),
@@ -1007,7 +1008,8 @@ const NodeTypeDescriptor kPhaser = {
 const NodeTypeDescriptor kRetrigger = {
     "Retrigger", "Retrigger", "Modulation",
     "Fires a pulse on a timer, to restart anything with a gate.",
-    "retrigger|repeat|stutter|machine gun|rearm|restart|pulse|clock|tremolo gate|ratchet",
+    "retrigger|repeat|stutter|machine gun|rearm|restart|pulse|clock|tremolo gate|"
+    "ratchet|drum roll|repeat note|echo gate",
     Slice<PortDescriptor>(kRetriggerInputs),
     Slice<PortDescriptor>(kRetriggerOutputs),
     Slice<ParameterDescriptor>(kRetriggerParameters),
@@ -1020,7 +1022,7 @@ const NodeTypeDescriptor kClock = {
     "Clock", "Clock", "Modulation",
     "Musical time: pulses at a bpm and note division, with swing and a bar downbeat.",
     "clock|tempo|bpm|metro|metronome|transport|division|sixteenth|eighth|swing|shuffle|"
-    "groove|sync|downbeat|bar|beat",
+    "groove|sync|downbeat|bar|beat|timer|tick|steady|master clock|conductor",
     Slice<PortDescriptor>(kClockInputs),
     Slice<PortDescriptor>(kClockOutputs),
     Slice<ParameterDescriptor>(kClockParameters),
@@ -1033,7 +1035,8 @@ const NodeTypeDescriptor kScaleQuantizer = {
     "ScaleQuantizer", "Scale Quantizer", "Modulation",
     "Snaps a pitch signal to the nearest note of a scale. Random in, melody out.",
     "quantize|quantizer|scale|key|in key|snap|pitch snap|degree|pentatonic|blues|"
-    "mode|tonic|root|never wrong",
+    "mode|tonic|root|never wrong|autotune|in tune|tune|correct pitch|major|minor|"
+    "harmony|melody maker",
     Slice<PortDescriptor>(kScaleQuantizerInputs),
     Slice<PortDescriptor>(kScaleQuantizerOutputs),
     Slice<ParameterDescriptor>(kScaleQuantizerParameters),
@@ -1048,7 +1051,7 @@ const NodeTypeDescriptor kStepSequencer = {
     "lane from the same clock into any knob and every step locks it — parameter "
     "locks, said in cables.",
     "step sequencer|sequencer|steps|pattern|lane|p-lock|parameter lock|plock|"
-    "acid|303|x0x|melody|bassline|program",
+    "acid|303|x0x|melody|bassline|program|piano roll|riff|line|16 steps|tb-303",
     Slice<PortDescriptor>(kStepSequencerInputs),
     Slice<PortDescriptor>(kStepSequencerOutputs),
     Slice<ParameterDescriptor>(kStepSequencerParameters),
@@ -1062,7 +1065,7 @@ const NodeTypeDescriptor kEuclid = {
     "Spreads hits as evenly as they will go across the steps. Three in eight is "
     "already a rhythm; the rest output is the offbeats, ready-made.",
     "euclid|euclidean|bjorklund|rhythm|tresillo|cinquillo|world rhythm|polyrhythm|"
-    "fill|rotate|groove|offbeat",
+    "fill|rotate|groove|offbeat|clave|generative rhythm",
     Slice<PortDescriptor>(kEuclidInputs),
     Slice<PortDescriptor>(kEuclidOutputs),
     Slice<ParameterDescriptor>(kEuclidParameters),

@@ -363,7 +363,8 @@ const NodeTypeDescriptor kNoteTriggers = {
     // kit arrived with its pads stripped out and every gate cable gone with them.
     "NoteTriggers", "Note Triggers", "Modulation",
     "Eight triggers from eight chromatic notes: the keyboard as a row of drum pads.",
-    "trigger|drum|pad|kit|split|map|note to trigger|drum machine",
+    "trigger|drum|pad|kit|split|map|note to trigger|drum machine|drum pads|mpc|"
+    "finger drumming|split keyboard",
     Slice<PortDescriptor>(kNoteTriggersInputs),
     Slice<PortDescriptor>(kNoteTriggersOutputs),
     Slice<ParameterDescriptor>(kNoteTriggersParameters),

@@ -200,7 +200,8 @@ private:
 const NodeTypeDescriptor kClip = {
     "Clip", "Clip", "Maths",
     "Keeps a signal between a floor and a ceiling. The hard limit as a building block.",
-    "clip|clamp|limit|bound|restrict|hard clip|saturate exactly|keep in range|no lower than|no higher than",
+    "clip|clamp|limit|bound|restrict|hard clip|saturate exactly|keep in range|"
+    "no lower than|no higher than|hard limiter|guard|ceiling|floor",
     Slice<PortDescriptor>(kUnaryInputs),
     Slice<PortDescriptor>(kControlOutput),
     Slice<ParameterDescriptor>(kClipParameters),
@@ -236,7 +237,8 @@ const NodeTypeDescriptor kMinMax = {
 const NodeTypeDescriptor kCompare = {
     "Compare", "Compare", "Maths",
     "Outputs a gate: 1 while the input is at or above the threshold, 0 below.",
-    "compare|greater|less|above|below|threshold|gate from signal|crossing|if|condition|logic",
+    "compare|greater|less|above|below|threshold|gate from signal|crossing|if|"
+    "condition|logic|comparator|schmitt|detect|threshold gate",
     Slice<PortDescriptor>(kBinaryInputs),
     Slice<PortDescriptor>(kControlOutput),
     Slice<ParameterDescriptor>(kCompareParameters),
@@ -248,7 +250,8 @@ const NodeTypeDescriptor kCompare = {
 const NodeTypeDescriptor kSampleHold = {
     "SampleHold", "Sample & Hold", "Modulation",
     "Freezes its input each time the trigger fires, and holds it until the next.",
-    "sample and hold|sample hold|s&h|s+h|freeze|capture|latch|stepped|quantise lfo|staircase",
+    "sample and hold|sample hold|s&h|s+h|freeze|capture|latch|stepped|quantise lfo|"
+    "staircase|random steps|hold value|glitch",
     Slice<PortDescriptor>(kSampleHoldInputs),
     Slice<PortDescriptor>(kControlOutput),
     Slice<ParameterDescriptor>(),

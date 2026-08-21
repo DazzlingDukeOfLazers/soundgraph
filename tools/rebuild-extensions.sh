@@ -17,11 +17,17 @@ set -e
 cd "$(dirname "$0")/.."
 
 dll="editor-godot/bin/soundgraph_godot.dll"
-vcvars="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat"
+# vcvars path is spelled inline in build_desktop: quoting survives cmd only that way.
 
 build_desktop() {
+    # Three MSYS traps live in this one line, each found the hard way. Quotes:
+    # escaped double quotes reach cmd as literal backslash-quotes, so the path is
+    # spelled 8.3 (PROGRA~1) and needs no quoting. Spaces: only the short path
+    # avoids them. And `>nul`: MSYS rewrites the literal word nul to /dev/null
+    # inside the argument, which cmd cannot open — so the banner is simply let
+    # through rather than redirected.
     cmake --build runtime-godot/build >/dev/null 2>&1 \
-        || cmd //c "\"$vcvars\" >nul && cmake --build runtime-godot/build"
+        || cmd //c 'C:\PROGRA~1\MICROS~4\2022\COMMUN~1\VC\Auxiliary\Build\vcvars64.bat && cmake --build runtime-godot/build'
 }
 
 echo "desktop extension"

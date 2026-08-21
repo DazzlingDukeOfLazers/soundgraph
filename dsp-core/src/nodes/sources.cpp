@@ -670,8 +670,9 @@ std::unique_ptr<DspNode> make() {
 
 const NodeTypeDescriptor kSineOscillator = {
     "SineOscillator", "Sine Oscillator", "Sources",
-    "A pure tone with no harmonics.",
-    "sine|sin|pure tone|test tone|simple wave|fundamental|fm operator|feedback",
+    "A pure tone with no harmonics. The sub-bass, the whistle, the FM building block.",
+    "sine|sin|pure tone|test tone|simple wave|fundamental|fm operator|feedback|sub|"
+    "sub bass|whistle|flute|beep|smooth tone",
     Slice<PortDescriptor>(kSineInputs),
     Slice<PortDescriptor>(kAudioOut),
     Slice<ParameterDescriptor>(kSineParameters),
@@ -683,7 +684,8 @@ const NodeTypeDescriptor kSineOscillator = {
 const NodeTypeDescriptor kSawOscillator = {
     "SawOscillator", "Saw Oscillator", "Sources",
     "A bright, buzzy wave containing every harmonic. The classic synth starting point.",
-    "saw|sawtooth|ramp|bright|buzzy|brass|strings|classic synth sound",
+    "saw|sawtooth|ramp|bright|buzzy|brass|strings|classic synth sound|supersaw|lead|"
+    "trance|rave|edm|violin|aggressive",
     Slice<PortDescriptor>(kOscInputs),
     Slice<PortDescriptor>(kAudioOut),
     Slice<ParameterDescriptor>(kOscParameters),
@@ -695,7 +697,8 @@ const NodeTypeDescriptor kSawOscillator = {
 const NodeTypeDescriptor kSquareOscillator = {
     "SquareOscillator", "Square Oscillator", "Sources",
     "A hollow, woody wave. Narrow the pulse width for a thinner, reedier tone.",
-    "square|pulse|pwm|hollow|woody|reed|clarinet|chiptune|8 bit",
+    "square|pulse|pwm|hollow|woody|reed|clarinet|chiptune|8 bit|8bit|game boy|"
+    "gameboy|nes|video game|retro game|organ",
     Slice<PortDescriptor>(kOscInputs),
     Slice<PortDescriptor>(kAudioOut),
     Slice<ParameterDescriptor>(kSquareParameters),
@@ -707,7 +710,8 @@ const NodeTypeDescriptor kSquareOscillator = {
 const NodeTypeDescriptor kNoise = {
     "Noise", "Noise", "Sources",
     "Random signal. Use it for percussion, wind, breath and texture.",
-    "noise|white|pink|hiss|wind|percussion|snare|random|texture",
+    "noise|white|pink|hiss|wind|percussion|snare|random|texture|hat|hihat|hi-hat|"
+    "shaker|crash|ocean|waves|static|tv",
     Slice<PortDescriptor>(),
     Slice<PortDescriptor>(kAudioOut),
     Slice<ParameterDescriptor>(kNoiseParameters),
@@ -734,7 +738,8 @@ const NodeTypeDescriptor kSampler = {
     "Plays a recording the patch carries. The buffer travels inside the file, like "
     "a module does.",
     "sampler|sample|play recording|wav|one-shot|hit|break|loop|playback|audio file|"
-    "slice|slicer|chop|jungle|repitch",
+    "slice|slicer|chop|jungle|repitch|drum sample|sound file|wav player|import audio|"
+    "recording",
     Slice<PortDescriptor>(kSamplerInputs),
     Slice<PortDescriptor>(kSamplerOutputs),
     Slice<ParameterDescriptor>(kSamplerParameters),
@@ -746,7 +751,8 @@ const NodeTypeDescriptor kSampler = {
 const NodeTypeDescriptor kLfo = {
     "LFO", "LFO", "Modulation",
     "A slow wave for moving other controls: vibrato, tremolo, filter sweeps.",
-    "lfo|low frequency oscillator|modulation|vibrato|tremolo|wobble|sweep|movement|slow",
+    "lfo|low frequency oscillator|modulation|vibrato|tremolo|wobble|sweep|movement|"
+    "slow|auto|drift|shimmer|dubstep|wobble bass|pulse",
     Slice<PortDescriptor>(kLfoInputs),
     Slice<PortDescriptor>(kLfoOutputs),
     Slice<ParameterDescriptor>(kLfoParameters),
@@ -758,7 +764,7 @@ const NodeTypeDescriptor kLfo = {
 const NodeTypeDescriptor kConstant = {
     "Constant", "Constant", "Modulation",
     "A fixed value. Useful for offsetting or scaling modulation.",
-    "constant|fixed|value|number|offset|dc|bias",
+    "constant|fixed|value|number|offset|dc|bias|always|set value|manual",
     Slice<PortDescriptor>(),
     Slice<PortDescriptor>(kConstantOutputs),
     Slice<ParameterDescriptor>(kConstantParameters),

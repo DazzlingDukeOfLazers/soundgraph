@@ -51,9 +51,12 @@ if [ -d "$build" ]; then
     if ! cmake --build "$build" >/dev/null 2>&1; then
         # MSVC needs its environment and a git hook does not inherit one. Try the usual
         # place before giving up, so this works from an ordinary shell on Windows.
+        # Spelled 8.3 and unredirected on purpose — see tools/rebuild-extensions.sh
+        # for the three MSYS traps this line walks around (quote mangling, spaces,
+        # and `>nul` becoming /dev/null inside the argument).
         vcvars="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat"
         if [ -f "$vcvars" ]; then
-            cmd //c "\"$vcvars\" >nul && cmake --build \"$build\"" || {
+            cmd //c 'C:\PROGRA~1\MICROS~4\2022\COMMUN~1\VC\Auxiliary\Build\vcvars64.bat && cmake --build build' || {
                 echo "build failed — fix it before pushing" >&2
                 exit 1
             }
