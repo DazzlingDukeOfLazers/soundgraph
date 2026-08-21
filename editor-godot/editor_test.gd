@@ -1659,6 +1659,16 @@ func _initialize() -> void:
 
 	# ---- nothing comes to rest under permanent furniture ---------------------------
 	# `size` is the whole control, and three permanent things overlap it: the scrollbars
+	# The canvas zooms out to a tenth — far enough to see a whole DX7 import as one
+	# shape — and the request "further out than a quarter" stays honoured even if a
+	# Godot default changes underneath.
+	main.graph_edit.zoom = 0.05
+	await process_frame
+	check(main.graph_edit.zoom_min <= 0.1001 and is_equal_approx(main.graph_edit.zoom,
+			main.graph_edit.zoom_min),
+		"the canvas zooms out to at least 10%% (floor %.2f, landed %.3f)"
+			% [main.graph_edit.zoom_min, main.graph_edit.zoom])
+
 	# GraphEdit draws inside its own bounds, the zoom cluster over the top left, and the
 	# minimap over the bottom right. Centring against `size` aims at a point that may be
 	# beneath any of them.

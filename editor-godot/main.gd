@@ -557,9 +557,17 @@ func _apply_theme() -> void:
 	#
 	# On the ladder now, one level above the canvas it floats over, with the viewport
 	# rectangle in the accent so "where am I" is answerable without squinting.
+	# The map floor is the darkest surface, so the node fills Godot copies from the
+	# graph (which are panel-dark) still read against it.
 	Design.set_box(editor_theme, "panel", "GraphEditMinimap",
-		Design.panel(Design.Surface.NODE, Design.RADIUS_PANEL))
-	var minimap_node := Design.panel(Design.Surface.ACTIVE, 1, 0)
+		Design.panel(Design.Surface.CANVAS, Design.RADIUS_PANEL))
+	# Godot fills each minimap square with the node's own panel colour, which on an
+	# instrument-black theme is a dark square on a dark map — the minimap read as a
+	# few floating cables. The border is ours to keep: a bright outline survives the
+	# fill being copied, so every module shows as a lit frame wherever it sits.
+	var minimap_node := Design.panel(Design.Surface.ACTIVE, 0, 0)
+	minimap_node.set_border_width_all(1)
+	minimap_node.border_color = Design.INK_SECOND
 	Design.set_box(editor_theme, "node", "GraphEditMinimap", minimap_node)
 	var minimap_camera := StyleBoxFlat.new()
 	minimap_camera.draw_center = false
@@ -664,8 +672,11 @@ func _build_ui() -> void:
 	# The minimap was a flat grey rectangle sitting over the canvas with no border and
 	# no relationship to anything else on screen — it read as a panel that had failed
 	# to draw. Smaller, and on the same surface ladder as everything else.
+	# Far enough out to see a whole DX7 import as one shape. The default floor was
+	# about a quarter scale; adaptive detail is what makes a tenth still readable.
+	graph_edit.zoom_min = 0.1
 	graph_edit.minimap_enabled = true
-	graph_edit.minimap_size = Vector2(180, 110)
+	graph_edit.minimap_size = Vector2(220, 136)
 	# Opaque, now that it is a surface rather than a grey box: it was faded to hide
 	# how out of place it looked, which is treating the symptom.
 	graph_edit.minimap_opacity = 0.9
