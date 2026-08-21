@@ -4970,6 +4970,16 @@ func _build_keyboard_bar() -> Control:
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", Design.SPACE_XS)
 
+	# The keyboard's own jacks, on the keyboard. This is where the cables into the patch
+	# come from — see seam_dock.gd for why they cannot be drawn by GraphEdit.
+	note_jacks = SeamDock.Jacks.new()
+	note_jacks.type_colours = TYPE_COLOURS
+	note_jacks.ink = INK
+	note_jacks.jack_grabbed.connect(_on_jack_grabbed)
+	note_jacks.tooltip_text = "Drag a jack onto an Input port to drive it, " \
+		+ "or off the graph to unplug it."
+	bar.add_child(note_jacks)
+
 	# A menu, not a toggle: full, mini and hide are three sizes of the same answer
 	# to "how much of my screen is a piano", and a toggle can only say two of them.
 	keyboard_toggle = MenuButton.new()
@@ -4982,50 +4992,8 @@ func _build_keyboard_bar() -> Control:
 		_set_keyboard_mode(["full", "mini", "hide"][id]))
 	bar.add_child(_defocus(keyboard_toggle))
 
-	# Master volume and mute, on the instrument rather than in the chrome.
-	#
-	# The volume knob is not a new idea either: it drives the output node's own `level`,
-	# the same parameter the panel's Master knob drives when a patch has put one there.
-	# What it adds is that the instrument has a volume control whether or not somebody
-	# thought to put one on the panel, which is true of every instrument anybody has ever
-	# played and was not true of this one.
-	#
-	# Mute is the exception that does not touch the document. Muting is a thing you do to
-	# a room, not to a patch — it should not make the file unsaved, it should not be
-	# undoable, and it must not be saved and handed to somebody else silent. So it sets
-	# the engine's parameter directly and leaves `level` where it was.
-	master_mute = Button.new()
-	master_mute.toggle_mode = true
-	master_mute.text = "Mute"
-	master_mute.tooltip_text = "Silence the output without changing the patch. Nothing " 		+ "about the file changes and the level stays where you left it."
-	master_mute.toggled.connect(func(pressed: bool) -> void: _set_muted(pressed))
-	bar.add_child(_defocus(master_mute))
-
-	master_knob = Rack.Knob.new()
-	master_knob.rack = rack
-	master_knob.compact = true
-	# Sized to sit inside the strip with air around it, and centred in the row: a
-	# dial as tall as the row it lives in reads as jammed, not mounted.
-	master_knob.dial = 0.72
-	master_knob.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	# A stand-in descriptor before the tree sees it: Knob reads its name and its doc in
-	# _ready to build a tooltip, so it cannot be added holding nothing. _refresh_master
-	# replaces this with the output node's real one as soon as a patch is open.
-	master_knob.descriptor = {"name": "level", "min": 0.0, "max": 1.2, "default": 0.8,
-		"scaling": "linear", "unit": "", "doc": "Master output level."}
-	master_knob.visible = false
-	bar.add_child(master_knob)
-
-	master_label = Label.new()
-	master_label.text = "Volume"
-	master_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	master_label.add_theme_font_size_override("font_size",
-		Design.type(Design.SIZE_SECONDARY))
-	master_label.add_theme_color_override("font_color", Design.INK_SECOND)
-	bar.add_child(master_label)
-
-	# The roll's fold and transport, beside the volume: Roll opens the grid, Play
-	# runs it, and the pace is a draggable number like every other value here.
+	# The roll's fold and transport: Roll opens the grid, Play runs it, and the
+	# pace is a draggable number like every other value here.
 	roll_button = Button.new()
 	roll_button.toggle_mode = true
 	roll_button.text = "Roll"
@@ -5071,22 +5039,13 @@ func _build_keyboard_bar() -> Control:
 		roll_zoom.text = "%d bar%s" % [next / 16, "s" if next > 16 else ""])
 	bar.add_child(_defocus(roll_zoom))
 
-	# The keyboard's own jacks, on the keyboard. This is where the cables into the patch
-	# come from — see seam_dock.gd for why they cannot be drawn by GraphEdit.
-	note_jacks = SeamDock.Jacks.new()
-	note_jacks.type_colours = TYPE_COLOURS
-	note_jacks.ink = INK
-	note_jacks.jack_grabbed.connect(_on_jack_grabbed)
-	note_jacks.tooltip_text = "Drag a jack onto an Input port to drive it, " \
-		+ "or off the graph to unplug it."
-	bar.add_child(note_jacks)
-
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(gap)
 
-	# And the output's, at the far end: signal leaves the instrument on the right, the
-	# same direction it travels through every graph and rack in this application.
+	# And the output's, opening the right-hand half: signal leaves the instrument on
+	# the right, the same direction it travels through every graph and rack here, and
+	# the room controls that govern that signal — volume, mute — sit just past it.
 	output_jacks = SeamDock.Jacks.new()
 	output_jacks.type_colours = TYPE_COLOURS
 	output_jacks.ink = INK
@@ -5094,6 +5053,48 @@ func _build_keyboard_bar() -> Control:
 	output_jacks.tooltip_text = "Drag onto an Output port to listen to it, " \
 		+ "or off the graph to unplug it."
 	bar.add_child(output_jacks)
+
+	master_knob = Rack.Knob.new()
+	master_knob.rack = rack
+	master_knob.compact = true
+	# Sized to sit inside the strip with air around it, and centred in the row: a
+	# dial as tall as the row it lives in reads as jammed, not mounted.
+	master_knob.dial = 0.72
+	master_knob.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# A stand-in descriptor before the tree sees it: Knob reads its name and its doc in
+	# _ready to build a tooltip, so it cannot be added holding nothing. _refresh_master
+	# replaces this with the output node's real one as soon as a patch is open.
+	master_knob.descriptor = {"name": "level", "min": 0.0, "max": 1.2, "default": 0.8,
+		"scaling": "linear", "unit": "", "doc": "Master output level."}
+	master_knob.visible = false
+	bar.add_child(master_knob)
+
+	master_label = Label.new()
+	master_label.text = "Volume"
+	master_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	master_label.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	master_label.add_theme_color_override("font_color", Design.INK_SECOND)
+	bar.add_child(master_label)
+
+	# Master volume and mute, on the instrument rather than in the chrome.
+	#
+	# The volume knob is not a new idea either: it drives the output node's own `level`,
+	# the same parameter the panel's Master knob drives when a patch has put one there.
+	# What it adds is that the instrument has a volume control whether or not somebody
+	# thought to put one on the panel, which is true of every instrument anybody has ever
+	# played and was not true of this one.
+	#
+	# Mute is the exception that does not touch the document. Muting is a thing you do to
+	# a room, not to a patch — it should not make the file unsaved, it should not be
+	# undoable, and it must not be saved and handed to somebody else silent. So it sets
+	# the engine's parameter directly and leaves `level` where it was.
+	master_mute = Button.new()
+	master_mute.toggle_mode = true
+	master_mute.text = "Mute"
+	master_mute.tooltip_text = "Silence the output without changing the patch. Nothing " 		+ "about the file changes and the level stays where you left it."
+	master_mute.toggled.connect(func(pressed: bool) -> void: _set_muted(pressed))
+	bar.add_child(_defocus(master_mute))
 
 	var range_label := Label.new()
 	range_label.name = "KeyboardRange"
