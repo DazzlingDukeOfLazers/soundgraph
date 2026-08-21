@@ -2718,7 +2718,7 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 	check(not main.piano_roll.visible, "the roll starts folded away")
-	main.roll_button.button_pressed = true
+	main.roll_button.get_popup().id_pressed.emit(0)
 	for i in 3:
 		await process_frame
 	check(main.piano_roll.visible and main.roll_play.visible,
@@ -2807,7 +2807,7 @@ func _initialize() -> void:
 		"the sequence survives a save and reload")
 	check(main.piano_roll.sequence == main.patch.get("sequence", {}),
 		"and the rebuilt roll reads the reloaded document")
-	main.roll_button.button_pressed = false
+	main.roll_button.get_popup().id_pressed.emit(2)
 	for i in 3:
 		await process_frame
 	check(not main.piano_roll.visible, "folding the roll away hides the grid")
@@ -2872,7 +2872,7 @@ func _initialize() -> void:
 			fresh_replicas = true
 	check(fresh_replicas, "and the fresh engine runs the voice copies")
 
-	main.roll_button.button_pressed = true
+	main.roll_button.get_popup().id_pressed.emit(0)
 	for i in 3:
 		await process_frame
 	main._on_roll_cell_toggled(0, 57)
@@ -2889,7 +2889,7 @@ func _initialize() -> void:
 		"and the clock holds all three notes at once (%s)" % str(main.held_notes.keys()))
 	main.roll_play.button_pressed = false
 	check(main.held_notes.is_empty(), "stopping lets the chord go")
-	main.roll_button.button_pressed = false
+	main.roll_button.get_popup().id_pressed.emit(2)
 	for i in 3:
 		await process_frame
 
@@ -2967,7 +2967,7 @@ func _initialize() -> void:
 
 	# The same grid lying the other way: time runs rightward, the low notes hang at
 	# the bottom, and the pointer's two axes swap to match.
-	main.roll_view.get_popup().id_pressed.emit(1)
+	main.roll_button.get_popup().id_pressed.emit(1)
 	check(main.piano_roll.orientation == "horizontal",
 		"the View menu lays the roll flat")
 	check(main.piano_roll.step_at(2.0) == main.piano_roll.scroll_step,
@@ -2975,7 +2975,7 @@ func _initialize() -> void:
 	var flat_span: Vector2 = main.piano_roll._pitch_span(57)
 	check(main.piano_roll.note_at(flat_span.x + flat_span.y * 0.5) == 57,
 		"and a lane still answers to its note along the pitch axis")
-	main.roll_view.get_popup().id_pressed.emit(0)
+	main.roll_button.get_popup().id_pressed.emit(0)
 	check(main.piano_roll.orientation == "vertical",
 		"and Vertical stands it back up")
 	var walk := InputEventMouseButton.new()
@@ -3003,7 +3003,7 @@ func _initialize() -> void:
 		"a note placed past the end grows the piece a bar (%d steps)"
 			% int(main.patch.get("sequence", {}).get("steps", 0)))
 	main.piano_roll.scroll_step = 0
-	main.roll_button.button_pressed = false
+	main.roll_button.get_popup().id_pressed.emit(2)
 	for i in 3:
 		await process_frame
 

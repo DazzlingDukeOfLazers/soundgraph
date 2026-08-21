@@ -175,11 +175,10 @@ var face_edit_button: Button
 # The piano roll and its transport. The clock lives here with the engine; the roll
 # itself only draws and points.
 var piano_roll: PianoRoll
-var roll_button: Button
+var roll_button: MenuButton
 var roll_play: Button
 var roll_capture: Button
 var roll_tempo: ValueField
-var roll_view: MenuButton
 var roll_bars_menu: PopupMenu
 var midi_dialog: FileDialog
 var roll_open := false
@@ -4639,8 +4638,8 @@ func _set_roll_open(open: bool) -> void:
 	roll_play.visible = open
 	roll_capture.visible = open
 	roll_tempo.visible = open
-	roll_view.visible = open
 	Settings.store("piano_roll", open)
+	_sync_roll_menu()
 	piano_roll.sequence = patch.get("sequence", {})
 	_refresh_roll_tempo_text()
 	piano_roll.queue_redraw()
@@ -4808,7 +4807,7 @@ func _import_midi_file(path: String) -> void:
 		"notes": sung["notes"]}
 	_commit_edit("import midi")
 	if not roll_open:
-		roll_button.button_pressed = true
+		_set_roll_open(true)
 	piano_roll.sequence = patch["sequence"]
 	piano_roll.scroll_step = 0
 	_refresh_roll_tempo_text()
@@ -4905,8 +4904,8 @@ func _build_keyboard_dock() -> Control:
 	column.add_child(piano_roll)
 
 	column.add_child(keyboard)
-	# The stored fold, through the same toggle a hand uses.
-	roll_button.button_pressed = bool(Settings.fetch("piano_roll", false))
+	# The stored fold, through the same door the menu uses.
+	_set_roll_open(bool(Settings.fetch("piano_roll", false)))
 	return keyboard_dock
 
 
@@ -4929,10 +4928,19 @@ func _set_roll_orientation(which: String) -> void:
 	if piano_roll != null:
 		piano_roll.orientation = which
 		piano_roll.queue_redraw()
-	if roll_view != null:
-		var menu := roll_view.get_popup()
-		menu.set_item_checked(menu.get_item_index(0), which == "vertical")
-		menu.set_item_checked(menu.get_item_index(1), which == "horizontal")
+	_sync_roll_menu()
+
+
+## The Roll menu's radios say what the roll is doing: Hide when it is away, and
+## whichever way it is lying when it is out.
+func _sync_roll_menu() -> void:
+	if roll_button == null:
+		return
+	var menu := roll_button.get_popup()
+	var which: String = piano_roll.orientation if piano_roll != null else "vertical"
+	menu.set_item_checked(menu.get_item_index(0), roll_open and which == "vertical")
+	menu.set_item_checked(menu.get_item_index(1), roll_open and which == "horizontal")
+	menu.set_item_checked(menu.get_item_index(2), not roll_open)
 
 
 ## How much of the piece the roll windows at once, chosen from the Bars submenu —
@@ -5044,12 +5052,31 @@ func _build_keyboard_bar() -> Control:
 
 	# The roll's fold and transport: Roll opens the grid, Play runs it, and the
 	# pace is a draggable number like every other value here.
-	roll_button = Button.new()
-	roll_button.toggle_mode = true
+	# A menu, like the keyboard's: choosing an orientation brings the roll out
+	# lying that way, Hide puts it away, and Bars is how much of the piece shows.
+	roll_button = MenuButton.new()
+	roll_button.flat = false
 	roll_button.text = "Roll"
-	roll_button.tooltip_text = "A step grid over the keys: click a lane to place a " \
-		+ "note, click it again to take it away."
-	roll_button.toggled.connect(_set_roll_open)
+	roll_button.tooltip_text = "A step grid over the keys: click a lane to place a " 		+ "note, click it again to take it away. Vertical rises over the keys that " 		+ "play it; horizontal runs left to right the way most sequencers do; Bars " 		+ "is how much of the piece is on screen — the wheel walks through the rest."
+	var roll_menu := roll_button.get_popup()
+	roll_menu.add_radio_check_item("Vertical", 0)
+	roll_menu.add_radio_check_item("Horizontal", 1)
+	roll_menu.add_radio_check_item("Hide", 2)
+	roll_menu.set_item_checked(2, true)
+	roll_menu.add_separator()
+	roll_bars_menu = PopupMenu.new()
+	for rows: int in [16, 32, 64]:
+		roll_bars_menu.add_radio_check_item(
+			"%d bar%s" % [rows / 16, "s" if rows > 16 else ""], rows)
+	roll_bars_menu.set_item_checked(0, true)
+	roll_bars_menu.id_pressed.connect(_set_roll_bars)
+	roll_menu.add_submenu_node_item("Bars", roll_bars_menu)
+	roll_menu.id_pressed.connect(func(id: int) -> void:
+		if id == 2:
+			_set_roll_open(false)
+		else:
+			_set_roll_orientation("vertical" if id == 0 else "horizontal")
+			_set_roll_open(true))
 	bar.add_child(_defocus(roll_button))
 	roll_play = Button.new()
 	roll_play.toggle_mode = true
@@ -5079,26 +5106,6 @@ func _build_keyboard_bar() -> Control:
 	roll_tempo.value_submitted.connect(_set_roll_tempo)
 	roll_tempo.visible = false
 	bar.add_child(roll_tempo)
-	roll_view = MenuButton.new()
-	roll_view.flat = false
-	roll_view.text = "View"
-	roll_view.tooltip_text = "Which way the roll lies and how much it shows: " 		+ "vertical rises over the keys that play it, horizontal runs left to " 		+ "right the way most sequencers do, and Bars is how much of the piece " 		+ "is on screen — the wheel walks through the rest."
-	var roll_menu := roll_view.get_popup()
-	roll_menu.add_radio_check_item("Vertical", 0)
-	roll_menu.add_radio_check_item("Horizontal", 1)
-	roll_menu.set_item_checked(0, true)
-	roll_menu.id_pressed.connect(func(id: int) -> void:
-		_set_roll_orientation("vertical" if id == 0 else "horizontal"))
-	roll_bars_menu = PopupMenu.new()
-	for rows: int in [16, 32, 64]:
-		roll_bars_menu.add_radio_check_item(
-			"%d bar%s" % [rows / 16, "s" if rows > 16 else ""], rows)
-	roll_bars_menu.set_item_checked(0, true)
-	roll_bars_menu.id_pressed.connect(_set_roll_bars)
-	roll_menu.add_submenu_node_item("Bars", roll_bars_menu)
-	roll_view.visible = false
-	bar.add_child(_defocus(roll_view))
-
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(gap)
