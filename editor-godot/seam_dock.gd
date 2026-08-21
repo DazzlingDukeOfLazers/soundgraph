@@ -83,17 +83,23 @@ class Jacks extends Control:
 		return Vector2(width, Design.scale(SOCKET) * 2.0
 			+ Design.scale(LABEL_GAP) + tallest)
 
+	## The row is usually taller than the jacks need; centring is what keeps the
+	## socket ring whole instead of shaving its top on the strip's edge.
+	func _top() -> float:
+		return maxf(0.0, (size.y - _get_minimum_size().y) * 0.5)
+
+
 	## Where one socket sits, in this control's own coordinates.
 	func _slot(index: int) -> Vector2:
 		var font := _font()
-		var size := _size()
+		var size_px := _size()
 		var x := 0.0
 		for i in ports.size():
 			var measured := font.get_string_size(str(ports[i].get("label", ports[i]["port"])),
-				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px)
 			var cell: float = maxf(measured.x, Design.scale(SOCKET) * 2.0)
 			if i == index:
-				return Vector2(x + cell * 0.5, Design.scale(SOCKET))
+				return Vector2(x + cell * 0.5, _top() + Design.scale(SOCKET))
 			x += cell + Design.scale(Design.SPACE_M)
 		return Vector2.ZERO
 

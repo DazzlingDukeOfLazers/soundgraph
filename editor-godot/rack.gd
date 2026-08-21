@@ -1329,9 +1329,10 @@ class Knob extends Control:
 
 	func _get_minimum_size() -> Vector2:
 		if compact:
-			# The dial and nothing else. Its own hit area still has to clear the rule
-			# every other control in this application obeys.
-			var across := _radius() * 2.0 + 8.0
+			# The dial plus the arc that rides five px outside it — the first version
+			# measured the dial alone and the arc shaved its top on the cell edge.
+			# The hit area still has to clear the rule every other control obeys.
+			var across := _radius() * 2.0 + 17.0
 			return Vector2(across, maxf(across, Design.scale(Design.HIT_TARGET)))
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
 		var label_size := Design.type(Design.SIZE_SECONDARY)

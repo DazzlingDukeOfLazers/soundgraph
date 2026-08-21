@@ -5004,6 +5004,10 @@ func _build_keyboard_bar() -> Control:
 	master_knob = Rack.Knob.new()
 	master_knob.rack = rack
 	master_knob.compact = true
+	# Sized to sit inside the strip with air around it, and centred in the row: a
+	# dial as tall as the row it lives in reads as jammed, not mounted.
+	master_knob.dial = 0.72
+	master_knob.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	# A stand-in descriptor before the tree sees it: Knob reads its name and its doc in
 	# _ready to build a tooltip, so it cannot be added holding nothing. _refresh_master
 	# replaces this with the output node's real one as soon as a patch is open.
