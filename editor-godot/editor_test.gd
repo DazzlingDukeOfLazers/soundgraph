@@ -8643,7 +8643,8 @@ func _initialize() -> void:
 	check(widest_cased <= 16 * Rack.HP + Rack.CASE_MARGIN * 2.0,
 		"a 16 HP case wraps its modules inside 16 HP")
 	check(widest_free > widest_cased * 1.5,
-		"and fitting the window spreads them far wider than that")
+		"and fitting the window spreads them far wider than that (free %.0f vs cased %.0f)"
+			% [widest_free, widest_cased])
 
 	main.rack.case_hp = 0
 

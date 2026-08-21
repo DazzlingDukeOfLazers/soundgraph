@@ -220,6 +220,30 @@ var case_hp: int = 0:
 		case_hp = value
 		_relayout()
 
+## How far away the viewer stands. 1.0 is workbench distance; a 168 HP case on a
+## laptop needs the room. Purely visual — layout happens in unscaled units and the
+## wrap width is the case's, not the window's.
+var view_zoom := 1.0:
+	set(value):
+		view_zoom = clampf(value, 0.25, 1.0)
+		scale = Vector2(view_zoom, view_zoom)
+		_relayout()
+
+
+## The zoom at which the whole case width fits the window, chosen when a case is
+## picked so the answer to "does my patch fit an 84 HP case" is visible immediately.
+func fit_case() -> void:
+	if case_hp <= 0:
+		view_zoom = 1.0
+		return
+	# The window is the scroll container, not this control: once a case is set the
+	# rack is exactly as wide as the case, and measuring yourself answers 1.0 forever.
+	var scroll: Control = get_parent()
+	if scroll != null and scroll.get_parent() is Control:
+		scroll = scroll.get_parent()
+	var window := maxf(scroll.size.x if scroll != null else size.x, 200.0)
+	view_zoom = window / (case_hp * HP + CASE_MARGIN * 2.0)
+
 var selected_id := ""
 
 ## Which cable the pointer is over, as an index into cable_endpoints(), or -1.
@@ -417,9 +441,21 @@ func _type_of(node_id: String) -> String:
 ## across rows and never resized to fit — a rack that reflows by stretching its modules
 ## would not look like a rack.
 func _relayout() -> void:
-	var available := maxf(size.x - CASE_MARGIN * 2.0, 200.0)
+	# A chosen case is exactly as wide as it says, even when the window is not:
+	# the point of picking 84 HP is seeing what fits in 84 HP, and clamping to the
+	# window silently answered a different question. The window catches up through
+	# view_zoom instead. The span comes from the holder — this control sizes itself.
+	var host := get_parent() as Control
+	var span: float = host.size.x if host != null else size.x
+	# A hidden tab's holder may not have been laid out yet; walk up to whatever has
+	# real width rather than wrapping the whole rack at the 200px floor.
+	if span <= 1.0 and host != null and host.get_parent() is Control:
+		span = (host.get_parent() as Control).size.x
+	if span <= 1.0:
+		span = maxf(size.x, get_viewport_rect().size.x if is_inside_tree() else 0.0)
+	var available := maxf(span / maxf(view_zoom, 0.01) - CASE_MARGIN * 2.0, 200.0)
 	if case_hp > 0:
-		available = minf(available, case_hp * HP)
+		available = case_hp * HP
 	var x := CASE_MARGIN
 	var y := CASE_MARGIN + RAIL
 	var row_widest := 0.0
@@ -437,9 +473,17 @@ func _relayout() -> void:
 
 	# Room below the last row for cables to hang into. Without it a catenary between two
 	# modules on the bottom row is clipped off by the scroll extent.
+	if case_hp > 0:
+		row_widest = maxf(row_widest, CASE_MARGIN + case_hp * HP)
 	_content_size = Vector2(row_widest + CASE_MARGIN,
 		y + module_height + RAIL + CASE_MARGIN + SAG_MAX * 0.5)
-	custom_minimum_size = Vector2(0.0, _content_size.y)
+	# Outside a container, this control sizes itself; the holder carries the scaled
+	# footprint into the scroll area's arithmetic.
+	size = Vector2(maxf(_content_size.x, span / maxf(view_zoom, 0.01)), _content_size.y)
+	if host != null:
+		host.custom_minimum_size = Vector2(
+			_content_size.x * view_zoom if case_hp > 0 else 0.0,
+			_content_size.y * view_zoom)
 	queue_redraw()
 	if _cables != null:
 		_cables.queue_redraw()
@@ -528,11 +572,41 @@ func _draw() -> void:
 	# where a row is not full.
 	var row_pitch := module_height + RAIL * 2.0 + ROW_GAP
 	var rows := int(ceil(maxf(_content_size.y - CASE_MARGIN, 1.0) / row_pitch))
+	# Rails span the case when one is chosen — a rail that stopped at the window's
+	# edge would deny the case its width — and the window otherwise.
+	var rail_width: float = (_content_size.x - CASE_MARGIN * 0.5 \
+		if case_hp > 0 else size.x / maxf(view_zoom, 0.01) - CASE_MARGIN)
 	for row in maxi(rows, 1):
 		var top := CASE_MARGIN + row * row_pitch
-		_draw_rail(Rect2(CASE_MARGIN * 0.5, top, size.x - CASE_MARGIN, RAIL))
+		_draw_rail(Rect2(CASE_MARGIN * 0.5, top, rail_width, RAIL))
 		_draw_rail(Rect2(CASE_MARGIN * 0.5, top + RAIL + module_height,
-			size.x - CASE_MARGIN, RAIL))
+			rail_width, RAIL))
+	if case_hp > 0:
+		_draw_hp_ruler(rows, row_pitch)
+
+
+## Tick marks along each top rail, in HP: a small tick every two, a numbered one
+## every eight, and a bright cap at the case's exact end. This is what makes "84 HP"
+## read as a measurement instead of a mood — the same reason a real rail has holes.
+func _draw_hp_ruler(rows: int, row_pitch: float) -> void:
+	var font := Design.numeric_font()
+	var font_size := Design.scale(11)
+	var end_x := CASE_MARGIN + case_hp * HP
+	for row in maxi(rows, 1):
+		var top := CASE_MARGIN + row * row_pitch
+		for hp in range(0, case_hp + 1, 2):
+			var x := CASE_MARGIN + hp * HP
+			var major := hp % 8 == 0
+			var tick := RAIL * (0.6 if major else 0.3)
+			draw_line(Vector2(x, top + RAIL - tick), Vector2(x, top + RAIL),
+				Color(Design.INK_SECOND.r, Design.INK_SECOND.g, Design.INK_SECOND.b, 0.5 if major else 0.25), 1.0)
+			if major and hp > 0 and hp < case_hp:
+				draw_string(font, Vector2(x + 3.0, top + RAIL - 2.0), str(hp),
+					HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size,
+					Color(Design.INK_SECOND.r, Design.INK_SECOND.g, Design.INK_SECOND.b, 0.55))
+		# The end of the case, capped bright: the wall a patch does or does not fit.
+		draw_line(Vector2(end_x, top), Vector2(end_x, top + RAIL * 2.0 + module_height),
+			Color(Design.BOUNDARY.r, Design.BOUNDARY.g, Design.BOUNDARY.b, 0.8), 2.0)
 
 
 func _draw_rail(rect: Rect2) -> void:
@@ -569,6 +643,16 @@ func _gui_input(event: InputEvent) -> void:
 	var motion := event as InputEventMouseMotion
 	if motion != null:
 		_update_cable_hover(motion.position)
+	# Ctrl+wheel is the view's zoom gesture here as on the graph. Claimed loudly, or
+	# the ScrollContainer would spend the same notches scrolling.
+	var wheel := event as InputEventMouseButton
+	if wheel != null and wheel.pressed and wheel.ctrl_pressed:
+		if wheel.button_index == MOUSE_BUTTON_WHEEL_UP:
+			view_zoom = view_zoom * 1.1
+			accept_event()
+		elif wheel.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			view_zoom = view_zoom / 1.1
+			accept_event()
 
 
 ## Nothing under the pointer means nothing highlighted, and leaving the case entirely

@@ -896,7 +896,15 @@ func _build_ui() -> void:
 	rack.edit_started.connect(func() -> void: _begin_edit())
 	rack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
 	rack.node_selected.connect(_on_rack_node_selected)
-	rack_scroll.add_child(rack)
+	# A plain Control between the scroll container and the rack, because a Container
+	# resets its children's scale on every layout pass — fit_child_in_rect wipes it —
+	# so a zoomed rack that is a direct child snaps back to 1.0 the moment anything
+	# breathes. The holder takes the layout; the rack keeps its scale.
+	var rack_holder := Control.new()
+	rack_holder.mouse_filter = Control.MOUSE_FILTER_PASS
+	rack_scroll.add_child(rack_holder)
+	rack_holder.add_child(rack)
+	rack_holder.resized.connect(rack._relayout)
 	views.add_child(rack_scroll)
 
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
@@ -1095,6 +1103,8 @@ func _on_view_menu(id: int) -> void:
 	for index in EditorToolbar.CASE_LABELS.size():
 		view_popup.set_item_checked(index + 3, index == choice)
 	rack.case_hp = EditorToolbar.CASE_WIDTHS[choice]
+	# Picking a case answers "does my patch fit it" — so show the whole case at once.
+	rack.fit_case()
 
 
 ## One step of a face drag. The hidden widgets move — they are where positions live
