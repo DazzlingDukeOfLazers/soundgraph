@@ -2482,11 +2482,24 @@ func _watch_for_quit_request(delta: float) -> void:
 
 func shutdown_audio() -> void:
 	set_process(false)
+	# The sandbox's voices first: eight more players and engines with the same race,
+	# and a teardown that only remembered the editor's own was half a teardown.
+	if sandbox != null and sandbox.sounds != null:
+		sandbox.sounds.shutdown()
 	if engine != null:
 		engine.all_notes_off()
 	if player != null:
+		# The mixer runs on its own thread and can be mid-block inside this player's
+		# playback at any moment; stop() alone does not wait for it. The lock does:
+		# nothing mixes while it is held, so after unlock the stopped, streamless
+		# player is genuinely untouched and freeing it is safe. Windows Error
+		# Reporting had the receipts — the same fault offset inside Godot's audio
+		# thread on run after run, usually landing just after the verdict had
+		# flushed, occasionally just before, which is all a "flake" ever was.
+		AudioServer.lock()
 		player.stop()
 		player.stream = null
+		AudioServer.unlock()
 		if player.get_parent() != null:
 			player.get_parent().remove_child(player)
 		player.free()

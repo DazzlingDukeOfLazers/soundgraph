@@ -252,8 +252,10 @@ func _struck_peak(main, note: int) -> float:
 		peak = maxf(peak, main.engine.get_peak())
 		await process_frame
 	main._let_go_note(note)
+	AudioServer.lock()
 	player.stop()
 	player.stream = null
+	AudioServer.unlock()
 	await process_frame
 	player.queue_free()
 	return peak
@@ -276,8 +278,10 @@ func _device_peak(main) -> float:
 	# Stopped and unplugged before it is freed: AudioServer mixes on its own thread
 	# and holds the generator playback, and freeing a player still playing is a race
 	# with that thread — the same race the end-of-run teardown documents.
+	AudioServer.lock()
 	player.stop()
 	player.stream = null
+	AudioServer.unlock()
 	await process_frame
 	player.queue_free()
 	return peak
@@ -4179,8 +4183,10 @@ func _initialize() -> void:
 	check(main.scope_probe.trigger_label.text == "trig 3",
 		"with the counter on the panel saying so (%s)"
 			% main.scope_probe.trigger_label.text)
+	AudioServer.lock()
 	pump_player.stop()
 	pump_player.stream = null
+	AudioServer.unlock()
 	await process_frame
 	pump_player.queue_free()
 	main.side_tabs.current_tab = 0
@@ -8817,8 +8823,10 @@ func _initialize() -> void:
 	# for deletion before shutdown_audio was asked of it — a teardown improvised in
 	# exactly the way that segfaulted roughly one run in five, always after the
 	# last check had already passed.
+	AudioServer.lock()
 	player.stop()
 	player.stream = null
+	AudioServer.unlock()
 	if main.has_method("shutdown_audio"):
 		main.shutdown_audio()
 	await process_frame

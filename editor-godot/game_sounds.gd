@@ -145,14 +145,31 @@ func sound_names() -> Array:
 ## alive when the extension unloads is an access violation waiting to happen. It was: the
 ## round-trip check began failing about one run in three with status 0xC0000005, a crash
 ## during shutdown, long after the work had succeeded.
-func _exit_tree() -> void:
+## Every voice down, deliberately: stopped and unplugged under one audio lock so the
+## mixer cannot be mid-block in any of them, then freed by hand rather than left to
+## the tree's own ordering — which frees children on its schedule, not this one, and
+## was the last place the shutdown crash could still stand.
+func shutdown() -> void:
+	set_process(false)
+	AudioServer.lock()
 	for name in _voices:
 		var voice: Dictionary = _voices[name]
 		if voice["player"] != null:
 			voice["player"].stop()
+	AudioServer.unlock()
+	for name in _voices:
+		var voice: Dictionary = _voices[name]
+		if voice["player"] != null:
+			if voice["player"].get_parent() != null:
+				voice["player"].get_parent().remove_child(voice["player"])
+			voice["player"].free()
 		voice["engine"] = null
 		voice["playback"] = null
 	_voices.clear()
+
+
+func _exit_tree() -> void:
+	shutdown()
 
 
 ## Every engine renders into its own player, every frame. Filling only what the buffer has

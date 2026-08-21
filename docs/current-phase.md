@@ -191,10 +191,22 @@ gesture. Synthetic events do not lift that; only a person clicking does.
   and puts them back on top, so the two fought sixty times a second. `z_index` does the
   same job without touching the tree.
 
-- **The sandbox leaks a variable number of `AudioStreamGeneratorPlayback` objects at exit** —
-  11, 2 and 0 across three runs of identical code. Not new and not growing, but it is the
-  same class of thing that caused the 0xC0000005 shutdown crash, so a leak count from a
-  single run is not evidence about anything.
+- **The shutdown flake is fixed where it was ours, and named where it is not.** The gate
+  failures ("editor_test did not report success") were the audio thread mid-mix in a
+  player being freed during the suite's own teardown — before the verdict could print.
+  Every teardown now stops players under `AudioServer.lock()`, and the game sounds shut
+  down deliberately instead of trusting tree order; fifty instrumented runs since show
+  zero verdictless exits. What remains is a crash *after* `quit()`, inside Godot 4.7's
+  own audio cleanup — same fault offset every time, invisible to the gate because the
+  verdict has always flushed by then, and out of script's reach. `quit_test.gd` is the
+  instrument that isolated it: boot, load the sandbox voices, tear down, quit — about
+  seven seconds a run, with Windows Error Reporting as the witness stdout cannot be.
+  Two measurement traps paid for on the way: WER batches its reports (event times are
+  reporting times, not crash times), and the console wrapper exe swallows the child's
+  exit code — the inner binary tells the truth.
+- The sandbox still leaks a variable number of `AudioStreamGeneratorPlayback` objects at
+  exit (refcount exactly 1 — AudioServer's own hold), which is the residue of that same
+  engine bug rather than a defect of the teardown.
 - Safari and Firefox are untested. Only Chrome has run the browser build.
 - macOS and Linux have never been compiled — CMake and miniaudio cover them, unexercised.
 - `AudioInput` in the browser has no `getUserMedia`, so `delay-echo.json` loads and
