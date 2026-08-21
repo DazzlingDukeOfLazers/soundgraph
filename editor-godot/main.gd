@@ -1395,6 +1395,8 @@ func _all_notes_off() -> void:
 	held_notes.clear()
 	if keyboard != null:
 		keyboard.set_held_notes(held_notes)
+	if roll_pitch != null:
+		roll_pitch.queue_redraw()
 
 
 
@@ -4626,6 +4628,8 @@ func _hold_note(note: int, velocity: float = 0.9) -> void:
 	engine.note_on(note, velocity)
 	if keyboard != null:
 		keyboard.set_held_notes(held_notes)
+	if roll_pitch != null:
+		roll_pitch.queue_redraw()
 
 
 func _let_go_note(note: int) -> void:
@@ -4635,6 +4639,8 @@ func _let_go_note(note: int) -> void:
 	engine.note_off(note)
 	if keyboard != null:
 		keyboard.set_held_notes(held_notes)
+	if roll_pitch != null:
+		roll_pitch.queue_redraw()
 
 
 ## ---- the piano roll ----------------------------------------------------------------
@@ -4924,6 +4930,11 @@ func _build_keyboard_dock() -> Control:
 
 	roll_scroll = VScrollBar.new()
 	roll_scroll.min_value = 0.0
+	# Wide enough to hit — the stock bar is eight pixels of target — and stepped
+	# by the beat, because the default step of a hundredth made the wheel over it
+	# move the view by nothing anyone could see.
+	roll_scroll.custom_minimum_size.x = Design.scale(14)
+	roll_scroll.step = 4.0
 	roll_scroll.tooltip_text = "Where in the piece the roll is looking. " \
 		+ "Up is later, the way the notes read."
 	roll_scroll.value_changed.connect(_on_roll_scroll)
@@ -4939,6 +4950,8 @@ func _build_keyboard_dock() -> Control:
 	roll_pitch = RollPitch.new()
 	roll_pitch.keyboard = keyboard
 	roll_pitch.visible = false
+	roll_pitch.note_pressed.connect(_on_keyboard_pressed)
+	roll_pitch.note_released.connect(_on_keyboard_released)
 	roll_row.add_child(roll_pitch)
 
 	roll_row.add_child(piano_roll)
@@ -5123,7 +5136,7 @@ func _build_keyboard_bar() -> Control:
 	roll_menu.set_item_checked(2, true)
 	roll_menu.add_separator()
 	roll_bars_menu = PopupMenu.new()
-	for rows: int in [8, 16, 32, 64, 128]:
+	for rows: int in [8, 16, 32, 64, 128, 256, 512, 1024, 2048]:
 		roll_bars_menu.add_radio_check_item("½ bar" if rows == 8
 			else "%d bar%s" % [rows / 16, "s" if rows > 16 else ""], rows)
 	roll_bars_menu.set_item_checked(1, true)

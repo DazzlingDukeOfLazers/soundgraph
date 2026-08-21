@@ -2968,7 +2968,10 @@ func _initialize() -> void:
 	main.roll_bars_menu.id_pressed.emit(8)
 	check(main.piano_roll.view_rows == 8, "half a bar for a close look")
 	main.roll_bars_menu.id_pressed.emit(128)
-	check(main.piano_roll.view_rows == 128, "eight bars for the whole shape")
+	check(main.piano_roll.view_rows == 128, "eight bars for a long stretch")
+	main.roll_bars_menu.id_pressed.emit(2048)
+	check(main.piano_roll.view_rows == 2048,
+		"and all hundred twenty-eight for the whole shape")
 	main.roll_bars_menu.id_pressed.emit(16)
 
 	# The same grid lying the other way: time runs rightward, the low notes hang at
@@ -2983,6 +2986,18 @@ func _initialize() -> void:
 		"and a lane still answers to its note along the pitch axis")
 	check(main.roll_pitch.visible and not main.roll_scroll.visible,
 		"lying flat, a sliver of piano names the pitches and the scrollbar rests")
+	# And the sliver plays: press, sound, light, release — the same path as the
+	# keyboard below, so a note started here is a note like any other.
+	for i in 3:
+		await process_frame
+	var sliver_c3: int = main.roll_pitch._note_at(
+		Vector2(3.0, main.roll_pitch.size.y - 2.0))
+	check(sliver_c3 == 48,
+		"the sliver's bottom key is the keyboard's lowest C (%d)" % sliver_c3)
+	main.roll_pitch._press(57)
+	check(main.held_notes.has(57), "pressing a sliver key sounds its note")
+	main.roll_pitch._release()
+	check(not main.held_notes.has(57), "and letting go lets go")
 	# Lying flat the wheel is a scroll, and a scroll pulls the page the other way.
 	var lean := InputEventMouseButton.new()
 	lean.button_index = MOUSE_BUTTON_WHEEL_DOWN

@@ -43,15 +43,15 @@ var playing_step := -1:
 		queue_redraw()
 
 ## The window onto a longer piece: how many rows are on screen, and which absolute
-## step sits at the window's start. A sequence is up to sixteen bars; the view shows
-## from half of one up to eight of them, and the wheel walks the rest.
-const MAX_STEPS := 256
+## step sits at the window's start. A sequence runs up to 128 bars; the view shows
+## from half of one to all of them, and the wheel and scrollbar walk the rest.
+const MAX_STEPS := 2048
 var view_rows := 16
 var scroll_step := 0
 
 
 func set_view_rows(rows: int) -> void:
-	view_rows = clampi(rows, 8, 128)
+	view_rows = clampi(rows, 8, MAX_STEPS)
 	scroll_step = clampi(scroll_step, 0, MAX_STEPS - view_rows)
 	queue_redraw()
 
