@@ -272,7 +272,7 @@ func _draw() -> void:
 			_draw_keycap(font, key_labels[note], keycap,
 				Vector2(rect.position.x + rect.size.x * 0.5,
 					(strip_top + strip_bottom) * 0.5 + font.get_ascent(keycap) * 0.5),
-				ink, WHITE_HELD if down else WHITE)
+				ink)
 
 	var black_width := white_width * BLACK_WIDTH
 	var black_height := size.y * BLACK_HEIGHT
@@ -292,26 +292,17 @@ func _draw() -> void:
 				_draw_keycap(font, key_labels[note], keycap,
 					Vector2(rect.position.x + rect.size.x * 0.5,
 						black_height - keycap * 0.62),
-					Design.BLACK_KEY_INK if not down else Design.WHITE_KEY_INK,
-					BLACK_HELD if down else BLACK)
+					Design.BLACK_KEY_INK if not down else Design.WHITE_KEY_INK)
 
 
-## One computer-key letter, in a keycap.
+## One computer-key letter, bare.
 ##
-## The outline is not decoration: it is what says "this letter is a key on your computer"
-## rather than "this is the name of the note", which are two different things that were
-## previously distinguished only by position and size. A shape carries that distinction
-## where a colour would not survive a greyscale print or a colour-blind reader.
+## It wore a drawn keycap for a while — an outline saying "this is a key on your
+## computer, not the name of the note" — but thirty outlined boxes marching across
+## the keys read as chrome, and position and size carry the distinction well enough:
+## the letter floats in the strip, the octave name sits on the key's floor.
 func _draw_keycap(font: Font, letter: String, size_px: int, centre: Vector2,
-		ink: Color, behind: Color) -> void:
+		ink: Color) -> void:
 	var text := font.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, size_px)
-	var pad := Vector2(size_px * 0.34, size_px * 0.18)
-	var box := Rect2(centre - Vector2(text.x * 0.5, font.get_ascent(size_px)) - pad,
-		Vector2(text.x, font.get_ascent(size_px) + font.get_descent(size_px)) + pad * 2.0)
-	# A cap the colour of the key it sits on keeps the letter's own contrast intact —
-	# the outline does the separating, so nothing is drawn on a third background whose
-	# pairing with the ink nobody has checked.
-	draw_rect(box, behind)
-	draw_rect(box, ink, false, 1.0)
 	draw_string(font, centre - Vector2(text.x * 0.5, 0.0), letter,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, size_px, ink)
