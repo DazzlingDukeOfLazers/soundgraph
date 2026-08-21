@@ -2958,14 +2958,26 @@ func _initialize() -> void:
 	# The window: zoom cycles bars, the wheel walks the piece, the playhead turns
 	# the page, and a click past the end grows the piece a bar at a time.
 	check(main.piano_roll.view_rows == 16, "the roll opens one bar tall")
-	main.roll_zoom.pressed.emit()
-	check(main.piano_roll.view_rows == 32 and main.roll_zoom.text == "2 bars",
-		"zoom steps to two bars")
-	main.roll_zoom.pressed.emit()
-	check(main.piano_roll.view_rows == 64 and main.roll_zoom.text == "4 bars",
-		"then four")
-	main.roll_zoom.pressed.emit()
+	main.roll_bars_menu.id_pressed.emit(32)
+	check(main.piano_roll.view_rows == 32, "the Bars submenu steps to two bars")
+	main.roll_bars_menu.id_pressed.emit(64)
+	check(main.piano_roll.view_rows == 64, "then four")
+	main.roll_bars_menu.id_pressed.emit(16)
 	check(main.piano_roll.view_rows == 16, "and back to one")
+
+	# The same grid lying the other way: time runs rightward, the low notes hang at
+	# the bottom, and the pointer's two axes swap to match.
+	main.roll_view.get_popup().id_pressed.emit(1)
+	check(main.piano_roll.orientation == "horizontal",
+		"the View menu lays the roll flat")
+	check(main.piano_roll.step_at(2.0) == main.piano_roll.scroll_step,
+		"lying flat, the window's first step is at the left edge")
+	var flat_span: Vector2 = main.piano_roll._pitch_span(57)
+	check(main.piano_roll.note_at(flat_span.x + flat_span.y * 0.5) == 57,
+		"and a lane still answers to its note along the pitch axis")
+	main.roll_view.get_popup().id_pressed.emit(0)
+	check(main.piano_roll.orientation == "vertical",
+		"and Vertical stands it back up")
 	var walk := InputEventMouseButton.new()
 	walk.button_index = MOUSE_BUTTON_WHEEL_UP
 	walk.pressed = true
@@ -6915,6 +6927,21 @@ func _initialize() -> void:
 	check(main.keyboard.visible and main.keyboard.custom_minimum_size.y
 			== Design.scale(112),
 		"and full is the whole piano again")
+
+	# The letters on the keys are training wheels somebody can take off. The size
+	# radios and the hints checkbox share one popup, so flipping the size must not
+	# blow the checkbox away.
+	main._set_key_hints(false)
+	check(not main.keyboard.show_key_labels, "the menu can take the key hints off")
+	main._set_keyboard_mode("mini")
+	main._set_keyboard_mode("full")
+	var hints_menu: PopupMenu = main.keyboard_toggle.get_popup()
+	check(not hints_menu.is_item_checked(hints_menu.get_item_index(3)),
+		"and choosing a size leaves the hints choice standing")
+	check(not main.keyboard.key_labels.is_empty(),
+		"the mapping itself stays live — only the letters go")
+	main._set_key_hints(true)
+	check(main.keyboard.show_key_labels, "and they come back")
 
 	# The dock's vertical ladder: on a short window the roll yields height first and a
 	# full keyboard drops to mini on its own — the piano must never be the row that

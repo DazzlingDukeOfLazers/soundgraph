@@ -95,6 +95,11 @@ var held: Dictionary = {}
 ## note -> the computer key that plays it, drawn on the key itself.
 var key_labels: Dictionary = {}
 
+## Whether those letters are drawn at all. The mapping stays live either way — this
+## silences the lesson, not the instrument — and the octave names stay: C3 is what
+## the key *is*, the letter is only how a computer reaches it.
+var show_key_labels := true
+
 var _mouse_note := -1
 
 
@@ -263,7 +268,7 @@ func _draw() -> void:
 			draw_string(font, Vector2(rect.position.x + 5.0, floor_y),
 				"C%d" % (note / 12 - 1), HORIZONTAL_ALIGNMENT_LEFT, -1,
 					octave_text, ink)
-		if key_labels.has(note):
+		if show_key_labels and key_labels.has(note):
 			var strip_top: float = size.y * BLACK_HEIGHT
 			var strip_bottom: float = floor_y - octave_text
 			# The cap takes the colour of the key *as it is now*, held or not. Drawing it
@@ -288,7 +293,7 @@ func _draw() -> void:
 				draw_rect(Rect2(rect.position + Vector2(HELD_INSET, HELD_INSET),
 					rect.size - Vector2(HELD_INSET, HELD_INSET) * 2.0),
 					Design.BLACK_KEY_INK, false, HELD_INSET)
-			if font != null and key_labels.has(note):
+			if font != null and show_key_labels and key_labels.has(note):
 				_draw_keycap(font, key_labels[note], keycap,
 					Vector2(rect.position.x + rect.size.x * 0.5,
 						black_height - keycap * 0.62),
