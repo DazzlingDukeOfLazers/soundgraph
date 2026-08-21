@@ -648,8 +648,19 @@ func _build_ui() -> void:
 	root.add_child(toolbar)
 
 	split = HSplitContainer.new()
-	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(split)
+	# The split lives inside a plain holder rather than in the column directly, so
+	# its children's minimum heights never reach the column's arithmetic. That is the
+	# guarantee the keyboard needed: on a short window the canvas and the bench clip
+	# inside this holder, and the piano keeps every pixel it asked for — a user who
+	# wants the graph taller makes the keyboard mini themselves, from a keyboard they
+	# can see. Not knowing there is a keyboard is the one failure this must not have.
+	var middle := Control.new()
+	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	middle.custom_minimum_size.y = Design.scale(120)
+	middle.clip_contents = true
+	root.add_child(middle)
+	split.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	middle.add_child(split)
 	# The divider is placed from the right, on every resize. It used to be a constant
 	# split_offset, which is measured from the *first* child rather than from the
 	# window — so the inspector sat at the same absolute x whatever the window size,

@@ -6933,6 +6933,15 @@ func _initialize() -> void:
 			and main.piano_roll.custom_minimum_size.y == Design.scale(150),
 		"and room given back is taken back")
 
+	# The structural guarantee behind the ladder: the split lives in a clipping
+	# holder, so the canvas's and the bench's minimum heights can never reach the
+	# column's arithmetic and shove the piano off the bottom. Rungs help; this is
+	# the part that cannot be mistuned.
+	var middle := main.split.get_parent() as Control
+	check(middle != null and middle.clip_contents
+			and not (middle is VBoxContainer),
+		"the canvas clips inside a holder rather than out-arguing the piano")
+
 	# ---- the machine plugs into the ports, and can be unplugged ----------------------
 	# Which port a device drives is the port's own host binding, so dragging a dock jack is
 	# not a cable edit — it moves that binding. Dropping it nowhere takes the binding off
