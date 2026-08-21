@@ -1017,6 +1017,11 @@ func _build_ui() -> void:
 	root.add_child(seam_cables)
 
 	_set_keyboard_mode(str(Settings.fetch("keyboard_mode", "full")))
+	# The dock has its own vertical ladder, and the window resizing is its signal —
+	# same reasoning as the toolbar's: the dock's own size stops changing exactly
+	# when the window gets too short for it.
+	get_viewport().size_changed.connect(_fit_keyboard_dock.bind(-1.0))
+	_fit_keyboard_dock.call_deferred()
 	_refresh_keyboard_range()
 	_build_search_popup()
 
@@ -4914,6 +4919,35 @@ func _set_keyboard_mode(mode: String) -> void:
 		var menu := keyboard_toggle.get_popup()
 		for index in menu.item_count:
 			menu.set_item_checked(index, menu.get_item_text(index).to_lower() == mode)
+	_fit_keyboard_dock()
+
+
+## The dock's vertical ladder: the keys are the instrument, so they yield last. On
+## a short window the roll gives up height first, then a full keyboard drops to mini
+## height on its own — the stored mode is the user's answer, this is the window's,
+## and the roll rendering while the piano fell off the bottom was the exact bug that
+## earned this function.
+func _fit_keyboard_dock(height: float = -1.0) -> void:
+	if keyboard == null:
+		return
+	var available := height
+	if available <= 0.0:
+		var view := get_viewport()
+		available = view.get_visible_rect().size.y if view != null else 0.0
+	if available <= 0.0:
+		return
+	var tight := available < 700.0
+	var cramped := available < 560.0
+	if piano_roll != null:
+		piano_roll.custom_minimum_size.y = Design.scale(90 if tight else 150)
+	if keyboard_mode == "full":
+		keyboard.custom_minimum_size.y = Design.scale(56 if cramped else 112)
+	# The bench yields too: its display's floor was tall enough to shove the whole
+	# column past the window's bottom on its own, and a shorter trace that shows is
+	# worth more than a taller one that pushed the piano off the screen.
+	if scope_probe != null and scope_probe.display != null:
+		scope_probe.display.custom_minimum_size.y = Design.scale(
+			52 if cramped else (90 if tight else 160))
 
 
 ## Kept for the callers that speak in booleans; the menu speaks in modes.

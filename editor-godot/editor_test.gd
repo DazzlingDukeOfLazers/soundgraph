@@ -6916,6 +6916,23 @@ func _initialize() -> void:
 			== Design.scale(112),
 		"and full is the whole piano again")
 
+	# The dock's vertical ladder: on a short window the roll yields height first and a
+	# full keyboard drops to mini on its own — the piano must never be the row that
+	# falls off the bottom while the roll above it renders on.
+	main._fit_keyboard_dock(500.0)
+	check(main.keyboard.custom_minimum_size.y == Design.scale(56)
+			and main.piano_roll.custom_minimum_size.y == Design.scale(90)
+			and main.scope_probe.display.custom_minimum_size.y == Design.scale(52),
+		"a cramped window squeezes the roll, the bench and the keys, in that order "
+			+ "(%.0f, %.0f, %.0f)"
+			% [main.piano_roll.custom_minimum_size.y,
+				main.scope_probe.display.custom_minimum_size.y,
+				main.keyboard.custom_minimum_size.y])
+	main._fit_keyboard_dock(900.0)
+	check(main.keyboard.custom_minimum_size.y == Design.scale(112)
+			and main.piano_roll.custom_minimum_size.y == Design.scale(150),
+		"and room given back is taken back")
+
 	# ---- the machine plugs into the ports, and can be unplugged ----------------------
 	# Which port a device drives is the port's own host binding, so dragging a dock jack is
 	# not a cable edit — it moves that binding. Dropping it nowhere takes the binding off
