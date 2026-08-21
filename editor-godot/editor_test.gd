@@ -6898,6 +6898,24 @@ func _initialize() -> void:
 	check(main.held_notes.is_empty(), "collapsing the dock lets go of what was held")
 	main._set_keyboard_expanded(true)
 
+	# The keyboard button is a size menu now: full, mini, hide — three sizes of the
+	# same answer, remembered across sessions.
+	main._set_keyboard_mode("mini")
+	await process_frame
+	check(main.keyboard.visible and main.keyboard.custom_minimum_size.y
+			< Design.scale(112),
+		"mini keeps the keys playable at half height (%.0f)"
+			% main.keyboard.custom_minimum_size.y)
+	main._set_keyboard_mode("hide")
+	await process_frame
+	check(not main.keyboard.visible and main.keyboard_toggle.is_visible_in_tree(),
+		"hide leaves the strip, with the way back on the same menu")
+	main._set_keyboard_mode("full")
+	await process_frame
+	check(main.keyboard.visible and main.keyboard.custom_minimum_size.y
+			== Design.scale(112),
+		"and full is the whole piano again")
+
 	# ---- the machine plugs into the ports, and can be unplugged ----------------------
 	# Which port a device drives is the port's own host binding, so dragging a dock jack is
 	# not a cable edit — it moves that binding. Dropping it nowhere takes the binding off

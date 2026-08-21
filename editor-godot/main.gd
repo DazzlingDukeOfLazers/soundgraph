@@ -242,7 +242,7 @@ var arrange_popup: PopupMenu
 var view_popup: PopupMenu
 var keyboard_bar: Control
 var keyboard_dock: PanelContainer
-var keyboard_toggle: Button
+var keyboard_toggle: MenuButton
 ## The instrument's own volume and mute; see _build_keyboard_bar.
 var master_knob
 var master_mute: Button
@@ -255,6 +255,9 @@ var seam_cables
 ## The device jack currently in the user's hand, or {} — see _on_jack_grabbed.
 var dragging_jack := {}
 var keyboard_expanded := true
+## "full", "mini" or "hide" — how much room the keys take. Mini keeps them playable
+## at half height; hide leaves only the strip, with the way back on the same menu.
+var keyboard_mode := "full"
 ## What is open, shown so "which patch am I looking at" is never a guess.
 var document_label: RichTextLabel
 var document_name := "untitled"
@@ -1013,7 +1016,7 @@ func _build_ui() -> void:
 	seam_cables.set_as_top_level(true)
 	root.add_child(seam_cables)
 
-	_set_keyboard_expanded(true)
+	_set_keyboard_mode(str(Settings.fetch("keyboard_mode", "full")))
 	_refresh_keyboard_range()
 	_build_search_popup()
 
@@ -4889,32 +4892,49 @@ func _build_keyboard_dock() -> Control:
 
 
 ## Collapses the dock to its control strip, or opens it again.
-func _set_keyboard_expanded(expanded: bool) -> void:
-	keyboard_expanded = expanded
+func _set_keyboard_mode(mode: String) -> void:
+	keyboard_mode = mode
+	keyboard_expanded = mode != "hide"
+	Settings.store("keyboard_mode", mode)
 	if keyboard != null:
-		# Hidden rather than shrunk: a keyboard two pixels tall is a row of slivers
-		# that still take clicks.
-		keyboard.visible = expanded
+		# Hidden rather than shrunk past playing: a keyboard two pixels tall is a row
+		# of slivers that still take clicks. Mini stays a keyboard — half the height,
+		# every key still a target a finger can mean.
+		keyboard.visible = keyboard_expanded
+		keyboard.custom_minimum_size.y = Design.scale(112 if mode == "full" else 56)
 		if piano_roll != null:
-			piano_roll.visible = expanded and roll_open
-		if not expanded:
+			piano_roll.visible = keyboard_expanded and roll_open
+		if not keyboard_expanded:
 			_release_all_notes()
 	if keyboard_toggle != null:
 		keyboard_toggle.text = "Keyboard"
 		keyboard_toggle.icon = _icon(
-			Icons.Kind.CARET_DOWN if expanded else Icons.Kind.CARET_RIGHT,
+			Icons.Kind.CARET_DOWN if keyboard_expanded else Icons.Kind.CARET_RIGHT,
 			Design.INK_SECOND)
-		keyboard_toggle.tooltip_text = ("Collapse the keyboard" if expanded
-			else "Show the keyboard")
+		var menu := keyboard_toggle.get_popup()
+		for index in menu.item_count:
+			menu.set_item_checked(index, menu.get_item_text(index).to_lower() == mode)
+
+
+## Kept for the callers that speak in booleans; the menu speaks in modes.
+func _set_keyboard_expanded(expanded: bool) -> void:
+	_set_keyboard_mode(keyboard_mode if expanded and keyboard_mode != "hide" 		else ("full" if expanded else "hide"))
 
 
 func _build_keyboard_bar() -> Control:
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", Design.SPACE_XS)
 
-	keyboard_toggle = Button.new()
-	keyboard_toggle.pressed.connect(func() -> void:
-		_set_keyboard_expanded(not keyboard_expanded))
+	# A menu, not a toggle: full, mini and hide are three sizes of the same answer
+	# to "how much of my screen is a piano", and a toggle can only say two of them.
+	keyboard_toggle = MenuButton.new()
+	keyboard_toggle.flat = false
+	var size_menu := keyboard_toggle.get_popup()
+	size_menu.add_radio_check_item("Full", 0)
+	size_menu.add_radio_check_item("Mini", 1)
+	size_menu.add_radio_check_item("Hide", 2)
+	size_menu.id_pressed.connect(func(id: int) -> void:
+		_set_keyboard_mode(["full", "mini", "hide"][id]))
 	bar.add_child(_defocus(keyboard_toggle))
 
 	# Master volume and mute, on the instrument rather than in the chrome.
