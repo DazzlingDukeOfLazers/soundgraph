@@ -2998,6 +2998,22 @@ func _initialize() -> void:
 	check(main.held_notes.has(57), "pressing a sliver key sounds its note")
 	main.roll_pitch._release()
 	check(not main.held_notes.has(57), "and letting go lets go")
+	# The wheel over the sliver walks octaves, so the whole piano is reachable
+	# without leaving the pointer's neighbourhood.
+	var octave_before: int = main.octave
+	var climb := InputEventMouseButton.new()
+	climb.button_index = MOUSE_BUTTON_WHEEL_UP
+	climb.pressed = true
+	climb.position = main.roll_pitch.size * 0.5
+	main.roll_pitch._gui_input(climb)
+	check(main.octave == octave_before + 1,
+		"wheel-up over the sliver climbs an octave (%d)" % main.octave)
+	var descend := InputEventMouseButton.new()
+	descend.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	descend.pressed = true
+	descend.position = main.roll_pitch.size * 0.5
+	main.roll_pitch._gui_input(descend)
+	check(main.octave == octave_before, "and wheel-down descends back")
 	# Lying flat the wheel is a scroll, and a scroll pulls the page the other way.
 	var lean := InputEventMouseButton.new()
 	lean.button_index = MOUSE_BUTTON_WHEEL_DOWN

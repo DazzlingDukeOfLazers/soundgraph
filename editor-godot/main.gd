@@ -4952,6 +4952,7 @@ func _build_keyboard_dock() -> Control:
 	roll_pitch.visible = false
 	roll_pitch.note_pressed.connect(_on_keyboard_pressed)
 	roll_pitch.note_released.connect(_on_keyboard_released)
+	roll_pitch.octave_shifted.connect(_shift_octave)
 	roll_row.add_child(roll_pitch)
 
 	roll_row.add_child(piano_roll)
@@ -5321,9 +5322,12 @@ func _refresh_keyboard_range() -> void:
 		labels[base + KEY_NOTES[keycode]] = OS.get_keycode_string(keycode)
 	keyboard.key_labels = labels
 	keyboard.set_range(base, keyboard_octaves)
-	# The roll's lanes are the keys' columns, so they move together.
+	# The roll's lanes are the keys' columns, so they move together — and the
+	# pitch sliver is the same window stood on end.
 	if piano_roll != null:
 		piano_roll.queue_redraw()
+	if roll_pitch != null:
+		roll_pitch.queue_redraw()
 	_refresh_keyboard_label(base)
 
 

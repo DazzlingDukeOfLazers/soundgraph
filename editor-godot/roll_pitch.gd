@@ -13,6 +13,8 @@ extends Control
 
 signal note_pressed(note: int)
 signal note_released(note: int)
+## The wheel asks for a different octave: +1 rolling up, -1 rolling down.
+signal octave_shifted(direction: int)
 
 ## The keyboard whose range, layout and held notes this mirrors.
 var keyboard: Control
@@ -72,6 +74,15 @@ func _note_at(point: Vector2) -> int:
 
 
 func _gui_input(event: InputEvent) -> void:
+	var wheel := event as InputEventMouseButton
+	if wheel != null and wheel.pressed and wheel.button_index in [
+			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		# The wheel walks the range: up climbs an octave, down descends. The strip
+		# only ever shows a window onto the piano's eight octaves, and reaching the
+		# rest should not require leaving the pointer's own neighbourhood.
+		octave_shifted.emit(1 if wheel.button_index == MOUSE_BUTTON_WHEEL_UP else -1)
+		accept_event()
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_press(_note_at(event.position))
