@@ -6988,6 +6988,16 @@ func _initialize() -> void:
 	await process_frame
 	check(not main.keyboard.visible and main.keyboard_toggle.is_visible_in_tree(),
 		"hide leaves the strip, with the way back on the same menu")
+	# Hiding the piano is about the piano: the roll, and the vertical piano riding
+	# with it, answer to the Roll menu alone.
+	main.roll_button.get_popup().id_pressed.emit(0)
+	for i in 3:
+		await process_frame
+	check(main.roll_row.visible and not main.keyboard.visible,
+		"the roll stands open while the keyboard hides")
+	main.roll_button.get_popup().id_pressed.emit(2)
+	for i in 3:
+		await process_frame
 	main._set_keyboard_mode("full")
 	await process_frame
 	check(main.keyboard.visible and main.keyboard.custom_minimum_size.y

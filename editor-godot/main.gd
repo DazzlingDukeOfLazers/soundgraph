@@ -4659,7 +4659,10 @@ func _roll_sequence() -> Dictionary:
 
 func _set_roll_open(open: bool) -> void:
 	roll_open = open
-	roll_row.visible = open and keyboard_expanded
+	# The Roll menu alone governs the roll. The keyboard's own size menu used to
+	# take the roll down with it, which read as one control quietly overruling
+	# another — hiding the piano is about the piano.
+	roll_row.visible = open
 	roll_play.visible = open
 	roll_capture.visible = open
 	roll_tempo.visible = open
@@ -5037,8 +5040,6 @@ func _set_keyboard_mode(mode: String) -> void:
 		# every key still a target a finger can mean.
 		keyboard.visible = keyboard_expanded
 		keyboard.custom_minimum_size.y = Design.scale(112 if mode == "full" else 56)
-		if piano_roll != null:
-			roll_row.visible = keyboard_expanded and roll_open
 		if not keyboard_expanded:
 			_release_all_notes()
 	if keyboard_toggle != null:
