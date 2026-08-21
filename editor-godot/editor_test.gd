@@ -6884,9 +6884,9 @@ func _initialize() -> void:
 	await process_frame
 	check(not main.muted, "and unmuting puts it back")
 
-	check(buttons == 10,
-		"with ten buttons on it: collapse, mute, roll, play, capture, zoom, two octave, two width (%d)"
-		% buttons)
+	check(buttons == 9,
+		"with nine buttons on it: collapse, mute, roll, play, capture, two octave, "
+		+ "two width — the bar-zoom button folded into the Roll menu (%d)" % buttons)
 
 	# The dock. The keyboard was the brightest, heaviest thing on screen and the eye
 	# went straight to it, so it has to be able to get out of the way.
