@@ -261,6 +261,25 @@ func _struck_peak(main, note: int) -> float:
 	return peak
 
 
+## The ModuleFace mounted on the canvas for an open module — the only place a
+## definition's face is arranged now that the side panel's copy is gone.
+func _mounted_module_face(main, wanted: String) -> ModuleFace:
+	for key in main.module_mounts:
+		var mount := main.module_mounts[key] as ModuleFace
+		if mount != null and mount.visible and mount.module_name() == wanted:
+			return mount
+	return null
+
+
+## Stands the canvas face up at a representative narrow width, the stance the side
+## panel used to give it for free. Geometry tests measure rails against panels; a
+## hidden, unsized face measures as a rumour.
+func _stand_face(main, width: float = 340.0) -> void:
+	main.patch_face.visible = true
+	main.patch_face.size = Vector2(width,
+		main.patch_face.get_combined_minimum_size().y)
+
+
 func _device_peak(main) -> float:
 	var generator := AudioStreamGenerator.new()
 	generator.buffer_length = 0.5
@@ -4029,11 +4048,8 @@ func _initialize() -> void:
 	await main._load_example("First Synth")
 	for i in 6:
 		await process_frame
-	check(main.side_tabs.tab_count == 2, "the side column carries Panel and Scope tabs")
-	main.side_tabs.current_tab = 1
-	for i in 3:
-		await process_frame
-	check(main.scope_probe.visible, "the Scope tab shows the probe")
+	check(main.scope_probe.visible,
+		"the side column is the probe scope, standing without tabs")
 
 	var probe_index := -1
 	for index in main.scope_probe._sources.size():
@@ -4199,7 +4215,6 @@ func _initialize() -> void:
 	AudioServer.unlock()
 	await process_frame
 	pump_player.queue_free()
-	main.side_tabs.current_tab = 0
 	for i in 3:
 		await process_frame
 
@@ -4644,37 +4659,14 @@ func _initialize() -> void:
 	# It used to be two mostly-empty regions and a line of grey text. The test is not
 	# that it has content but that the content *changes with what is selected* — a panel
 	# showing the same thing either way is the fixed layout it replaced.
+	# The context inspector went with the side panel; the outline carries the run
+	# order now, and selection still aims the probe and the face's offer.
 	main.inspecting = {}
 	main._refresh_context()
 	await process_frame
-	check(main.context_heading.text == "The graph",
-		"with nothing selected the inspector describes the graph (%s)"
-			% main.context_heading.text)
-
-	# The execution order is chips you can click, not a caption. Counted, because a
-	# single label containing arrows would satisfy any looser check.
-	var chips := 0
-	for child in main.context_panel.get_children():
-		if child is HFlowContainer:
-			for chip in (child as HFlowContainer).get_children():
-				if chip is Button:
-					chips += 1
-	check(chips == main.widgets.size(),
-		"and every stage of the run order is a control you can press (%d of %d)"
-			% [chips, main.widgets.size()])
-
-	# Pressing one selects and centres that node, which is what turns the order from
-	# something to read into a way of getting around a graph too big to see at once.
 	main._focus_node("filter")
 	await process_frame
-	check(main.widgets["filter"].selected, "pressing a stage selects its node")
-	check(main.context_heading.text == "Selected node",
-		"and the inspector becomes that node (%s)" % main.context_heading.text)
-	var shows_node := false
-	for child in main.context_panel.get_children():
-		if child is Label and (child as Label).text.contains("StateVariableFilter"):
-			shows_node = true
-	check(shows_node, "naming its type and category")
+	check(main.widgets["filter"].selected, "focusing a node selects it")
 	check(str(main.inspecting.get("node", "")) == "filter",
 		"and pointing the scope at it")
 
@@ -4790,6 +4782,9 @@ func _initialize() -> void:
 	# the last child of the column — was simply below the bottom. Nobody hid it;
 	# arithmetic did.
 	await main._load_example("DX7: algo-01")
+	for i in 8:
+		await process_frame
+	_stand_face(main)
 	for i in 6:
 		await process_frame
 	var tall_needed: float = column.get_combined_minimum_size().y
@@ -5084,6 +5079,7 @@ func _initialize() -> void:
 			await main._rebuild_view()
 			for i in 8:
 				await process_frame
+			_stand_face(main)
 			check(main.patch_face.derived,
 				"a file with no panel shows the default instead")
 			var defaults: Array = PatchFace.default_controls(main.patch, main.registry)
@@ -5428,8 +5424,6 @@ func _initialize() -> void:
 	check(case_badge != null and case_badge.visible and case_badge.text == "ALGO 01",
 		"the case wears the instrument's name (%s)"
 			% ("none" if case_badge == null else case_badge.text))
-	check(not main.face_heading.visible,
-		"and nothing repeats it above (%s)" % main.face_heading.text)
 
 	# And the case encloses the rack it names: name band, rail, modules, rail. Six plates
 	# lying on a panel with a name floating over them are six things; inside a case with
@@ -6023,44 +6017,34 @@ func _initialize() -> void:
 	# reason the builder is here rather than in a tab of its own: the thing being arranged
 	# and the graph it came out of are on screen together.
 	main.show_view("Graph")
-	main._focus_node(instance)
+	# The side panel's face copy is gone: a definition's face is arranged where the
+	# definition is open — on the canvas. Open the module and take its mount.
+	await main._open_module("part")
+	for i in 10:
+		await process_frame
+	# The mount appears when the open frame is flipped to its face — the same turn
+	# the case badge makes on the canvas.
+	main.flipped_modules["part"] = true
+	main._apply_flips()
 	for i in 6:
 		await process_frame
-	check(main.module_face.visible and not main.patch_face.visible,
-		"selecting a module instance puts its face on the panel")
-	check(main.face_heading.visible and main.face_heading.text == "part",
-		"and the heading says whose it is (%s)" % main.face_heading.text)
-	check(main.module_face.face_rows() == [["cutoff", "rate"], ["resonance", "amount"]],
+	var face: ModuleFace = _mounted_module_face(main, "part")
+	check(face != null, "opening a module mounts its face on the canvas")
+	check(face.face_rows() == [["cutoff", "rate"], ["resonance", "amount"]],
 		"a module nobody has arranged reads as the wrap already on screen (%s)"
-			% str(main.module_face.face_rows()))
+			% str(face.face_rows()))
 
-	# Selecting something that is not a module gives the file's own face back.
-	main._focus_node(main._output_node())
-	for i in 4:
-		await process_frame
-	check(main.patch_face.visible and not main.module_face.visible,
-		"and selecting something that is not a module gives the file's own face back")
-	# Titled with the instrument rather than with the word "Panel", which named the
-	# obvious in the best row on screen. The module's name gave way to the file's.
+	# The file's face keeps wearing the file's name, not the module's.
 	var synth_badge := main.patch_face.get_node_or_null("Case/Name") as Label
 	check(synth_badge != null and synth_badge.text != "" and synth_badge.text != "PART",
 		"the case wears the file's name, not the module's (%s)"
 			% ("none" if synth_badge == null else synth_badge.text))
 
-	# And so does a selection with nothing behind it, which is the branch of
-	# _on_node_selected that used to return without telling the panel anything at all: it
-	# emptied `inspecting` and left the panel describing whatever had been selected before.
-	# Invisible while the panel was only ever the file's face; not invisible now.
-	main._focus_node(instance)
-	for i in 4:
-		await process_frame
-	check(main.module_face.visible, "a module's face is up again")
+	# A selection with nothing behind it still empties `inspecting`.
 	main._on_node_selected(main.graph_edit)  # a node the id map has never heard of
 	for i in 4:
 		await process_frame
 	check(main.inspecting.is_empty(), "selecting an untracked node inspects nothing")
-	check(main.patch_face.visible and not main.module_face.visible,
-		"and the panel says so rather than keeping the last module's face")
 
 	main._focus_node(instance)
 	for i in 8:
@@ -6069,7 +6053,7 @@ func _initialize() -> void:
 	# Ghosts: everything the face could show and does not. Here that is every inner knob
 	# nobody exported, since all four exports are on the face.
 	var ghost_keys: Array = []
-	for cell: Dictionary in main.module_face._cells:
+	for cell: Dictionary in face._cells:
 		if bool(cell["ghost"]):
 			ghost_keys.append(str(cell["key"]))
 	check(ghost_keys.size() > 0, "the wand grows a ghost for what the face leaves off (%d)"
@@ -6085,39 +6069,39 @@ func _initialize() -> void:
 	# A real drag, through the same two functions the mouse goes through: which cell was
 	# grabbed, and where the drop landed.
 	var seat := func(key: String) -> Rect2:
-		for cell: Dictionary in main.module_face._cells:
+		for cell: Dictionary in face._cells:
 			if str(cell["key"]) == key:
 				return (cell["control"] as Control).get_global_rect()
 		return Rect2()
 
 	var resonance_seat: Rect2 = seat.call("resonance")
-	var from_index: int = main.module_face._cell_at(seat.call("rate").get_center())
+	var from_index: int = face._cell_at(seat.call("rate").get_center())
 	check(from_index >= 0, "a knob on the face can be picked up (%d)" % from_index)
-	var landing: Dictionary = main.module_face.drop_at(
+	var landing: Dictionary = face.drop_at(
 		Vector2(resonance_seat.position.x + 2.0, resonance_seat.get_center().y))
 	check(not bool(landing.get("fresh", false)) and int(landing.get("row", -1)) == 1,
 		"the middle of a row means into that row (%s)" % str(landing))
-	main.module_face._finish(from_index, landing)
+	face._finish(from_index, landing)
 	for i in 8:
 		await process_frame
 
 	var face_now: Array = main.patch["modules"]["part"].get("panel", {}).get("rows", [])
 	check(face_now == [["cutoff"], ["rate", "resonance", "amount"]],
 		"dragging a knob writes the panel it landed in (%s)" % str(face_now))
-	check(main.module_face.face_rows() == face_now,
+	check(face.face_rows() == face_now,
 		"and the face it rebuilt into is the one the file now says (%s)"
-			% str(main.module_face.face_rows()))
+			% str(face.face_rows()))
 	check(main.patch["modules"]["part"].get("parameters", []).size() == 4,
 		"the surface is untouched — an arrangement is presentation, not export (%d)"
 			% main.patch["modules"]["part"].get("parameters", []).size())
 
 	# Below the last row: a line of its own. The only gesture that says so.
 	var last_seat: Rect2 = seat.call("amount")
-	var below: Dictionary = main.module_face.drop_at(Vector2(last_seat.get_center().x,
+	var below: Dictionary = face.drop_at(Vector2(last_seat.get_center().x,
 		last_seat.position.y + last_seat.size.y - 2.0))
 	check(bool(below.get("fresh", false)),
 		"the bottom of a row means a line of its own (%s)" % str(below))
-	main.module_face._finish(main.module_face._cell_at(seat.call("cutoff").get_center()), below)
+	face._finish(face._cell_at(seat.call("cutoff").get_center()), below)
 	for i in 8:
 		await process_frame
 	check(main.patch["modules"]["part"].get("panel", {}).get("rows", [])
@@ -6129,14 +6113,14 @@ func _initialize() -> void:
 	# is one thought and an unexported knob on a face would be a knob wired to nothing.
 	var before_surface: int = main.patch["modules"]["part"].get("parameters", []).size()
 	var a_ghost := ""
-	for cell: Dictionary in main.module_face._cells:
+	for cell: Dictionary in face._cells:
 		if bool(cell["ghost"]) and a_ghost == "":
 			a_ghost = str(cell["key"])
-	var ghost_index: int = main.module_face._cell_at(seat.call(a_ghost).get_center())
+	var ghost_index: int = face._cell_at(seat.call(a_ghost).get_center())
 	check(ghost_index >= 0, "a ghost can be picked up too (%s)" % a_ghost)
 	var onto: Rect2 = seat.call("rate")
-	main.module_face._finish(ghost_index,
-		main.module_face.drop_at(Vector2(onto.position.x + 2.0, onto.get_center().y)))
+	face._finish(ghost_index,
+		face.drop_at(Vector2(onto.position.x + 2.0, onto.get_center().y)))
 	for i in 10:
 		await process_frame
 	check(main.patch["modules"]["part"].get("parameters", []).size() == before_surface + 1,
@@ -6158,9 +6142,9 @@ func _initialize() -> void:
 	# Off the panel: off the face, still exported. The reversible edit must not be able to
 	# do the destructive one by accident.
 	var surface_before_removal: int = main.patch["modules"]["part"].get("parameters", []).size()
-	var off: Dictionary = main.module_face.drop_at(Vector2(-500.0, -500.0))
+	var off: Dictionary = face.drop_at(Vector2(-500.0, -500.0))
 	check(bool(off.get("remove", false)), "a drop outside the panel means off it (%s)" % str(off))
-	main.module_face._finish(main.module_face._cell_at(seat.call("cutoff").get_center()), off)
+	face._finish(face._cell_at(seat.call("cutoff").get_center()), off)
 	for i in 10:
 		await process_frame
 	var after_removal: Array = []
@@ -6172,10 +6156,21 @@ func _initialize() -> void:
 		"and leaves it exported, so nothing pointing at it breaks (%d)"
 			% main.patch["modules"]["part"].get("parameters", []).size())
 	var offered_again := false
-	for cell: Dictionary in main.module_face._cells:
+	for cell: Dictionary in face._cells:
 		if bool(cell["ghost"]) and str(cell["key"]) == "cutoff":
 			offered_again = true
 	check(offered_again, "so it comes back as a ghost, ready to be put on again")
+
+	# Fold the module back to its instance: the sections below are about the closed
+	# node's own ghosts, and an open frame has no instance widget to click.
+	main.flipped_modules.erase("part")
+	await main._rebuild_view()
+	await main._close_module("part")
+	for i in 10:
+		await process_frame
+	main._focus_node(instance)
+	for i in 6:
+		await process_frame
 
 	# ---- ghost jacks: declaring a port by clicking it --------------------------------
 	# A port is on the face or it is not, and there is no arrangement for it to land in, so
@@ -6246,20 +6241,8 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 
-	var take_off_buttons := func() -> int:
-		var found := 0
-		for child in main.context_panel.get_children():
-			var row := child as HBoxContainer
-			if row == null:
-				continue
-			for inner in row.get_children():
-				if inner is Button and str((inner as Button).text) == "×":
-					found += 1
-		return found
-	check(take_off_buttons.call() > 0,
-		"the inspector offers a way to take each port and knob back off (%d)"
-			% take_off_buttons.call())
-
+	# The inspector's take-off list went with the side panel; _unexport_knob is the
+	# machinery it pressed, tested directly below.
 	# Un-exporting: the export goes, and so does everything reaching through it.
 	main.patch["controls"] = [{
 		"id": "played", "label": "Played", "kind": "knob",
@@ -6372,15 +6355,10 @@ func _initialize() -> void:
 	main._focus_node(instance)
 	for i in 4:
 		await process_frame
-	var name_field: LineEdit = null
-	for child in main.context_panel.get_children():
-		if child is LineEdit:
-			name_field = child
-	check(name_field != null and name_field.text == "part",
-		"a module instance offers its name in the inspector (%s)"
-			% ("missing" if name_field == null else name_field.text))
+	# The inspector's name field went with the side panel; the rename machinery it
+	# submitted to is driven directly.
 
-	name_field.text_submitted.emit("shaper")
+	main._on_module_renamed("part", "shaper")
 	for i in 8:
 		await process_frame
 	check(main.patch["modules"].has("shaper") and not main.patch["modules"].has("part"),
@@ -6402,19 +6380,13 @@ func _initialize() -> void:
 	check(wired == 2, "and every cable follows the instance's new id (%d)" % wired)
 
 	# The names it must refuse, each for its own reason.
-	for child in main.context_panel.get_children():
-		if child is LineEdit:
-			name_field = child
-	name_field.text_submitted.emit("shaper.two")
+	main._on_module_renamed("shaper", "shaper.two")
 	for i in 4:
 		await process_frame
 	check(main.patch["modules"].has("shaper"),
 		"a name with a dot is refused — that is the separator expansion uses (%s)"
 			% str(main.patch["modules"].keys()))
-	for child in main.context_panel.get_children():
-		if child is LineEdit:
-			name_field = child
-	name_field.text_submitted.emit("")
+	main._on_module_renamed("shaper", "")
 	for i in 4:
 		await process_frame
 	check(main.patch["modules"].has("shaper"), "and an empty name is not a rename")
@@ -6520,16 +6492,26 @@ func _initialize() -> void:
 	main._focus_node(main._output_node())
 	for i in 6:
 		await process_frame
-	check(main.module_face.visible and main.module_face.module_name() == "part",
-		"inside an open module the panel is its face (%s)"
-			% main.module_face.module_name())
-	check(main.face_heading.text == "part",
-		"under the container's name (%s)" % main.face_heading.text)
-	var opened_target: Array = main.module_face._write_target("cutoff")
+	main.flipped_modules["part"] = true
+	main._apply_flips()
+	for i in 6:
+		await process_frame
+	var opened_face: ModuleFace = _mounted_module_face(main, "part")
+	check(opened_face != null and opened_face.module_name() == "part",
+		"inside an open module its face stands on the canvas (%s)"
+			% ("none" if opened_face == null else opened_face.module_name()))
+	var opened_target: Array = opened_face._write_target("cutoff")
 	check(str(opened_target[0]).begins_with("part.") \
 			and str(opened_target[1]) == "cutoff",
 		"and its knobs reach the parts directly (%s.%s)"
 			% [opened_target[0], opened_target[1]])
+
+	# Put the flip back down: the next section performs the turn itself, through the
+	# canvas control, and a flip already standing would make its toggle a put-away.
+	main.flipped_modules.erase("part")
+	await main._rebuild_view()
+	for i in 6:
+		await process_frame
 
 	# ---- each container turns independently -------------------------------------------
 	# The open frame carries its own FACE control, and flipping it turns only that
@@ -6693,21 +6675,15 @@ func _initialize() -> void:
 	check(str(main.inspecting.get("node", "")) == "part",
 		"selecting the module makes it the selected node (%s)" % str(main.inspecting))
 
-	var open_again: Button = null
-	for child in main.context_panel.get_children():
-		var button := child as Button
-		if button != null and str(button.text).begins_with("Open"):
-			open_again = button
-	check(open_again != null, "a shut module offers to open again, from the inspector")
-	if open_again != null:
-		open_again.pressed.emit()
-		for i in 10:
-			await process_frame
-		check(main.graph_edit.groups.has("part"),
-			"and pressing it opens the module (%s)" % str(main.graph_edit.groups.keys()))
-		await main._close_module("part")
-		for i in 10:
-			await process_frame
+	# The inspector's Open button went with the side panel; the verb is the graph's.
+	await main._open_module("part")
+	for i in 10:
+		await process_frame
+	check(main.graph_edit.groups.has("part"),
+		"and the open verb still opens the module (%s)" % str(main.graph_edit.groups.keys()))
+	await main._close_module("part")
+	for i in 10:
+		await process_frame
 
 
 	await main._load_example("First Synth")
@@ -6746,7 +6722,7 @@ func _initialize() -> void:
 
 	# And the inspector is actually inside it, which is the thing that went wrong
 	# rather than the cause of it.
-	var inspector: Control = main.scope.get_parent()
+	var inspector: Control = main.scope_probe.get_parent()
 	var window_width: float = main.get_viewport().get_visible_rect().size.x
 	check(inspector.global_position.x + inspector.size.x <= window_width + 1.0,
 		"and the inspector sits inside it (right edge %.0f, window %.0f)"
@@ -8357,8 +8333,6 @@ func _initialize() -> void:
 		await process_frame
 	check(main.inspecting.is_empty(),
 		"clicking the case band chooses the container (%s)" % str(main.inspecting))
-	check(main.patch_face.visible and not main.module_face.visible,
-		"and the panel shows the container's face")
 	var chosen_still := 0
 	for child in main.graph_edit.get_children():
 		if child is GraphNode and (child as GraphNode).selected:

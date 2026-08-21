@@ -193,9 +193,6 @@ var face_anchor := Vector2.ZERO
 
 ## The file's own face: the knobs somebody plays. See patch_face.gd.
 var patch_face: PatchFace
-## And one module's, when a module instance is what is selected. See module_face.gd.
-var module_face: ModuleFace
-var face_heading: Label
 var views: TabContainer
 var rack: Rack
 var sandbox: Sandbox
@@ -227,7 +224,6 @@ var side_panel_open := true
 
 var split: HSplitContainer
 var side_panel: VBoxContainer
-var side_tabs: TabBar
 var view_zoom_slider: HSlider
 var view_zoom_readout: Label
 var _zoom_slider_syncing := false
@@ -269,9 +265,6 @@ var _level_cursor := 0
 
 var health_label: Label
 var diagnostics_heading: Label
-var context_heading: Label
-var context_panel: VBoxContainer
-var scope: Control
 var search_popup: PopupPanel
 var search_field: LineEdit
 var search_results: VBoxContainer
@@ -889,6 +882,28 @@ func _build_ui() -> void:
 	big_face.z_index = 50
 	big_face.reordered.connect(_on_panel_reordered)
 	big_face.offered.connect(_toggle_control)
+	# The graph's face is the only face now — the side panel's copy is gone, so the
+	# whole preset machinery wires here. patch_face stays the name the rest of this
+	# file and the tests speak; it simply points at the face on the canvas.
+	big_face.preset_applied.connect(
+		func(index: int, writes: Array) -> void:
+			_apply_preset(index, writes, big_face, ""))
+	big_face.preset_saved.connect(
+		func(values: Dictionary) -> void:
+			_save_preset(values, big_face, ""))
+	big_face.morph_started.connect(func() -> void: _begin_edit())
+	big_face.preset_morphed.connect(_write_morph)
+	big_face.morph_finished.connect(func() -> void: _commit_edit("morph"))
+	big_face.preset_renamed.connect(
+		func(index: int, wanted: String) -> void:
+			_rename_preset(index, wanted, big_face, ""))
+	big_face.preset_reordered.connect(
+		func(from_index: int, to_index: int) -> void:
+			_reorder_preset(from_index, to_index, big_face, ""))
+	big_face.preset_deleted.connect(
+		func(index: int) -> void:
+			_delete_preset(index, big_face, ""))
+	patch_face = big_face
 	graph_edit.add_child(big_face)
 
 	# The way back, floating over the canvas while the face is up.
@@ -1340,8 +1355,6 @@ func _use_palette(index: int) -> void:
 	_refresh_status()
 	if keyboard != null:
 		keyboard.queue_redraw()
-	if scope != null:
-		scope.queue_redraw()
 	if rack != null:
 		rack.type_colours = TYPE_COLOURS
 		rack.rebuild()
@@ -1390,12 +1403,6 @@ func show_view(title: String) -> bool:
 ## chasing it one event behind.
 ## Which side view is out: the panel that plays the file, or the scope that
 ## troubleshoots it. The probe only spends engine time while it is the one showing.
-func _on_side_tab(tab: int) -> void:
-	var panel_body := side_panel.find_child("PanelBody", true, false)
-	if panel_body != null:
-		panel_body.visible = tab == 0
-	if scope_probe != null:
-		scope_probe.visible = tab == 1
 
 
 func _fit_side_panel() -> void:
@@ -1450,6 +1457,9 @@ func _set_side_panel_open(open: bool) -> void:
 		# Hidden rather than squeezed. A panel narrowed to 36px is a column of clipped
 		# words that still takes clicks and still has to be laid out.
 		side_panel_body.visible = open
+	if scope_probe != null:
+		# The probe folds with the panel: it is the panel now.
+		scope_probe.visible = open
 	if side_panel_toggle != null:
 		side_panel_toggle.text = ""
 		side_panel_toggle.icon = _icon(
@@ -1492,17 +1502,20 @@ func _build_side_panel() -> Control:
 	side_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	side_column.add_theme_constant_override("separation", Design.SPACE_S)
 	inset.add_child(side_column)
-	side_tabs = TabBar.new()
-	side_tabs.add_tab("Panel")
-	side_tabs.add_tab("Scope")
-	side_tabs.focus_mode = Control.FOCUS_NONE
-	side_tabs.tab_changed.connect(_on_side_tab)
-	side_column.add_child(side_tabs)
+	# One job now: the bench. The Panel tab is gone — the face lives on the canvas
+	# behind the Face toggle, the presets travel with it, and Graph valid reads out
+	# of the menu — so the side column is the probe scope, with the health line and
+	# the problem list underneath, appearing only when there are problems to list.
+	scope_probe = ProbeScope.new()
+	scope_probe.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side_column.add_child(scope_probe)
 
-	# The collapse control sits *under* everything, and never moves: the faces lead the
-	# panel and used to pay a strip of the most valuable row on screen for a button that
-	# is pressed a few times an hour. Outside the body on purpose, so the way back is
-	# still on screen when the body is hidden.
+	side_panel_body = VBoxContainer.new()
+	side_panel_body.add_theme_constant_override("separation", Design.SPACE_S)
+	side_column.add_child(side_panel_body)
+
+	# The collapse control sits under everything, and never moves: the way back has
+	# to be on screen when the body is hidden.
 	var strip := HBoxContainer.new()
 	side_panel_toggle = Button.new()
 	side_panel_toggle.flat = true
@@ -1512,111 +1525,17 @@ func _build_side_panel() -> Control:
 	strip.add_child(_defocus(side_panel_toggle))
 	side_panel.add_child(strip)
 
-	# The panel scrolls rather than growing past the bottom of the window. Its content
-	# is not a fixed list — the run order grows with the patch, the problem list with
-	# the mistakes — so on a short window the cost line and everything under it were
-	# simply off-screen with no way to reach them. No sideways scrollbar: one under a
-	# column of text is a sign that something is too wide, not a way to read it.
-	#
-	# SHOW_NEVER rather than DISABLED, and the difference is the divider. DISABLED makes
-	# the scroller *report* its content's width as its minimum, which the split has to
-	# honour — so whenever anything in the panel was wider than the panel, the divider
-	# silently stopped moving and the drag went dead in the hand. SHOW_NEVER keeps the
-	# bar away and lets content clip instead of taking the divider hostage.
-	var body_scroll := ScrollContainer.new()
-	body_scroll.name = "PanelBody"
-	body_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	side_column.add_child(body_scroll)
-
-	scope_probe = ProbeScope.new()
-	scope_probe.visible = false
-	scope_probe.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	side_column.add_child(scope_probe)
-
-	side_panel_body = VBoxContainer.new()
-	side_panel_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	side_panel_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_panel_body.add_theme_constant_override("separation", Design.SPACE_M)
-	body_scroll.add_child(side_panel_body)
-
-	var panel := side_panel_body
-
-	# The face, first and always. It is what the file is *for* — the graph underneath is
-	# how it is built — so it leads the panel rather than sitting under the diagnostics.
-	#
-	# Two of them, one at a time. Which you get is which you are looking at: select a module
-	# instance and this is that module's face, select anything else and it is the file's.
-	# One column rather than two, because they are the same kind of thing and a person is
-	# only ever arranging one of them.
-	#
-	# No standing title. The file's own face is self-evidently the panel — a label saying
-	# "Panel" above a rack of knobs was a row of the best space on screen spent naming the
-	# obvious. The heading appears only when the face is a *module's*, where the name is
-	# load-bearing: without it there is nothing saying whose knobs these are.
-	face_heading = _field("Panel")
-	face_heading.visible = false
-	panel.add_child(face_heading)
-	patch_face = PatchFace.new()
-	patch_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	patch_face.reordered.connect(_on_panel_reordered)
-	patch_face.offered.connect(_toggle_control)
-	patch_face.preset_applied.connect(
-		func(index: int, writes: Array) -> void:
-			_apply_preset(index, writes, patch_face, ""))
-	patch_face.preset_saved.connect(
-		func(values: Dictionary) -> void:
-			_save_preset(values, patch_face, ""))
-	patch_face.morph_started.connect(func() -> void: _begin_edit())
-	patch_face.preset_morphed.connect(_write_morph)
-	patch_face.morph_finished.connect(func() -> void: _commit_edit("morph"))
-	patch_face.preset_renamed.connect(
-		func(index: int, wanted: String) -> void:
-			_rename_preset(index, wanted, patch_face, ""))
-	patch_face.preset_reordered.connect(
-		func(from_index: int, to_index: int) -> void:
-			_reorder_preset(from_index, to_index, patch_face, ""))
-	patch_face.preset_deleted.connect(
-		func(index: int) -> void:
-			_delete_preset(index, patch_face, ""))
-	panel.add_child(patch_face)
-
-	module_face = ModuleFace.new()
-	module_face.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	module_face.rearranged.connect(_on_face_rearranged)
-	module_face.removed.connect(_on_face_knob_removed)
-	module_face.refused.connect(func(reason: String) -> void: _say(reason))
-	module_face.visible = false
-	panel.add_child(module_face)
-
-	# One quiet line, always in the same place. Valid is the normal state and should look
-	# like it — a green "No problems." carried as much visual authority as an actual error,
-	# so the panel read as urgent when nothing was wrong.
 	health_label = Label.new()
 	health_label.add_theme_font_size_override("font_size",
 		Design.type(Design.SIZE_SECONDARY))
-	panel.add_child(health_label)
+	side_panel_body.add_child(health_label)
 
 	diagnostics_heading = _section_heading("Problems")
-	panel.add_child(diagnostics_heading)
+	side_panel_body.add_child(diagnostics_heading)
 	diagnostics_list = VBoxContainer.new()
 	diagnostics_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	diagnostics_list.add_theme_constant_override("separation", Design.SPACE_S)
-	panel.add_child(diagnostics_list)
-
-	# No SIGNAL heading. The scope writes what it is showing across its own top left —
-	# "filter.out", or "master output" — so a heading above it said the same thing
-	# twice, in a smaller voice, one line further from the thing it described.
-	scope = Scope.new()
-	scope.custom_minimum_size.y = Design.scale(120)
-	panel.add_child(scope)
-
-	context_heading = _section_heading("The graph")
-	panel.add_child(context_heading)
-	context_panel = VBoxContainer.new()
-	context_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	context_panel.add_theme_constant_override("separation", Design.SPACE_S)
-	panel.add_child(context_panel)
+	side_panel_body.add_child(diagnostics_list)
 
 	# What used to be here: "Play with A W S E D F T G Y H U J K. Z and X shift octave."
 	#
@@ -1923,6 +1842,86 @@ func _device_panel_for(instance_id: String, module_name: String,
 
 ## The ModuleFace mounted on the canvas for this key — an open module's name or a
 ## flipped instance's id — made once and reused across rebuilds.
+
+func _on_face_rearranged(rows: Array, added: Dictionary = {},
+		mount: ModuleFace = null) -> void:
+	# The emitting mount knows whose face it is; the selection no longer has to —
+	# an open, flipped module has no instance node to select.
+	var module_name := mount.module_name() if mount != null 		else _module_of(str(inspecting.get("node", "")))
+	var definitions: Dictionary = patch.get("modules", {})
+	if module_name == "" or not definitions.has(module_name):
+		return
+	_begin_edit()
+	var definition: Dictionary = definitions[module_name]
+
+	# A ghost dragged onto the face was never exported, so it becomes an export on the way
+	# in â€” one edit, because "put this knob on the module" is one thought. The face names it
+	# by where it came from; the export name is chosen here, where what is already taken is
+	# known, and swapped into the rows so the panel names the binding and not the ghost.
+	var gained := ""
+	if not added.is_empty() and str(added.get("node", "")) != "":
+		var surface: Array = definition.get("parameters", []).duplicate(true)
+		gained = _free_export_name(surface, str(added["node"]), str(added["parameter"]))
+		surface.append({"name": gained, "node": str(added["node"]),
+			"parameter": str(added["parameter"])})
+		definition["parameters"] = surface
+		var renamed: Array = []
+		for row: Array in rows:
+			renamed.append(row.map(func(n): return gained if str(n) == str(added["key"]) \
+				else str(n)))
+		rows = renamed
+
+	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
+	panel["rows"] = rows
+	definition["panel"] = panel
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_refresh_context()
+	_commit_edit("rearrange %s" % module_name)
+	if gained != "":
+		_say("'%s' is on %s's face, and exported so a patch can reach it"
+			% [gained, module_name])
+	else:
+		_say("%s's face is %d row%s now" % [module_name, rows.size(),
+			"" if rows.size() == 1 else "s"])
+
+
+## A knob was dragged off a module's face.
+##
+## Off the face, still exported. The panel is presentation and the surface is the contract:
+## a control or an automation lane pointing at that export goes on working, and the module
+## goes on being able to do what it could do. Taking the *export* away is the destructive
+## edit, and it is not this gesture â€” see task #61.
+
+
+func _on_face_knob_removed(export_name: String, mount: ModuleFace = null) -> void:
+	var module_name := mount.module_name() if mount != null 		else _module_of(str(inspecting.get("node", "")))
+	var definitions: Dictionary = patch.get("modules", {})
+	if module_name == "" or not definitions.has(module_name):
+		return
+	var definition: Dictionary = definitions[module_name]
+	# From the rows the face is actually showing, which for a module that has never been
+	# arranged is the wrap on screen rather than an empty panel. Taking a knob off a face
+	# nobody has arranged has to write down the rest of it or the removal would read as
+	# "clear the panel".
+	var rows: Array = ModuleFace.moved(
+		mount.face_rows() if mount != null else [], export_name, {"remove": true})
+	_begin_edit()
+	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
+	panel["rows"] = rows
+	definition["panel"] = panel
+	_synthesize_module_descriptors()
+	await _rebuild_view()
+	_apply()
+	_commit_edit("take %s off %s's face" % [export_name, module_name])
+	_say("'%s' is off %s's face, and still exported" % [export_name, module_name])
+
+
+## An export name not already spoken for. Same shape as ModuleAuthor's: the inner
+## parameter's own name where it is free, qualified by its node where it is not.
+
+
 func _mount_for(key: String) -> ModuleFace:
 	var mount: Control = module_mounts.get(key, null)
 	if mount != null and not (mount is ModuleFace):
@@ -1932,8 +1931,11 @@ func _mount_for(key: String) -> ModuleFace:
 	if mount == null:
 		mount = ModuleFace.new()
 		mount.z_index = 50
-		(mount as ModuleFace).rearranged.connect(_on_face_rearranged)
-		(mount as ModuleFace).removed.connect(_on_face_knob_removed)
+		var shown_mount := mount as ModuleFace
+		shown_mount.rearranged.connect(func(rows: Array, added: Dictionary = {}) -> void:
+			_on_face_rearranged(rows, added, shown_mount))
+		shown_mount.removed.connect(func(export_name: String) -> void:
+			_on_face_knob_removed(export_name, shown_mount))
 		(mount as ModuleFace).refused.connect(
 			func(reason: String) -> void: _say(reason))
 		graph_edit.add_child(mount)
@@ -1959,25 +1961,24 @@ func _place_face() -> void:
 			mount.scale = Vector2(zoom, zoom)
 
 
+## Selection or document changed: everything that follows them catches up. The
+## context panel this used to feed is gone with the side Panel; what remains is the
+## face's offer, the ghost jacks, and the outline — kept under the old names because
+## a dozen places call them after the graph changes.
 func _refresh_context() -> void:
-	# Which face the panel shows, and which module offers its ghost jacks, both follow the
-	# selection — settled here rather than by each of the half-dozen paths that can change
-	# what is selected.
 	_refresh_face()
 	_refresh_ghost_ports()
-	if context_panel == null:
-		return
-	for child in context_panel.get_children():
-		context_panel.remove_child(child)
-		child.queue_free()
 
-	var node_id: String = str(inspecting.get("node", ""))
-	if node_id == "":
-		context_heading.text = "The graph"
-		_fill_graph_context()
-	else:
-		context_heading.text = "Selected node"
-		_fill_node_context(node_id)
+
+func _show_info() -> void:
+	# Selection paths call _refresh_context; only document changes come through here,
+	# because rebuilding the outline's tree inside its own selection signal is a
+	# clear-during-emit, and Godot answers that with a hang rather than an error.
+	_refresh_context()
+	if outline != null:
+		outline.patch = patch
+		outline.registry = registry
+		outline.refresh()
 
 
 func _node_type(node_id: String) -> String:
@@ -1993,235 +1994,8 @@ func _node_type(node_id: String) -> String:
 ## a patch cable does not tell you, so it is now a row of chips: hovering one lights the
 ## node it names, clicking one selects and centres it. The same information, turned from a
 ## caption into a way of getting around the graph.
-func _fill_graph_context() -> void:
-	if engine == null or not engine.is_loaded():
-		return
-	var info: Variant = JSON.parse_string(engine.get_info_json())
-	if typeof(info) != TYPE_DICTIONARY:
-		return
-
-	context_panel.add_child(_field("Runs in this order"))
-	var flow := HFlowContainer.new()
-	flow.add_theme_constant_override("h_separation", Design.SPACE_XS)
-	flow.add_theme_constant_override("v_separation", Design.SPACE_XS)
-	# A summary, not a census. Chips read well up to a dozen; a 35-node DX7 voice
-	# wrapped them into a 428px-tall block, and because nothing in the inspector column
-	# scrolls, that became the *minimum height of the editor* — which is how loading a
-	# big patch silently pushed the keyboard dock below the bottom of the window. The
-	# strip shows the head of the order and folds the rest into one chip that opens the
-	# Outline, which is the view built for reading a big graph as a list.
-	# Voice replicas carry the engine's own separator in their names; the order strip
-	# shows each node once — the copies run the same code in the same order, and a
-	# chip per replica would be a census of an implementation detail.
-	var order: Array = []
-	for entry in info["nodes"]:
-		if not str(entry["id"]).contains(char(31)):
-			order.append(entry)
-	var shown: int = mini(order.size(), ORDER_CHIP_LIMIT)
-	if order.size() == ORDER_CHIP_LIMIT + 1:
-		shown = order.size()  # "+1 more" would take the space of the thing it hides
-	for index in shown:
-		flow.add_child(_stage_chip(str(order[index]["id"])))
-	if shown < order.size():
-		var more := Button.new()
-		more.text = "+%d more" % (order.size() - shown)
-		more.tooltip_text = "The full order is in the Outline view."
-		more.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-		more.pressed.connect(func() -> void: show_view("Outline"))
-		flow.add_child(_defocus(more))
-	context_panel.add_child(flow)
-
-	if not info["feedback"].is_empty():
-		context_panel.add_child(_field("Feedback"))
-		var reported := {}
-		for edge in info["feedback"]:
-			# One line per loop, not per voice copy of it.
-			var line := "%s to %s (previous block)" % [
-				str(edge["from"]).get_slice(char(31), 0),
-				str(edge["to"]).get_slice(char(31), 0)]
-			if reported.has(line):
-				continue
-			reported[line] = true
-			context_panel.add_child(_value(line, Design.WARNING))
-
-	# The count and the cost stay the engine's own truth — a four-voice patch really
-	# does run four copies of the cone, and on an ESP32 that is the number that
-	# matters — with the voice count said out loud beside it.
-	var voice_count := 1
-	for node in patch.get("nodes", []):
-		voice_count = maxi(voice_count,
-			int(node.get("parameters", {}).get("voices", 1)))
-	var cost: Dictionary = info["cost"]
-	context_panel.add_child(_field("Cost"))
-	context_panel.add_child(_numeric("%d nodes · %d Hz%s"
-		% [int(info["node_count"]), int(info["sample_rate"]),
-			" · %d voices" % voice_count if voice_count > 1 else ""]))
-	context_panel.add_child(_numeric("cpu %.1f units · state %d B · buffers %.1f KB"
-		% [cost["cpu"], int(cost["state_bytes"]), float(cost["heap_bytes"]) / 1024.0]))
 
 
-func _fill_node_context(node_id: String) -> void:
-	var type_name := _node_type(node_id)
-	var descriptor: Dictionary = registry.get(type_name, {})
-
-	var title := Label.new()
-	title.text = node_id
-	title.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
-	title.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NODE_TITLE))
-	title.add_theme_color_override("font_color", Design.INK_BRIGHT)
-	context_panel.add_child(title)
-	context_panel.add_child(_value("%s · %s"
-		% [type_name, str(descriptor.get("category", ""))], Design.INK_SECOND))
-
-	var summary := Label.new()
-	summary.text = str(descriptor.get("summary", ""))
-	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	summary.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-	summary.add_theme_color_override("font_color", Design.INK_NORMAL)
-	context_panel.add_child(summary)
-
-	# A module's name is the document's own, not the registry's, so it is the one thing in
-	# this panel that can be typed over. It has to be somewhere: collapse names every fresh
-	# definition "part", "part-2", and a patch full of parts is a patch nobody can read.
-	#
-	# On the instance rather than on a list of definitions, because the instance is the
-	# thing on screen — you rename the module by pointing at one of them, the same way you
-	# arrange its face by dragging one of them.
-	var module_name := _module_of(node_id)
-	if module_name != "":
-		context_panel.add_child(_field("Module name"))
-		var field := LineEdit.new()
-		field.text = module_name
-		field.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
-		field.tooltip_text = "Type a new name and press Enter. Every instance of this " \
-			+ "module follows it, and so does an instance still going by the old name."
-		# Enter only. A rename that also fired on focus-exit would commit whatever half a
-		# name was in the box when somebody clicked away — and the commit rebuilds the
-		# panel, so the second path would be reporting focus lost from a freed field.
-		field.text_submitted.connect(func(text: String) -> void:
-			_on_module_renamed(module_name, text.strip_edges()))
-		context_panel.add_child(field)
-
-		# The other half of the toggle. The frame round an open module carries its Close;
-		# a shut one is a single node with nowhere to put the opposite, so it goes here,
-		# beside the name — the two things you can do to a module as a whole.
-		var open_button := Button.new()
-		open_button.text = "Open on the canvas"
-		open_button.tooltip_text = "Put %s's parts on the canvas, inside a frame. " \
-			% module_name + "Closing the frame folds them back in."
-		open_button.pressed.connect(func() -> void: _open_module(node_id))
-		context_panel.add_child(_defocus(open_button))
-
-		var dive_button := Button.new()
-		dive_button.text = "Dive in"
-		dive_button.tooltip_text = "Make %s the open document — edit it as its own " \
-			% module_name + "patch, play it standalone, and climb back up when done. " \
-			+ "Double-tapping the node's title does the same."
-		dive_button.pressed.connect(func() -> void: _dive_into(node_id))
-		context_panel.add_child(_defocus(dive_button))
-
-		_fill_module_contract(module_name)
-
-	# Every output, with a click to point the scope at it — "what is this node putting out"
-	# answered in one click rather than by hunting for the right port on the node itself.
-	var outputs := _port_list(node_id, "outputs")
-	if not outputs.is_empty():
-		context_panel.add_child(_field("Outputs"))
-		for port in outputs:
-			context_panel.add_child(_port_row(node_id, port))
-
-
-## What a module promises the patches that use it: its ports and its exported knobs.
-##
-## Listed here, in the inspector, and each with a way to take it back — which is the half of
-## surface editing the wand cannot offer. Declaring a port or exporting a knob is safe: a
-## cable cannot already be plugged into a port that did not exist, so a click is enough and
-## the wand's ghosts are that click. Taking one away is the opposite. A port strands every
-## cable in it; an export strands every control and automation lane aimed at it, and every
-## value an instance had set through it.
-##
-## So it is a list with a confirmation rather than a click, and the confirmation says what
-## breaks *before* it happens, counted from the document rather than described in general.
-## "Remove this port" and "remove this port and the two cables in it" are different offers,
-## and only one of them can be accepted honestly.
-func _fill_module_contract(module_name: String) -> void:
-	var definition: Dictionary = patch.get("modules", {}).get(module_name, {})
-	if definition.is_empty():
-		return
-
-	# Through Seams.declared_ports, so both spellings appear. A module's port may be a
-	# binding in `inputs`/`outputs` or a port node drawn inside the definition, and most of
-	# them are the second — a list that showed only the binding list would omit the ports
-	# nearly every module actually has, which is worse than having no list.
-	for is_output in [false, true]:
-		var ports: Array = Seams.declared_ports(definition, is_output)
-		if ports.is_empty():
-			continue
-		context_panel.add_child(_field("Module outputs" if is_output else "Module inputs"))
-		for port: Dictionary in ports:
-			context_panel.add_child(_contract_row(
-				str(port["name"]),
-				"%s.%s" % [str(port["node"]), str(port["port"])],
-				_cables_into(module_name, str(port["name"])),
-				"cable",
-				func(): _undeclare_port(module_name, is_output, str(port["name"]))))
-
-	var exports: Array = definition.get("parameters", [])
-	if exports.is_empty():
-		return
-	context_panel.add_child(_field("Knobs"))
-	for binding: Dictionary in exports:
-		context_panel.add_child(_contract_row(
-			str(binding["name"]),
-			"%s.%s" % [str(binding["node"]), str(binding["parameter"])],
-			_controls_driving(module_name, str(binding["name"])),
-			"control",
-			func(): _unexport_knob(module_name, str(binding["name"]))))
-
-
-## One line of the contract: what it is called, what it reaches, and a way to take it off.
-func _contract_row(shown: String, inner: String, depends: int, noun: String,
-		remove: Callable) -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", Design.scale(Design.SPACE_S))
-
-	var name_label := Label.new()
-	name_label.text = shown
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.clip_text = true
-	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	# What it actually reaches, under the name the module gave it — the same pairing the
-	# file's own panel draws, so "which inner thing is this" never needs the file open.
-	name_label.tooltip_text = inner
-	name_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_CONTROL))
-	row.add_child(name_label)
-
-	if depends > 0:
-		# The count, before anything is clicked. A number that only appears in the
-		# confirmation is a number somebody meets after deciding.
-		var uses := Label.new()
-		uses.text = "%d %s%s" % [depends, noun, "" if depends == 1 else "s"]
-		uses.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-		uses.add_theme_color_override("font_color", Design.INK_SECOND)
-		row.add_child(uses)
-
-	var take_off := Button.new()
-	take_off.text = "×"
-	take_off.tooltip_text = "Take %s off the module" % shown
-	take_off.pressed.connect(func() -> void:
-		if depends == 0:
-			remove.call()
-			return
-		_confirm("Take %s off %s?" % [shown, noun],
-			"%d %s%s point%s at it and will be removed too. Undo puts everything back."
-				% [depends, noun, "" if depends == 1 else "s",
-					"s" if depends == 1 else ""],
-			remove))
-	row.add_child(_defocus(take_off))
-	return row
-
-
-## How many cables are plugged into this port, across every instance of the module.
 func _cables_into(module_name: String, port_name: String) -> int:
 	var instances := _instances_of(module_name)
 	var count := 0
@@ -2338,7 +2112,6 @@ func _undeclare_port(module_name: String, is_output: bool, port_name: String) ->
 	_synthesize_module_descriptors()
 	await _rebuild_view()
 	_apply()
-	_refresh_context()
 	_commit_edit("take %s off %s" % [port_name, module_name])
 	_say("%s is no longer a port of %s%s" % [port_name, module_name,
 		"" if stranded == 0 else " — and %d cable%s had nowhere to land"
@@ -2401,8 +2174,8 @@ func _unexport_knob(module_name: String, export_name: String) -> void:
 	_synthesize_module_descriptors()
 	await _rebuild_view()
 	_apply()
-	_refresh_face()
 	_refresh_context()
+	_refresh_face()
 	_commit_edit("take %s off %s's surface" % [export_name, module_name])
 	_say("%s is no longer exported by %s%s" % [export_name, module_name,
 		"" if dropped == 0 else " — and %d control%s had nothing left to drive"
@@ -2628,7 +2401,6 @@ func _process(_delta: float) -> void:
 		return
 	if engine.is_loaded():
 		engine.fill_playback(playback, playback.get_frames_available())
-	_update_scope()
 	_update_port_levels(_delta)
 	_advance_roll(_delta)
 	if rack != null and rack.is_visible_in_tree():
@@ -2710,23 +2482,6 @@ func _rebuild_level_targets() -> void:
 				"audio": str(outputs[index]["type"]) == "audio",
 			})
 
-
-func _update_scope() -> void:
-	if scope == null:
-		return
-	# No node, or a node with no port to listen to: the master output, which is the honest
-	# answer to "what am I hearing" when nothing narrower has been asked for.
-	if not inspecting.has("port"):
-		scope.show_samples(engine.get_scope(1024), "master output")
-		return
-	var signal_samples: PackedFloat32Array = engine.get_port_signal(
-		inspecting["node"], inspecting["port"])
-	scope.show_samples(signal_samples, "%s.%s" % [inspecting["node"], inspecting["port"]])
-
-
-# ---------------------------------------------------------------------------------
-# Building the graph view from the registry
-# ---------------------------------------------------------------------------------
 
 func _slot_type(signal_type: String) -> int:
 	match signal_type:
@@ -6885,66 +6640,22 @@ func _set_muted(quiet: bool) -> void:
 func _refresh_face() -> void:
 	if patch_face == null:
 		return
-	var showing := ""
-	if patch_face != null:
-		# What the file's panel offers follows the selection, which is the whole gesture:
-		# select a node, the knobs of its that are not on the panel appear under it, drag
-		# one up. The same offer a module's face makes, at the file's scale.
-		patch_face.offer_node = str(inspecting.get("node", ""))
-	if module_face != null:
-		module_face.patch = patch
-		module_face.registry = registry
-		module_face.rack = rack
-		module_face.node_id = str(inspecting.get("node", ""))
-		# Inside a container, the panel is that container's face. The graph is the inside
-		# of the device and the panel is what a player holds, and drilling into a module
-		# turns both at once — the graph shows its parts, the panel its knobs. Selecting
-		# an instance still wins, because pointing at a thing is more specific than
-		# standing inside one.
-		module_face.opened_module = ""
-		if module_face.module_name() == "" and graph_edit != null:
-			for open_name in graph_edit.groups:
-				module_face.opened_module = str(open_name)
-				break
-		showing = module_face.module_name()
-		module_face.visible = showing != ""
-		if module_face.visible:
-			module_face.rebuild()
-	patch_face.visible = showing == ""
-	if patch_face.visible:
-		patch_face.preset_index = int(preset_pages.get("", patch_face.preset_index))
-		patch_face.patch = patch
-		patch_face.registry = registry
-		patch_face.rack = rack
-		patch_face.title = _instrument_name()
-		patch_face.rebuild()
-	# The turned-over container shows the same face at full size, and it follows the
-	# document the same way — one face, two mountings, never two states.
-	if big_face != null and big_face.visible:
-		big_face.patch = patch
-		big_face.registry = registry
-		big_face.rack = rack
-		big_face.title = _instrument_name()
-		big_face.rebuild()
+	# One face now, mounted on the canvas. It follows the document and the selection
+	# here — offer, pages, patch, rebuild — but never its own visibility: the Face
+	# toggle owns that. Rebuilt even while hidden, so flipping shows the current
+	# document instantly instead of the one from the last flip.
+	patch_face.offer_node = str(inspecting.get("node", ""))
+	patch_face.preset_index = int(preset_pages.get("", patch_face.preset_index))
+	patch_face.patch = patch
+	patch_face.registry = registry
+	patch_face.rack = rack
+	patch_face.title = _instrument_name()
+	patch_face.rebuild()
 	if graph_edit != null:
-		# The same name on both boundaries. The graph's case and the panel's are one
-		# container drawn twice — as wiring on one side, as knobs on the other — and a
-		# container whose two faces disagreed about its name would be two containers.
+		# The same name on both boundaries: the graph's case and the face are one
+		# container drawn twice, and two names would be two containers.
 		graph_edit.case_title = _instrument_name()
-	if face_heading != null:
-		# Whose face this is — but only when it is a module's. The file's own name is on
-		# the case now, printed on the thing it names rather than floating above it, so a
-		# heading here as well would be the same word twice in adjacent rows.
-		face_heading.text = showing
-		face_heading.visible = showing != ""
 
-
-## What this file calls itself, for the top of its panel.
-##
-## The document's own metadata name first — that is the name the *patch* claims, and an
-## imported DX7 voice carries the name the synth shipped with ("ALGO 01"), which is worth
-## more than the path it happens to be saved at. The file name is the fallback, without
-## its extension: ".json" is a fact about storage, not about the instrument.
 func _instrument_name() -> String:
 	var named := str(patch.get("metadata", {}).get("name", "")).strip_edges()
 	if named != "":
@@ -7032,79 +6743,8 @@ func _on_ghost_port_picked(widget_name: String, offer: Dictionary) -> void:
 ##
 ## Any labels already on the panel are kept. Moving a knob is not renaming it, and the two
 ## are separate fields precisely so that one gesture cannot quietly do the other.
-func _on_face_rearranged(rows: Array, added: Dictionary = {}) -> void:
-	var node_id := str(inspecting.get("node", ""))
-	var module_name := _module_of(node_id)
-	var definitions: Dictionary = patch.get("modules", {})
-	if module_name == "" or not definitions.has(module_name):
-		return
-	_begin_edit()
-	var definition: Dictionary = definitions[module_name]
-
-	# A ghost dragged onto the face was never exported, so it becomes an export on the way
-	# in — one edit, because "put this knob on the module" is one thought. The face names it
-	# by where it came from; the export name is chosen here, where what is already taken is
-	# known, and swapped into the rows so the panel names the binding and not the ghost.
-	var gained := ""
-	if not added.is_empty() and str(added.get("node", "")) != "":
-		var surface: Array = definition.get("parameters", []).duplicate(true)
-		gained = _free_export_name(surface, str(added["node"]), str(added["parameter"]))
-		surface.append({"name": gained, "node": str(added["node"]),
-			"parameter": str(added["parameter"])})
-		definition["parameters"] = surface
-		var renamed: Array = []
-		for row: Array in rows:
-			renamed.append(row.map(func(n): return gained if str(n) == str(added["key"]) \
-				else str(n)))
-		rows = renamed
-
-	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
-	panel["rows"] = rows
-	definition["panel"] = panel
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	_apply()
-	_commit_edit("rearrange %s" % module_name)
-	if gained != "":
-		_say("'%s' is on %s's face, and exported so a patch can reach it"
-			% [gained, module_name])
-	else:
-		_say("%s's face is %d row%s now" % [module_name, rows.size(),
-			"" if rows.size() == 1 else "s"])
 
 
-## A knob was dragged off a module's face.
-##
-## Off the face, still exported. The panel is presentation and the surface is the contract:
-## a control or an automation lane pointing at that export goes on working, and the module
-## goes on being able to do what it could do. Taking the *export* away is the destructive
-## edit, and it is not this gesture — see task #61.
-func _on_face_knob_removed(export_name: String) -> void:
-	var node_id := str(inspecting.get("node", ""))
-	var module_name := _module_of(node_id)
-	var definitions: Dictionary = patch.get("modules", {})
-	if module_name == "" or not definitions.has(module_name):
-		return
-	var definition: Dictionary = definitions[module_name]
-	# From the rows the face is actually showing, which for a module that has never been
-	# arranged is the wrap on screen rather than an empty panel. Taking a knob off a face
-	# nobody has arranged has to write down the rest of it or the removal would read as
-	# "clear the panel".
-	var rows: Array = ModuleFace.moved(module_face.face_rows(), export_name,
-		{"remove": true})
-	_begin_edit()
-	var panel: Dictionary = (definition.get("panel", {}) as Dictionary).duplicate(true)
-	panel["rows"] = rows
-	definition["panel"] = panel
-	_synthesize_module_descriptors()
-	await _rebuild_view()
-	_apply()
-	_commit_edit("take %s off %s's face" % [export_name, module_name])
-	_say("'%s' is off %s's face, and still exported" % [export_name, module_name])
-
-
-## An export name not already spoken for. Same shape as ModuleAuthor's: the inner
-## parameter's own name where it is free, qualified by its node where it is not.
 func _free_export_name(surface: Array, node_id: String, parameter: String) -> String:
 	var taken := {}
 	for binding in surface:
@@ -7868,28 +7508,8 @@ func _highlight(node_ids: Array) -> void:
 
 
 ## Kept under its old name because half a dozen places call it after the graph changes.
-func _show_info() -> void:
-	_refresh_context()
-	if outline != null:
-		outline.patch = patch
-		outline.registry = registry
-		outline.refresh()
 
 
-## Where an example actually lives.
-##
-## The copy under res://examples-mirror is mirrored in from examples/patches by the build, which
-## means it goes stale the moment a patch is edited without rebuilding the extension —
-## and the editor then quietly opens an old layout while the repository has a new one.
-## That is a genuinely confusing failure, so the repository copy wins whenever it is
-## reachable, and res:// is the fallback for an exported build that has no repository
-## around it.
-## Builds the examples menu by looking at what is actually there.
-##
-## Scans the same two places _example_path() does and in the same order, so the menu can
-## never offer something that cannot be opened. Sorted within each group, and the groups
-## in the order EXAMPLE_GROUPS declares them, so the menu does not reshuffle itself when a
-## filesystem hands back a different order.
 func _scan_examples() -> void:
 	_examples.clear()
 	for folder: String in EXAMPLE_GROUPS:
