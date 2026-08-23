@@ -668,6 +668,29 @@ const DEMOS = {
       ],
     }),
   },
+  Speech: {
+    summary: 'A Speak & Spell voice: LPC frames carried in the patch, spoken through '
+      + 'the TMS5220 tables. tools/lpc-encode.mjs turns any WAV into words.',
+    try: 'Every key says the name. Raise pitch for helium, lower speed to stretch the '
+      + 'words without dropping the voice, and loop to let it stammer forever — then '
+      + 'encode a recording of your own with tools/lpc-encode.mjs.',
+    build: () => ({
+      buffers: { phrase: spokenPhraseBuffer() },
+      nodes: [
+        keyboard(),
+        { ...node('demo', 'Speech', { pitch: 1, speed: 1, level: 1, loop: 0 }, 1, 0),
+          buffer: 'phrase' },
+        node('amp', 'Gain', { gain: 0.9 }, 2, 0),
+        out(3),
+      ],
+      connections: [
+        wire('kb', 'trigger', 'demo', 'trigger'),
+        wire('demo', 'out', 'amp', 'in'),
+        wire('amp', 'out', 'out', 'left'),
+        wire('amp', 'out', 'out', 'right'),
+      ],
+    }),
+  },
   Compressor: {
     summary: 'Holds the loud parts down. Wire a kick to the sidechain and everything '
       + 'through it pumps.',
@@ -1072,6 +1095,7 @@ const PROBES = {
   Phaser: { parameter: 'sweep', value: 0 },
   Compressor: { parameter: 'ratio', value: 1 },
   Sampler: { parameter: 'loop', value: 1 },
+  Speech: { parameter: 'pitch', value: 2 },
   Comb: { parameter: 'time', value: 0.004 },
   Allpass: { parameter: 'gain', value: 0 },
   Crush: { parameter: 'bits', value: 2 },
@@ -1153,6 +1177,23 @@ function generatedHitBuffer() {
     bytes.writeInt16LE(Math.round(sample * 32767), i * 2);
   }
   return { sample_rate: rate, channels: 1, format: 'pcm16', data: bytes.toString('base64') };
+}
+
+// The demo's phrase: the words "sound graph", spoken by the dev machine's own OS
+// voice (Windows Speech API), then crushed to 253 bytes of TMS5220 bitstream by
+// tools/lpc-encode.mjs — at which point what remains is the chip, not the voice.
+// Regenerate from any recording:  node tools/lpc-encode.mjs yours.wav
+function spokenPhraseBuffer() {
+  const data = 'AAAAACAAAABPAHUADwDgAOkAbgACAD4A3QBVAEAAnwCsAKsA6ABzABUAVwDHAK0AoQDXAFUAzAAc'
+    + 'AIcAgAAuADcAWQBKANkADQDiADYAcwAqAHUARgB5AM0AzACpAPQAmQDhADUARQCnANYAeABmANcA'
+    + 'FABdAEoApQBaAB0AUwB0AOgAfACLAHMAWwDVAJ0AMgDyAEkALgBHAGcATgCmADgApgDdANoAGQDV'
+    + 'AKUAyQCOAGwAqACJALgANAA6AFoAoQBVABUAWQDiADQAtADaAGUAUgCHAKQACABLABcADQDVAJUA'
+    + 'PADOAOQAiQCbADgACgBxADMALwDmAJ0AmgD1AEIASgCHAGQAtQDaAAsALwAVAIMAtgByAO8AxABz'
+    + 'ACoAxwDHAL0A9ABWAKUAHQC/AAYA0wB4AHYAiAC0AFoATAAlAN4AZQDWAHEAMgCNAHgAlwDqAM0A'
+    + 'zQD1AOkAGQDmADUARwBTAJkAZwC3ABYAXQBNAGEA4gAVAHsAYwAJAI0AlwB1AFwATQDdAPQA5QDd'
+    + 'AKEApwBzANcAlgB4AFgALgAGAGAAXwAiAAEAMADsACwAAAB+AK0ABADIAG4AcwAAANkAaQAGAOAA'
+    + 'OgDWAAAA1AC3AAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwA=';
+  return { sample_rate: 8000, channels: 1, format: 'pcm16', data };
 }
 
 // ---- verification ------------------------------------------------------------------

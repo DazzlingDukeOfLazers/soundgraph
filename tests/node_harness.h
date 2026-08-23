@@ -63,6 +63,19 @@ public:
 
     bool valid() const { return type_ != nullptr && node_ != nullptr; }
 
+    // Re-prepares with a sample buffer bound, the way the graph binds one to a node
+    // whose description names it. For testing buffer-fed nodes without a graph.
+    void bind_buffer(const std::vector<float>& samples, double buffer_rate = 8000.0) {
+        buffer_ = samples;
+        soundgraph::PrepareContext context;
+        context.sample_rate = sample_rate_;
+        context.max_block_size = frames_;
+        context.buffer_data = buffer_.data();
+        context.buffer_frames = static_cast<int>(buffer_.size());
+        context.buffer_sample_rate = buffer_rate;
+        node_->prepare(context);
+    }
+
     // An input only counts as connected once it has been filled; that distinction is
     // exactly what the nodes key their parameter fallbacks off.
     void connect(const std::string& port, float value) {
@@ -141,6 +154,7 @@ private:
     std::vector<bool> connected_;
     int frames_ = 0;
     double sample_rate_ = 48000.0;
+    std::vector<float> buffer_;
 };
 
 // Common measurements used across node tests.

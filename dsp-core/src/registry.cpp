@@ -131,6 +131,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kNoise,
         &nodes::kNoiseOscillator,
         &nodes::kSampler,
+        &nodes::kSpeech,
         &nodes::kStateVariableFilter,
         &nodes::kOnePoleFilter,
         &nodes::kFormant,

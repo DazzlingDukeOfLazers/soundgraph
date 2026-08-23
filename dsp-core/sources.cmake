@@ -26,6 +26,7 @@ set(SOUNDGRAPH_DSP_SOURCES
     src/nodes/maths.cpp
     src/nodes/terminals.cpp
     src/nodes/shaping.cpp
+    src/nodes/speech.cpp
 )
 
 set(SOUNDGRAPH_PATCH_IO_SOURCES

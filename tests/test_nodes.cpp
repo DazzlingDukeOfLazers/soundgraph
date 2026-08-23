@@ -1503,6 +1503,91 @@ TEST(scale_quantizer_wraps_across_the_octave) {
     CHECK_NEAR(harness.output()[1], 1.0, 1e-6);
 }
 
+namespace {
+// The Speech node's buffer format, written the way tools/lpc-encode.mjs writes it:
+// one byte per pcm16 sample, bits LSB-first. Mid-table reflection coefficients make
+// a stable, unremarkable mouth — the tests are about the machinery, not the accent.
+struct SpeechStream {
+    std::vector<float> samples;
+    int bit = 0;
+    void put(int value, int count) {
+        for (int b = 0; b < count; ++b) {
+            if (bit % 8 == 0) {
+                samples.push_back(0.0f);
+            }
+            int byte = static_cast<int>(std::lround(samples.back() * 32768.0));
+            byte |= ((value >> b) & 1) << (bit % 8);
+            samples.back() = static_cast<float>(byte) / 32768.0f;
+            ++bit;
+        }
+    }
+    void voiced_frame(int energy, int pitch_index) {
+        put(energy, 4);
+        put(0, 1);
+        put(pitch_index, 6);
+        const int k_index[10] = {16, 16, 8, 8, 8, 8, 8, 4, 4, 4};
+        const int k_bits[10] = {5, 5, 4, 4, 4, 4, 4, 3, 3, 3};
+        for (int i = 0; i < 10; ++i) {
+            put(k_index[i], k_bits[i]);
+        }
+    }
+    void silent_frame() { put(0, 4); }
+    void stop() { put(15, 4); }
+};
+}  // namespace
+
+TEST(speech_speaks_its_bitstream_and_stops) {
+    SpeechStream phrase;
+    for (int i = 0; i < 8; ++i) {
+        phrase.voiced_frame(12, 20);
+    }
+    phrase.stop();
+    NodeHarness harness("Speech", 48000, kSampleRate);
+    CHECK(harness.valid());
+    harness.bind_buffer(phrase.samples);
+    harness.connect("trigger", 1.0f);
+    harness.process();
+    double early = 0.0;
+    for (int i = 0; i < 9600; ++i) {
+        early += harness.output()[i] * harness.output()[i];
+    }
+    CHECK(std::sqrt(early / 9600.0) > 0.001);   // eight frames of voice, audible
+    double late = 0.0;
+    for (int i = 38000; i < 48000; ++i) {
+        late += harness.output()[i] * harness.output()[i];
+    }
+    CHECK(std::sqrt(late / 10000.0) < 0.0005);  // the stop frame stops
+    for (int i = 0; i < 48000; ++i) {
+        CHECK(std::isfinite(harness.output()[i]));
+        CHECK(std::fabs(harness.output()[i]) < 2.0f);
+    }
+}
+
+TEST(speech_silent_frames_say_nothing) {
+    SpeechStream phrase;
+    for (int i = 0; i < 4; ++i) {
+        phrase.silent_frame();
+    }
+    phrase.stop();
+    NodeHarness harness("Speech", 24000, kSampleRate);
+    harness.bind_buffer(phrase.samples);
+    harness.connect("trigger", 1.0f);
+    harness.process();
+    for (int i = 0; i < 24000; ++i) {
+        CHECK(std::fabs(harness.output()[i]) < 0.001f);
+    }
+}
+
+TEST(speech_without_a_buffer_is_silent_not_broken) {
+    NodeHarness harness("Speech", 4800, kSampleRate);
+    CHECK(harness.valid());
+    harness.connect("trigger", 1.0f);
+    harness.process();
+    for (float sample : harness.output()) {
+        CHECK(sample == 0.0f);
+    }
+}
+
 TEST(sampler_without_a_buffer_is_silent_not_broken) {
     // The harness prepares nodes with no buffer bound, which is exactly the state of
     // a Sampler dropped into a patch before anyone gives it audio: silent, gate and
