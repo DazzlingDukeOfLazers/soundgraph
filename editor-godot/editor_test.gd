@@ -503,6 +503,59 @@ func _initialize() -> void:
 	main.feedback_outbox = real_outbox
 	main.feedback_submitter.endpoint = main.FEEDBACK_ENDPOINT
 
+	# ---- the speak pipeline: a WAV becomes words in a buffer --------------------------
+	# The editor half end-to-end, minus the OS voice (not the suite's to depend on):
+	# a generated WAV through wav_import, the engine's encoder, into the patch as a
+	# buffer the node is bound to, one undo step. Same shape as Capture.
+	var speech_id: String = await main._add_node("Speech", Vector2(900, 600))
+	for i in 6:
+		await process_frame
+	var wav_path := "user://test-words.wav"
+	var wav_bytes := PackedByteArray()
+	var wav_frames := 8000
+	wav_bytes.resize(44 + wav_frames * 2)
+	wav_bytes.encode_u32(0, 0x46464952)          # RIFF
+	wav_bytes.encode_u32(4, 36 + wav_frames * 2)
+	wav_bytes.encode_u32(8, 0x45564157)          # WAVE
+	wav_bytes.encode_u32(12, 0x20746d66)         # fmt_
+	wav_bytes.encode_u32(16, 16)
+	wav_bytes.encode_u16(20, 1)
+	wav_bytes.encode_u16(22, 1)
+	wav_bytes.encode_u32(24, 8000)
+	wav_bytes.encode_u32(28, 16000)
+	wav_bytes.encode_u16(32, 2)
+	wav_bytes.encode_u16(34, 16)
+	wav_bytes.encode_u32(36, 0x61746164)         # data
+	wav_bytes.encode_u32(40, wav_frames * 2)
+	for i in wav_frames:
+		var phase := fmod(float(i) * 120.0 / 8000.0, 1.0)
+		wav_bytes.encode_s16(44 + i * 2, int((phase * 2.0 - 1.0) * 12000.0))
+	var wav_file := FileAccess.open(wav_path, FileAccess.WRITE)
+	wav_file.store_buffer(wav_bytes)
+	wav_file.close()
+	main._import_speech_wav(speech_id, ProjectSettings.globalize_path(wav_path))
+	for i in 6:
+		await process_frame
+	var words_name := "words-%s" % speech_id
+	check(main.patch.get("buffers", {}).has(words_name),
+		"speaking a WAV writes the bitstream buffer into the patch")
+	var words_bound := false
+	for node: Dictionary in main.patch.get("nodes", []):
+		if str(node["id"]) == speech_id:
+			words_bound = str(node.get("buffer", "")) == words_name
+	check(words_bound, "and binds the node to it")
+	check(main._problem_count == 0, "and the patch still validates (%d problems)"
+		% main._problem_count)
+	await main._undo()
+	for i in 6:
+		await process_frame
+	check(not main.patch.get("buffers", {}).has(words_name),
+		"one undo takes the words back out")
+	await main._undo()
+	for i in 6:
+		await process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(wav_path))
+
 	# ---- the step sequencer wears a roll ----------------------------------------------
 	# Sixteen "stepN" number cells answered "what shape is this line" with sixteen
 	# acts of reading; the node carries a bar of piano roll instead. Painting writes

@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "soundgraph/patch_io.h"
+#include "soundgraph/lpc_encoder.h"
 
 using namespace godot;
 
@@ -59,6 +60,8 @@ void SoundGraphEngine::_bind_methods() {
 
     ClassDB::bind_method(D_METHOD("render_block", "frames"),
                          &SoundGraphEngine::render_block);
+    ClassDB::bind_method(D_METHOD("lpc_encode", "samples", "sample_rate"),
+                         &SoundGraphEngine::lpc_encode);
     ClassDB::bind_method(D_METHOD("fill_playback", "playback", "max_frames"),
                          &SoundGraphEngine::fill_playback);
     ClassDB::bind_method(D_METHOD("get_peak"), &SoundGraphEngine::get_peak);
@@ -294,6 +297,22 @@ PackedFloat32Array SoundGraphEngine::render_block(int frames) {
                                        right_[static_cast<std::size_t>(i)]);
         }
         written += chunk;
+    }
+    return out;
+}
+
+// The editor half of the speak pipeline: samples in, the Speech node's bitstream
+// out, as raw bytes for the editor to pack into a patch buffer. Needs no loaded
+// graph — encoding a voice is not a question about the current patch.
+PackedByteArray SoundGraphEngine::lpc_encode(const PackedFloat32Array& samples,
+                                             float sample_rate) {
+    PackedByteArray out;
+    const std::vector<unsigned char> bytes = soundgraph::encode_lpc(
+        samples.ptr(), static_cast<int>(samples.size()),
+        static_cast<double>(sample_rate));
+    out.resize(static_cast<int64_t>(bytes.size()));
+    for (std::size_t i = 0; i < bytes.size(); ++i) {
+        out[static_cast<int64_t>(i)] = bytes[i];
     }
     return out;
 }

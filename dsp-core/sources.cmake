@@ -20,6 +20,7 @@ set(SOUNDGRAPH_DSP_SOURCES
     src/graph_description.cpp
     src/graph.cpp
     src/registry.cpp
+    src/lpc_encoder.cpp
     src/nodes/sources.cpp
     src/nodes/filters.cpp
     src/nodes/amplitude.cpp

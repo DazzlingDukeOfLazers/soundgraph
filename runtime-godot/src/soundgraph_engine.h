@@ -89,6 +89,8 @@ public:
     // from _process with get_frames_available(); the buffer plumbing stays in C++ so
     // GDScript never touches a sample.
     godot::PackedFloat32Array render_block(int frames);
+    godot::PackedByteArray lpc_encode(const godot::PackedFloat32Array& samples,
+                                      float sample_rate);
     int fill_playback(const godot::Ref<godot::AudioStreamGeneratorPlayback>& playback,
                       int max_frames);
 

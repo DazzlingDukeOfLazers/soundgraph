@@ -90,6 +90,7 @@ const RollPitch := preload("res://roll_pitch.gd")
 const StepGrid := preload("res://step_grid.gd")
 const DeviceBlurbs := preload("res://device_blurbs.gd")
 const FeedbackSubmitter := preload("res://feedback_submitter.gd")
+const WavImport := preload("res://wav_import.gd")
 const MidiImport := preload("res://midi_import.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
@@ -3330,6 +3331,21 @@ func _create_widget(node: Dictionary) -> void:
 		if has_output:
 			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
 
+	if str(node.get("type", "")) == "Speech":
+		var words_line := HBoxContainer.new()
+		words_line.set_meta("row", "steps")
+		words_line.set_meta("has_slot", false)
+		words_line.alignment = BoxContainer.ALIGNMENT_CENTER
+		var words := Button.new()
+		words.text = "Words…"
+		words.tooltip_text = "Put words in this node's mouth: type a sentence for " \
+			+ "the computer's own voice, or feed it a WAV, and either way it is " \
+			+ "crushed to a few hundred bytes of chip-speak carried in the patch."
+		var words_id := str(node["id"])
+		words.pressed.connect(func() -> void: _open_speech_words(words_id))
+		words_line.add_child(_defocus(words))
+		widget.add_child(words_line)
+
 	if step_lane:
 		var lane_line := HBoxContainer.new()
 		# Its own row kind, not "module": the detail pass runs _fit_row_height over
@@ -5562,6 +5578,13 @@ var feedback_shot_check: CheckBox
 var feedback_send: Button
 var _feedback_shot: Image
 
+# ---- the speak pipeline: text or a WAV, into a Speech node's buffer ------------
+var words_popup: PopupPanel
+var words_text: LineEdit
+var words_hint: Label
+var words_wav_dialog: FileDialog
+var _words_node := ""
+
 var _search_spawn := Vector2.ZERO
 var _search_top_result := ""
 var _added_since_open := 0
@@ -5771,6 +5794,150 @@ func _on_feedback_flushed(sent: int, discarded: int, failed: int) -> void:
 	elif failed > 0:
 		_say("feedback is waiting in the outbox — it goes out when the service "
 			+ "is reachable")
+
+
+func _open_speech_words(node_id: String) -> void:
+	_words_node = node_id
+	if words_popup == null:
+		_build_words_popup()
+	words_hint.text = "The words go through the OS voice, then through the same " \
+		+ "encoder a WAV goes through. Either way the patch carries only the bytes."
+	words_popup.popup_centered()
+	words_text.grab_focus()
+
+
+func _build_words_popup() -> void:
+	words_popup = PopupPanel.new()
+	words_popup.size = Vector2i(520, 220)
+	words_popup.add_theme_stylebox_override("panel",
+		Design.padded_panel(Design.Surface.NODE, Design.SPACE_M, Design.SPACE_M))
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.add_theme_constant_override("separation", Design.SPACE_S)
+
+	var heading := Label.new()
+	heading.text = "Words"
+	heading.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+	box.add_child(heading)
+
+	words_text = LineEdit.new()
+	words_text.placeholder_text = "what should it say?"
+	words_text.text_submitted.connect(func(_text: String) -> void: _speak_typed())
+	box.add_child(words_text)
+
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", Design.SPACE_S)
+	var say := Button.new()
+	say.text = "Say it"
+	say.tooltip_text = "Through the computer's own voice, then into the chip."
+	say.pressed.connect(_speak_typed)
+	buttons.add_child(_defocus(say))
+	var from_wav := Button.new()
+	from_wav.text = "From a WAV…"
+	from_wav.tooltip_text = "Any 16-bit recording: your voice, somebody's sample " \
+		+ "pack, this program's own render."
+	from_wav.pressed.connect(_pick_speech_wav)
+	buttons.add_child(_defocus(from_wav))
+	box.add_child(buttons)
+
+	words_hint = Label.new()
+	words_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Pinned, as every wrapping label in a size-to-content popup must be.
+	words_hint.custom_minimum_size = Vector2(Design.scale(460), 0)
+	words_hint.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	words_hint.add_theme_color_override("font_color", Design.INK_SECOND)
+	box.add_child(words_hint)
+
+	words_popup.add_child(box)
+	add_child(words_popup)
+
+
+## Text through the operating system's own voice into a temporary WAV. The one
+## platform-specific seam in the pipeline, and it degrades to a message rather
+## than a mystery: everything after the WAV is the same for every source.
+func _speak_typed() -> void:
+	var text := words_text.text.strip_edges()
+	if text == "":
+		words_hint.text = "Type something first."
+		return
+	var wav_path := ProjectSettings.globalize_path("user://words-tts.wav")
+	var status := -1
+	match OS.get_name():
+		"Windows":
+			var script := "Add-Type -AssemblyName System.Speech; " \
+				+ "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; " \
+				+ "$f = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(" \
+				+ "22050, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, " \
+				+ "[System.Speech.AudioFormat.AudioChannel]::Mono); " \
+				+ "$s.SetOutputToWaveFile('%s', $f); " % wav_path.replace("'", "''") \
+				+ "$s.Speak('%s'); $s.Dispose()" % text.replace("'", "''")
+			status = OS.execute("powershell", ["-NoProfile", "-Command", script])
+		"macOS":
+			status = OS.execute("say",
+				["-o", wav_path, "--data-format=LEI16@22050", text])
+		_:
+			words_hint.text = "No system voice on this platform — feed a WAV instead."
+			return
+	if status != 0 or not FileAccess.file_exists(wav_path):
+		words_hint.text = "The system voice did not answer — feed a WAV instead."
+		return
+	_import_speech_wav(_words_node, wav_path)
+	DirAccess.remove_absolute(wav_path)
+
+
+func _pick_speech_wav() -> void:
+	if words_wav_dialog == null:
+		words_wav_dialog = FileDialog.new()
+		words_wav_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		words_wav_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		words_wav_dialog.filters = ["*.wav ; WAV audio"]
+		words_wav_dialog.file_selected.connect(func(path: String) -> void:
+			_import_speech_wav(_words_node, path))
+		add_child(words_wav_dialog)
+	words_wav_dialog.popup_centered(Vector2i(700, 500))
+
+
+## The whole pipeline below the voice: WAV to floats (wav_import), floats to
+## bitstream (the engine's encoder — no DSP in GDScript), bytes into the patch as
+## a buffer, the node bound to it, one undo step. Same shape as Capture.
+func _import_speech_wav(node_id: String, path: String) -> void:
+	var wav := WavImport.read(path)
+	if wav.is_empty():
+		_say("that file is not a 16-bit WAV this reader can hold")
+		if words_hint != null:
+			words_hint.text = "That file is not a 16-bit WAV this reader can hold."
+		return
+	var bytes: PackedByteArray = engine.lpc_encode(wav["samples"], float(wav["rate"]))
+	if bytes.size() <= 3:
+		_say("the encoder heard nothing worth keeping in that recording")
+		return
+	var pcm := PackedByteArray()
+	for byte in bytes:
+		pcm.append(byte)
+		pcm.append(0)
+	_begin_edit()
+	if int(patch.get("schema_version", 1)) < 3:
+		patch["schema_version"] = 3
+	var name := ""
+	for node: Dictionary in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			name = str(node.get("buffer", ""))
+	if name == "" or name == "capture":
+		name = "words-%s" % node_id
+	var buffers: Dictionary = patch.get("buffers", {})
+	buffers[name] = {"sample_rate": 8000, "channels": 1, "format": "pcm16",
+		"data": Marshalls.raw_to_base64(pcm)}
+	patch["buffers"] = buffers
+	for node: Dictionary in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			node["buffer"] = name
+	_commit_edit("speak words")
+	_apply()
+	if words_popup != null:
+		words_popup.hide()
+	_say("%d bytes of chip-speak in buffer \"%s\" — press a key" \
+		% [bytes.size(), name])
 
 
 func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "node_harness.h"
+#include "soundgraph/lpc_encoder.h"
 #include "test_support.h"
 
 using testing::NodeHarness;
@@ -1561,6 +1562,37 @@ TEST(speech_speaks_its_bitstream_and_stops) {
         CHECK(std::isfinite(harness.output()[i]));
         CHECK(std::fabs(harness.output()[i]) < 2.0f);
     }
+}
+
+TEST(speech_round_trip_speaks_what_the_encoder_wrote) {
+    // The whole pipeline in one room: a second of enveloped 120 Hz saw — buzzy
+    // enough for the analysis to find a voice in it — through the encoder, the
+    // bytes packed the way the editor packs them, and the node made to say it.
+    std::vector<float> voice(8000);
+    for (int i = 0; i < 8000; ++i) {
+        const double t = i / 8000.0;
+        const double phase = std::fmod(t * 120.0, 1.0);
+        voice[static_cast<std::size_t>(i)] = static_cast<float>(
+            (phase * 2.0 - 1.0) * 0.4 * std::sin(3.14159265 * t));
+    }
+    const std::vector<unsigned char> bytes =
+        soundgraph::encode_lpc(voice.data(), 8000, 8000.0);
+    CHECK(bytes.size() > 20);
+
+    std::vector<float> packed(bytes.size());
+    for (std::size_t i = 0; i < bytes.size(); ++i) {
+        packed[i] = static_cast<float>(bytes[i]) / 32768.0f;
+    }
+    NodeHarness harness("Speech", 72000, kSampleRate);
+    harness.bind_buffer(packed);
+    harness.connect("trigger", 1.0f);
+    harness.process();
+    double sum = 0.0;
+    for (int i = 0; i < 48000; ++i) {
+        sum += harness.output()[i] * harness.output()[i];
+        CHECK(std::isfinite(harness.output()[i]));
+    }
+    CHECK(std::sqrt(sum / 48000.0) > 0.001);   // it speaks
 }
 
 TEST(speech_silent_frames_say_nothing) {
