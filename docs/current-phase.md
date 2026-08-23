@@ -330,6 +330,18 @@ somewhere other than the cause.
   worker is cache-first with no `skipWaiting`, so a waiting replacement never activates
   while a client is open. Unregister it before concluding anything about a re-export; check
   which `index.pck` size actually loaded first.
+- **A click test's subject must be put on screen first.** The editor suite's synthesized
+  clicks are computed from widget geometry, which is correct at any scroll — but the
+  *delivery* is not: a press at y = -167 lands on nothing, and a press computed for a
+  port that sits under the toolbar hits the toolbar. The face-edit block ran green for
+  weeks on whatever scroll fit-on-load happened to choose, then one range widening
+  (LFO amount to ±1000) grew every LFO readout's reservation, nudged every bbox, moved
+  every fit — and nine checks went red on a pristine checkout, looking exactly like an
+  environment failure. Centre the view on the subjects before clicking, aim inside
+  child rects rather than by unzoomed pixel offsets, and treat "it fails on a clean
+  tree" as "the test depends on something the tree does not pin", not as proof of a
+  haunted machine. Related: `zoom_actual` now re-centres deferred with freshly-read
+  rects, because the zoom's own detail change re-dresses the nodes a frame later.
 - **An autowrap label with no pinned width reports its minimum height as if wrapped at
   zero width.** Inside a popup that sizes to content, one long `AUTOWRAP_WORD_SMART`
   label inflated the feedback dialog to the window's full height on first open — layout
