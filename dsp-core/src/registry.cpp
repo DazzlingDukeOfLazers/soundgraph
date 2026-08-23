@@ -133,6 +133,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kSampler,
         &nodes::kStateVariableFilter,
         &nodes::kOnePoleFilter,
+        &nodes::kFormant,
         &nodes::kDelay,
         &nodes::kComb,
         &nodes::kAllpass,

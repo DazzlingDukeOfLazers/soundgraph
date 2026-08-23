@@ -231,6 +231,134 @@ private:
 };
 
 // ---------------------------------------------------------------------------------
+// Formant filter
+//
+// Three bandpass resonators tuned to vowel formants, and a morph that walks A E I O U.
+// The classic talkbox move: vowel identity lives almost entirely in the first two
+// formant frequencies, the third adds the throat. The table is the widely published
+// tenor set trimmed to three formants; this is an instrument, not a phonetics exam,
+// and the demo is the contract.
+//
+// Same TPT SVF core as StateVariableFilter, three of them in parallel, coefficients
+// recomputed once per block for the same ESP32 reasons. Frequencies interpolate in log
+// space (a morph through pitch should walk cents, not hertz), amplitudes in dB.
+// ---------------------------------------------------------------------------------
+
+// A E I O U: frequency (Hz), level (dB), bandwidth (Hz) for each of three formants.
+constexpr float kVowelFormants[5][3][3] = {
+    {{650.0f, 0.0f, 80.0f}, {1080.0f, -6.0f, 90.0f}, {2650.0f, -7.0f, 120.0f}},
+    {{400.0f, 0.0f, 70.0f}, {1700.0f, -14.0f, 80.0f}, {2600.0f, -12.0f, 100.0f}},
+    {{290.0f, 0.0f, 40.0f}, {1870.0f, -15.0f, 90.0f}, {2800.0f, -18.0f, 100.0f}},
+    {{400.0f, 0.0f, 70.0f}, {800.0f, -10.0f, 80.0f}, {2600.0f, -12.0f, 100.0f}},
+    {{350.0f, 0.0f, 40.0f}, {600.0f, -20.0f, 80.0f}, {2700.0f, -17.0f, 100.0f}},
+};
+
+constexpr PortDescriptor kFormantInputs[] = {
+    {"in", SignalType::Audio, "", true, true,
+     "Signal to push through the mouth. Saws and pulses vowel best."},
+    {"morph", SignalType::Control, "vowels", false, false,
+     "Added to the morph knob: 0 A, 1 E, 2 I, 3 O, 4 U. An LFO here talks."},
+};
+
+constexpr PortDescriptor kFormantOutputs[] = {
+    {"out", SignalType::Audio, "", false, false, "The vowel."},
+};
+
+constexpr ParameterDescriptor kFormantParameters[] = {
+    {"morph", "", 0.0f, 4.0f, 0.0f, Scaling::Linear,
+     "Which vowel the mouth is making: 0 A, 1 E, 2 I, 3 O, 4 U. Between whole "
+     "numbers it blends.", nullptr, 0},
+    {"emphasis", "", 0.0f, 1.0f, 0.5f, Scaling::Linear,
+     "How tight the mouth is. Low is breathy and soft, high whistles the vowel.",
+     nullptr, 0},
+};
+
+class FormantNode final : public DspNode {
+public:
+    enum Param { kMorph = 0, kEmphasis = 1 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        reset();
+    }
+
+    void reset() override {
+        for (int f = 0; f < 3; ++f) {
+            ic1_[f] = 0.0f;
+            ic2_[f] = 0.0f;
+        }
+    }
+
+    void process(const ProcessContext& context) override {
+        const float* in = context.inputs[0];
+        const float* morph_in = context.inputs[1];
+        float* out = context.outputs[0];
+
+        if (in == nullptr) {
+            for (int i = 0; i < context.frames; ++i) {
+                out[i] = 0.0f;
+            }
+            return;
+        }
+
+        float morph = parameter(kMorph);
+        if (morph_in != nullptr) {
+            morph += morph_in[0];
+        }
+        morph = dsp::clampf(morph, 0.0f, 4.0f);
+        const int low = static_cast<int>(morph) < 4 ? static_cast<int>(morph) : 3;
+        const float blend = morph - static_cast<float>(low);
+
+        // Wide at 0, the table's own bandwidths at 0.5, half of them at 1.
+        const float tightness = std::pow(2.0f, 1.0f - 2.0f * parameter(kEmphasis));
+
+        float g[3];
+        float k[3];
+        float level[3];
+        for (int f = 0; f < 3; ++f) {
+            const float* from = kVowelFormants[low][f];
+            const float* to = kVowelFormants[low + 1][f];
+            const float frequency = from[0] * std::pow(to[0] / from[0], blend);
+            const float db = from[1] + (to[1] - from[1]) * blend;
+            const float bandwidth = (from[2] + (to[2] - from[2]) * blend) * tightness;
+            const float centre = dsp::clampf(frequency, 20.0f, sample_rate_ * 0.45f);
+            g[f] = std::tan(dsp::kPi * centre / sample_rate_);
+            // k is 1/Q, and Q is centre over bandwidth: the resonator's damping is
+            // the vowel's own, not a user knob.
+            k[f] = dsp::clampf(bandwidth / centre, 0.02f, 2.0f);
+            level[f] = std::pow(10.0f, db / 20.0f);
+        }
+
+        float a1[3];
+        float a2[3];
+        for (int f = 0; f < 3; ++f) {
+            a1[f] = 1.0f / (1.0f + g[f] * (g[f] + k[f]));
+            a2[f] = g[f] * a1[f];
+        }
+
+        for (int i = 0; i < context.frames; ++i) {
+            const float input = in[i];
+            float sum = 0.0f;
+            for (int f = 0; f < 3; ++f) {
+                const float v3 = input - ic2_[f];
+                const float v1 = a1[f] * ic1_[f] + a2[f] * v3;
+                const float v2 = ic2_[f] + a2[f] * ic1_[f] + g[f] * a2[f] * v3;
+                ic1_[f] = 2.0f * v1 - ic1_[f];
+                ic2_[f] = 2.0f * v2 - ic2_[f];
+                // k * v1 is the unity-peak bandpass; the table's level sets the mix.
+                sum += k[f] * v1 * level[f];
+            }
+            out[i] = sum;
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    float ic1_[3] = {0.0f, 0.0f, 0.0f};
+    float ic2_[3] = {0.0f, 0.0f, 0.0f};
+};
+
+// ---------------------------------------------------------------------------------
 // Delay
 //
 // The only node that currently breaks a feedback loop. A cycle through anything else is
@@ -558,6 +686,20 @@ const NodeTypeDescriptor kOnePoleFilter = {
     false, NodeRole::Processor, false,
     ResourceCost{2.5f, 16, 0},
     &make<OnePoleFilterNode>,
+};
+
+const NodeTypeDescriptor kFormant = {
+    "Formant", "Formant", "Filters",
+    "Three formant resonators that make anything say a vowel: A, E, I, O, U, and "
+    "everything between.",
+    "formant|vowel|voice|vocal|talk|talking|talkbox|mouth|speech|say|singing|sing|"
+    "choir|human|aah|ooh|robot voice|vox",
+    Slice<PortDescriptor>(kFormantInputs),
+    Slice<PortDescriptor>(kFormantOutputs),
+    Slice<ParameterDescriptor>(kFormantParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{4.0f, 32, 0},
+    &make<FormantNode>,
 };
 
 const NodeTypeDescriptor kDelay = {

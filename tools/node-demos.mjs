@@ -301,6 +301,37 @@ const DEMOS = {
       + 'lets far more through, which is the entire reason it exists.',
     build: () => throughEffect('OnePoleFilter', { cutoff: 800, mode: 0 }),
   },
+  Formant: {
+    summary: 'Three formant resonators that make anything say a vowel: A, E, I, O, U, '
+      + 'and everything between.',
+    try: 'Hold a low note — the LFO is already mouthing its way through the vowels. Drag '
+      + 'morph to pick one by hand, raise emphasis until it whistles, or drop it to a '
+      + 'whisper.',
+    // Its own tail rather than throughEffect: the shared tail is a one-shot envelope
+    // on the trigger, and a mouth that dies half a second in never gets to talk. A
+    // sustaining ADSR on the gate is the whole demo.
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('osc', 'SawOscillator', { frequency: 220 }, 1, 0),
+        node('demo', 'Formant', { morph: 0, emphasis: 0.6 }, 2, 0),
+        node('env', 'ADSR', { attack: 0.01, decay: 0.1, sustain: 0.85, release: 0.2 }, 2, 1),
+        node('mouth', 'LFO', { rate: 0.3, shape: 0, amount: 2, offset: 2 }, 1, 2),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('osc', 'out', 'demo', 'in'),
+        wire('kb', 'gate', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('demo', 'out', 'amp', 'in'),
+        wire('amp', 'out', 'out', 'left'),
+        wire('amp', 'out', 'out', 'right'),
+        wire('mouth', 'out', 'demo', 'morph'),
+      ],
+    }),
+  },
 
   // ---- time ---------------------------------------------------------------------
   Delay: {
@@ -1035,6 +1066,7 @@ const PROBES = {
 
   StateVariableFilter: { parameter: 'cutoff', value: 5000 },
   OnePoleFilter: { parameter: 'cutoff', value: 6000 },
+  Formant: { parameter: 'emphasis', value: 0 },
 
   Delay: { parameter: 'feedback', value: 0.05 },
   Phaser: { parameter: 'sweep', value: 0 },

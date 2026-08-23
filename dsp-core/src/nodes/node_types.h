@@ -19,6 +19,7 @@ extern const NodeTypeDescriptor kConstant;
 // Filters and time
 extern const NodeTypeDescriptor kStateVariableFilter;
 extern const NodeTypeDescriptor kOnePoleFilter;
+extern const NodeTypeDescriptor kFormant;
 extern const NodeTypeDescriptor kDelay;
 extern const NodeTypeDescriptor kComb;
 extern const NodeTypeDescriptor kAllpass;

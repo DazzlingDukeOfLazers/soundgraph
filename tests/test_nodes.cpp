@@ -1048,6 +1048,58 @@ float settled_amplitude(const std::string& type, float cutoff, float mode, float
 
 }  // namespace
 
+namespace {
+// A sine at tone_hz through the Formant node; the settled tail's RMS.
+float formant_response(float morph, float tone_hz) {
+    NodeHarness harness("Formant", 8000, kSampleRate);
+    harness.set("morph", morph);
+    harness.set("emphasis", 0.5f);
+    std::vector<float>& in = harness.input("in");
+    for (size_t i = 0; i < in.size(); ++i) {
+        in[i] = std::sin(2.0f * 3.14159265f * tone_hz * static_cast<float>(i)
+            / static_cast<float>(kSampleRate));
+    }
+    harness.process();
+    float sum = 0.0f;
+    for (size_t i = 4000; i < 8000; ++i) {
+        sum += harness.output()[i] * harness.output()[i];
+    }
+    return std::sqrt(sum / 4000.0f);
+}
+}  // namespace
+
+TEST(formant_vowels_move_the_energy) {
+    // "Ah" has its first formant at 650 Hz, "ee" at 290: a tone under each vowel's
+    // own formant should ring far louder than under the other's.
+    CHECK(formant_response(0.0f, 650.0f) > 2.0f * formant_response(2.0f, 650.0f));
+    CHECK(formant_response(2.0f, 290.0f) > 2.0f * formant_response(0.0f, 290.0f));
+}
+
+TEST(formant_morph_blends_rather_than_switches) {
+    // Halfway between A and E, a 650 Hz tone sits between the two ends' responses.
+    const float at_a = formant_response(0.0f, 650.0f);
+    const float at_e = formant_response(1.0f, 650.0f);
+    const float between = formant_response(0.5f, 650.0f);
+    CHECK(between < at_a);
+    CHECK(between > at_e);
+}
+
+TEST(formant_stays_finite_driven_hard) {
+    NodeHarness harness("Formant", 8000, kSampleRate);
+    harness.set("morph", 4.0f);
+    harness.set("emphasis", 1.0f);
+    std::vector<float>& in = harness.input("in");
+    for (size_t i = 0; i < in.size(); ++i) {
+        // A loud naive saw, the harshest thing a keyboard patch will feed it.
+        in[i] = 2.0f * (static_cast<float>(i % 200) / 200.0f) - 1.0f;
+    }
+    harness.process();
+    for (size_t i = 0; i < 8000; ++i) {
+        CHECK(std::isfinite(harness.output()[i]));
+        CHECK(std::fabs(harness.output()[i]) < 10.0f);
+    }
+}
+
 TEST(one_pole_lowpass_passes_below_and_cuts_above) {
     CHECK_NEAR(settled_amplitude("OnePoleFilter", 1000.0f, 0.0f, 50.0f), 1.0, 0.02);
     // A one-pole is 3 dB down at its own cutoff.
