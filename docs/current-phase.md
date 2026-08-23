@@ -330,6 +330,12 @@ somewhere other than the cause.
   worker is cache-first with no `skipWaiting`, so a waiting replacement never activates
   while a client is open. Unregister it before concluding anything about a re-export; check
   which `index.pck` size actually loaded first.
+- **An autowrap label with no pinned width reports its minimum height as if wrapped at
+  zero width.** Inside a popup that sizes to content, one long `AUTOWRAP_WORD_SMART`
+  label inflated the feedback dialog to the window's full height on first open — layout
+  hadn't run yet, so the label answered "how tall am I?" for a width it would never have.
+  Pin `custom_minimum_size.x` on any wrapping label that lives outside a ScrollContainer;
+  the search dialog only escapes because its wrapping labels sit inside one.
 
 ## Invariants
 
