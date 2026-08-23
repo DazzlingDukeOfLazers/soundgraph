@@ -459,6 +459,50 @@ func _initialize() -> void:
 	main._toggle_loved("Comb")
 	check(not main._loved_nodes.has("Comb"), "and a second tap takes the love back")
 
+	# ---- feedback leaves through an outbox --------------------------------------------
+	# The outbox is the deliverable and the only thing tested: the network belongs to
+	# the vendored submitter, and the live service is not this suite's to lean on.
+	main.feedback_submitter.endpoint = ""
+	var real_outbox: String = main.feedback_outbox
+	main.feedback_outbox = "user://feedback/test-outbox.jsonl"
+	main._open_feedback()
+	for i in 3:
+		await process_frame
+	check(main.feedback_popup.visible, "the hamburger's item opens the dialog")
+	check(main.feedback_send.disabled, "Send waits for a note")
+	main.feedback_note.text = "[deleteme] filed by the editor test"
+	main.feedback_note.text_changed.emit()
+	check(not main.feedback_send.disabled, "and wakes once there is one")
+	main._send_feedback()
+	for i in 2:
+		await process_frame
+	check(not main.feedback_popup.visible, "sending puts the dialog away")
+	var out_file := FileAccess.open("user://feedback/test-outbox.jsonl", FileAccess.READ)
+	check(out_file != null, "sending writes the outbox")
+	var envelope: Dictionary = {}
+	if out_file != null:
+		envelope = JSON.parse_string(out_file.get_line()) as Dictionary
+		out_file.close()
+	check(int(envelope.get("v", 0)) == 1 and str(envelope.get("app", "")) == "SoundGraph",
+		"the envelope is v1, filed under this product's own name")
+	check(bool(envelope.get("test", false)), "[deleteme] marks a test report")
+	check(str(envelope.get("element_key", "")).begins_with("view/"),
+		"reports group on the view they came from (%s)"
+			% str(envelope.get("element_key", "")))
+	check(str(envelope.get("install_id", "")).length() == 16
+			and str(envelope.get("install_id", "")) == main._feedback_install_id(),
+		"the install id is sixteen hex digits and stable across asks")
+	if bool(envelope.get("shot_attached", false)):
+		check(FileAccess.file_exists("user://feedback/" + str(envelope.get("shot", ""))),
+			"a promised screenshot actually exists on disk")
+	DirAccess.remove_absolute(
+		ProjectSettings.globalize_path("user://feedback/test-outbox.jsonl"))
+	if envelope.has("shot"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(
+			"user://feedback/" + str(envelope["shot"])))
+	main.feedback_outbox = real_outbox
+	main.feedback_submitter.endpoint = main.FEEDBACK_ENDPOINT
+
 	# ---- the step sequencer wears a roll ----------------------------------------------
 	# Sixteen "stepN" number cells answered "what shape is this line" with sixteen
 	# acts of reading; the node carries a bar of piano roll instead. Painting writes

@@ -21,6 +21,8 @@ signal file_action(id: int)
 signal view_action(id: int)
 signal arrange_action(id: int)
 signal make_module_requested
+## Somebody wants to tell the workbench something. Main owns the dialog.
+signal feedback_requested
 signal mute_toggled
 
 enum Rung {
@@ -463,6 +465,10 @@ func _build() -> void:
 	burger_popup.set_item_tooltip(burger_popup.get_item_index(101),
 		"Silence the output without changing the patch — the same mute as the "
 		+ "keyboard's. Escape still stops every sounding note.")
+	burger_popup.add_item("Send feedback…", 105)
+	burger_popup.set_item_tooltip(burger_popup.get_item_index(105),
+		"A note straight to the workbench: what you were doing, what went "
+		+ "sideways. The dialog says exactly what it sends, and works offline.")
 	burger_popup.add_separator()
 	burger_popup.add_item("Audio starting…", 102)
 	burger_popup.set_item_disabled(burger_popup.get_item_index(102), true)
@@ -482,7 +488,9 @@ func _build() -> void:
 		elif id == 104:
 			if toolbar_qr != null:
 				toolbar_qr.visible = not toolbar_qr.visible
-				Settings.store("qr_visible", toolbar_qr.visible))
+				Settings.store("qr_visible", toolbar_qr.visible)
+		elif id == 105:
+			feedback_requested.emit())
 	bar.add_child(_defocus(burger))
 
 	var margin := MarginContainer.new()

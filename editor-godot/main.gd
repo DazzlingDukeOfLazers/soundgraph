@@ -89,6 +89,7 @@ const PianoRoll := preload("res://piano_roll.gd")
 const RollPitch := preload("res://roll_pitch.gd")
 const StepGrid := preload("res://step_grid.gd")
 const DeviceBlurbs := preload("res://device_blurbs.gd")
+const FeedbackSubmitter := preload("res://feedback_submitter.gd")
 const MidiImport := preload("res://midi_import.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
@@ -623,6 +624,7 @@ func _build_ui() -> void:
 	toolbar = EditorToolbar.new(_examples, _build_description())
 	toolbar.is_muted = func() -> bool: return muted
 	toolbar.add_node_requested.connect(_open_search)
+	toolbar.feedback_requested.connect(_open_feedback)
 	toolbar.undo_requested.connect(_undo)
 	toolbar.redo_requested.connect(_redo)
 	toolbar.example_chosen.connect(_load_example)
@@ -1039,6 +1041,11 @@ func _build_ui() -> void:
 	_set_roll_orientation(str(Settings.fetch("roll_orientation", "vertical")))
 	for key in Settings.fetch("loved_nodes", []):
 		_loved_nodes[str(key)] = true
+	feedback_submitter = FeedbackSubmitter.new()
+	feedback_submitter.endpoint = FEEDBACK_ENDPOINT
+	feedback_submitter.outbox_path = feedback_outbox
+	feedback_submitter.finished.connect(_on_feedback_flushed)
+	add_child(feedback_submitter)
 	# The dock has its own vertical ladder, and the window resizing is its signal —
 	# same reasoning as the toolbar's: the dock's own size stops changing exactly
 	# when the window gets too short for it.
@@ -5541,6 +5548,20 @@ func _build_result_row(type_name: String) -> Control:
 	return row
 
 
+# ---- feedback -----------------------------------------------------------------
+# One server serves several products; what keeps this product's reports its own is
+# the envelope's `app` field, an install id living in *this* project's settings,
+# and an outbox under *this* project's user:// — no code or state shared with any
+# other application posting to the same service.
+const FEEDBACK_ENDPOINT := "https://feedback.mutantfactory.net"
+var feedback_outbox := "user://feedback/outbox.jsonl"
+var feedback_submitter: Node
+var feedback_popup: PopupPanel
+var feedback_note: TextEdit
+var feedback_shot_check: CheckBox
+var feedback_send: Button
+var _feedback_shot: Image
+
 var _search_spawn := Vector2.ZERO
 var _search_top_result := ""
 var _added_since_open := 0
@@ -5603,6 +5624,153 @@ func _family_devices(prefixes: Array, query: String) -> Array:
 			matches.append(text)
 	matches.sort()
 	return matches
+
+
+## This install's stable anonymous name for the feedback service: it groups one
+## reporter's history without an account. Generated once, kept in this project's
+## own settings — a different id from every other product on this machine.
+func _feedback_install_id() -> String:
+	var id := str(Settings.fetch("install_id", ""))
+	if id == "":
+		id = Crypto.new().generate_random_bytes(8).hex_encode()
+		Settings.store("install_id", id)
+	return id
+
+
+func _open_feedback() -> void:
+	# The screenshot is taken NOW, before the dialog covers what the report is
+	# about. Held in memory; nothing is written unless Send is pressed with the
+	# box still ticked.
+	_feedback_shot = get_viewport().get_texture().get_image()
+	if feedback_popup == null:
+		_build_feedback_popup()
+	feedback_note.text = ""
+	feedback_send.disabled = true
+	feedback_popup.popup_centered()
+	feedback_note.grab_focus()
+	# Opening the dialog is the moment somebody is demonstrably here and likely
+	# online — the polite time to deliver anything an offline session left behind.
+	feedback_submitter.flush()
+
+
+func _build_feedback_popup() -> void:
+	feedback_popup = PopupPanel.new()
+	feedback_popup.size = Vector2i(540, 400)
+	# An opaque panel of its own: the theme leaves PopupPanel see-through, which the
+	# search dialog gets away with behind its rows and a form does not.
+	feedback_popup.add_theme_stylebox_override("panel",
+		Design.padded_panel(Design.Surface.NODE, Design.SPACE_M, Design.SPACE_M))
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.add_theme_constant_override("separation", Design.SPACE_S)
+
+	var heading := Label.new()
+	heading.text = "Send feedback"
+	heading.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+	box.add_child(heading)
+
+	feedback_note = TextEdit.new()
+	feedback_note.placeholder_text = "What were you doing, and what went sideways? " 		+ "A note with [deleteme] in it tests the pipes and is thrown away."
+	feedback_note.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	feedback_note.custom_minimum_size.y = Design.scale(120)
+	feedback_note.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	feedback_note.text_changed.connect(func() -> void:
+		feedback_send.disabled = feedback_note.text.strip_edges() == "")
+	box.add_child(feedback_note)
+
+	feedback_shot_check = CheckBox.new()
+	feedback_shot_check.text = "Include a screenshot of the editor"
+	feedback_shot_check.tooltip_text = "The editor as it looked when this dialog " 		+ "opened — untick to send the note alone."
+	feedback_shot_check.button_pressed = true
+	box.add_child(feedback_shot_check)
+
+	# The whole privacy surface, stated where the choice is made: the report says
+	# what it carries, and the reporter can put the picture down.
+	var carries := Label.new()
+	carries.text = "Sends your note, the build (%s), your platform, which view " 		% str(_build_stamp().get("short", "dev")) 		+ "you were in, and a random install id. Offline, it waits in an outbox " 		+ "and goes when it can."
+	carries.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Pinned width, because an autowrap label with none reports its minimum height
+	# as if wrapped at nothing — which inflated this dialog to the window's full
+	# height the first time it opened.
+	carries.custom_minimum_size = Vector2(Design.scale(480), 0)
+	carries.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	carries.add_theme_color_override("font_color", Design.INK_SECOND)
+	box.add_child(carries)
+
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_END
+	buttons.add_theme_constant_override("separation", Design.SPACE_S)
+	var cancel := Button.new()
+	cancel.text = "Cancel"
+	cancel.pressed.connect(func() -> void: feedback_popup.hide())
+	buttons.add_child(_defocus(cancel))
+	feedback_send = Button.new()
+	feedback_send.text = "Send"
+	feedback_send.disabled = true
+	feedback_send.pressed.connect(_send_feedback)
+	buttons.add_child(_defocus(feedback_send))
+	box.add_child(buttons)
+
+	feedback_popup.add_child(box)
+	add_child(feedback_popup)
+
+
+## Writes one envelope line to the outbox and asks the submitter to drain it. The
+## outbox is the deliverable — the network is the submitter's problem, later if
+## need be — so this function succeeds offline, on purpose.
+func _send_feedback() -> void:
+	var note := feedback_note.text.strip_edges()
+	if note == "":
+		return
+	DirAccess.make_dir_recursive_absolute(
+		ProjectSettings.globalize_path(feedback_outbox.get_base_dir()))
+	var record := {
+		"v": 1,
+		"app": "SoundGraph",
+		"app_version": str(_build_stamp().get("short", "dev")),
+		"platform": OS.get_name(),
+		"install_id": _feedback_install_id(),
+		"ts": Time.get_datetime_string_from_system(true),
+		"text": note,
+		"element_key": "view/%s" % views.get_tab_title(views.current_tab).to_lower(),
+	}
+	if note.contains("[deleteme]"):
+		record["test"] = true
+	var attached := false
+	if feedback_shot_check.button_pressed and _feedback_shot != null:
+		var shot_name := "shot-%d.png" % int(Time.get_unix_time_from_system() * 1000.0)
+		if _feedback_shot.save_png(feedback_outbox.get_base_dir().path_join(shot_name)) == OK:
+			record["shot"] = shot_name
+			attached = true
+	record["shot_attached"] = attached
+	var file: FileAccess
+	if FileAccess.file_exists(feedback_outbox):
+		file = FileAccess.open(feedback_outbox, FileAccess.READ_WRITE)
+		if file != null:
+			file.seek_end()
+	else:
+		file = FileAccess.open(feedback_outbox, FileAccess.WRITE)
+	if file == null:
+		_say("could not write the feedback outbox — nothing was sent")
+		return
+	file.store_line(JSON.stringify(record))
+	file.close()
+	feedback_popup.hide()
+	_say("thank you — sending…")
+	feedback_submitter.flush()
+
+
+func _on_feedback_flushed(sent: int, discarded: int, failed: int) -> void:
+	if discarded > 0 and sent == 0 and failed == 0:
+		_say("test report accepted and thrown away, exactly as designed")
+	elif sent > 0 and failed == 0:
+		_say("feedback sent — thank you")
+	elif sent > 0:
+		_say("some feedback sent; the rest waits in the outbox")
+	elif failed > 0:
+		_say("feedback is waiting in the outbox — it goes out when the service "
+			+ "is reachable")
 
 
 func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:
