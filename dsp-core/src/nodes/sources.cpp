@@ -425,8 +425,12 @@ constexpr PortDescriptor kLfoOutputs[] = {
 constexpr ParameterDescriptor kLfoParameters[] = {
     {"rate", "Hz", 0.01f, 200.0f, 2.0f, Scaling::Exponential, "Cycles per second.", nullptr, 0},
     {"shape", "", 0.0f, 4.0f, 0.0f, Scaling::Linear, "Waveform.", kLfoShapeLabels, 5},
-    {"amount", "", 0.0f, 1000.0f, 1.0f, Scaling::Linear,
-     "Scales the output. Set this in the unit of whatever you are modulating.", nullptr, 0},
+    // Negative is legal and means inverted: the DX7 import expresses tremolo as an
+    // upside-down dip wave (amount -0.5, offset 0.5), and a floor of zero was
+    // silently clamping that to a tremolo of nothing on every load.
+    {"amount", "", -1000.0f, 1000.0f, 1.0f, Scaling::Linear,
+     "Scales the output, in the unit of whatever you are modulating. Negative "
+     "turns the swing upside down.", nullptr, 0},
     {"offset", "", -1000.0f, 1000.0f, 0.0f, Scaling::Linear,
      "Added to the output. Use it to make a bipolar shape unipolar.", nullptr, 0},
 };
