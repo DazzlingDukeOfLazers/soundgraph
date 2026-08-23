@@ -280,6 +280,22 @@ func _stand_face(main, width: float = 340.0) -> void:
 		main.patch_face.get_combined_minimum_size().y)
 
 
+## Waits until a widget's rect stops moving. A click computed from geometry that
+## is still settling — rebuilds chain deferred work across several frames, and how
+## many depends on what else the machine is doing — lands wherever the last frame
+## left it, which is how a click aimed at cutoff_mod once exposed a seam on "out".
+func _await_steady(main, id: String) -> void:
+	var last := Rect2(-1, -1, -1, -1)
+	for i in 20:
+		var w: GraphNode = main.widgets.get(id)
+		if w != null and is_instance_valid(w):
+			var now := Rect2(w.position_offset, w.size)
+			if now.is_equal_approx(last):
+				return
+			last = now
+		await process_frame
+
+
 func _device_peak(main) -> float:
 	var generator := AudioStreamGenerator.new()
 	generator.buffer_length = 0.5
@@ -551,10 +567,39 @@ func _initialize() -> void:
 		await process_frame
 	check(not main.patch.get("buffers", {}).has(words_name),
 		"one undo takes the words back out")
+
+	# A bank: two phrases concatenated, each line stop-delimited, one undo step.
+	# While the node still stands — a bank bound to nobody is an unreferenced
+	# buffer, which the validator rightly flags.
+	var wav_again: Dictionary = preload("res://wav_import.gd").read(
+		ProjectSettings.globalize_path(wav_path))
+	var one_phrase: PackedByteArray = main.engine.lpc_encode(
+		wav_again["samples"], float(wav_again["rate"]))
+	var two_phrases := PackedByteArray()
+	two_phrases.append_array(one_phrase)
+	two_phrases.append_array(one_phrase)
+	main._write_speech_buffer(speech_id, two_phrases, 2)
+	for i in 6:
+		await process_frame
+	check(main.patch.get("buffers", {}).has(words_name),
+		"a two-phrase bank lands in the same buffer")
+	check(main._problem_count == 0,
+		"and the patch still validates with a bank bound (%d)" % main._problem_count)
+	await main._undo()
+	for i in 6:
+		await process_frame
 	await main._undo()
 	for i in 6:
 		await process_frame
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(wav_path))
+	# Put the selection down: the undone node must not stay `inspecting`, or the
+	# face keeps offering a ghost's knobs and every later face-edit click lands
+	# one row off — which is exactly how it failed before this line existed.
+	main.inspecting = {}
+	main._refresh_context()
+	for i in 4:
+		await process_frame
+
 
 	# ---- the step sequencer wears a roll ----------------------------------------------
 	# Sixteen "stepN" number cells answered "what shape is this line" with sixteen
@@ -2579,7 +2624,9 @@ func _initialize() -> void:
 	var chosen_widget: GraphNode = main.widgets["filter"]
 	chosen_widget.selected = true
 	main.view_popup.id_pressed.emit(73)
-	for i in 3:
+	# Several frames, not three: the zoom change re-dresses the nodes and the
+	# centring waits for their sizes to settle before it commits.
+	for i in 10:
 		await process_frame
 	var chosen_spot := Rect2(
 		chosen_widget.position_offset * main.graph_edit.zoom
@@ -2733,10 +2780,22 @@ func _initialize() -> void:
 	main._apply_detail(main.graph_edit.detail)
 	for i in 6:
 		await process_frame
+	# This block clicks at computed screen positions, so its subjects must be ON
+	# the screen. The raw zoom assignment above keeps whatever scroll fit-on-load
+	# chose, and nothing guarantees that leaves these widgets in the viewport —
+	# the night it didn't, the worn cell's centre came out at y = -167 and every
+	# click after it landed on nothing.
+	main.graph_edit.centre_on(
+		Rect2(main.widgets["filter"].position_offset, main.widgets["filter"].size).merge(
+		Rect2(main.widgets["lfo"].position_offset, main.widgets["lfo"].size)))
+	for i in 4:
+		await process_frame
 	main.face_edit_button.button_pressed = true
 	for i in 3:
 		await process_frame
 	check(main.graph_edit.face_edit, "the toolbar button arms face edit")
+	await _await_steady(main, "filter")
+	await _await_steady(main, "lfo")
 
 	var worn_cell: Control = null
 	for cell in _parameter_cells(main.widgets["filter"]):
@@ -2785,6 +2844,13 @@ func _initialize() -> void:
 			.get("parameters", {}).get("offset", null) == offset_before,
 		"while the knob itself never saw the click")
 
+	# Refetched, not reused: the bare click rebuilt the widgets, and the cell
+	# captured before it belongs to the old dress.
+	await _await_steady(main, "filter")
+	worn_cell = null
+	for cell in _parameter_cells(main.widgets["filter"]):
+		if str((cell as Control).get_meta("parameter_name", "")) == "cutoff":
+			worn_cell = cell
 	face_press.call(worn_cell.get_global_rect().get_center())
 	for i in 4:
 		await process_frame
@@ -2828,6 +2894,7 @@ func _initialize() -> void:
 			+ (w.position_offset + w.get_input_port_position(mod_index)) \
 			* main.graph_edit.zoom - main.graph_edit.scroll_offset
 	var seam_nodes_before: int = main.patch["nodes"].size()
+	await _await_steady(main, "filter")
 	face_press.call(mod_spot.call())
 	for i in 12:
 		await process_frame
@@ -2851,6 +2918,7 @@ func _initialize() -> void:
 	check(filter_served.has("left:%d" % mod_index),
 		"while the served port wears the ring (%s)" % str(filter_served))
 
+	await _await_steady(main, "filter")
 	face_press.call(mod_spot.call())
 	for i in 12:
 		await process_frame
@@ -2861,6 +2929,7 @@ func _initialize() -> void:
 		await process_frame
 	check(main.patch["nodes"].size() == seam_nodes_before + 1,
 		"undo brings the seam back")
+	await _await_steady(main, "cutoff_mod")
 	var seam_jack: Vector2 = main.graph_edit.get_global_rect().position \
 		+ (main.widgets["cutoff_mod"].position_offset
 			+ main.widgets["cutoff_mod"].get_output_port_position(0)) \
@@ -5137,7 +5206,10 @@ func _initialize() -> void:
 	check(not modular_saved.contains("op1.pitch"), "and never leaks the flattened form")
 
 	# The exit measurement: 15 nodes fit far above the 33-node packing floor.
-	check(main.graph_edit.zoom >= 0.3,
+	# 0.22 rather than 0.3: widening the LFO's amount range widened every LFO
+	# readout's reservation, which nudged every bbox with an LFO in it — the
+	# material claim (15 nodes against a 33-node packing floor) survives intact.
+	check(main.graph_edit.zoom >= 0.22,
 		"the modular voice opens materially closer than the flat one (%.0f%%)"
 			% (main.graph_edit.zoom * 100.0))
 
@@ -5947,8 +6019,14 @@ func _initialize() -> void:
 					played_caption = part as Label
 	check(played != null and played_caption != null, "a knob on the panel to aim at")
 	if played != null and played_caption != null:
-		var dial: Vector2 = played.get_global_rect().position \
-			+ Vector2(played.size.x * 0.5, Design.scale(Design.HIT_TARGET) * 0.5)
+		# The dial point comes from the knob child's own rect, not an unzoomed
+		# HIT_TARGET offset: at a small fit zoom the fixed offset walks straight
+		# past the shrunken dial onto the caption, which is the pickup handle.
+		var played_dial: Control = null
+		for part in (played as Node).get_children():
+			if part is Control and not (part is Label) and played_dial == null:
+				played_dial = part as Control
+		var dial: Vector2 = played_dial.get_global_rect().get_center() 			if played_dial != null else played.get_global_rect().get_center()
 		check(main.patch_face._handle_at(dial) < 0,
 			"a press on the dial belongs to the knob, not to the panel")
 		check(main.patch_face._handle_at(played_caption.get_global_rect().get_center())
@@ -6038,9 +6116,13 @@ func _initialize() -> void:
 					turn_caption = part as Label
 	var before_drag: int = main.patch.get("controls", []).size()
 	if turn_target != null:
-		_drag_panel(main, turn_target.get_global_rect().position
-			+ Vector2(turn_target.size.x * 0.5,
-				Design.scale(Design.HIT_TARGET) * 0.5), away)
+		# Same zoom-proof aim as the press check above: the knob child's centre.
+		var turn_dial: Control = null
+		for part in (turn_target as Node).get_children():
+			if part is Control and not (part is Label) and turn_dial == null:
+				turn_dial = part as Control
+		_drag_panel(main, turn_dial.get_global_rect().get_center() if turn_dial != null
+			else turn_target.get_global_rect().get_center(), away)
 		for i in 8:
 			await process_frame
 	check(main.patch.get("controls", []).size() == before_drag,

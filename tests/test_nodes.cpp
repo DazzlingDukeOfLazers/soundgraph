@@ -1610,6 +1610,57 @@ TEST(speech_silent_frames_say_nothing) {
     }
 }
 
+TEST(speech_note_input_picks_the_phrase) {
+    // Two phrases in one buffer, stop-delimited: a short word and a long one.
+    // The note input, read on the trigger edge, chooses — root says the first,
+    // a semitone up says the next — and the lengths tell us which one spoke.
+    SpeechStream bank;
+    for (int i = 0; i < 3; ++i) {
+        bank.voiced_frame(12, 20);   // 75 ms: the short word
+    }
+    bank.stop();
+    for (int i = 0; i < 14; ++i) {
+        bank.voiced_frame(12, 20);   // 350 ms: the long one
+    }
+    bank.stop();
+
+    auto tail_rms = [](const std::vector<float>& out) {
+        double sum = 0.0;
+        for (int i = 12000; i < 15000; ++i) {   // 0.25 s in: past the short word
+            sum += out[static_cast<std::size_t>(i)] * out[static_cast<std::size_t>(i)];
+        }
+        return std::sqrt(sum / 3000.0);
+    };
+
+    NodeHarness low("Speech", 24000, kSampleRate);
+    low.bind_buffer(bank.samples);
+    low.connect("trigger", 1.0f);
+    low.connect("note", 130.81f);            // the root: the short word
+    low.process();
+
+    NodeHarness high("Speech", 24000, kSampleRate);
+    high.bind_buffer(bank.samples);
+    high.connect("trigger", 1.0f);
+    high.connect("note", 138.59f);           // a semitone up: the long one
+    high.process();
+
+    double head = 0.0;
+    for (int i = 0; i < 3000; ++i) {
+        head += low.output()[i] * low.output()[i];
+    }
+    CHECK(std::sqrt(head / 3000.0) > 0.001);     // the short word does speak
+    CHECK(tail_rms(low.output()) < 0.0005);      // and has finished by a quarter second
+    CHECK(tail_rms(high.output()) > 0.001);      // while the long one is still talking
+
+    // Above the bank's top, the last phrase answers rather than silence.
+    NodeHarness beyond("Speech", 24000, kSampleRate);
+    beyond.bind_buffer(bank.samples);
+    beyond.connect("trigger", 1.0f);
+    beyond.connect("note", 523.25f);         // two octaves up: clamped to the long one
+    beyond.process();
+    CHECK(tail_rms(beyond.output()) > 0.001);
+}
+
 TEST(speech_without_a_buffer_is_silent_not_broken) {
     NodeHarness harness("Speech", 4800, kSampleRate);
     CHECK(harness.valid());

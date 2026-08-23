@@ -5580,7 +5580,7 @@ var _feedback_shot: Image
 
 # ---- the speak pipeline: text or a WAV, into a Speech node's buffer ------------
 var words_popup: PopupPanel
-var words_text: LineEdit
+var words_text: TextEdit
 var words_hint: Label
 var words_wav_dialog: FileDialog
 var _words_node := ""
@@ -5808,7 +5808,7 @@ func _open_speech_words(node_id: String) -> void:
 
 func _build_words_popup() -> void:
 	words_popup = PopupPanel.new()
-	words_popup.size = Vector2i(520, 220)
+	words_popup.size = Vector2i(520, 300)
 	words_popup.add_theme_stylebox_override("panel",
 		Design.padded_panel(Design.Surface.NODE, Design.SPACE_M, Design.SPACE_M))
 	var box := VBoxContainer.new()
@@ -5820,9 +5820,11 @@ func _build_words_popup() -> void:
 	heading.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
 	box.add_child(heading)
 
-	words_text = LineEdit.new()
-	words_text.placeholder_text = "what should it say?"
-	words_text.text_submitted.connect(func(_text: String) -> void: _speak_typed())
+	words_text = TextEdit.new()
+	words_text.placeholder_text = "what should it say?\none line per phrase — " \
+		+ "the root note says the first, each semitone up says the next"
+	words_text.custom_minimum_size.y = Design.scale(96)
+	words_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(words_text)
 
 	var buttons := HBoxContainer.new()
@@ -5853,37 +5855,48 @@ func _build_words_popup() -> void:
 	add_child(words_popup)
 
 
-## Text through the operating system's own voice into a temporary WAV. The one
-## platform-specific seam in the pipeline, and it degrades to a message rather
-## than a mystery: everything after the WAV is the same for every source.
+## Text through the operating system's own voice, one line per phrase: each line
+## becomes its own stop-delimited entry in the bank, and the note input picks one —
+## the root note says the first, each semitone up the next. The OS voice is the one
+## platform-specific seam, and it degrades to a message rather than a mystery.
 func _speak_typed() -> void:
-	var text := words_text.text.strip_edges()
-	if text == "":
+	var phrases: Array = []
+	for line in words_text.text.split("\n"):
+		if str(line).strip_edges() != "":
+			phrases.append(str(line).strip_edges())
+	if phrases.is_empty():
 		words_hint.text = "Type something first."
 		return
+	var bank := PackedByteArray()
 	var wav_path := ProjectSettings.globalize_path("user://words-tts.wav")
-	var status := -1
-	match OS.get_name():
-		"Windows":
-			var script := "Add-Type -AssemblyName System.Speech; " \
-				+ "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; " \
-				+ "$f = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(" \
-				+ "22050, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, " \
-				+ "[System.Speech.AudioFormat.AudioChannel]::Mono); " \
-				+ "$s.SetOutputToWaveFile('%s', $f); " % wav_path.replace("'", "''") \
-				+ "$s.Speak('%s'); $s.Dispose()" % text.replace("'", "''")
-			status = OS.execute("powershell", ["-NoProfile", "-Command", script])
-		"macOS":
-			status = OS.execute("say",
-				["-o", wav_path, "--data-format=LEI16@22050", text])
-		_:
-			words_hint.text = "No system voice on this platform — feed a WAV instead."
+	for phrase: String in phrases:
+		var status := -1
+		match OS.get_name():
+			"Windows":
+				var script := "Add-Type -AssemblyName System.Speech; " \
+					+ "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; " \
+					+ "$f = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(" \
+					+ "22050, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, " \
+					+ "[System.Speech.AudioFormat.AudioChannel]::Mono); " \
+					+ "$s.SetOutputToWaveFile('%s', $f); " % wav_path.replace("'", "''") \
+					+ "$s.Speak('%s'); $s.Dispose()" % phrase.replace("'", "''")
+				status = OS.execute("powershell", ["-NoProfile", "-Command", script])
+			"macOS":
+				status = OS.execute("say",
+					["-o", wav_path, "--data-format=LEI16@22050", phrase])
+			_:
+				words_hint.text = "No system voice on this platform — feed a WAV instead."
+				return
+		if status != 0 or not FileAccess.file_exists(wav_path):
+			words_hint.text = "The system voice did not answer — feed a WAV instead."
 			return
-	if status != 0 or not FileAccess.file_exists(wav_path):
-		words_hint.text = "The system voice did not answer — feed a WAV instead."
-		return
-	_import_speech_wav(_words_node, wav_path)
-	DirAccess.remove_absolute(wav_path)
+		var wav := WavImport.read(wav_path)
+		DirAccess.remove_absolute(wav_path)
+		if wav.is_empty():
+			words_hint.text = "The system voice wrote a file this reader cannot hold."
+			return
+		bank.append_array(engine.lpc_encode(wav["samples"], float(wav["rate"])))
+	_write_speech_buffer(_words_node, bank, phrases.size())
 
 
 func _pick_speech_wav() -> void:
@@ -5898,9 +5911,8 @@ func _pick_speech_wav() -> void:
 	words_wav_dialog.popup_centered(Vector2i(700, 500))
 
 
-## The whole pipeline below the voice: WAV to floats (wav_import), floats to
-## bitstream (the engine's encoder — no DSP in GDScript), bytes into the patch as
-## a buffer, the node bound to it, one undo step. Same shape as Capture.
+## The WAV half: one file, one phrase. WAV to floats (wav_import), floats to
+## bitstream (the engine's encoder — no DSP in GDScript), into the bank.
 func _import_speech_wav(node_id: String, path: String) -> void:
 	var wav := WavImport.read(path)
 	if wav.is_empty():
@@ -5908,7 +5920,13 @@ func _import_speech_wav(node_id: String, path: String) -> void:
 		if words_hint != null:
 			words_hint.text = "That file is not a 16-bit WAV this reader can hold."
 		return
-	var bytes: PackedByteArray = engine.lpc_encode(wav["samples"], float(wav["rate"]))
+	_write_speech_buffer(node_id,
+		engine.lpc_encode(wav["samples"], float(wav["rate"])), 1)
+
+
+## Bytes into the patch as a buffer, the node bound to it, one undo step. Same
+## shape as Capture, whatever spoke the bytes.
+func _write_speech_buffer(node_id: String, bytes: PackedByteArray, phrases: int) -> void:
 	if bytes.size() <= 3:
 		_say("the encoder heard nothing worth keeping in that recording")
 		return
@@ -5936,8 +5954,9 @@ func _import_speech_wav(node_id: String, path: String) -> void:
 	_apply()
 	if words_popup != null:
 		words_popup.hide()
-	_say("%d bytes of chip-speak in buffer \"%s\" — press a key" \
-		% [bytes.size(), name])
+	_say("%d phrase%s, %d bytes of chip-speak in buffer \"%s\" — the root note " \
+		% [phrases, "s" if phrases > 1 else "", bytes.size(), name] \
+		+ "says the first, each semitone up the next")
 
 
 func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:

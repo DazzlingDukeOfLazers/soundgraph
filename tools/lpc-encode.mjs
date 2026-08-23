@@ -209,17 +209,26 @@ function toBufferBase64(bytes) {
   return packed.toString('base64');
 }
 
-const [, , wavPath, flag] = process.argv;
-if (!wavPath) {
-  console.error('usage: node tools/lpc-encode.mjs voice.wav [--stats]');
+const args = process.argv.slice(2);
+const wantStats = args.includes('--stats');
+const wavPaths = args.filter((a) => a !== '--stats');
+if (wavPaths.length === 0) {
+  console.error('usage: node tools/lpc-encode.mjs voice.wav [more.wav ...] [--stats]');
+  console.error('  several WAVs become one bank: each file is a stop-delimited phrase,');
+  console.error('  and the Speech node's note input picks one.');
   process.exit(2);
 }
-const { samples, rate } = readWav(wavPath);
-const at8k = rate === RATE ? samples : resampleTo8k(samples, rate);
-const { bytes, stats } = encode(at8k);
-if (flag === '--stats') {
-  console.error(`${stats.frames} frames (${stats.voiced} voiced, ${stats.silent} silent), `
-    + `${bytes.length} bytes of bitstream from ${(at8k.length / RATE).toFixed(2)} s`);
+const bytes = [];
+for (const wavPath of wavPaths) {
+  const { samples, rate } = readWav(wavPath);
+  const at8k = rate === RATE ? samples : resampleTo8k(samples, rate);
+  const { bytes: phrase, stats } = encode(at8k);
+  bytes.push(...phrase);
+  if (wantStats) {
+    console.error(`${wavPath}: ${stats.frames} frames (${stats.voiced} voiced, `
+      + `${stats.silent} silent), ${phrase.length} bytes from `
+      + `${(at8k.length / RATE).toFixed(2)} s`);
+  }
 }
 console.log(JSON.stringify({
   sample_rate: RATE,

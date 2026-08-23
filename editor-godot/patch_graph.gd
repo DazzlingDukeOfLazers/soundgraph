@@ -2190,11 +2190,44 @@ func zoom_actual() -> void:
 	if any:
 		zoom = 1.0
 		centre_on(chosen)
+		# And once more after the layout settles — with the rects read FRESH. The
+		# zoom change re-dresses the nodes (detail follows zoom), so a node that
+		# was wearing its simplified height when this measured it grows back to
+		# full dress a frame later, and the first centring parked its new bottom
+		# under the minimap. Re-centring on the remembered rect would repeat the
+		# same mistake with confidence; the deferred pass collects the selection
+		# again. Found as a timing flake: the same suite green one night and red
+		# the next, by whichever order the re-dress and the centring landed.
+		_centre_on_selection.call_deferred()
 		return
 	var middle: Vector2 = usable_rect().get_center()
 	var focus: Vector2 = (scroll_offset + middle) / maxf(zoom, 0.01)
 	zoom = 1.0
 	scroll_offset = focus - middle
+
+
+## The deferred half of zoom_actual: wait for the selection's rects to stop
+## moving — container minimums propagate over a few frames after the re-dress —
+## then centre on what they settled at.
+func _centre_on_selection() -> void:
+	var last := Rect2()
+	for settle in 8:
+		var chosen := Rect2()
+		var any := false
+		for child in get_children():
+			var node := child as GraphNode
+			if node != null and node.visible and node.selected:
+				var rect := Rect2(node.position_offset, node.size)
+				chosen = rect if not any else chosen.merge(rect)
+				any = true
+		if not any:
+			return
+		if chosen.is_equal_approx(last):
+			centre_on(chosen)
+			return
+		last = chosen
+		await get_tree().process_frame
+	centre_on(last)
 
 
 func centre_on(graph_rect: Rect2) -> void:

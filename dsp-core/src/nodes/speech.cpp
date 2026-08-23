@@ -17,6 +17,11 @@
 // because pcm16's fixed-point round trip is exact and a second buffer format for a
 // few hundred bytes of speech would be a schema change nobody needs. Bits are taken
 // LSB-first within each byte, the chip's own speak-external order.
+//
+// One buffer can carry a whole phrase bank: phrases are stop-frame delimited —
+// which the format already was — and the note input picks one, the root note
+// saying the first line and each semitone up the next. Draw notes on the piano
+// roll and the roll cues words.
 
 #include <cmath>
 #include <memory>
@@ -31,8 +36,12 @@ namespace {
 
 constexpr PortDescriptor kSpeechInputs[] = {
     {"trigger", SignalType::Control, "", false, false,
-     "Starts the phrase from the top on a rising edge. The keyboard's trigger "
+     "Starts a phrase from the top on a rising edge. The keyboard's trigger "
      "makes every key a talk button."},
+    {"note", SignalType::Control, "Hz", false, false,
+     "Which phrase to say, read on the trigger edge: the root note says the "
+     "first, each semitone up says the next. Wire the keyboard here and the "
+     "piano roll cues words."},
 };
 
 constexpr PortDescriptor kSpeechOutputs[] = {
@@ -49,16 +58,20 @@ constexpr ParameterDescriptor kSpeechParameters[] = {
     {"level", "", 0.0f, 2.0f, 1.0f, Scaling::Linear, "Output level.", nullptr, 0},
     {"loop", "", 0.0f, 1.0f, 0.0f, Scaling::Linear,
      "Say it again forever. 0 speaks once per trigger.", nullptr, 0},
+    {"root", "Hz", 27.5f, 2000.0f, 130.81f, Scaling::Exponential,
+     "The note that says the first phrase — C3 by default, under the keyboard's "
+     "opening octave. Each semitone above it says the next line.", nullptr, 0},
 };
 
 class SpeechNode final : public DspNode {
 public:
-    enum Param { kPitch = 0, kSpeed = 1, kLevel = 2, kLoop = 3 };
+    enum Param { kPitch = 0, kSpeed = 1, kLevel = 2, kLoop = 3, kRoot = 4 };
 
     void prepare(const PrepareContext& context) override {
         host_rate_ = static_cast<float>(context.sample_rate);
         data_ = context.buffer_data;
         data_frames_ = context.buffer_frames;
+        scan_phrases();
         reset();
     }
 
@@ -87,12 +100,25 @@ public:
 
     void process(const ProcessContext& context) override {
         const float* trigger = context.inputs[0];
+        const float* note = context.inputs[1];
         float* out = context.outputs[0];
 
         if (trigger != nullptr) {
             const bool open = trigger[0] > 0.5f;
             if (open && !trigger_was_open_) {
-                start();
+                int phrase = 0;
+                if (note != nullptr && note[0] > 0.0f) {
+                    const float root = parameter(kRoot);
+                    phrase = static_cast<int>(std::lround(
+                        12.0 * std::log2(static_cast<double>(note[0]) / root)));
+                }
+                if (phrase < 0) {
+                    phrase = 0;
+                }
+                if (phrase >= phrase_count_ && phrase_count_ > 0) {
+                    phrase = phrase_count_ - 1;
+                }
+                start(phrase);
             }
             trigger_was_open_ = open;
         }
@@ -114,8 +140,58 @@ public:
     }
 
 private:
-    void start() {
-        bit_position_ = 0;
+    // Walks the bitstream once, recording where each stop-delimited phrase begins.
+    // In prepare rather than process: the scan allocates nothing but still costs a
+    // pass over the data, which is a load-time price, not a per-trigger one.
+    void scan_phrases() {
+        phrase_count_ = 0;
+        if (data_ == nullptr || data_frames_ <= 0) {
+            return;
+        }
+        int bit = 0;
+        const int total_bits = data_frames_ * 8;
+        phrase_starts_[phrase_count_++] = 0;
+        auto peek = [&](int count) {
+            int value = 0;
+            for (int b = 0; b < count && bit < total_bits; ++b, ++bit) {
+                const int byte = static_cast<int>(std::lround(
+                    static_cast<double>(data_[bit >> 3]) * 32768.0)) & 0xff;
+                value |= ((byte >> (bit & 7)) & 1) << b;
+            }
+            return value;
+        };
+        while (bit + 4 <= total_bits && phrase_count_ < kMaxPhrases) {
+            const int energy = peek(4);
+            if (energy == 15) {
+                // A new phrase needs room for at least a frame behind it. The
+                // stream is byte-padded, so up to seven zero bits trail the last
+                // stop — counting those as a phrase made the bank one silent
+                // entry longer than what was spoken, and the top-of-bank clamp
+                // landed on the silence.
+                if (bit + 12 <= total_bits) {
+                    phrase_starts_[phrase_count_++] = bit;
+                }
+                continue;
+            }
+            if (energy == 0) {
+                continue;
+            }
+            const int repeat = peek(1);
+            const int pitch = kSpeechPitch[peek(6) & 63];
+            if (repeat != 0) {
+                continue;
+            }
+            const int stages = pitch != 0 ? 10 : 4;
+            for (int i = 0; i < stages; ++i) {
+                peek(kSpeechKBits[i]);
+            }
+        }
+    }
+
+    void start(int phrase) {
+        current_phrase_ = phrase_count_ > 0
+            ? (phrase < phrase_count_ ? phrase : phrase_count_ - 1) : 0;
+        bit_position_ = phrase_count_ > 0 ? phrase_starts_[current_phrase_] : 0;
         period_index_ = 0;
         period_sample_ = 0;
         chirp_position_ = 0;
@@ -155,9 +231,9 @@ private:
         if (!playing_) {
             return;
         }
-        if (energy == 15) {   // stop
+        if (energy == 15) {   // this phrase's stop, not necessarily the stream's
             if (parameter(kLoop) > 0.5f) {
-                start();
+                start(current_phrase_);
             } else {
                 energy_target_ = 0.0f;
                 playing_ = false;
@@ -246,6 +322,11 @@ private:
     const float* data_ = nullptr;
     int data_frames_ = 0;
     float host_rate_ = 48000.0f;
+
+    static constexpr int kMaxPhrases = 64;
+    int phrase_starts_[kMaxPhrases] = {};
+    int phrase_count_ = 0;
+    int current_phrase_ = 0;
 
     bool playing_ = false;
     bool trigger_was_open_ = false;

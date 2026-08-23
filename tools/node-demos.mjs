@@ -669,11 +669,12 @@ const DEMOS = {
     }),
   },
   Speech: {
-    summary: 'A Speak & Spell voice: LPC frames carried in the patch, spoken through '
-      + 'the TMS5220 tables. tools/lpc-encode.mjs turns any WAV into words.',
-    try: 'Every key says the name. Raise pitch for helium, lower speed to stretch the '
-      + 'words without dropping the voice, and loop to let it stammer forever — then '
-      + 'encode a recording of your own with tools/lpc-encode.mjs.',
+    summary: 'A Speak & Spell voice: a bank of LPC phrases carried in the patch, one '
+      + 'per note. The Words… button on the node turns typed lines into phrases.',
+    try: 'Three words on three keys: C3 says "sound", C#3 says "graph", D3 says '
+      + '"rave" — draw them on the piano roll and the roll speaks on cue. Raise '
+      + 'pitch for helium, lower speed to stretch the words, and Words… on the node '
+      + 'to put your own lines in its mouth.',
     build: () => ({
       buffers: { phrase: spokenPhraseBuffer() },
       nodes: [
@@ -685,6 +686,7 @@ const DEMOS = {
       ],
       connections: [
         wire('kb', 'trigger', 'demo', 'trigger'),
+        wire('kb', 'frequency', 'demo', 'note'),
         wire('demo', 'out', 'amp', 'in'),
         wire('amp', 'out', 'out', 'left'),
         wire('amp', 'out', 'out', 'right'),
@@ -1179,20 +1181,29 @@ function generatedHitBuffer() {
   return { sample_rate: rate, channels: 1, format: 'pcm16', data: bytes.toString('base64') };
 }
 
-// The demo's phrase: the words "sound graph", spoken by the dev machine's own OS
-// voice (Windows Speech API), then crushed to 253 bytes of TMS5220 bitstream by
-// tools/lpc-encode.mjs — at which point what remains is the chip, not the voice.
-// Regenerate from any recording:  node tools/lpc-encode.mjs yours.wav
+// The demo's phrase bank: the words "sound", "graph" and "rave", spoken by the
+// dev machine's own OS voice (Windows Speech API), each crushed to ~150 bytes of
+// TMS5220 bitstream by tools/lpc-encode.mjs and concatenated — phrases are
+// stop-frame delimited, so a bank is just phrases in a row. At which point what
+// remains is the chip, not the voice. Regenerate from any recordings:
+//   node tools/lpc-encode.mjs word.wav
 function spokenPhraseBuffer() {
-  const data = 'AAAAACAAAABPAHUADwDgAOkAbgACAD4A3QBVAEAAnwCsAKsA6ABzABUAVwDHAK0AoQDXAFUAzAAc'
-    + 'AIcAgAAuADcAWQBKANkADQDiADYAcwAqAHUARgB5AM0AzACpAPQAmQDhADUARQCnANYAeABmANcA'
-    + 'FABdAEoApQBaAB0AUwB0AOgAfACLAHMAWwDVAJ0AMgDyAEkALgBHAGcATgCmADgApgDdANoAGQDV'
-    + 'AKUAyQCOAGwAqACJALgANAA6AFoAoQBVABUAWQDiADQAtADaAGUAUgCHAKQACABLABcADQDVAJUA'
-    + 'PADOAOQAiQCbADgACgBxADMALwDmAJ0AmgD1AEIASgCHAGQAtQDaAAsALwAVAIMAtgByAO8AxABz'
-    + 'ACoAxwDHAL0A9ABWAKUAHQC/AAYA0wB4AHYAiAC0AFoATAAlAN4AZQDWAHEAMgCNAHgAlwDqAM0A'
-    + 'zQD1AOkAGQDmADUARwBTAJkAZwC3ABYAXQBNAGEA4gAVAHsAYwAJAI0AlwB1AFwATQDdAPQA5QDd'
-    + 'AKEApwBzANcAlgB4AFgALgAGAGAAXwAiAAEAMADsACwAAAB+AK0ABADIAG4AcwAAANkAaQAGAOAA'
-    + 'OgDWAAAA1AC3AAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwA=';
+  const data = 'AAAAADAAgABvAFUAEQDwAOkArgACAP4A3ABdAEAAnwCsAAsA6ACUADUAAQB9AK4AMgCUAC4AowBE'
+    + 'AG4A5gBSANoAjADyALoAmQBbAOkAqwC7APMAbQDuAKUA7wAMAM0AuQA1AJkAtgC1AKsA7QDUAGYA'
+    + 'ugAYAMsA0gBUAKMApwBrAJwAUwBvAKwAlgCPAE8AUgC7AK4AQAA+AD4AUQCtALgAbgDJAPQA6ACy'
+    + 'AJsAugDnAMIAswBRAIsA6QCJAKsAtgAGAKkApwDHADUAWwAbANwAfABsAHkA8AASAGkAmgCxALsA'
+    + 'QgAzAEMAcgAlAOAAagCvAMwAWgCJAAIArwC0AMEAcwATAG4A+wByAMwA1gAFAAAAAAAAAAAAAAAA'
+    + 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwAAAAAABAAAgCqANQAsgBmAOQAWQCmAG4AUgCzAFUA'
+    + 'BwCYAFIAhwC9AM8AEgCmAFwAmwDmAEIAPACoAJAAbQCcADsAMQARAI8A8QBxAC8AxQBzAFkAyACn'
+    + 'AL0AVADaAJkAXgAdAPcAUgCJAGcAiQCmANwASwAlAKIAHQB3AHQAMACFAIkAdwBqANEAAQDVAOkA'
+    + 'tQCYAL4AvAAzAPUAxABsAAoAEQCxALgAmwC6AOkAUwBLAFMAUwAHAKAAEACRAAAA2ABxABIAAABH'
+    + 'AMYAAgDgANcASQCAANwAOgAFAHAAHQBvAOgAKgDsADwAqwBZAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    + 'AAAAAAAAAAAAAAAAAAAAAAAADwAAAAAAAQC4AOYALgABAAsAzwAxALgA6QBIAIUApQDRAGAAqABD'
+    + 'AFEAlACGAHsApwCWAEQAUABaAM4ArQDYAEgAJQD5ALUAtwBWACIANACmANUAYABLAIkADAC1AA0A'
+    + 'iwCtAKwAOQDjADYATQC2ALQA6ACMAEsAtQD5AE4AGwC7ADUAwwDqACsASwBMANMAEwADAG4ArABo'
+    + 'APYAhQAUAIkA2wCJAN0A1gCRAKAApQCZAHQA0wAnAJUAtwClAAwAIAAbABUAAQDuAFsAJAAAAIYA'
+    + 'iwAEAMAAjwBzABAAuQDpABoAWgDMAEAA2ADHAIkAZwDyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    + 'AAAAAAAAAAAAAAAAAOAAAQA=';
   return { sample_rate: 8000, channels: 1, format: 'pcm16', data };
 }
 
