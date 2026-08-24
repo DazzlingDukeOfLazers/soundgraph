@@ -22,6 +22,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 option(SOUNDGRAPH_BUILD_TESTS "Build the test suite" ON)
 option(SOUNDGRAPH_BUILD_TOOLS "Build the command line tools" ON)
 option(SOUNDGRAPH_BUILD_NATIVE_RUNTIME "Build the native live-audio host" ON)
+# Off by default: needs SDKs the ordinary build must not depend on. See runtime-clap/.
+option(SOUNDGRAPH_CLAP "Build the CLAP/VST3/AU plugin" OFF)
 
 # A WebAssembly configuration builds only the core and the browser binding. Everything
 # else — device hosts, file tools, the test runners — is a native concern.
@@ -46,6 +48,16 @@ endif()
 
 if(SOUNDGRAPH_BUILD_NATIVE_RUNTIME)
     add_subdirectory(runtime-native)
+endif()
+
+if(SOUNDGRAPH_CLAP AND NOT EMSCRIPTEN)
+    if(APPLE)
+        # clap-wrapper's AU and standalone shells are Objective-C++. Enabling the
+        # languages from within a subdirectory leaves later sibling directories without
+        # compile rules, so it happens here at the top.
+        enable_language(OBJC OBJCXX)
+    endif()
+    add_subdirectory(runtime-clap)
 endif()
 
 if(SOUNDGRAPH_BUILD_TESTS)

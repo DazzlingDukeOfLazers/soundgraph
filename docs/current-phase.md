@@ -356,6 +356,23 @@ somewhere other than the cause.
   Pin `custom_minimum_size.x` on any wrapping label that lives outside a ScrollContainer;
   the search dialog only escapes because its wrapping labels sit inside one.
 
+## Plugins (branch dd/vst)
+
+The player plugin exists: one CLAP implementation in `runtime-clap`, assembled by
+clap-wrapper into `SoundGraph.clap`, `SoundGraph.vst3` and `SoundGraph.component`.
+State is the patch JSON; a stepped "Patch" parameter loads anything under
+`$SOUNDGRAPH_PATCHES` or `~/Documents/SoundGraph/Patches`. The AU passes `auval -v
+aumu SgPl SnGr` on the Mac, render tests included. Opt in with
+
+```bash
+tools/get-plugin-sdks.sh        # once per clone
+cmake -S . -B build -DSOUNDGRAPH_CLAP=ON && cmake --build build
+```
+
+Still open: a DAW smoke test of the VST3/CLAP (the AU is the validated one so far), the
+Windows build of the same target, sample-rate golden comparison through the plugin path,
+audio input for HostAudioSource patches, and eventually a GUI hosting the web editor.
+
 ## Invariants
 
 - `dsp-core` depends on nothing but the C++ standard library.

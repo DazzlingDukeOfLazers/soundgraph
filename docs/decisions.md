@@ -740,3 +740,41 @@ repetition the layout has to rediscover geometrically is knowledge the importer 
 and the format could not hold. A module is a notation, like a loop is to its unrolled
 body — schema_version 2 only when used, byte-identical flattened audio as the stage-1
 exit test.
+
+## 2026-08-24 — Plugins are CLAP-first, wrapped by clap-wrapper
+
+Decision:
+`runtime-clap` implements exactly one plugin: the SoundGraph player, written against
+the CLAP C ABI over `Graph` + `patch-io`. free-audio's clap-wrapper (MIT) compiles that
+one implementation into the VST3, the AUv2 and (with Xcode present) a standalone app.
+The plugin's saved state is the patch JSON itself, knob positions written back into the
+node parameters they drive. Patch selection is a stepped "Patch" parameter listing the
+built-in patch plus every .json under $SOUNDGRAPH_PATCHES and
+~/Documents/SoundGraph/Patches, so a host's generic parameter UI is enough — no plugin
+GUI yet. Switching patches goes through clap_host.request_restart(), keeping every
+allocation on the main thread while deactivated. Opt-in (-DSOUNDGRAPH_CLAP=ON) after a
+one-time tools/get-plugin-sdks.sh; the default build touches no network and no SDKs.
+
+Reason:
+Steinberg relicensed the VST3 SDK to MIT in October 2025 (SDK 3.8), so the entire stack
+— CLAP headers, clap-wrapper, VST3 SDK, Apple's AudioUnitSDK — is now permissive, which
+ARCHITECTURE.md required. One seam instead of three: the AU that auval validates is the
+same implementation the VST3 and CLAP ship. dsp-core was already plugin-shaped
+(allocation only in build(), lock-free events, host-buffer-size independence), so the
+whole edge is one file, in the same spirit as sg-play.
+
+Alternatives:
+JUCE 8 (AGPL or paid — fails the permissive rule and would be the repo's biggest
+dependency); iPlug2 (permissive and mature but a whole framework with its own
+scaffolding); hand-rolled VST3 + AUv2 (licensing-clean since the MIT change, but two
+wrappers of grim boilerplate for no architectural gain).
+
+Consequences:
+Windows and Linux get VST3 + CLAP from the same target with no additional code; the Mac
+additionally gets the AU that Logic and GarageBand require. Two wrapper quirks are
+patched in runtime-clap/CMakeLists.txt: Ninja needs the generated AudioComponents
+Info.plist restored POST_BUILD (clap-wrapper's PRE_BUILD copy is clobbered by CMake's
+generic bundle plist), and the standalone app steps aside when only Command Line Tools
+are installed (its menu nib needs Xcode's ibtool). Automation ids are FNV-1a of the
+control's id string, so they survive reload; controls inside modules persist through
+the authored/flattened index parallelism patch-io guarantees.
