@@ -356,7 +356,7 @@ somewhere other than the cause.
   Pin `custom_minimum_size.x` on any wrapping label that lives outside a ScrollContainer;
   the search dialog only escapes because its wrapping labels sit inside one.
 
-## Plugins (branch dd/vst)
+## Plugins
 
 The player plugin exists: one CLAP implementation in `runtime-clap`, assembled by
 clap-wrapper into `SoundGraph.clap`, `SoundGraph.vst3` and `SoundGraph.component`.
