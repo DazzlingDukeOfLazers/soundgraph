@@ -849,3 +849,41 @@ the patch-name group header over the slot parameters, live re-labeling of Smart
 Controls knobs on a patch switch, and correct state restore from a saved project.
 Verified end to end on 2026-08-24 by driving GarageBand itself. Windows keeps
 Documents\SoundGraph\Patches until a native convention argues otherwise.
+
+## 2026-08-24 — The plugin GUI is one webview, drawn by the plugin itself
+
+Decision:
+The plugin implements clap_plugin_gui with a single webview rendering an embedded,
+network-free panel.html: the SoundGraph wordmark "by MutantFactory.net", the patch
+selector, the loaded patch's name, and one styled slider per bound control. choc
+(Tracktion, ISC, v1.0.15) drives the platform webview — WKWebView through the
+Objective-C runtime from plain C++ on macOS, WebView2 on Windows — vendored as the 16
+headers choc_WebView.h transitively needs (1.3 MB) under runtime-clap/third_party/choc,
+the miniaudio pattern. clap-wrapper bridges the same GUI into the VST3 IPlugView and
+the AU's Cocoa view, so one panel serves every format. GUI changes ride a lock-free
+queue that process()/flush() drains into the graph and into the host's output event
+queue as gesture+value events, so automation records and projects mark dirty; the page
+polls a state version and re-renders itself when a patch switch or state load changes
+the surface, and a state-loaded patch re-syncs the selector by matching its name
+against the discovered list.
+
+Reason:
+GarageBand's Smart Controls prove the point: a host's own panel shows knob names and
+nothing else — branding, patch identity and layout only exist where the plugin draws
+them. A webview keeps the panel one HTML file that any web-literate person can restyle,
+and it is the staging area for hosting the real web editor inside the plugin later.
+JUCE-style native widgets would contradict the framework decision already made.
+
+Alternatives:
+Native NSView/Win32 drawing (two platform code paths for a panel that will become the
+web editor anyway); shipping the GUI-less generic view forever (fails the "whose knobs
+are these" test); a floating window (hosts treat embedded views as first-class,
+floating as an afterthought).
+
+Consequences:
+16 vendored headers and two OS frameworks (WebKit/Cocoa) on the link line. The AU, the
+VST3 and the CLAP all show the identical panel; verified in GarageBand — panel loads
+in the AU view with state restored, slider drags reach the graph and the host, patch
+switches re-render the surface live. Windows uses the same code path via WebView2,
+unverified until the PC build. The panel is fixed at 560×460 until resizing earns its
+complexity.

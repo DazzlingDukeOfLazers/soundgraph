@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -35,6 +36,18 @@
 
 #include "soundgraph/patch_io.h"
 #include "soundgraph/soundgraph.h"
+
+// The GUI is one webview showing the embedded panel.html. choc drives the platform
+// webview (WKWebView / WebView2) from plain C++, ISC-licensed and vendored like
+// miniaudio. See docs/decisions.md.
+#if defined(__APPLE__) || defined(_WIN32)
+#define SOUNDGRAPH_HAS_GUI 1
+#include "choc/gui/choc_WebView.h"
+#if defined(__APPLE__)
+#include "choc/platform/choc_ObjectiveCHelpers.h"
+#endif
+#include "panel_html.h"
+#endif
 
 #include "default_patch.h"
 #include "soundgraph_clap_entry.h"
@@ -94,6 +107,54 @@ struct DiscoveredPatch {
     std::string path;  // empty for the built-in patch
 };
 
+// A parameter change born in the GUI. It must reach two places: the graph (so the
+// knob does something) and the host's input queue as an *output* event (so automation
+// records and the project marks dirty). The GUI thread produces; process() — or
+// flush(), when inactive — consumes.
+struct GuiEvent {
+    enum class Kind : std::uint8_t { GestureBegin, Value, GestureEnd };
+    Kind kind = Kind::Value;
+    clap_id param_id = 0;
+    double value = 0.0;
+};
+
+class GuiEventQueue {
+public:
+    bool push(const GuiEvent& event) {
+        const std::uint32_t write = write_.load(std::memory_order_relaxed);
+        if (write + 1 - read_.load(std::memory_order_acquire) > kCapacity) {
+            return false;
+        }
+        items_[write & (kCapacity - 1)] = event;
+        write_.store(write + 1, std::memory_order_release);
+        return true;
+    }
+    bool pop(GuiEvent& out) {
+        const std::uint32_t read = read_.load(std::memory_order_relaxed);
+        if (read == write_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        out = items_[read & (kCapacity - 1)];
+        read_.store(read + 1, std::memory_order_release);
+        return true;
+    }
+
+private:
+    static constexpr std::uint32_t kCapacity = 512;
+    std::array<GuiEvent, kCapacity> items_{};
+    std::atomic<std::uint32_t> write_{0};
+    std::atomic<std::uint32_t> read_{0};
+};
+
+#if defined(SOUNDGRAPH_HAS_GUI)
+struct GuiState {
+    std::unique_ptr<choc::ui::WebView> webview;
+    double scale = 1.0;
+};
+constexpr uint32_t kGuiWidth = 560;
+constexpr uint32_t kGuiHeight = 460;
+#endif
+
 struct Plugin {
     clap_plugin_t plugin{};
     const clap_host_t* host = nullptr;
@@ -113,6 +174,11 @@ struct Plugin {
     std::array<std::atomic<float>, kSlotCount> values{};  // normalised 0..1
     std::atomic<int> requested_patch{0};
     std::atomic<bool> active{false};
+    std::atomic<int> state_version{0};  // bumped per adopt; the GUI polls it
+    GuiEventQueue gui_events;
+#if defined(SOUNDGRAPH_HAS_GUI)
+    std::unique_ptr<GuiState> gui;
+#endif
 
     // The live graph. `live` belongs to the audio thread while active; `incoming` is
     // the main thread's handoff; `graveyard` is the audio thread's return path.
@@ -303,6 +369,8 @@ void adopt_description(Plugin* plug, soundgraph::GraphDescription&& description)
 
     // Calling back into the host during clap_plugin.init is not allowed — the first
     // adopt happens there, and the host reads the fresh surface right afterwards anyway.
+    plug->state_version.fetch_add(1, std::memory_order_relaxed);
+
     if (plug->initialized && plug->host_params != nullptr) {
         plug->host_params->rescan(plug->host, CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_VALUES |
                                                   CLAP_PARAM_RESCAN_TEXT);
@@ -374,6 +442,21 @@ void commit_patch(Plugin* plug) {
         std::unique_ptr<soundgraph::GraphDescription> pending =
             std::move(plug->pending_description);
         adopt_description(plug, std::move(*pending));
+        // A state-loaded patch usually exists in the discovered list under its
+        // file-stem name ("Acid Bass" → "acid-bass"). When it does, the selector
+        // follows, so the GUI dropdown and host parameter agree with what loaded.
+        std::string stem;
+        for (const char character : plug->patch_display) {
+            stem += (character == ' ') ? '-' : static_cast<char>(std::tolower(
+                                                   static_cast<unsigned char>(character)));
+        }
+        for (std::size_t i = 0; i < plug->patches.size(); ++i) {
+            if (plug->patches[i].label == stem || plug->patches[i].label == plug->patch_display) {
+                plug->current_patch = static_cast<int>(i);
+                plug->requested_patch.store(static_cast<int>(i), std::memory_order_relaxed);
+                break;
+            }
+        }
         changed = true;
     } else {
         const int wanted = plug->requested_patch.load(std::memory_order_relaxed);
@@ -486,6 +569,278 @@ void handle_event(Plugin* plug, const clap_event_header_t* header) {
             break;
     }
 }
+
+// Empties the GUI's queue: each change is applied through handle_event exactly as a
+// host event would be, and mirrored to the host's output queue so automation records.
+// Runs on the audio thread inside process(), or on the main thread inside flush().
+void drain_gui_events(Plugin* plug, const clap_output_events_t* out) {
+    GuiEvent event;
+    while (plug->gui_events.pop(event)) {
+        if (event.kind == GuiEvent::Kind::Value) {
+            clap_event_param_value_t value{};
+            value.header.size = sizeof(value);
+            value.header.time = 0;
+            value.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+            value.header.type = CLAP_EVENT_PARAM_VALUE;
+            value.param_id = event.param_id;
+            value.note_id = -1;
+            value.port_index = -1;
+            value.channel = -1;
+            value.key = -1;
+            value.value = event.value;
+            handle_event(plug, &value.header);
+            if (out != nullptr) {
+                out->try_push(out, &value.header);
+            }
+        } else if (out != nullptr) {
+            clap_event_param_gesture_t gesture{};
+            gesture.header.size = sizeof(gesture);
+            gesture.header.time = 0;
+            gesture.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+            gesture.header.type = (event.kind == GuiEvent::Kind::GestureBegin)
+                                      ? CLAP_EVENT_PARAM_GESTURE_BEGIN
+                                      : CLAP_EVENT_PARAM_GESTURE_END;
+            gesture.param_id = event.param_id;
+            out->try_push(out, &gesture.header);
+        }
+    }
+}
+
+// ---- clap_plugin_gui ---------------------------------------------------------------
+// One webview showing the embedded panel. The page pulls its state through bound
+// functions and pushes knob movements into the GUI queue; nothing here touches the
+// audio thread directly.
+
+#if defined(SOUNDGRAPH_HAS_GUI)
+
+void json_escape_into(std::string& out, const std::string& text) {
+    for (const char character : text) {
+        switch (character) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(character) < 0x20) {
+                    char buffer[8];
+                    std::snprintf(buffer, sizeof(buffer), "\\u%04x", character);
+                    out += buffer;
+                } else {
+                    out += character;
+                }
+        }
+    }
+}
+
+std::string gui_state_json(Plugin* plug) {
+    std::string out = "{\"patch\":\"";
+    json_escape_into(out, plug->patch_display);
+    out += "\",\"version\":\"";
+    json_escape_into(out, kDescriptor.version);
+    out += "\",\"stateVersion\":" +
+           std::to_string(plug->state_version.load(std::memory_order_relaxed));
+    out += ",\"patchIndex\":" + std::to_string(plug->current_patch);
+    out += ",\"patches\":[";
+    for (std::size_t i = 0; i < plug->patches.size(); ++i) {
+        if (i) out += ',';
+        out += '"';
+        json_escape_into(out, plug->patches[i].label);
+        out += '"';
+    }
+    out += "],\"controls\":[";
+    bool first = true;
+    for (int i = 0; i < kSlotCount; ++i) {
+        const SlotMeta& slot = plug->slots[static_cast<std::size_t>(i)];
+        if (!slot.bound) continue;
+        if (!first) out += ',';
+        first = false;
+        out += "{\"id\":" + std::to_string(kSlotIdBase + i);
+        out += ",\"name\":\"";
+        json_escape_into(out, slot.name);
+        out += "\",\"min\":" + std::to_string(slot.min_value);
+        out += ",\"max\":" + std::to_string(slot.max_value);
+        out += ",\"scaling\":\"";
+        out += (slot.scaling == Scaling::Exponential) ? "exp" : "linear";
+        out += "\",\"value\":" +
+               std::to_string(plug->values[static_cast<std::size_t>(i)].load(std::memory_order_relaxed));
+        out += '}';
+    }
+    out += "]}";
+    return out;
+}
+
+std::string gui_values_json(Plugin* plug) {
+    std::string out = "{\"stateVersion\":" +
+                      std::to_string(plug->state_version.load(std::memory_order_relaxed));
+    out += ",\"values\":{";
+    bool first = true;
+    for (int i = 0; i < kSlotCount; ++i) {
+        if (!plug->slots[static_cast<std::size_t>(i)].bound) continue;
+        if (!first) out += ',';
+        first = false;
+        out += "\"" + std::to_string(kSlotIdBase + i) + "\":" +
+               std::to_string(plug->values[static_cast<std::size_t>(i)].load(std::memory_order_relaxed));
+    }
+    out += "}}";
+    return out;
+}
+
+// A GUI change enters the queue and pokes the host so the queue gets drained soon
+// even when the transport is idle.
+void gui_send(Plugin* plug, const GuiEvent& event) {
+    plug->gui_events.push(event);
+    if (plug->host_params != nullptr) {
+        plug->host_params->request_flush(plug->host);
+    }
+}
+
+bool gui_is_api_supported(const clap_plugin_t*, const char* api, bool is_floating) {
+    if (is_floating) return false;
+#if defined(__APPLE__)
+    return std::strcmp(api, CLAP_WINDOW_API_COCOA) == 0;
+#else
+    return std::strcmp(api, CLAP_WINDOW_API_WIN32) == 0;
+#endif
+}
+
+bool gui_get_preferred_api(const clap_plugin_t*, const char** api, bool* is_floating) {
+#if defined(__APPLE__)
+    *api = CLAP_WINDOW_API_COCOA;
+#else
+    *api = CLAP_WINDOW_API_WIN32;
+#endif
+    *is_floating = false;
+    return true;
+}
+
+bool gui_create(const clap_plugin_t* plugin, const char* api, bool is_floating) {
+    if (!gui_is_api_supported(plugin, api, is_floating)) {
+        return false;
+    }
+    Plugin* plug = self(plugin);
+    auto gui = std::make_unique<GuiState>();
+    gui->webview = std::make_unique<choc::ui::WebView>(choc::ui::WebView::Options{});
+    if (gui->webview == nullptr || gui->webview->getViewHandle() == nullptr) {
+        return false;
+    }
+
+    choc::ui::WebView& view = *gui->webview;
+    view.bind("sg_getState", [plug](const choc::value::ValueView&) {
+        return choc::json::parse(gui_state_json(plug));
+    });
+    view.bind("sg_getValues", [plug](const choc::value::ValueView&) {
+        return choc::json::parse(gui_values_json(plug));
+    });
+    view.bind("sg_setParam", [plug](const choc::value::ValueView& args) {
+        gui_send(plug, {GuiEvent::Kind::Value, static_cast<clap_id>(args[0].getWithDefault<int64_t>(0)),
+                        args[1].getWithDefault<double>(0.0)});
+        return choc::value::Value();
+    });
+    view.bind("sg_begin", [plug](const choc::value::ValueView& args) {
+        gui_send(plug, {GuiEvent::Kind::GestureBegin,
+                        static_cast<clap_id>(args[0].getWithDefault<int64_t>(0)), 0.0});
+        return choc::value::Value();
+    });
+    view.bind("sg_end", [plug](const choc::value::ValueView& args) {
+        gui_send(plug, {GuiEvent::Kind::GestureEnd,
+                        static_cast<clap_id>(args[0].getWithDefault<int64_t>(0)), 0.0});
+        return choc::value::Value();
+    });
+    view.bind("sg_selectPatch", [plug](const choc::value::ValueView& args) {
+        gui_send(plug, {GuiEvent::Kind::Value, kPatchParamId,
+                        args[0].getWithDefault<double>(0.0)});
+        return choc::value::Value();
+    });
+    view.setHTML(reinterpret_cast<const char*>(soundgraph_clap::kPanelHtml));
+
+    plug->gui = std::move(gui);
+    return true;
+}
+
+void gui_destroy(const clap_plugin_t* plugin) {
+    self(plugin)->gui.reset();
+}
+
+bool gui_set_scale(const clap_plugin_t* plugin, double scale) {
+    Plugin* plug = self(plugin);
+    if (plug->gui != nullptr) {
+        plug->gui->scale = scale;
+    }
+    return true;
+}
+
+bool gui_get_size(const clap_plugin_t*, uint32_t* width, uint32_t* height) {
+    *width = kGuiWidth;
+    *height = kGuiHeight;
+    return true;
+}
+
+bool gui_can_resize(const clap_plugin_t*) {
+    return false;
+}
+
+bool gui_get_resize_hints(const clap_plugin_t*, clap_gui_resize_hints_t*) {
+    return false;
+}
+
+bool gui_adjust_size(const clap_plugin_t* plugin, uint32_t* width, uint32_t* height) {
+    return gui_get_size(plugin, width, height);
+}
+
+bool gui_set_size(const clap_plugin_t*, uint32_t width, uint32_t height) {
+    return width == kGuiWidth && height == kGuiHeight;
+}
+
+bool gui_set_parent(const clap_plugin_t* plugin, const clap_window_t* window) {
+    Plugin* plug = self(plugin);
+    if (plug->gui == nullptr || plug->gui->webview == nullptr) {
+        return false;
+    }
+#if defined(__APPLE__)
+    struct Rect { double x = 0, y = 0, width = 0, height = 0; };
+    id child = static_cast<id>(plug->gui->webview->getViewHandle());
+    id parent = static_cast<id>(window->cocoa);
+    choc::objc::call<void>(child, "setFrame:",
+                           Rect{0, 0, static_cast<double>(kGuiWidth),
+                                static_cast<double>(kGuiHeight)});
+    // NSViewWidthSizable | NSViewHeightSizable
+    choc::objc::call<void>(child, "setAutoresizingMask:", static_cast<unsigned long>(2 | 16));
+    choc::objc::call<void>(parent, "addSubview:", child);
+    return true;
+#elif defined(_WIN32)
+    HWND child = static_cast<HWND>(plug->gui->webview->getViewHandle());
+    ::SetParent(child, static_cast<HWND>(window->win32));
+    ::SetWindowPos(child, nullptr, 0, 0, static_cast<int>(kGuiWidth),
+                   static_cast<int>(kGuiHeight), SWP_NOZORDER | SWP_SHOWWINDOW);
+    return true;
+#else
+    (void)window;
+    return false;
+#endif
+}
+
+bool gui_set_transient(const clap_plugin_t*, const clap_window_t*) {
+    return false;
+}
+
+void gui_suggest_title(const clap_plugin_t*, const char*) {}
+
+bool gui_show(const clap_plugin_t*) {
+    return true;
+}
+
+bool gui_hide(const clap_plugin_t*) {
+    return true;
+}
+
+const clap_plugin_gui_t kGui = {
+    gui_is_api_supported, gui_get_preferred_api, gui_create,     gui_destroy,
+    gui_set_scale,        gui_get_size,          gui_can_resize, gui_get_resize_hints,
+    gui_adjust_size,      gui_set_size,          gui_set_parent, gui_set_transient,
+    gui_suggest_title,    gui_show,              gui_hide};
+
+#endif  // SOUNDGRAPH_HAS_GUI
 
 // ---- clap_plugin_audio_ports -------------------------------------------------------
 
@@ -624,13 +979,14 @@ bool params_text_to_value(const clap_plugin_t* plugin, clap_id param_id, const c
 }
 
 void params_flush(const clap_plugin_t* plugin, const clap_input_events_t* in,
-                  const clap_output_events_t*) {
+                  const clap_output_events_t* out) {
     Plugin* plug = self(plugin);
     const uint32_t count = in->size(in);
     if (count > 0) SG_TRACE("flush: %u events, active=%d", count, plug->active.load() ? 1 : 0);
     for (uint32_t i = 0; i < count; ++i) {
         handle_event(plug, in->get(in, i));
     }
+    drain_gui_events(plug, out);
     // While inactive, flush arrives on the main thread — apply selector moves here and
     // now rather than waiting for a callback the host has no reason to hurry.
     if (!plug->active.load(std::memory_order_relaxed)) {
@@ -796,6 +1152,8 @@ void plugin_reset(const clap_plugin_t* plugin) {
 clap_process_status plugin_process(const clap_plugin_t* plugin, const clap_process_t* process) {
     Plugin* plug = self(plugin);
 
+    drain_gui_events(plug, process->out_events);
+
     // Adopt a freshly built graph if the main thread left one, and hand back the old
     // one for the main thread to free. One exchange each way; nothing blocks.
     GraphInstance* incoming = plug->incoming.exchange(nullptr, std::memory_order_acquire);
@@ -851,6 +1209,9 @@ const void* plugin_get_extension(const clap_plugin_t*, const char* id) {
     if (std::strcmp(id, CLAP_EXT_NOTE_PORTS) == 0) return &kNotePorts;
     if (std::strcmp(id, CLAP_EXT_PARAMS) == 0) return &kParams;
     if (std::strcmp(id, CLAP_EXT_STATE) == 0) return &kState;
+#if defined(SOUNDGRAPH_HAS_GUI)
+    if (std::strcmp(id, CLAP_EXT_GUI) == 0) return &kGui;
+#endif
     return nullptr;
 }
 

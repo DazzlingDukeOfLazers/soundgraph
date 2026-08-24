@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<!-- SoundGraph plugin panel. Self-contained: no network, no libraries. The plugin
+     binds sg_getState / sg_getValues / sg_setParam / sg_begin / sg_end / sg_selectPatch
+     as promise-returning globals; everything visual lives here. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #16181d;
+    --panel: #1e2128;
+    --line: #2c313b;
+    --text: #e6e9ef;
+    --dim: #8a93a3;
+    --accent: #57d98a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 14px 18px 10px; border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .wordmark { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+  .wordmark span { color: var(--accent); }
+  .vendor { color: var(--dim); font-size: 12px; }
+  .patchbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px; border-bottom: 1px solid var(--line);
+  }
+  .patchbar label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  select {
+    flex: 1; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+    font: inherit; outline: none;
+  }
+  #patchname { padding: 12px 18px 4px; font-size: 16px; font-weight: 600; }
+  #controls { flex: 1; overflow-y: auto; padding: 6px 18px 14px; }
+  .control { display: grid; grid-template-columns: 110px 1fr 64px; align-items: center; gap: 12px; padding: 5px 0; }
+  .control .name { color: var(--dim); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .control .value { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 2px; background: var(--line);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); margin-top: -5px;
+  }
+  footer {
+    padding: 8px 18px; border-top: 1px solid var(--line);
+    color: var(--dim); font-size: 11px; display: flex; justify-content: space-between;
+    background: var(--panel);
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="wordmark">Sound<span>Graph</span></div>
+    <div class="vendor">by MutantFactory.net</div>
+  </header>
+  <div class="patchbar">
+    <label>Patch</label>
+    <select id="patch"></select>
+  </div>
+  <div id="patchname"></div>
+  <div id="controls"></div>
+  <footer><div id="footnote">mutantfactory.net</div><div id="version"></div></footer>
+
+<script>
+let state = null;
+let stateVersion = -1;
+let dragging = null;   // param id currently held by the user
+
+function toEngine(c, t) {
+  if (c.scaling === "exp" && c.min > 0) return c.min * Math.pow(c.max / c.min, t);
+  return c.min + t * (c.max - c.min);
+}
+function format(c, t) {
+  const v = toEngine(c, t);
+  const magnitude = Math.abs(v);
+  return magnitude >= 100 ? v.toFixed(0) : magnitude >= 1 ? v.toFixed(2) : v.toFixed(3);
+}
+
+function render() {
+  const select = document.getElementById("patch");
+  select.innerHTML = "";
+  state.patches.forEach((label, i) => {
+    const option = document.createElement("option");
+    option.value = i;
+    option.textContent = label;
+    if (i === state.patchIndex) option.selected = true;
+    select.appendChild(option);
+  });
+  select.disabled = state.patches.length < 2;
+
+  document.getElementById("patchname").textContent = state.patch;
+  document.getElementById("version").textContent = "v" + state.version;
+
+  const holder = document.getElementById("controls");
+  holder.innerHTML = "";
+  for (const c of state.controls) {
+    const row = document.createElement("div");
+    row.className = "control";
+    row.innerHTML = '<div class="name"></div>' +
+                    '<input type="range" min="0" max="1000">' +
+                    '<div class="value"></div>';
+    row.querySelector(".name").textContent = c.name;
+    const slider = row.querySelector("input");
+    const value = row.querySelector(".value");
+    slider.value = Math.round(c.value * 1000);
+    value.textContent = format(c, c.value);
+
+    slider.addEventListener("pointerdown", () => { dragging = c.id; sg_begin(c.id); });
+    slider.addEventListener("input", () => {
+      const t = slider.value / 1000;
+      value.textContent = format(c, t);
+      sg_setParam(c.id, t);
+    });
+    slider.addEventListener("pointerup", () => { dragging = null; sg_end(c.id); });
+    c._slider = slider;
+    c._value = value;
+    holder.appendChild(row);
+  }
+}
+
+document.getElementById("patch").addEventListener("change", (event) => {
+  sg_selectPatch(Number(event.target.value));
+});
+
+async function refreshState() {
+  state = await sg_getState();
+  stateVersion = state.stateVersion;
+  render();
+}
+
+setInterval(async () => {
+  try {
+    const now = await sg_getValues();
+    if (now.stateVersion !== stateVersion) { await refreshState(); return; }
+    if (!state) return;
+    for (const c of state.controls) {
+      if (c.id === dragging) continue;
+      const t = now.values[c.id];
+      if (t === undefined) continue;
+      c.value = t;
+      c._slider.value = Math.round(t * 1000);
+      c._value.textContent = format(c, t);
+    }
+  } catch (e) { /* plugin going away; ignore */ }
+}, 100);
+
+refreshState();
+</script>
+</body>
+</html>

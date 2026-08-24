@@ -31,13 +31,35 @@ add_custom_command(
         DEPENDS ${SOUNDGRAPH_DEFAULT_PATCH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_patch.cmake
         COMMENT "Embedding first-synth.json as the built-in patch")
 
+# The GUI panel, embedded the same way the default patch is.
+set(SOUNDGRAPH_PANEL_HTML ${CMAKE_CURRENT_SOURCE_DIR}/src/gui/panel.html)
+set(SOUNDGRAPH_PANEL_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated/panel_html.h)
+add_custom_command(
+        OUTPUT ${SOUNDGRAPH_PANEL_HEADER}
+        COMMAND ${CMAKE_COMMAND}
+            -DINPUT=${SOUNDGRAPH_PANEL_HTML}
+            -DOUTPUT=${SOUNDGRAPH_PANEL_HEADER}
+            -DSYMBOL=kPanelHtml
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_patch.cmake
+        DEPENDS ${SOUNDGRAPH_PANEL_HTML} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_patch.cmake
+        COMMENT "Embedding panel.html as the plugin GUI")
+
 add_library(soundgraph-clap-impl STATIC
         src/soundgraph_clap.cpp
-        ${SOUNDGRAPH_DEFAULT_PATCH_HEADER})
-target_include_directories(soundgraph-clap-impl PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+        ${SOUNDGRAPH_DEFAULT_PATCH_HEADER}
+        ${SOUNDGRAPH_PANEL_HEADER})
+target_include_directories(soundgraph-clap-impl PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 target_link_libraries(soundgraph-clap-impl
         PUBLIC clap clap-wrapper-extensions
         PRIVATE soundgraph::dsp soundgraph::patch_io)
+if(APPLE)
+    # choc's WebView drives WKWebView through the Objective-C runtime — plain C++
+    # here, but the frameworks have to be on every wrapped binary's link line.
+    target_link_libraries(soundgraph-clap-impl PUBLIC
+            "-framework WebKit" "-framework Cocoa")
+endif()
 set_target_properties(soundgraph-clap-impl PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 set(SOUNDGRAPH_PLUGIN_FORMATS CLAP VST3)

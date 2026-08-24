@@ -380,9 +380,16 @@ GarageBand maps the patch's declared controls onto its Smart Controls knobs (Cut
 Resonance, Sweep Rate…), plays live from Musical Typing, records, and an Export Song to
 Disk render of the recorded region produced correct, non-silent audio.
 
-Still open: the Windows build of the same target, sample-rate golden comparison through
-the plugin path, audio input for HostAudioSource patches, and eventually a GUI hosting
-the web editor.
+The plugin has its own GUI (2026-08-24): a webview panel — SoundGraph wordmark "by
+MutantFactory.net", patch selector, patch name, sliders for the bound controls — one
+embedded panel.html served identically through the CLAP, the VST3 and the AU via choc
+(vendored, ISC). Verified in GarageBand: the AU window shows the panel with restored
+state, slider drags reach both the graph and host automation, and patch switches
+re-render the surface live.
+
+Still open: the Windows build of the same target (including its WebView2 GUI path),
+sample-rate golden comparison through the plugin path, audio input for HostAudioSource
+patches, and growing the panel toward hosting the full web editor.
 
 ## Invariants
 

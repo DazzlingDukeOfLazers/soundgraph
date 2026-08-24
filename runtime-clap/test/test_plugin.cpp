@@ -299,6 +299,20 @@ int main() {
     CHECK(params->get_info(plugin, 3, &slot_info) && std::strcmp(slot_info.name, "Env Mod") == 0,
           "loaded state keeps acid-bass's slot names");
 
+#if defined(__APPLE__) || defined(_WIN32)
+    const auto* gui =
+        static_cast<const clap_plugin_gui_t*>(plugin->get_extension(plugin, CLAP_EXT_GUI));
+    CHECK(gui != nullptr, "gui extension exists");
+#if defined(__APPLE__)
+    CHECK(gui->is_api_supported(plugin, CLAP_WINDOW_API_COCOA, false), "gui speaks cocoa");
+#else
+    CHECK(gui->is_api_supported(plugin, CLAP_WINDOW_API_WIN32, false), "gui speaks win32");
+#endif
+    uint32_t width = 0, height = 0;
+    CHECK(gui->get_size(plugin, &width, &height) && width > 0 && height > 0,
+          "gui reports a size");
+#endif
+
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
     plugin->destroy(plugin);
