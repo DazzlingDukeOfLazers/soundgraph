@@ -662,7 +662,8 @@ std::string gui_state_json(Plugin* plug) {
         out += ",\"max\":" + std::to_string(slot.max_value);
         out += ",\"scaling\":\"";
         out += (slot.scaling == Scaling::Exponential) ? "exp" : "linear";
-        out += "\",\"value\":" +
+        out += "\",\"default\":" + std::to_string(slot.default_normalized);
+        out += ",\"value\":" +
                std::to_string(plug->values[static_cast<std::size_t>(i)].load(std::memory_order_relaxed));
         out += '}';
     }

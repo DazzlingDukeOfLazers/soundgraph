@@ -31,18 +31,38 @@ add_custom_command(
         DEPENDS ${SOUNDGRAPH_DEFAULT_PATCH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_patch.cmake
         COMMENT "Embedding first-synth.json as the built-in patch")
 
-# The GUI panel, embedded the same way the default patch is.
+# The GUI panel, embedded the same way the default patch is — after the editor's
+# typeface is injected as a data URI, so the panel is set in the same face as the
+# editor. Without python3 the panel simply falls back to the system font stack.
 set(SOUNDGRAPH_PANEL_HTML ${CMAKE_CURRENT_SOURCE_DIR}/src/gui/panel.html)
+set(SOUNDGRAPH_PANEL_FINAL ${CMAKE_CURRENT_BINARY_DIR}/generated/panel_final.html)
 set(SOUNDGRAPH_PANEL_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated/panel_html.h)
+set(SOUNDGRAPH_EDITOR_FONT ${CMAKE_SOURCE_DIR}/editor-godot/fonts/AtkinsonHyperlegibleNext.ttf)
+find_program(SOUNDGRAPH_PYTHON3 python3)
+if(SOUNDGRAPH_PYTHON3)
+    add_custom_command(
+            OUTPUT ${SOUNDGRAPH_PANEL_FINAL}
+            COMMAND ${SOUNDGRAPH_PYTHON3} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/inject_font.py
+                ${SOUNDGRAPH_PANEL_HTML} ${SOUNDGRAPH_EDITOR_FONT} ${SOUNDGRAPH_PANEL_FINAL}
+            DEPENDS ${SOUNDGRAPH_PANEL_HTML} ${SOUNDGRAPH_EDITOR_FONT}
+                ${CMAKE_CURRENT_SOURCE_DIR}/cmake/inject_font.py
+            COMMENT "Setting the panel in the editor's typeface")
+else()
+    add_custom_command(
+            OUTPUT ${SOUNDGRAPH_PANEL_FINAL}
+            COMMAND ${CMAKE_COMMAND} -E copy ${SOUNDGRAPH_PANEL_HTML} ${SOUNDGRAPH_PANEL_FINAL}
+            DEPENDS ${SOUNDGRAPH_PANEL_HTML}
+            COMMENT "python3 not found — panel keeps the system font stack")
+endif()
 add_custom_command(
         OUTPUT ${SOUNDGRAPH_PANEL_HEADER}
         COMMAND ${CMAKE_COMMAND}
-            -DINPUT=${SOUNDGRAPH_PANEL_HTML}
+            -DINPUT=${SOUNDGRAPH_PANEL_FINAL}
             -DOUTPUT=${SOUNDGRAPH_PANEL_HEADER}
             -DSYMBOL=kPanelHtml
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_patch.cmake
-        DEPENDS ${SOUNDGRAPH_PANEL_HTML} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_patch.cmake
-        COMMENT "Embedding panel.html as the plugin GUI")
+        DEPENDS ${SOUNDGRAPH_PANEL_FINAL} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_patch.cmake
+        COMMENT "Embedding the panel as the plugin GUI")
 
 add_library(soundgraph-clap-impl STATIC
         src/soundgraph_clap.cpp

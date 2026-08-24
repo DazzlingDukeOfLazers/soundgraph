@@ -1,83 +1,165 @@
 <!DOCTYPE html>
-<!-- SoundGraph plugin panel. Self-contained: no network, no libraries. The plugin
+<!-- SoundGraph plugin panel, wearing the rack's face: the palette, the knob drawing
+     and the type hierarchy come from editor-godot/rack.gd and design.gd — value larger
+     than name, 270° pot travel from 135°, mint arc over a white-13% track. The plugin
      binds sg_getState / sg_getValues / sg_setParam / sg_begin / sg_end / sg_selectPatch
-     as promise-returning globals; everything visual lives here. -->
+     as promise-returning globals. Self-contained: no network, no libraries; the build
+     injects the editor's typeface at the token below. -->
 <html>
 <head>
 <meta charset="utf-8">
 <style>
+  /*SG_FONT_FACE*/
   :root {
-    --bg: #16181d;
-    --panel: #1e2128;
-    --line: #2c313b;
-    --text: #e6e9ef;
-    --dim: #8a93a3;
-    --accent: #57d98a;
+    /* rack.gd's palette, hex-ified */
+    --rail: #16181c;
+    --rail-edge: rgba(255,255,255,0.05);
+    --panel: #282b33;
+    --panel-low: #20232a;
+    --panel-edge: rgba(255,255,255,0.07);
+    --screw: #6b7380;
+    --knob-body: #3c4049;
+    --knob-cap: #4a4f59;
+    --knob-track: rgba(255,255,255,0.13);
+    --accent: #6ee8b8;
+    --ink: #e6e9ef;
+    --muted: #98a1b0;
+    --line: #333944;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
   html, body { height: 100%; }
   body {
-    background: var(--bg); color: var(--text);
-    font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: var(--rail);
+    color: var(--ink);
+    font-family: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 13px;
     display: flex; flex-direction: column; overflow: hidden;
   }
+
+  .rail {
+    flex: none; height: 22px; background: var(--rail);
+    border-bottom: 1px solid var(--rail-edge);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px;
+  }
+  .rail.bottom { border-bottom: none; border-top: 1px solid var(--rail-edge); }
+  .screw {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--screw), #3a3f47 70%);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+    position: relative;
+  }
+  .screw::after {
+    content: ""; position: absolute; left: 1px; right: 1px; top: 4px; height: 1px;
+    background: rgba(0,0,0,0.55); transform: rotate(38deg);
+  }
+  .rail .label {
+    color: var(--muted); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  }
+
+  .plate {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    background: linear-gradient(var(--panel), var(--panel-low));
+    border-top: 1px solid var(--panel-edge);
+    border-bottom: 1px solid rgba(0,0,0,0.4);
+  }
+
   header {
     display: flex; align-items: baseline; gap: 8px;
-    padding: 14px 18px 10px; border-bottom: 1px solid var(--line);
-    background: var(--panel);
+    padding: 12px 16px 9px;
+    border-bottom: 1px solid var(--line);
   }
-  .wordmark { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+  .wordmark { font-size: 21px; font-weight: 600; letter-spacing: 0.01em; }
   .wordmark span { color: var(--accent); }
-  .vendor { color: var(--dim); font-size: 12px; }
+  .vendor { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  #patchtitle { font-size: 17px; font-weight: 600; color: var(--ink); }
+
   .patchbar {
     display: flex; align-items: center; gap: 10px;
-    padding: 12px 18px; border-bottom: 1px solid var(--line);
+    padding: 9px 16px; border-bottom: 1px solid var(--line);
+    background: rgba(0,0,0,0.12);
   }
-  .patchbar label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .patchbar label {
+    color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+  }
   select {
-    flex: 1; background: var(--bg); color: var(--text);
-    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
-    font: inherit; outline: none;
+    flex: 1; background: var(--panel-low); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px;
+    font: inherit; outline: none; min-height: 30px;
   }
-  #patchname { padding: 12px 18px 4px; font-size: 16px; font-weight: 600; }
-  #controls { flex: 1; overflow-y: auto; padding: 6px 18px 14px; }
-  .control { display: grid; grid-template-columns: 110px 1fr 64px; align-items: center; gap: 12px; padding: 5px 0; }
-  .control .name { color: var(--dim); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .control .value { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); }
-  input[type="range"] {
-    -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent;
+  select:hover { border-color: var(--muted); }
+
+  #controls {
+    flex: 1; overflow-y: auto;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 4px 2px; align-content: start;
+    padding: 12px 12px 16px;
   }
-  input[type="range"]::-webkit-slider-runnable-track {
-    height: 4px; border-radius: 2px; background: var(--line);
+  .cell {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 6px 2px 4px; border-radius: 8px; cursor: ns-resize;
+    touch-action: none;
   }
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
-    background: var(--accent); margin-top: -5px;
+  .cell:hover { background: rgba(255,255,255,0.03); }
+  .cell svg { display: block; }
+  .cell .name {
+    margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--muted);
+    max-width: 112px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-align: center;
   }
-  footer {
-    padding: 8px 18px; border-top: 1px solid var(--line);
-    color: var(--dim); font-size: 11px; display: flex; justify-content: space-between;
-    background: var(--panel);
+  /* The value is what you came to read and what changes while you watch — it gets the
+     larger size and the numeric face, exactly as the rack decided. */
+  .cell .value {
+    font-size: 16px; font-weight: 500; color: var(--ink);
+    font-variant-numeric: tabular-nums;
   }
 </style>
 </head>
 <body>
-  <header>
-    <div class="wordmark">Sound<span>Graph</span></div>
-    <div class="vendor">by MutantFactory.net</div>
-  </header>
-  <div class="patchbar">
-    <label>Patch</label>
-    <select id="patch"></select>
+  <div class="rail">
+    <div class="screw"></div><div class="label">SoundGraph</div><div class="screw"></div>
   </div>
-  <div id="patchname"></div>
-  <div id="controls"></div>
-  <footer><div id="footnote">mutantfactory.net</div><div id="version"></div></footer>
+
+  <div class="plate">
+    <header>
+      <div class="wordmark">Sound<span>Graph</span></div>
+      <div class="vendor">by MutantFactory.net</div>
+      <div class="spacer"></div>
+      <div id="patchtitle"></div>
+    </header>
+    <div class="patchbar">
+      <label>Patch</label>
+      <select id="patch"></select>
+    </div>
+    <div id="controls"></div>
+  </div>
+
+  <div class="rail bottom">
+    <div class="screw"></div>
+    <div class="label" id="footnote">mutantfactory.net</div>
+    <div class="screw"></div>
+  </div>
 
 <script>
 let state = null;
 let stateVersion = -1;
-let dragging = null;   // param id currently held by the user
+let dragging = null;   // the control being held, if any
+
+// ---- rack knob geometry: 270° of travel starting at 135° -------------------------
+const START_DEG = 135, SWEEP_DEG = 270;
+const C = 38, R = 26;                 // centre and body radius in a 76x76 viewBox
+
+function polar(radius, degrees) {
+  const a = degrees * Math.PI / 180;
+  return [C + radius * Math.cos(a), C + radius * Math.sin(a)];
+}
+function arcPath(radius, fromDeg, toDeg) {
+  const [x1, y1] = polar(radius, fromDeg);
+  const [x2, y2] = polar(radius, toDeg);
+  const large = (toDeg - fromDeg) > 180 ? 1 : 0;
+  return `M ${x1} ${y1} A ${radius} ${radius} 0 ${large} 1 ${x2} ${y2}`;
+}
 
 function toEngine(c, t) {
   if (c.scaling === "exp" && c.min > 0) return c.min * Math.pow(c.max / c.min, t);
@@ -87,6 +169,41 @@ function format(c, t) {
   const v = toEngine(c, t);
   const magnitude = Math.abs(v);
   return magnitude >= 100 ? v.toFixed(0) : magnitude >= 1 ? v.toFixed(2) : v.toFixed(3);
+}
+
+function knobSvg() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", 76); svg.setAttribute("height", 76);
+  svg.setAttribute("viewBox", "0 0 76 76");
+  svg.innerHTML =
+    `<path class="track" fill="none" stroke="rgba(255,255,255,0.13)" stroke-width="3"
+           stroke-linecap="round" d="${arcPath(R + 5, START_DEG, START_DEG + SWEEP_DEG)}"/>` +
+    `<path class="fill" fill="none" stroke="#6ee8b8" stroke-width="3" stroke-linecap="round"/>` +
+    `<circle cx="${C}" cy="${C}" r="${R}" fill="#3c4049" stroke="rgba(0,0,0,0.5)"/>` +
+    `<circle cx="${C}" cy="${C - 1}" r="${R - 5}" fill="#4a4f59"/>` +
+    `<line class="pointer" stroke="#e6e9ef" stroke-width="2.5" stroke-linecap="round"/>`;
+  return svg;
+}
+
+function paintKnob(svg, t) {
+  const angle = START_DEG + SWEEP_DEG * t;
+  const fill = svg.querySelector(".fill");
+  if (t > 0.004) {
+    fill.setAttribute("d", arcPath(R + 5, START_DEG, angle));
+    fill.style.display = "";
+  } else {
+    fill.style.display = "none";
+  }
+  const pointer = svg.querySelector(".pointer");
+  const [x1, y1] = polar(6, angle);
+  const [x2, y2] = polar(R - 3, angle);
+  pointer.setAttribute("x1", x1); pointer.setAttribute("y1", y1);
+  pointer.setAttribute("x2", x2); pointer.setAttribute("y2", y2);
+}
+
+function showValue(c, t) {
+  c._value.textContent = format(c, t);
+  paintKnob(c._svg, t);
 }
 
 function render() {
@@ -101,33 +218,50 @@ function render() {
   });
   select.disabled = state.patches.length < 2;
 
-  document.getElementById("patchname").textContent = state.patch;
-  document.getElementById("version").textContent = "v" + state.version;
+  document.getElementById("patchtitle").textContent = state.patch;
+  document.getElementById("footnote").textContent =
+    "mutantfactory.net · v" + state.version;
 
   const holder = document.getElementById("controls");
   holder.innerHTML = "";
   for (const c of state.controls) {
-    const row = document.createElement("div");
-    row.className = "control";
-    row.innerHTML = '<div class="name"></div>' +
-                    '<input type="range" min="0" max="1000">' +
-                    '<div class="value"></div>';
-    row.querySelector(".name").textContent = c.name;
-    const slider = row.querySelector("input");
-    const value = row.querySelector(".value");
-    slider.value = Math.round(c.value * 1000);
-    value.textContent = format(c, c.value);
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const svg = knobSvg();
+    cell.appendChild(svg);
+    const value = document.createElement("div");
+    value.className = "value";
+    cell.appendChild(value);
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = c.name;
+    name.title = c.name;
+    cell.appendChild(name);
+    c._svg = svg; c._value = value;
+    showValue(c, c.value);
 
-    slider.addEventListener("pointerdown", () => { dragging = c.id; sg_begin(c.id); });
-    slider.addEventListener("input", () => {
-      const t = slider.value / 1000;
-      value.textContent = format(c, t);
-      sg_setParam(c.id, t);
+    // The rack's gesture: vertical drag, shift for a fine hand, double-click home.
+    cell.addEventListener("pointerdown", (event) => {
+      dragging = c;
+      c._dragY = event.clientY;
+      c._dragFrom = c.value;
+      cell.setPointerCapture(event.pointerId);
+      sg_begin(c.id);
     });
-    slider.addEventListener("pointerup", () => { dragging = null; sg_end(c.id); });
-    c._slider = slider;
-    c._value = value;
-    holder.appendChild(row);
+    cell.addEventListener("pointermove", (event) => {
+      if (dragging !== c) return;
+      const span = 160 * (event.shiftKey ? 4 : 1);
+      c.value = Math.min(1, Math.max(0, c._dragFrom + (c._dragY - event.clientY) / span));
+      showValue(c, c.value);
+      sg_setParam(c.id, c.value);
+    });
+    cell.addEventListener("pointerup", () => { dragging = null; sg_end(c.id); });
+    cell.addEventListener("dblclick", () => {
+      c.value = c.default;
+      showValue(c, c.value);
+      sg_begin(c.id); sg_setParam(c.id, c.value); sg_end(c.id);
+    });
+    holder.appendChild(cell);
   }
 }
 
@@ -147,12 +281,11 @@ setInterval(async () => {
     if (now.stateVersion !== stateVersion) { await refreshState(); return; }
     if (!state) return;
     for (const c of state.controls) {
-      if (c.id === dragging) continue;
+      if (c === dragging) continue;
       const t = now.values[c.id];
-      if (t === undefined) continue;
+      if (t === undefined || Math.abs(t - c.value) < 0.0005) continue;
       c.value = t;
-      c._slider.value = Math.round(t * 1000);
-      c._value.textContent = format(c, t);
+      showValue(c, t);
     }
   } catch (e) { /* plugin going away; ignore */ }
 }, 100);

@@ -887,3 +887,26 @@ in the AU view with state restored, slider drags reach the graph and the host, p
 switches re-render the surface live. Windows uses the same code path via WebView2,
 unverified until the PC build. The panel is fixed at 560×460 until resizing earns its
 complexity.
+
+## 2026-08-24 — The plugin panel wears the rack's face
+
+Decision:
+panel.html renders the rack's visual language rather than a generic web form: the
+rack.gd palette (panel/rail/knob-body/track colours, the mint SELECTED arc), real
+knobs — 270° travel from 135°, track arc, value arc, cap and pointer — the rack's
+gestures (vertical drag, shift for a fine hand, double-click home to default), and the
+rack's type hierarchy (the value larger than the name, tabular numerals). The build
+injects the editor's Atkinson Hyperlegible Next as a data URI
+(runtime-clap/cmake/inject_font.py, python3; without python3 the panel falls back to
+the system stack), so the plugin is set in the same face as the editor.
+
+Reason:
+The plugin panel is SoundGraph's face in other people's software; it should look like
+SoundGraph, and the rack view already decided what that looks like — including the
+reasoning about value-over-name emphasis, which transfers unchanged.
+
+Consequences:
+The embedded panel grows to ~160 KB, almost all typeface. The palette and knob
+geometry are duplicated from rack.gd into panel.html as CSS/SVG — a divergence risk
+noted and accepted until the panel hosts the web editor outright. Verified in
+GarageBand: knobs render, drag and answer with the arc and the host in step.
