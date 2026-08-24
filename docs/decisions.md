@@ -778,3 +778,42 @@ generic bundle plist), and the standalone app steps aside when only Command Line
 are installed (its menu nib needs Xcode's ibtool). Automation ids are FNV-1a of the
 control's id string, so they survive reload; controls inside modules persist through
 the authored/flattened index parallelism patch-io guarantees.
+
+## 2026-08-24 — The plugin's parameter surface is fixed slots; patches swap live
+
+Decision:
+Revises this morning's entry. The player exposes a fixed surface — the patch selector
+plus 32 normalised slots (ids 1000+i), slot i driving control i of the loaded patch —
+instead of one hashed parameter per control. Switching patches no longer requests a
+host restart: the selector event asks for a main-thread callback, the callback builds a
+whole new GraphInstance (graph + per-graph slot bindings) and hands it over through one
+atomic; the audio thread adopts it at the top of process() and pushes the old instance
+onto a graveyard stack the main thread frees. Slot renames ride
+CLAP_PARAM_RESCAN_INFO, which takes effect immediately without deactivation.
+
+Reason:
+Headless Reaper testing showed the restart design silently failing: the plugin's
+request_restart became restartComponent(kIoChanged|kLatencyChanged), which Reaper
+answered without ever deactivating, so CLAP_PARAM_RESCAN_ALL — legal only while
+deactivated — never got its window and the patch never swapped. VST3 also cannot add
+or remove parameters at runtime at all, so a per-control surface could never survive a
+patch switch in any VST3 host. Fixed slots with normalised ranges are what patch-player
+plugins (samplers, wavetables) have always done; ranges never change, so no rescan
+needs permission. The slot's control scaling (linear/exponential) maps the normalised
+value, so automation curves still feel right.
+
+Alternatives:
+Keeping restart-based swaps and documenting "works where hosts honour restarts" (fails
+in Reaper, the first DAW tried); per-patch hashed parameter ids (automation stable per
+patch, dead on VST3 dynamics).
+
+Consequences:
+Automation lanes bind to slot positions, not control identities — repurposed when the
+patch changes, as in every sampler. A patch's controls beyond 32 have no host knob
+(current corpus maximum is 12). Two host-facing lessons are recorded in the seam: never
+call clap_host_params.rescan from inside clap_plugin.init (Reaper's scanner rejects the
+plugin), and SOUNDGRAPH_CLAP_TRACE=file traces the host's actual callback sequence,
+which is how the Reaper behaviour was diagnosed. Verified end to end: ctest
+clap_plugin_plays_and_swaps_patches drives the bare CLAP, auval revalidates the AU, and
+a scripted headless Reaper session loads the VST3, switches First Synth to acid-bass by
+automation, and renders audibly different audio.

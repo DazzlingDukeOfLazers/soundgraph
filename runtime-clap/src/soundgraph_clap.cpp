@@ -6,20 +6,29 @@
 // second format. clap-wrapper compiles this same implementation into the VST3, the
 // Audio Unit and the standalone, so every format shares one seam.
 //
+// The parameter surface is fixed: a patch selector plus kSlotCount normalised slots,
+// slot i driving control i of whatever patch is loaded. Fixed, because the VST3 model
+// cannot add or remove parameters while running, and because a host is only obliged to
+// honour CLAP_PARAM_RESCAN_ALL through a restart it may or may not grant (Reaper, for
+// one, does not). Renaming slots needs only CLAP_PARAM_RESCAN_INFO, which every format
+// applies immediately — so switching patches never has to ask the host's permission.
+//
 // Threading follows the graph's contract. Everything that allocates — parsing a patch,
-// building the graph — happens on the main thread while the plugin is deactivated. The
-// audio thread only ever renders and enqueues events. Switching patches while running
-// therefore goes through clap_host.request_restart(): the host deactivates, the swap
-// and rebuild happen on the main thread, and processing resumes on the new graph.
+// building a graph — happens on the main thread, into a fresh GraphInstance; the audio
+// thread adopts it with one atomic exchange at the top of process() and pushes the old
+// instance onto a graveyard stack the main thread later frees. The audio thread only
+// ever renders and enqueues events; it never allocates, frees, or parses.
 
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <clap/clap.h>
@@ -33,6 +42,8 @@
 namespace {
 
 constexpr clap_id kPatchParamId = 1;
+constexpr clap_id kSlotIdBase = 1000;
+constexpr int kSlotCount = 32;
 
 const char* kFeatures[] = {CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER,
                            CLAP_PLUGIN_FEATURE_STEREO, nullptr};
@@ -49,28 +60,33 @@ const clap_plugin_descriptor_t kDescriptor = {
     "Plays any SoundGraph patch as an instrument",
     kFeatures};
 
-// Parameter ids must stay stable across sessions for host automation to survive a
-// project reload, so they are derived from the control's id string rather than its
-// position. FNV-1a, with collisions (and the reserved patch-selector id) probed away.
-std::uint32_t fnv1a(const std::string& text) {
-    std::uint32_t hash = 2166136261u;
-    for (const char character : text) {
-        hash ^= static_cast<unsigned char>(character);
-        hash *= 16777619u;
-    }
-    return hash;
-}
+enum class Scaling { Linear, Exponential };
 
-struct ParamSlot {
-    clap_id id = 0;
-    std::string name;          // what the host displays
+// What the host sees of a slot. Main thread only.
+struct SlotMeta {
+    bool bound = false;
+    std::string name;
     double min_value = 0.0;
     double max_value = 1.0;
-    double default_value = 0.0;
-    bool stepped = false;
-    int control_index = -1;    // into description.controls / authored_controls
-    int node_index = -1;       // resolved against the built graph
+    Scaling scaling = Scaling::Linear;
+    double default_normalized = 0.0;
+};
+
+// What the audio thread needs of a slot, resolved against one particular graph and
+// carried with it, so an event can never mix one patch's indices with another's nodes.
+struct SlotBinding {
+    bool bound = false;
+    int node_index = -1;
     int parameter_index = -1;
+    double min_value = 0.0;
+    double max_value = 1.0;
+    Scaling scaling = Scaling::Linear;
+};
+
+struct GraphInstance {
+    soundgraph::Graph graph;
+    std::array<SlotBinding, kSlotCount> bindings{};
+    GraphInstance* graveyard_next = nullptr;
 };
 
 struct DiscoveredPatch {
@@ -83,28 +99,66 @@ struct Plugin {
     const clap_host_t* host = nullptr;
     const clap_host_params_t* host_params = nullptr;
 
-    soundgraph::Graph graph;
+    // Main thread.
     soundgraph::GraphDescription description;
     std::vector<DiscoveredPatch> patches;
-
-    std::vector<ParamSlot> params;
-    std::unordered_map<clap_id, int> param_by_id;
-    std::unique_ptr<std::atomic<float>[]> values;
-
-    // Which entry of `patches` is loaded, and which one a patch-selector event asked
-    // for. The audio thread only writes the request; the main thread performs the swap.
+    std::array<SlotMeta, kSlotCount> slots{};
     int current_patch = 0;
-    std::atomic<int> requested_patch{0};
-
-    // A patch arriving through state load, waiting for the main thread while inactive.
     std::unique_ptr<soundgraph::GraphDescription> pending_description;
-
-    bool active = false;
     double sample_rate = 48000.0;
+    bool initialized = false;  // no host callbacks (rescan) until init has returned
+
+    // Shared.
+    std::array<std::atomic<float>, kSlotCount> values{};  // normalised 0..1
+    std::atomic<int> requested_patch{0};
+    std::atomic<bool> active{false};
+
+    // The live graph. `live` belongs to the audio thread while active; `incoming` is
+    // the main thread's handoff; `graveyard` is the audio thread's return path.
+    GraphInstance* live = nullptr;
+    std::atomic<GraphInstance*> incoming{nullptr};
+    std::atomic<GraphInstance*> graveyard{nullptr};
 };
 
 Plugin* self(const clap_plugin_t* plugin) {
     return static_cast<Plugin*>(plugin->plugin_data);
+}
+
+// Debug tracing, only when SOUNDGRAPH_CLAP_TRACE names a file. Never in the render path
+// unless something is already going wrong enough to be chasing it.
+FILE* trace_file() {
+    static FILE* file = [] {
+        const char* path = std::getenv("SOUNDGRAPH_CLAP_TRACE");
+        return path != nullptr ? std::fopen(path, "a") : nullptr;
+    }();
+    return file;
+}
+
+#define SG_TRACE(...)                            \
+    do {                                         \
+        if (FILE* f = trace_file()) {            \
+            std::fprintf(f, __VA_ARGS__);        \
+            std::fputc('\n', f);                 \
+            std::fflush(f);                      \
+        }                                        \
+    } while (false)
+
+double slot_to_engine(double min_value, double max_value, Scaling scaling, double t) {
+    t = std::min(1.0, std::max(0.0, t));
+    if (scaling == Scaling::Exponential && min_value > 0.0) {
+        return min_value * std::pow(max_value / min_value, t);
+    }
+    return min_value + t * (max_value - min_value);
+}
+
+double engine_to_slot(double min_value, double max_value, Scaling scaling, double value) {
+    if (scaling == Scaling::Exponential && min_value > 0.0 && value > 0.0) {
+        return std::log(value / min_value) / std::log(max_value / min_value);
+    }
+    if (max_value == min_value) {
+        return 0.0;
+    }
+    return (value - min_value) / (max_value - min_value);
 }
 
 // ---- patch discovery ---------------------------------------------------------------
@@ -162,7 +216,17 @@ std::vector<DiscoveredPatch> discover_patches() {
         scan_directory(std::filesystem::path(home) / "Documents" / "SoundGraph" / "Patches",
                        found);
     }
+    // Directory iteration order is filesystem-dependent; the selector's indices must
+    // not be. The built-in patch stays at zero.
+    std::sort(found.begin() + 1, found.end(),
+              [](const DiscoveredPatch& a, const DiscoveredPatch& b) { return a.label < b.label; });
     return found;
+}
+
+// With nothing but the built-in patch, a selector would be a stepped parameter whose
+// min equals its max — which a VST3 host normalises into NaN. No choices, no knob.
+bool has_patch_param(const Plugin* plug) {
+    return plug->patches.size() > 1;
 }
 
 // ---- description helpers -----------------------------------------------------------
@@ -173,110 +237,178 @@ bool parse_default_patch(soundgraph::GraphDescription& out,
     return soundgraph::parse_patch(text, out, diagnostics);
 }
 
-// Rebuilds the parameter table from the description's controls. Main thread,
-// deactivated only — the audio thread reads these structures during process().
-void rebuild_params(Plugin* plug) {
-    plug->params.clear();
-    plug->param_by_id.clear();
+Scaling scaling_of(const soundgraph::ControlDescription& control) {
+    if (control.scaling == "exponential" || control.scaling == "logarithmic") {
+        return Scaling::Exponential;
+    }
+    return Scaling::Linear;
+}
 
-    for (int i = 0; i < static_cast<int>(plug->description.controls.size()); ++i) {
-        const soundgraph::ControlDescription& control = plug->description.controls[static_cast<std::size_t>(i)];
+// Makes `description` current: refills the slot table and resets slot values to the
+// patch's own. Main thread. Safe while active — the audio thread never reads SlotMeta,
+// and renaming slots needs only CLAP_PARAM_RESCAN_INFO.
+void adopt_description(Plugin* plug, soundgraph::GraphDescription&& description) {
+    plug->description = std::move(description);
 
-        ParamSlot slot;
-        slot.name = control.label.empty() ? control.id : control.label;
-        slot.control_index = i;
-        if (control.has_range) {
-            slot.min_value = control.min_value;
-            slot.max_value = control.max_value;
+    for (int i = 0; i < kSlotCount; ++i) {
+        SlotMeta& slot = plug->slots[static_cast<std::size_t>(i)];
+        if (i >= static_cast<int>(plug->description.controls.size())) {
+            slot = SlotMeta{};
+            slot.name = "(unused)";
+            plug->values[static_cast<std::size_t>(i)].store(0.0f, std::memory_order_relaxed);
+            continue;
         }
+        const soundgraph::ControlDescription& control =
+            plug->description.controls[static_cast<std::size_t>(i)];
+        slot.bound = true;
+        slot.name = control.label.empty() ? control.id : control.label;
+        slot.min_value = control.has_range ? control.min_value : 0.0;
+        slot.max_value = control.has_range ? control.max_value : 1.0;
+        slot.scaling = scaling_of(control);
+
+        double engine_default = slot.min_value;
         if (control.has_default) {
-            slot.default_value = control.default_value;
+            engine_default = control.default_value;
         } else if (const soundgraph::NodeDescription* node =
                        plug->description.find_node(control.target.node)) {
             if (const soundgraph::ParameterValue* parameter =
                     node->find_parameter(control.target.parameter)) {
-                slot.default_value = parameter->value;
+                engine_default = parameter->value;
             }
         }
-        if (slot.default_value < slot.min_value) slot.default_value = slot.min_value;
-        if (slot.default_value > slot.max_value) slot.default_value = slot.max_value;
-
-        clap_id id = fnv1a(control.id);
-        while (id == kPatchParamId || id == 0 || id == CLAP_INVALID_ID ||
-               plug->param_by_id.count(id) != 0) {
-            ++id;
-        }
-        slot.id = id;
-
-        plug->param_by_id.emplace(slot.id, static_cast<int>(plug->params.size()));
-        plug->params.push_back(std::move(slot));
+        slot.default_normalized =
+            engine_to_slot(slot.min_value, slot.max_value, slot.scaling, engine_default);
+        plug->values[static_cast<std::size_t>(i)].store(
+            static_cast<float>(slot.default_normalized), std::memory_order_relaxed);
     }
 
-    plug->values = std::make_unique<std::atomic<float>[]>(plug->params.size());
-    for (std::size_t i = 0; i < plug->params.size(); ++i) {
-        plug->values[i].store(static_cast<float>(plug->params[i].default_value),
-                              std::memory_order_relaxed);
+    // Calling back into the host during clap_plugin.init is not allowed — the first
+    // adopt happens there, and the host reads the fresh surface right afterwards anyway.
+    if (plug->initialized && plug->host_params != nullptr) {
+        plug->host_params->rescan(plug->host, CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_VALUES |
+                                                  CLAP_PARAM_RESCAN_TEXT);
     }
 }
 
-// Applies a freshly parsed patch as the current description. Main thread, deactivated.
-void adopt_description(Plugin* plug, soundgraph::GraphDescription&& description) {
-    plug->description = std::move(description);
-    rebuild_params(plug);
-    if (plug->host_params != nullptr) {
-        plug->host_params->rescan(plug->host, CLAP_PARAM_RESCAN_ALL);
-    }
-}
+// Builds a GraphInstance for the current description at the current sample rate, with
+// bindings resolved and the current slot values queued so the first block already sits
+// at the knob positions. Main thread; returns null if the patch cannot be realised.
+GraphInstance* make_instance(Plugin* plug) {
+    auto instance = std::make_unique<GraphInstance>();
 
-// Loads the patch the selector points at. Falls back to the built-in patch when a file
-// has gone missing or no longer parses. Main thread, deactivated.
-void load_selected_patch(Plugin* plug) {
-    const int wanted = plug->requested_patch.load(std::memory_order_relaxed);
-    const int index = (wanted >= 0 && wanted < static_cast<int>(plug->patches.size())) ? wanted : 0;
-
-    soundgraph::GraphDescription description;
+    soundgraph::PrepareContext context;
+    context.sample_rate = plug->sample_rate;
     std::vector<soundgraph::Diagnostic> diagnostics;
-    bool loaded = false;
-    const std::string& path = plug->patches[static_cast<std::size_t>(index)].path;
-    if (!path.empty()) {
-        loaded = soundgraph::load_patch(path, description, diagnostics);
+    if (!instance->graph.build(plug->description, soundgraph::NodeRegistry::builtin(), context,
+                               diagnostics)) {
+        return nullptr;
     }
-    if (!loaded) {
-        description = soundgraph::GraphDescription();
-        diagnostics.clear();
-        if (!parse_default_patch(description, diagnostics)) {
-            return;  // the embedded patch failing to parse would be a build defect
+
+    for (int i = 0; i < kSlotCount; ++i) {
+        const SlotMeta& slot = plug->slots[static_cast<std::size_t>(i)];
+        SlotBinding& binding = instance->bindings[static_cast<std::size_t>(i)];
+        if (!slot.bound) {
+            continue;
+        }
+        const soundgraph::ControlTarget& target =
+            plug->description.controls[static_cast<std::size_t>(i)].target;
+        binding.node_index = instance->graph.node_index(target.node);
+        binding.parameter_index =
+            (binding.node_index >= 0)
+                ? instance->graph.parameter_index(binding.node_index, target.parameter)
+                : -1;
+        binding.bound = binding.node_index >= 0 && binding.parameter_index >= 0;
+        binding.min_value = slot.min_value;
+        binding.max_value = slot.max_value;
+        binding.scaling = slot.scaling;
+
+        if (binding.bound) {
+            const double t = plug->values[static_cast<std::size_t>(i)].load(std::memory_order_relaxed);
+            instance->graph.set_parameter(
+                binding.node_index, binding.parameter_index,
+                static_cast<float>(slot_to_engine(binding.min_value, binding.max_value,
+                                                  binding.scaling, t)));
         }
     }
-    plug->current_patch = index;
-    plug->requested_patch.store(index, std::memory_order_relaxed);
-    adopt_description(plug, std::move(description));
+    return instance.release();
 }
 
-// Any patch waiting to be applied? Main thread, called while deactivated.
-void apply_pending(Plugin* plug) {
-    if (plug->pending_description) {
-        std::unique_ptr<soundgraph::GraphDescription> pending = std::move(plug->pending_description);
-        adopt_description(plug, std::move(*pending));
-        return;
+void free_graveyard(Plugin* plug) {
+    GraphInstance* chain = plug->graveyard.exchange(nullptr, std::memory_order_acquire);
+    while (chain != nullptr) {
+        GraphInstance* next = chain->graveyard_next;
+        delete chain;
+        chain = next;
     }
-    if (plug->requested_patch.load(std::memory_order_relaxed) != plug->current_patch) {
-        load_selected_patch(plug);
+}
+
+// Applies whatever change is waiting — a state load or a selector move — and, while
+// active, hands the audio thread a freshly built graph. Main thread.
+void commit_patch(Plugin* plug) {
+    SG_TRACE("commit_patch: requested=%d current=%d pending=%d active=%d",
+             plug->requested_patch.load(), plug->current_patch,
+             plug->pending_description ? 1 : 0, plug->active.load() ? 1 : 0);
+    free_graveyard(plug);
+
+    bool changed = false;
+    if (plug->pending_description) {
+        std::unique_ptr<soundgraph::GraphDescription> pending =
+            std::move(plug->pending_description);
+        adopt_description(plug, std::move(*pending));
+        changed = true;
+    } else {
+        const int wanted = plug->requested_patch.load(std::memory_order_relaxed);
+        if (wanted != plug->current_patch) {
+            const int index =
+                (wanted >= 0 && wanted < static_cast<int>(plug->patches.size())) ? wanted : 0;
+
+            soundgraph::GraphDescription description;
+            std::vector<soundgraph::Diagnostic> diagnostics;
+            bool loaded = false;
+            const std::string& path = plug->patches[static_cast<std::size_t>(index)].path;
+            if (!path.empty()) {
+                loaded = soundgraph::load_patch(path, description, diagnostics);
+            }
+            if (!loaded) {
+                description = soundgraph::GraphDescription();
+                diagnostics.clear();
+                if (!parse_default_patch(description, diagnostics)) {
+                    return;  // the embedded patch failing to parse would be a build defect
+                }
+            }
+            plug->current_patch = index;
+            plug->requested_patch.store(index, std::memory_order_relaxed);
+            adopt_description(plug, std::move(description));
+            changed = true;
+        }
+    }
+
+    if (changed && plug->active.load(std::memory_order_relaxed)) {
+        GraphInstance* instance = make_instance(plug);
+        SG_TRACE("commit_patch: built instance %p", static_cast<void*>(instance));
+        if (instance != nullptr) {
+            GraphInstance* unconsumed =
+                plug->incoming.exchange(instance, std::memory_order_release);
+            delete unconsumed;  // main thread owns anything the audio thread never took
+        }
     }
 }
 
 // ---- event handling ----------------------------------------------------------------
-// Audio thread. Notes go straight into the graph; parameter events update the cached
-// value (for host reads) and enqueue the change for the next rendered block.
+// Audio thread while processing (or main thread through flush while inactive). Notes
+// go straight into the graph; slot events update the shared value and reach the graph
+// through its control queue; a selector move is recorded and left for the main thread.
 
 void handle_event(Plugin* plug, const clap_event_header_t* header) {
     if (header->space_id != CLAP_CORE_EVENT_SPACE_ID) {
         return;
     }
+    GraphInstance* live = plug->live;
     switch (header->type) {
         case CLAP_EVENT_NOTE_ON:
         case CLAP_EVENT_NOTE_OFF:
         case CLAP_EVENT_NOTE_CHOKE: {
+            if (live == nullptr) break;
             const auto* event = reinterpret_cast<const clap_event_note_t*>(header);
             soundgraph::NoteEvent note;
             note.kind = (header->type == CLAP_EVENT_NOTE_ON)
@@ -284,10 +416,11 @@ void handle_event(Plugin* plug, const clap_event_header_t* header) {
                             : soundgraph::NoteEvent::Kind::NoteOff;
             note.note = event->key;
             note.velocity = static_cast<float>(event->velocity);
-            plug->graph.dispatch_note(note);
+            live->graph.dispatch_note(note);
             break;
         }
         case CLAP_EVENT_MIDI: {
+            if (live == nullptr) break;
             const auto* event = reinterpret_cast<const clap_event_midi_t*>(header);
             const std::uint8_t status = event->data[0] & 0xF0;
             soundgraph::NoteEvent note;
@@ -295,35 +428,38 @@ void handle_event(Plugin* plug, const clap_event_header_t* header) {
             note.velocity = static_cast<float>(event->data[2]) / 127.0f;
             if (status == 0x90 && event->data[2] != 0) {
                 note.kind = soundgraph::NoteEvent::Kind::NoteOn;
-                plug->graph.dispatch_note(note);
+                live->graph.dispatch_note(note);
             } else if (status == 0x80 || (status == 0x90 && event->data[2] == 0)) {
                 note.kind = soundgraph::NoteEvent::Kind::NoteOff;
-                plug->graph.dispatch_note(note);
+                live->graph.dispatch_note(note);
             } else if (status == 0xB0 && (event->data[1] == 120 || event->data[1] == 123)) {
                 note.kind = soundgraph::NoteEvent::Kind::AllNotesOff;
-                plug->graph.dispatch_note(note);
+                live->graph.dispatch_note(note);
             }
             break;
         }
         case CLAP_EVENT_PARAM_VALUE: {
             const auto* event = reinterpret_cast<const clap_event_param_value_t*>(header);
             if (event->param_id == kPatchParamId) {
-                const int wanted = static_cast<int>(event->value + 0.5);
-                if (wanted != plug->current_patch) {
-                    plug->requested_patch.store(wanted, std::memory_order_relaxed);
-                    plug->host->request_restart(plug->host);
-                }
+                plug->requested_patch.store(static_cast<int>(event->value + 0.5),
+                                            std::memory_order_relaxed);
+                SG_TRACE("event: patch -> %d, requesting callback", static_cast<int>(event->value + 0.5));
+                plug->host->request_callback(plug->host);
                 break;
             }
-            const auto found = plug->param_by_id.find(event->param_id);
-            if (found == plug->param_by_id.end()) {
+            if (event->param_id < kSlotIdBase ||
+                event->param_id >= kSlotIdBase + static_cast<clap_id>(kSlotCount)) {
                 break;
             }
-            const ParamSlot& slot = plug->params[static_cast<std::size_t>(found->second)];
-            const float value = static_cast<float>(event->value);
-            plug->values[static_cast<std::size_t>(found->second)].store(value, std::memory_order_relaxed);
-            if (slot.node_index >= 0 && slot.parameter_index >= 0) {
-                plug->graph.set_parameter(slot.node_index, slot.parameter_index, value);
+            const std::size_t index = event->param_id - kSlotIdBase;
+            const float t = static_cast<float>(event->value);
+            plug->values[index].store(t, std::memory_order_relaxed);
+            if (live != nullptr && live->bindings[index].bound) {
+                const SlotBinding& binding = live->bindings[index];
+                live->graph.set_parameter(
+                    binding.node_index, binding.parameter_index,
+                    static_cast<float>(slot_to_engine(binding.min_value, binding.max_value,
+                                                      binding.scaling, t)));
             }
             break;
         }
@@ -377,12 +513,12 @@ const clap_plugin_note_ports_t kNotePorts = {note_ports_count, note_ports_get};
 // ---- clap_plugin_params ------------------------------------------------------------
 
 uint32_t params_count(const clap_plugin_t* plugin) {
-    return 1 + static_cast<uint32_t>(self(plugin)->params.size());
+    return (has_patch_param(self(plugin)) ? 1 : 0) + kSlotCount;
 }
 
 bool params_get_info(const clap_plugin_t* plugin, uint32_t index, clap_param_info_t* info) {
     Plugin* plug = self(plugin);
-    if (index == 0) {
+    if (has_patch_param(plug) && index == 0) {
         info->id = kPatchParamId;
         info->flags = CLAP_PARAM_IS_STEPPED;
         info->cookie = nullptr;
@@ -393,19 +529,19 @@ bool params_get_info(const clap_plugin_t* plugin, uint32_t index, clap_param_inf
         info->default_value = 0.0;
         return true;
     }
-    const std::size_t slot_index = index - 1;
-    if (slot_index >= plug->params.size()) {
+    const std::size_t slot_index = has_patch_param(plug) ? index - 1 : index;
+    if (slot_index >= kSlotCount) {
         return false;
     }
-    const ParamSlot& slot = plug->params[slot_index];
-    info->id = slot.id;
-    info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+    const SlotMeta& slot = plug->slots[slot_index];
+    info->id = kSlotIdBase + static_cast<clap_id>(slot_index);
+    info->flags = CLAP_PARAM_IS_AUTOMATABLE | (slot.bound ? 0 : CLAP_PARAM_IS_HIDDEN);
     info->cookie = nullptr;
     std::snprintf(info->name, sizeof(info->name), "%s", slot.name.c_str());
     std::snprintf(info->module, sizeof(info->module), "%s", "");
-    info->min_value = slot.min_value;
-    info->max_value = slot.max_value;
-    info->default_value = slot.default_value;
+    info->min_value = 0.0;
+    info->max_value = 1.0;
+    info->default_value = slot.default_normalized;
     return true;
 }
 
@@ -415,12 +551,11 @@ bool params_get_value(const clap_plugin_t* plugin, clap_id param_id, double* out
         *out_value = static_cast<double>(plug->requested_patch.load(std::memory_order_relaxed));
         return true;
     }
-    const auto found = plug->param_by_id.find(param_id);
-    if (found == plug->param_by_id.end()) {
+    if (param_id < kSlotIdBase || param_id >= kSlotIdBase + static_cast<clap_id>(kSlotCount)) {
         return false;
     }
     *out_value = static_cast<double>(
-        plug->values[static_cast<std::size_t>(found->second)].load(std::memory_order_relaxed));
+        plug->values[param_id - kSlotIdBase].load(std::memory_order_relaxed));
     return true;
 }
 
@@ -435,7 +570,16 @@ bool params_value_to_text(const clap_plugin_t* plugin, clap_id param_id, double 
         std::snprintf(out, out_size, "%s", plug->patches[static_cast<std::size_t>(index)].label.c_str());
         return true;
     }
-    std::snprintf(out, out_size, "%.4g", value);
+    if (param_id < kSlotIdBase || param_id >= kSlotIdBase + static_cast<clap_id>(kSlotCount)) {
+        return false;
+    }
+    const SlotMeta& slot = plug->slots[param_id - kSlotIdBase];
+    if (!slot.bound) {
+        std::snprintf(out, out_size, "%s", "-");
+        return true;
+    }
+    std::snprintf(out, out_size, "%.4g",
+                  slot_to_engine(slot.min_value, slot.max_value, slot.scaling, value));
     return true;
 }
 
@@ -451,7 +595,11 @@ bool params_text_to_value(const clap_plugin_t* plugin, clap_id param_id, const c
         }
         return false;
     }
-    *out_value = std::atof(text);
+    if (param_id < kSlotIdBase || param_id >= kSlotIdBase + static_cast<clap_id>(kSlotCount)) {
+        return false;
+    }
+    const SlotMeta& slot = plug->slots[param_id - kSlotIdBase];
+    *out_value = engine_to_slot(slot.min_value, slot.max_value, slot.scaling, std::atof(text));
     return true;
 }
 
@@ -459,8 +607,14 @@ void params_flush(const clap_plugin_t* plugin, const clap_input_events_t* in,
                   const clap_output_events_t*) {
     Plugin* plug = self(plugin);
     const uint32_t count = in->size(in);
+    if (count > 0) SG_TRACE("flush: %u events, active=%d", count, plug->active.load() ? 1 : 0);
     for (uint32_t i = 0; i < count; ++i) {
         handle_event(plug, in->get(in, i));
+    }
+    // While inactive, flush arrives on the main thread — apply selector moves here and
+    // now rather than waiting for a callback the host has no reason to hurry.
+    if (!plug->active.load(std::memory_order_relaxed)) {
+        commit_patch(plug);
     }
 }
 
@@ -474,20 +628,20 @@ const clap_plugin_params_t kParams = {params_count, params_get_info, params_get_
 // module expansion.
 
 void write_value_into(std::vector<soundgraph::NodeDescription>& nodes,
-                      const soundgraph::ControlTarget& target, float value) {
+                      const soundgraph::ControlTarget& target, double value) {
     for (soundgraph::NodeDescription& node : nodes) {
         if (node.id != target.node) {
             continue;
         }
         for (soundgraph::ParameterValue& parameter : node.parameters) {
             if (parameter.name == target.parameter) {
-                parameter.value = static_cast<double>(value);
+                parameter.value = value;
                 return;
             }
         }
         soundgraph::ParameterValue parameter;
         parameter.name = target.parameter;
-        parameter.value = static_cast<double>(value);
+        parameter.value = value;
         node.parameters.push_back(std::move(parameter));
         return;
     }
@@ -497,14 +651,17 @@ bool state_save(const clap_plugin_t* plugin, const clap_ostream_t* stream) {
     Plugin* plug = self(plugin);
 
     soundgraph::GraphDescription snapshot = plug->description;
-    for (const ParamSlot& slot : plug->params) {
-        const float value = plug->values[static_cast<std::size_t>(&slot - plug->params.data())]
-                                .load(std::memory_order_relaxed);
-        const std::size_t control_index = static_cast<std::size_t>(slot.control_index);
-        write_value_into(snapshot.nodes, snapshot.controls[control_index].target, value);
-        if (snapshot.authored_taken && control_index < snapshot.authored_controls.size()) {
-            write_value_into(snapshot.authored_nodes,
-                             snapshot.authored_controls[control_index].target, value);
+    for (std::size_t i = 0; i < snapshot.controls.size() && i < kSlotCount; ++i) {
+        const SlotMeta& slot = plug->slots[i];
+        if (!slot.bound) {
+            continue;
+        }
+        const double value =
+            slot_to_engine(slot.min_value, slot.max_value, slot.scaling,
+                           plug->values[i].load(std::memory_order_relaxed));
+        write_value_into(snapshot.nodes, snapshot.controls[i].target, value);
+        if (snapshot.authored_taken && i < snapshot.authored_controls.size()) {
+            write_value_into(snapshot.authored_nodes, snapshot.authored_controls[i].target, value);
         }
     }
 
@@ -542,12 +699,9 @@ bool state_load(const clap_plugin_t* plugin, const clap_istream_t* stream) {
         return false;
     }
 
+    // state_load is a main-thread call; the swap can happen right here.
     plug->pending_description = std::move(description);
-    if (plug->active) {
-        plug->host->request_restart(plug->host);
-    } else {
-        apply_pending(plug);
-    }
+    commit_patch(plug);
     return true;
 }
 
@@ -567,52 +721,43 @@ bool plugin_init(const clap_plugin_t* plugin) {
     if (!parse_default_patch(description, diagnostics)) {
         return false;
     }
-    plug->description = std::move(description);
-    rebuild_params(plug);
+    adopt_description(plug, std::move(description));
+    plug->initialized = true;
     return true;
 }
 
 void plugin_destroy(const clap_plugin_t* plugin) {
-    delete self(plugin);
+    Plugin* plug = self(plugin);
+    free_graveyard(plug);
+    delete plug->incoming.exchange(nullptr);
+    delete plug->live;
+    delete plug;
 }
 
 bool plugin_activate(const clap_plugin_t* plugin, double sample_rate, uint32_t, uint32_t) {
     Plugin* plug = self(plugin);
-    apply_pending(plug);
-
+    SG_TRACE("activate at %.0f", sample_rate);
     plug->sample_rate = sample_rate;
-    soundgraph::PrepareContext context;
-    context.sample_rate = sample_rate;
+    commit_patch(plug);  // anything still waiting applies before the graph is built
 
-    std::vector<soundgraph::Diagnostic> diagnostics;
-    if (!plug->graph.build(plug->description, soundgraph::NodeRegistry::builtin(), context,
-                           diagnostics)) {
+    delete plug->live;
+    plug->live = nullptr;
+    GraphInstance* instance = make_instance(plug);
+    if (instance == nullptr) {
         return false;
     }
-
-    // Resolve every control against the built graph, then hand the cached values to the
-    // control queue so the first rendered block already sits at the knob positions.
-    for (std::size_t i = 0; i < plug->params.size(); ++i) {
-        ParamSlot& slot = plug->params[i];
-        const soundgraph::ControlTarget& target =
-            plug->description.controls[static_cast<std::size_t>(slot.control_index)].target;
-        slot.node_index = plug->graph.node_index(target.node);
-        slot.parameter_index = (slot.node_index >= 0)
-            ? plug->graph.parameter_index(slot.node_index, target.parameter) : -1;
-        if (slot.node_index >= 0 && slot.parameter_index >= 0) {
-            plug->graph.set_parameter(slot.node_index, slot.parameter_index,
-                                      plug->values[i].load(std::memory_order_relaxed));
-        }
-    }
-
-    plug->active = true;
+    plug->live = instance;
+    plug->active.store(true, std::memory_order_relaxed);
     return true;
 }
 
 void plugin_deactivate(const clap_plugin_t* plugin) {
     Plugin* plug = self(plugin);
-    plug->active = false;
-    apply_pending(plug);
+    plug->active.store(false, std::memory_order_relaxed);
+    free_graveyard(plug);
+    delete plug->incoming.exchange(nullptr);
+    delete plug->live;
+    plug->live = nullptr;
 }
 
 bool plugin_start_processing(const clap_plugin_t*) {
@@ -622,11 +767,27 @@ bool plugin_start_processing(const clap_plugin_t*) {
 void plugin_stop_processing(const clap_plugin_t*) {}
 
 void plugin_reset(const clap_plugin_t* plugin) {
-    self(plugin)->graph.reset();
+    Plugin* plug = self(plugin);
+    if (plug->live != nullptr) {
+        plug->live->graph.reset();
+    }
 }
 
 clap_process_status plugin_process(const clap_plugin_t* plugin, const clap_process_t* process) {
     Plugin* plug = self(plugin);
+
+    // Adopt a freshly built graph if the main thread left one, and hand back the old
+    // one for the main thread to free. One exchange each way; nothing blocks.
+    GraphInstance* incoming = plug->incoming.exchange(nullptr, std::memory_order_acquire);
+    if (incoming != nullptr) {
+        SG_TRACE("process: swapped in %p", static_cast<void*>(incoming));
+        GraphInstance* old = plug->live;
+        plug->live = incoming;
+        if (old != nullptr) {
+            old->graveyard_next = plug->graveyard.load(std::memory_order_relaxed);
+            plug->graveyard.store(old, std::memory_order_release);
+        }
+    }
 
     float* left = process->audio_outputs[0].data32[0];
     float* right = process->audio_outputs[0].data32[1];
@@ -634,6 +795,15 @@ clap_process_status plugin_process(const clap_plugin_t* plugin, const clap_proce
 
     const clap_input_events_t* events = process->in_events;
     const uint32_t event_count = events->size(events);
+
+    if (plug->live == nullptr) {
+        std::memset(left, 0, total_frames * sizeof(float));
+        std::memset(right, 0, total_frames * sizeof(float));
+        for (uint32_t i = 0; i < event_count; ++i) {
+            handle_event(plug, events->get(events, i));
+        }
+        return CLAP_PROCESS_CONTINUE;
+    }
 
     // Events land at their declared frame: render up to each event's time, apply it,
     // continue. The graph's own fixed internal blocks keep the output identical to what
@@ -643,13 +813,14 @@ clap_process_status plugin_process(const clap_plugin_t* plugin, const clap_proce
         const clap_event_header_t* header = events->get(events, i);
         if (header->time > cursor) {
             const uint32_t frames = header->time - cursor;
-            plug->graph.render(left + cursor, right + cursor, static_cast<int>(frames));
+            plug->live->graph.render(left + cursor, right + cursor, static_cast<int>(frames));
             cursor += frames;
         }
         handle_event(plug, header);
     }
     if (cursor < total_frames) {
-        plug->graph.render(left + cursor, right + cursor, static_cast<int>(total_frames - cursor));
+        plug->live->graph.render(left + cursor, right + cursor,
+                                 static_cast<int>(total_frames - cursor));
     }
 
     return CLAP_PROCESS_CONTINUE;
@@ -663,7 +834,10 @@ const void* plugin_get_extension(const clap_plugin_t*, const char* id) {
     return nullptr;
 }
 
-void plugin_on_main_thread(const clap_plugin_t*) {}
+void plugin_on_main_thread(const clap_plugin_t* plugin) {
+    SG_TRACE("on_main_thread");
+    commit_patch(self(plugin));
+}
 
 // ---- factory -----------------------------------------------------------------------
 

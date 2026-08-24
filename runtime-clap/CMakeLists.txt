@@ -89,6 +89,14 @@ make_clapfirst_plugins(
         ${SOUNDGRAPH_STANDALONE_ARGS}
 )
 
+if(SOUNDGRAPH_BUILD_TESTS)
+    add_executable(test_clap_plugin test/test_plugin.cpp)
+    target_link_libraries(test_clap_plugin PRIVATE soundgraph-clap-impl clap)
+    target_compile_definitions(test_clap_plugin PRIVATE
+            SOUNDGRAPH_TEST_PATCHES="${CMAKE_SOURCE_DIR}/examples/patches/synths")
+    add_test(NAME clap_plugin_plays_and_swaps_patches COMMAND test_clap_plugin)
+endif()
+
 if(APPLE)
     # clap-wrapper installs the generated AudioComponents Info.plist in a PRE_BUILD
     # step, which Ninja runs before CMake writes the bundle's own generic plist — so the

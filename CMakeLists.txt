@@ -50,6 +50,12 @@ if(SOUNDGRAPH_BUILD_NATIVE_RUNTIME)
     add_subdirectory(runtime-native)
 endif()
 
+# Before any directory that registers tests: enable_testing() only covers directories
+# added after it.
+if(SOUNDGRAPH_BUILD_TESTS)
+    enable_testing()
+endif()
+
 if(SOUNDGRAPH_CLAP AND NOT EMSCRIPTEN)
     if(APPLE)
         # clap-wrapper's AU and standalone shells are Objective-C++. Enabling the
@@ -61,6 +67,5 @@ if(SOUNDGRAPH_CLAP AND NOT EMSCRIPTEN)
 endif()
 
 if(SOUNDGRAPH_BUILD_TESTS)
-    enable_testing()
     add_subdirectory(tests)
 endif()

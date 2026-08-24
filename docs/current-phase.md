@@ -361,17 +361,22 @@ somewhere other than the cause.
 The player plugin exists: one CLAP implementation in `runtime-clap`, assembled by
 clap-wrapper into `SoundGraph.clap`, `SoundGraph.vst3` and `SoundGraph.component`.
 State is the patch JSON; a stepped "Patch" parameter loads anything under
-`$SOUNDGRAPH_PATCHES` or `~/Documents/SoundGraph/Patches`. The AU passes `auval -v
-aumu SgPl SnGr` on the Mac, render tests included. Opt in with
+`$SOUNDGRAPH_PATCHES` or `~/Documents/SoundGraph/Patches`, driving a fixed surface of
+32 normalised slots (see the decision log — VST3 forbids dynamic parameter sets, and
+patches swap live through an atomic graph handoff, no host restart involved). Verified
+three ways on the Mac: `auval -v aumu SgPl SnGr` passes render tests included, ctest
+`clap_plugin_plays_and_swaps_patches` drives the bare CLAP through a patch swap, and a
+scripted headless Reaper session (`REAPER -nosplash -new <script.lua>`) loads the VST3,
+flips the selector by automation and renders audibly different audio. Opt in with
 
 ```bash
 tools/get-plugin-sdks.sh        # once per clone
 cmake -S . -B build -DSOUNDGRAPH_CLAP=ON && cmake --build build
 ```
 
-Still open: a DAW smoke test of the VST3/CLAP (the AU is the validated one so far), the
-Windows build of the same target, sample-rate golden comparison through the plugin path,
-audio input for HostAudioSource patches, and eventually a GUI hosting the web editor.
+Still open: the Windows build of the same target, an AU test inside Logic or GarageBand
+proper, sample-rate golden comparison through the plugin path, audio input for
+HostAudioSource patches, and eventually a GUI hosting the web editor.
 
 ## Invariants
 
