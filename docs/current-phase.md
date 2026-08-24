@@ -1,10 +1,17 @@
 # Current Phase
 
-**Knobcon hardening and editor polish.** Branch `knobcon-hardening`, 8 commits ahead of
-`main`. Feature freeze Sep 4, show Sep 11.
+**Features until the show.** Work happens on `dev` and merges to `main` at milestones —
+the two are in sync as of the `spoken-roll` tag (2026-08-23). Knobcon is Sep 11; the
+Sep 4 feature freeze was deliberately relaxed ("it's a great marketing tool and we don't
+need hardware to make it spread itself"), so features keep landing: since the freeze
+decision the vocabulary grew from 25 to 44 node types (through the maths family, Clock,
+ScaleQuantizer, StepSequencer, Euclid, Comb/Allpass, Compressor, Sampler, Formant and
+the TMS5220 Speech node), the editor's top row, roll, rack, shelves and feedback dialog
+were reworked, and every one of the 280 examples is load-verified.
 
-Milestones A, B, C and F are all on `main` and all complete. What remains before the show
-is reliability and presentation, not features.
+Milestones A, B, C and F are all complete. Each feature lands with its tests, rides the
+full gate (`tools/pre-push.sh`, enforced on every push including tags), and gets a tag
+named for itself — the tag list is the changelog.
 
 ## Where the project stands
 
@@ -13,9 +20,9 @@ architectures:
 
 | target | how it runs | verified by |
 |---|---|---|
-| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 7 ctest suites, 18 golden vectors |
+| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 24 ctest suites, 18 golden vectors |
 | Browser | WebAssembly in an AudioWorklet | `verify-goldens.mjs`, 18 cases, worst 2.09e-7 |
-| Godot 4.7 | GDExtension | 89 editor checks, 18 layout checks |
+| Godot 4.7 | GDExtension | ~1170 editor checks, plus design and layout suites |
 | ESP32-S3 | generic firmware, Waveshare audio board | `sg-serial.py verify-goldens`, all 18 cases, worst 9.16e-5 |
 
 `dsp-core` still depends on nothing but the C++ standard library, and no editor or host
