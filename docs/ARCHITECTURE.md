@@ -195,7 +195,10 @@ Target:
 - macOS VST3
 - Windows VST3
 
-AU is a first-class Mac requirement. Investigate iPlug2 or another permissively licensed lightweight wrapper. Do not put Godot itself on the plugin critical path.
+AU is a first-class Mac requirement. Resolved 2026-08-24: `runtime-clap` is one CLAP
+implementation, and clap-wrapper (MIT, like the whole stack — Steinberg relicensed the
+VST3 SDK to MIT in late 2025) assembles the VST3, the AU and the standalone from it.
+See the decision log. Godot stays off the plugin critical path.
 
 ## Embedded
 

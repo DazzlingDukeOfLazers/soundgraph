@@ -356,6 +356,41 @@ somewhere other than the cause.
   Pin `custom_minimum_size.x` on any wrapping label that lives outside a ScrollContainer;
   the search dialog only escapes because its wrapping labels sit inside one.
 
+## Plugins
+
+The player plugin exists: one CLAP implementation in `runtime-clap`, assembled by
+clap-wrapper into `SoundGraph.clap`, `SoundGraph.vst3` and `SoundGraph.component`.
+State is the patch JSON; a stepped "Patch" parameter loads anything under
+`$SOUNDGRAPH_PATCHES` or `~/Documents/SoundGraph/Patches`, driving a fixed surface of
+32 normalised slots (see the decision log — VST3 forbids dynamic parameter sets, and
+patches swap live through an atomic graph handoff, no host restart involved). Verified
+three ways on the Mac: `auval -v aumu SgPl SnGr` passes render tests included, ctest
+`clap_plugin_plays_and_swaps_patches` drives the bare CLAP through a patch swap, and a
+scripted headless Reaper session (`REAPER -nosplash -new <script.lua>`) loads the VST3,
+flips the selector by automation and renders audibly different audio. Opt in with
+
+```bash
+tools/get-plugin-sdks.sh        # once per clone
+cmake -S . -B build -DSOUNDGRAPH_CLAP=ON && cmake --build build
+```
+
+The AU is verified inside GarageBand itself (2026-08-24, driven by screenshot-guided UI
+automation): it appears under AU Instruments → SoundGraph, loads as a track instrument,
+GarageBand maps the patch's declared controls onto its Smart Controls knobs (Cutoff,
+Resonance, Sweep Rate…), plays live from Musical Typing, records, and an Export Song to
+Disk render of the recorded region produced correct, non-silent audio.
+
+The plugin has its own GUI (2026-08-24): a webview panel — SoundGraph wordmark "by
+MutantFactory.net", patch selector, patch name, sliders for the bound controls — one
+embedded panel.html served identically through the CLAP, the VST3 and the AU via choc
+(vendored, ISC). Verified in GarageBand: the AU window shows the panel with restored
+state, slider drags reach both the graph and host automation, and patch switches
+re-render the surface live.
+
+Still open: the Windows build of the same target (including its WebView2 GUI path),
+sample-rate golden comparison through the plugin path, audio input for HostAudioSource
+patches, and growing the panel toward hosting the full web editor.
+
 ## Invariants
 
 - `dsp-core` depends on nothing but the C++ standard library.

@@ -740,3 +740,173 @@ repetition the layout has to rediscover geometrically is knowledge the importer 
 and the format could not hold. A module is a notation, like a loop is to its unrolled
 body — schema_version 2 only when used, byte-identical flattened audio as the stage-1
 exit test.
+
+## 2026-08-24 — Plugins are CLAP-first, wrapped by clap-wrapper
+
+Decision:
+`runtime-clap` implements exactly one plugin: the SoundGraph player, written against
+the CLAP C ABI over `Graph` + `patch-io`. free-audio's clap-wrapper (MIT) compiles that
+one implementation into the VST3, the AUv2 and (with Xcode present) a standalone app.
+The plugin's saved state is the patch JSON itself, knob positions written back into the
+node parameters they drive. Patch selection is a stepped "Patch" parameter listing the
+built-in patch plus every .json under $SOUNDGRAPH_PATCHES and
+~/Documents/SoundGraph/Patches, so a host's generic parameter UI is enough — no plugin
+GUI yet. Switching patches goes through clap_host.request_restart(), keeping every
+allocation on the main thread while deactivated. Opt-in (-DSOUNDGRAPH_CLAP=ON) after a
+one-time tools/get-plugin-sdks.sh; the default build touches no network and no SDKs.
+
+Reason:
+Steinberg relicensed the VST3 SDK to MIT in October 2025 (SDK 3.8), so the entire stack
+— CLAP headers, clap-wrapper, VST3 SDK, Apple's AudioUnitSDK — is now permissive, which
+ARCHITECTURE.md required. One seam instead of three: the AU that auval validates is the
+same implementation the VST3 and CLAP ship. dsp-core was already plugin-shaped
+(allocation only in build(), lock-free events, host-buffer-size independence), so the
+whole edge is one file, in the same spirit as sg-play.
+
+Alternatives:
+JUCE 8 (AGPL or paid — fails the permissive rule and would be the repo's biggest
+dependency); iPlug2 (permissive and mature but a whole framework with its own
+scaffolding); hand-rolled VST3 + AUv2 (licensing-clean since the MIT change, but two
+wrappers of grim boilerplate for no architectural gain).
+
+Consequences:
+Windows and Linux get VST3 + CLAP from the same target with no additional code; the Mac
+additionally gets the AU that Logic and GarageBand require. Two wrapper quirks are
+patched in runtime-clap/CMakeLists.txt: Ninja needs the generated AudioComponents
+Info.plist restored POST_BUILD (clap-wrapper's PRE_BUILD copy is clobbered by CMake's
+generic bundle plist), and the standalone app steps aside when only Command Line Tools
+are installed (its menu nib needs Xcode's ibtool). Automation ids are FNV-1a of the
+control's id string, so they survive reload; controls inside modules persist through
+the authored/flattened index parallelism patch-io guarantees.
+
+## 2026-08-24 — The plugin's parameter surface is fixed slots; patches swap live
+
+Decision:
+Revises this morning's entry. The player exposes a fixed surface — the patch selector
+plus 32 normalised slots (ids 1000+i), slot i driving control i of the loaded patch —
+instead of one hashed parameter per control. Switching patches no longer requests a
+host restart: the selector event asks for a main-thread callback, the callback builds a
+whole new GraphInstance (graph + per-graph slot bindings) and hands it over through one
+atomic; the audio thread adopts it at the top of process() and pushes the old instance
+onto a graveyard stack the main thread frees. Slot renames ride
+CLAP_PARAM_RESCAN_INFO, which takes effect immediately without deactivation.
+
+Reason:
+Headless Reaper testing showed the restart design silently failing: the plugin's
+request_restart became restartComponent(kIoChanged|kLatencyChanged), which Reaper
+answered without ever deactivating, so CLAP_PARAM_RESCAN_ALL — legal only while
+deactivated — never got its window and the patch never swapped. VST3 also cannot add
+or remove parameters at runtime at all, so a per-control surface could never survive a
+patch switch in any VST3 host. Fixed slots with normalised ranges are what patch-player
+plugins (samplers, wavetables) have always done; ranges never change, so no rescan
+needs permission. The slot's control scaling (linear/exponential) maps the normalised
+value, so automation curves still feel right.
+
+Alternatives:
+Keeping restart-based swaps and documenting "works where hosts honour restarts" (fails
+in Reaper, the first DAW tried); per-patch hashed parameter ids (automation stable per
+patch, dead on VST3 dynamics).
+
+Consequences:
+Automation lanes bind to slot positions, not control identities — repurposed when the
+patch changes, as in every sampler. A patch's controls beyond 32 have no host knob
+(current corpus maximum is 12). Two host-facing lessons are recorded in the seam: never
+call clap_host_params.rescan from inside clap_plugin.init (Reaper's scanner rejects the
+plugin), and SOUNDGRAPH_CLAP_TRACE=file traces the host's actual callback sequence,
+which is how the Reaper behaviour was diagnosed. Verified end to end: ctest
+clap_plugin_plays_and_swaps_patches drives the bare CLAP, auval revalidates the AU, and
+a scripted headless Reaper session loads the VST3, switches First Synth to acid-bass by
+automation, and renders audibly different audio.
+
+## 2026-08-24 — Patches live in the Audio Presets folder, and the panel names its patch
+
+Decision:
+On macOS the plugin scans ~/Library/Audio/Presets/SoundGraph/Patches (plus
+$SOUNDGRAPH_PATCHES); tools/install-patches.sh fills it from examples/. Every bound
+slot reports the loaded patch's name as its CLAP `module`, so a host's generic panel
+shows the patch as the group header and two instances are tellable apart at a glance.
+Branding: vendor/manufacturer is "MutantFactory.net", plugin name "SoundGraph"; the
+AUv2 manufacturer code stays SnGr — identity, not branding.
+
+Reason:
+The first patch-folder choice, ~/Documents/SoundGraph/Patches, was a macOS trap twice
+over: scanning it from inside a host triggers a TCC consent prompt per host, and inside
+GarageBand's sandboxed AU service — which cannot show a prompt — the denied directory
+iterator THREW, the exception escaped clap_plugin.init, and GarageBand showed a warning
+triangle instead of a synth. The Audio Presets folder is the platform convention for
+exactly this and is not permission-gated. The iterator now uses the error_code forms of
+every operation; unreadable directories are an ordinary condition for a plugin, never an
+exception.
+
+Alternatives:
+Keeping ~/Documents and documenting the prompt (breaks sandboxed hosts outright);
+bundling patches inside the .component/.vst3 resources (immutable, defeats "drop a
+JSON in a folder"); per-host allowlisting (not a thing).
+
+Consequences:
+GarageBand shows: a Patch selector slider whose min/max labels render as patch names,
+the patch-name group header over the slot parameters, live re-labeling of Smart
+Controls knobs on a patch switch, and correct state restore from a saved project.
+Verified end to end on 2026-08-24 by driving GarageBand itself. Windows keeps
+Documents\SoundGraph\Patches until a native convention argues otherwise.
+
+## 2026-08-24 — The plugin GUI is one webview, drawn by the plugin itself
+
+Decision:
+The plugin implements clap_plugin_gui with a single webview rendering an embedded,
+network-free panel.html: the SoundGraph wordmark "by MutantFactory.net", the patch
+selector, the loaded patch's name, and one styled slider per bound control. choc
+(Tracktion, ISC, v1.0.15) drives the platform webview — WKWebView through the
+Objective-C runtime from plain C++ on macOS, WebView2 on Windows — vendored as the 16
+headers choc_WebView.h transitively needs (1.3 MB) under runtime-clap/third_party/choc,
+the miniaudio pattern. clap-wrapper bridges the same GUI into the VST3 IPlugView and
+the AU's Cocoa view, so one panel serves every format. GUI changes ride a lock-free
+queue that process()/flush() drains into the graph and into the host's output event
+queue as gesture+value events, so automation records and projects mark dirty; the page
+polls a state version and re-renders itself when a patch switch or state load changes
+the surface, and a state-loaded patch re-syncs the selector by matching its name
+against the discovered list.
+
+Reason:
+GarageBand's Smart Controls prove the point: a host's own panel shows knob names and
+nothing else — branding, patch identity and layout only exist where the plugin draws
+them. A webview keeps the panel one HTML file that any web-literate person can restyle,
+and it is the staging area for hosting the real web editor inside the plugin later.
+JUCE-style native widgets would contradict the framework decision already made.
+
+Alternatives:
+Native NSView/Win32 drawing (two platform code paths for a panel that will become the
+web editor anyway); shipping the GUI-less generic view forever (fails the "whose knobs
+are these" test); a floating window (hosts treat embedded views as first-class,
+floating as an afterthought).
+
+Consequences:
+16 vendored headers and two OS frameworks (WebKit/Cocoa) on the link line. The AU, the
+VST3 and the CLAP all show the identical panel; verified in GarageBand — panel loads
+in the AU view with state restored, slider drags reach the graph and the host, patch
+switches re-render the surface live. Windows uses the same code path via WebView2,
+unverified until the PC build. The panel is fixed at 560×460 until resizing earns its
+complexity.
+
+## 2026-08-24 — The plugin panel wears the rack's face
+
+Decision:
+panel.html renders the rack's visual language rather than a generic web form: the
+rack.gd palette (panel/rail/knob-body/track colours, the mint SELECTED arc), real
+knobs — 270° travel from 135°, track arc, value arc, cap and pointer — the rack's
+gestures (vertical drag, shift for a fine hand, double-click home to default), and the
+rack's type hierarchy (the value larger than the name, tabular numerals). The build
+injects the editor's Atkinson Hyperlegible Next as a data URI
+(runtime-clap/cmake/inject_font.py, python3; without python3 the panel falls back to
+the system stack), so the plugin is set in the same face as the editor.
+
+Reason:
+The plugin panel is SoundGraph's face in other people's software; it should look like
+SoundGraph, and the rack view already decided what that looks like — including the
+reasoning about value-over-name emphasis, which transfers unchanged.
+
+Consequences:
+The embedded panel grows to ~160 KB, almost all typeface. The palette and knob
+geometry are duplicated from rack.gd into panel.html as CSS/SVG — a divergence risk
+noted and accepted until the panel hosts the web editor outright. Verified in
+GarageBand: knobs render, drag and answer with the arc and the host in step.

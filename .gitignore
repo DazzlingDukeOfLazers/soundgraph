@@ -60,3 +60,7 @@ editor-godot/build_stamp.json
 
 # the editor's working directory: the status badge, in-progress patches, rescue autosaves
 run/
+
+# plugin SDKs, fetched by tools/get-plugin-sdks.sh; _fetch holds clap-wrapper's own
+# pinned downloads (VST3 SDK, Apple AudioUnitSDK) so a deleted build dir does not refetch
+runtime-clap/sdks/
