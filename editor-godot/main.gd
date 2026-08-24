@@ -3331,6 +3331,19 @@ func _create_widget(node: Dictionary) -> void:
 		if has_output:
 			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
 
+	if str(node.get("type", "")) == "MidiCC":
+		var learn_line := HBoxContainer.new()
+		learn_line.set_meta("row", "steps")
+		learn_line.set_meta("has_slot", false)
+		learn_line.alignment = BoxContainer.ALIGNMENT_CENTER
+		var learn := Button.new()
+		learn.text = "Learn"
+		learn.tooltip_text = "Arm, then turn the hardware knob you mean: the next " 			+ "controller heard becomes this node's number. Escape cancels."
+		var learn_id := str(node["id"])
+		learn.pressed.connect(func() -> void: _learn_midicc_node(learn_id))
+		learn_line.add_child(_defocus(learn))
+		widget.add_child(learn_line)
+
 	if str(node.get("type", "")) == "Speech":
 		var words_line := HBoxContainer.new()
 		words_line.set_meta("row", "steps")
@@ -4602,11 +4615,28 @@ func _on_learn_requested(node_id: String, parameter: String) -> void:
 	_say("that knob is not on the file's face, so there is nothing to bind")
 
 
-## The armed learn meets its CC: the binding is written into the control, as
-## one undo step, in the schema's own `binding.midi_cc` field.
+## A MidiCC node's Learn button landed here: the next CC the hardware sends
+## becomes the node's controller number.
+func _learn_midicc_node(node_id: String) -> void:
+	_learning = {"node": node_id}
+	_say("MIDI learn: turn the knob you mean — the next controller heard becomes "
+		+ "this node's number. Escape cancels.")
+
+
+## The armed learn meets its CC. Two kinds of learner share the arm: a face
+## control writes the binding into its own `binding.midi_cc` field, a MidiCC
+## node writes its `cc` parameter — each as one undo step.
 func _bind_learned(cc: int) -> void:
+	var node_id := str(_learning.get("node", ""))
 	var wanted := str(_learning.get("id", ""))
 	_learning = {}
+	if node_id != "":
+		_begin_edit()
+		_set_parameter(node_id, "cc", float(cc))
+		_commit_edit("learn CC %d" % cc)
+		_apply()
+		_say("CC %d is this node's knob now" % cc)
+		return
 	for control in patch.get("controls", []):
 		if str(control.get("id", "")) != wanted:
 			continue
@@ -4675,10 +4705,22 @@ func _on_midi(event: InputEventMIDI) -> void:
 			if event.instrument >= 0 and event.instrument < presets.size():
 				patch_face._turn_to(event.instrument)
 		MIDI_MESSAGE_CONTROL_CHANGE:
+			# The engine's controller surface hears every CC regardless of learns
+			# and bindings: MidiCC nodes read it as a signal, and a knob that is
+			# both bound to a face control and picked up by a node should drive
+			# both, because that is what the hand did.
+			if engine != null:
+				engine.control_change(event.controller_number,
+					float(event.controller_value) / 127.0)
 			if not _learning.is_empty():
 				_bind_learned(event.controller_number)
 			else:
 				_apply_cc(event)
+		MIDI_MESSAGE_PITCH_BEND:
+			# The joystick's sideways axis, wearing controller number 128 so one
+			# table serves the whole surface. 14-bit, centre at 0.5.
+			if engine != null:
+				engine.control_change(128, float(event.pitch) / 16383.0)
 
 
 ## Every note goes through these two, whether a mouse or a computer key started it. The

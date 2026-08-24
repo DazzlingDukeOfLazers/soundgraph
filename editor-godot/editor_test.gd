@@ -519,6 +519,56 @@ func _initialize() -> void:
 	main.feedback_outbox = real_outbox
 	main.feedback_submitter.endpoint = main.FEEDBACK_ENDPOINT
 
+	# ---- hardware MIDI: notes, knobs, the bend, and the node that learns --------------
+	# Synthesized InputEventMIDI through the same _input the driver feeds. Notes ride
+	# the keyboard's own funnel; every CC lands on the engine's controller surface;
+	# the joystick's sideways axis wears number 128; and a MidiCC node's Learn takes
+	# the next controller heard.
+	var midi_on := InputEventMIDI.new()
+	midi_on.message = MIDI_MESSAGE_NOTE_ON
+	midi_on.pitch = 61
+	midi_on.velocity = 100
+	main._input(midi_on)
+	check(main.held_notes.has(61), "a hardware note lands on the keyboard's funnel")
+	var midi_off := InputEventMIDI.new()
+	midi_off.message = MIDI_MESSAGE_NOTE_OFF
+	midi_off.pitch = 61
+	main._input(midi_off)
+	check(not main.held_notes.has(61), "and its note-off lets go")
+	var vel_zero := InputEventMIDI.new()
+	vel_zero.message = MIDI_MESSAGE_NOTE_ON
+	vel_zero.pitch = 62
+	vel_zero.velocity = 0
+	main._input(vel_zero)
+	check(not main.held_notes.has(62),
+		"note-on at velocity zero is the wire's other spelling of note-off")
+
+	var midicc_node: String = await main._add_node("MidiCC", Vector2(1100, 600))
+	for i in 6:
+		await process_frame
+	main._learn_midicc_node(midicc_node)
+	var turn := InputEventMIDI.new()
+	turn.message = MIDI_MESSAGE_CONTROL_CHANGE
+	turn.controller_number = 71
+	turn.controller_value = 90
+	main._input(turn)
+	for i in 4:
+		await process_frame
+	check(is_equal_approx(main._current_parameter(midicc_node, "cc", -1.0), 71.0),
+		"Learn takes the next controller heard (%d)"
+			% int(main._current_parameter(midicc_node, "cc", -1.0)))
+	check(main._learning.is_empty(), "and the learn disarms itself")
+	var bend := InputEventMIDI.new()
+	bend.message = MIDI_MESSAGE_PITCH_BEND
+	bend.pitch = 16383
+	main._input(bend)   # reaches the engine's surface as number 128; no crash is the check
+	await main._undo()
+	for i in 4:
+		await process_frame
+	await main._undo()
+	for i in 6:
+		await process_frame
+
 	# ---- the speak pipeline: a WAV becomes words in a buffer --------------------------
 	# The editor half end-to-end, minus the OS voice (not the suite's to depend on):
 	# a generated WAV through wav_import, the engine's encoder, into the patch as a

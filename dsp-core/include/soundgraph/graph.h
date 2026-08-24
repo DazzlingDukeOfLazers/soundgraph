@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -72,6 +73,9 @@ public:
     // Safe to call from one non-audio thread. These enqueue; they never touch DSP state.
 
     void note_on(int note, float velocity);
+    // A hardware controller moved: 0..127 are MIDI CCs, 128 the pitch bend, value
+    // 0..1. Queued like notes, applied at the block boundary.
+    void control_change(int cc, float value);
     void note_off(int note);
     void all_notes_off();
 
@@ -213,6 +217,10 @@ private:
 
     // One flat allocation; buffers are kBlockSize-sized windows into it. Keeping them
     // contiguous keeps the working set small, which matters on ESP32.
+    // Last value per controller, 0..1; negative means never spoken. 129 entries:
+    // 128 MIDI CCs and the pitch bend at 128.
+    std::array<float, 129> cc_values_{};
+
     std::vector<float> buffer_pool_;
     int buffer_count_ = 0;
 

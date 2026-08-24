@@ -1537,6 +1537,63 @@ struct SpeechStream {
 };
 }  // namespace
 
+TEST(midicc_rests_until_the_hardware_speaks) {
+    NodeHarness harness("MidiCC", 4800, kSampleRate);
+    CHECK(harness.valid());
+    harness.set("cc", 74.0f);
+    harness.set("low", 100.0f);
+    harness.set("high", 500.0f);
+    harness.set("resting", 0.25f);
+    harness.process();
+    // No surface at all: the resting value, scaled, from the very first sample.
+    CHECK_NEAR(harness.output()[0], 200.0, 0.5);
+    CHECK_NEAR(harness.output()[4799], 200.0, 0.5);
+}
+
+TEST(midicc_follows_its_own_controller_and_no_other) {
+    NodeHarness harness("MidiCC", 9600, kSampleRate);
+    harness.set("cc", 74.0f);
+    harness.set("glide", 5.0f);
+    harness.set_cc(73, 1.0f);       // a neighbour moves: not ours
+    harness.set_cc(74, 0.5f);       // ours
+    harness.process();
+    CHECK_NEAR(harness.output()[9599], 0.5, 0.001);
+}
+
+TEST(midicc_unseen_controller_keeps_resting) {
+    NodeHarness harness("MidiCC", 4800, kSampleRate);
+    harness.set("cc", 20.0f);
+    harness.set("resting", 0.8f);
+    harness.set_cc(74, 0.1f);       // the surface exists, but cc 20 never spoke
+    harness.process();
+    CHECK_NEAR(harness.output()[4799], 0.8, 0.001);
+}
+
+TEST(midicc_glides_rather_than_steps) {
+    NodeHarness harness("MidiCC", 480, kSampleRate);
+    harness.set("cc", 7.0f);
+    harness.set("glide", 100.0f);
+    harness.set("resting", 0.0f);
+    harness.set_cc(7, 1.0f);
+    harness.process();
+    // 10 ms into a 100 ms glide from a resting start of 0: on the way, not there.
+    CHECK(harness.output()[479] > 0.02f);
+    CHECK(harness.output()[479] < 0.5f);
+    // And monotonically rising — a stairstep would double back nowhere.
+    for (int i = 1; i < 480; ++i) {
+        CHECK(harness.output()[i] >= harness.output()[i - 1] - 1e-6f);
+    }
+}
+
+TEST(midicc_hears_the_pitch_bend_at_128) {
+    NodeHarness harness("MidiCC", 4800, kSampleRate);
+    harness.set("cc", 128.0f);
+    harness.set("glide", 0.0f);
+    harness.set_cc(128, 0.75f);
+    harness.process();
+    CHECK_NEAR(harness.output()[4799], 0.75, 0.001);
+}
+
 TEST(speech_speaks_its_bitstream_and_stops) {
     SpeechStream phrase;
     for (int i = 0; i < 8; ++i) {

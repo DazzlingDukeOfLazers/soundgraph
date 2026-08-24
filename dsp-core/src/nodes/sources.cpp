@@ -765,6 +765,106 @@ const NodeTypeDescriptor kLfo = {
     &make<LfoNode>,
 };
 
+// ---------------------------------------------------------------------------------
+// MIDI CC
+//
+// A hardware knob, as a node: picks one controller number off the surface the host
+// feeds in and holds its last value, scaled between low and high, glided over a few
+// milliseconds because 7-bit hardware moves in audible stairsteps. Until the
+// hardware first speaks, the resting value answers — a patch that opens silent
+// because nobody has touched a knob yet would be a patch that ships broken.
+//
+// Deliberately not a terminal: importing a patch as a module keeps its MidiCC
+// nodes, because your hardware knob should keep reaching a sound after the sound
+// becomes a module. Same filing argument as NoteTriggers.
+// ---------------------------------------------------------------------------------
+
+constexpr PortDescriptor kMidiCcOutputs[] = {
+    {"out", SignalType::Control, "", false, false,
+     "The controller's position, scaled between low and high."},
+};
+
+constexpr ParameterDescriptor kMidiCcParameters[] = {
+    {"cc", "", 0.0f, 128.0f, 1.0f, Scaling::Linear,
+     "Which controller to listen to. 1 is the mod wheel, 128 is the pitch bend; "
+     "the Learn button on the node fills this in from the next knob you turn.",
+     nullptr, 0},
+    {"low", "", -1000.0f, 1000.0f, 0.0f, Scaling::Linear,
+     "What the knob's bottom means, in the unit of whatever you are driving.",
+     nullptr, 0},
+    {"high", "", -1000.0f, 1000.0f, 1.0f, Scaling::Linear,
+     "What the knob's top means.", nullptr, 0},
+    {"resting", "", 0.0f, 1.0f, 0.0f, Scaling::Linear,
+     "Where the knob sits before the hardware first speaks — the patch's answer "
+     "until a real one arrives.", nullptr, 0},
+    {"glide", "ms", 0.0f, 500.0f, 15.0f, Scaling::Linear,
+     "Smoothing over the hardware's 7-bit stairsteps. Zero is instant.", nullptr, 0},
+};
+
+class MidiCcNode final : public DspNode {
+public:
+    enum Param { kCc = 0, kLow = 1, kHigh = 2, kResting = 3, kGlide = 4 };
+
+    void prepare(const PrepareContext& context) override {
+        sample_rate_ = static_cast<float>(context.sample_rate);
+        reset();
+    }
+
+    void reset() override {
+        current_ = 0.0f;
+        primed_ = false;
+    }
+
+    void process(const ProcessContext& context) override {
+        float* out = context.outputs[0];
+        const int cc = static_cast<int>(parameter(kCc) + 0.5f);
+        float position = parameter(kResting);
+        if (context.cc_values != nullptr && cc >= 0 && cc <= 128 &&
+            context.cc_values[cc] >= 0.0f) {
+            position = context.cc_values[cc];
+        }
+        const float target = parameter(kLow) +
+            (parameter(kHigh) - parameter(kLow)) * position;
+        if (!primed_) {
+            // From the resting point, not the first target: hardware that speaks
+            // in the very first block still arrives by glide, not by teleport.
+            current_ = parameter(kLow) +
+                (parameter(kHigh) - parameter(kLow)) * parameter(kResting);
+            primed_ = true;
+        }
+        // One-pole glide, coefficient per block: the same transcendental-out-of-
+        // the-loop budget as every other node here.
+        const float glide_seconds = parameter(kGlide) * 0.001f;
+        float coefficient = 1.0f;
+        if (glide_seconds > 0.0001f) {
+            coefficient = 1.0f - std::exp(-1.0f / (glide_seconds * sample_rate_));
+        }
+        for (int i = 0; i < context.frames; ++i) {
+            current_ += (target - current_) * coefficient;
+            out[i] = current_;
+        }
+    }
+
+private:
+    float sample_rate_ = 48000.0f;
+    float current_ = 0.0f;
+    bool primed_ = false;
+};
+
+const NodeTypeDescriptor kMidiCc = {
+    "MidiCC", "MIDI CC", "Modulation",
+    "A hardware knob as a node: one controller number off your MIDI surface, held, "
+    "scaled and smoothed. Learn fills the number in from the next knob you turn.",
+    "midi|cc|control change|controller|knob|hardware|mod wheel|modwheel|learn|"
+    "midi learn|bend|pitch bend|mpk|external|surface|fader|expression",
+    Slice<PortDescriptor>(),
+    Slice<PortDescriptor>(kMidiCcOutputs),
+    Slice<ParameterDescriptor>(kMidiCcParameters),
+    false, NodeRole::Processor, false,
+    ResourceCost{1.0f, 8, 0},
+    &make<MidiCcNode>,
+};
+
 const NodeTypeDescriptor kConstant = {
     "Constant", "Constant", "Modulation",
     "A fixed value. Useful for offsetting or scaling modulation.",
