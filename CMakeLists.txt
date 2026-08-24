@@ -25,6 +25,14 @@ option(SOUNDGRAPH_BUILD_NATIVE_RUNTIME "Build the native live-audio host" ON)
 # Off by default: needs SDKs the ordinary build must not depend on. See runtime-clap/.
 option(SOUNDGRAPH_CLAP "Build the CLAP/VST3/AU plugin" OFF)
 
+# One CRT for the whole plugin. clap-wrapper statically links the MSVC runtime for
+# everything under its own roof, but the wrapper *entry* objects are compiled in this
+# project's scope — without this they default to the DLL runtime and the VST3 dies in
+# a hail of LNK2038 mismatches. Set before any target exists so every object agrees.
+if(SOUNDGRAPH_CLAP AND MSVC AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # A WebAssembly configuration builds only the core and the browser binding. Everything
 # else — device hosts, file tools, the test runners — is a native concern.
 if(EMSCRIPTEN)

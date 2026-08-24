@@ -179,7 +179,12 @@ struct MemoryStream {
 }  // namespace
 
 int main() {
+    // setenv is POSIX; MSVC spells it _putenv_s. Same act on both stages.
+#ifdef _WIN32
+    _putenv_s("SOUNDGRAPH_PATCHES", SOUNDGRAPH_TEST_PATCHES);
+#else
     setenv("SOUNDGRAPH_PATCHES", SOUNDGRAPH_TEST_PATCHES, 1);
+#endif
 
     CHECK(soundgraph_clap_init(""), "entry init");
     const auto* factory = static_cast<const clap_plugin_factory_t*>(
@@ -189,6 +194,11 @@ int main() {
     const clap_plugin_descriptor_t* descriptor = factory->get_plugin_descriptor(factory, 0);
 
     TestHost host = make_host();
+    // Re-pointed HERE, at the object that will actually live through the test:
+    // make_host() aimed host_data at its own local and returned by value, which
+    // worked on the Mac only because NRVO elided the copy. MSVC copied, the
+    // pointer dangled, and every flag the fake host set landed in dead stack.
+    host.host.host_data = &host;
     const clap_plugin_t* plugin = factory->create_plugin(factory, &host.host, descriptor->id);
     CHECK(plugin != nullptr, "plugin created");
     CHECK(plugin->init(plugin), "plugin init");

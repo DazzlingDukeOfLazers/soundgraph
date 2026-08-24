@@ -9,6 +9,12 @@ set -e
 source_root="$(cd "$(dirname "$0")/.." && pwd)/examples/patches"
 case "$(uname)" in
     Darwin) target="$HOME/Library/Audio/Presets/SoundGraph/Patches" ;;
+    MINGW*|MSYS*|CYGWIN*)
+        # The plugin reads %USERPROFILE%\Documents on Windows; git-bash's $HOME is
+        # whatever some installer last vandalised it to (SPB_Data, on the machine
+        # that found this), so USERPROFILE is the only name that agrees with the
+        # plugin about where Documents is.
+        target="$(cygpath "$USERPROFILE")/Documents/SoundGraph/Patches" ;;
     *)      target="$HOME/Documents/SoundGraph/Patches" ;;
 esac
 
