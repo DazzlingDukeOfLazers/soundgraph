@@ -52,12 +52,12 @@ const clap_plugin_descriptor_t kDescriptor = {
     CLAP_VERSION_INIT,
     "org.soundgraph.player",
     "SoundGraph",
-    "SoundGraph",
-    "https://github.com/DazzlingDukeOfLazers/soundgraph",
+    "MutantFactory.net",
+    "https://mutantfactory.net",
     "",
     "",
     "0.1.0",
-    "Plays any SoundGraph patch as an instrument",
+    "SoundGraph by MutantFactory.net — plays any SoundGraph patch as an instrument",
     kFeatures};
 
 enum class Scaling { Linear, Exponential };
@@ -102,6 +102,7 @@ struct Plugin {
     // Main thread.
     soundgraph::GraphDescription description;
     std::vector<DiscoveredPatch> patches;
+    std::string patch_display;  // the loaded patch's name, shown as the params' module
     std::array<SlotMeta, kSlotCount> slots{};
     int current_patch = 0;
     std::unique_ptr<soundgraph::GraphDescription> pending_description;
@@ -168,21 +169,25 @@ double engine_to_slot(double min_value, double max_value, Scaling scaling, doubl
 // UI is thereby enough to play any patch — no plugin GUI required yet.
 
 void scan_directory(const std::filesystem::path& directory, std::vector<DiscoveredPatch>& out) {
+    // Every step uses the error_code forms: a plain increment throws on the first
+    // unreadable entry, and sandboxed plugin hosts (GarageBand's AU service, denied a
+    // folder by TCC) make unreadable entries an ordinary Tuesday. An exception here
+    // escapes clap_plugin.init and the host shows a warning triangle instead of a synth.
     std::error_code error;
     std::filesystem::recursive_directory_iterator iterator(directory, error);
-    if (error) {
-        return;
-    }
-    for (const auto& entry : iterator) {
+    const std::filesystem::recursive_directory_iterator end;
+    while (!error && iterator != end) {
         if (out.size() >= 256) {
             return;
         }
+        const std::filesystem::directory_entry& entry = *iterator;
         if (entry.is_regular_file(error) && entry.path().extension() == ".json") {
             DiscoveredPatch patch;
             patch.label = entry.path().stem().string();
             patch.path = entry.path().string();
             out.push_back(std::move(patch));
         }
+        iterator.increment(error);
     }
 }
 
@@ -208,14 +213,20 @@ std::vector<DiscoveredPatch> discover_patches() {
     }
 
 #if defined(_WIN32)
-    const char* home = std::getenv("USERPROFILE");
-#else
-    const char* home = std::getenv("HOME");
-#endif
-    if (home != nullptr) {
+    if (const char* home = std::getenv("USERPROFILE")) {
         scan_directory(std::filesystem::path(home) / "Documents" / "SoundGraph" / "Patches",
                        found);
     }
+#else
+    // Not ~/Documents: that folder is TCC-protected on macOS, and a plugin scanning it
+    // makes every host pop a consent dialog — or fail inside a sandboxed AU service
+    // that cannot show one. The Audio Presets folder is the convention and is not gated.
+    if (const char* home = std::getenv("HOME")) {
+        scan_directory(std::filesystem::path(home) / "Library" / "Audio" / "Presets" /
+                           "SoundGraph" / "Patches",
+                       found);
+    }
+#endif
     // Directory iteration order is filesystem-dependent; the selector's indices must
     // not be. The built-in patch stays at zero.
     std::sort(found.begin() + 1, found.end(),
@@ -249,6 +260,14 @@ Scaling scaling_of(const soundgraph::ControlDescription& control) {
 // and renaming slots needs only CLAP_PARAM_RESCAN_INFO.
 void adopt_description(Plugin* plug, soundgraph::GraphDescription&& description) {
     plug->description = std::move(description);
+
+    // The patch's own name becomes the parameters' module, so a host panel says which
+    // patch this instance is playing — the one thing that tells two instances apart.
+    plug->patch_display = plug->description.metadata_value("name");
+    if (plug->patch_display.empty()) {
+        plug->patch_display =
+            plug->patches[static_cast<std::size_t>(plug->current_patch)].label;
+    }
 
     for (int i = 0; i < kSlotCount; ++i) {
         SlotMeta& slot = plug->slots[static_cast<std::size_t>(i)];
@@ -538,7 +557,8 @@ bool params_get_info(const clap_plugin_t* plugin, uint32_t index, clap_param_inf
     info->flags = CLAP_PARAM_IS_AUTOMATABLE | (slot.bound ? 0 : CLAP_PARAM_IS_HIDDEN);
     info->cookie = nullptr;
     std::snprintf(info->name, sizeof(info->name), "%s", slot.name.c_str());
-    std::snprintf(info->module, sizeof(info->module), "%s", "");
+    std::snprintf(info->module, sizeof(info->module), "%s",
+                  slot.bound ? plug->patch_display.c_str() : "");
     info->min_value = 0.0;
     info->max_value = 1.0;
     info->default_value = slot.default_normalized;

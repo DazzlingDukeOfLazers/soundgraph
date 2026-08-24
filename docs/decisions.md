@@ -817,3 +817,35 @@ which is how the Reaper behaviour was diagnosed. Verified end to end: ctest
 clap_plugin_plays_and_swaps_patches drives the bare CLAP, auval revalidates the AU, and
 a scripted headless Reaper session loads the VST3, switches First Synth to acid-bass by
 automation, and renders audibly different audio.
+
+## 2026-08-24 — Patches live in the Audio Presets folder, and the panel names its patch
+
+Decision:
+On macOS the plugin scans ~/Library/Audio/Presets/SoundGraph/Patches (plus
+$SOUNDGRAPH_PATCHES); tools/install-patches.sh fills it from examples/. Every bound
+slot reports the loaded patch's name as its CLAP `module`, so a host's generic panel
+shows the patch as the group header and two instances are tellable apart at a glance.
+Branding: vendor/manufacturer is "MutantFactory.net", plugin name "SoundGraph"; the
+AUv2 manufacturer code stays SnGr — identity, not branding.
+
+Reason:
+The first patch-folder choice, ~/Documents/SoundGraph/Patches, was a macOS trap twice
+over: scanning it from inside a host triggers a TCC consent prompt per host, and inside
+GarageBand's sandboxed AU service — which cannot show a prompt — the denied directory
+iterator THREW, the exception escaped clap_plugin.init, and GarageBand showed a warning
+triangle instead of a synth. The Audio Presets folder is the platform convention for
+exactly this and is not permission-gated. The iterator now uses the error_code forms of
+every operation; unreadable directories are an ordinary condition for a plugin, never an
+exception.
+
+Alternatives:
+Keeping ~/Documents and documenting the prompt (breaks sandboxed hosts outright);
+bundling patches inside the .component/.vst3 resources (immutable, defeats "drop a
+JSON in a folder"); per-host allowlisting (not a thing).
+
+Consequences:
+GarageBand shows: a Patch selector slider whose min/max labels render as patch names,
+the patch-name group header over the slot parameters, live re-labeling of Smart
+Controls knobs on a patch switch, and correct state restore from a saved project.
+Verified end to end on 2026-08-24 by driving GarageBand itself. Windows keeps
+Documents\SoundGraph\Patches until a native convention argues otherwise.

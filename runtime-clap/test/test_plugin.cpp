@@ -207,6 +207,8 @@ int main() {
     clap_param_info_t slot_info{};
     CHECK(params->get_info(plugin, 3, &slot_info) && std::strcmp(slot_info.name, "Sweep Rate") == 0,
           "slot 2 is first-synth's Sweep Rate");
+    CHECK(std::strcmp(slot_info.module, "First Synth") == 0,
+          "slot module names the loaded patch");
     CHECK(params->get_info(plugin, 8, &slot_info) && (slot_info.flags & CLAP_PARAM_IS_HIDDEN) != 0,
           "slot 7 is hidden while first-synth is loaded");
 
@@ -247,6 +249,8 @@ int main() {
     CHECK(params->count(plugin) == 33, "surface stays selector + 32 slots");
     CHECK(params->get_info(plugin, 3, &slot_info) && std::strcmp(slot_info.name, "Env Mod") == 0,
           "slot 2 renamed to acid-bass's Env Mod");
+    CHECK(std::strcmp(slot_info.module, "Acid Bass") == 0,
+          "slot module follows the patch switch");
     CHECK(params->get_info(plugin, 8, &slot_info) && (slot_info.flags & CLAP_PARAM_IS_HIDDEN) == 0,
           "slot 7 visible now that acid-bass binds it");
 

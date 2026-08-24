@@ -81,7 +81,9 @@ make_clapfirst_plugins(
 
         ASSET_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/plugins
 
-        AUV2_MANUFACTURER_NAME "SoundGraph"
+        AUV2_MANUFACTURER_NAME "MutantFactory.net"
+        # The four-char code is identity, not branding: changing it would orphan every
+        # saved project, so it stays SnGr regardless of what the display name says.
         AUV2_MANUFACTURER_CODE "SnGr"
         AUV2_SUBTYPE_CODE "SgPl"
         AUV2_INSTRUMENT_TYPE "aumu"
