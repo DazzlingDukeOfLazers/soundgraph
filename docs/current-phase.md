@@ -374,9 +374,15 @@ tools/get-plugin-sdks.sh        # once per clone
 cmake -S . -B build -DSOUNDGRAPH_CLAP=ON && cmake --build build
 ```
 
-Still open: the Windows build of the same target, an AU test inside Logic or GarageBand
-proper, sample-rate golden comparison through the plugin path, audio input for
-HostAudioSource patches, and eventually a GUI hosting the web editor.
+The AU is verified inside GarageBand itself (2026-08-24, driven by screenshot-guided UI
+automation): it appears under AU Instruments → SoundGraph, loads as a track instrument,
+GarageBand maps the patch's declared controls onto its Smart Controls knobs (Cutoff,
+Resonance, Sweep Rate…), plays live from Musical Typing, records, and an Export Song to
+Disk render of the recorded region produced correct, non-silent audio.
+
+Still open: the Windows build of the same target, sample-rate golden comparison through
+the plugin path, audio input for HostAudioSource patches, and eventually a GUI hosting
+the web editor.
 
 ## Invariants
 
