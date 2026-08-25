@@ -76,10 +76,24 @@ That writes `editor-web/soundgraph.wasm`. Then serve the **repository root** —
 loads example patches from `../examples/patches/`:
 
 ```bash
-python -m http.server 8177
+python tools/serve.py
 ```
 
 and open <http://127.0.0.1:8177/editor-web/>.
+
+Use that rather than `python -m http.server`. The stdlib server sends `Last-Modified` and
+no `Cache-Control`, so Chrome applies heuristic caching to the ES modules and keeps running
+the previous `app.js` after the file on disk has changed — with no symptom except that a
+fix appears not to have worked. Restarting the server does not clear it; the cache is keyed
+on the URL. `tools/serve.py` sends `no-store` on everything, which for a static server on
+loopback costs nothing.
+
+If a page is already stuck on cached modules, one hard reload (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>)
+breaks out of it. To check which code is actually running:
+
+```js
+typeof window.soundgraph.startOnce   // "function" once the single-flight start is loaded
+```
 
 A plain `file://` open will not work: the module is fetched, and AudioWorklet modules need
 an http origin.

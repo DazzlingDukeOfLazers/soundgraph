@@ -37,7 +37,7 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 # browser
 emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release && cmake --build build-wasm
 node runtime-wasm/verify-goldens.mjs
-python -m http.server 8177          # then open /editor-web/
+python tools/serve.py               # then open /editor-web/ ; NOT http.server, see below
 
 # godot
 cmake -S runtime-godot -B runtime-godot/build -DCMAKE_BUILD_TYPE=Release
