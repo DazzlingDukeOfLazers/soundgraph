@@ -941,3 +941,35 @@ The ABI declarations must not drift from firmware 1.0.12-2 — the fwid gate in
 every patch refuses to run under any other firmware build. If a board with
 different firmware appears, the SDK fetch and the link symbols must change
 together.
+
+## 2026-08-25 — The Axoloti becomes a compiled soundgraph target (sgaxo)
+
+Decision:
+Soundgraph patches reach the Axoloti by compilation, not interpretation:
+`embedded/axoloti/sgaxo/` validates a patch against a declared node subset,
+generates C++ over a kernel library restating dsp-core's inner loops, links
+against the stock 1.0.12-2 firmware, and programs the board over USB. The
+generated graph runs at dsp-core's 64-frame block size behind a FIFO, and all
+parameter-derived transcendentals are precomputed host-side in double
+precision and baked as literals.
+
+Reason:
+It preserves the workflow the Axoloti audience already owns (a patcher program
+that compiles and uploads), reuses the proven rig unchanged, and makes the
+compatibility claim testable: the board renders the shared golden vectors and
+the host compares raw samples over USB. Measured: sine bit-exact, first-synth
+within 2e-6 — tighter than the ESP32's own native agreement. Partial
+compatibility priced honestly is a subset list with test evidence per node.
+
+Alternatives:
+A player-patch interpreter (patches as data, instant switching) — deferred,
+not rejected; it would consume the same kernel library. Full dsp-core on the
+board — blocked by the 44 KB patch window and the libc-less toolchain.
+Curated fixed banks only — needless, given how cheap the codegen proved.
+
+Consequences:
+The kernel library must not drift from dsp-core; the golden comparison on
+hardware is the tripwire. Nodes with per-block schedules that depend on
+history (cutoff_sweep) stay refused until replicated. Patch switching remains
+stop/load/start. The subset grows kernel by kernel, each landing with its
+golden case.

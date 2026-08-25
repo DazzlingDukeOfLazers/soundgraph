@@ -72,6 +72,37 @@ Tiers, in dependency order:
 | `tests/test_patch_run.py` | compiled patches execute: heartbeat at 3000 cycles/s, clean restart | board + built patches |
 | `tests/test_limits.py` | analog loopback integrity, DSP load ramp -> max clean oscillator count (`tests/reports/dsp_limits.json`) | board + loopback cable |
 
+## sgaxo: soundgraph patches, compiled for the board
+
+`sgaxo/codegen.py` compiles a soundgraph patch (JSON) into an Axoloti patch
+binary: validate against the declared node subset, generate C++ over the
+kernel library (`sgaxo/kernels.h`, line-for-line restatements of dsp-core
+inner loops), compile with arm-none-eabi-g++ against the stock firmware, and
+upload over the driver. The board renders the shared golden vectors and the
+host reads the raw float32 samples back over USB:
+
+- `sine` golden case: **bit-exact** (max abs error 0)
+- `first-synth` (note events, saw, LFO-modulated SVF, ADSR, limiter):
+  **max abs error 2e-6** — 50x inside the 1e-4 cross-target tolerance
+
+Fidelity comes from three rules: the graph runs at dsp-core's 64-frame block
+size behind a FIFO (per-block semantics are part of the golden recordings);
+every parameter-derived coefficient (ADSR exp curves, glide) is precomputed
+on the host in double precision and baked as a literal; and only per-block
+modulation math (SVF tan/exp2) runs on the board, as short polynomials.
+`-ffp-contract=off` keeps rounding identical to native.
+
+Compiled patches are playable instruments: live MIDI (any transport) drives
+the same note handler the golden events replay through.
+
+Supported today: Input(note)/Output seams, Sine/Saw oscillators, LFO (all
+shapes), StateVariableFilter, ADSR, Gain. Everything else is refused by name
+at compile time — the subset is a tested claim, not a vibe.
+
+```sh
+python3 sgaxo/codegen.py path/to/patch.json   # -> sgaxo/build/patch.bin
+```
+
 ## How the pieces talk
 
 - Host -> board: `AxoW` (memory write) uploads, `Axos`/`AxoS` start/stop,
