@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "sgaxo effects fixture",
+    "description": "Exercises Drive, both OnePoleFilter modes, and a swept Phaser deterministically (no notes).",
+    "tags": ["test"]
+  },
+  "nodes": [
+    { "id": "osc", "type": "SawOscillator", "parameters": { "frequency": 165 } },
+    { "id": "dist", "type": "Drive", "parameters": { "drive": 6 } },
+    { "id": "lp", "type": "OnePoleFilter", "parameters": { "cutoff": 1400, "mode": 0 } },
+    { "id": "hp", "type": "OnePoleFilter", "parameters": { "cutoff": 500, "mode": 1 } },
+    { "id": "swirl", "type": "Phaser", "parameters": { "offset": 1.5, "sweep": 40, "depth": 0.7 } },
+    { "id": "mix", "type": "Mixer", "parameters": { "level1": 0.6, "level2": 0.4 } },
+    { "id": "out", "type": "StereoOutput", "parameters": { "level": 0.7, "safety_limit": 0 } }
+  ],
+  "connections": [
+    { "from": { "node": "osc", "port": "out" }, "to": { "node": "dist", "port": "in" } },
+    { "from": { "node": "dist", "port": "out" }, "to": { "node": "lp", "port": "in" } },
+    { "from": { "node": "lp", "port": "out" }, "to": { "node": "swirl", "port": "in" } },
+    { "from": { "node": "dist", "port": "out" }, "to": { "node": "hp", "port": "in" } },
+    { "from": { "node": "swirl", "port": "out" }, "to": { "node": "mix", "port": "in1" } },
+    { "from": { "node": "hp", "port": "out" }, "to": { "node": "mix", "port": "in2" } },
+    { "from": { "node": "mix", "port": "out" }, "to": { "node": "out", "port": "left" } }
+  ]
+}

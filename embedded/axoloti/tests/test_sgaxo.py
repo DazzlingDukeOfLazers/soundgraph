@@ -169,16 +169,12 @@ def test_first_synth_playable_over_midi(board, toolchain):
 SG_RENDER = GOLDEN.parent.parent / "build" / "bin" / "sg-render"
 
 
-def test_maths_nodes_match_native_render(board, toolchain, tmp_path):
-    """Constant, Add, Multiply and Mixer have no golden cases of their own, so
-    the reference is rendered on demand: the native sg-render runs the same
-    fixture patch silently and the board must match it sample for sample —
-    a golden-on-demand for every kernel the manifest doesn't cover."""
+def _native_reference(fixture, wav):
+    """Golden-on-demand: sg-render renders the fixture silently; the board
+    must match its left channel sample for sample."""
     if not SG_RENDER.exists():
         pytest.skip("native sg-render not built (build/bin/sg-render)")
     import subprocess
-    fixture = _HERE / "fixtures" / "maths-mix.json"
-    wav = tmp_path / "native.wav"
     subprocess.run([str(SG_RENDER), str(fixture), str(wav), "--seconds", "0.1",
                     "--silent", "--float", "--quiet"], check=True)
     # sg-render writes stereo float32; the board capture is the left channel.
@@ -191,13 +187,37 @@ def test_maths_nodes_match_native_render(board, toolchain, tmp_path):
             payload = data[pos + 8:pos + 8 + size]
         pos += 8 + size + (size & 1)
     stereo = struct.unpack(f"<{len(payload) // 4}f", payload)
-    golden = list(stereo[0::2])
-    rendered = run_case(board, "maths-mix", None, len(golden),
+    return list(stereo[0::2])
+
+
+@pytest.mark.parametrize("fixture_name,tolerance", [
+    ("maths-mix", TOLERANCE),       # pure arithmetic; ~1 ULP fma residue
+    ("effects-chain", TOLERANCE),   # measured 4.2e-7: tanh/exp ride exp2f_approx
+])
+def test_fixture_matches_native_render(board, toolchain, tmp_path,
+                                       fixture_name, tolerance):
+    fixture = _HERE / "fixtures" / f"{fixture_name}.json"
+    golden = _native_reference(fixture, tmp_path / "native.wav")
+    rendered = run_case(board, fixture_name, None, len(golden),
                         patch_path=fixture)
-    compare(rendered, golden, "maths-mix")
+    compare(rendered, golden, fixture_name, tolerance=tolerance)
+
+
+@pytest.mark.parametrize("case,tolerance", [
+    # Slide's per-sample pow(2,x) runs through exp2f_approx; a downstream
+    # oscillator integrates the tiny frequency error into coherent phase
+    # drift. Measured 9e-6 with the degree-8 polynomial (the first, worse
+    # polynomial produced 5e-3 here — this case is the exp2 accuracy meter).
+    ("slide", 5e-5),
+    ("noise-oscillator", 5e-5),
+])
+def test_slide_family_golden_on_hardware(board, toolchain, case, tolerance):
+    golden = read_golden_wav(GOLDEN / "vectors" / f"{case}.wav")
+    rendered = run_case(board, case, f"cases/{case}.json", len(golden))
+    compare(rendered, golden, case, tolerance=tolerance)
 
 
 def test_unsupported_patch_is_refused(toolchain):
     """The subset gate must refuse, by name, what the target cannot run."""
     with pytest.raises(codegen.Unsupported, match="not in the Axoloti subset"):
-        codegen.build_patch(GOLDEN / "cases" / "slide.json", name="refused")
+        codegen.build_patch(GOLDEN / "cases" / "arpeggio.json", name="refused")
