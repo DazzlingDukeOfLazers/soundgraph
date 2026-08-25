@@ -72,6 +72,9 @@ if(SOUNDGRAPH_CLAP AND NOT EMSCRIPTEN)
         enable_language(OBJC OBJCXX)
     endif()
     add_subdirectory(runtime-clap)
+    # The headless host rides the same switch: it tests the artifact runtime-clap
+    # builds, and it needs the same fetched CLAP headers.
+    add_subdirectory(host-clap)
 endif()
 
 if(SOUNDGRAPH_BUILD_TESTS)

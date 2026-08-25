@@ -387,9 +387,29 @@ embedded panel.html served identically through the CLAP, the VST3 and the AU via
 state, slider drags reach both the graph and host automation, and patch switches
 re-render the surface live.
 
-Still open: the Windows build of the same target (including its WebView2 GUI path),
-sample-rate golden comparison through the plugin path, audio input for HostAudioSource
-patches, and growing the panel toward hosting the full web editor.
+The Windows build of the same target shipped (2026-08-24, branch `dd/clap-host` via
+`dd/midi-controller`): the VST3 and CLAP install per-user, and both were verified in
+Reaper 7.79 — scanned, loaded, piano-roll sequenced, audible at the OS endpoint, the
+selector showing patch names. The survey that led there is its own finding: on Windows
+no healthy FOSS DAW hosts VST3 (Zrythm's packaging segfaults, LMMS has no VST3/CLAP and
+its bundled Carla bridge crashes, OpenMPT is VST2-only) — Carla 2.5.10 works for rack
+hosting but ships a corrupt default VST3 search path (fixed per-user in
+`HKCU\Software\falkTX\Carla2\Paths`).
+
+`sg-host` (2026-08-24, `host-clap/`) is the first brick of SoundGraph-as-host: a
+headless CLAP host that LoadLibrary/dlopens any `.clap`, walks the factory, activates,
+plays notes, applies `--param NAME=VALUE` automation, renders to WAV, and turns an RMS
+threshold into an exit code. Unlike `test_clap_plugin` it meets the *shipped artifact*
+across the dynamic-loading boundary — a broken export table or CRT mismatch cannot hide.
+Two ctests ride the CLAP build: `sg_host_plays_the_built_clap` and
+`sg_host_lists_the_parameter_surface`. Patch swaps work through it (the
+request_callback → on_main_thread dance happens between blocks, as in a real host).
+
+Still open: the embedded webview GUI is a black window inside Windows hosts (Reaper and
+Carla both — the plugin's WebView2 path doesn't paint when parented into a host window;
+the Mac GUI and the parameter surface are unaffected), sample-rate golden comparison
+through the plugin path, audio input for HostAudioSource patches, VST3 hosting as the
+second act of `sg-host`, and growing the panel toward hosting the full web editor.
 
 ## Invariants
 
