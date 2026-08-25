@@ -596,58 +596,67 @@ compensation is removed.
 `sg_host_saves_and_restores_plugin_state` runs three processes, because a plugin that is
 never destroyed and reopened can round-trip by accident.
 
-## Axoloti (2026-08-25)
+## Axoloti: from roadmap footnote to shipping target (2026-08-25)
 
-The "Axoloti/Ksoloti experiments" roadmap item has its first station:
-`embedded/axoloti/` proves, against a real Axoloti Core on USB, that we can program
-the board and where its realtime ceiling sits. No Java patcher involved — the host
-speaks the board's vendor bulk protocol directly from Python (`driver/axoproto.py`),
-and test patches are hand-written C++ against a self-declared 60-line ABI, compiled
-with today's arm-none-eabi-gcc 16 and linked with `--just-symbols` against the stock
-1.0.12-2 firmware elf (fetched pinned from the official release; the board's reported
-firmware CRC `0xe95bac96` matches it byte-for-byte, so nothing gets reflashed).
+The "Axoloti/Ksoloti experiments" line item became, in one day of stations, a fifth
+verified target and the first shipping soundgraph appliance. `embedded/axoloti/` holds
+the whole rig; the board runs stock 1.0.12-2 firmware throughout — nothing reflashed,
+patches link `--just-symbols` against the release elf whose CRC the board itself
+reports.
 
-Twenty hardware tests in four tiers: USB link, memory write/read-back (the patch
-upload path, ~62 KB/s up / ~770 KB/s down), compiled-patch execution (heartbeat at
-3000 DSP cycles/s), and an analog-loopback limits suite. The `looplab` patch emits
-1500 Hz on the left out and analyzes its own inputs on-board (peak, mean-square, zero
-crossings per 100 ms window, published in shared memory the host reads over USB), so
-loopback verification needs no host audio interface. Measured on this board: tone
-returns at −10.7 dBFS with the frequency exact; a host-controlled load bank finds the
-knee at 176 oscillators (~92% DSP load) clean, hard collapse at 192 — firmware load
-pegs, heartbeat drops to 1000/s, audio dies. All three overload signals agree, and the
-suite skips cleanly when no board is plugged in.
+**The rig.** The host speaks the board's vendor USB protocol directly from Python
+(`driver/axoproto.py`) — no Java patcher anywhere. 70 hardware-in-the-loop tests in
+eight tiers: USB link, memory programming, patch execution, analog loopback +
+realtime limits, stress characterization, MIDI on all three transports, the SD card,
+and sgaxo's golden verdicts. Everything skips cleanly with no board attached.
 
-The second station (2026-08-25, same day): soundgraph-shaped limits. `nodelab` runs
-faithful float ports of dsp-core node inner loops — the shipped SineOscillator loop
-against the repo's committed 4096-entry sine table, the Simper SVF with per-block
-coefficients, GainNode with its modulation input live — plus the structural costs a
-scheduled graph pays: indirect dispatch per node per 16-frame block, per-node
-buffers, null-checked inputs, a summing mix pass. Measured clean limits: **48
-standalone Sine nodes** (~1.9% load each) or **28 Sine→SVF→Gain voices** (84 nodes,
-~3.3% per voice), against 176 raw integer oscillators. The Sine node costs ~3.7x a
-raw oscillator — not the float table-lerp (cheap on the M4F) but the per-sample
-nullptr checks, clamp, and the per-sample FPU divide for frequency→increment.
+**The measurements.** Realtime knees: 176 raw integer oscillators, 48 faithful float
+Sine nodes, 28 Sine→SVF→Gain voices. Stress bench: noise floor −66 dBFS, frequency
+response flat ±0.1 dB across 50 Hz–20 kHz, SINAD ~47 dB and indifferent to load, zero
+audio defects through load slams, USB hammering and combined soaks; SDRAM moves
+24.6 MB/s of verified traffic cleanly and never corrupts a word even at CPU
+overload. MIDI: 5.6 ms echo round trips, nothing dropped at 84% load.
 
-The third station (2026-08-25): stress characterization. `stresslab` adds a
-variable-frequency/-amplitude tone, an on-board Goertzel (SINAD), cumulative
-click/dropout counters that miss nothing between host polls, and a verified
-audio-rate SDRAM ring. Measured: noise floor −66 dBFS, amplitude linearity exact
-−36…−1 dBFS, frequency response flat ±0.1 dB across 50 Hz–20 kHz, SINAD ~47 dB
-unchanged from idle to 85% load, zero audio defects through load slamming, USB
-hammering and a 60 s combined soak, and 24.6 MB/s of clean verified SDRAM traffic —
-with data integrity intact even at 49 MB/s CPU overload. 32 hardware tests total;
-`tools/soak.py` runs the combined soak for hours.
+**The compiler.** sgaxo turns editor patches into board binaries with patch-io as its
+front-end (`sg-validate --resolve`: any schema version, module expansion, seams to
+terminals, the engine's own execution order and feedback edges — scheduling defined
+once). The kernel library restates every dsp-core inner loop; parameter-derived
+transcendentals are host-computed in double and baked; the graph runs at the native
+64-frame block size; `-ffp-contract=off` keeps rounding identical. The full
+vocabulary compiles — oscillators, filters, envelopes, effects, SDRAM-backed
+Delay/Comb/Allpass, Sampler (buffers shipped to SDRAM; the read head runs libgcc
+soft-double and matches native bit for bit), the TMS5220 Speech node, and true
+polyphony carrying graph.cpp's route_note allocator verbatim. Hosted plugins are the
+one refusal, on physics.
 
-Traps that cost time: the board fragments bulk packets arbitrarily (an ack can arrive
-as `'A'` then `'xoA…'` — any stream resync must keep partial-header tails); patch
-`.data` is NOLOAD in `ramlink.ld` (initialized statics silently arrive as garbage —
-the Makefile refuses to link them); modern gcc's `-freorder-functions` would put
-cold code in `.text.unlikely`, which the linker script doesn't place; and a
-marginally seated USB cable brownout-crashes the board under rising DSP load while
-staying stable at idle — indistinguishable from a patch bug until an
-instruction-level diff of "crashing" vs "stable" binaries proved them functionally
-identical. Ramp measurements now record the 5 V rail (noisy; judge by crashes).
+**The verdicts.** 25 fidelity comparisons measured on the hardware against the shared
+golden manifest and on-demand native renders: eleven manifest cases bit-exact
+(sine, saw, square, both noises, lfo, adsr, delay-feedback through the SDRAM line,
+ahd-envelope, arpeggio, noise-oscillator), Sampler and delay-echo bit-exact,
+plucked-string 8.9e-8, Speech 2.4e-7, first-synth 2e-6, slide 9e-6, the 85-node
+4-voice warehouse patch 2.5e-5 (rendered slower than realtime — capture correctness
+survives overload). The residuals are understood, not mysterious: exp2-lattice phase
+drift and fma-vs-two-roundings, each written down where it lives.
+
+**The product.** `tools/bake-bank.py` bakes editor patches into a standalone SD
+card: /start.bin boots at power-on, index.axb + MIDI Program Change walk the bank
+through the firmware's own loader, sample and phrase buffers ride as sidecars the
+patch FatFs-loads into SDRAM at init. Verified end to end on hardware, including the
+cold boot: power-cycled with the card in, the board came up playing first-synth
+autonomously.
+
+**Traps that cost time, so they only cost it once:** the board fragments USB bulk
+packets arbitrarily (keep partial-header tails when resyncing); patch `.data` is
+NOLOAD in ramlink.ld (initialized statics arrive as garbage — the codegen refuses
+them); gcc's `-freorder-functions` would emit sections the linker script never
+places; a marginal USB cable brownout-crashes the board under load and impersonates
+a patch bug — soak a known-good binary twice before believing any crash, and judge
+the 5 V sysmon by steadiness, not level; transcendental polynomial constants must be
+derived and measured in float32-Horner simulation, never recalled (a remembered
+"minimax" cost 5e-3 on the slide golden); sg-render's note schedule is unsorted
+on/off pairs whose delivery stops at the first not-yet-due action — mirror it in
+list order; index.axb lines lose their last four characters and every line needs a
+trailing newline.
 
 ## Invariants
 

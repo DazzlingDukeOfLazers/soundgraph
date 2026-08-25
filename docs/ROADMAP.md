@@ -99,7 +99,7 @@ boards/<vendor>/<board>/
 ## Milestone K — Legacy/External Ecosystem Experiments
 
 Only after the core is stable:
-- Axoloti/Ksoloti target
+- Axoloti/Ksoloti target — **done for Axoloti Core** (embedded/axoloti: compiled target, 25 golden verdicts on hardware, standalone SD banks; Ksoloti untested but same firmware family)
 - Pure Data import/export subset
 - other graph interchange
 
