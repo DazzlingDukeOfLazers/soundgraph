@@ -68,7 +68,7 @@ here**: there is no C++ compiler at all — no MSVC, no gcc, no clang — and no
 
 **The toolchain is now complete.** Visual Studio Build Tools 2022 (MSVC 19.44) was
 installed by hand — it needs UAC, and `winget` returns 1602 from a non-interactive shell.
-It lives at `C:\Program Files (x86)\Microsoft Visual Studio2\BuildTools`, **not** the
+It lives at `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`, **not** the
 Community path this file used to name and `tools/pre-push.sh` used to hard-code; the gate
 now asks `vswhere` instead of assuming.
 
