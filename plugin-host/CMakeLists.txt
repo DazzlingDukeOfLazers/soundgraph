@@ -79,6 +79,19 @@ if(SOUNDGRAPH_BUILD_TESTS)
     set_tests_properties(sg_host_plays_the_built_vst3 PROPERTIES
             ENVIRONMENT "${SOUNDGRAPH_HOST_PATCHES}")
 
+    # The watchdog, proven on a render far too long to finish: u-he's Podolski showed
+    # that a plugin can stop this program for good by opening a dialog, and a rig that
+    # can be stopped for good by a stranger is not a rig. A runaway render stands in
+    # for the dialog — what is being tested is that something ends it. Exit code 3 is
+    # deliberate, so a caller can tell "hung" from "silent".
+    add_test(NAME sg_host_watchdog_ends_a_runaway_render
+            COMMAND sg-host $<TARGET_FILE:soundgraph-plugin_clap>
+                --seconds 200000 --note 60 --timeout 2)
+    set_tests_properties(sg_host_watchdog_ends_a_runaway_render PROPERTIES
+            ENVIRONMENT "${SOUNDGRAPH_HOST_PATCHES}"
+            TIMEOUT 60
+            PASS_REGULAR_EXPRESSION "did not finish within 2 seconds")
+
     # A patch swap is the one thing that needs main-thread work to actually arrive,
     # and through the VST3 wrapper it only arrives if the host pumps its message loop
     # and lets the wrapper's 20 ms timer fire. It silently did neither until sg-host

@@ -282,7 +282,7 @@ public:
         // buffers but does not clear them, and a plugin handed uninitialised memory
         // processes it as audio: Surge XT's effects rack, given nothing, produced a
         // full-scale roar out of whatever the allocator happened to be holding. Every
-        // block rather than once, because VST3 permits processing in place — a plugin
+        // block rather than once, because VST3 permits processing in place â€” a plugin
         // may legitimately write over its own input.
         for (int32 bus = 0; bus < data_.numInputs; ++bus) {
             AudioBusBuffers& buffers = data_.inputs[bus];
@@ -337,8 +337,8 @@ public:
 private:
     static constexpr int32 kMaxEventsPerBlock = 2048;
 
-    // A plugin's deferred main-thread work can arrive as a window message — on
-    // Windows clap-wrapper posts itself WM_TIMER through a message-only window — and
+    // A plugin's deferred main-thread work can arrive as a window message â€” on
+    // Windows clap-wrapper posts itself WM_TIMER through a message-only window â€” and
     // a host that never pumps is a host that never delivers it.
     static void pump_messages() {
 #if defined(_WIN32)
@@ -350,7 +350,7 @@ private:
 #endif
     }
 
-    // HostApplication derives from IHostApplication, which derives from FUnknown —
+    // HostApplication derives from IHostApplication, which derives from FUnknown â€”
     // an unambiguous upcast, and the SDK offers no unknownCast() on this class.
     FUnknown* host_context() { return static_cast<IHostApplication*>(&host_application_); }
 

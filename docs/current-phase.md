@@ -433,13 +433,21 @@ JUCE-shaped. It also shows the two formats disagreeing about the same plugin —
 publishes 722 normalised parameters plus a Preset selector, its CLAP 591 in plain units
 (0..4, -24..24) and no selector at all.
 
-Two things a headless host learns from strangers. **u-he Podolski** hangs sg-host
-outright: extracted rather than installed (its installer demands elevation), it cannot
-find its data directory and says so with a *modal message box* from inside the audio
-setup path, which no console host will ever dismiss. sg-host has no watchdog and will
-wait forever — worth a `--timeout` and a `SetErrorMode` before this tool is ever pointed
-at a plugin nobody vetted. And plugins that ship installers rather than files cannot be
-added to a test rig without a human at the UAC prompt.
+Two things a headless host learns from strangers. **u-he Podolski**, extracted rather
+than installed (its installer demands elevation), renders perfectly well and then
+refuses to *end*: unable to find its data directory during teardown it opens a modal
+message box, which no console host will ever dismiss. sg-host waited three minutes
+before something else noticed. Hence `--timeout` (default 60 seconds, `0` waits
+forever), a watchdog thread that exits 3 — distinct from silent (1) and misuse (2) —
+and `SetErrorMode` for the system's own dialogs, though that does *not* cover a plugin
+calling MessageBox itself, which is precisely what Podolski does. Only the watchdog
+answers that. And plugins that ship installers rather than files cannot be added to a
+test rig without a human at the UAC prompt.
+
+The watchdog test then found a second bug of ours: `--seconds 200000` overflowed the
+int32 frame count, so the render loop never ran and reported perfect silence — a test
+rig failing in the one direction it must never fail. Frame counts are 64-bit now, and
+audio is only accumulated when a `--wav` is actually going to be written.
 
 Trap the tool found on its first day, and the reason `settle()` exists: on Windows
 clap-wrapper services CLAP's `request_callback` from `onIdle`, which it drives from a

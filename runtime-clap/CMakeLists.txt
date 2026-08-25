@@ -141,6 +141,22 @@ if(SOUNDGRAPH_BUILD_TESTS)
     add_test(NAME clap_plugin_plays_and_swaps_patches COMMAND test_clap_plugin)
 endif()
 
+# One name, three targets, one import library — and a race.
+#
+# The CLAP, the VST3 and the standalone are all OUTPUT_NAME "SoundGraph", so on MSVC
+# all three ask the linker for the same SoundGraph.lib/.exp beside them. Ninja builds
+# them at once, two linkers open the same .exp, and the build fails with LNK1104 on a
+# file nothing is wrong with. It passes on the retry, which is exactly what makes it
+# worth fixing rather than living with: an intermittent red on a gate teaches people to
+# press the button again.
+if(MSVC)
+    foreach(target soundgraph-plugin_clap soundgraph-plugin_vst3 soundgraph-plugin_standalone)
+        if(TARGET ${target})
+            set_target_properties(${target} PROPERTIES ARCHIVE_OUTPUT_NAME ${target})
+        endif()
+    endforeach()
+endif()
+
 if(APPLE)
     # clap-wrapper installs the generated AudioComponents Info.plist in a PRE_BUILD
     # step, which Ninja runs before CMake writes the bundle's own generic plist — so the
