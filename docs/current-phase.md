@@ -422,6 +422,25 @@ enough), and the same plugin now renders exact silence. No automated test covers
 the repository cannot depend on a third-party plugin, so the guard is this note and the
 comment in `host_vst3.cpp`.
 
+Third-party plugins the host has been proven against, all as loose files under
+`C:\Users\danie\Tools\` and none installed system-wide: **Surge XT 1.3.4** (instrument
+and effects, VST3 + CLAP), **Dexed 1.0.1** (VST3 + CLAP, identical output through both
+— and redundant as a DX7 oracle, since `tools/dx7-ref` already vendors msfa, which is
+Dexed's own engine), and **ModulAir 1.3.3** (Full Bucket Music). ModulAir is the one
+that matters most: it is hand-written C++ with no plugin framework, where Surge, Dexed
+and Vital are all JUCE, so it is the only evidence that the loader is not quietly
+JUCE-shaped. It also shows the two formats disagreeing about the same plugin — its VST3
+publishes 722 normalised parameters plus a Preset selector, its CLAP 591 in plain units
+(0..4, -24..24) and no selector at all.
+
+Two things a headless host learns from strangers. **u-he Podolski** hangs sg-host
+outright: extracted rather than installed (its installer demands elevation), it cannot
+find its data directory and says so with a *modal message box* from inside the audio
+setup path, which no console host will ever dismiss. sg-host has no watchdog and will
+wait forever — worth a `--timeout` and a `SetErrorMode` before this tool is ever pointed
+at a plugin nobody vetted. And plugins that ship installers rather than files cannot be
+added to a test rig without a human at the UAC prompt.
+
 Trap the tool found on its first day, and the reason `settle()` exists: on Windows
 clap-wrapper services CLAP's `request_callback` from `onIdle`, which it drives from a
 20 ms `WM_TIMER` on a message-only window (`detail/os/windows.cpp`). A headless host
