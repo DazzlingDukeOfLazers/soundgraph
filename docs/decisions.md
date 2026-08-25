@@ -910,3 +910,34 @@ The embedded panel grows to ~160 KB, almost all typeface. The palette and knob
 geometry are duplicated from rack.gd into panel.html as CSS/SVG — a divergence risk
 noted and accepted until the panel hosts the web editor outright. Verified in
 GarageBand: knobs render, drag and answer with the arc and the host in step.
+
+## 2026-08-25 — Axoloti tests speak the USB protocol directly, no patcher
+
+Decision:
+Hardware tests for the Axoloti Core (`embedded/axoloti/`) implement the board's
+vendor bulk USB protocol in Python and hand-write test patches in C++ against a
+self-declared ABI (`axo_abi.h`), linked with `--just-symbols` against the stock
+1.0.12-2 firmware elf fetched pinned-by-sha256 from the official release. The
+board keeps its stock firmware; nothing is reflashed.
+
+Reason:
+The Java patcher is a heavy, aging dependency and its toolchain (gcc 4.9 era)
+does not run cleanly on arm64 macOS. The protocol is ~10 commands and the patch
+ABI is one struct and one entry point; declaring them ourselves removes the whole
+ChibiOS header tree from the build. The board's reported firmware CRC matches the
+release image byte-for-byte, so patches built with modern gcc 16 link against
+exact symbol addresses — verified live: uploaded patches run at the expected
+3000 cycles/s and restart cleanly.
+
+Alternatives:
+Ksoloti's maintained fork (would still be a full patcher stack); building and
+reflashing our own firmware (invasive, and unnecessary while stock symbols
+match); USB-protocol-only tests without patch execution (could not measure
+realtime limits).
+
+Consequences:
+GPL upstream artifacts stay out of the repo (fetched into gitignored `sdk/`).
+The ABI declarations must not drift from firmware 1.0.12-2 — the fwid gate in
+every patch refuses to run under any other firmware build. If a board with
+different firmware appears, the SDK fetch and the link symbols must change
+together.
