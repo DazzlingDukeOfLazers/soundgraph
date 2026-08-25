@@ -146,9 +146,10 @@ gate at four tests, and has already found three bugs. Nothing touches the graph.
 test: done — `sg_host_plays_the_built_vst3` and friends are green.*
 
 **Stage 2 — `PluginEffect`.** Audio in, audio out, sixteen slots, desktop runtimes
-only, embedded state. No notes, so no polyphony question. *Exit test: a patch with our
-own drum kit through Surge XT's reverb renders on Windows and macOS, and the same patch
-opens on the ESP32 build with one warning and audible silence rather than a failure.*
+only, embedded state, resolved by identity. No notes, so no polyphony question. **In
+scope before Knobcon.** *Exit test: a patch with our own drum kit through Surge XT's
+reverb renders on Windows and macOS, and the same patch opens on the ESP32 build with
+one warning and audible silence rather than a failure.*
 
 **Stage 3 — `PluginInstrument`.** Note input, and the voice-clone exemption that
 requires. *Exit test: a plugin instrument plays a chord as one instance, and
@@ -158,19 +159,71 @@ requires. *Exit test: a plugin instrument plays a chord as one instance, and
 plugin's own window. This is where the feature becomes usable by a person, and it is
 deliberately last: everything before it is testable from a command line.
 
-## Open questions, deliberately
+## Decided, 2026-08-25
 
-- **Where does the plugin's own GUI live?** The editor is Godot; the plugin wants an
-  HWND or an NSView. Embedding is possible and unpleasant. A separate top-level window
-  is honest and much cheaper, and may simply be right.
-- **Does a patch name a plugin by path, or by identity?** Path is fragile across
-  machines; identity (format + unique id) needs a scan to resolve. Probably both, with
-  identity winning and path as a hint — but this wants a decision before Stage 2 ships,
-  not during.
-- **Sample-rate and block-size renegotiation.** The graph runs `kBlockSize = 64`.
-  Plugins may prefer larger, and some behave badly below 128. Whether the node buffers
-  up to a larger block — adding latency — or simply passes 64 through, is a measurement
-  question nobody should answer from an armchair.
-- **Does any of this ship before Knobcon?** Stage 2 is perhaps a week. It is also the
-  first feature that makes the portability claim conditional, which is a thing to say
-  on a stage carefully or not at all.
+**A patch names a plugin by identity, never by path.** Identity is the pair
+(format, id): for CLAP the reverse-DNS string the plugin publishes
+(`org.soundgraph.player`), for VST3 the 128-bit class UID as hex
+(`ABCDEF019182FAEB566D624153675854`). Both are what `sg-host --list` already prints,
+so the resolver has been proven against four vendors before a line of it exists.
+
+Beside the identity, and never load-bearing, sits a hint block: vendor, display name,
+version, and the path it was last seen at. A path is a fine thing to *remember* and a
+terrible thing to *depend on* — it is what lets the diagnostic say "this patch wants
+Surge XT by Surge Synth Team, last seen in Common Files" instead of a bare UID. The
+runtime resolves by scanning the standard locations once and matching on identity; the
+hint is consulted only to speed that up, and its being wrong is never an error.
+
+**The plugin's window is embedded in Godot.** The editor opens a real OS sub-window
+(a Godot `Window` with subwindow embedding off), takes its native handle through
+`DisplayServer.window_get_native_handle`, and parents the plugin's HWND or NSView into
+it — the same act `gui_set_parent` already performs for our own panel, pointed at a
+window the editor owns rather than a DAW's. The plugin then sits in a window Godot
+positions, titles and closes, which is what makes it feel like part of the editor
+rather than a stray application.
+
+This is the ambitious option and it is chosen knowingly. The Windows half is the same
+`SetParent` plus `WS_CHILD` restyle already working in the plugin; macOS `addSubview:`
+into a Godot-owned view is the part with genuine risk, and Linux is a third story
+again. If a compositor fights us, the fallback — a plain top-level window that Godot
+merely knows about — costs an afternoon and no design change, because nothing else
+depends on where that HWND lives.
+
+**Block size: pass 64 straight through, buffer nothing.** The design originally said
+this was a measurement question nobody should answer from an armchair, so it was
+measured, with `sg-host --block` across every third-party plugin on the machine:
+
+| plugin | 32 | 64 | 128 | 256 | 512 |
+|---|---|---|---|---|---|
+| Surge XT (JUCE) | 0.089042 | 0.088780 | 0.088786 | 0.088606 | 0.088308 |
+| Dexed (JUCE) | 0.044621 | 0.044618 | 0.044618 | 0.044564 | 0.044553 |
+| ModulAir (no framework) | 0.070195 | 0.070195 | 0.070196 | 0.070185 | 0.070005 |
+
+RMS of one second at 48 kHz. The spread across a sixteen-fold change in block size is
+in the fourth decimal — block-boundary jitter in envelopes and modulation, not
+misbehaviour. The received wisdom that plugins break below 128 frames is not true of
+any plugin we can test.
+
+Cost says the same. Sixty seconds of audio rendered in 502 ms at block 64 and 486 ms
+at block 512 for Surge XT, 703 ms and 705 ms for ModulAir: no argument for buffering
+there either.
+
+So the node hands the plugin the graph's own 64 frames and adds no latency to anything.
+An optional per-node block size stays in the schema, defaulting to zero meaning
+"native", as the escape hatch for the plugin that eventually proves the folklore right
+— but it is not the default, because three vendors and two frameworks say it needn't be.
+
+**It ships before Knobcon.** Stage 2 goes into the pre-show plan. What that costs on
+stage is a sentence: SoundGraph patches run unchanged on four targets, *and* a patch
+may invite a desktop plugin in, which is the one thing that stays where it was
+invited. Said that way it is a feature with a boundary, which is what it is. Said
+carelessly it sounds like the portability claim developed an asterisk, which is what
+it must not become.
+
+## Still open
+
+- **Latency compensation.** Plugins report latency and the graph has no notion of it.
+  Irrelevant for a reverb, audible the moment two paths run in parallel and only one
+  has a plugin in it. Stage 2 can report latency and ignore it; Stage 3 cannot.
+- **How much state is too much.** The embedded-state ceiling wants a number taken from
+  real plugin presets rather than invented here.
