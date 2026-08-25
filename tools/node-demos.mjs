@@ -601,6 +601,28 @@ const DEMOS = {
       ],
     }),
   },
+  PluginEffect: {
+    summary: 'A VST3 or CLAP plugin from elsewhere, wired in like any other node.',
+    try: 'Choose a plugin and bind its controls to the sixteen slots, then modulate '
+      + 'them from an LFO or a knob like anything else here. With no plugin chosen — '
+      + 'and on the ESP32 or in a browser, where there can never be one — the audio '
+      + 'passes through untouched, which is what this demo shows.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('osc', 'SawOscillator', { frequency: 220 }, 1, 0),
+        node('demo', 'PluginEffect', {}, 2, 0),
+        envelope(2),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('osc', 'out', 'demo', 'left'),
+        ...tail('demo', 'left'),
+      ],
+    }),
+  },
   Constant: {
     summary: 'A fixed value — the thing you reach for to offset or scale a modulation.',
     try: 'The LFO swings either side of zero; adding this constant lifts it so the filter '
@@ -1142,6 +1164,7 @@ const PROBES = {
   LFO: { parameter: 'amount', value: 0.5 },
   Constant: { parameter: 'value', value: -1.0 },
   MidiCC: { parameter: 'resting', value: 1 },
+  PluginEffect: { probeless: 'with no plugin chosen it passes audio through, so no parameter of it can change anything — which is the property worth demonstrating' },
 
   Add: { parameter: 'offset', value: 1.0 },
   Multiply: { parameter: 'factor', value: 0 },

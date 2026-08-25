@@ -102,6 +102,83 @@ bool base64_decode(const std::string& text, std::vector<unsigned char>& out) {
 constexpr std::size_t kBufferWarnBytes = 1u << 20;   // 1 MB
 constexpr std::size_t kBufferErrorBytes = 4u << 20;  // 4 MB
 
+// A patch names a plugin by identity and remembers the rest. Reading is deliberately
+// forgiving about the hints and strict about the identity: a patch that cannot say
+// *which* plugin it wants is broken, while one whose remembered path has gone stale is
+// merely a patch on a different machine, which is the normal case.
+bool read_plugins(const json::Value& root,
+                  GraphDescription& out,
+                  std::vector<Diagnostic>& diagnostics) {
+    const json::Value* plugins = root.find("plugins");
+    if (plugins != nullptr && !plugins->is_object()) {
+        diagnostics.push_back(error("plugins_not_an_object",
+                                    "\"plugins\" must be an object of named plugins."));
+        return false;
+    }
+    bool ok = true;
+    if (plugins != nullptr)
+    for (const auto& entry : plugins->object()) {
+        PluginDescription plugin;
+        plugin.id = entry.first;
+        const json::Value& body = entry.second;
+        if (!body.is_object()) {
+            diagnostics.push_back(error("plugin_not_an_object",
+                                        "Plugin '" + plugin.id + "' is not an object."));
+            ok = false;
+            continue;
+        }
+        if (const json::Value* format = body.find("format")) {
+            plugin.format = format->as_string();
+        }
+        if (plugin.format != "CLAP" && plugin.format != "VST3") {
+            diagnostics.push_back(error("plugin_unknown_format",
+                "Plugin '" + plugin.id + "' declares format '" + plugin.format + "'.",
+                "Only \"CLAP\" and \"VST3\" exist so far."));
+            ok = false;
+            continue;
+        }
+        if (const json::Value* identity = body.find("identity")) {
+            plugin.identity = identity->as_string();
+        }
+        if (plugin.identity.empty()) {
+            diagnostics.push_back(error("plugin_no_identity",
+                "Plugin '" + plugin.id + "' does not say which plugin it is.",
+                "A patch names a plugin by its format's own unique id, never by path."));
+            ok = false;
+            continue;
+        }
+        if (const json::Value* vendor = body.find("vendor")) plugin.vendor = vendor->as_string();
+        if (const json::Value* name = body.find("name")) plugin.name = name->as_string();
+        if (const json::Value* version = body.find("version")) plugin.version = version->as_string();
+        if (const json::Value* path = body.find("path_hint")) plugin.path_hint = path->as_string();
+        if (const json::Value* state = body.find("state")) plugin.state = state->as_string();
+        if (const json::Value* slots = body.find("slots")) {
+            if (slots->is_array()) {
+                for (const json::Value& slot : slots->array()) {
+                    plugin.slots.push_back(static_cast<int>(slot.as_number(-1.0)));
+                }
+            }
+        }
+        out.plugins.push_back(std::move(plugin));
+    }
+
+    // A node naming a plugin the patch does not carry is the mistake this exists to
+    // catch, and it is an error rather than a warning: unlike a missing *installation*,
+    // which is a fact about the machine, this is a fact about the file.
+    for (const NodeDescription& node : out.nodes) {
+        if (node.plugin.empty()) {
+            continue;
+        }
+        if (out.find_plugin(node.plugin) == nullptr) {
+            diagnostics.push_back(error("unknown_plugin",
+                "Node '" + node.id + "' names plugin '" + node.plugin +
+                "', which this patch does not carry."));
+            ok = false;
+        }
+    }
+    return ok;
+}
+
 bool read_buffers(const json::Value& root,
                   GraphDescription& out,
                   std::vector<Diagnostic>& diagnostics) {
@@ -377,6 +454,11 @@ bool read_node(const json::Value& entry,
     if (const json::Value* buffer = entry.find("buffer")) {
         if (buffer->is_string()) {
             node.buffer = buffer->as_string();
+        }
+    }
+    if (const json::Value* plugin = entry.find("plugin")) {
+        if (plugin->is_string()) {
+            node.plugin = plugin->as_string();
         }
     }
     if (const json::Value* parameters = entry.find("parameters")) {
@@ -1482,6 +1564,9 @@ bool parse_patch(const std::string& text,
         }
     }
 
+    if (!read_plugins(root, out, diagnostics)) {
+        return false;
+    }
     if (!read_buffers(root, out, diagnostics)) {
         ok = false;
     }
@@ -1533,6 +1618,9 @@ json::Value write_node_entry(const NodeDescription& node) {
     }
     if (!node.buffer.empty()) {
         entry.set("buffer", json::Value(node.buffer));
+    }
+    if (!node.plugin.empty()) {
+        entry.set("plugin", json::Value(node.plugin));
     }
     if (!node.parameters.empty()) {
         json::Value parameters = json::Value::make_object();
@@ -1743,6 +1831,29 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
             buffer_table.set(buffer.id, std::move(entry));
         }
         root.set("buffers", std::move(buffer_table));
+    }
+
+    if (!description.plugins.empty()) {
+        json::Value plugin_table = json::Value::make_object();
+        for (const PluginDescription& plugin : description.plugins) {
+            json::Value entry = json::Value::make_object();
+            entry.set("format", json::Value(plugin.format));
+            entry.set("identity", json::Value(plugin.identity));
+            if (!plugin.vendor.empty()) entry.set("vendor", json::Value(plugin.vendor));
+            if (!plugin.name.empty()) entry.set("name", json::Value(plugin.name));
+            if (!plugin.version.empty()) entry.set("version", json::Value(plugin.version));
+            if (!plugin.path_hint.empty()) entry.set("path_hint", json::Value(plugin.path_hint));
+            if (!plugin.state.empty()) entry.set("state", json::Value(plugin.state));
+            if (!plugin.slots.empty()) {
+                json::Value slots = json::Value::make_array();
+                for (int slot : plugin.slots) {
+                    slots.push_back(json::Value(static_cast<double>(slot)));
+                }
+                entry.set("slots", std::move(slots));
+            }
+            plugin_table.set(plugin.id, std::move(entry));
+        }
+        root.set("plugins", std::move(plugin_table));
     }
 
     if (!controls_out.empty()) {

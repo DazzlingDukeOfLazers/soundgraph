@@ -736,6 +736,8 @@ bool Graph::build(const GraphDescription& description,
     buffer_pool_.clear();
     buffer_count_ = 0;
     sample_buffers_ = description.buffers;
+    plugin_descriptions_ = description.plugins;
+    plugin_instances_.clear();
     control_queue_.clear();
     cc_values_.fill(-1.0f);
     cost_ = ResourceCost{};
@@ -840,6 +842,62 @@ bool Graph::build(const GraphDescription& description,
                 return false;
             }
         }
+
+        // Plugins resolve the way buffers do, with one difference that is the whole
+        // point: not finding one is not fatal. A target with no provider, or a machine
+        // without that plugin installed, still builds the patch — the node passes its
+        // audio through and the diagnostic says why, once, in words that name what is
+        // missing rather than printing a class UID at somebody.
+        if (!node_description.plugin.empty()) {
+            const PluginDescription* wanted = nullptr;
+            for (const PluginDescription& entry : plugin_descriptions_) {
+                if (entry.id == node_description.plugin) {
+                    wanted = &entry;
+                    break;
+                }
+            }
+            if (wanted == nullptr) {
+                Diagnostic diagnostic = error("unknown_plugin",
+                    "Node " + quote(node_description.id) + " names plugin " +
+                    quote(node_description.plugin) + ", which this patch does not carry.");
+                diagnostic.node_ids = {node_description.id};
+                diagnostics.push_back(diagnostic);
+                return false;
+            }
+
+            std::unique_ptr<HostedPluginInstance> instance;
+            if (plugin_provider_ != nullptr) {
+                PluginRequest request;
+                request.format = wanted->format;
+                request.identity = wanted->identity;
+                request.vendor = wanted->vendor;
+                request.name = wanted->name;
+                request.path_hint = wanted->path_hint;
+                request.state = wanted->state;
+                instance = plugin_provider_->acquire(request);
+            }
+
+            if (instance == nullptr) {
+                const std::string described =
+                    wanted->name.empty() ? quote(wanted->identity)
+                                         : quote(wanted->name) +
+                                               (wanted->vendor.empty() ? std::string()
+                                                                       : " by " + wanted->vendor);
+                Diagnostic diagnostic;
+                diagnostic.severity = Severity::Warning;
+                diagnostic.code = "plugin_unavailable";
+                diagnostic.message = "Node " + quote(node_description.id) + " plays through " +
+                                     described + ", which is not available here.";
+                diagnostic.suggestion = "The audio passes through untouched. Install the plugin, "
+                                        "or open this patch on a machine that has it.";
+                diagnostic.node_ids = {node_description.id};
+                diagnostics.push_back(diagnostic);
+            } else {
+                node_context.plugin = instance.get();
+                plugin_instances_.push_back(std::move(instance));
+            }
+        }
+
         slot.node->prepare(node_context);
 
         slot.inputs.resize(static_cast<std::size_t>(type->inputs.size()));

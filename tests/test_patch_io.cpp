@@ -666,7 +666,6 @@ TEST(modules_refuse_the_documented_abuses) {
     CHECK(refuses(collision, "module_id_collision"));
 }
 
-TEST_MAIN("patch io tests")
 
 // ---------------------------------------------------------------------------------
 // Seams
@@ -1614,3 +1613,80 @@ TEST(the_sampler_plays_its_buffer_whatever_the_host_chunk_size) {
     CHECK_NEAR(whole[999], 0.0, 1e-9);
     CHECK_NEAR(whole[2000], 0.0, 1e-9);
 }
+
+// ---- plugins --------------------------------------------------------------------------
+
+TEST(a_plugin_is_named_by_identity_and_survives_a_round_trip) {
+    const std::string text = R"({
+        "schema_version": 4,
+        "plugins": {
+            "verb": {
+                "format": "VST3",
+                "identity": "ABCDEF019182FAEB566D624153675854",
+                "vendor": "Surge Synth Team",
+                "name": "Surge XT Effects",
+                "path_hint": "C:/Program Files/Common Files/VST3/Surge XT Effects.vst3",
+                "state": "c3VyZ2U=",
+                "slots": [12, -1, 7]
+            }
+        },
+        "nodes": [
+            { "id": "osc", "type": "SineOscillator" },
+            { "id": "fx", "type": "PluginEffect", "plugin": "verb" },
+            { "id": "out", "type": "StereoOutput" }
+        ],
+        "connections": [
+            { "from": { "node": "osc", "port": "out" }, "to": { "node": "fx", "port": "left" } },
+            { "from": { "node": "fx", "port": "left" }, "to": { "node": "out", "port": "left" } }
+        ]
+    })";
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(soundgraph::parse_patch(text, graph, diagnostics));
+    CHECK(graph.plugins.size() == 1);
+    CHECK(graph.plugins[0].id == "verb");
+    CHECK(graph.plugins[0].format == "VST3");
+    CHECK(graph.plugins[0].identity == "ABCDEF019182FAEB566D624153675854");
+    CHECK(graph.plugins[0].name == "Surge XT Effects");
+    CHECK(graph.plugins[0].state == "c3VyZ2U=");
+    CHECK(graph.plugins[0].slots.size() == 3 && graph.plugins[0].slots[0] == 12 &&
+          graph.plugins[0].slots[1] == -1);
+    CHECK(graph.find_node("fx") != nullptr && graph.find_node("fx")->plugin == "verb");
+
+    // Written back and read again: the identity and the state are what must not drift,
+    // because between them they are the whole of what makes the patch the artifact.
+    const std::string written = soundgraph::write_patch(graph);
+    GraphDescription again;
+    std::vector<Diagnostic> again_diagnostics;
+    CHECK(soundgraph::parse_patch(written, again, again_diagnostics));
+    CHECK(again.plugins.size() == 1);
+    CHECK(again.plugins[0].identity == graph.plugins[0].identity);
+    CHECK(again.plugins[0].state == graph.plugins[0].state);
+    CHECK(again.plugins[0].slots == graph.plugins[0].slots);
+    CHECK(again.find_node("fx")->plugin == "verb");
+}
+
+TEST(a_plugin_without_an_identity_is_refused) {
+    const std::string text = R"({
+        "schema_version": 4,
+        "plugins": { "verb": { "format": "VST3", "path_hint": "somewhere.vst3" } },
+        "nodes": [ { "id": "fx", "type": "PluginEffect", "plugin": "verb" } ]
+    })";
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(!soundgraph::parse_patch(text, graph, diagnostics));
+    CHECK(has_code(diagnostics, "plugin_no_identity"));
+}
+
+TEST(a_node_naming_a_plugin_the_patch_does_not_carry_is_refused) {
+    const std::string text = R"({
+        "schema_version": 4,
+        "nodes": [ { "id": "fx", "type": "PluginEffect", "plugin": "ghost" } ]
+    })";
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(!soundgraph::parse_patch(text, graph, diagnostics));
+    CHECK(has_code(diagnostics, "unknown_plugin"));
+}
+
+TEST_MAIN("patch io tests")

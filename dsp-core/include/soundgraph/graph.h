@@ -65,6 +65,12 @@ public:
     // render call. Pass null for silence. `right` may be null for a mono source.
     void set_audio_input(const float* left, const float* right, int frames);
 
+    // Who to ask for hosted plugins. Set before build(); null — the default, and the
+    // only possibility on the ESP32 or in a browser — means every PluginEffect in the
+    // patch passes its audio through and says so once in the diagnostics. See
+    // docs/hosted-plugins-design.md.
+    void set_plugin_provider(PluginProvider* provider) { plugin_provider_ = provider; }
+
     // Returns all nodes and all internal state to their post-prepare condition without
     // reallocating. Safe to call between blocks.
     void reset();
@@ -227,6 +233,11 @@ private:
     // The patch's recorded audio, copied out of the description at build so that nodes
     // may point into it for the graph's whole life. One copy serves every voice.
     std::vector<BufferDescription> sample_buffers_;
+    std::vector<PluginDescription> plugin_descriptions_;
+    // The graph owns the instances because the nodes only borrow them, and a voice's
+    // clone must not outlive the plugin it was pointed at.
+    std::vector<std::unique_ptr<HostedPluginInstance>> plugin_instances_;
+    PluginProvider* plugin_provider_ = nullptr;
 
     // The graph always runs whole kBlockSize blocks and hands the host whatever it asked
     // for out of this FIFO. Without it, a host using a buffer size that is not a multiple
