@@ -112,8 +112,19 @@ Drive, Crush, Slide, Arpeggio, ADSR, AhdEnvelope, Retrigger, Gain, Constant,
 Add, Multiply, Mixer — twenty-four node types, every one hardware-verified:
 eleven manifest goldens bit-exact, slide 9e-6, first-synth 2e-6, and three
 fixtures against the native render at or under 1e-5. Editor patches at any
-schema version compile through the patch-io resolver; still refused by name:
-Sampler/Speech (buffers), polyphony (voices > 1), hosted plugins. Kernels
+schema version compile through the patch-io resolver, including Sampler
+patches: buffers ship to a 3.5 MB SDRAM pool over USB before start
+(verified by readback), and the read head runs in libgcc soft-double —
+IEEE-exact against native, ~10-15% CPU per sampler, hit-verified bit-exact
+on hardware. The Speech node speaks too: the TMS5220 phrase bank
+rides the same SDRAM pool, and the demo verifies at 2.4e-7 over a second of
+voice. Polyphony works: the resolver emits the voiced graph
+through graph.cpp's own replicate_voices, and the generated runtime carries
+the engine's exact voice allocator (same-note retrigger, oldest-released,
+steal-with-release). Verified: a 3-voice pad with overlapping notes at 5e-4,
+and the 85-node 4-voice warehouse patch — far past realtime, rendered slower
+than the audio it describes and still faithful at 2.5e-5. The one refusal
+left is hosted plugins, which is physics, not a gap. Kernels
 without golden-manifest cases are verified against a native sg-render of the
 same patch (golden-on-demand, tests/fixtures/). Everything else is
 refused by name

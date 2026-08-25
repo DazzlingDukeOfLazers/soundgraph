@@ -44,6 +44,11 @@ REPO = RIG.parent.parent
 DSP_CORE_SRC = REPO / "dsp-core" / "src"
 SG_VALIDATE = REPO / "build" / "bin" / "sg-validate"
 
+# SDRAM map: 0xC0000000 +4MB kernel delay lines (.sdram section);
+# 0xC0400000 capture; 0xC0480000 +3.5MB sample buffers, host-uploaded.
+BUFFER_POOL_BASE = 0xC0480000
+BUFFER_POOL_SIZE = 0x380000
+
 SAMPLE_RATE = 48000.0
 FWID = "0xe95bac96"
 
@@ -100,7 +105,7 @@ SUPPORTED = {
     "NoteInput": {
         "inputs": [], "connectable": set(),
         "params": {"glide": 0.0, "transpose": 0.0, "voices": 1.0},
-        "fixed": {"voices": 1.0},
+        "fixed": {},
         "outputs": ["frequency", "gate", "velocity", "trigger"],
     },
     "AudioInput": {
@@ -252,6 +257,21 @@ SUPPORTED = {
         "fixed": {},
         "outputs": ["left", "right"],
     },
+    "Speech": {
+        "inputs": ["trigger", "note"], "connectable": {"trigger", "note"},
+        "params": {"pitch": 1.0, "speed": 1.0, "level": 1.0, "loop": 0.0,
+                   "root": 130.81},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Sampler": {
+        "inputs": ["gate", "frequency", "slice"],
+        "connectable": {"gate", "frequency", "slice"},
+        "params": {"level": 0.8, "loop": 0.0, "root": 261.63, "slices": 1.0,
+                   "start": 0.0, "length": 1.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
     "Constant": {
         "inputs": [], "connectable": set(),
         "params": {"value": 1.0},
@@ -310,12 +330,6 @@ def _validate(resolved):
     nodes = {}
     for n in resolved["nodes"]:
         t = n["type"]
-        if "\x1f" in n["id"]:
-            raise Unsupported("polyphonic patches (voices > 1) are not "
-                              "supported on the Axoloti target yet")
-        if n.get("buffer"):
-            raise Unsupported(f"{n['id']}: carries an audio buffer — the "
-                              "Sampler family is not on this target yet")
         if t not in SUPPORTED:
             raise Unsupported(f"node type {t!r} is not in the Axoloti subset")
         spec = SUPPORTED[t]
@@ -329,7 +343,8 @@ def _validate(resolved):
                 raise Unsupported(
                     f"{n['id']}: parameter {name!r}={params[name]} — this "
                     f"target only supports {name}={required}")
-        nodes[n["id"]] = {"type": t, "params": params}
+        nodes[n["id"]] = {"type": t, "params": params,
+                          "buffer": n.get("buffer", "")}
 
     # Every wire, in document order; summing legality was already ruled on by
     # the native validator, so multiple sources per input are simply collected.
@@ -361,14 +376,61 @@ def _validate(resolved):
     if sorted(order) != sorted(nodes):
         raise Unsupported("schedule does not cover the node set — resolver "
                           "and patch disagree")
-    return nodes, bindings, order
+
+    # Voice families: NoteInput replicas grouped by base id, indexed by voice
+    # (voice 0 keeps the original id). A NoteInput with no replicas hears
+    # every note — graph.cpp's global_note_receivers_.
+    voices = int(resolved.get("voices", 1))
+    receivers = [[] for _ in range(voices)]
+    global_receivers = []
+    families = {}
+    for i, n in nodes.items():
+        if n["type"] != "NoteInput":
+            continue
+        base, _, suffix = i.partition("\x1f")
+        families.setdefault(base, {})[int(suffix) if suffix else 0] = i
+    for base, members in families.items():
+        if voices > 1 and len(members) == voices:
+            for voice, i in members.items():
+                receivers[voice].append(i)
+        else:
+            global_receivers.extend(members.values())
+    return nodes, bindings, order, voices, receivers, global_receivers
 
 
 def _cid(node_id):
+    # The voice separator gets its own spelling so 'kb\x1f1' cannot collide
+    # with a document id like 'kb_1'.
+    node_id = node_id.replace("\x1f", "__v")
     return "".join(ch if ch.isalnum() else "_" for ch in node_id)
 
 
-def _emit(nodes, bindings, order, frames, patch_id, events, zero_input):
+def _plan_buffers(resolved, nodes):
+    """Assign each referenced buffer an SDRAM address; returns
+    (placements: id -> (addr, frames, rate_step_lit), uploads: [(addr, path)])."""
+    described = {b["id"]: b for b in resolved.get("buffers", [])}
+    referenced = {n["buffer"] for n in nodes.values() if n["buffer"]}
+    placements, uploads = {}, []
+    cursor = BUFFER_POOL_BASE
+    for bid in sorted(referenced):
+        if bid not in described:
+            raise Unsupported(f"buffer {bid!r} is named but not carried")
+        b = described[bid]
+        nbytes = b["frames"] * 4
+        if cursor + nbytes > BUFFER_POOL_BASE + BUFFER_POOL_SIZE:
+            raise Unsupported(
+                f"sample buffers exceed the {BUFFER_POOL_SIZE // 1048576} MB "
+                "SDRAM pool")
+        # PrepareContext: rate_step = float(buffer_sample_rate / sample_rate).
+        rate_step = f32(float(b["sample_rate"]) / SAMPLE_RATE)
+        placements[bid] = (cursor, b["frames"], rate_step)
+        uploads.append((cursor, pathlib.Path(b["file"])))
+        cursor += (nbytes + 3) & ~3
+    return placements, uploads
+
+
+def _emit(nodes, bindings, order, frames, patch_id, events, zero_input,
+          buffer_placements, voices, receivers, global_receivers):
     L = ["// Generated by sgaxo/codegen.py — do not edit.",
          '#include "kernels.h"', ""]
     init = []
@@ -457,6 +519,16 @@ def _emit(nodes, bindings, order, frames, patch_id, events, zero_input):
             L.append(f"static sgaxo::AhdState st_{c};")
         elif t == "Retrigger":
             L.append(f"static sgaxo::RetriggerState st_{c};")
+        elif t == "Sampler":
+            L.append(f"static sgaxo::SamplerState st_{c};")
+        elif t == "Speech":
+            L.append(f"static sgaxo::SpeechState st_{c};")
+            if n["buffer"] and n["buffer"] in buffer_placements:
+                addr, bframes, _rs = buffer_placements[n["buffer"]]
+                init.append(f"sgaxo::speech_init(st_{c}, "
+                            f"(const float *){addr:#010x}u, {bframes});")
+            else:
+                init.append(f"sgaxo::speech_init(st_{c}, 0, 0);")
 
     if sdram_bytes > 0x400000:
         raise Unsupported(
@@ -615,6 +687,27 @@ def _emit(nodes, bindings, order, frames, patch_id, events, zero_input):
             L.append(f"  sgaxo::k_stereo_level({src(i, 'left')}, "
                      f"{src(i, 'right')}, {buf(i, 'left')}, {buf(i, 'right')}, "
                      f"{_lit(p['level'])});")
+        elif t == "Speech":
+            speed = f32(p["speed"])
+            step = f32(8000.0 / SAMPLE_RATE)
+            loop = 1 if p["loop"] > 0.5 else 0
+            L.append(f"  sgaxo::k_speech(st_{c}, {src(i, 'trigger')}, "
+                     f"{src(i, 'note')}, {buf(i, 'out')}, {_lit(p['pitch'])}, "
+                     f"{_lit(speed)}, {_lit(p['level'])}, {loop}, "
+                     f"{_lit(p['root'])}, {_lit(step)});")
+        elif t == "Sampler":
+            if n["buffer"] and n["buffer"] in buffer_placements:
+                addr, bframes, rate_step = buffer_placements[n["buffer"]]
+                data = f"(const float *){addr:#010x}u"
+            else:
+                data, bframes, rate_step = "0", 0, 1.0
+            slices = int(min(max(f32(p["slices"]) + 0.5, 1.0), 16.0))
+            loop = 1 if p["loop"] >= 0.5 else 0
+            L.append(f"  sgaxo::k_sampler(st_{c}, {src(i, 'gate')}, "
+                     f"{src(i, 'frequency')}, {src(i, 'slice')}, {buf(i, 'out')}, "
+                     f"{_lit(p['level'])}, {loop}, {_lit(p['root'])}, {slices}, "
+                     f"{_lit(p['start'])}, {_lit(p['length'])}, {data}, "
+                     f"{bframes}, {_lit(rate_step)});")
         elif t == "Constant":
             L.append(f"  sgaxo::k_constant({buf(i, 'out')}, {_lit(p['value'])});")
         elif t == "Add":
@@ -650,14 +743,84 @@ def _emit(nodes, bindings, order, frames, patch_id, events, zero_input):
     L.append("}")
     L.append("")
 
-    L.append("static void sg_note_event(int on, int note, float velocity) {")
-    if note_nodes:
-        for i in note_nodes:
-            L.append(f"  sgaxo::note_event(st_{_cid(i)}, on, note, velocity, "
+    if voices > 1:
+        # The voice allocator, exactly Graph::route_note: a note-on lands on
+        # the voice already singing that note, else the longest-released,
+        # else it steals the longest-held (releasing its old note first, to
+        # that voice only); a note-off releases every voice holding the note.
+        L.append(f"#define SG_VOICES {voices}")
+        L.append("typedef struct { int held; int note; unsigned stamp; } "
+                 "sg_voice_state_t;")
+        L.append("static sg_voice_state_t sg_voice_states[SG_VOICES];")
+        L.append("static unsigned sg_alloc_stamp;")
+        L.append("static void sg_voice_dispatch(int voice, int on, int note, "
+                 "float velocity) {")
+        L.append("  switch (voice) {")
+        for voice in range(voices):
+            L.append(f"    case {voice}:")
+            for i in receivers[voice]:
+                L.append(f"      sgaxo::note_event(st_{_cid(i)}, on, note, "
+                         f"velocity, {_lit(SAMPLE_RATE)});")
+            L.append("      break;")
+        L.append("  }")
+        L.append("}")
+        L.append("static void sg_note_event(int on, int note, float velocity) {")
+        L.append("  if (!on) {")
+        L.append("    for (int v = 0; v < SG_VOICES; v++) {")
+        L.append("      sg_voice_state_t *st = &sg_voice_states[v];")
+        L.append("      if (!st->held || st->note != note) continue;")
+        L.append("      st->held = 0;")
+        L.append("      st->stamp = ++sg_alloc_stamp;")
+        L.append("      sg_voice_dispatch(v, 0, note, velocity);")
+        L.append("    }")
+        for i in global_receivers:
+            L.append(f"    sgaxo::note_event(st_{_cid(i)}, 0, note, velocity, "
                      f"{_lit(SAMPLE_RATE)});")
+        L.append("    return;")
+        L.append("  }")
+        L.append("  int chosen = -1;")
+        L.append("  for (int v = 0; v < SG_VOICES; v++) {")
+        L.append("    if (sg_voice_states[v].held && "
+                 "sg_voice_states[v].note == note) chosen = v;")
+        L.append("  }")
+        L.append("  if (chosen < 0) {")
+        L.append("    unsigned oldest = 0;")
+        L.append("    for (int v = 0; v < SG_VOICES; v++) {")
+        L.append("      if (!sg_voice_states[v].held && "
+                 "(chosen < 0 || sg_voice_states[v].stamp < oldest)) {")
+        L.append("        chosen = v; oldest = sg_voice_states[v].stamp;")
+        L.append("      }")
+        L.append("    }")
+        L.append("  }")
+        L.append("  if (chosen < 0) {")
+        L.append("    unsigned oldest = 0;")
+        L.append("    for (int v = 0; v < SG_VOICES; v++) {")
+        L.append("      if (chosen < 0 || sg_voice_states[v].stamp < oldest) {")
+        L.append("        chosen = v; oldest = sg_voice_states[v].stamp;")
+        L.append("      }")
+        L.append("    }")
+        L.append("  }")
+        L.append("  sg_voice_state_t *st = &sg_voice_states[chosen];")
+        L.append("  if (st->held && st->note != note) {")
+        L.append("    sg_voice_dispatch(chosen, 0, st->note, 0.0f);")
+        L.append("  }")
+        L.append("  st->note = note;")
+        L.append("  st->held = 1;")
+        L.append("  st->stamp = ++sg_alloc_stamp;")
+        L.append("  sg_voice_dispatch(chosen, 1, note, velocity);")
+        for i in global_receivers:
+            L.append(f"  sgaxo::note_event(st_{_cid(i)}, 1, note, velocity, "
+                     f"{_lit(SAMPLE_RATE)});")
+        L.append("}")
     else:
-        L.append("  (void)on; (void)note; (void)velocity;")
-    L.append("}")
+        L.append("static void sg_note_event(int on, int note, float velocity) {")
+        if note_nodes:
+            for i in note_nodes:
+                L.append(f"  sgaxo::note_event(st_{_cid(i)}, on, note, velocity, "
+                         f"{_lit(SAMPLE_RATE)});")
+        else:
+            L.append("  (void)on; (void)note; (void)velocity;")
+        L.append("}")
     L.append("")
 
     L.append("static const sgaxo_event_t sg_events[] = {")
@@ -686,13 +849,19 @@ def build_patch(patch_path, frames=4800, name=None, events=(),
     block boundaries exactly like the golden runner.
     zero_input: feed silence to AudioInput (deterministic tests). False wires
     the codec's real input — the effects-box configuration.
+
+    Returns (binary, patch_id, buffer_uploads) where buffer_uploads is a list
+    of (sdram_address, bytes) the host must write before starting the patch.
     """
     name = name or pathlib.Path(patch_path).stem
     resolved = _resolve(pathlib.Path(patch_path))
-    nodes, bindings, order = _validate(resolved)
+    nodes, bindings, order, voices, receivers, global_receivers = \
+        _validate(resolved)
+    placements, uploads = _plan_buffers(resolved, nodes)
     pid = patch_id_for(name)
     source = _emit(nodes, bindings, order, frames, pid, list(events),
-                   zero_input)
+                   zero_input, placements, voices, receivers,
+                   global_receivers)
 
     BUILD.mkdir(exist_ok=True)
     cpp = BUILD / f"{name}.cpp"
@@ -701,10 +870,15 @@ def build_patch(patch_path, frames=4800, name=None, events=(),
     inc = ["-I", str(HERE), "-I", str(RIG / "patches"), "-I", str(DSP_CORE_SRC)]
     subprocess.run([CXX, *CXXFLAGS, *inc, "-c", str(cpp), "-o", str(obj)],
                    check=True)
+    libgcc = subprocess.run(
+        [CXX.replace("g++", "gcc"), "-mcpu=cortex-m4", "-mfloat-abi=hard",
+         "-mfpu=fpv4-sp-d16", "-mthumb", "-print-libgcc-file-name"],
+        capture_output=True, text=True, check=True).stdout.strip()
     subprocess.run(
         [CXX, "-nostdlib", "-nostartfiles", f"-T{SDK}/ramlink.ld",
          "-mcpu=cortex-m4", "-mfloat-abi=hard", "-mfpu=fpv4-sp-d16", "-mthumb",
-         f"-Wl,--just-symbols={SDK}/axoloti.elf", str(obj), "-o", str(elf)],
+         f"-Wl,--just-symbols={SDK}/axoloti.elf", str(obj), libgcc,
+         "-o", str(elf)],
         check=True)
     # The patch .data section is NOLOAD: initialized statics would arrive as
     # garbage. Refuse to ship a binary that has one.
@@ -715,10 +889,13 @@ def build_patch(patch_path, frames=4800, name=None, events=(),
         if len(parts) >= 4 and parts[2] in ("d", "D") and int(parts[1], 16) > 0:
             raise Unsupported(f"initialized .data would be lost on load: {line}")
     subprocess.run([OBJCOPY, "-O", "binary", str(elf), str(binp)], check=True)
-    return binp.read_bytes(), pid
+    buffer_uploads = [(addr, path.read_bytes()) for addr, path in uploads]
+    return binp.read_bytes(), pid, buffer_uploads
 
 
 if __name__ == "__main__":
     import sys
-    binary, pid = build_patch(pathlib.Path(sys.argv[1]))
-    print(f"{len(binary)} bytes, patch id {pid:#010x}")
+    binary, pid, buffers = build_patch(pathlib.Path(sys.argv[1]))
+    print(f"{len(binary)} bytes, patch id {pid:#010x}, "
+          f"{len(buffers)} buffer(s), "
+          f"{sum(len(b) for _a, b in buffers)} buffer bytes")
