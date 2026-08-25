@@ -79,16 +79,27 @@ export class SoundGraph extends EventTarget {
     // Fetches and compiles the module. Safe to call before any user gesture — no
     // AudioContext is created here, so nothing needs permission yet.
     async loadModule(url = './soundgraph.wasm') {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`could not fetch ${url} (${response.status})`);
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`could not fetch ${url} (${response.status})`);
+            }
+            // compileStreaming would be better, but it needs the right Content-Type and this
+            // has to work off a plain static file server too.
+            this.bytes = await response.arrayBuffer();
+            this.module = await WebAssembly.compile(this.bytes);
+            this.tooling = new Tooling(await WebAssembly.instantiate(this.module, {}));
+            return this.tooling;
+        } catch (error) {
+            // Tagged, because `start()` can fail two ways that have nothing in common
+            // except the silence: the module never arrived, or the browser would not give
+            // us an AudioContext. Sending somebody to check their output device over a
+            // missing download is sending them to the one place the answer is not.
+            if (error instanceof Error) {
+                error.kind = 'module';
+            }
+            throw error;
         }
-        // compileStreaming would be better, but it needs the right Content-Type and this
-        // has to work off a plain static file server too.
-        this.bytes = await response.arrayBuffer();
-        this.module = await WebAssembly.compile(this.bytes);
-        this.tooling = new Tooling(await WebAssembly.instantiate(this.module, {}));
-        return this.tooling;
     }
 
     // Must be called from a user gesture: browsers will not start audio otherwise.

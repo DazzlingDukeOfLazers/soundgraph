@@ -58,12 +58,26 @@ export const COPY = {
         skip: 'Explore without the tour',
         volume: 'Audio will begin after you press Start. Check your volume first.',
     },
+    // Two failures, two messages. The browser refusing to start audio is the visitor's end
+    // and worth checking a volume knob over; the sound module failing to arrive is ours, and
+    // no amount of checking their output device will help. Both used to say the second
+    // thing, which meant the only failure this page could actually produce from a fresh
+    // clone was also the one it described wrongly.
     audioFailure: {
         title: 'We do not have audio yet.',
         body: 'Your browser may be waiting for permission or using a different output ' +
             'device. Check your volume and audio output, then try again.',
         retry: 'Try audio again',
         silent: 'Continue silently',
+    },
+    engineFailure: {
+        title: 'The sound engine did not load.',
+        body: 'SoundGraph makes its sound in a module this page downloads, and that download ' +
+            'did not arrive. That is this end, not yours — nothing is wrong with your volume ' +
+            'or your speakers. A reload often fixes it, and everything else on this page ' +
+            'works without it.',
+        retry: 'Try again',
+        silent: 'Continue without sound',
     },
     hear: {
         title: 'This is the complete patch.',
@@ -435,28 +449,38 @@ export class Onboarding {
             await this.host.startAudio();
             milestone(MILESTONES.AUDIO_STARTED);
             this.silent = false;
-        } catch {
-            this.showAudioFailure();
+        } catch (error) {
+            this.showAudioFailure(error);
             return;
         }
         await this.host.loadTutorialPatch();
         this.showHear();
     }
 
-    showAudioFailure() {
+    showAudioFailure(error) {
         this.step = 'audio-failure';
+        const copy = error?.kind === 'module' ? COPY.engineFailure : COPY.audioFailure;
+
         this.showModal(() => {
             const panel = make('div', 'tour-panel failure');
             panel.append(
-                make('h2', 'promise', COPY.audioFailure.title),
-                make('p', 'body', COPY.audioFailure.body),
+                make('h2', 'promise', copy.title),
+                make('p', 'body', copy.body),
             );
             const actions = make('div', 'tour-actions');
             actions.append(
-                button(COPY.audioFailure.retry, 'primary', () => this.beginAudio()),
-                button(COPY.audioFailure.silent, 'quiet', () => this.continueSilently()),
+                button(copy.retry, 'primary', () => this.beginAudio()),
+                button(copy.silent, 'quiet', () => this.continueSilently()),
             );
             panel.append(actions);
+
+            // What actually went wrong, verbatim and last. A visitor can ignore it; whoever
+            // is looking at a broken deploy needs it, and asking them to open a console to
+            // find out why the page said it had no sound is a poor trade.
+            const detail = error?.message ?? String(error ?? '');
+            if (detail) {
+                panel.append(make('p', 'detail', detail));
+            }
             return panel;
         });
     }

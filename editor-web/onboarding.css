@@ -97,6 +97,18 @@
 .tour-panel .prompt { margin: 0.4rem 0 0.9rem; color: var(--accent); }
 .tour-panel .small-print { margin: 0.9rem 0 0; font-size: 0.78rem; color: var(--muted); }
 
+/* The underlying error, verbatim. Monospace and quiet: it is for whoever is fixing the
+ * deploy, not for the visitor, and it should read as machinery rather than as advice. */
+.tour-panel .detail {
+    margin: 1rem 0 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    word-break: break-word;
+}
+
 .tour-actions {
     display: flex;
     flex-wrap: wrap;
