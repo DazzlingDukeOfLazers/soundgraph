@@ -66,32 +66,28 @@ template and `docs/decisions.md` records what a mismatch costs — plus CMake 4.
 Still missing, so **the native build, ctest and therefore `tools/pre-push.sh` cannot run
 here**: there is no C++ compiler at all — no MSVC, no gcc, no clang — and no ESP-IDF.
 
-**Installing one is not a free action on this box, and both obvious routes are blocked.**
-`winget install Microsoft.VisualStudio.2022.BuildTools` needs UAC elevation and returns
-1602 from a non-interactive shell. MinGW-w64 installs fine at user scope and then cannot
-run at all: **Smart App Control is on** (`HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy`,
-`VerifiedAndReputablePolicyState = 1`), and it blocks the unsigned binaries — every one of
-them exits `0xC0E90002` with no output, and
-`Microsoft-Windows-CodeIntegrity/Operational` names the file:
-`x86_64-w64-mingw32-g++.exe attempted to load libwinpthread-1.dll that did not meet the
-Enterprise signing level requirements`.
+**The toolchain is now complete.** Visual Studio Build Tools 2022 (MSVC 19.44) was
+installed by hand — it needs UAC, and `winget` returns 1602 from a non-interactive shell.
+It lives at `C:\Program Files (x86)\Microsoft Visual Studio2\BuildTools`, **not** the
+Community path this file used to name and `tools/pre-push.sh` used to hard-code; the gate
+now asks `vswhere` instead of assuming.
 
-So the desktop extension needs **Daniel at the keyboard**, approving the Build Tools
-installer. That is also the toolchain this project documents. Smart App Control could be
-turned off instead — but it is **one-way**: Windows offers no supported route back to On
-short of reinstalling, so it should not be traded for a build. Emscripten, CMake and Ninja
-are unaffected: emcc runs through Python, and the Kitware and Ninja binaries are signed. What
-does work is the browser half end to end: configure with the Emscripten toolchain file
-directly rather than through `emcmake`, which is worth knowing because `emsdk_env.bat`
-detects MSYS and emits *bash* exports, so calling it from `cmd` sets nothing and leaves
-`emcc` off PATH while looking like it succeeded.
+The whole gate passes here for the first time: **ctest 25/25**, editor 1174 checks, design
+and layout suites, and `verify-roundtrip` with identical audio on all three patches.
 
-```bash
-cmake -S . -B build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_TOOLCHAIN_FILE=C:/Users/danie/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
-cmake --build build-wasm          # writes editor-web/soundgraph.wasm
-node runtime-wasm/verify-goldens.mjs
-```
+**Smart App Control blocks freshly built binaries, at random.** It is on
+(`HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy`, `VerifiedAndReputablePolicyState = 1`)
+and it blocked `build/bin/test_dx7_operator.exe` — a binary this machine had just compiled —
+while the other 24 test executables, equally unsigned and equally fresh, ran. The verdict is
+per file hash, so **relinking clears it**: touching the source and rebuilding produced a new
+hash that ran, all 5 cases passing. ctest reports this as `BAD_COMMAND` rather than a
+failure, and running the binary by hand is what says "blocked by your organization's Device
+Guard policy"; `Microsoft-Windows-CodeIntegrity/Operational` names the file. Expect it again
+on any rebuild, and do not read it as a broken test.
+
+Reputation, not signature: emsdk's own `clang.exe` is `NotSigned` and runs fine, which is
+why the WebAssembly build never hit this. Turning Smart App Control off would also fix it
+and is **one-way** — no supported route back to On short of reinstalling Windows.
 
 The native `build/` directory on the Windows machine is **Ninja + MSVC**, so `cmake
 --build build` only works from a shell that has the VS environment loaded — run it from a
