@@ -205,6 +205,36 @@ for (const origin of [
 }
 
 // ---------------------------------------------------------------------------------
+// Hiding actually hides
+//
+// `hidden` is a UA-stylesheet rule, `[hidden] { display: none }`, and any class selector
+// that sets `display` outranks it. `.tour-modal` set `display: flex` and had no guard, so
+// `modal.hidden = true` set a property and changed nothing: the arrival overlay stayed
+// painted over the coach mark that had replaced it, buttons still disabled, for every
+// visitor who pressed Start. It read as a hang and it reached a person.
+//
+// No browser check would have caught it, because `element.hidden` reports the property
+// that was just set rather than whether anything is drawn — every DOM assertion passed. So
+// the invariant is enforced on the stylesheet instead: anything the tour hides must say so
+// in CSS, whether or not it currently sets `display`.
+// ---------------------------------------------------------------------------------
+
+console.log('');
+console.log('hiding');
+
+const css = ['onboarding.css', 'style.css']
+    .map((name) => readFileSync(join(here, name), 'utf8'))
+    .join('\n');
+
+for (const selector of ['.tour-layer', '.tour-ring', '.tour-card', '.tour-modal', '.sheet']) {
+    // The guard may be alone or in a comma-separated list, so look for the selector with
+    // [hidden] attached anywhere a rule could name it.
+    const guarded = new RegExp(`\\${selector}\\[hidden\\]`).test(css);
+    check(`${selector} has an explicit [hidden] rule`, guarded,
+        'without one, a display: property on its class silently defeats element.hidden');
+}
+
+// ---------------------------------------------------------------------------------
 // The picture
 // ---------------------------------------------------------------------------------
 

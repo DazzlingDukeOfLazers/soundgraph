@@ -58,6 +58,24 @@
     background: rgba(10, 12, 15, 0.82);
 }
 
+/* `hidden` is a UA-stylesheet rule — `[hidden] { display: none }` — and ANY class selector
+ * that sets `display` outranks it. `.tour-modal` sets `display: flex`, so `modal.hidden =
+ * true` set a property and changed nothing on screen: the arrival overlay stayed painted
+ * over the coach mark that had replaced it, its buttons still disabled from the click that
+ * opened it. The tour was running correctly underneath the whole time, which is exactly
+ * what made it look like a hang.
+ *
+ * It survived every check because `element.hidden` reports the property you just set, not
+ * whether anything is drawn — so every DOM assertion passed. Assert
+ * `getComputedStyle(el).display`, never `el.hidden`. All four are listed rather than only
+ * the one that sets `display` today, so adding one later cannot reopen this. */
+.tour-layer[hidden],
+.tour-ring[hidden],
+.tour-card[hidden],
+.tour-modal[hidden] {
+    display: none;
+}
+
 .tour-modal .tour-panel {
     width: min(560px, 100%);
     background: var(--panel);

@@ -102,12 +102,24 @@ the environment. That is exactly how the macos-support merge first presented on 
   **Help → Restart introduction** runs the tour again. Signups and one funnel row per visit
   go to the feedback service. Three decisions in `docs/decisions.md` (2026-08-25).
 
-  Verified by walking the whole tour in a browser: the audio-failure recovery screen and its
-  silent path, the four highlighted groups, the one-octave golden-moment threshold, the
-  Original/Your version toggle, the bypass lesson rewiring the graph and putting it back
-  exactly, the mailing panel's decline and error states, the skip path, and a returning
-  visitor opening into their locally saved patch. Four defects came out of that walk and are
-  fixed: the spoken signal order was breadth-first and announced the amplifier before the
+  Walked end to end in a browser: the audio-failure recovery screen and its silent path, the
+  four highlighted groups, the one-octave golden-moment threshold, the Original/Your version
+  toggle, the bypass lesson rewiring the graph and putting it back exactly, the mailing
+  panel's decline and error states, the skip path, and a returning visitor opening into
+  their locally saved patch.
+
+  **That walk asserted the DOM, not the rendering, and it missed a defect that reached a
+  person.** `.tour-modal` sets `display: flex`, which outranks the UA stylesheet's
+  `[hidden] { display: none }`, so `modal.hidden = true` set a property and hid nothing: the
+  arrival overlay stayed painted over the coach mark that had replaced it, with its buttons
+  still disabled from the click. The tour ran correctly underneath, which is what made it
+  read as a hang. Every check passed because `element.hidden` reports the property you just
+  set rather than whether anything is drawn. Assert `getComputedStyle(el).display`, and take
+  a screenshot when one can be taken — this is the same lesson as the Godot inspector that
+  was off the right-hand edge of the window while every measurement passed. The stylesheet
+  invariant is now enforced in `verify-onboarding.mjs`.
+
+  Four more defects came out of that walk and are fixed: the spoken signal order was breadth-first and announced the amplifier before the
   filter; the status line blamed the patch when the engine was what failed to load; a
   malformed address was headed "that did not connect" when nothing had been sent; and a
   coach mark pointed at a control below the fold without scrolling to it. A fifth — the 808
