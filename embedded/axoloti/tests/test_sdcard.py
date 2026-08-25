@@ -34,7 +34,7 @@ def sd(board):
     try:
         _, entries = board.sd_dir_listing()
         victims = sorted((n for n, _s, _t in entries
-                          if n.startswith(TEST_DIR.lstrip("/"))),
+                          if n.lstrip("/").startswith(TEST_DIR.lstrip("/"))),
                          key=len, reverse=True)
         for name in victims:
             board.sd_delete("/" + name.rstrip("/"))
@@ -61,7 +61,7 @@ def test_write_and_stat(sd):
 def test_listing_sees_the_file(sd):
     board = sd
     _, entries = board.sd_dir_listing()
-    names = {n: s for n, s, _t in entries}
+    names = {n.lstrip("/"): s for n, s, _t in entries}
     assert "sgtest/a.bin" in names, f"listing missing our file: {sorted(names)[:10]}"
     assert names["sgtest/a.bin"] == 65536
 
