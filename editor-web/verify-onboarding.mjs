@@ -30,7 +30,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
 
 const { COPY, GOLDEN_OCTAVES, isGoldenChange } = await import('./onboarding.js');
-const { MILESTONES, browserFamily, funnelText, looksLikeAddress } = await import('./reporting.js');
+const { MILESTONES, browserFamily, funnelText, isDevelopmentOrigin, looksLikeAddress } =
+    await import('./reporting.js');
 const { GraphView } = await import('./graph-view.js');
 
 const patch = JSON.parse(readFileSync(join(root, 'examples', 'patches', 'start-here.json'), 'utf8'));
@@ -166,6 +167,42 @@ check('Firefox is reported as Firefox',
 check('an address with no domain is refused', looksLikeAddress('someone@localhost') === false);
 check('an ordinary address is accepted', looksLikeAddress('someone@example.com') === true);
 check('an empty field is refused', looksLikeAddress('') === false);
+
+// Funnel rows from a dev origin are marked `test` so the server discards them. Getting this
+// wrong in either direction is quiet: too narrow and every reload writes a row into the
+// store a human reads; too wide and real visitors stop being counted at all.
+console.log('');
+console.log('dev origins');
+
+for (const origin of [
+    'http://localhost:8177',
+    'http://localhost',
+    'https://localhost:443',
+    'http://127.0.0.1:8177',
+    'http://10.0.0.145:8081',
+    'http://192.168.1.20:3000',
+    'http://172.16.0.5',
+    'http://172.31.255.255:99',
+    'http://lumpy.local:8177',
+]) {
+    check(`${origin} is a dev origin`, isDevelopmentOrigin(origin) === true);
+}
+
+for (const origin of [
+    'https://mutantfactory.net',
+    'https://soundgraph.dev',
+    // The one that matters: anybody can register this, and a check that just looked for
+    // the substring would let it throw its rows away — or worse, be trusted for anything.
+    'https://localhost.example.com',
+    'https://127.0.0.1.example.com',
+    'http://172.15.0.1',        // just below the private range
+    'http://172.32.0.1',        // just above it
+    'http://10.999.1.1',        // not an address at all
+    'http://notlocalhost',
+    '',
+]) {
+    check(`${origin || '(empty)'} is not a dev origin`, isDevelopmentOrigin(origin) === false);
+}
 
 // ---------------------------------------------------------------------------------
 // The picture

@@ -19,6 +19,10 @@
 // two rows rather than hundreds. If that stops being a good enough answer, FUNNEL_REPORTS
 // below is the switch, and turning it off costs the funnel and nothing else.
 //
+// A funnel row from a dev origin is marked `test`, which the server accepts and discards.
+// Otherwise every reload while working on this page would write one, and the people
+// polluting the store worst would be the two who read it.
+//
 // Nothing here is allowed to take the instrument down. Every network call is guarded, a
 // refusal is remembered rather than retried in a loop, and the page works identically
 // with the endpoint unreachable — which is also what happens when someone blocks it.
@@ -77,6 +81,34 @@ export function browserFamily(userAgent = navigator.userAgent) {
     // Safari last: every browser above also says "Safari" in its user agent string.
     if (/Safari\//.test(agent)) return 'web/Safari';
     return 'web';
+}
+
+// An IPv4 octet, so `10.999.1.1` is not quietly treated as an address. Same shape as the
+// service's own cors.js, on purpose: these two lists have to mean the same thing by "a dev
+// origin", and the day they disagree is the day local rows start landing in the store.
+const OCTET = '(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+
+const LOOPBACK = new RegExp(`^https?://(localhost|127\\.${OCTET}\\.${OCTET}\\.${OCTET})(:\\d{1,5})?$`);
+
+const PRIVATE_LAN = new RegExp(
+    '^https?://(' +
+        `10\\.${OCTET}\\.${OCTET}\\.${OCTET}` +
+        `|192\\.168\\.${OCTET}\\.${OCTET}` +
+        `|172\\.(1[6-9]|2\\d|3[01])\\.${OCTET}\\.${OCTET}` +
+        '|[a-z0-9][a-z0-9-]*\\.local' +
+    ')(:\\d{1,5})?$'
+);
+
+/**
+ * Is this page being served from somebody's own machine?
+ *
+ * Anchored at both ends, which is the whole job: `localhost.example.com` is a domain
+ * anybody can register, and a check that merely looked for "localhost" would hand every
+ * page on it a way to have its rows thrown away.
+ */
+export function isDevelopmentOrigin(origin = globalThis.location?.origin ?? '') {
+    const value = String(origin).trim().toLowerCase().replace(/\/+$/, '');
+    return LOOPBACK.test(value) || PRIVATE_LAN.test(value);
 }
 
 /**
@@ -185,6 +217,15 @@ export async function flushFunnel({ keepalive = false } = {}) {
             element_key: 'onboarding/funnel',
             text,
             milestones: reached,
+            // A funnel row from a dev machine is somebody testing the page, and every
+            // reload of it would otherwise become a row in the store a human reads. The
+            // server refuses `test` at the door — 202, nothing written — so the whole path
+            // still gets exercised locally and none of it accumulates.
+            //
+            // This applies to the funnel ONLY. A signup from a dev origin is still a person
+            // asking to join, and throwing their address away to keep a store tidy is the
+            // wrong trade.
+            ...(isDevelopmentOrigin() ? { test: true } : {}),
         }), { keepalive });
         lastSent = text;
         return true;

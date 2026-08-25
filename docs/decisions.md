@@ -54,7 +54,12 @@ Consequences:
 Machine-written rows now live in a store built for words people wrote. `triage.py --app`
 keeps other products' reads clean and `groups` buckets these into two rows, but the default
 `new` view will carry them. `FUNNEL_REPORTS` in `editor-web/reporting.js` turns them off
-without touching signups. Whatever origin serves the page must be added to the service's
+without touching signups. A funnel row from a loopback or private-LAN origin carries
+`test: true`, so the whole path runs while working on the page and the server stores none of
+it — the two people who read the store would otherwise have been the ones filling it. That
+guard is on the funnel only: a signup from a dev origin is still a person asking to join,
+and the origin test is anchored at both ends, because `localhost.example.com` is a domain
+anybody can register. Whatever origin serves the page must be added to the service's
 `ALLOWED_ORIGINS`; `localhost` and `private` are already on it. The page also mints a random
 `install_id` in localStorage — the About panel says so, in those words, because "no
 tracking" would be a claim and this is a description.

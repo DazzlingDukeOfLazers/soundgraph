@@ -50,6 +50,12 @@ Whatever origin serves this page must be named in that service's `ALLOWED_ORIGIN
 `localhost` and `private` are already there, so a dev server works untouched.
 `FUNNEL_REPORTS` turns the first one off; signups are separate.
 
+**Working on this page does not fill the store.** A funnel row from loopback or a private
+LAN is marked `test`, which the service accepts and discards — `202 {"discarded": true}`,
+nothing written — so the whole path runs locally and none of it accumulates. Signups are
+deliberately not covered by that: somebody joining from a dev origin is still somebody
+joining.
+
 Reports carry a build stamp, so write one before serving a build anybody will use:
 
 ```bash

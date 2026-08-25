@@ -179,11 +179,17 @@ gesture. Synthetic events do not lift that; only a person clicking does.
   unverified is specifically the audible half: whether the Start Here patch sounds good,
   whether one octave of cutoff is the right threshold *by ear*, and whether the pulse is
   recognisable inside two minutes. Build the wasm and play it before the show.
-- **Nothing has been posted to the feedback service.** Reporting was switched off for the
-  whole browser session on purpose, so no funnel row and no signup has ever reached
-  `feedback.mutantfactory.net` from this page. The envelope is built to the contract and the
-  failure paths are exercised locally, but the round trip is untested, and the origin that
-  ends up serving the page still has to be added to `ALLOWED_ORIGINS`.
+- **Nothing has been stored in the feedback service, and that is the tested half.** A funnel
+  row from `http://localhost:8177` reaches `feedback.mutantfactory.net` and comes back
+  `202 {"discarded": true}` — the preflight passes, the response is readable, and the row is
+  refused at the door because a dev origin marks its funnel rows `test`. So the transport,
+  the CORS allow-list and the envelope are all confirmed against the live service.
+
+  What has never happened is a report that is actually **kept**: no funnel row from a
+  production origin, and no signup at all — a real address would be stored, so that one is
+  not a thing to try idly. The origin that ends up serving this page still has to be added
+  to `ALLOWED_ORIGINS`; until then it is refused with no CORS headers, which reads from the
+  page as a network failure.
 - The **sandbox's** sounds have not been heard in a browser. They use the same generator and
   the same `playback_type` as the editor's synth, which is confirmed audible, so this is a
   reasonable inference rather than a verified fact — pressing Space in the Sandbox tab would
