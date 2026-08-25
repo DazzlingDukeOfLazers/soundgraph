@@ -422,9 +422,21 @@ clap-wrapper plugin needs both; a live DAW never notices because its loop was al
 running. `sg_host_swaps_patches_through_the_vst3` fails if either half is removed
 (verified by removing it).
 
-Still open: the embedded webview GUI is a black window inside Windows hosts (Reaper and
-Carla both — the plugin's WebView2 path doesn't paint when parented into a host window;
-the Mac GUI and the parameter surface are unaffected), sample-rate golden comparison
+The Windows GUI works too (2026-08-24). It arrived as a black rectangle in both Reaper
+and Carla, and the cause was neither host: choc builds a WKWebView synchronously on
+macOS but asks WebView2 for an environment *asynchronously* on Windows, and both
+`bind()` and `setHTML()` open with `if (! coreWebView) return false;`. Called at
+gui_create time on Windows they were therefore not errors — they were silently
+discarded, so the window existed and had simply never been told to show anything. The
+panel setup now lives in `finish_gui_setup`, which is idempotent, refuses to act until
+`isReady()`, and is driven by a registered CLAP host timer (with a bounded message pump
+in `gui_set_parent` for hosts that offer no timer extension). One genuine second bug
+sat underneath: choc creates its window `WS_POPUP`, and reparenting a popup into a
+host's window without restyling it `WS_CHILD` leaves it painting unreliably — the style
+has to change with the parentage. Verified in Reaper: both the CLAP and the VST3 show
+the panel, the patch dropdown is populated through the JS bindings, and it opens.
+
+Still open: sample-rate golden comparison
 through the plugin path, audio input for HostAudioSource patches, VST3 hosting as the
 second act of `sg-host`, and growing the panel toward hosting the full web editor.
 

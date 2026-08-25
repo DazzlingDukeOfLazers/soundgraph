@@ -150,9 +150,18 @@ private:
 struct GuiState {
     std::unique_ptr<choc::ui::WebView> webview;
     double scale = 1.0;
+    // Windows builds its webview asynchronously, so the bindings and the page cannot
+    // be installed at create time — see finish_gui_setup. `dressed` records that they
+    // finally were; `timer` is the host timer we asked for in order to keep trying.
+    bool dressed = false;
+    clap_id timer = CLAP_INVALID_ID;
 };
 constexpr uint32_t kGuiWidth = 560;
 constexpr uint32_t kGuiHeight = 460;
+// How often to ask an asynchronous webview whether it has finished starting, and how
+// long to wait for it by hand when the host offers no timer to ask from.
+constexpr uint32_t kGuiTimerMs = 16;
+constexpr uint32_t kGuiPumpMs = 3000;
 #endif
 
 struct Plugin {
@@ -715,16 +724,24 @@ bool gui_get_preferred_api(const clap_plugin_t*, const char** api, bool* is_floa
     return true;
 }
 
-bool gui_create(const clap_plugin_t* plugin, const char* api, bool is_floating) {
-    if (!gui_is_api_supported(plugin, api, is_floating)) {
-        return false;
-    }
-    Plugin* plug = self(plugin);
-    auto gui = std::make_unique<GuiState>();
-    gui->webview = std::make_unique<choc::ui::WebView>(choc::ui::WebView::Options{});
-    if (gui->webview == nullptr || gui->webview->getViewHandle() == nullptr) {
-        return false;
-    }
+// Installs the bindings and the page — the moment the webview can actually take them.
+//
+// This is a function rather than the tail of gui_create because of a platform split
+// that costs a whole GUI when it is ignored. macOS builds its WKWebView synchronously,
+// so everything works if done immediately. Windows does not: choc asks WebView2 for an
+// environment through CreateCoreWebView2EnvironmentWithOptions, which *completes on the
+// message loop some time later*, and until it does, choc's own bind() and setHTML()
+// both begin `if (! coreWebView) return false;`. Called at create time on Windows they
+// are therefore not errors — they are silently discarded, leaving a real window that
+// was never told to display anything. That is the black rectangle.
+//
+// So: idempotent, safe to call as often as anyone likes, and does nothing until the
+// view says it is ready. Bindings go in before the HTML because they are installed as
+// document-creation scripts, which only reach documents created after them.
+bool finish_gui_setup(Plugin* plug) {
+    GuiState* gui = plug->gui.get();
+    if (gui == nullptr || gui->dressed) return gui != nullptr;
+    if (gui->webview == nullptr || !gui->webview->isReady()) return false;
 
     choc::ui::WebView& view = *gui->webview;
     view.bind("sg_getState", [plug](const choc::value::ValueView&) {
@@ -754,14 +771,61 @@ bool gui_create(const clap_plugin_t* plugin, const char* api, bool is_floating) 
         return choc::value::Value();
     });
     view.setHTML(reinterpret_cast<const char*>(soundgraph_clap::kPanelHtml));
+    gui->dressed = true;
+    return true;
+}
 
+bool gui_create(const clap_plugin_t* plugin, const char* api, bool is_floating) {
+    if (!gui_is_api_supported(plugin, api, is_floating)) {
+        return false;
+    }
+    Plugin* plug = self(plugin);
+    auto gui = std::make_unique<GuiState>();
+    gui->webview = std::make_unique<choc::ui::WebView>(choc::ui::WebView::Options{});
+    if (gui->webview == nullptr || gui->webview->getViewHandle() == nullptr) {
+        return false;
+    }
     plug->gui = std::move(gui);
+
+    // Synchronous platforms are dressed here and now, and never look at the timer.
+    if (finish_gui_setup(plug)) {
+        return true;
+    }
+
+    // Asynchronous ones need to be asked again later. A host timer is the polite way
+    // to get a main thread back, and every host that can show a GUI has one — but the
+    // extension is optional, so the pump in gui_set_parent covers hosts without it.
+    if (const auto* timers = static_cast<const clap_host_timer_support_t*>(
+            plug->host->get_extension(plug->host, CLAP_EXT_TIMER_SUPPORT))) {
+        timers->register_timer(plug->host, kGuiTimerMs, &plug->gui->timer);
+    }
     return true;
 }
 
 void gui_destroy(const clap_plugin_t* plugin) {
-    self(plugin)->gui.reset();
+    Plugin* plug = self(plugin);
+    if (plug->gui != nullptr && plug->gui->timer != CLAP_INVALID_ID) {
+        if (const auto* timers = static_cast<const clap_host_timer_support_t*>(
+                plug->host->get_extension(plug->host, CLAP_EXT_TIMER_SUPPORT))) {
+            timers->unregister_timer(plug->host, plug->gui->timer);
+        }
+    }
+    plug->gui.reset();
 }
+
+void plugin_on_timer(const clap_plugin_t* plugin, clap_id timer) {
+    Plugin* plug = self(plugin);
+    if (plug->gui == nullptr || timer != plug->gui->timer) return;
+    if (!finish_gui_setup(plug)) return;
+    // Dressed at last; the timer has done the only job it was registered for.
+    if (const auto* timers = static_cast<const clap_host_timer_support_t*>(
+            plug->host->get_extension(plug->host, CLAP_EXT_TIMER_SUPPORT))) {
+        timers->unregister_timer(plug->host, plug->gui->timer);
+    }
+    plug->gui->timer = CLAP_INVALID_ID;
+}
+
+const clap_plugin_timer_support_t kTimerSupport = {plugin_on_timer};
 
 bool gui_set_scale(const clap_plugin_t* plugin, double scale) {
     Plugin* plug = self(plugin);
@@ -811,9 +875,31 @@ bool gui_set_parent(const clap_plugin_t* plugin, const clap_window_t* window) {
     return true;
 #elif defined(_WIN32)
     HWND child = static_cast<HWND>(plug->gui->webview->getViewHandle());
+    // choc makes its window WS_POPUP, which is right for a window that stands alone
+    // and wrong for one living inside a host's: a popup reparented as-is keeps
+    // top-level behaviour and does not clip or paint reliably against its new parent.
+    // The style has to change with the parentage.
+    ::SetWindowLongPtrW(child, GWL_STYLE, WS_CHILD | WS_VISIBLE);
     ::SetParent(child, static_cast<HWND>(window->win32));
     ::SetWindowPos(child, nullptr, 0, 0, static_cast<int>(kGuiWidth),
                    static_cast<int>(kGuiHeight), SWP_NOZORDER | SWP_SHOWWINDOW);
+
+    // Last resort for a host that offers no timer extension: give WebView2's
+    // asynchronous startup the message loop it is waiting for, briefly, here on the
+    // main thread where set_parent is already required to be called. Bounded, and
+    // skipped entirely the moment the view is dressed — which for a host with timers
+    // it already will be.
+    if (!plug->gui->dressed && plug->gui->timer == CLAP_INVALID_ID) {
+        const DWORD deadline = ::GetTickCount() + kGuiPumpMs;
+        while (!finish_gui_setup(plug) && ::GetTickCount() < deadline) {
+            MSG message;
+            while (::PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+                ::TranslateMessage(&message);
+                ::DispatchMessageW(&message);
+            }
+            ::Sleep(4);
+        }
+    }
     return true;
 #else
     (void)window;
@@ -1212,6 +1298,7 @@ const void* plugin_get_extension(const clap_plugin_t*, const char* id) {
     if (std::strcmp(id, CLAP_EXT_STATE) == 0) return &kState;
 #if defined(SOUNDGRAPH_HAS_GUI)
     if (std::strcmp(id, CLAP_EXT_GUI) == 0) return &kGui;
+    if (std::strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) return &kTimerSupport;
 #endif
     return nullptr;
 }
