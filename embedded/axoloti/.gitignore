@@ -1,0 +1,5 @@
+sdk/
+patches/build/
+tests/reports/
+.venv/
+__pycache__/

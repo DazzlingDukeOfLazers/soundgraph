@@ -479,6 +479,34 @@ Still open: sample-rate golden comparison
 through the plugin path, audio input for HostAudioSource patches, VST3 hosting as the
 second act of `sg-host`, and growing the panel toward hosting the full web editor.
 
+## Axoloti (2026-08-25)
+
+The "Axoloti/Ksoloti experiments" roadmap item has its first station:
+`embedded/axoloti/` proves, against a real Axoloti Core on USB, that we can program
+the board and where its realtime ceiling sits. No Java patcher involved — the host
+speaks the board's vendor bulk protocol directly from Python (`driver/axoproto.py`),
+and test patches are hand-written C++ against a self-declared 60-line ABI, compiled
+with today's arm-none-eabi-gcc 16 and linked with `--just-symbols` against the stock
+1.0.12-2 firmware elf (fetched pinned from the official release; the board's reported
+firmware CRC `0xe95bac96` matches it byte-for-byte, so nothing gets reflashed).
+
+Twenty hardware tests in four tiers: USB link, memory write/read-back (the patch
+upload path, ~62 KB/s up / ~770 KB/s down), compiled-patch execution (heartbeat at
+3000 DSP cycles/s), and an analog-loopback limits suite. The `looplab` patch emits
+1500 Hz on the left out and analyzes its own inputs on-board (peak, mean-square, zero
+crossings per 100 ms window, published in shared memory the host reads over USB), so
+loopback verification needs no host audio interface. Measured on this board: tone
+returns at −10.7 dBFS with the frequency exact; a host-controlled load bank finds the
+knee at 176 oscillators (~92% DSP load) clean, hard collapse at 192 — firmware load
+pegs, heartbeat drops to 1000/s, audio dies. All three overload signals agree, and the
+suite skips cleanly when no board is plugged in.
+
+Traps that cost time: the board fragments bulk packets arbitrarily (an ack can arrive
+as `'A'` then `'xoA…'` — any stream resync must keep partial-header tails); patch
+`.data` is NOLOAD in `ramlink.ld` (initialized statics silently arrive as garbage —
+the Makefile refuses to link them); and modern gcc's `-freorder-functions` would put
+cold code in `.text.unlikely`, which the linker script doesn't place.
+
 ## Invariants
 
 - `dsp-core` depends on nothing but the C++ standard library.
