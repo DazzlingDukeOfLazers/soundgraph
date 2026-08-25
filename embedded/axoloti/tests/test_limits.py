@@ -5,28 +5,22 @@ Wiring: audio out -> audio in with a (mono) cable. The looplab patch emits a
 only reads numbers, so no audio interface is involved.
 
 The DSP load ramp switches on oscillators in the patch's load bank until the
-board runs out of realtime, using three independent overload signals: the
-firmware's own dspLoadPct, the heartbeat rate (dropped cycles), and the
-loopback analyzer (audible dropouts collapse peak/frequency stability).
+board runs out of realtime — see ramp.py for the three overload signals.
 """
 
 import json
 import pathlib
-import statistics
 import time
 
 import pytest
 
+import ramp
 import shm
 from axoproto import ProtocolError
 from conftest import load_patch_bin
+from ramp import FREQ_TOL_HZ, MIN_PEAK_DBFS, TONE_HZ, fresh_window
 
 REPORT_DIR = pathlib.Path(__file__).resolve().parent / "reports"
-
-TONE_HZ = 1500
-FREQ_TOL_HZ = 100
-# Minimum acceptable loopback level: generous, the tone leaves at -6 dBFS.
-MIN_PEAK_DBFS = -40
 
 
 @pytest.fixture(scope="module")
@@ -39,20 +33,6 @@ def looplab(board):
         board.stop_patch()
     except ProtocolError:
         pass
-
-
-def fresh_window(board, timeout_s=3.0):
-    """Wait for two window publications so the last full window reflects the
-    current control settings, then return it."""
-    start = shm.read_shm(board).win_count
-    deadline = time.monotonic() + timeout_s
-    while True:
-        state = shm.read_shm(board)
-        if state.win_count >= start + 2:
-            return state
-        if time.monotonic() > deadline:
-            raise AssertionError("analyzer windows stopped advancing")
-        time.sleep(0.05)
 
 
 def test_loopback_carries_tone(looplab):
@@ -85,73 +65,14 @@ def test_tone_off_goes_quiet(looplab):
         "when the tone stopped")
 
 
-def _measure(board, n, settle_s=0.4):
-    shm.set_nosc(board, n)
-    time.sleep(settle_s)
-    loads = [board.ping(timeout_s=4).dsp_load for _ in range(5)]
-    hb0 = board.read_u32(shm.SHM_ADDR + 4, timeout_s=4)
-    t0 = time.monotonic()
-    time.sleep(0.3)
-    hb1 = board.read_u32(shm.SHM_ADDR + 4, timeout_s=4)
-    hb_rate = (hb1 - hb0) / (time.monotonic() - t0)
-    state = fresh_window(board)
-    return {
-        "n_osc": n,
-        "dsp_load_pct": statistics.median(loads),
-        "heartbeat_rate": round(hb_rate),
-        "peak_l_dbfs": round(state.peak_l_dbfs, 1),
-        "zc_hz": state.zc_frequency_hz,
-    }
-
-
-def _is_clean(m, baseline_peak_dbfs):
-    return (m["dsp_load_pct"] <= 95
-            and m["heartbeat_rate"] >= 0.95 * shm.CYCLES_PER_SECOND
-            and abs(m["zc_hz"] - TONE_HZ) < FREQ_TOL_HZ
-            and m["peak_l_dbfs"] > baseline_peak_dbfs - 6)
-
-
 def test_dsp_load_ramp_finds_limit(looplab):
     board = looplab
     shm.set_tone(board, True)
-    baseline = _measure(board, 0)
-    assert baseline["dsp_load_pct"] < 20
-    assert baseline["peak_l_dbfs"] > MIN_PEAK_DBFS
-
-    results = [baseline]
-    last_clean, first_dirty = 0, None
-    for n in (16, 32, 64, 96, 128, 160, 192, 224, 256, 320, 384,
-              448, 512, 640, 768, 896, 1024):
-        try:
-            m = _measure(board, n)
-        except (ProtocolError, AssertionError) as e:
-            m = {"n_osc": n, "error": str(e)}
-            results.append(m)
-            first_dirty = n
-            break
-        results.append(m)
-        if _is_clean(m, baseline["peak_l_dbfs"]):
-            last_clean = n
-        else:
-            first_dirty = n
-            break
-
-    # Refine the knee to within 8 oscillators.
-    lo, hi = last_clean, first_dirty
-    while hi is not None and hi - lo > 8:
-        mid = (lo + hi) // 2
-        try:
-            m = _measure(board, mid)
-            results.append(m)
-            if _is_clean(m, baseline["peak_l_dbfs"]):
-                lo = mid
-            else:
-                hi = mid
-        except (ProtocolError, AssertionError):
-            hi = mid
-    last_clean = lo
-
-    shm.set_nosc(board, 0)
+    baseline, last_clean, first_dirty, results = ramp.run_ramp(
+        board, shm.set_nosc,
+        steps=(16, 32, 64, 96, 128, 160, 192, 224, 256, 320, 384, 448, 512,
+               640, 768, 896, 1024),
+        refine_to=8)
 
     REPORT_DIR.mkdir(exist_ok=True)
     report = {"max_clean_oscillators": last_clean,
@@ -159,18 +80,13 @@ def test_dsp_load_ramp_finds_limit(looplab):
               "sweep": results}
     (REPORT_DIR / "dsp_limits.json").write_text(json.dumps(report, indent=2))
 
-    print("\n  n_osc  load%  heartbeat  peak dBFS  zc Hz")
-    for m in results:
-        if "error" in m:
-            print(f"  {m['n_osc']:5d}  link/analyzer lost: {m['error'][:60]}")
-        else:
-            print(f"  {m['n_osc']:5d}  {m['dsp_load_pct']:4d}  "
-                  f"{m['heartbeat_rate']:9d}  {m['peak_l_dbfs']:8.1f}  "
-                  f"{m['zc_hz']:6.0f}")
+    ramp.print_table(results, label="n_osc")
     if first_dirty is None:
-        print(f"  no overload found up to 1024 oscillators")
+        print("  no overload found up to 1024 oscillators")
     print(f"  => clean realtime limit: {last_clean} load-bank oscillators")
 
+    assert baseline["dsp_load_pct"] < 20
+    assert baseline["peak_l_dbfs"] > MIN_PEAK_DBFS
     assert last_clean >= 32, "board overloads implausibly early"
 
 

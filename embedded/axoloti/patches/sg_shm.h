@@ -20,7 +20,9 @@ typedef struct {
 
   // Host-written controls (patch only reads).
   int32_t ctrl_tone;      // 0/1: emit the 1500 Hz test tone on left out
-  int32_t ctrl_nosc;      // active oscillators in the load bank (load_ramp)
+  int32_t ctrl_nosc;      // looplab: active oscillators in the load bank
+  int32_t ctrl_nsine;     // nodelab: standalone soundgraph Sine nodes
+  int32_t ctrl_nvoice;    // nodelab: Sine->SVF->Gain voices
 
   // Input analyzer, published once per completed window.
   uint32_t win_count;     // completed windows since start

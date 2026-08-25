@@ -501,11 +501,26 @@ knee at 176 oscillators (~92% DSP load) clean, hard collapse at 192 — firmware
 pegs, heartbeat drops to 1000/s, audio dies. All three overload signals agree, and the
 suite skips cleanly when no board is plugged in.
 
+The second station (2026-08-25, same day): soundgraph-shaped limits. `nodelab` runs
+faithful float ports of dsp-core node inner loops — the shipped SineOscillator loop
+against the repo's committed 4096-entry sine table, the Simper SVF with per-block
+coefficients, GainNode with its modulation input live — plus the structural costs a
+scheduled graph pays: indirect dispatch per node per 16-frame block, per-node
+buffers, null-checked inputs, a summing mix pass. Measured clean limits: **48
+standalone Sine nodes** (~1.9% load each) or **28 Sine→SVF→Gain voices** (84 nodes,
+~3.3% per voice), against 176 raw integer oscillators. The Sine node costs ~3.7x a
+raw oscillator — not the float table-lerp (cheap on the M4F) but the per-sample
+nullptr checks, clamp, and the per-sample FPU divide for frequency→increment.
+
 Traps that cost time: the board fragments bulk packets arbitrarily (an ack can arrive
 as `'A'` then `'xoA…'` — any stream resync must keep partial-header tails); patch
 `.data` is NOLOAD in `ramlink.ld` (initialized statics silently arrive as garbage —
-the Makefile refuses to link them); and modern gcc's `-freorder-functions` would put
-cold code in `.text.unlikely`, which the linker script doesn't place.
+the Makefile refuses to link them); modern gcc's `-freorder-functions` would put
+cold code in `.text.unlikely`, which the linker script doesn't place; and a
+marginally seated USB cable brownout-crashes the board under rising DSP load while
+staying stable at idle — indistinguishable from a patch bug until an
+instruction-level diff of "crashing" vs "stable" binaries proved them functionally
+identical. Ramp measurements now record the 5 V rail (noisy; judge by crashes).
 
 ## Invariants
 

@@ -18,15 +18,15 @@ NM = arm-none-eabi-nm
 
 CXXFLAGS = -nostdlib -ffreestanding -fno-exceptions -fno-rtti -mcpu=cortex-m4 -O3 \
   -fomit-frame-pointer -falign-functions=16 -mfloat-abi=hard \
-  -mfpu=fpv4-sp-d16 -mthumb -std=c++11 -fno-math-errno \
+  -mfpu=fpv4-sp-d16 -mthumb -std=c++17 -fno-math-errno \
   -fno-threadsafe-statics -fno-use-cxa-atexit -fno-reorder-functions \
-  -Wall -Wextra -DSG_EXPECTED_FWID=$(FWID)
+  -Wall -Wextra -Wdouble-promotion -I../../../dsp-core/src -DSG_EXPECTED_FWID=$(FWID)
 
 LDFLAGS = -nostdlib -nostartfiles -T$(SDK)/ramlink.ld -mcpu=cortex-m4 \
   -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb \
   -Wl,--just-symbols=$(SDK)/axoloti.elf
 
-PATCHES = smoke looplab
+PATCHES = smoke looplab nodelab
 BINS = $(PATCHES:%=build/%.bin)
 
 all: $(BINS)
@@ -34,7 +34,7 @@ all: $(BINS)
 build:
 	mkdir -p build
 
-build/%.o: %.cpp axo_abi.h sg_shm.h | build
+build/%.o: %.cpp axo_abi.h sg_shm.h sg_lab.h | build
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 build/%.elf: build/%.o $(SDK)/ramlink.ld $(SDK)/axoloti.elf

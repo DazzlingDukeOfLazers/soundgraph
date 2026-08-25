@@ -85,12 +85,33 @@ class Axoloti:
     """One claimed connection to an Axoloti Core."""
 
     def __init__(self):
+        self.log_messages = deque(maxlen=64)  # collected "AxoT" text messages
+        try:
+            self._connect()
+        except (ProtocolError, usb.core.USBError):
+            # A prior session that died unreleased can leave the pipe in a
+            # state where transfers fail outright (libusb -99). A device
+            # reset re-enumerates and clears it; the firmware keeps running.
+            self._reset_device()
+            self._connect()
+
+    def _reset_device(self):
+        dev = usb.core.find(idVendor=VID, idProduct=PID, backend=_backend())
+        if dev is None:
+            raise BoardNotFound("no Axoloti Core (16c0:0442) on USB")
+        try:
+            dev.reset()
+        except usb.core.USBError:
+            pass  # reset drops the handle; that's the point
+        usb.util.dispose_resources(dev)
+        time.sleep(2.0)
+
+    def _connect(self):
         self.dev = usb.core.find(idVendor=VID, idProduct=PID, backend=_backend())
         if self.dev is None:
             raise BoardNotFound("no Axoloti Core (16c0:0442) on USB")
         usb.util.claim_interface(self.dev, INTERFACE)
         self._rx = b""
-        self.log_messages = deque(maxlen=64)  # collected "AxoT" text messages
         # A prior session may have died mid-stream: drain leftovers and prove
         # the link with a ping before handing out the connection.
         last_error = None
@@ -98,11 +119,12 @@ class Axoloti:
             self.drain()
             try:
                 self.ping(timeout_s=1.0)
-                break
+                return
             except ProtocolError as e:
                 last_error = e
-        else:
-            raise ProtocolError(f"board unresponsive after resync: {last_error}")
+        usb.util.release_interface(self.dev, INTERFACE)
+        usb.util.dispose_resources(self.dev)
+        raise ProtocolError(f"board unresponsive after resync: {last_error}")
 
     def close(self):
         usb.util.release_interface(self.dev, INTERFACE)

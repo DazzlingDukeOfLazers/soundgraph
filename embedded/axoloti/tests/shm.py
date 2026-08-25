@@ -10,14 +10,17 @@ CYCLES_PER_SECOND = 3000     # 48 kHz / 16-sample buffers
 
 SMOKE_ID = 0x534D4B31        # "SMK1"
 LOOPLAB_ID = 0x4C4F4F31      # "LOO1"
+NODELAB_ID = 0x4E4F4431      # "NOD1"
 
-# magic, heartbeat, ctrl_tone, ctrl_nosc, win_count, msq_l, msq_r,
-# peak_l, peak_r, zerocross_l, dcsum_l (8-aligned at offset 40), sink
-_FMT = "<IIiiIIIiiIqI"
+# magic, heartbeat, ctrl_tone, ctrl_nosc, ctrl_nsine, ctrl_nvoice, win_count,
+# msq_l, msq_r, peak_l, peak_r, zerocross_l, dcsum_l (8-aligned at 48), sink
+_FMT = "<IIiiiiIIIiiIqI"
 SIZE = struct.calcsize(_FMT)
 
 OFF_CTRL_TONE = 8
 OFF_CTRL_NOSC = 12
+OFF_CTRL_NSINE = 16
+OFF_CTRL_NVOICE = 20
 
 
 @dataclass
@@ -26,6 +29,8 @@ class Shm:
     heartbeat: int
     ctrl_tone: int
     ctrl_nosc: int
+    ctrl_nsine: int
+    ctrl_nvoice: int
     win_count: int
     in_msq_l: int
     in_msq_r: int
@@ -59,3 +64,11 @@ def set_tone(board, on):
 
 def set_nosc(board, n):
     board.write_mem(SHM_ADDR + OFF_CTRL_NOSC, struct.pack("<i", n))
+
+
+def set_nsine(board, n):
+    board.write_mem(SHM_ADDR + OFF_CTRL_NSINE, struct.pack("<i", n))
+
+
+def set_nvoice(board, n):
+    board.write_mem(SHM_ADDR + OFF_CTRL_NVOICE, struct.pack("<i", n))

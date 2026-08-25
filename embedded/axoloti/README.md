@@ -64,3 +64,25 @@ Tiers, in dependency order:
 
 Patch code+rodata window is 44 KB (`ramlink.ld`), upload runs ~60 KB/s
 (the firmware parses uploads byte-by-byte), readback ~700 KB/s.
+
+Realtime ceilings measured on a stock Core (clean = all three overload
+signals green, loopback verified):
+
+| workload | clean limit | ~load/unit |
+|----------|-------------|------------|
+| raw q32 phase-acc oscillators (`looplab`) | 176 | 0.52% |
+| soundgraph Sine nodes, faithful float port (`nodelab`) | 48 | 1.9% |
+| Sine→SVF→Gain voices (`nodelab`) | 28 (84 nodes) | 3.3% |
+
+The Sine node costs ~3.7x a raw oscillator: float table-lerp is cheap on the
+M4F, but the per-sample nullptr checks, nyquist clamp and the
+`frequency / sample_rate` divide (14-cycle FPU op, per sample) add up. A full
+voice is ~1.7 Sine-equivalents — the SVF's five-multiply core plus Gain are
+cheaper than the oscillator that feeds them.
+
+One trap for posterity: a marginally seated USB cable brownout-crashes the
+board under load and looks exactly like a patch bug (crashes within seconds
+whenever the DSP load rises, stable at idle). It cost an afternoon and an
+instruction-level binary diff to prove the code innocent. Every ramp
+measurement now records the 5 V rail (`v50_raw`, ~3100 healthy); the readings
+are noisy, so judge by crashes, not by single samples.
