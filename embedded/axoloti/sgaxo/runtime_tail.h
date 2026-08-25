@@ -1,7 +1,8 @@
 // sgaxo generated-patch tail: included at the END of every generated patch,
 // after the codegen has defined
 //
-//   static void sg_graph_process(float *out_l, float *out_r);  // 64 frames
+//   static void sg_graph_process(const float *in_l, const float *in_r,
+//                                float *out_l, float *out_r);  // 64 frames
 //   static void sg_graph_init(void);                    // runtime state init
 //   static void sg_note_event(int on, int note, float velocity);  // may be a no-op
 //   static const sgaxo_event_t sg_events[];  static const int sg_event_count;
@@ -59,6 +60,7 @@ static void sgaxo_midi_in(midi_device_t dev, uint8_t port, uint8_t b0,
 }
 
 static float sgaxo_fifo_l[SGAXO_FRAMES], sgaxo_fifo_r[SGAXO_FRAMES];
+static float sgaxo_in_l[SGAXO_FRAMES], sgaxo_in_r[SGAXO_FRAMES];
 static uint32_t sgaxo_fifo_pos;   // runtime-inited to SGAXO_FRAMES (empty)
 static uint32_t sgaxo_position;   // absolute frame count of rendered blocks
 static int sgaxo_next_event;
@@ -78,15 +80,22 @@ static void sgaxo_render_block(void) {
     sg_note_event(m->on, m->note, m->velocity);
     sgaxo_midi_rd = sgaxo_midi_rd + 1;
   }
-  sg_graph_process(sgaxo_fifo_l, sgaxo_fifo_r);
+  sg_graph_process(sgaxo_in_l, sgaxo_in_r, sgaxo_fifo_l, sgaxo_fifo_r);
   sgaxo_position += SGAXO_FRAMES;
   sgaxo_fifo_pos = 0;
 }
 
 static void sgaxo_dsp(int32_t *inbuf, int32_t *outbuf) {
-  (void)inbuf;
+  // The codec's input rides the same FIFO phase as the output: 16 frames
+  // land per cycle, and the block that renders sees the 64 input frames
+  // gathered over the preceding four cycles.
   if (sgaxo_fifo_pos >= SGAXO_FRAMES) sgaxo_render_block();
+  const float inv_q27 = 1.0f / 134217728.0f;
   uint32_t done = SGX->frames_done;
+  for (int i = 0; i < 16; i++) {
+    sgaxo_in_l[sgaxo_fifo_pos + i] = (float)(inbuf[i * 2] >> 4) * inv_q27;
+    sgaxo_in_r[sgaxo_fifo_pos + i] = (float)(inbuf[i * 2 + 1] >> 4) * inv_q27;
+  }
   for (int i = 0; i < 16; i++) {
     const float l = sgaxo_fifo_l[sgaxo_fifo_pos];
     const float r = sgaxo_fifo_r[sgaxo_fifo_pos];
