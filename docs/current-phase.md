@@ -396,14 +396,31 @@ its bundled Carla bridge crashes, OpenMPT is VST2-only) — Carla 2.5.10 works f
 hosting but ships a corrupt default VST3 search path (fixed per-user in
 `HKCU\Software\falkTX\Carla2\Paths`).
 
-`sg-host` (2026-08-24, `host-clap/`) is the first brick of SoundGraph-as-host: a
-headless CLAP host that LoadLibrary/dlopens any `.clap`, walks the factory, activates,
-plays notes, applies `--param NAME=VALUE` automation, renders to WAV, and turns an RMS
-threshold into an exit code. Unlike `test_clap_plugin` it meets the *shipped artifact*
-across the dynamic-loading boundary — a broken export table or CRT mismatch cannot hide.
-Two ctests ride the CLAP build: `sg_host_plays_the_built_clap` and
-`sg_host_lists_the_parameter_surface`. Patch swaps work through it (the
-request_callback → on_main_thread dance happens between blocks, as in a real host).
+`sg-host` (2026-08-24, `plugin-host/`) is the first brick of SoundGraph-as-host: a
+headless host that loads any `.clap` **or `.vst3`** the way a DAW does, walks the
+factory, activates, plays notes, applies `--param NAME=VALUE` automation, renders to
+WAV, and turns an RMS threshold into an exit code. Unlike `test_clap_plugin` it meets
+the *shipped artifact* across the dynamic-loading boundary — a broken export table or
+CRT mismatch cannot hide. `main.cpp` knows only `hosted_plugin.h`; the formats live in
+`host_clap.cpp` and `host_vst3.cpp`, so a third format would not touch the driver.
+Four ctests ride the CLAP build (`sg_host_plays_the_built_clap`,
+`…_lists_the_parameter_surface`, `…_plays_the_built_vst3`,
+`…_swaps_patches_through_the_vst3`).
+
+Result worth keeping: rendering the same notes through the CLAP and through the VST3
+produces **byte-identical WAV files**, so the wrapper is transparent on this path.
+
+Trap the tool found on its first day, and the reason `settle()` exists: on Windows
+clap-wrapper services CLAP's `request_callback` from `onIdle`, which it drives from a
+20 ms `WM_TIMER` on a message-only window (`detail/os/windows.cpp`). A headless host
+pumps no message loop, so `on_main_thread` never ran and **patch switching through the
+VST3 silently did nothing** — the render simply kept playing the old patch. Two things
+were needed: pump the message queue from the host's main thread, and let real wall
+clock pass, because an offline render finishes a second of audio in a few milliseconds
+and would outrun a 20 ms timer even with a loop running. Any offline VST3 host of a
+clap-wrapper plugin needs both; a live DAW never notices because its loop was always
+running. `sg_host_swaps_patches_through_the_vst3` fails if either half is removed
+(verified by removing it).
 
 Still open: the embedded webview GUI is a black window inside Windows hosts (Reaper and
 Carla both — the plugin's WebView2 path doesn't paint when parented into a host window;
