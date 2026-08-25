@@ -152,6 +152,12 @@ Fastest path is baking to a directory and copying with a card reader;
 patches keep live MIDI, real audio input (`zero_input=False`), and the whole
 verified vocabulary.
 
+Verified on hardware, card in slot: the Program Change walk loads every
+entry (ids checked), out-of-range falls back to /start.bin with the
+firmware's own log line, the Sampler's SDRAM buffer reads back byte-identical
+to its card sidecar after an SD load — and a cold power-cycle boots the board
+into entry 0 autonomously, no computer involved.
+
 ## How the pieces talk
 
 - Host -> board: `AxoW` (memory write) uploads, `Axos`/`AxoS` start/stop,
