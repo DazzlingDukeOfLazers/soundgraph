@@ -1,5 +1,140 @@
 # Decision Log
 
+## 2026-08-25 — Three surfaces, one patch, and the light one is the front door
+
+Decision:
+SoundGraph is presented as three surfaces rather than merged into one program:
+`/soundgraph` (this page — marketing and onboarding, ~400 KB), `/soundgraph/editor` (the
+Godot editor exported to WebAssembly, ~10 MB gzipped), and `/soundgraph/desktop` (the
+application). They are declared in `editor-web/surfaces.js` with URLs that default to
+null; an unconfigured surface is announced but not linked. The patch travels between them
+through `soundgraph.handoff.v1` in localStorage, and `/soundgraph` now leads with the pitch
+and the graph, with the JSON source collapsed below.
+
+Reason:
+They cannot be one bundle. A Godot web export is one engine plus one `.pck`; there is no
+way to lazy-load half of Godot. But they are already one *product*, because the patch is
+the canonical artifact and both surfaces get every answer about it from the same
+`dsp-core` — so "open this there" needs no protocol beyond leaving the document somewhere
+both can read. Same origin makes localStorage that somewhere.
+
+The light page stays the front door because the gap is 400 KB against 10 MB, and by
+`editor-godot/README.md` the export is cached from the *second* visit, not the first.
+Putting ten megabytes in front of the first sound is exactly what the two-minute
+introduction exists to prevent.
+
+**The full editor must be hosted BELOW this page.** The export ships a service worker whose
+scope is the directory it is served from, cache-first with no revalidation, updates landing
+a visit late. At or above `/soundgraph` it would take control of the marketing page and
+make it one that cannot be reliably updated. `verify-onboarding.mjs` fails a configured URL
+that is absolute or escapes upwards.
+
+Alternatives:
+Replace the light page with the export — rejected: kills the zero-install doorway. Bring
+the editing features into `editor-web` — rejected by the architecture rule against a second
+program with opinions about what a graph means. One shell swapping the two in iframes —
+rejected for now: two audio engines in one document is the failure mode that produced two
+graphs both connected to the destination, and it took a day to find.
+
+Consequences:
+Nothing is deployed yet, so all three URLs are null and the page currently says "not yet"
+twice, honestly. The prefetch that warms the full editor after the golden moment is written
+but its file list is empty on purpose — the names come from the Godot export, and guessing
+them would produce a prefetch that fetches nothing while appearing to work.
+
+Moving the pitch onto the page also fixed a real bug it uncovered: controls drive the
+engine, not the document, so saving, downloading or handing off a patch carried the values
+it loaded with and silently discarded every knob the visitor had moved — including the one
+the golden moment is built on.
+
+## 2026-08-25 — The web editor draws the graph, and still does not edit it
+
+Decision:
+`editor-web/graph-view.js` renders the patch as nodes and typed cables, above the JSON
+pane. Read-only: selecting a node finds it in the text, moving a control lights the node it
+drives, and nothing adds, removes or rewires anything. Layout uses the patch's own
+`position` hints; cable weight and dash come from the registry's port types.
+
+Reason:
+The onboarding has to be able to say "the filter" and point at something. Before this, the
+page knew every fact about a graph and could not show one — execution order was a line of
+text and a control was labelled `filter.cutoff` without saying where that was. The claim
+the whole project is built on is that SoundGraph exposes relationships, and the zero-install
+doorway was the one surface that did not.
+
+Alternatives:
+Put the onboarding in the Godot editor instead, which already draws graphs — rejected for
+now: it is a 46 MB first load, it is already Knobcon-critical, and the About copy says the
+dedicated graph editor is still in development. Point the coach marks at the controls panel
+only — rejected: the golden moment's second half is *understanding where the change
+happened*, and that needs a picture.
+
+Consequences:
+Two programs now draw a graph. This one is deliberately the lesser: no editing, no palette,
+no layout engine, and it reads the registry rather than keeping its own vocabulary, so a
+node added to the core appears here without JavaScript changing. If it ever grows an edit
+affordance, that is the moment to stop and ask whether it should exist at all.
+
+## 2026-08-25 — The introduction earns the email, and the funnel is one row per visit
+
+Decision:
+The mailing-list panel cannot appear until the golden moment is complete and the visitor
+has chosen to continue — the only exception is the "Join the mailing list" button, which is
+somebody asking. Signups and the ten measurement milestones both go to the Mutant Factory
+feedback service (`schema/envelope.v1.md`), the signup as one report carrying the address in
+its own field, the funnel as **one** report per visit, updated in place via a stable
+`report_id`, keyed `element_key: onboarding/funnel`.
+
+Reason:
+The plan's rule was "never ask for an email before the first sound", and the cheapest way to
+keep a rule like that is to make it structural rather than remembered: `offerMailingList()`
+is reachable from exactly one place in the state machine. Reusing the feedback service means
+no second backend and no new privacy surface — the envelope was written so a second
+application could conform to it without sharing code, and this is that.
+
+Alternatives:
+A dedicated mailing provider — rejected for now: none is chosen (the website's AGENTS.md
+still lists it open), and inventing one would be a commitment made by a tour. One report per
+event — rejected: ten rows per visitor would swamp a store a human reads daily.
+
+Consequences:
+Machine-written rows now live in a store built for words people wrote. `triage.py --app`
+keeps other products' reads clean and `groups` buckets these into two rows, but the default
+`new` view will carry them. `FUNNEL_REPORTS` in `editor-web/reporting.js` turns them off
+without touching signups. A funnel row from a loopback or private-LAN origin carries
+`test: true`, so the whole path runs while working on the page and the server stores none of
+it — the two people who read the store would otherwise have been the ones filling it. That
+guard is on the funnel only: a signup from a dev origin is still a person asking to join,
+and the origin test is anchored at both ends, because `localhost.example.com` is a domain
+anybody can register. Whatever origin serves the page must be added to the service's
+`ALLOWED_ORIGINS`; `localhost` and `private` are already on it. The page also mints a random
+`install_id` in localStorage — the About panel says so, in those words, because "no
+tracking" would be a claim and this is a description.
+
+## 2026-08-25 — The tutorial patch is seven nodes, and the tour teaches four things
+
+Decision:
+`examples/patches/start-here.json` is Clock, StepSequencer, AhdEnvelope, SawOscillator,
+StateVariableFilter, Gain, Output. The tour's four sentences group them —
+sequence/oscillator/filter/output — rather than the patch being cut down to four nodes.
+
+Reason:
+The plan asked for three or four visible nodes. Reaching that meant dropping the envelope
+and the amplifier, which turns the demo from a plucked eight-step line into a continuous saw
+whose pitch steps. The filter is the thing being taught, and a resonant filter opening on
+each note is dramatically more legible than one opening on a drone. The count was a proxy
+for readability; the grouping keeps the readability and pays for it with two more boxes.
+
+Alternatives:
+Group the nodes in the picture too, so four cards are drawn over seven nodes — rejected: a
+graph view that lies about how many nodes there are, in a project whose whole claim is
+exposing relationships, is the wrong thing to be clever about.
+
+Consequences:
+`editor-web/verify-onboarding.mjs` asserts every node in the patch is named by some
+sentence, so adding an eighth node to the tutorial patch fails the suite rather than
+quietly leaving something drawn but unexplained.
+
 ## 2026-08-09 — The sfxr oracle carries its own sine
 
 Decision:

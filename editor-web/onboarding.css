@@ -1,0 +1,253 @@
+/* The first two minutes. See onboarding.js for the script this dresses.
+ *
+ * One rule runs through all of it: only the arrival screen covers the page. Everything
+ * after it is a card beside a ring, drawn over an instrument that stays usable — a tour
+ * that disables the thing it is teaching is a manual with extra steps. */
+
+.tour-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    /* The layer itself is a coordinate space, not a lid. Only the pieces that hold
+     * buttons take pointer events back. */
+    pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ the ring */
+
+.tour-ring {
+    position: fixed;
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    box-shadow: 0 0 0 4px rgba(110, 231, 183, 0.16);
+    pointer-events: none;
+    transition: top 160ms ease, left 160ms ease, width 160ms ease, height 160ms ease;
+}
+
+/* ------------------------------------------------------------------ the card */
+
+.tour-card {
+    position: fixed;
+    pointer-events: auto;
+    width: min(380px, calc(100vw - 2rem));
+    background: var(--panel);
+    border: 1px solid var(--accent-dim);
+    border-radius: var(--radius);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+    padding: 1rem 1.1rem;
+}
+
+/* Where a card goes when it is about the patch as a whole rather than one control. */
+.tour-card.corner {
+    top: auto;
+    left: auto;
+    right: 1.25rem;
+    bottom: 1.25rem;
+}
+
+/* ----------------------------------------------------------------- the modal */
+
+.tour-modal {
+    position: fixed;
+    inset: 0;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(10, 12, 15, 0.82);
+}
+
+/* `hidden` is a UA-stylesheet rule — `[hidden] { display: none }` — and ANY class selector
+ * that sets `display` outranks it. `.tour-modal` sets `display: flex`, so `modal.hidden =
+ * true` set a property and changed nothing on screen: the arrival overlay stayed painted
+ * over the coach mark that had replaced it, its buttons still disabled from the click that
+ * opened it. The tour was running correctly underneath the whole time, which is exactly
+ * what made it look like a hang.
+ *
+ * It survived every check because `element.hidden` reports the property you just set, not
+ * whether anything is drawn — so every DOM assertion passed. Assert
+ * `getComputedStyle(el).display`, never `el.hidden`. All four are listed rather than only
+ * the one that sets `display` today, so adding one later cannot reopen this. */
+.tour-layer[hidden],
+.tour-ring[hidden],
+.tour-card[hidden],
+.tour-modal[hidden] {
+    display: none;
+}
+
+.tour-modal .tour-panel {
+    width: min(560px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 2rem 2rem 1.5rem;
+}
+
+/* --------------------------------------------------------------- panel parts */
+
+.tour-panel h2 {
+    /* The page's h2 is a small uppercase section label; a tour heading is a sentence
+     * somebody reads, so it opts out rather than inheriting that. */
+    font-size: 1.15rem;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text);
+    margin: 0 0 0.5rem;
+}
+
+.tour-panel .brandmark {
+    margin: 0 0 0.75rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.tour-panel .promise {
+    font-size: 1.6rem;
+    line-height: 1.25;
+    margin: 0 0 0.75rem;
+    color: var(--text);
+}
+
+.tour-panel .body { margin: 0 0 0.9rem; color: var(--muted); }
+.tour-panel .prompt { margin: 0.4rem 0 0.9rem; color: var(--accent); }
+.tour-panel .small-print { margin: 0.9rem 0 0; font-size: 0.78rem; color: var(--muted); }
+
+/* The underlying error, verbatim. Monospace and quiet: it is for whoever is fixing the
+ * deploy, not for the visitor, and it should read as machinery rather than as advice. */
+.tour-panel .detail {
+    margin: 1rem 0 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    word-break: break-word;
+}
+
+.tour-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.tour-actions .quiet { background: transparent; }
+
+/* A text link that happens to be a button, because it performs an action rather than
+ * going anywhere. Kept underlined: a link that only reads as one by its colour is
+ * invisible to a share of readers larger than most palettes assume. */
+.tour-actions .link,
+.tour-panel > .link {
+    background: none;
+    border: none;
+    padding: 0.35rem 0;
+    min-height: auto;
+    color: var(--muted);
+    text-decoration: underline;
+    font-size: 0.85rem;
+}
+
+.tour-panel > .link { display: block; margin-top: 0.75rem; }
+.tour-actions .link:hover, .tour-panel > .link:hover { color: var(--text); }
+
+/* ------------------------------------------------------- step 3, one at a time */
+
+.read-lines {
+    margin: 0 0 0.9rem;
+    padding-left: 1.15rem;
+    color: var(--muted);
+}
+
+.read-lines li {
+    margin: 0.3rem 0;
+    opacity: 0;
+    transition: opacity 320ms ease;
+}
+
+.read-lines li.shown { opacity: 1; color: var(--text); }
+
+/* ---------------------------------------------------------- step 5, comparing */
+
+.compare-state {
+    margin: 0 0 0.75rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.agency-list { margin: 0 0 0.9rem; padding-left: 1.15rem; color: var(--muted); }
+.agency-list li { margin: 0.25rem 0; }
+
+/* ----------------------------------------------------------- the mailing list */
+
+.mailing-panel {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 45;
+    width: min(360px, calc(100vw - 2rem));
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+    padding: 1rem 1.1rem;
+}
+
+.mailing-panel h2 {
+    font-size: 1.05rem;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text);
+    margin: 0 0 0.5rem;
+}
+
+.mailing-panel .body { margin: 0 0 0.9rem; color: var(--muted); font-size: 0.9rem; }
+.mailing-panel .small-print { margin: 0.9rem 0 0; font-size: 0.75rem; color: var(--muted); }
+
+.mailing-form { display: grid; gap: 0.4rem; margin-bottom: 0.6rem; }
+.mailing-form label { font-size: 0.8rem; color: var(--muted); }
+
+.mailing-form input {
+    font: inherit;
+    color: var(--text);
+    background: #101216;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.55rem 0.7rem;
+    min-height: 44px;
+}
+
+.mailing-form input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ------------------------------------------------------- the returning visitor */
+
+.resume-panel {
+    position: fixed;
+    left: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 45;
+    max-width: min(340px, calc(100vw - 2rem));
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    padding: 0.9rem 1rem;
+}
+
+.resume-panel .body { margin: 0 0 0.6rem; color: var(--text); font-size: 0.9rem; }
+
+/* -------------------------------------------------------------- reduced motion
+ *
+ * The tour's motion is never decorative — it is a ring following what is being talked
+ * about, and sentences arriving in time with it. Somebody who has asked for less motion
+ * still gets both; they arrive at once instead of sliding into place. */
+
+@media (prefers-reduced-motion: reduce) {
+    .tour-ring { transition: none; }
+    .read-lines li { transition: none; }
+}

@@ -22,9 +22,44 @@ compiler the core has been through — and loaded as an Emscripten side module.
 ```bash
 emcmake cmake -S runtime-godot -B runtime-godot/build-web -DCMAKE_BUILD_TYPE=Release
 cmake --build runtime-godot/build-web
-godot --headless --path editor-godot --export-release Web ../build-godot-web/index.html
-python -m http.server 8178 --directory build-godot-web
+node tools/export-web.mjs --out editor-web/editor
+python tools/serve.py                    # then open /editor-web/editor/
 ```
+
+`--out editor-web/editor` puts the export **below** the lite page rather than beside it, so
+the local layout is the deployed one: `/soundgraph` and `/soundgraph/editor`. That is not
+cosmetic. This export ships a service worker, a service worker's scope is the directory it
+is served from, and this one is cache-first with no revalidation (see *It downloads once*).
+Exported alongside or above the lite page it would take control of it, and the page a QR
+code points at would become one that cannot be reliably updated.
+
+If godot-cpp is not checked out yet — it is gitignored, being third-party source:
+
+```bash
+git clone --depth 1 https://github.com/godotengine/godot-cpp.git runtime-godot/third_party/godot-cpp
+cmake -S runtime-godot -B runtime-godot/build-web -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DGODOTCPP_API_VERSION=4.7 \
+  -DCMAKE_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+```
+
+godot-cpp has **no 4.7 branch** — its newest is 4.5, and 4.7 support lives on `master`,
+which ships `extension_api-4-7.json`. That file describes 4.7.0 while the engine here is
+4.7.1; a patch-level difference is fine, because GDExtension compatibility is promised
+within a minor version. `-DGODOTCPP_API_VERSION=4.7` selects it. If a future engine ever
+has no matching file at all, dump one from the engine itself with
+`godot --headless --dump-extension-api --dump-gdextension-interface` and point
+`GODOTCPP_CUSTOM_API_FILE` at it.
+
+## A patch arriving from the lite page
+
+`/soundgraph` can hand a patch to this editor. Same origin, so the channel is
+`localStorage['soundgraph.handoff.v1']`, and the patch itself is the whole protocol — both
+surfaces read the same file and ask the same core about it, so there is nothing else to
+agree on. `_load_handed_off_patch()` reads and clears it in one step and, when it finds
+one, opens it **instead of** the default example: somebody who pressed "open in the full
+editor" asked for their patch, and First Synth landing on top of it would throw away what
+they had just made. Clearing matters as much — a handoff that survived its own load would
+reopen on every later visit.
 
 **The Emscripten version must match the one Godot's template was built with.** For Godot
 4.7.1 that is **4.0.20**. A side module and the engine that loads it share an ABI, and a

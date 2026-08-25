@@ -74,27 +74,98 @@ export class SoundGraph extends EventTarget {
         this.parameterHandles = new Map();
         this.pendingBinds = new Map();
         this.nextBindId = 1;
+        // The in-flight start, if there is one. See start().
+        this.starting = null;
     }
 
     // Fetches and compiles the module. Safe to call before any user gesture — no
     // AudioContext is created here, so nothing needs permission yet.
     async loadModule(url = './soundgraph.wasm') {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`could not fetch ${url} (${response.status})`);
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`could not fetch ${url} (${response.status})`);
+            }
+            // compileStreaming would be better, but it needs the right Content-Type and this
+            // has to work off a plain static file server too.
+            this.bytes = await response.arrayBuffer();
+            this.module = await WebAssembly.compile(this.bytes);
+            this.tooling = new Tooling(await WebAssembly.instantiate(this.module, {}));
+            return this.tooling;
+        } catch (error) {
+            // Tagged, because `start()` can fail two ways that have nothing in common
+            // except the silence: the module never arrived, or the browser would not give
+            // us an AudioContext. Sending somebody to check their output device over a
+            // missing download is sending them to the one place the answer is not.
+            if (error instanceof Error) {
+                error.kind = 'module';
+            }
+            throw error;
         }
-        // compileStreaming would be better, but it needs the right Content-Type and this
-        // has to work off a plain static file server too.
-        this.bytes = await response.arrayBuffer();
-        this.module = await WebAssembly.compile(this.bytes);
-        this.tooling = new Tooling(await WebAssembly.instantiate(this.module, {}));
-        return this.tooling;
     }
 
-    // Must be called from a user gesture: browsers will not start audio otherwise.
+    /**
+     * Resume, or say why not.
+     *
+     * `AudioContext.resume()` does NOT reject when the browser refuses to start audio — the
+     * promise simply never settles. Awaiting it therefore waits forever, which upstream is
+     * indistinguishable from a crash: no error, no rejection, nothing to catch, and a page
+     * that sits there looking hung. A browser that has decided not to give you audio is a
+     * normal thing to handle, so it is turned into an ordinary failure here.
+     *
+     * The state is checked as well as the race, because resolving is not the same as
+     * running: a context can settle back into `suspended` and report success.
+     */
+    async resumeContext(timeoutMs = 5000) {
+        if (this.context.state === 'running') {
+            return;
+        }
+        let timer = 0;
+        const expiry = new Promise((resolve) => {
+            timer = setTimeout(() => resolve('timeout'), timeoutMs);
+        });
+        const outcome = await Promise.race([this.context.resume().then(() => 'resumed'), expiry]);
+        clearTimeout(timer);
+
+        if (outcome === 'timeout' || this.context.state !== 'running') {
+            const error = new Error(
+                outcome === 'timeout'
+                    ? 'the browser never answered the request to start audio'
+                    : `the browser would not start audio (the context is ${this.context.state})`);
+            error.kind = 'audio';
+            throw error;
+        }
+    }
+
+    /**
+     * Must be called from a user gesture: browsers will not start audio otherwise.
+     *
+     * SINGLE-FLIGHT, AND IT HAS TO BE. Two overlapping calls each used to build their own
+     * AudioContext, worklet and graph, and each connected to the destination — the same
+     * patch playing twice, slightly out of phase, with the first copy unstoppable because
+     * only the last is remembered in `this.node`. Nothing downstream can recover from that;
+     * even reloading the patch only reaches one of them.
+     *
+     * The window is real rather than theoretical: `this.context` is not assigned until
+     * after `loadModule()` awaits, so a second caller arriving during that await sees a
+     * blank instance and starts again from the top. A second call now joins the first.
+     */
     async start(workletUrl = './soundgraph-worklet.js') {
+        if (this.starting) {
+            return this.starting;
+        }
+        this.starting = this.startOnce(workletUrl);
+        try {
+            return await this.starting;
+        } finally {
+            this.starting = null;
+        }
+    }
+
+    async startOnce(workletUrl) {
+        // Covers the resume case and, with the guard above, guarantees at most one node.
         if (this.context) {
-            await this.context.resume();
+            await this.resumeContext();
             return;
         }
         if (!this.module) {
@@ -117,7 +188,7 @@ export class SoundGraph extends EventTarget {
         // fails silently, so the bytes go across instead. See soundgraph-worklet.js.
         // The buffer is copied rather than transferred so this survives a restart.
         this.node.port.postMessage({ type: 'init', bytes: this.bytes.slice(0) });
-        await this.context.resume();
+        await this.resumeContext();
     }
 
     receive(message) {

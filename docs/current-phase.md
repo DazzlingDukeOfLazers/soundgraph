@@ -1,7 +1,9 @@
 # Current Phase
 
-**Features until the show.** Work happens on `dev` and merges to `main` at milestones —
-the two are in sync as of the `spoken-roll` tag (2026-08-23). Knobcon is Sep 11; the
+**Features until the show.** Work happens on short-lived branches off `main`, each
+landing with its tests and a tag named for itself. `dev` was the integration branch until
+the `spoken-roll` tag (2026-08-23) and has not moved since; `main` is 52 commits ahead of
+it, and everything now goes there directly. Knobcon is Sep 11; the
 Sep 4 feature freeze was deliberately relaxed ("it's a great marketing tool and we don't
 need hardware to make it spread itself"), so features keep landing: since the freeze
 decision the vocabulary grew from 25 to 44 node types (through the maths family, Clock,
@@ -20,7 +22,7 @@ architectures:
 
 | target | how it runs | verified by |
 |---|---|---|
-| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 24 ctest suites, 18 golden vectors |
+| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 25 ctest cases (34 with the plugin SDKs), 18 golden vectors |
 | Browser | WebAssembly in an AudioWorklet | `verify-goldens.mjs`, 18 cases, worst 2.09e-7 |
 | Godot 4.7 | GDExtension | ~1170 editor checks, plus design and layout suites |
 | ESP32-S3 | generic firmware, Waveshare audio board | `sg-serial.py verify-goldens`, all 18 cases, worst 9.16e-5 |
@@ -37,7 +39,7 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 # browser
 emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release && cmake --build build-wasm
 node runtime-wasm/verify-goldens.mjs
-python -m http.server 8177          # then open /editor-web/
+python tools/serve.py               # then open /editor-web/ ; NOT http.server, see below
 
 # godot
 cmake -S runtime-godot -B runtime-godot/build -DCMAKE_BUILD_TYPE=Release
@@ -66,6 +68,39 @@ Toolchains live outside the repository: ESP-IDF v5.5 at `C:\Users\danie\esp-idf`
 Emscripten at `C:\Users\danie\emsdk`, Godot 4.7.1 under `C:\Users\danie\Downloads\gofo\`,
 and a repo-local `.venv` with pyserial and esptool.
 
+**What is actually on the Windows box as of 2026-08-25**, because the paragraph above
+described the machine it was written on and this clone found none of it. Reinstalled this
+session: Emscripten **4.0.20** at `C:\Users\danie\emsdk` — that version and not `latest`,
+because the Godot extension must be built against the same Emscripten as the 4.7.1 export
+template and `docs/decisions.md` records what a mismatch costs — plus CMake 4.4.2 and Ninja
+1.13.2 from winget, both user-scope, no elevation.
+
+Still missing, so **the native build, ctest and therefore `tools/pre-push.sh` cannot run
+here**: there is no C++ compiler at all — no MSVC, no gcc, no clang — and no ESP-IDF.
+
+**The toolchain is now complete.** Visual Studio Build Tools 2022 (MSVC 19.44) was
+installed by hand — it needs UAC, and `winget` returns 1602 from a non-interactive shell.
+It lives at `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`, **not** the
+Community path this file used to name and `tools/pre-push.sh` used to hard-code; the gate
+now asks `vswhere` instead of assuming.
+
+The whole gate passes here for the first time: **ctest 25/25**, editor 1174 checks, design
+and layout suites, and `verify-roundtrip` with identical audio on all three patches.
+
+**Smart App Control blocks freshly built binaries, at random.** It is on
+(`HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy`, `VerifiedAndReputablePolicyState = 1`)
+and it blocked `build/bin/test_dx7_operator.exe` — a binary this machine had just compiled —
+while the other 24 test executables, equally unsigned and equally fresh, ran. The verdict is
+per file hash, so **relinking clears it**: touching the source and rebuilding produced a new
+hash that ran, all 5 cases passing. ctest reports this as `BAD_COMMAND` rather than a
+failure, and running the binary by hand is what says "blocked by your organization's Device
+Guard policy"; `Microsoft-Windows-CodeIntegrity/Operational` names the file. Expect it again
+on any rebuild, and do not read it as a broken test.
+
+Reputation, not signature: emsdk's own `clang.exe` is `NotSigned` and runs fine, which is
+why the WebAssembly build never hit this. Turning Smart App Control off would also fix it
+and is **one-way** — no supported route back to On short of reinstalling Windows.
+
 The native `build/` directory on the Windows machine is **Ninja + MSVC**, so `cmake
 --build build` only works from a shell that has the VS environment loaded — run it from a
 "x64 Native Tools" prompt, or wrap it:
@@ -80,6 +115,80 @@ file — then `cl.exe` can't find `<string>` and the errors point at the code in
 the environment. That is exactly how the macos-support merge first presented on Windows.
 
 ## Done in this phase
+
+- **The full editor is exported to `/soundgraph/editor`, and the handoff works end to end.**
+  Moving a knob on the lite page and pressing "Open in the full editor" carries the patch
+  across: the Godot editor boots, reads `soundgraph.handoff.v1`, clears it, and opens that
+  document instead of its default example. Confirmed from outside the canvas —
+  `window.soundgraphEditor` reported `document: start-here.json, nodes: 7, from: handoff`.
+
+  Three things that had never been established on this machine, now established:
+  the web GDExtension builds (godot-cpp has **no 4.7 branch** — 4.7 support is on `master`,
+  which ships `extension_api-4-7.json` describing 4.7.0 against a 4.7.1 engine, which is
+  fine within a minor version); it **loads**, with no `function signature mismatch`, the
+  browser reporting `Emscripten 4.0.20, single-threaded, GDExtension support`; and the
+  export lands below the lite page so its service worker's scope is `/editor-web/editor/`
+  and cannot reach the page above it. The template's own `godot.js` contains `4.0.20`,
+  confirming the version pinned when Emscripten was reinstalled.
+
+  **The PWA caching is unverified.** Service worker registration fails in the browser used
+  for this session — for *any* script, on a plain `http.server` as well as `tools/serve.py`,
+  in a secure context with the script serving 200 as `text/javascript`. That is the harness,
+  not the export, but it means "cached from the second visit" and the offline behaviour have
+  not been re-confirmed here. Check in an ordinary Chrome before relying on them.
+
+  Two loose ends: the **desktop** extension was not rebuilt, so opening `editor-godot` in
+  the Godot editor still reports a missing DLL (the web export is unaffected — it packs the
+  web library). And `/soundgraph/desktop` has nothing to point at until there is a numbered
+  release.
+
+- **`/soundgraph` is the front door, and says what is behind it.** The page now leads with
+  the pitch and the graph; the JSON source is collapsed below it. Three surfaces are
+  declared in `editor-web/surfaces.js` — this page, the full editor, the desktop
+  application — each announced with what it costs, and linked only once a URL is
+  configured. The current patch travels to the full editor through localStorage, since both
+  read the same file and ask the same core about it. Decision and the hosting constraint
+  (the export's service worker must not be able to reach this page) in `docs/decisions.md`.
+
+  It also turned up a bug that predates it: controls drive the engine, not the document, so
+  **saving, downloading or handing off a patch carried the values it loaded with** and
+  discarded every knob the visitor had moved — the golden moment among them. All three now
+  go through the live control values, while leaving unapplied edits in the source pane
+  alone.
+
+- **The web editor has an introduction, and draws the graph.** `editor-web` now opens on a
+  prepared patch (`examples/patches/start-here.json`) and a six-step tour: hear it, read it
+  left to right, drag the filter cutoff, compare against the original, decide what to keep.
+  Above the JSON pane there is a read-only picture of the patch — nodes at their authored
+  positions, cables weighted and dashed by signal type from the registry — so "the filter"
+  is something on screen rather than a word in a label. Persistent actions (New patch,
+  factory patches, Save locally, Help, About, Join) sit in a bar under the header, and
+  **Help → Restart introduction** runs the tour again. Signups and one funnel row per visit
+  go to the feedback service. Three decisions in `docs/decisions.md` (2026-08-25).
+
+  Walked end to end in a browser: the audio-failure recovery screen and its silent path, the
+  four highlighted groups, the one-octave golden-moment threshold, the Original/Your version
+  toggle, the bypass lesson rewiring the graph and putting it back exactly, the mailing
+  panel's decline and error states, the skip path, and a returning visitor opening into
+  their locally saved patch.
+
+  **That walk asserted the DOM, not the rendering, and it missed a defect that reached a
+  person.** `.tour-modal` sets `display: flex`, which outranks the UA stylesheet's
+  `[hidden] { display: none }`, so `modal.hidden = true` set a property and hid nothing: the
+  arrival overlay stayed painted over the coach mark that had replaced it, with its buttons
+  still disabled from the click. The tour ran correctly underneath, which is what made it
+  read as a hang. Every check passed because `element.hidden` reports the property you just
+  set rather than whether anything is drawn. Assert `getComputedStyle(el).display`, and take
+  a screenshot when one can be taken — this is the same lesson as the Godot inspector that
+  was off the right-hand edge of the window while every measurement passed. The stylesheet
+  invariant is now enforced in `verify-onboarding.mjs`.
+
+  Four more defects came out of that walk and are fixed: the spoken signal order was breadth-first and announced the amplifier before the
+  filter; the status line blamed the patch when the engine was what failed to load; a
+  malformed address was headed "that did not connect" when nothing had been sent; and a
+  coach mark pointed at a control below the fold without scrolling to it. A fifth — the 808
+  kit rendering as a 330-pixel stamp with 3-pixel lettering — was an SVG with a viewBox and
+  no width/height attributes, so `height: auto` had no ratio to keep.
 
 - Device reliability: malformed-patch abuse suite, thirty-cycle power soak with **0 bytes**
   of heap drift, and a truncated upload no longer wedges the console. Both re-run against
@@ -161,9 +270,30 @@ gesture. Synthetic events do not lift that; only a person clicking does.
 
 - **The Web Serial deploy button has never been clicked.** It is gesture-gated by design,
   so it needs a human. Everything around it is verified; the button itself is not.
-- **The web editor has never been looked at.** The Godot editor now has, repeatedly; the
-  browser page has only ever been checked element by element from a script. It matters less
-  than it did, now that the Godot editor is itself reachable from a URL.
+- **The introduction has not been heard through a browser.** The wasm now builds here (see
+  the toolchain note below), all 21 golden cases match the native vectors, and the tutorial
+  patch has been rendered and measured through the same module — it builds, it pulses evenly
+  (0.77 to 0.99 across the eight steps), it peaks at 0.715 with the limiter idle, and one
+  octave of cutoff takes the 880 Hz band from 0.6 to 3.5. The editor page loads that module,
+  types its cables from the real registry and builds its controls from the real validator.
+
+  What is still missing is a person clicking Start and listening. The AudioContext path
+  needs a trusted user gesture, which is exactly what a driven browser cannot supply, so
+  everything downstream of `engine.start()` — worklet, context, the meter — is inferred from
+  the module being correct rather than observed. Two minutes with headphones settles it, and
+  `docs/decisions.md` records that Godot's audio needed the same and behaved differently
+  than every automated check predicted.
+- **Nothing has been stored in the feedback service, and that is the tested half.** A funnel
+  row from `http://localhost:8177` reaches `feedback.mutantfactory.net` and comes back
+  `202 {"discarded": true}` — the preflight passes, the response is readable, and the row is
+  refused at the door because a dev origin marks its funnel rows `test`. So the transport,
+  the CORS allow-list and the envelope are all confirmed against the live service.
+
+  What has never happened is a report that is actually **kept**: no funnel row from a
+  production origin, and no signup at all — a real address would be stored, so that one is
+  not a thing to try idly. The origin that ends up serving this page still has to be added
+  to `ALLOWED_ORIGINS`; until then it is refused with no CORS headers, which reads from the
+  page as a network failure.
 - The **sandbox's** sounds have not been heard in a browser. They use the same generator and
   the same `playback_type` as the editor's synth, which is confirmed audible, so this is a
   reasonable inference rather than a verified fact — pressing Space in the Sandbox tab would
@@ -291,6 +421,13 @@ These all cost real time once and are written up in `decisions.md` or the compon
 READMEs. Collected here because the pattern is the same each time — the symptom pointed
 somewhere other than the cause.
 
+- **The web page runs whatever `editor-web/soundgraph.wasm` is on disk.** It is
+  gitignored build output, so a clone or a machine that has not run the WebAssembly build
+  lately is serving a core from whenever it last did — and nothing says so. On 2026-08-25
+  this machine's copy was from Aug 10, which predates `Clock` and `StepSequencer`, so the
+  onboarding tour's own tutorial patch could not have loaded. `verify-onboarding.mjs` does
+  not catch it: it checks the tour against the patch file, not against the compiled core.
+  Rebuild before believing anything the browser shows.
 - **An embedded Godot subwindow has no window behind it.** `Window.is_embedded()` is
   true by default, `DisplayServer.window_get_native_handle` then returns the *main*
   window's, and a plugin handed it draws over the whole editor. Turning

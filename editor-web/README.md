@@ -3,15 +3,94 @@
 The zero-install doorway, and the reference frontend the Godot editor gets checked
 against. Both open the same patch file and must mean the same thing by it.
 
+It is also the front door: `/soundgraph` is the marketing and onboarding page, so it leads
+with what SoundGraph is and keeps the JSON source collapsed underneath.
+
+## The three surfaces
+
+Declared in `surfaces.js`, which is the only place their URLs live:
+
+```text
+/soundgraph            this page — ~400 KB, nothing to install
+/soundgraph/editor     the Godot editor exported to WebAssembly — ~10 MB gzipped
+/soundgraph/desktop    the desktop application
+```
+
+A surface whose `url` is null is announced but not linked: it says what it is and that it
+is not ready, rather than offering a link that 404s. Nothing here invents a deployment.
+
+**The full editor must be hosted below this page, never at or above it.** The Godot export
+ships a service worker whose scope is the directory it is served from, and its caching is
+cache-first with no revalidation with updates landing a visit late (see
+`editor-godot/README.md`). Hosted at `/soundgraph` it would take control of this page too,
+and the marketing page would become one that cannot be reliably updated.
+`verify-onboarding.mjs` fails a URL that is absolute or climbs upwards.
+
+The patch travels between surfaces in `soundgraph.handoff.v1` — deliberately not the same
+key as the saved patch, so opening a patch elsewhere cannot overwrite somebody's saved
+work. It carries the patch **as it currently sounds**: control values are written into the
+document first, because moving a knob drives the engine without rewriting the file.
+
 This directory contains **no DSP**. The graph runs as WebAssembly compiled from the same
 `dsp-core` that produces the native build.
 
 ```text
 index.html / app.js        page, controls, keyboard, MIDI      main thread
+graph-view.js              the patch, drawn: nodes and cables  main thread
+onboarding.js / .css       the first two minutes               main thread
+local-store.js             the four things this page remembers main thread
+reporting.js               the only code here that posts       main thread
 soundgraph.js              AudioContext + worklet + tooling    main thread
 soundgraph-worklet.js      instantiates the module, renders    audio thread
 soundgraph.wasm            dsp-core + patch-io                 built, not committed
 ```
+
+## The picture
+
+`graph-view.js` draws the patch above the JSON: nodes where the patch's own `position`
+hints put them, cables weighted and dashed by the signal type the registry declares.
+Selecting a node finds it in the text; moving a control lights the node it drives.
+
+It is **read-only on purpose**. Rewiring belongs to the Godot editor, and a second program
+with opinions about what a graph means is the thing this repository is arranged to avoid.
+Without the WebAssembly module it still draws — it just cannot tell an audio cable from a
+control one, and says so by drawing them all the same.
+
+## The introduction
+
+A first-time visitor gets `examples/patches/start-here.json` and a six-step tour: hear the
+patch, read it left to right, drag the filter cutoff, hear the difference, decide what to
+keep. Only the first screen is a modal — the rest are coach marks over a page that stays
+usable. Progress lives in localStorage, **Help → Restart introduction** runs it again, and
+the mailing-list panel cannot appear before the golden moment.
+
+`node editor-web/verify-onboarding.mjs` holds the tour, the patch it teaches and the
+measurement plan's ten event names against each other. It runs in the main ctest suite as
+`web_onboarding_matches_its_patch`, and it exists because renaming a node in the patch would
+otherwise leave the tour highlighting an empty set with no error anywhere.
+
+## What leaves this page
+
+Two POSTs, both to the Mutant Factory feedback service, both described in `reporting.js`:
+one report per visit carrying how far the introduction got, and one when somebody joins the
+mailing list. No patch contents, no audio, and no device data beyond a browser family.
+Whatever origin serves this page must be named in that service's `ALLOWED_ORIGINS` —
+`localhost` and `private` are already there, so a dev server works untouched.
+`FUNNEL_REPORTS` turns the first one off; signups are separate.
+
+**Working on this page does not fill the store.** A funnel row from loopback or a private
+LAN is marked `test`, which the service accepts and discards — `202 {"discarded": true}`,
+nothing written — so the whole path runs locally and none of it accumulates. Signups are
+deliberately not covered by that: somebody joining from a dev origin is still somebody
+joining.
+
+Reports carry a build stamp, so write one before serving a build anybody will use:
+
+```bash
+node tools/stamp-build.mjs --target web-editor
+```
+
+Without it the page reports `development`, which is the truth when running from source.
 
 ## Build and run
 
@@ -25,10 +104,24 @@ That writes `editor-web/soundgraph.wasm`. Then serve the **repository root** —
 loads example patches from `../examples/patches/`:
 
 ```bash
-python -m http.server 8177
+python tools/serve.py
 ```
 
 and open <http://127.0.0.1:8177/editor-web/>.
+
+Use that rather than `python -m http.server`. The stdlib server sends `Last-Modified` and
+no `Cache-Control`, so Chrome applies heuristic caching to the ES modules and keeps running
+the previous `app.js` after the file on disk has changed — with no symptom except that a
+fix appears not to have worked. Restarting the server does not clear it; the cache is keyed
+on the URL. `tools/serve.py` sends `no-store` on everything, which for a static server on
+loopback costs nothing.
+
+If a page is already stuck on cached modules, one hard reload (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>)
+breaks out of it. To check which code is actually running:
+
+```js
+typeof window.soundgraph.startOnce   // "function" once the single-flight start is loaded
+```
 
 A plain `file://` open will not work: the module is fetched, and AudioWorklet modules need
 an http origin.

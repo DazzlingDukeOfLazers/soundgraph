@@ -136,6 +136,16 @@ if(SOUNDGRAPH_NODE)
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/mirror-examples.mjs --check)
 endif()
 
+# The web editor's introduction names nodes and a control that live in a patch file, and
+# nothing about renaming one of them would fail anywhere: the tour would highlight an empty
+# set and tell a first-time visitor to look at something that is not there. This holds the
+# tour, examples/patches/start-here.json and the measurement plan's ten event names against
+# each other. No browser needed — it imports the real modules.
+if(SOUNDGRAPH_NODE)
+    add_test(NAME web_onboarding_matches_its_patch
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/editor-web/verify-onboarding.mjs)
+endif()
+
 # One demo patch per node type, and two different questions about them.
 #
 # The first is the usual generated-file question — do the committed files still match the
