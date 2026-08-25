@@ -422,6 +422,33 @@ enough), and the same plugin now renders exact silence. No automated test covers
 the repository cannot depend on a third-party plugin, so the guard is this note and the
 comment in `host_vst3.cpp`.
 
+Third-party plugins the host has been proven against, all as loose files under
+`C:\Users\danie\Tools\` and none installed system-wide: **Surge XT 1.3.4** (instrument
+and effects, VST3 + CLAP), **Dexed 1.0.1** (VST3 + CLAP, identical output through both
+— and redundant as a DX7 oracle, since `tools/dx7-ref` already vendors msfa, which is
+Dexed's own engine), and **ModulAir 1.3.3** (Full Bucket Music). ModulAir is the one
+that matters most: it is hand-written C++ with no plugin framework, where Surge, Dexed
+and Vital are all JUCE, so it is the only evidence that the loader is not quietly
+JUCE-shaped. It also shows the two formats disagreeing about the same plugin — its VST3
+publishes 722 normalised parameters plus a Preset selector, its CLAP 591 in plain units
+(0..4, -24..24) and no selector at all.
+
+Two things a headless host learns from strangers. **u-he Podolski**, extracted rather
+than installed (its installer demands elevation), renders perfectly well and then
+refuses to *end*: unable to find its data directory during teardown it opens a modal
+message box, which no console host will ever dismiss. sg-host waited three minutes
+before something else noticed. Hence `--timeout` (default 60 seconds, `0` waits
+forever), a watchdog thread that exits 3 — distinct from silent (1) and misuse (2) —
+and `SetErrorMode` for the system's own dialogs, though that does *not* cover a plugin
+calling MessageBox itself, which is precisely what Podolski does. Only the watchdog
+answers that. And plugins that ship installers rather than files cannot be added to a
+test rig without a human at the UAC prompt.
+
+The watchdog test then found a second bug of ours: `--seconds 200000` overflowed the
+int32 frame count, so the render loop never ran and reported perfect silence — a test
+rig failing in the one direction it must never fail. Frame counts are 64-bit now, and
+audio is only accumulated when a `--wav` is actually going to be written.
+
 Trap the tool found on its first day, and the reason `settle()` exists: on Windows
 clap-wrapper services CLAP's `request_callback` from `onIdle`, which it drives from a
 20 ms `WM_TIMER` on a message-only window (`detail/os/windows.cpp`). A headless host
