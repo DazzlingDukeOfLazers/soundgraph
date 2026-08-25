@@ -33,6 +33,19 @@ typedef struct {
   uint32_t in_zerocross_l;// sign changes of left in per window
   int64_t in_dcsum_l;     // sum of left samples in window (DC indicator)
   uint32_t sink;          // load-bank output sink, keeps work observable
+
+  // Stress extensions (stresslab; other patches leave them zero).
+  uint32_t ctrl_step;        // tone phase step, q32 at 48 kHz (freq*2^32/48000)
+  int32_t ctrl_amp;          // tone peak amplitude, q27 (0 = silence)
+  uint32_t ctrl_coeff;       // Goertzel coefficient 2cos(2*pi*f/fs), float bits
+  int32_t ctrl_slope_max;    // click detector: max |dx| per sample, q27 (0 = off)
+  int32_t ctrl_floor;        // dropout detector: min per-ms input peak, q27 (0 = off)
+  uint32_t ctrl_sdram_words; // SDRAM words written + verified per dsp cycle
+  uint32_t cum_clicks;       // cumulative; host clears by writing zero
+  uint32_t cum_dropouts;
+  uint32_t cum_sdram_errs;
+  uint32_t goertzel_sig;     // last window: Goertzel power at the tone, float bits
+  uint32_t goertzel_tot;     // last window: total power (mean-square * N), float bits
 } sg_shm_t;
 
 // One analyzer window = 300 dsp cycles = 4800 samples = 100 ms at 48 kHz.

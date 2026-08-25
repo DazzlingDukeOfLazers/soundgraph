@@ -75,12 +75,16 @@ static inline void sg_lab_audio(int32_t *inbuf, int32_t *outbuf) {
   }
 }
 
-static inline void sg_lab_tick(void) {
+// Returns 1 on the cycle that publishes a window, so a patch can publish its
+// own extra per-window results on the same boundary.
+static inline int sg_lab_tick(void) {
   SHM->heartbeat = SHM->heartbeat + 1;
   if (++sg_cycle_in_window >= SG_WINDOW_CYCLES) {
     sg_cycle_in_window = 0;
     sg_publish_window();
+    return 1;
   }
+  return 0;
 }
 
 #endif  // SG_LAB_H

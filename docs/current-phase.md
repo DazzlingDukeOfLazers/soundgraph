@@ -512,6 +512,16 @@ standalone Sine nodes** (~1.9% load each) or **28 Sine→SVF→Gain voices** (84
 raw oscillator — not the float table-lerp (cheap on the M4F) but the per-sample
 nullptr checks, clamp, and the per-sample FPU divide for frequency→increment.
 
+The third station (2026-08-25): stress characterization. `stresslab` adds a
+variable-frequency/-amplitude tone, an on-board Goertzel (SINAD), cumulative
+click/dropout counters that miss nothing between host polls, and a verified
+audio-rate SDRAM ring. Measured: noise floor −66 dBFS, amplitude linearity exact
+−36…−1 dBFS, frequency response flat ±0.1 dB across 50 Hz–20 kHz, SINAD ~47 dB
+unchanged from idle to 85% load, zero audio defects through load slamming, USB
+hammering and a 60 s combined soak, and 24.6 MB/s of clean verified SDRAM traffic —
+with data integrity intact even at 49 MB/s CPU overload. 32 hardware tests total;
+`tools/soak.py` runs the combined soak for hours.
+
 Traps that cost time: the board fragments bulk packets arbitrarily (an ack can arrive
 as `'A'` then `'xoA…'` — any stream resync must keep partial-header tails); patch
 `.data` is NOLOAD in `ramlink.ld` (initialized statics silently arrive as garbage —

@@ -26,7 +26,7 @@ LDFLAGS = -nostdlib -nostartfiles -T$(SDK)/ramlink.ld -mcpu=cortex-m4 \
   -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb \
   -Wl,--just-symbols=$(SDK)/axoloti.elf
 
-PATCHES = smoke looplab nodelab
+PATCHES = smoke looplab nodelab stresslab
 BINS = $(PATCHES:%=build/%.bin)
 
 all: $(BINS)

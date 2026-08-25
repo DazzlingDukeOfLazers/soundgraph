@@ -80,6 +80,24 @@ M4F, but the per-sample nullptr checks, nyquist clamp and the
 voice is ~1.7 Sine-equivalents — the SVF's five-multiply core plus Gain are
 cheaper than the oscillator that feeds them.
 
+The stress tier (`tests/test_stress.py`, `patches/stresslab.cpp`) characterizes
+the engine rather than just finding its ceiling. Measured on this rig:
+
+- noise floor −66 dBFS RMS; loopback gain −7.6 dB
+- amplitude linearity exact (6.0 dB steps) from −36 to −1 dBFS
+- frequency response flat within ±0.1 dB, 50 Hz – 20 kHz
+- SINAD ~47 dB at −6 dBFS, unchanged from idle to 85% DSP load
+  (measurement is loopback path + float32 estimator; ceiling 60 dB)
+- zero clicks/dropouts across 5 s at 84% load, 44 idle↔84% load flips,
+  USB hammering (129 KB/s readback while at 84%), and a 60 s
+  everything-at-once soak (63% load + SDRAM traffic)
+- SDRAM: 24.6 MB/s write+verify traffic clean at 68% load; pushing 49 MB/s
+  overloads the CPU (audible dropouts) but never corrupts a word
+- 20 upload/start/stop churn cycles without degradation
+
+`tools/soak.py --minutes 30` runs the everything-at-once soak for as long as
+you like, with per-10 s defect reporting.
+
 One trap for posterity: a marginally seated USB cable brownout-crashes the
 board under load and looks exactly like a patch bug (crashes within seconds
 whenever the DSP load rises, stable at idle). It cost an afternoon and an
