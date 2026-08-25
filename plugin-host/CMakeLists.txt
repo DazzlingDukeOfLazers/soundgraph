@@ -2,63 +2,28 @@
 # tests, because both need the SDKs tools/get-plugin-sdks.sh fetches — the default
 # build stays SDK-free. Unlike the plugin it links no wrapper: the whole point is to
 # stand on the host side of the dynamic-loading boundary.
+#
+# The library itself is built by plugin-host.cmake, which runtime-godot also calls. This
+# file is what is specific to *this* build: the command line tool, and the tests that
+# point it at artifacts only this build produces.
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/plugin-host.cmake)
+
+# In this build the answer is known exactly rather than searched for: clap-wrapper has
+# just fetched the SDK and says where it put it, whatever this build directory is called.
 set(SOUNDGRAPH_VST3_SDK ${CPM_PACKAGE_vst3sdk_SOURCE_DIR})
-if(NOT SOUNDGRAPH_VST3_SDK OR NOT EXISTS ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/module.h)
+set(SOUNDGRAPH_CLAP_SDK ${CMAKE_SOURCE_DIR}/runtime-clap/sdks/clap)
+
+soundgraph_find_plugin_sdks(SOUNDGRAPH_CLAP_SDK_PATH SOUNDGRAPH_VST3_SDK_PATH)
+if(NOT SOUNDGRAPH_VST3_SDK_PATH)
     message(FATAL_ERROR "sg-host: the VST3 SDK is missing. clap-wrapper fetches it during "
             "configure; delete build-clap/runtime-clap/cpm and reconfigure if this persists.")
 endif()
 
-# The hosting helpers Steinberg ships but base-sdk-vst3 does not compile: module loading
-# (whose implementation is per-platform), the example IHostApplication, and the
-# containers a process call needs. Everything else comes from base-sdk-vst3, which
-# clap-wrapper already builds for the plugin side.
-set(SOUNDGRAPH_VST3_HOSTING
-        ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/module.cpp
-        ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/hostclasses.cpp
-        # HostApplication's constructor builds one of these, so the two travel together.
-        ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/pluginterfacesupport.cpp
-        ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/eventlist.cpp
-        ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/parameterchanges.cpp
-        ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/processdata.cpp
-        ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/utility/stringconvert.cpp)
-if(WIN32)
-    list(APPEND SOUNDGRAPH_VST3_HOSTING
-            ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/module_win32.cpp)
-elseif(APPLE)
-    list(APPEND SOUNDGRAPH_VST3_HOSTING
-            ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/module_mac.mm)
-else()
-    list(APPEND SOUNDGRAPH_VST3_HOSTING
-            ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/module_linux.cpp)
-endif()
-
-# The loaders, and the provider that turns them into something dsp-core can hold. A
-# library rather than part of sg-host, because sg-host is no longer the only caller:
-# anything that renders a patch containing a PluginEffect needs the same code.
-add_library(soundgraph-plugin-host STATIC
-        src/host_clap.cpp
-        src/host_vst3.cpp
-        src/desktop_provider.cpp
-        ${SOUNDGRAPH_VST3_HOSTING})
-target_include_directories(soundgraph-plugin-host PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        PRIVATE
-        ${CMAKE_SOURCE_DIR}/runtime-clap/sdks/clap/include
-        ${SOUNDGRAPH_VST3_SDK})
-target_link_libraries(soundgraph-plugin-host
-        PUBLIC soundgraph::dsp
-        PRIVATE base-sdk-vst3 ${CMAKE_DL_LIBS})
-target_compile_features(soundgraph-plugin-host PUBLIC cxx_std_17)
-if(WIN32)
-    # module_win32 walks bundle directories with the Shell API and reports versions
-    # through the Version API; neither is linked by default.
-    target_link_libraries(soundgraph-plugin-host PRIVATE shell32 ole32 version)
-endif()
+soundgraph_add_plugin_host(soundgraph-plugin-host)
 
 add_executable(sg-host src/main.cpp)
-target_include_directories(sg-host PRIVATE
-        ${CMAKE_SOURCE_DIR}/runtime-clap/sdks/clap/include)
+target_include_directories(sg-host PRIVATE ${SOUNDGRAPH_CLAP_SDK_PATH}/include)
 target_link_libraries(sg-host PRIVATE soundgraph-plugin-host soundgraph::wav)
 target_compile_features(sg-host PRIVATE cxx_std_17)
 

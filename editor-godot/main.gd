@@ -1,5 +1,6 @@
 extends Control
 const PluginPicker := preload("res://plugin_picker.gd")
+const PluginWindow := preload("res://plugin_window.gd")
 ## SoundGraph — Godot editor.
 ##
 ## The primary editor, and deliberately not the authority on anything. Every question this
@@ -151,6 +152,8 @@ var engine
 var registry: Dictionary = {}          # type name -> descriptor from the core
 var patch: Dictionary = {}             # the document, in patch-format shape
 var _plugin_scan: Array = []           # what this machine has, asked once
+var _plugin_face: Window = null        # the one plugin panel that is open, if any
+var _subwindows_were_embedded := false  # what to put back when that panel closes
 var widgets: Dictionary = {}           # patch node id -> GraphNode
 var ids: Dictionary = {}               # GraphNode.name -> patch node id
 
@@ -2394,6 +2397,8 @@ func _watch_for_quit_request(delta: float) -> void:
 
 func shutdown_audio() -> void:
 	set_process(false)
+	# Before the engine goes: the panel is drawn by a plugin the engine owns.
+	_close_plugin_face()
 	# The sandbox's voices first: eight more players and engines with the same race,
 	# and a teardown that only remembered the editor's own was half a teardown.
 	if sandbox != null and sandbox.sounds != null:
@@ -3352,6 +3357,17 @@ func _create_widget(node: Dictionary) -> void:
 			slots.tooltip_text = "Say which of the plugin's own controls each slot " 				+ "drives. A bound slot is an ordinary control input, so an LFO or a " 				+ "MidiCC node can move it."
 			slots.pressed.connect(func() -> void: _bind_plugin_slots(choose_id))
 			plugin_line.add_child(_defocus(slots))
+			# Offered whenever this build can host at all, rather than only when the
+			# plugin turns out to have a panel. Asking would mean a loaded graph and a
+			# resolved plugin, and widgets are built at times when neither is true yet —
+			# so the question is asked on the press, where a plain sentence can be the
+			# answer.
+			if engine != null and engine.can_host_plugins():
+				var face := Button.new()
+				face.text = "Panel"
+				face.tooltip_text = "Show the plugin's own panel, in a window of its " 					+ "own. Everything it changes there belongs to the plugin, and " 					+ "travels with the patch as its state."
+				face.pressed.connect(func() -> void: _open_plugin_face(choose_id))
+				plugin_line.add_child(_defocus(face))
 		widget.add_child(plugin_line)
 
 	if str(node.get("type", "")) == "MidiCC":
@@ -4674,6 +4690,83 @@ func _choose_plugin_for(node_id: String) -> void:
 	dialog.canceled.connect(func() -> void: dialog.queue_free())
 	add_child(dialog)
 	dialog.popup_centered()
+
+
+## Opens the plugin's own panel for a node, in a window of its own.
+##
+## One at a time: the editor has one place to put such a window, and a second press is
+## much more likely to mean "show me this one" than "show me both".
+func _open_plugin_face(node_id: String) -> void:
+	if engine == null or not engine.is_loaded():
+		_say("The graph is not running, so there is no plugin to show.")
+		return
+	if not engine.plugin_has_gui(node_id):
+		# Three different situations, deliberately one sentence: the node names no
+		# plugin, the plugin is not on this machine, or it genuinely has no panel. The
+		# first two already say so elsewhere — a missing plugin is a diagnostic on the
+		# node — so repeating them here would only be louder, not clearer.
+		_say("No panel to show: either the plugin is not on this machine, or it draws none.")
+		return
+
+	_close_plugin_face()
+
+	# Godot draws its own subwindows inside the main viewport by default, and an
+	# embedded subwindow has no operating-system window behind it — nothing to lend.
+	# Turned off for as long as a panel is open, and put back after, because the rest of
+	# this editor's dialogs were designed embedded and look wrong as loose windows.
+	_subwindows_were_embedded = get_tree().root.gui_embed_subwindows
+	get_tree().root.gui_embed_subwindows = false
+
+	var name := node_id
+	var chosen := ""
+	for node in patch.get("nodes", []):
+		if str(node.get("id", "")) == node_id:
+			chosen = str(node.get("plugin", ""))
+	if chosen != "":
+		name = str(patch.get("plugins", {}).get(chosen, {}).get("name", node_id))
+
+	var face: Window = PluginWindow.new()
+	face.setup(engine, node_id, name)
+	face.attach_failed.connect(func(reason: String) -> void:
+		_say(reason)
+		_close_plugin_face())
+	# The window can also go without this editor being asked — the user closes it. The
+	# embedding setting has to come back either way, so the tidying hangs off the window
+	# actually leaving rather than off any one of the ways it can be told to.
+	face.tree_exited.connect(_plugin_face_gone)
+	_plugin_face = face
+	add_child(face)
+	face.move_to_center()
+
+
+## Puts any open plugin panel away.
+##
+## Called wherever the graph is about to be replaced or dropped. load_patch() acquires
+## new plugin instances, so the panel would otherwise be showing a plugin that no longer
+## exists — and closing it is not reopening it: the new graph may not have that node.
+## `announce` when the closing is a side effect of something else the user did, because
+## a panel that vanishes on its own is a bug until it is explained.
+func _close_plugin_face(announce: bool = false) -> void:
+	if _plugin_face == null:
+		return
+	if is_instance_valid(_plugin_face):
+		_plugin_face.hide()
+		_plugin_face.queue_free()
+		if announce:
+			_say("Editing the graph reloads the plugin, so its panel closed.")
+	_plugin_face = null
+
+
+## After the panel has genuinely gone, whichever way it went.
+##
+## Separate from closing it because freeing is deferred: Godot refuses to change the
+## embedding setting while a child window is still displayed, so restoring it in the same
+## breath as queue_free() prints a warning and does nothing. This runs on tree_exited,
+## which is late enough.
+func _plugin_face_gone() -> void:
+	_plugin_face = null
+	if get_tree() != null:
+		get_tree().root.gui_embed_subwindows = _subwindows_were_embedded
 
 
 ## Writes a chosen plugin into the patch: one table entry, one node field, one undo step.
@@ -8077,6 +8170,7 @@ func _apply(same_sound_as: String = "") -> void:
 	_show_diagnostics(diagnostics)
 
 	if typeof(report) == TYPE_DICTIONARY and report["ok"]:
+		_close_plugin_face(true)
 		engine.load_patch(text, 48000.0)
 		# Loading puts the stored level back, so a mute has to be re-asserted or it lifts
 		# the first time anybody moves a node.

@@ -4,10 +4,19 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <sstream>
 
 #include "soundgraph/patch_io.h"
 #include "soundgraph/lpc_encoder.h"
+
+// The desktop provider, when this build has the SDKs to load a plugin with. The guard
+// is the whole of the difference: with it absent the extension is what it always was,
+// and dsp-core's answer to "no provider" — the effect passes its audio through and the
+// patch says so once — is the one the user gets.
+#if defined(SOUNDGRAPH_WITH_PLUGIN_HOST)
+#include "desktop_provider.h"
+#endif
 
 using namespace godot;
 
@@ -33,9 +42,22 @@ SoundGraphEngine::SoundGraphEngine() {
     right_.assign(kMaxFillFrames, 0.0f);
     frames_.resize(kMaxFillFrames);
     scope_.assign(kScopeSamples, 0.0f);
+
+    // Made once and pointed at the graph before anything is built, because the graph
+    // borrows it for the life of every patch it loads. Making one per load would mean
+    // rescanning the machine each time a patch is opened.
+#if defined(SOUNDGRAPH_WITH_PLUGIN_HOST)
+    plugin_provider_ = soundgraph::host::make_desktop_plugin_provider();
+    graph_.set_plugin_provider(plugin_provider_.get());
+#endif
 }
 
-SoundGraphEngine::~SoundGraphEngine() = default;
+SoundGraphEngine::~SoundGraphEngine() {
+    // Before the graph goes, and therefore before the instances do. A plugin still
+    // drawing into a window that has been freed is a crash with nothing of ours on the
+    // stack, which is the worst kind to be handed.
+    close_plugin_gui(String(open_gui_node_.c_str()));
+}
 
 void SoundGraphEngine::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_registry_json"), &SoundGraphEngine::get_registry_json);
@@ -67,6 +89,17 @@ void SoundGraphEngine::_bind_methods() {
     ClassDB::bind_method(D_METHOD("fill_playback", "playback", "max_frames"),
                          &SoundGraphEngine::fill_playback);
     ClassDB::bind_method(D_METHOD("get_peak"), &SoundGraphEngine::get_peak);
+
+    ClassDB::bind_method(D_METHOD("can_host_plugins"), &SoundGraphEngine::can_host_plugins);
+    ClassDB::bind_method(D_METHOD("plugin_has_gui", "node_id"),
+                         &SoundGraphEngine::plugin_has_gui);
+    ClassDB::bind_method(D_METHOD("open_plugin_gui", "node_id", "window_handle"),
+                         &SoundGraphEngine::open_plugin_gui);
+    ClassDB::bind_method(D_METHOD("close_plugin_gui", "node_id"),
+                         &SoundGraphEngine::close_plugin_gui);
+    ClassDB::bind_method(D_METHOD("plugin_gui_size", "node_id"),
+                         &SoundGraphEngine::plugin_gui_size);
+    ClassDB::bind_method(D_METHOD("tick_plugins"), &SoundGraphEngine::tick_plugins);
 
     ClassDB::bind_method(D_METHOD("get_scope", "samples"), &SoundGraphEngine::get_scope);
     ClassDB::bind_method(D_METHOD("get_port_signal", "node_id", "port"),
@@ -183,6 +216,11 @@ String SoundGraphEngine::format_patch(const String& patch_json) const {
 // -------------------------------------------------------------------------------------
 
 bool SoundGraphEngine::load_patch(const String& patch_json, double sample_rate) {
+    // build() destroys every plugin instance and acquires new ones, so an editor left
+    // open across a reload would be drawing from a plugin that no longer exists. Closed
+    // first, and deliberately not reopened: the new graph may not even have that node.
+    close_plugin_gui(String(open_gui_node_.c_str()));
+
     loaded_ = false;
     peak_ = 0.0;
     std::fill(scope_.begin(), scope_.end(), 0.0f);
@@ -454,6 +492,64 @@ void SoundGraphEngine::push_scope(const float* samples, int count) {
 // -------------------------------------------------------------------------------------
 // Inspection
 // -------------------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------------------
+// Hosted plugins
+// -------------------------------------------------------------------------------------
+
+bool SoundGraphEngine::can_host_plugins() const { return plugin_provider_ != nullptr; }
+
+bool SoundGraphEngine::plugin_has_gui(const String& node_id) {
+    soundgraph::HostedPluginInstance* plugin = graph_.plugin_for_node(to_utf8(node_id));
+    return plugin != nullptr && plugin->has_gui();
+}
+
+bool SoundGraphEngine::open_plugin_gui(const String& node_id, int64_t window_handle) {
+    if (window_handle == 0) {
+        return false;
+    }
+    const std::string id = to_utf8(node_id);
+    soundgraph::HostedPluginInstance* plugin = graph_.plugin_for_node(id);
+    if (plugin == nullptr) {
+        return false;
+    }
+    // One editor at a time. Not a limitation of the plugins — a DAW happily shows
+    // several — but of this editor, which has one window to lend and one place to put
+    // it. Opening a second closes the first rather than leaking it.
+    if (!open_gui_node_.empty() && open_gui_node_ != id) {
+        close_plugin_gui(String(open_gui_node_.c_str()));
+    }
+    if (!plugin->open_gui(reinterpret_cast<void*>(static_cast<std::intptr_t>(window_handle)))) {
+        return false;
+    }
+    open_gui_node_ = id;
+    return true;
+}
+
+void SoundGraphEngine::close_plugin_gui(const String& node_id) {
+    const std::string id = to_utf8(node_id);
+    if (id.empty()) {
+        return;
+    }
+    if (soundgraph::HostedPluginInstance* plugin = graph_.plugin_for_node(id)) {
+        plugin->close_gui();
+    }
+    if (open_gui_node_ == id) {
+        open_gui_node_.clear();
+    }
+}
+
+Vector2i SoundGraphEngine::plugin_gui_size(const String& node_id) {
+    soundgraph::HostedPluginInstance* plugin = graph_.plugin_for_node(to_utf8(node_id));
+    int width = 0;
+    int height = 0;
+    if (plugin == nullptr || !plugin->gui_size(width, height)) {
+        return Vector2i(0, 0);
+    }
+    return Vector2i(width, height);
+}
+
+void SoundGraphEngine::tick_plugins() { graph_.tick_plugins(); }
 
 PackedFloat32Array SoundGraphEngine::get_scope(int samples) const {
     const int count = std::min(std::max(samples, 0), kScopeSamples);

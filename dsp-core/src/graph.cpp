@@ -711,6 +711,21 @@ bool validate(const GraphDescription& description,
 Graph::Graph() = default;
 Graph::~Graph() = default;
 
+void Graph::tick_plugins() {
+    for (const std::unique_ptr<HostedPluginInstance>& instance : plugin_instances_) {
+        instance->main_thread_tick();
+    }
+}
+
+HostedPluginInstance* Graph::plugin_for_node(const std::string& node_id) const {
+    for (std::size_t i = 0; i < plugin_instance_nodes_.size(); ++i) {
+        if (plugin_instance_nodes_[i] == node_id) {
+            return plugin_instances_[i].get();
+        }
+    }
+    return nullptr;
+}
+
 int Graph::allocate_buffer() {
     const int index = buffer_count_++;
     buffer_pool_.resize(static_cast<std::size_t>(buffer_count_) * kBlockSize, 0.0f);
@@ -741,6 +756,7 @@ bool Graph::build(const GraphDescription& description,
     sample_buffers_ = description.buffers;
     plugin_descriptions_ = description.plugins;
     plugin_instances_.clear();
+    plugin_instance_nodes_.clear();
     control_queue_.clear();
     cc_values_.fill(-1.0f);
     cost_ = ResourceCost{};
@@ -899,6 +915,7 @@ bool Graph::build(const GraphDescription& description,
             } else {
                 node_context.plugin = instance.get();
                 plugin_instances_.push_back(std::move(instance));
+                plugin_instance_nodes_.push_back(node_description.id);
             }
         }
 

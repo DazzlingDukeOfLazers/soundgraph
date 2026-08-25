@@ -615,12 +615,28 @@ public:
     void note_on(int note, float) override { notes_on.push_back(note); ++live; }
     void note_off(int note) override { notes_off.push_back(note); --live; }
 
+    // The editor's half of the contract: a panel, and the main thread to service it.
+    bool has_gui() override { return true; }
+    bool open_gui(void* parent) override {
+        opened_into = parent;
+        return parent != nullptr;
+    }
+    void close_gui() override { opened_into = nullptr; }
+    bool gui_size(int& width, int& height) override {
+        width = 1141;
+        height = 711;
+        return true;
+    }
+    void main_thread_tick() override { ++ticks; }
+
     std::vector<int> notes_on;
     std::vector<int> notes_off;
     int live = 0;
     double prepared_rate = 0.0;
     int prepared_block = 0;
     std::map<int, float> controls;
+    void* opened_into = nullptr;
+    int ticks = 0;
 };
 
 class OnePluginProvider : public soundgraph::PluginProvider {
@@ -703,6 +719,48 @@ TEST(a_plugin_node_is_resolved_by_identity_and_driven) {
     // The slot reached the plugin, normalised, and the untouched ones did too.
     CHECK(std::fabs(provider.last->controls[2] - 0.75f) < 1e-6);
     CHECK(provider.last->controls.size() == 16);
+}
+
+TEST(the_graph_hands_out_the_plugin_a_node_is_playing_through) {
+    // What an editor needs to show a plugin's own panel: the instance behind a node,
+    // found by the name the author gave the node. Kept here rather than in the runtime
+    // that owns windows, because the graph is what resolved the plugin and a second map
+    // from node to plugin is a second thing to get out of step with a reload.
+    GraphDescription graph = plugin_chain();
+
+    OnePluginProvider provider;
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+
+    soundgraph::HostedPluginInstance* found = runtime.plugin_for_node("fx");
+    CHECK(found == provider.last);
+    CHECK(runtime.plugin_for_node("osc") == nullptr);   // a node with no plugin
+    CHECK(runtime.plugin_for_node("nope") == nullptr);  // a node that is not there
+
+    // The handle is opaque all the way through: the core never looks at it, so a
+    // stand-in address proves the journey as well as a real HWND would.
+    int width = 0;
+    int height = 0;
+    CHECK(found->has_gui());
+    CHECK(found->open_gui(&runtime));
+    CHECK(provider.last->opened_into == &runtime);
+    CHECK(found->gui_size(width, height) && width == 1141 && height == 711);
+
+    const int before = provider.last->ticks;
+    runtime.tick_plugins();
+    CHECK(provider.last->ticks == before + 1);
+
+    found->close_gui();
+    CHECK(provider.last->opened_into == nullptr);
+
+    // And a rebuild lets go of every instance, which is why an editor closes the panel
+    // before reloading rather than after.
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+    CHECK(runtime.plugin_for_node("fx") == provider.last);
 }
 
 TEST(a_plugin_node_passes_audio_through_when_there_is_no_plugin) {

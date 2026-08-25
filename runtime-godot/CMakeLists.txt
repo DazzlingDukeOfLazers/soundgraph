@@ -76,6 +76,37 @@ add_library(soundgraph_godot SHARED
 
 target_link_libraries(soundgraph_godot PRIVATE godot-cpp soundgraph::patch_io)
 
+# ---- hosting somebody else's plugin -------------------------------------------------
+#
+# Optional, and quietly so. Building this needs the CLAP and VST3 SDKs, which
+# tools/get-plugin-sdks.sh fetches and an ordinary clone does not have; without them the
+# extension is exactly what it was before, and a patch naming a plugin still opens and
+# still says which plugin it wanted. dsp-core was built for that case from the start —
+# no provider is a fact about the machine, not an error — so there is nothing to guard
+# here beyond the one branch.
+#
+# Never for the web build: a browser has no shared libraries to load, and asking
+# Emscripten to compile the VST3 SDK is a way to find that out slowly.
+#
+# The extension links the hosting code rather than shelling out to sg-host, which is a
+# deliberate reversal. Scanning still happens out of process, because opening every
+# plugin on a machine is exactly the act that hangs — but a plugin the user is *playing*
+# has to be in the process that owns the audio graph and the window, and no amount of
+# pipe between them changes that.
+if(NOT EMSCRIPTEN)
+    include(${SOUNDGRAPH_ROOT}/plugin-host/plugin-host.cmake)
+    soundgraph_find_plugin_sdks(SOUNDGRAPH_GODOT_CLAP_SDK SOUNDGRAPH_GODOT_VST3_SDK)
+    if(SOUNDGRAPH_GODOT_CLAP_SDK AND SOUNDGRAPH_GODOT_VST3_SDK)
+        message(STATUS "soundgraph: hosting plugins (VST3 SDK ${SOUNDGRAPH_GODOT_VST3_SDK})")
+        soundgraph_add_plugin_host(soundgraph_godot_plugin_host)
+        target_link_libraries(soundgraph_godot PRIVATE soundgraph_godot_plugin_host)
+        target_compile_definitions(soundgraph_godot PRIVATE SOUNDGRAPH_WITH_PLUGIN_HOST)
+    else()
+        message(STATUS "soundgraph: no plugin SDKs found; the extension will not host plugins. "
+                "Run tools/get-plugin-sdks.sh and configure the plugin build once.")
+    endif()
+endif()
+
 # Stated on the target as well as through the shared-library flags above: this has to be a
 # side module however CMake decides to phrase the link line, and a missing SIDE_MODULE
 # fails as "undefined symbol: main", which points nowhere near the cause.

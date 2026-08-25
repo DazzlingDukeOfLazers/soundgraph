@@ -285,10 +285,68 @@ invited. Said that way it is a feature with a boundary, which is what it is. Sai
 carelessly it sounds like the portability claim developed an asterisk, which is what
 it must not become.
 
+## The plugin's own panel, inside the editor
+
+Sixteen numbered slots are a mixing desk bolted over the front of an instrument. The
+plugin knows how it wants to be operated and has spent years drawing it; the editor's
+job is to get out of the way and lend it a window.
+
+**Where the hosting lives.** The Godot extension links the loaders directly. That is a
+reversal of the rule the rest of this feature follows — scanning happens out of process,
+because opening every plugin on a machine is the act that hangs — and the reason is
+simple: a plugin being *played* has to be in the process that owns the audio graph, and
+a plugin being *drawn* has to be in the process that owns the window. There is no pipe
+that makes either of those remote.
+
+The cost is stated rather than hidden: a plugin that crashes now takes the editor with
+it. The isolation that remains is the isolation that matters most — the scan, which is
+where an unknown machine's worth of strangers' code gets opened for the first time.
+
+`plugin-host/plugin-host.cmake` is what made this possible. The host library used to be
+a guest in the plugin's own build, borrowing clap-wrapper's `base-sdk-vst3`; it now
+finds the SDKs and compiles the host-side subset of the VST3 SDK itself, so any build
+can call `soundgraph_add_plugin_host()`. A host that depends on the build of the plugin
+it is meant to load was backwards anyway.
+
+**How the handle travels.** Godot makes a real operating-system window, `DisplayServer`
+reports its native handle, and that handle passes through `HostedPluginInstance::open_gui`
+— which dsp-core declares and never looks at — to the loader, which knows it is an HWND
+on Windows and an NSView on macOS. The core's promise is intact: it knows no more about
+windows than it does about DLLs.
+
+**Three things that had to be learned.**
+
+- Godot draws its own subwindows *inside* the main viewport by default, and an embedded
+  subwindow has no operating-system window behind it. `gui_embed_subwindows` is turned
+  off while a panel is open and put back after — after, meaning on `tree_exited`, because
+  freeing is deferred and Godot refuses the change while a child window is still shown.
+- The plugin fills whatever it is handed, corner to corner, with no portable way to ask
+  it to occupy a rectangle instead. So it gets a window of its own rather than a panel in
+  the editor — which is also what every DAW does, so it is what the hands expect.
+- Plugins ask in real pixels and are DPI-aware. Surge XT asks `sg-host` for 1141x711 and
+  Godot for 2282x1422, on the same machine, because Godot's process is per-monitor DPI
+  aware and sg-host's is not. Both are right. The request is clamped to the usable screen
+  anyway: a window larger than the screen is one whose title bar cannot be reached.
+
+**The gap this opens, said out loud.** A graph edit rebuilds the graph, which re-acquires
+every plugin, which discards whatever the user did inside the plugin's panel — because
+`PluginDescription::state` is in the schema and nothing writes it yet. Before the panel
+existed this was theoretical; now it is the first thing a user will hit, and the editor
+says so when it happens rather than letting a panel vanish unexplained. Saving and
+restoring plugin state is the next piece of work, not a defect in this one.
+
 ## Still open
 
 - **Latency compensation.** Plugins report latency and the graph has no notion of it.
   Irrelevant for a reverb, audible the moment two paths run in parallel and only one
   has a plugin in it. Stage 2 can report latency and ignore it; Stage 3 cannot.
+- **Plugin state is not saved.** `PluginDescription::state` exists in the schema and
+  nothing reads or writes it. Every graph edit therefore returns the plugin to its
+  defaults. This was theoretical until the panel shipped; it is now the most visible
+  thing missing.
 - **How much state is too much.** The embedded-state ceiling wants a number taken from
   real plugin presets rather than invented here.
+- **Resizing.** The host tells the plugin nothing about the window size, so dragging the
+  panel's edge stretches the frame and not the plugin. Both formats have a call for it
+  (`clap_plugin_gui::set_size`, `IPlugView::onSize`) and `HostedPlugin` has no verb for
+  it yet.

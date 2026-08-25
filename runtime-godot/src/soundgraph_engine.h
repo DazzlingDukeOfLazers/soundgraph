@@ -16,6 +16,7 @@
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/vector2i.hpp>
 
 #include <memory>
 #include <vector>
@@ -97,6 +98,44 @@ public:
 
     double get_peak() const { return peak_; }
 
+    // ---- hosted plugins ---------------------------------------------------------------
+    // Somebody else's plugin, playing inside this graph. The editor picks one with
+    // plugin_picker.gd and the patch names it; everything below is about the running
+    // instance rather than the document.
+    //
+    // The provider lives here, in the extension, and not in the editor's GDScript,
+    // because a plugin has to be in the process that owns the audio graph. Scanning
+    // stays out of process — sg-host --scan opens every plugin on the machine, which is
+    // exactly the act that hangs — but a plugin being *played* cannot be at the far end
+    // of a pipe.
+
+    // Whether this build can host at all. False on the web, false in a clone that has
+    // not fetched the SDKs, and worth asking before offering the user a button.
+    bool can_host_plugins() const;
+
+    // Whether the plugin this node plays through draws an editor. False for a node with
+    // no plugin, for a plugin this machine does not have, and for one that has no face.
+    bool plugin_has_gui(const godot::String& node_id);
+
+    // Lends the plugin a window to draw in, and returns whether it took it.
+    //
+    // `window_handle` is what DisplayServer.window_get_native_handle(WINDOW_HANDLE, id)
+    // gives for a Godot Window — an HWND on Windows, an NSView on macOS. It travels from
+    // there through dsp-core, which never looks at it, to the loader, which knows what
+    // it is. Give it a window of its own rather than the main one: the plugin fills
+    // whatever it is handed, corner to corner.
+    bool open_plugin_gui(const godot::String& node_id, int64_t window_handle);
+    void close_plugin_gui(const godot::String& node_id);
+
+    // The size the plugin asks for, in pixels; zero when it will not say. Only
+    // meaningful once the editor is open, which is the plugin's rule and not ours.
+    godot::Vector2i plugin_gui_size(const godot::String& node_id);
+
+    // Every hosted plugin gets the main thread, once. Call it from _process: a plugin
+    // that has been clicked defers work and waits, so an editor nobody ticks is one
+    // whose knobs move and whose sound does not follow.
+    void tick_plugins();
+
     // ---- inspection ------------------------------------------------------------------
 
     // Recent output history, for a scope. Newest sample last.
@@ -131,6 +170,14 @@ private:
 
     soundgraph::Graph graph_;
     soundgraph::GraphDescription description_;
+
+    // Built once and outliving every graph, because the graph borrows it. Null when
+    // this build cannot host plugins, which the core already treats as ordinary.
+    std::unique_ptr<soundgraph::PluginProvider> plugin_provider_;
+    // The one node whose editor is open, so that a reload or a teardown can close it.
+    // A plugin left drawing into a window that has been freed is a crash with nothing
+    // of ours on the stack.
+    std::string open_gui_node_;
     std::string diagnostics_json_ = "[]";
     std::string info_json_ = "{}";
     bool loaded_ = false;

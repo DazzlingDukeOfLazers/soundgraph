@@ -46,6 +46,14 @@ godot --headless --path editor-godot --script res://editor_test.gd
 godot --headless --path editor-godot --script res://layout_test.gd
 node tools/verify-roundtrip.mjs
 
+# hosting somebody else's plugin
+tools/get-plugin-sdks.sh                                   # once per clone
+cmake -S . -B build-clap -DSOUNDGRAPH_CLAP=ON && cmake --build build-clap
+build-clap/bin/sg-host --scan                              # what this machine has
+SOUNDGRAPH_PLUGIN_PATH=/path/to/plugins build-clap/bin/sg-host "Surge XT.clap" --gui
+# and then, so the Godot extension picks the same SDKs up:
+cmake -S runtime-godot -B runtime-godot/build     # prints "soundgraph: hosting plugins"
+
 # hardware (board on COM3)
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 verify-goldens
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 abuse
@@ -281,6 +289,16 @@ These all cost real time once and are written up in `decisions.md` or the compon
 READMEs. Collected here because the pattern is the same each time — the symptom pointed
 somewhere other than the cause.
 
+- **An embedded Godot subwindow has no window behind it.** `Window.is_embedded()` is
+  true by default, `DisplayServer.window_get_native_handle` then returns the *main*
+  window's, and a plugin handed it draws over the whole editor. Turning
+  `gui_embed_subwindows` off is the fix, and putting it back has to wait for
+  `tree_exited` — `queue_free()` is deferred, and Godot refuses the change while the
+  child window is still shown, with a warning rather than an error.
+- **The same plugin reports different sizes to different hosts.** Surge XT asks
+  `sg-host` for 1141x711 and the Godot extension for 2282x1422 on one screen. Neither is
+  wrong: Godot's process is per-monitor DPI aware and sg-host's is not, so the plugin is
+  answering a different question about the same display. Never hard-code either.
 - **The 0xC0000005 exit crash is rarer, not gone.** shutdown_audio() plus two frames took
   it from ~1 in 5 to the point where 36 consecutive clean runs looked like zero — and on
   2026-08-09 it fired twice in 11 runs, then 0 in the next 32. A residual few-percent
@@ -475,9 +493,59 @@ host's window without restyling it `WS_CHILD` leaves it painting unreliably — 
 has to change with the parentage. Verified in Reaper: both the CLAP and the VST3 show
 the panel, the patch dropdown is populated through the JS bindings, and it opens.
 
-Still open: sample-rate golden comparison
-through the plugin path, audio input for HostAudioSource patches, VST3 hosting as the
-second act of `sg-host`, and growing the panel toward hosting the full web editor.
+Still open on the *player* plugin: sample-rate golden comparison through the plugin
+path, audio input for HostAudioSource patches, and growing the panel toward hosting the
+full web editor.
+
+## SoundGraph as a host (2026-08-25)
+
+The other direction: a patch invites somebody else's plugin in. `docs/hosted-plugins-design.md`
+is the design and the decision log; this is the state.
+
+**Two node types**, `PluginEffect` (stereo in and out) and `PluginInstrument` (notes in,
+stereo out), each with sixteen slots that bind to the plugin's own parameters. A patch
+carries a `plugins` table and each node names an entry, resolved **by identity** —
+`org.surge-synth-team.surge-xt`, or a VST3 class UID — never by path. A machine without
+that plugin still opens the patch: the effect passes its audio through, and one warning
+names what is missing. That is the same stance dsp-core takes towards a target with no
+provider at all, which is every target but the desktop.
+
+`PluginInstrument` is a **voice boundary**: the replicator stops there, so one instance
+hears every note and does its own voice allocation. Sixteen copies of Surge XT each
+told to play the whole chord is not polyphony, it is sixteen wrong answers.
+
+**The panel (2026-08-25).** The Godot extension links the hosting code and gives a
+plugin one of Godot's own operating-system windows to draw in. Verified with Surge XT:
+loaded in-process, plays (peak 0.37 on a held C), reports its editor at 2282x1422, and
+paints its full interface inside a window Godot made. Three things that had to be
+learned are written up in the design doc — Godot embeds its subwindows by default and
+an embedded one has no OS window behind it; a plugin fills whatever it is handed, so it
+gets a window of its own; and plugins ask in real pixels, DPI-aware, which is why Surge
+asks `sg-host` for 1141x711 and Godot for 2282x1422 on the same screen.
+
+The isolation rule bends here, on purpose. **Scanning** stays out of process — `sg-host
+--scan` opens every plugin on the machine, which is the act that hangs — but a plugin
+being *played* has to live where the audio graph is, and a plugin being *drawn* has to
+live where the window is.
+
+`plugin-host/plugin-host.cmake` is what made the link possible: the host library used
+to be a guest in the plugin's build, borrowing clap-wrapper's `base-sdk-vst3`. It now
+finds the SDKs and compiles the host-side subset of the VST3 SDK itself, so
+`runtime-godot` — a separate configuration that has never heard of clap-wrapper — can
+call `soundgraph_add_plugin_host()` too. Without the SDKs the extension is exactly what
+it was, and says so at configure time.
+
+**The bugs were ours, and pointing the tool at strangers' plugins is what found them.**
+Effects were being handed uninitialised memory, which nothing had caught because our own
+plugin is an instrument with no audio inputs and Surge's FX rack roared at peak 2.0. A
+"negative parameter id means unbound" sentinel silently dropped most real CLAP ids —
+Surge's Global Volume is `-810883302` — and for two stages that looked exactly like slot
+control not working; only the exact `-1` a patch writes means unbound now.
+
+**Not saved yet: the plugin's own state.** `PluginDescription::state` is in the schema
+and nothing writes it, so every graph edit returns the plugin to its defaults. The
+editor says so when it happens rather than letting the panel vanish unexplained. This is
+the next piece of work on this feature.
 
 ## Axoloti (2026-08-25)
 

@@ -170,12 +170,29 @@ public:
         if (slot < 0 || slot >= static_cast<int>(slots_.size())) return;
         const SlotBinding& binding = slots_[static_cast<std::size_t>(slot)];
         if (!binding.bound) return;  // an unbound slot drives nothing, quietly
-        std::fprintf(stderr, "[dbg] set_control slot=%d value=%f param=%d\n", slot, value,
-                     binding.parameter);
         const double plain =
             binding.minimum + static_cast<double>(value) * (binding.maximum - binding.minimum);
         plugin_->queue_parameter(static_cast<uint32_t>(binding.parameter), plain);
     }
+
+    // ---- the plugin's own face ------------------------------------------------
+    // Straight through. The core declares these so an editor has something to ask,
+    // and the loaders already know how to do them; this is only the join. The one
+    // translation is that the core counts pixels in ints.
+    bool has_gui() override { return plugin_->has_gui(); }
+    bool open_gui(void* parent) override { return plugin_->open_gui(parent); }
+    void close_gui() override { plugin_->close_gui(); }
+
+    bool gui_size(int& width, int& height) override {
+        unsigned w = 0;
+        unsigned h = 0;
+        if (!plugin_->gui_size(w, h)) return false;
+        width = static_cast<int>(w);
+        height = static_cast<int>(h);
+        return true;
+    }
+
+    void main_thread_tick() override { plugin_->main_thread_tick(); }
 
 private:
     std::unique_ptr<HostedPlugin> plugin_;
@@ -204,8 +221,6 @@ std::vector<SlotBinding> bind_slots(const HostedPlugin& plugin, const std::vecto
                 break;
             }
         }
-        std::fprintf(stderr, "[dbg] bind slot -> param=%d range %f..%f\n", binding.parameter,
-                     binding.minimum, binding.maximum);
         bindings.push_back(binding);
     }
     return bindings;

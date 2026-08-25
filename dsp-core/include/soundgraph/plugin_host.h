@@ -68,6 +68,35 @@ public:
 
     // Reported, and not yet compensated for. See the design doc.
     virtual int latency_frames() const { return 0; }
+
+    // ---- the plugin's own face --------------------------------------------------
+    // A hosted plugin usually draws itself, and an editor that can only offer sixteen
+    // numbered slots has hidden the instrument behind a mixing desk. So the editor
+    // lends the plugin a window and the plugin fills it.
+    //
+    // `parent` is a platform window handle — an HWND, an NSView, an X11 window id —
+    // and nothing in this file looks at it. That is what keeps the promise: the core
+    // still knows no more about windows than it does about DLLs, and the handle passes
+    // from whoever owns a window to whoever can draw in one without either end being
+    // named here.
+    //
+    // Every one of these has a do-nothing default, because most of the world has no
+    // answer: a plugin with no editor, a runtime with no windows, an ESP32. Not
+    // showing an editor is an ordinary outcome and never an error.
+    virtual bool has_gui() { return false; }
+    virtual bool open_gui(void* parent) { (void)parent; return false; }
+    virtual void close_gui() {}
+    virtual bool gui_size(int& width, int& height) {
+        (void)width;
+        (void)height;
+        return false;
+    }
+
+    // The host's main thread, between blocks. An open editor is the reason this
+    // matters: a plugin that has been clicked defers the work to its main thread and
+    // waits, and a host that never offers one leaves the editor half-dead — knobs that
+    // move and a sound that does not follow. Whoever owns the window calls this.
+    virtual void main_thread_tick() {}
 };
 
 // How a runtime offers plugins. A target that has none has no provider, and a graph

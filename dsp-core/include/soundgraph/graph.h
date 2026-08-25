@@ -71,6 +71,27 @@ public:
     // docs/hosted-plugins-design.md.
     void set_plugin_provider(PluginProvider* provider) { plugin_provider_ = provider; }
 
+    // The plugin a node is playing through, or null — because it names no plugin, or
+    // because that plugin is not on this machine.
+    //
+    // For an editor that wants to show the plugin's own window, and for whoever has to
+    // give it a main thread. The graph is what resolved the instance, so the graph is
+    // what can be asked; the alternative is an editor keeping its own second map from
+    // node to plugin, which is one more thing to get out of step with a reload.
+    //
+    // Voice zero keeps the author's node id, so this finds the instance the user means
+    // even in a polyphonic patch. It deliberately does not reach the other voices'
+    // copies: showing one editor per voice would be showing the user an implementation
+    // detail they did not ask for.
+    HostedPluginInstance* plugin_for_node(const std::string& node_id) const;
+
+    // Give every hosted plugin the host's main thread, once. For whoever owns the
+    // message loop to call between blocks — an editor's frame, a DAW's idle. A plugin
+    // that has been clicked defers work to its main thread and waits for it, so a host
+    // that never offers one shows an editor whose knobs move and whose sound does not
+    // follow.
+    void tick_plugins();
+
     // Returns all nodes and all internal state to their post-prepare condition without
     // reallocating. Safe to call between blocks.
     void reset();
@@ -237,6 +258,8 @@ private:
     // The graph owns the instances because the nodes only borrow them, and a voice's
     // clone must not outlive the plugin it was pointed at.
     std::vector<std::unique_ptr<HostedPluginInstance>> plugin_instances_;
+    // Which node each of those was acquired for, in step with the vector above.
+    std::vector<std::string> plugin_instance_nodes_;
     PluginProvider* plugin_provider_ = nullptr;
 
     // The graph always runs whole kBlockSize blocks and hands the host whatever it asked

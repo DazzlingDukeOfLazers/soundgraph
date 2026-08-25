@@ -9356,6 +9356,34 @@ func _initialize() -> void:
 	check(str(main.undo_redo.get_current_action_name()) == "bind plugin slots",
 		"and it is one step, under its own name")
 
+	# ---- the plugin's own panel -------------------------------------------------------
+	# Headless, so no window is ever opened here: what is checked is the surface and the
+	# refusals, which is the half that has to hold on every machine. Whether a real
+	# plugin draws is not a question a test without a plugin can ask, and pretending
+	# otherwise would make this suite green on a machine where none of it works.
+	check(main.engine.has_method("can_host_plugins"),
+		"the extension says whether this build can host plugins at all")
+	check(typeof(main.engine.can_host_plugins()) == TYPE_BOOL,
+		"and answers with a yes or a no rather than a guess")
+
+	# A node that does not exist, a node with no plugin, and a plugin that is not on this
+	# machine all reach the same place, and none of them is an error.
+	check(not main.engine.plugin_has_gui("no-such-node"),
+		"a node with no plugin has no panel")
+	check(main.engine.plugin_gui_size("no-such-node") == Vector2i.ZERO,
+		"and no size to report")
+	check(not main.engine.open_plugin_gui("no-such-node", 0),
+		"a window handle of zero is refused rather than passed on")
+	main.engine.tick_plugins()  # nothing hosted: has to be a quiet no-op, not a crash
+
+	# Closing a panel that was never opened must not disturb the editor. The embedding
+	# setting is global and every dialog in this program depends on it, so the one path
+	# that turns it off has to be the only path that touches it.
+	var embedding_before: bool = main.get_tree().root.gui_embed_subwindows
+	main._close_plugin_face()
+	check(main.get_tree().root.gui_embed_subwindows == embedding_before,
+		"closing a panel that is not open leaves the editor's own windows alone")
+
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with
 	# frames to spare rather than destroyed underneath it. Order matters and was
