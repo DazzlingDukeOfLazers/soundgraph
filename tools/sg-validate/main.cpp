@@ -2,6 +2,7 @@
 //
 // Deliberately usable before any audio device exists: this is the tool that answers
 // "is this graph well formed?" independently of any host.
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -19,6 +20,10 @@ int print_usage() {
         "\n"
         "options:\n"
         "  --explain          print the execution order, feedback edges and resource estimate\n"
+        "  --resolve <file>   write the loaded, fully resolved patch plus the schedule as\n"
+        "                     JSON: {schedule:{execution_order,feedback_connections}, patch}.\n"
+        "                     This is the contract compiled backends (sgaxo) build from,\n"
+        "                     so scheduling stays defined in exactly one place.\n"
         "  --json             print diagnostics as JSON, for scripts and editors\n"
         "  --quiet            print nothing; report the result through the exit code\n"
         "\n"
@@ -139,6 +144,7 @@ int main(int argc, char** argv) {
     bool want_explanation = false;
     bool quiet = false;
     bool as_json = false;
+    std::string resolve_path;
     for (int i = 2; i < argc; ++i) {
         if (std::strcmp(argv[i], "--explain") == 0) {
             want_explanation = true;
@@ -146,6 +152,8 @@ int main(int argc, char** argv) {
             as_json = true;
         } else if (std::strcmp(argv[i], "--quiet") == 0) {
             quiet = true;
+        } else if (std::strcmp(argv[i], "--resolve") == 0 && i + 1 < argc) {
+            resolve_path = argv[++i];
         } else {
             std::cerr << "unknown option: " << argv[i] << "\n";
             return print_usage();
@@ -182,6 +190,94 @@ int main(int argc, char** argv) {
             std::cout << path << ": not valid.\n";
         }
         return 1;
+    }
+
+    if (!resolve_path.empty()) {
+        soundgraph::Graph graph;
+        std::vector<soundgraph::Diagnostic> build_diagnostics;
+        soundgraph::PrepareContext context;
+        if (!graph.build(description, registry, context, build_diagnostics)) {
+            if (!quiet) {
+                print_diagnostics(build_diagnostics);
+                std::cout << path << ": does not build.\n";
+            }
+            return 1;
+        }
+        auto json_escape = [](const std::string& text) {
+            std::string escaped;
+            for (unsigned char ch : text) {
+                if (ch == '"' || ch == '\\') {
+                    escaped += '\\';
+                    escaped += static_cast<char>(ch);
+                } else if (ch < 0x20) {
+                    char buffer[8];
+                    std::snprintf(buffer, sizeof buffer, "\\u%04x", ch);
+                    escaped += buffer;
+                } else {
+                    escaped += static_cast<char>(ch);
+                }
+            }
+            return escaped;
+        };
+        // The flattened view: description.nodes/connections are what the engine
+        // builds from (modules already expanded); write_patch writes the authored
+        // view, which is exactly what a compiled backend must NOT consume.
+        std::string out = "{\n  \"schedule\": {\n    \"execution_order\": [";
+        bool first = true;
+        for (int index : graph.execution_order()) {
+            if (!first) out += ", ";
+            first = false;
+            out += "\"" + json_escape(graph.node_id(index)) + "\"";
+        }
+        out += "],\n    \"feedback_connections\": [";
+        first = true;
+        for (int index : graph.feedback_connections()) {
+            if (!first) out += ", ";
+            first = false;
+            out += std::to_string(index);
+        }
+        out += "]\n  },\n  \"nodes\": [";
+        first = true;
+        for (const soundgraph::NodeDescription& node : description.nodes) {
+            if (!first) out += ",";
+            first = false;
+            out += "\n    {\"id\": \"" + json_escape(node.id) + "\", \"type\": \"" +
+                   json_escape(node.type) + "\"";
+            if (!node.host.empty()) {
+                out += ", \"host\": \"" + json_escape(node.host) + "\"";
+            }
+            if (!node.buffer.empty()) {
+                out += ", \"buffer\": \"" + json_escape(node.buffer) + "\"";
+            }
+            out += ", \"parameters\": {";
+            bool first_parameter = true;
+            for (const soundgraph::ParameterValue& parameter : node.parameters) {
+                if (!first_parameter) out += ", ";
+                first_parameter = false;
+                char value[64];
+                std::snprintf(value, sizeof value, "%.17g", parameter.value);
+                out += "\"" + json_escape(parameter.name) + "\": " + value;
+            }
+            out += "}}";
+        }
+        out += "\n  ],\n  \"connections\": [";
+        first = true;
+        for (const soundgraph::ConnectionDescription& connection : description.connections) {
+            if (!first) out += ",";
+            first = false;
+            out += "\n    {\"from\": \"" + json_escape(connection.from_node) +
+                   "\", \"from_port\": \"" + json_escape(connection.from_port) +
+                   "\", \"to\": \"" + json_escape(connection.to_node) +
+                   "\", \"to_port\": \"" + json_escape(connection.to_port) + "\"}";
+        }
+        out += "\n  ]\n}\n";
+        FILE* f = std::fopen(resolve_path.c_str(), "wb");
+        if (f == nullptr) {
+            std::cerr << "cannot write " << resolve_path << "\n";
+            return 1;
+        }
+        std::fwrite(out.data(), 1, out.size(), f);
+        std::fclose(f);
     }
 
     if (want_explanation) {

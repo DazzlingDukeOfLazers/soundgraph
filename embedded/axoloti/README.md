@@ -75,10 +75,17 @@ Tiers, in dependency order:
 ## sgaxo: soundgraph patches, compiled for the board
 
 `sgaxo/codegen.py` compiles a soundgraph patch (JSON) into an Axoloti patch
-binary: validate against the declared node subset, generate C++ over the
-kernel library (`sgaxo/kernels.h`, line-for-line restatements of dsp-core
-inner loops), compile with arm-none-eabi-g++ against the stock firmware, and
-upload over the driver. The board renders the shared golden vectors and the
+binary — and its front-end is patch-io itself, via `sg-validate --resolve`:
+any schema version loads, modules expand, Input/Output seams become
+terminals, validation runs natively, and the engine's own schedule (execution
+order + feedback edges) comes along, so scheduling stays defined in exactly
+one place. sgaxo then generates C++ over the kernel library
+(`sgaxo/kernels.h`, line-for-line restatements of dsp-core inner loops) —
+including summing-input premixes and block-end feedback snapshots exactly as
+graph.cpp performs them — compiles with arm-none-eabi-g++ against the stock
+firmware, and uploads over the driver. Editor patches compile: modules,
+feedback loops through Delay, and AudioInput (the effects-box configuration —
+`build_patch(..., zero_input=False)` wires the codec's real input). The board renders the shared golden vectors and the
 host reads the raw float32 samples back over USB:
 
 - six of seven golden cases **bit-exact** (max abs error 0): sine, noise,
@@ -104,9 +111,9 @@ OnePoleFilter, Delay/Comb/Allpass (SDRAM-backed lines, 4 MB budget), Phaser,
 Drive, Crush, Slide, Arpeggio, ADSR, AhdEnvelope, Retrigger, Gain, Constant,
 Add, Multiply, Mixer — twenty-four node types, every one hardware-verified:
 eleven manifest goldens bit-exact, slide 9e-6, first-synth 2e-6, and three
-fixtures against the native render at or under 1e-5. Note: sgaxo reads
-schema_version 1 (the golden/case format); editor patches at schema_version 3
-need patch-io's loader before this target — a known gap. Kernels
+fixtures against the native render at or under 1e-5. Editor patches at any
+schema version compile through the patch-io resolver; still refused by name:
+Sampler/Speech (buffers), polyphony (voices > 1), hosted plugins. Kernels
 without golden-manifest cases are verified against a native sg-render of the
 same patch (golden-on-demand, tests/fixtures/). Everything else is
 refused by name

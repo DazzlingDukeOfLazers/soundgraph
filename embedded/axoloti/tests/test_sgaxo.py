@@ -173,14 +173,22 @@ def test_first_synth_playable_over_midi(board, toolchain):
 SG_RENDER = GOLDEN.parent.parent / "build" / "bin" / "sg-render"
 
 
-def _native_reference(fixture, wav):
-    """Golden-on-demand: sg-render renders the fixture silently; the board
-    must match its left channel sample for sample."""
+def _native_reference(fixture, wav, seconds=0.1, notes=None, gate=0.7,
+                      velocity=0.9):
+    """Golden-on-demand: sg-render renders the fixture (silently, or playing
+    `notes` spread evenly, exactly its scheduler); the board must match the
+    left channel sample for sample."""
     if not SG_RENDER.exists():
         pytest.skip("native sg-render not built (build/bin/sg-render)")
     import subprocess
-    subprocess.run([str(SG_RENDER), str(fixture), str(wav), "--seconds", "0.1",
-                    "--silent", "--float", "--quiet"], check=True)
+    cmd = [str(SG_RENDER), str(fixture), str(wav), "--seconds", str(seconds),
+           "--float", "--quiet", "--gate", str(gate),
+           "--velocity", str(velocity)]
+    if notes:
+        cmd += ["--notes", ",".join(str(n) for n in notes)]
+    else:
+        cmd += ["--silent"]
+    subprocess.run(cmd, check=True)
     # sg-render writes stereo float32; the board capture is the left channel.
     data = wav.read_bytes()
     pos, payload = 12, None
@@ -222,15 +230,49 @@ def test_slide_family_golden_on_hardware(board, toolchain, case, tolerance):
     compare(rendered, golden, case, tolerance=tolerance)
 
 
+def _mirror_schedule(total_frames, notes, gate=0.7, velocity=0.9):
+    """sg-render's build_note_schedule, verbatim."""
+    if not notes:
+        return []
+    slot = total_frames // len(notes)
+    held = int(slot * gate)
+    events = []
+    for i, note in enumerate(notes):
+        events.append((i * slot, True, note, velocity))
+        events.append((i * slot + held, False, note, 0.0))
+    return sorted(events, key=lambda e: e[0])
+
+
+@pytest.mark.parametrize("rel,notes,seconds,tolerance", [
+    # Module expansion: the amp module unfolds into ADSR + Gain + Level seams.
+    # 5e-4: note 60's frequency is an inexact exp2 lattice point, and the
+    # saw's polyBLEP edges amplify the integrated phase drift (slide physics).
+    ("examples/patches/envelope-amp.json", [48, 55, 60], 0.5, 5e-4),
+    # Modules + Comb (Karplus-Strong pitch tracking) + Noise burst.
+    ("examples/patches/plucked-string.json", [45, 52, 57], 0.5, 5e-5),
+    # AudioInput + a feedback edge through the Delay. Rendered with silent
+    # input on both sides, so this proves the wiring runs clean (no NaN, no
+    # garbage) rather than exercising audio content.
+    ("examples/patches/delay-echo.json", None, 0.25, TOLERANCE),
+])
+def test_editor_patch_matches_native_render(board, toolchain, tmp_path, rel,
+                                            notes, seconds, tolerance):
+    """Real editor patches — seams, modules, feedback and all — compiled
+    through patch-io's resolver and verified against the native render."""
+    patch = GOLDEN.parent.parent / rel
+    golden = _native_reference(patch, tmp_path / "native.wav",
+                               seconds=seconds, notes=notes)
+    events = _mirror_schedule(len(golden), notes or [])
+    rendered = run_case(board, pathlib.Path(rel).stem, None, len(golden),
+                        events=events, patch_path=patch)
+    compare(rendered, golden, pathlib.Path(rel).stem, tolerance=tolerance)
+
+
 def test_unsupported_patch_is_refused(toolchain):
     """The subset gate must refuse, by name, what the target cannot run."""
-    import json
-    patch = {"schema_version": 1,
-             "nodes": [{"id": "s", "type": "Sampler"},
-                       {"id": "out", "type": "StereoOutput"}],
-             "connections": []}
-    bad = pathlib.Path(codegen.BUILD) / "refused-input.json"
-    bad.parent.mkdir(exist_ok=True)
-    bad.write_text(json.dumps(patch))
+    # A natively valid editor patch whose node type sgaxo does not carry:
+    # the refusal must come from the subset gate, by name.
+    compressor = (GOLDEN.parent.parent / "examples" / "patches" / "nodes"
+                  / "Compressor.json")
     with pytest.raises(codegen.Unsupported, match="not in the Axoloti subset"):
-        codegen.build_patch(bad, name="refused")
+        codegen.build_patch(compressor, name="refused")

@@ -839,6 +839,35 @@ inline void k_mixer(const float *in1, const float *in2, const float *in3,
   }
 }
 
+// --- AudioInput (terminals.cpp AudioInputNode) -------------------------------
+// The runtime hands the codec's input block here; the node applies its gain.
+
+inline void k_audio_input(const float *in_l, const float *in_r, float *out_l,
+                          float *out_r, float gain) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    out_l[i] = in_l[i] * gain;
+    out_r[i] = in_r[i] * gain;
+  }
+}
+
+// --- Level / StereoLevel (amplitude.cpp) -------------------------------------
+// Module seam trimming synthesizes these (patch_io.cpp: a levelled seam
+// expands into a Level node), so any module-using patch may contain them.
+
+inline void k_level(const float *in, float *out, float level) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    out[i] = (in != 0 ? in[i] : 0.0f) * level;
+  }
+}
+
+inline void k_stereo_level(const float *left, const float *right, float *out_l,
+                           float *out_r, float level) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    out_l[i] = (left != 0 ? left[i] : 0.0f) * level;
+    out_r[i] = (right != 0 ? right[i] : 0.0f) * level;
+  }
+}
+
 // --- Gain (amplitude.cpp GainNode) ------------------------------------------
 
 inline void k_gain(const float *in, const float *gain_in, float *out,
