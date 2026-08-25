@@ -294,7 +294,10 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             L.append(f"static sgaxo::AdsrState st_{c};")
         elif t == "Noise":
             L.append(f"static sgaxo::NoiseState st_{c};")
-            init.append(f"st_{c}.rng.seed({int(n['params']['seed'])}u);")
+            # Through float32 like every parameter: native stores the seed in a
+            # float, so 20260807 seeds as 20260808 — and so must we.
+            seed = int(f32(n["params"]["seed"])) & 0xFFFFFFFF
+            init.append(f"st_{c}.rng.seed({seed}u);")
         elif t == "Delay":
             delay_count += 1
             if delay_count > 10:
