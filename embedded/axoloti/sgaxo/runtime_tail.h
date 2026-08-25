@@ -22,7 +22,7 @@
 #include "axo_abi.h"
 
 #define SGAXO_SHM_ADDR 0x2001C000u
-#define SGAXO_CAPTURE_BASE 0xC0000000u
+#define SGAXO_CAPTURE_BASE 0xC0400000u  // above the .sdram delay lines
 #define SGAXO_SHM_MAGIC 0x53475831u  // "SGX1"
 
 typedef struct {
