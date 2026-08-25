@@ -109,6 +109,31 @@ public:
         return false;
     }
 
+    // Resizing, which is a conversation and runs both ways.
+    //
+    // The host proposes, because somebody dragged the window's edge, and the plugin
+    // answers with a size it can actually be — editors have aspect ratios, zoom steps
+    // and minimums, so the size taken is rarely the size asked for. set_gui_size takes
+    // the wanted one and gives back the taken one.
+    //
+    // And the plugin proposes: a zoom menu inside the editor is the plugin asking the
+    // host to make the window bigger. That arrives whenever the plugin feels like it, so
+    // it waits to be collected rather than interrupting whatever was going on.
+    //
+    // Still no window knowledge here. These are pixel counts, and the core has never
+    // needed to know what they are counted on.
+    virtual bool gui_can_resize() { return false; }
+    virtual bool set_gui_size(int& width, int& height) {
+        (void)width;
+        (void)height;
+        return false;
+    }
+    virtual bool take_gui_resize_request(int& width, int& height) {
+        (void)width;
+        (void)height;
+        return false;
+    }
+
     // The host's main thread, between blocks. An open editor is the reason this
     // matters: a plugin that has been clicked defers the work to its main thread and
     // waits, and a host that never offers one leaves the editor half-dead — knobs that

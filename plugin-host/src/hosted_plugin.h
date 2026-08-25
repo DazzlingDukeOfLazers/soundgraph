@@ -96,6 +96,22 @@ public:
     // What the plugin would like to be, in pixels. Only meaningful once open.
     virtual bool gui_size(unsigned& width, unsigned& height) = 0;
 
+    // ---- and the size of it ------------------------------------------------------
+    // Resizing is a conversation, not an instruction, and it runs in both directions.
+    //
+    // The host proposes — somebody dragged the window's edge — and the plugin answers
+    // with a size it can actually be, which is rarely the one asked for: editors have
+    // aspect ratios, integer zoom steps, and minimums below which their own text stops
+    // fitting. So set_gui_size takes the wanted size and gives back the taken one.
+    //
+    // And the plugin proposes: Surge XT's right-click menu offers 75% to 200% zoom, and
+    // choosing one is the plugin telling the host to make the window bigger. That
+    // arrives whenever the plugin feels like it, so it is left waiting to be collected
+    // rather than delivered through a callback into whatever was happening at the time.
+    virtual bool gui_can_resize() = 0;
+    virtual bool set_gui_size(unsigned& width, unsigned& height) = 0;
+    virtual bool take_gui_resize_request(unsigned& width, unsigned& height) = 0;
+
     // Between blocks: the host's main thread. Formats that ask for a callback from
     // the audio thread — CLAP's request_callback, and anything a VST3 defers — get
     // answered here, which is the promise a real host makes.

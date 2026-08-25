@@ -425,8 +425,48 @@ development machine has any lookahead — Surge XT reports zero for every one of
 effect types, verified by confirming the type parameter really landed. That gap is about
 this machine's plugin collection, not about the code path.
 
+## Resizing, which runs in both directions
+
+**The host proposes.** Somebody drags the window's edge, and the plugin answers with a
+size it can actually be — which is rarely the one asked for. Offered 1500x700, Surge XT
+takes 1123x700: it holds a 1141:711 aspect and rounds the request to fit. So the verb
+takes the wanted size and gives back the taken one, and the window follows the answer
+rather than the question. A window an inch wider than the editor inside it shows an inch
+of somebody else's background, which reads as a drawing bug rather than as rounding.
+
+**And the plugin proposes.** A zoom menu inside somebody else's editor is the plugin
+asking the host to make the window bigger. That arrives from inside the plugin, mid-click,
+so it is written down and left to be collected rather than delivered through a callback
+into whatever the editor was doing. VST3 sends it through `IPlugFrame::resizeView`, which
+meant providing an `IPlugFrame` at all — this host never had one, and the SDK expects
+`setFrame()` before `attached()`. Some plugins read a missing frame as a sign they are
+being probed rather than played.
+
+**A window that cannot be dragged should not look as though it can**, so the panel is
+marked unresizable when the plugin says `can_resize` is false. Our own VST3 is one: the
+webview panel is a fixed 560x460, refuses a resize outright, and its window refuses with
+it.
+
+**The bug this turned up.** Surge XT's VST3 opens at 3312x2064 on a 4K screen — nearly
+the whole display, and with a title bar added, more than fits in the work area. Windows
+answers that by maximising, and a maximised window is full width: the editor sat 3312
+wide inside a 3840-wide frame with five hundred pixels of Godot beside it. The old code
+clamped the *window* to the screen, which is the wrong half of the pair. The fix is to
+ask the *plugin* to be smaller, measuring the room with the decorations included, since
+the title bar is the part that did not fit. It now opens at 3198x1993 with the plugin
+filling it.
+
+**What is proven.** Host-to-plugin, by hand against Surge XT in both formats: asked for
+1500x700 and given 1123x700 (CLAP) and 1124x700 (VST3), and a drag to 1300x800 settling
+at 1284x800 with the window and the plugin agreeing to the pixel. The contract's shape —
+size in, taken size out, and a request cleared by being collected rather than acted on —
+has a test. Plugin-to-host is implemented and **not** exercised: it needs a human to open
+a zoom menu, and no plugin here asks for a resize on its own.
+
 ## Still open
-- **Resizing.** The host tells the plugin nothing about the window size, so dragging the
-  panel's edge stretches the frame and not the plugin. Both formats have a call for it
-  (`clap_plugin_gui::set_size`, `IPlugView::onSize`) and `HostedPlugin` has no verb for
-  it yet.
+
+- **The plugin-to-host direction is unverified.** Opening a zoom menu inside Surge XT and
+  watching the window follow is a twenty-second check that needs a human hand, and it is
+  the last claim here made on the strength of the code rather than of a measurement.
+- **One panel at a time.** Not a limit of the plugins, which are happy to show several,
+  but of this editor: it has one window to lend and one place to put it.

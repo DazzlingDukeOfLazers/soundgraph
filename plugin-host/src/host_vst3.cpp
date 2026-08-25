@@ -55,6 +55,44 @@ using namespace Steinberg::Vst;
 namespace soundgraph::host {
 namespace {
 
+// The host's side of the view's world, which this host had simply never provided.
+//
+// VST3 expects setFrame() before attached(), and a view with no frame has no way to ask
+// for anything — including the one thing it most often wants, which is to be a different
+// size. Surge XT's zoom menu goes through here. Some plugins also take a missing frame
+// as a sign they are being probed rather than played, so providing one is worth doing
+// even for the plugins that never call back.
+//
+// Reference counting is deliberately inert: this object is a member of the plugin
+// wrapper and outlives every view it is given to, so it is never the last reference to
+// anything and has nothing to free.
+class HostFrame : public IPlugFrame {
+public:
+    tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+        QUERY_INTERFACE(iid, obj, FUnknown::iid, IPlugFrame)
+        QUERY_INTERFACE(iid, obj, IPlugFrame::iid, IPlugFrame)
+        *obj = nullptr;
+        return kNoInterface;
+    }
+    uint32 PLUGIN_API addRef() override { return 1; }
+    uint32 PLUGIN_API release() override { return 1; }
+
+    // Written down rather than acted on. The window belongs to whoever opened it — in
+    // the editor's case a Godot scene tree with opinions about when it is touched — and
+    // this is called from inside the plugin, mid-click.
+    tresult PLUGIN_API resizeView(IPlugView*, ViewRect* rect) override {
+        if (rect == nullptr) return kInvalidArgument;
+        requested_width = static_cast<unsigned>(rect->getWidth());
+        requested_height = static_cast<unsigned>(rect->getHeight());
+        requested = true;
+        return kResultTrue;
+    }
+
+    unsigned requested_width = 0;
+    unsigned requested_height = 0;
+    bool requested = false;
+};
+
 std::string from_utf16(const TChar* text) {
     if (!text) return {};
     String string(text);
@@ -436,6 +474,11 @@ public:
             view_ = nullptr;
             return false;
         }
+        // Before attached(), which is the order the SDK documents: a view asked to
+        // appear before it has been told who to talk to has nowhere to send its first
+        // request, and its first request is often how big it wants to be.
+        frame_.requested = false;
+        view_->setFrame(&frame_);
         if (view_->attached(parent, platform) != kResultOk) {
             view_ = nullptr;
             return false;
@@ -446,7 +489,33 @@ public:
     void close_gui() override {
         if (!view_) return;
         view_->removed();
+        view_->setFrame(nullptr);
         view_ = nullptr;
+    }
+
+    bool gui_can_resize() override {
+        return view_ && view_->canResize() == kResultTrue;
+    }
+
+    bool set_gui_size(unsigned& width, unsigned& height) override {
+        if (!view_) return false;
+        ViewRect rect(0, 0, static_cast<int32>(width), static_cast<int32>(height));
+        // checkSizeConstraint is the plugin rounding the request to something it can be
+        // — an aspect ratio, a zoom step, a minimum below which its own text stops
+        // fitting. A view that declines to answer keeps the number it was given.
+        view_->checkSizeConstraint(&rect);
+        if (view_->onSize(&rect) != kResultOk) return false;
+        width = static_cast<unsigned>(rect.getWidth());
+        height = static_cast<unsigned>(rect.getHeight());
+        return true;
+    }
+
+    bool take_gui_resize_request(unsigned& width, unsigned& height) override {
+        if (!frame_.requested) return false;
+        width = frame_.requested_width;
+        height = frame_.requested_height;
+        frame_.requested = false;
+        return true;
     }
 
     bool gui_size(unsigned& width, unsigned& height) override {
@@ -493,6 +562,7 @@ private:
     FUnknown* host_context() { return static_cast<IHostApplication*>(&host_application_); }
 
     IPtr<IPlugView> view_;
+    HostFrame frame_;
     VST3::Hosting::Module::Ptr module_;
     HostApplication host_application_;
     IPtr<IComponent> component_;

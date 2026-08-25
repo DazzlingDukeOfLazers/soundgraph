@@ -9405,6 +9405,15 @@ func _initialize() -> void:
 	main._capture_plugin_states()
 	check(main._plugin_states.is_empty(), "a graph with no hosted plugin has no state to give")
 
+	# Resizing, refused politely all the way down. Everything a node with no plugin can
+	# be asked about its window has to answer without inventing a size.
+	check(not main.engine.plugin_gui_can_resize("no-such-node"),
+		"a node with no plugin will not be resized")
+	check(main.engine.resize_plugin_gui("no-such-node", Vector2i(800, 600)) == Vector2i.ZERO,
+		"and offering it one is refused rather than half-accepted")
+	check(main.engine.take_plugin_gui_resize_request("no-such-node") == Vector2i.ZERO,
+		"and it never asks for one either")
+
 	# ---- latency ----------------------------------------------------------------------
 	# The plumbing only, which is all this machine can check: nothing installed here has
 	# any lookahead, so the interesting number is proven in the C++ suite against a fake

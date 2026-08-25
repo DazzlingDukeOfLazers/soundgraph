@@ -629,6 +629,28 @@ public:
     }
     void main_thread_tick() override { ++ticks; }
 
+    // An editor with an opinion about its shape, which is the ordinary case: Surge XT
+    // holds a 1141:711 aspect and rounds whatever it is offered to fit.
+    bool gui_can_resize() override { return true; }
+    bool set_gui_size(int& width, int& height) override {
+        height = height < 100 ? 100 : height;
+        width = height * 1141 / 711;
+        gui_width = width;
+        gui_height = height;
+        return true;
+    }
+    bool take_gui_resize_request(int& width, int& height) override {
+        if (!wants_resize) return false;
+        width = 800;
+        height = 500;
+        wants_resize = false;  // one shot: collecting it is what clears it
+        return true;
+    }
+
+    int gui_width = 1141;
+    int gui_height = 711;
+    bool wants_resize = false;
+
     std::vector<int> notes_on;
     std::vector<int> notes_off;
     int live = 0;
@@ -957,6 +979,42 @@ TEST(a_plugin_claiming_absurd_latency_is_capped_and_reported) {
     std::vector<float> left(256);
     std::vector<float> right(256);
     runtime.render(left.data(), right.data(), 256);
+}
+
+TEST(resizing_a_plugins_editor_is_a_conversation_in_both_directions) {
+    // The shape of the contract, which is the part a future implementation is most
+    // likely to get wrong: the size goes in and the *taken* size comes back out, and a
+    // request from the plugin is cleared by being collected rather than by being acted
+    // on. Whether a real editor redraws is not a question this suite can ask; that is
+    // proven against Surge XT by hand, and written down in the design doc.
+    GraphDescription graph = plugin_chain();
+
+    OnePluginProvider provider;
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+
+    soundgraph::HostedPluginInstance* plugin = runtime.plugin_for_node("fx");
+    CHECK(plugin != nullptr && plugin->gui_can_resize());
+
+    // Asked for something the editor cannot be; given back what it took instead.
+    int width = 1500;
+    int height = 700;
+    CHECK(plugin->set_gui_size(width, height));
+    CHECK(height == 700);
+    CHECK(width == 700 * 1141 / 711);
+    CHECK(width != 1500);
+
+    // Nothing to collect until the plugin asks, and then exactly once.
+    int asked_width = 0;
+    int asked_height = 0;
+    CHECK(!plugin->take_gui_resize_request(asked_width, asked_height));
+    provider.last->wants_resize = true;
+    CHECK(plugin->take_gui_resize_request(asked_width, asked_height));
+    CHECK(asked_width == 800 && asked_height == 500);
+    CHECK(!plugin->take_gui_resize_request(asked_width, asked_height));
 }
 
 TEST(a_plugin_node_passes_audio_through_when_there_is_no_plugin) {

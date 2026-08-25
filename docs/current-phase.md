@@ -557,6 +557,21 @@ initial patch is 50 KB of state, Dexed's 6 KB, Surge's effects rack 1 KB. The ed
 refuses above four mebibytes of base64 per plugin and says so — half a preset is not a
 smaller preset.
 
+**The panel resizes (2026-08-25).** Both directions. The host proposes and the plugin
+answers with a size it can actually be — Surge XT, offered 1500x700, takes 1123x700
+because it holds its aspect — and the window follows the answer. The plugin proposes too:
+a zoom menu inside somebody else's editor arrives through CLAP's `request_resize` or
+VST3's `IPlugFrame::resizeView`, is written down, and is collected on the editor's own
+terms. Providing an `IPlugFrame` at all was new; the SDK wants `setFrame()` before
+`attached()` and this host had never given one.
+
+It found a real bug on the way: Surge's VST3 opens at 3312x2064 on this 4K screen, which
+with a title bar exceeds the work area, so Windows maximised the window and left five
+hundred pixels of Godot showing beside the editor. Clamping the window was the wrong half
+of the pair — the fix is to ask the plugin to be smaller, with the decorations counted.
+
+Plugin-to-host is implemented and unexercised: it needs a human to open a zoom menu.
+
 **Delay compensation (2026-08-25).** A node's inputs must all describe the same
 instant, so each node has an arrival time — the latest of its sources' output times — and
 everything that would land early is delayed into line. Feedback edges are left alone;

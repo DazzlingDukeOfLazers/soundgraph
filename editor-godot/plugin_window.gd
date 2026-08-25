@@ -24,6 +24,11 @@ extends Window
 var _engine
 var _node_id := ""
 var _open := false
+# True while this file is the one changing the window's size, so that the change it makes
+# is not mistaken for the user dragging an edge. Without it the two directions of the
+# conversation answer each other forever: the plugin rounds the size, the window takes the
+# rounded one, the size_changed that follows offers it back, and around it goes.
+var _resizing := false
 
 # Signals failure back to whoever opened the window, since attaching happens a frame
 # later and cannot simply return false.
@@ -78,16 +83,69 @@ func _attach() -> void:
 		return
 
 	_open = true
-	# The size the plugin asks for, clamped to what the screen can hold. Plugins are
-	# DPI-aware and ask in real pixels — Surge XT wants 2282x1422 on a 200% display —
-	# which is fine until it is not: a window larger than the screen is one whose title
-	# bar cannot be reached, so it cannot be moved or closed. Cropping the plugin's
-	# panel is the lesser harm, and the window can be resized afterwards.
-	var wanted: Vector2i = _engine.plugin_gui_size(_node_id)
-	if wanted.x > 0 and wanted.y > 0:
-		var room := DisplayServer.screen_get_usable_rect().size
-		size = Vector2i(mini(wanted.x, room.x), mini(wanted.y, room.y))
+	# A window that cannot usefully be dragged should not look as though it can. Most
+	# editors are fixed; the ones that are not usually offer their own zoom menu too,
+	# which is the other half of this and arrives through _process below.
+	unresizable = not _engine.plugin_gui_can_resize(_node_id)
+	if not unresizable:
+		size_changed.connect(_offer_size_to_plugin)
+
+	_fit_and_take(_engine.plugin_gui_size(_node_id))
 	set_process(true)
+
+
+## Takes a size the plugin asked for, fitted to a screen it did not consider.
+##
+## Plugins are DPI-aware and ask in real pixels: Surge XT's VST3 opens at 3312x2064 on a
+## 4K display, which is very nearly the whole screen and, once a title bar is added, more
+## than fits in the work area. Windows answers that by maximising the window, and a
+## maximised window is full width — so the editor sat 3312 wide inside a 3840-wide frame
+## with five hundred pixels of Godot showing beside it.
+##
+## The fix is not to clamp the window but to *ask the plugin to be smaller*. A plugin
+## told the size it can have keeps its own proportions; a window merely cropped to fit
+## shows a border of somebody else's background, which reads as a drawing bug. The room
+## available is measured with the decorations included, because the title bar is the part
+## that did not fit.
+func _fit_and_take(wanted: Vector2i) -> void:
+	if wanted.x <= 0 or wanted.y <= 0:
+		return
+	var overhead := DisplayServer.window_get_size_with_decorations(get_window_id()) - size
+	var room := DisplayServer.screen_get_usable_rect().size - overhead
+	var fits := Vector2i(mini(wanted.x, maxi(room.x, 240)), mini(wanted.y, maxi(room.y, 160)))
+	if fits != wanted:
+		var taken: Vector2i = _engine.resize_plugin_gui(_node_id, fits)
+		if taken.x > 0 and taken.y > 0:
+			fits = taken
+	_set_size_quietly(fits)
+
+
+## The window changed size under the user's hand: tell the plugin, and take its answer.
+##
+## The answer is rarely the question. An editor with an aspect ratio, integer zoom steps
+## or a minimum size rounds the request, and the window has to follow it rather than the
+## other way round — a window an inch wider than the editor inside it shows an inch of
+## somebody else's background, which reads as a drawing bug rather than as rounding.
+func _offer_size_to_plugin() -> void:
+	if not _open or _resizing or _engine == null:
+		return
+	# The flag alone is not enough. size_changed can arrive a frame after the assignment
+	# that caused it — the operating system decides when a window has really changed —
+	# by which time the flag is down and our own resize looks like the user's. So the
+	# question asked is whether the plugin already knows the size the window is, which is
+	# true exactly when nobody has dragged anything.
+	if size == _engine.plugin_gui_size(_node_id):
+		return
+	var taken: Vector2i = _engine.resize_plugin_gui(_node_id, size)
+	if taken.x > 0 and taken.y > 0 and taken != size:
+		_set_size_quietly(taken)
+
+
+## Changes the window without treating the change as the user's doing.
+func _set_size_quietly(to: Vector2i) -> void:
+	_resizing = true
+	size = to
+	_resizing = false
 
 
 func _process(_delta: float) -> void:
@@ -95,8 +153,16 @@ func _process(_delta: float) -> void:
 	# sound does not follow: both formats let a plugin defer work to the host's main
 	# thread and then wait for it, and a host that never offers one leaves that work
 	# undone for as long as the editor is open.
-	if _open and _engine != null:
-		_engine.tick_plugins()
+	if not _open or _engine == null:
+		return
+	_engine.tick_plugins()
+	# The other direction: the plugin asking to be a different size, which is what a zoom
+	# menu inside somebody else's editor amounts to. Collected here rather than delivered
+	# by callback, because it arrives from inside the plugin in the middle of a click and
+	# this window belongs to a scene tree with opinions about when it is touched.
+	var asked: Vector2i = _engine.take_plugin_gui_resize_request(_node_id)
+	if asked != Vector2i.ZERO:
+		_fit_and_take(asked)
 
 
 func _close() -> void:

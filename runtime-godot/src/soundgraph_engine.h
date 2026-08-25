@@ -140,6 +140,19 @@ public:
     // and for the moment before a reload, not for a frame loop.
     godot::String plugin_state(const godot::String& node_id);
 
+    // Whether the plugin will accept a size this editor chooses. A window that cannot
+    // usefully be dragged should not look as though it can.
+    bool plugin_gui_can_resize(const godot::String& node_id);
+
+    // Offers the plugin a size and returns the one it took, which is rarely the one
+    // offered — editors have aspect ratios, zoom steps and minimums of their own. Zero
+    // means it would not resize at all.
+    godot::Vector2i resize_plugin_gui(const godot::String& node_id, godot::Vector2i wanted);
+
+    // A size the plugin has asked for since this was last called, or zero. A zoom menu
+    // inside somebody else's editor arrives here.
+    godot::Vector2i take_plugin_gui_resize_request(const godot::String& node_id);
+
     // Every hosted plugin gets the main thread, once. Call it from _process: a plugin
     // that has been clicked defers work and waits, so an editor nobody ticks is one
     // whose knobs move and whose sound does not follow.

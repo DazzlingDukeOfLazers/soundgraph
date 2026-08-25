@@ -198,6 +198,26 @@ public:
         return true;
     }
 
+    bool gui_can_resize() override { return plugin_->gui_can_resize(); }
+
+    bool set_gui_size(int& width, int& height) override {
+        unsigned w = static_cast<unsigned>(width < 0 ? 0 : width);
+        unsigned h = static_cast<unsigned>(height < 0 ? 0 : height);
+        if (!plugin_->set_gui_size(w, h)) return false;
+        width = static_cast<int>(w);
+        height = static_cast<int>(h);
+        return true;
+    }
+
+    bool take_gui_resize_request(int& width, int& height) override {
+        unsigned w = 0;
+        unsigned h = 0;
+        if (!plugin_->take_gui_resize_request(w, h)) return false;
+        width = static_cast<int>(w);
+        height = static_cast<int>(h);
+        return true;
+    }
+
     void main_thread_tick() override { plugin_->main_thread_tick(); }
 
 private:

@@ -42,6 +42,10 @@ struct ClapHost {
     // before any of this existed.
     std::vector<ClapTimer> timers;
     clap_id next_timer_id = 1;
+    // A size the plugin asked for, left here until somebody collects it.
+    uint32_t requested_width = 0;
+    uint32_t requested_height = 0;
+    bool resize_requested = false;
     std::thread::id main_thread = std::this_thread::get_id();
 };
 
@@ -73,9 +77,18 @@ const clap_host_timer_support_t kHostTimer = {
 
 const clap_host_gui_t kHostGui = {
     /*resize_hints_changed*/ [](const clap_host_t*) {},
-    // A plugin may ask to be a different size than it first said. This host says yes
-    // and does nothing about it, which is honest for a window nobody is laying out.
-    /*request_resize*/ [](const clap_host_t*, uint32_t, uint32_t) { return true; },
+    // A plugin asking to be a different size than it first said — Surge XT's zoom menu
+    // is the everyday case. Written down rather than acted on here: this is called from
+    // inside the plugin, in the middle of whatever it was doing, and the window it wants
+    // resized belongs to a Godot scene tree that has opinions about when it is touched.
+    // Whoever owns the window collects it on its own terms.
+    /*request_resize*/ [](const clap_host_t* host, uint32_t width, uint32_t height) {
+        auto* self = static_cast<ClapHost*>(host->host_data);
+        self->requested_width = width;
+        self->requested_height = height;
+        self->resize_requested = true;
+        return true;
+    },
     /*request_show*/ [](const clap_host_t*) { return true; },
     /*request_hide*/ [](const clap_host_t*) { return true; },
     /*closed*/ [](const clap_host_t*, bool) {},
@@ -494,6 +507,38 @@ public:
         gui->hide(plugin_);
         gui->destroy(plugin_);
         gui_open_ = false;
+    }
+
+    bool gui_can_resize() override {
+        const clap_plugin_gui_t* gui = gui_extension();
+        if (gui == nullptr || !gui_open_ || gui->can_resize == nullptr) return false;
+        return gui->can_resize(plugin_);
+    }
+
+    bool set_gui_size(unsigned& width, unsigned& height) override {
+        const clap_plugin_gui_t* gui = gui_extension();
+        if (gui == nullptr || !gui_open_) return false;
+        uint32_t w = width;
+        uint32_t h = height;
+        // adjust_size first, which is the plugin rounding the request to something it
+        // can be. A plugin that declines to answer keeps the number it was given, and
+        // set_size below is then the one that gets to refuse.
+        if (gui->adjust_size != nullptr) {
+            gui->adjust_size(plugin_, &w, &h);
+        }
+        if (gui->set_size == nullptr || !gui->set_size(plugin_, w, h)) return false;
+        // Read back rather than trusting the adjustment: the size that matters is the
+        // one the plugin says it is now, and a window sized to anything else leaves a
+        // border of somebody else's background.
+        return gui_size(width, height);
+    }
+
+    bool take_gui_resize_request(unsigned& width, unsigned& height) override {
+        if (!host_.resize_requested) return false;
+        width = host_.requested_width;
+        height = host_.requested_height;
+        host_.resize_requested = false;
+        return true;
     }
 
     bool gui_size(unsigned& width, unsigned& height) override {

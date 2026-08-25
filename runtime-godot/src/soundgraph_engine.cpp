@@ -99,6 +99,12 @@ void SoundGraphEngine::_bind_methods() {
                          &SoundGraphEngine::close_plugin_gui);
     ClassDB::bind_method(D_METHOD("plugin_gui_size", "node_id"),
                          &SoundGraphEngine::plugin_gui_size);
+    ClassDB::bind_method(D_METHOD("plugin_gui_can_resize", "node_id"),
+                         &SoundGraphEngine::plugin_gui_can_resize);
+    ClassDB::bind_method(D_METHOD("resize_plugin_gui", "node_id", "wanted"),
+                         &SoundGraphEngine::resize_plugin_gui);
+    ClassDB::bind_method(D_METHOD("take_plugin_gui_resize_request", "node_id"),
+                         &SoundGraphEngine::take_plugin_gui_resize_request);
     ClassDB::bind_method(D_METHOD("plugin_state", "node_id"),
                          &SoundGraphEngine::plugin_state);
     ClassDB::bind_method(D_METHOD("tick_plugins"), &SoundGraphEngine::tick_plugins);
@@ -547,6 +553,34 @@ Vector2i SoundGraphEngine::plugin_gui_size(const String& node_id) {
     int width = 0;
     int height = 0;
     if (plugin == nullptr || !plugin->gui_size(width, height)) {
+        return Vector2i(0, 0);
+    }
+    return Vector2i(width, height);
+}
+
+bool SoundGraphEngine::plugin_gui_can_resize(const String& node_id) {
+    soundgraph::HostedPluginInstance* plugin = graph_.plugin_for_node(to_utf8(node_id));
+    return plugin != nullptr && plugin->gui_can_resize();
+}
+
+Vector2i SoundGraphEngine::resize_plugin_gui(const String& node_id, Vector2i wanted) {
+    soundgraph::HostedPluginInstance* plugin = graph_.plugin_for_node(to_utf8(node_id));
+    if (plugin == nullptr || wanted.x <= 0 || wanted.y <= 0) {
+        return Vector2i(0, 0);
+    }
+    int width = wanted.x;
+    int height = wanted.y;
+    if (!plugin->set_gui_size(width, height)) {
+        return Vector2i(0, 0);
+    }
+    return Vector2i(width, height);
+}
+
+Vector2i SoundGraphEngine::take_plugin_gui_resize_request(const String& node_id) {
+    soundgraph::HostedPluginInstance* plugin = graph_.plugin_for_node(to_utf8(node_id));
+    int width = 0;
+    int height = 0;
+    if (plugin == nullptr || !plugin->take_gui_resize_request(width, height)) {
         return Vector2i(0, 0);
     }
     return Vector2i(width, height);
