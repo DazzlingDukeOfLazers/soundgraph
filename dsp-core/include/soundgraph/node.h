@@ -154,6 +154,14 @@ struct NodeTypeDescriptor {
     // and omitting it leaves it false, which is right for every node but the plugins.
     bool requires_plugin_host;
 
+    // Where the polyphonic world collapses into one signal. The audio output has
+    // always been such a place — voices sum there — and a hosted instrument is the
+    // second: it does its own voice allocation, so cloning it per voice would give N
+    // copies of a synth that was already told to play all the notes. Everything
+    // downstream of one is outside the voice system too, because a filter fed a
+    // finished chord must not be cloned either.
+    bool is_voice_boundary;
+
     int find_input(const char* port_name) const;
     int find_output(const char* port_name) const;
     int find_parameter(const char* parameter_name) const;

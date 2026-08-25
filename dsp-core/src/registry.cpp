@@ -156,6 +156,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kConstant,
         &nodes::kMidiCc,
         &nodes::kPluginEffect,
+        &nodes::kPluginInstrument,
         &nodes::kAdd,
         &nodes::kMultiply,
         &nodes::kClip,

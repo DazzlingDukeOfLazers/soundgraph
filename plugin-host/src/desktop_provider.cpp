@@ -141,6 +141,13 @@ public:
         plugin_->process_audio(inputs, input_channels, outputs, output_channels, frames);
     }
 
+    void note_on(int note, float velocity) override {
+        (void)velocity;  // sg-host's queue_note carries its own fixed velocity for now
+        plugin_->queue_note(note, true);
+    }
+
+    void note_off(int note) override { plugin_->queue_note(note, false); }
+
     void set_control(int slot, float value) override {
         if (slot < 0 || slot >= static_cast<int>(slots_.size())) return;
         const int parameter = slots_[static_cast<std::size_t>(slot)];

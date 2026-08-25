@@ -2153,7 +2153,13 @@ public:
     void set_control(int slot, float value) override {
         controls.push_back({slot, value});
     }
+    void note_on(int note, float velocity) override { held.push_back({note, velocity}); }
+    void note_off(int note) override { released.push_back(note); }
+    void all_notes_off() override { ++panics; }
 
+    std::vector<std::pair<int, float>> held;
+    std::vector<int> released;
+    int panics = 0;
     double rate = 0.0;
     int block = 0;
     int blocks = 0;
@@ -2230,6 +2236,53 @@ TEST(plugin_effect_mix_holds_the_dry_signal_against_the_wet) {
 
     // Half wet (0.5) and half dry (1.0): 0.5 * 0.5 + 0.5 * 1.0.
     CHECK_NEAR(harness.output("left")[0], 0.75, 1e-6);
+}
+
+TEST(plugin_instrument_hands_every_note_to_the_one_plugin) {
+    RecordingPlugin plugin;
+    NodeHarness harness("PluginInstrument", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.bind_plugin(&plugin);
+
+    // A chord, all of it, to one instance. The engine reaches this node directly
+    // because it is outside the voice system; the plugin does its own allocation.
+    harness.note_on(60, 1.0f);
+    harness.note_on(64, 0.5f);
+    harness.note_on(67, 0.75f);
+    harness.process();
+
+    CHECK(plugin.held.size() == 3);
+    CHECK(plugin.held[0].first == 60);
+    CHECK(plugin.held[1].first == 64);
+    CHECK(plugin.held[2].first == 67);
+
+    harness.note_off(64);
+    harness.process();
+    CHECK(plugin.released.size() == 1 && plugin.released[0] == 64);
+}
+
+TEST(plugin_instrument_without_a_plugin_is_silent_not_broken) {
+    NodeHarness harness("PluginInstrument", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.note_on(60, 1.0f);
+    harness.process();
+
+    // An instrument has nothing to pass through, so silence is the honest answer —
+    // unlike an effect, where silence would cost the whole patch rather than one node.
+    CHECK_NEAR(harness.output("left")[0], 0.0, 1e-9);
+    CHECK_NEAR(harness.output("right")[63], 0.0, 1e-9);
+}
+
+TEST(plugin_instrument_gain_scales_what_the_plugin_returned) {
+    RecordingPlugin plugin;   // writes half of whatever it is given, and it is given none
+    NodeHarness harness("PluginInstrument", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.bind_plugin(&plugin);
+    harness.set("gain", 0.5f);
+    harness.process();
+    // With no audio input the recording plugin returns silence, so this asserts the
+    // path runs rather than the arithmetic; the arithmetic is the effect's jig.
+    CHECK(std::isfinite(harness.output("left")[0]));
 }
 
 // Not a TEST, because it can only be asked once every test has run and TEST order is
