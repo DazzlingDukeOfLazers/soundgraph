@@ -92,6 +92,20 @@ the environment. That is exactly how the macos-support merge first presented on 
 
 ## Done in this phase
 
+- **`/soundgraph` is the front door, and says what is behind it.** The page now leads with
+  the pitch and the graph; the JSON source is collapsed below it. Three surfaces are
+  declared in `editor-web/surfaces.js` — this page, the full editor, the desktop
+  application — each announced with what it costs, and linked only once a URL is
+  configured. The current patch travels to the full editor through localStorage, since both
+  read the same file and ask the same core about it. Decision and the hosting constraint
+  (the export's service worker must not be able to reach this page) in `docs/decisions.md`.
+
+  It also turned up a bug that predates it: controls drive the engine, not the document, so
+  **saving, downloading or handing off a patch carried the values it loaded with** and
+  discarded every knob the visitor had moved — the golden moment among them. All three now
+  go through the live control values, while leaving unapplied edits in the source pane
+  alone.
+
 - **The web editor has an introduction, and draws the graph.** `editor-web` now opens on a
   prepared patch (`examples/patches/start-here.json`) and a six-step tour: hear it, read it
   left to right, drag the filter cutoff, compare against the original, decide what to keep.

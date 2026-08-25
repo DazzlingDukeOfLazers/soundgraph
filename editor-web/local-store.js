@@ -8,6 +8,7 @@
 //   soundgraph.onboarding.v1  how far the introduction got, and whether it is finished
 //   soundgraph.patch.v1       the patch the visitor last saved, so a return opens into it
 //   soundgraph.mailing.v1     whether the mailing-list panel has been answered
+//   soundgraph.handoff.v1     a patch on its way to the full editor, read once and cleared
 //
 // localStorage can throw — Safari in private browsing, a storage quota, a browser
 // configured to refuse it — and every one of those is a reason to lose a preference, not
@@ -19,6 +20,7 @@ const KEYS = {
     onboarding: 'soundgraph.onboarding.v1',
     patch: 'soundgraph.patch.v1',
     mailing: 'soundgraph.mailing.v1',
+    handoff: 'soundgraph.handoff.v1',
 };
 
 function read(key, fallback = null) {
@@ -107,6 +109,27 @@ export function savedPatch() {
 
 export function forgetSavedPatch() {
     remove(KEYS.patch);
+}
+
+/**
+ * The patch being carried to another surface.
+ *
+ * Deliberately NOT the same key as the saved patch. "Open this in the full editor" is a
+ * different act from "save this", and writing the handoff over somebody's saved work
+ * because both are a patch in localStorage would be a data-loss bug wearing a convenience
+ * feature's clothes. The full editor reads this, uses it once, and clears it.
+ */
+export function handOffPatch(text, name) {
+    return write(KEYS.handoff, { text, name: name ?? 'Untitled', at: new Date().toISOString() });
+}
+
+export function handedOffPatch() {
+    const stored = read(KEYS.handoff);
+    return stored && typeof stored.text === 'string' ? stored : null;
+}
+
+export function clearHandOff() {
+    remove(KEYS.handoff);
 }
 
 // ---------------------------------------------------------------------------------

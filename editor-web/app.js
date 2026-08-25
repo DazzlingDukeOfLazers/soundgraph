@@ -13,10 +13,12 @@ import { Onboarding } from './onboarding.js';
 import { MILESTONES, flushFunnel, loadBuildStamp, milestone } from './reporting.js';
 import {
     forgetEverything,
+    handOffPatch,
     onboardingProgress,
     savePatchLocally,
     savedPatch,
 } from './local-store.js';
+import { SURFACES, isReachable, surface } from './surfaces.js';
 
 const engine = new SoundGraph();
 
@@ -43,6 +45,8 @@ const ui = {
     graphName: document.getElementById('graph-name'),
     newPatch: document.getElementById('new-patch'),
     saveLocal: document.getElementById('save-local'),
+    openFull: document.getElementById('open-full'),
+    source: document.getElementById('source'),
     help: document.getElementById('help'),
     about: document.getElementById('about'),
     join: document.getElementById('join'),
@@ -277,6 +281,37 @@ function buildControls(patch) {
 function findParameterValue(patch, nodeId, parameterName) {
     const node = (patch.nodes ?? []).find((candidate) => candidate.id === nodeId);
     return node?.parameters?.[parameterName];
+}
+
+/**
+ * The patch as it currently sounds, not as it was loaded.
+ *
+ * Moving a control sends a value to the engine; it does not rewrite the document. So
+ * anything that takes the patch elsewhere — saving it, downloading it, handing it to the
+ * full editor — was carrying the values the file arrived with and silently discarding
+ * every knob the visitor had moved. The golden moment IS a knob move, so handing that off
+ * reverted is the one thing this page must not do.
+ *
+ * Built from the text rather than from `currentPatch`, so unapplied edits in the source
+ * pane are not thrown away either. Text that does not parse is returned untouched: it is
+ * the visitor's work, and mangling it to add parameters would be a worse trade than
+ * saving it exactly as they left it.
+ */
+function patchWithControlValues() {
+    let patch;
+    try {
+        patch = JSON.parse(ui.patch.value);
+    } catch {
+        return ui.patch.value;
+    }
+    for (const surface of controlSurfaces.values()) {
+        const { node, parameter } = surface.control.target;
+        const target = (patch.nodes ?? []).find((candidate) => candidate.id === node);
+        if (!target) continue;
+        target.parameters = target.parameters ?? {};
+        target.parameters[parameter] = surface.value;
+    }
+    return JSON.stringify(patch, null, 2);
 }
 
 // ---------------------------------------------------------------------------------
@@ -526,7 +561,7 @@ async function loadExample(path) {
 ui.apply.addEventListener('click', applyPatch);
 
 ui.save.addEventListener('click', () => {
-    const blob = new Blob([ui.patch.value], { type: 'application/json' });
+    const blob = new Blob([patchWithControlValues()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     const name = currentPatch?.metadata?.name ?? 'patch';
@@ -561,7 +596,7 @@ ui.newPatch.addEventListener('click', () => {
 });
 
 function saveLocally() {
-    const ok = savePatchLocally(ui.patch.value, currentPatch?.metadata?.name);
+    const ok = savePatchLocally(patchWithControlValues(), currentPatch?.metadata?.name);
     ui.status.textContent = ok ? 'saved in this browser' : 'this browser refused to store it';
     if (ok) milestone(MILESTONES.PATCH_SAVED);
     return ok;
@@ -579,6 +614,9 @@ graph.addEventListener('nodeselect', (event) => {
     const needle = `"id": "${id}"`;
     const at = ui.patch.value.indexOf(needle);
     if (at < 0) return;
+    // The source is collapsed by default, and selecting into a closed <details> selects
+    // into something nobody can see.
+    ui.source.open = true;
     ui.patch.focus();
     ui.patch.setSelectionRange(at, at + needle.length);
     // setSelectionRange scrolls the caret into view only in some browsers; this is the part
@@ -671,6 +709,115 @@ function setBypass(on) {
 }
 
 // ---------------------------------------------------------------------------------
+// The other two surfaces
+//
+// The complaint that started this: the doorway gave no sign there was a building behind
+// it. A surface with no URL configured is still announced — it says what it is and that it
+// is not ready — because "we have not deployed it yet" is information, and a link that
+// 404s is not.
+// ---------------------------------------------------------------------------------
+
+function renderSurfaces() {
+    const list = document.getElementById('surfaces');
+    list.replaceChildren();
+
+    for (const entry of SURFACES) {
+        const item = document.createElement('li');
+        if (entry.here) item.className = 'here';
+
+        const name = document.createElement('div');
+        name.className = 'surface-name';
+        name.append(document.createTextNode(entry.name));
+
+        const badge = document.createElement('span');
+        if (entry.here) {
+            badge.className = 'badge';
+            badge.textContent = 'you are here';
+        } else if (!isReachable(entry.id)) {
+            badge.className = 'badge pending';
+            badge.textContent = 'not yet';
+        }
+        if (badge.textContent) name.append(badge);
+        item.append(name);
+
+        const summary = document.createElement('p');
+        summary.textContent = entry.summary;
+        item.append(summary);
+
+        if (entry.cost) {
+            const cost = document.createElement('p');
+            cost.className = 'cost';
+            cost.textContent = entry.cost;
+            item.append(cost);
+        }
+
+        if (!entry.here && isReachable(entry.id)) {
+            const link = document.createElement('a');
+            link.href = entry.url;
+            link.textContent = entry.id === 'desktop' ? 'Download' : 'Open this patch there';
+            if (entry.id === 'full') {
+                link.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    openFullEditor();
+                });
+            }
+            item.append(link);
+        }
+        list.append(item);
+    }
+
+    // The same list inside About, without the marketing voice.
+    const about = document.getElementById('about-surfaces');
+    about.replaceChildren();
+    for (const entry of SURFACES) {
+        const line = document.createElement('li');
+        line.textContent = `${entry.name} — ${entry.detail}` +
+            (entry.here ? ' You are using it now.' : isReachable(entry.id) ? '' : ' Not deployed yet.');
+        about.append(line);
+    }
+}
+
+/**
+ * Carry the current patch to the full editor.
+ *
+ * The patch is the whole interchange: both surfaces read the same file and get every
+ * answer about it from the same core, so "open it there" needs no protocol beyond leaving
+ * the document somewhere both can see. Same origin, so localStorage is that somewhere.
+ */
+function openFullEditor() {
+    const full = surface('full');
+    if (!isReachable('full')) return false;
+    handOffPatch(patchWithControlValues(), currentPatch?.metadata?.name);
+    window.location.href = full.url;
+    return true;
+}
+
+/**
+ * Warm the full editor's big files once somebody has shown they want it.
+ *
+ * Only after the golden moment, and never against a metered connection: ten megabytes
+ * fetched speculatively onto somebody's phone data is a cost they did not agree to. The
+ * file list is empty until it is configured — see surfaces.js for why guessing the names
+ * would produce a prefetch that fetches nothing while looking like it worked.
+ */
+function warmFullEditor() {
+    const full = surface('full');
+    if (!isReachable('full') || !full.preload?.length) return false;
+
+    const connection = navigator.connection;
+    if (connection?.saveData) return false;
+    if (/(^|-)2g$/.test(connection?.effectiveType ?? '')) return false;
+
+    for (const file of full.preload) {
+        const link = document.createElement('link');
+        link.rel = 'prefetch';
+        link.href = new URL(file, new URL(full.url, window.location.href)).href;
+        document.head.append(link);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------------
 // The introduction
 // ---------------------------------------------------------------------------------
 
@@ -696,12 +843,25 @@ const tour = new Onboarding({
     activeNode: (id) => graph.setActive(id),
     savePatchLocally: saveLocally,
     setBypass,
+    fullEditor: () => (isReachable('full') ? surface('full') : null),
+    openFullEditor,
+    // The moment intent is proven. Nothing before it justifies ten megabytes.
+    onGoldenMoment: warmFullEditor,
 });
 
 ui.join.addEventListener('click', () => {
     tour.openMailingList();
     ui.join.blur();
 });
+
+// Only offered when there is somewhere to go.
+if (isReachable('full')) {
+    ui.openFull.hidden = false;
+    ui.openFull.addEventListener('click', () => {
+        ui.openFull.blur();
+        openFullEditor();
+    });
+}
 
 // ---------------------------------------------------------------------------------
 // Sheets
@@ -891,6 +1051,7 @@ async function boot() {
         ui.examples.append(option);
     }
     buildKeyboard();
+    renderSurfaces();
     loadBuildStamp().then((stamp) => {
         document.getElementById('about-build').textContent = stamp;
     });

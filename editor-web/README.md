@@ -3,6 +3,34 @@
 The zero-install doorway, and the reference frontend the Godot editor gets checked
 against. Both open the same patch file and must mean the same thing by it.
 
+It is also the front door: `/soundgraph` is the marketing and onboarding page, so it leads
+with what SoundGraph is and keeps the JSON source collapsed underneath.
+
+## The three surfaces
+
+Declared in `surfaces.js`, which is the only place their URLs live:
+
+```text
+/soundgraph            this page — ~400 KB, nothing to install
+/soundgraph/editor     the Godot editor exported to WebAssembly — ~10 MB gzipped
+/soundgraph/desktop    the desktop application
+```
+
+A surface whose `url` is null is announced but not linked: it says what it is and that it
+is not ready, rather than offering a link that 404s. Nothing here invents a deployment.
+
+**The full editor must be hosted below this page, never at or above it.** The Godot export
+ships a service worker whose scope is the directory it is served from, and its caching is
+cache-first with no revalidation with updates landing a visit late (see
+`editor-godot/README.md`). Hosted at `/soundgraph` it would take control of this page too,
+and the marketing page would become one that cannot be reliably updated.
+`verify-onboarding.mjs` fails a URL that is absolute or climbs upwards.
+
+The patch travels between surfaces in `soundgraph.handoff.v1` — deliberately not the same
+key as the saved patch, so opening a patch elsewhere cannot overwrite somebody's saved
+work. It carries the patch **as it currently sounds**: control values are written into the
+document first, because moving a knob drives the engine without rewriting the file.
+
 This directory contains **no DSP**. The graph runs as WebAssembly compiled from the same
 `dsp-core` that produces the native build.
 

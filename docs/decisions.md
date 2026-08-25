@@ -1,5 +1,52 @@
 # Decision Log
 
+## 2026-08-25 — Three surfaces, one patch, and the light one is the front door
+
+Decision:
+SoundGraph is presented as three surfaces rather than merged into one program:
+`/soundgraph` (this page — marketing and onboarding, ~400 KB), `/soundgraph/editor` (the
+Godot editor exported to WebAssembly, ~10 MB gzipped), and `/soundgraph/desktop` (the
+application). They are declared in `editor-web/surfaces.js` with URLs that default to
+null; an unconfigured surface is announced but not linked. The patch travels between them
+through `soundgraph.handoff.v1` in localStorage, and `/soundgraph` now leads with the pitch
+and the graph, with the JSON source collapsed below.
+
+Reason:
+They cannot be one bundle. A Godot web export is one engine plus one `.pck`; there is no
+way to lazy-load half of Godot. But they are already one *product*, because the patch is
+the canonical artifact and both surfaces get every answer about it from the same
+`dsp-core` — so "open this there" needs no protocol beyond leaving the document somewhere
+both can read. Same origin makes localStorage that somewhere.
+
+The light page stays the front door because the gap is 400 KB against 10 MB, and by
+`editor-godot/README.md` the export is cached from the *second* visit, not the first.
+Putting ten megabytes in front of the first sound is exactly what the two-minute
+introduction exists to prevent.
+
+**The full editor must be hosted BELOW this page.** The export ships a service worker whose
+scope is the directory it is served from, cache-first with no revalidation, updates landing
+a visit late. At or above `/soundgraph` it would take control of the marketing page and
+make it one that cannot be reliably updated. `verify-onboarding.mjs` fails a configured URL
+that is absolute or escapes upwards.
+
+Alternatives:
+Replace the light page with the export — rejected: kills the zero-install doorway. Bring
+the editing features into `editor-web` — rejected by the architecture rule against a second
+program with opinions about what a graph means. One shell swapping the two in iframes —
+rejected for now: two audio engines in one document is the failure mode that produced two
+graphs both connected to the destination, and it took a day to find.
+
+Consequences:
+Nothing is deployed yet, so all three URLs are null and the page currently says "not yet"
+twice, honestly. The prefetch that warms the full editor after the golden moment is written
+but its file list is empty on purpose — the names come from the Godot export, and guessing
+them would produce a prefetch that fetches nothing while appearing to work.
+
+Moving the pitch onto the page also fixed a real bug it uncovered: controls drive the
+engine, not the document, so saving, downloading or handing off a patch carried the values
+it loaded with and silently discarded every knob the visitor had moved — including the one
+the golden moment is built on.
+
 ## 2026-08-25 — The web editor draws the graph, and still does not edit it
 
 Decision:

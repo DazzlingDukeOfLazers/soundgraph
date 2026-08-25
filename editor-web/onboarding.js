@@ -132,6 +132,11 @@ export const COPY = {
         keepGoing: 'Keep experimenting',
         save: 'Save this patch',
         more: 'Show me one more thing',
+        // Shown only when the full editor is actually reachable. Naming a thing somebody
+        // cannot open is worse than not mentioning it.
+        fullLead: 'This page reads a graph. To build one — add nodes, drag cables — there ' +
+            'is a full editor, and it will open with this patch.',
+        full: 'Open in the full editor',
     },
     structural: {
         title: 'One more thing: take the filter out of the path.',
@@ -680,6 +685,9 @@ export class Onboarding {
         if (!this.silent) {
             milestone(MILESTONES.GOLDEN_MOMENT_COMPLETED);
             flushFunnel();
+            // Intent is now proven, which is the earliest point a ten-megabyte speculative
+            // download can be justified.
+            this.host.onGoldenMoment?.();
         }
         this.showingOriginal = false;
 
@@ -749,6 +757,18 @@ export class Onboarding {
                 }),
             );
             panel.append(actions);
+
+            // The one place the visitor is already deciding what to do next, so the one
+            // place naming a bigger tool is an offer rather than an interruption.
+            if (this.host.fullEditor?.()) {
+                panel.append(make('p', 'body', COPY.agency.fullLead));
+                const onward = make('div', 'tour-actions');
+                onward.append(button(COPY.agency.full, 'quiet', () => {
+                    this.finish();
+                    this.host.openFullEditor();
+                }));
+                panel.append(onward);
+            }
 
             const more = button(COPY.agency.more, 'link', () => this.showStructural());
             panel.append(more);

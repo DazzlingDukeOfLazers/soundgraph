@@ -33,6 +33,7 @@ const { COPY, GOLDEN_OCTAVES, isGoldenChange } = await import('./onboarding.js')
 const { MILESTONES, browserFamily, funnelText, isDevelopmentOrigin, looksLikeAddress } =
     await import('./reporting.js');
 const { GraphView } = await import('./graph-view.js');
+const { SURFACES, isReachable } = await import('./surfaces.js');
 
 const patch = JSON.parse(readFileSync(join(root, 'examples', 'patches', 'start-here.json'), 'utf8'));
 
@@ -202,6 +203,38 @@ for (const origin of [
     '',
 ]) {
     check(`${origin || '(empty)'} is not a dev origin`, isDevelopmentOrigin(origin) === false);
+}
+
+// ---------------------------------------------------------------------------------
+// The three surfaces
+//
+// Everything user-facing keys off `url`, so an unset one must degrade to "announced but
+// not linked" rather than to a link that 404s. And the full editor's location is not a
+// free choice: it ships a service worker whose scope is its own directory, cache-first
+// with no revalidation, so hosted at or above this page it would take control of the
+// marketing page and make it un-updatable.
+// ---------------------------------------------------------------------------------
+
+console.log('');
+console.log('surfaces');
+
+check('all three are declared', SURFACES.length === 3,
+    SURFACES.map((s) => s.id).join(', '));
+check('exactly one is the page you are on',
+    SURFACES.filter((entry) => entry.here === true).length === 1);
+check('every surface says what it is',
+    SURFACES.every((entry) => entry.name && entry.summary && entry.detail));
+check('an unset url is not reachable',
+    SURFACES.filter((entry) => !entry.url).every((entry) => isReachable(entry.id) === false));
+
+for (const entry of SURFACES) {
+    if (!entry.url) continue;
+    // Relative and below this page. `/soundgraph/editor` is fine; `/soundgraph`, `..` or
+    // an absolute path is not.
+    const contained = !/^([a-z]+:)?\/\//i.test(entry.url) &&
+        !entry.url.startsWith('/') && !entry.url.split('/').includes('..');
+    check(`${entry.id} is hosted below this page`, contained,
+        `${entry.url} — a service worker there could take over this page`);
 }
 
 // ---------------------------------------------------------------------------------

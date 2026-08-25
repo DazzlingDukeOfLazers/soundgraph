@@ -202,9 +202,65 @@ input[type=range] {
  *
  * Signal types are told apart by weight and dash as well as hue, per the UX principles:
  * a reader who cannot separate the colours still gets the distinction. */
-/* Full width above the two columns: the picture is the thing a first-time visitor should
- * meet, and a graph squeezed into half the page is a graph nobody reads. */
+/* The pitch, and then the picture, both full width above the two columns. This page is
+ * what a QR code points at, so what the thing IS has to be legible before anything is
+ * clicked — and a graph squeezed into half the page is a graph nobody reads. */
+.hero { grid-column: 1 / -1; padding: 0.5rem 0 0; }
+.hero h2 {
+    font-size: 1.6rem; text-transform: none; letter-spacing: 0;
+    color: var(--text); margin: 0 0 0.5rem; line-height: 1.25;
+}
+.hero .lede { color: var(--text); margin: 0 0 0.5rem; max-width: 62ch; }
+.hero .hint { max-width: 62ch; }
+
+/* The three surfaces. One is the page you are on; the others say what they cost before
+ * you commit to them, because the full editor is ten megabytes and finding that out
+ * halfway through the download is not informed consent. */
+.surfaces {
+    list-style: none;
+    margin: 1.1rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.6rem;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+.surfaces li {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.8rem 0.9rem;
+}
+.surfaces li.here { border-color: var(--accent-dim); }
+.surfaces .surface-name {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
+    font-weight: 600; margin-bottom: 0.25rem;
+}
+.surfaces .badge {
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--accent); font-weight: 400;
+}
+.surfaces .badge.pending { color: var(--muted); }
+.surfaces p { margin: 0 0 0.35rem; color: var(--muted); font-size: 0.86rem; }
+.surfaces .cost { color: var(--warning); font-size: 0.78rem; margin: 0; }
+.surfaces a {
+    display: inline-block; margin-top: 0.5rem;
+    color: var(--accent); font-size: 0.88rem;
+}
+
 .graph-panel { grid-column: 1 / -1; }
+
+/* The source, one click away and never behind a mode. The patch format is the product, so
+ * it stays reachable — but it is no longer the first thing anybody sees. */
+.patch details > summary {
+    cursor: pointer;
+    padding: 0.2rem 0;
+    list-style-position: outside;
+}
+.patch details > summary .summary-title {
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+}
+.patch details > summary .hint { display: block; margin: 0.2rem 0 0; }
+.patch details[open] > summary { margin-bottom: 0.5rem; }
 
 /* The height cap and the scrollbar belong to the BOX, not to the drawing. Capping the
  * drawing instead makes a large patch letterbox itself down to a stamp — the 808 kit is
@@ -265,6 +321,15 @@ input[type=range] {
 }
 .actions-bar button { min-height: 36px; padding: 0.35rem 0.7rem; font-size: 0.88rem; }
 .actions-bar .spacer { flex: 1; }
+
+/* On a phone these seven controls wrap into five rows and put 300 pixels of toolbar above
+ * the pitch — on the page whose whole job is to lead with the pitch. One scrolling row
+ * instead: the same controls, reachable, in the height of one. */
+@media (max-width: 700px) {
+    .actions-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+    .actions-bar button, .actions-bar select { flex: 0 0 auto; }
+    .actions-bar .spacer { display: none; }
+}
 
 /* About, and the two panels that open over the page from the actions bar. */
 .sheet {
