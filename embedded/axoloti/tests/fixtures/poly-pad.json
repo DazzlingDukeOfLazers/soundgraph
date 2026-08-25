@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "sgaxo poly pad fixture",
+    "description": "Three-voice pad: exercises the voice allocator with overlapping notes (rotation, release, steal).",
+    "tags": ["test"]
+  },
+  "nodes": [
+    { "id": "kb", "type": "Input", "host": "note", "parameters": { "voices": 3 } },
+    { "id": "osc", "type": "SawOscillator", "parameters": { "frequency": 110 } },
+    { "id": "env", "type": "ADSR", "parameters": { "attack": 0.02, "decay": 0.1, "sustain": 0.6, "release": 0.15 } },
+    { "id": "vca", "type": "Gain", "parameters": { "gain": 0.3 } },
+    { "id": "out", "type": "Output", "host": "stereo", "parameters": { "level": 0.9, "safety_limit": 0 } }
+  ],
+  "connections": [
+    { "from": { "node": "kb", "port": "frequency" }, "to": { "node": "osc", "port": "frequency" } },
+    { "from": { "node": "kb", "port": "gate" }, "to": { "node": "env", "port": "gate" } },
+    { "from": { "node": "osc", "port": "out" }, "to": { "node": "vca", "port": "in" } },
+    { "from": { "node": "env", "port": "out" }, "to": { "node": "vca", "port": "gain" } },
+    { "from": { "node": "vca", "port": "out" }, "to": { "node": "out", "port": "left" } }
+  ]
+}

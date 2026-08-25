@@ -118,7 +118,13 @@ patches: buffers ship to a 3.5 MB SDRAM pool over USB before start
 IEEE-exact against native, ~10-15% CPU per sampler, hit-verified bit-exact
 on hardware. The Speech node speaks too: the TMS5220 phrase bank
 rides the same SDRAM pool, and the demo verifies at 2.4e-7 over a second of
-voice. Still refused by name: polyphony (voices > 1) and hosted plugins. Kernels
+voice. Polyphony works: the resolver emits the voiced graph
+through graph.cpp's own replicate_voices, and the generated runtime carries
+the engine's exact voice allocator (same-note retrigger, oldest-released,
+steal-with-release). Verified: a 3-voice pad with overlapping notes at 5e-4,
+and the 85-node 4-voice warehouse patch — far past realtime, rendered slower
+than the audio it describes and still faithful at 2.5e-5. The one refusal
+left is hosted plugins, which is physics, not a gap. Kernels
 without golden-manifest cases are verified against a native sg-render of the
 same patch (golden-on-demand, tests/fixtures/). Everything else is
 refused by name

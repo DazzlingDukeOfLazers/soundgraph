@@ -115,6 +115,8 @@ std::string voice_name(const std::string& base, int voice) {
     return base + kVoiceSeparator + std::to_string(voice);
 }
 
+}  // namespace
+
 // Expands `description` into `voiced` with the cone copied once per extra voice.
 // Returns the voice count; at 1 nothing is written and the caller keeps the original.
 int replicate_voices(const GraphDescription& description,
@@ -193,6 +195,7 @@ int replicate_voices(const GraphDescription& description,
     return voices;
 }
 
+namespace {
 
 // Resolves node types and connection endpoints, reporting anything that cannot be
 // resolved. A connection that fails to resolve is dropped rather than half-applied, so

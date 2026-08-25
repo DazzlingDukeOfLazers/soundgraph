@@ -70,7 +70,9 @@ def run_case(board, case_name, patch_rel, frames, events=(), patch_path=None):
         board.write_mem(addr, blob)
         assert board.read_mem(addr, len(blob)) == blob, "buffer upload corrupt"
     board.run_patch(binary, expect_patch_id=pid)
-    deadline = time.monotonic() + 3.0 + frames / 48000.0
+    # Overloaded polyphonic patches render slower than realtime; the capture
+    # is still exact, it just takes longer than the audio it describes.
+    deadline = time.monotonic() + 3.0 + 6.0 * frames / 48000.0
     while board.read_u32(SGX_SHM + OFF_STATUS) != 1:
         if time.monotonic() > deadline:
             pytest.fail(f"{case_name}: capture never completed "
@@ -244,7 +246,11 @@ def _mirror_schedule(total_frames, notes, gate=0.7, velocity=0.9):
     for i, note in enumerate(notes):
         events.append((i * slot, True, note, velocity))
         events.append((i * slot + held, False, note, 0.0))
-    return sorted(events, key=lambda e: e[0])
+    # Deliberately NOT sorted: sg-render's delivery loop walks the list in
+    # order and stops at the first not-yet-due action, so with gate > 1 a
+    # note-on can be held back behind the previous note's off. Quirky, but it
+    # is the reference, and the board must replay it exactly.
+    return events
 
 
 @pytest.mark.parametrize("rel,notes,seconds,tolerance", [
@@ -277,6 +283,38 @@ def test_editor_patch_matches_native_render(board, toolchain, tmp_path, rel,
     rendered = run_case(board, pathlib.Path(rel).stem, None, len(golden),
                         events=events, patch_path=patch)
     compare(rendered, golden, pathlib.Path(rel).stem, tolerance=tolerance)
+
+
+def test_polyphony_allocator_matches_native(board, toolchain, tmp_path):
+    """Three voices, five overlapping notes (gate 1.6 holds each into the
+    next): rotation, same-note retrigger, release and steal all fire, and the
+    board's allocator must land every note on the same voice native does —
+    any disagreement is full-scale, not subtle."""
+    patch = _HERE / "fixtures" / "poly-pad.json"
+    notes = [48, 55, 52, 48, 59]
+    golden = _native_reference(patch, tmp_path / "native.wav", seconds=1.0,
+                               notes=notes, gate=1.6)
+    events = _mirror_schedule(len(golden), notes, gate=1.6)
+    rendered = run_case(board, "poly-pad", None, len(golden), events=events,
+                        patch_path=patch)
+    # 1e-3: three saw voices at inexact exp2 lattice notes, each carrying the
+    # envelope-amp-scale phase drift (2.4e-4), summing at the output jack. An
+    # allocator disagreement reads full-scale, not this.
+    compare(rendered, golden, "poly-pad", tolerance=1e-3)
+
+
+def test_polyphonic_warehouse_compiles_and_renders(board, toolchain, tmp_path):
+    """The big one: 4 voices whose cone drags a full comb reverb along —
+    85 nodes, far past the board's realtime budget. The render is slower than
+    the audio it describes, and still sample-faithful."""
+    patch = GOLDEN.parent.parent / "examples" / "patches" / "warehouse.json"
+    notes = [36, 43]
+    golden = _native_reference(patch, tmp_path / "native.wav", seconds=0.4,
+                               notes=notes, gate=0.7)
+    events = _mirror_schedule(len(golden), notes, gate=0.7)
+    rendered = run_case(board, "warehouse", None, len(golden), events=events,
+                        patch_path=patch)
+    compare(rendered, golden, "warehouse", tolerance=5e-4)
 
 
 def test_unsupported_patch_is_refused(toolchain):

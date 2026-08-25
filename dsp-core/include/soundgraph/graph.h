@@ -23,6 +23,17 @@ namespace soundgraph {
 // note-driven part of the graph.
 inline constexpr int kMaxVoices = 16;
 
+// Voice-cone replication, exposed for compiled backends (sg-validate
+// --resolve): expands `description` into `voiced` with the cone downstream of
+// each NoteInput copied once per extra voice — exactly what Graph::build does
+// internally, because it is the same function. Returns the voice count; at 1
+// nothing is written and the caller keeps the original.
+int replicate_voices(const GraphDescription& description,
+                     const NodeRegistry& registry,
+                     GraphDescription& voiced,
+                     std::vector<Diagnostic>& diagnostics,
+                     bool& ok);
+
 // Static analysis of a patch. Requires no audio device, no sample rate, and no built
 // graph — an editor can run this on every keystroke.
 //

@@ -222,7 +222,21 @@ int main(int argc, char** argv) {
         // The flattened view: description.nodes/connections are what the engine
         // builds from (modules already expanded); write_patch writes the authored
         // view, which is exactly what a compiled backend must NOT consume.
-        std::string out = "{\n  \"schedule\": {\n    \"execution_order\": [";
+        // Voices replicate through the same function build() uses, so the dump
+        // and the schedule cannot disagree.
+        soundgraph::GraphDescription voiced;
+        std::vector<soundgraph::Diagnostic> voice_diagnostics;
+        bool voices_ok = true;
+        const int voice_count = soundgraph::replicate_voices(
+            description, registry, voiced, voice_diagnostics, voices_ok);
+        if (!voices_ok) {
+            if (!quiet) print_diagnostics(voice_diagnostics);
+            return 1;
+        }
+        const soundgraph::GraphDescription& active =
+            voice_count > 1 ? voiced : description;
+        std::string out = "{\n  \"voices\": " + std::to_string(voice_count) +
+            ",\n  \"schedule\": {\n    \"execution_order\": [";
         bool first = true;
         for (int index : graph.execution_order()) {
             if (!first) out += ", ";
@@ -238,7 +252,7 @@ int main(int argc, char** argv) {
         }
         out += "]\n  },\n  \"nodes\": [";
         first = true;
-        for (const soundgraph::NodeDescription& node : description.nodes) {
+        for (const soundgraph::NodeDescription& node : active.nodes) {
             if (!first) out += ",";
             first = false;
             out += "\n    {\"id\": \"" + json_escape(node.id) + "\", \"type\": \"" +
@@ -263,7 +277,7 @@ int main(int argc, char** argv) {
         out += "\n  ],\n  \"buffers\": [";
         first = true;
         int buffer_index = 0;
-        for (const soundgraph::BufferDescription& buffer : description.buffers) {
+        for (const soundgraph::BufferDescription& buffer : active.buffers) {
             const std::string sidecar =
                 resolve_path + ".buf" + std::to_string(buffer_index++);
             FILE* bf = std::fopen(sidecar.c_str(), "wb");
@@ -285,7 +299,7 @@ int main(int argc, char** argv) {
         }
         out += "\n  ],\n  \"connections\": [";
         first = true;
-        for (const soundgraph::ConnectionDescription& connection : description.connections) {
+        for (const soundgraph::ConnectionDescription& connection : active.connections) {
             if (!first) out += ",";
             first = false;
             out += "\n    {\"from\": \"" + json_escape(connection.from_node) +
