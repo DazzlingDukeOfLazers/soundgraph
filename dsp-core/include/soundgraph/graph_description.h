@@ -20,6 +20,11 @@ inline constexpr int kSchemaVersionModules = 2;
 // Documents that carry audio buffers declare this version, for the same reason.
 inline constexpr int kSchemaVersionBuffers = 3;
 
+// Documents that name a hosted plugin declare this version. Such a patch is the first
+// that cannot run on every target, so a runtime that predates the idea must refuse it
+// rather than quietly drop the node that makes the sound.
+inline constexpr int kSchemaVersionPlugins = 4;
+
 struct ParameterValue {
     std::string name;
     double value = 0.0;
@@ -34,11 +39,34 @@ struct BufferDescription {
     std::vector<float> samples;  // mono
 };
 
+// Somebody else's plugin, as the patch remembers it.
+//
+// Identity is (format, identity) and nothing else is ever looked up: the reverse-DNS
+// string a CLAP publishes, or a VST3's class UID as hex. The rest is hint — it is what
+// lets a machine without the plugin say "this patch wants Surge XT by Surge Synth
+// Team" instead of printing a bare UID at somebody.
+//
+// `state` is the plugin's own opaque preset, carried so the patch stays the artifact.
+// Slots bind the node's sixteen control parameters to parameters of the plugin, by the
+// plugin's own parameter id; an unbound slot is simply -1.
+struct PluginDescription {
+    std::string id;        // how nodes in this patch refer to it
+    std::string format;    // "CLAP" or "VST3"
+    std::string identity;  // the only thing resolution uses
+    std::string vendor;    // hint
+    std::string name;      // hint
+    std::string version;   // hint
+    std::string path_hint; // hint
+    std::string state;     // opaque, as the plugin gave it to us
+    std::vector<int> slots;  // slot index -> plugin parameter id, -1 for unbound
+};
+
 struct NodeDescription {
     std::string id;      // stable identity; connections refer to this
     std::string type;    // registry type name, or "module" for an instance
     std::string module;  // when type == "module": which definition this instantiates
     std::string buffer;  // when set: which of the patch's buffers this node plays
+    std::string plugin;  // when set: which of the patch's plugins this node hosts
     // When type is "Input" or "Output": which side of the machine this seam is on.
     // Empty means a module's own edge — a port, spliced out by expansion. Set means the
     // patch's edge, and the seam becomes the terminal that already speaks to that host.
@@ -186,6 +214,7 @@ struct GraphDescription {
     std::vector<ControlDescription> controls;
     std::vector<AutomationLane> automation;
     std::vector<BufferDescription> buffers;
+    std::vector<PluginDescription> plugins;
 
     // Modules, and the document as authored. When `modules` is non-empty, the vectors
     // above hold the *flattened* view — instances expanded into plain nodes, which is
@@ -203,6 +232,7 @@ struct GraphDescription {
     bool has_modules() const { return !modules.empty(); }
     const ModuleDescription* find_module(const std::string& module_name) const;
     const BufferDescription* find_buffer(const std::string& buffer_id) const;
+    const PluginDescription* find_plugin(const std::string& plugin_id) const;
     const NodeDescription* find_node(const std::string& node_id) const;
     std::string metadata_value(const std::string& key) const;
     void set_metadata(const std::string& key, const std::string& value);

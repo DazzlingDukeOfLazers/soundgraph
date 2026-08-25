@@ -58,6 +58,12 @@ public:
     // room. Returns false only when the plugin refused outright.
     virtual bool process(int frames, std::vector<std::vector<float>>& channels) = 0;
 
+    // The same act with audio going in as well as coming out, and no vectors: what an
+    // effect needs, and what a graph node can call on the audio thread without
+    // allocating. `inputs` may be null for an instrument.
+    virtual bool process_audio(const float* const* inputs, int input_channels,
+                               float* const* outputs, int output_channels, int frames) = 0;
+
     // Between blocks: the host's main thread. Formats that ask for a callback from
     // the audio thread — CLAP's request_callback, and anything a VST3 defers — get
     // answered here, which is the promise a real host makes.

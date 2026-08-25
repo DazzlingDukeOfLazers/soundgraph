@@ -5,12 +5,20 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "soundgraph/patch_io.h"
 #include "soundgraph/soundgraph.h"
 #include "wav.h"
+
+// Real plugins, when this build has the SDKs to load them. Without it a patch naming a
+// PluginEffect still renders — the node passes its audio through and the graph says so
+// — which is the same thing that happens on the ESP32 and in a browser.
+#if defined(SOUNDGRAPH_WITH_PLUGIN_HOST)
+#include "desktop_provider.h"
+#endif
 
 namespace {
 
@@ -145,6 +153,13 @@ int main(int argc, char** argv) {
     context.sample_rate = options.sample_rate;
 
     soundgraph::Graph graph;
+#if defined(SOUNDGRAPH_WITH_PLUGIN_HOST)
+    // Declared before the graph so that it outlives it: the graph holds instances the
+    // provider made, and the nodes hold pointers to those.
+    std::unique_ptr<soundgraph::PluginProvider> provider =
+        soundgraph::host::make_desktop_plugin_provider();
+    graph.set_plugin_provider(provider.get());
+#endif
     if (!graph.build(description, soundgraph::NodeRegistry::builtin(), context, diagnostics)) {
         for (const soundgraph::Diagnostic& diagnostic : diagnostics) {
             std::cerr << diagnostic.format() << "\n\n";

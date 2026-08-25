@@ -1,5 +1,9 @@
 // Validation, scheduling and execution.
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -582,6 +586,185 @@ TEST(control_change_reaches_a_midicc_node_through_the_queue) {
     double loud = 0.0;
     for (float sample : left) loud += sample * sample;
     CHECK(std::sqrt(loud / 4800.0) > 0.1);      // knob up: the tone arrives
+}
+
+// ---- hosted plugins ---------------------------------------------------------------
+// A plugin the test can be certain about: it halves what it is given and records what
+// it was told. Enough to prove the graph resolves, owns, prepares and drives the thing
+// without anybody having to install Surge XT to run the suite. Halving rather than
+// doubling so that no gain staging anywhere can clip the comparison — the first version
+// of this test doubled a sine into the limiter and measured the limiter.
+namespace {
+
+class HalvingPlugin : public soundgraph::HostedPluginInstance {
+public:
+    void prepare(double sample_rate, int max_block_frames) override {
+        prepared_rate = sample_rate;
+        prepared_block = max_block_frames;
+    }
+    void process(const float* const* inputs, int input_channels, float* const* outputs,
+                 int output_channels, int frames) override {
+        for (int channel = 0; channel < output_channels; ++channel) {
+            const float* in = channel < input_channels ? inputs[channel] : nullptr;
+            for (int i = 0; i < frames; ++i) {
+                outputs[channel][i] = in != nullptr ? in[i] * 0.5f : 0.0f;
+            }
+        }
+    }
+    void set_control(int slot, float value) override { controls[slot] = value; }
+
+    double prepared_rate = 0.0;
+    int prepared_block = 0;
+    std::map<int, float> controls;
+};
+
+class OnePluginProvider : public soundgraph::PluginProvider {
+public:
+    std::unique_ptr<soundgraph::HostedPluginInstance> acquire(
+        const soundgraph::PluginRequest& request) override {
+        asked_for = request;
+        ++times_asked;
+        auto instance = std::make_unique<HalvingPlugin>();
+        last = instance.get();
+        return instance;
+    }
+    soundgraph::PluginRequest asked_for;
+    int times_asked = 0;
+    HalvingPlugin* last = nullptr;
+};
+
+// A provider for a machine that does not have the plugin: it says so, politely.
+class EmptyProvider : public soundgraph::PluginProvider {
+public:
+    std::unique_ptr<soundgraph::HostedPluginInstance> acquire(
+        const soundgraph::PluginRequest&) override {
+        return nullptr;
+    }
+};
+
+GraphDescription plugin_chain() {
+    GraphDescription graph;
+    graph.nodes.push_back(node("osc", "SineOscillator"));
+    graph.nodes.push_back(node("fx", "PluginEffect"));
+    graph.nodes.push_back(node("out", "StereoOutput"));
+    graph.nodes.back().parameters.push_back({"level", 1.0});
+    graph.nodes[1].plugin = "reverb";
+    connect(graph, "osc", "out", "fx", "left");
+    connect(graph, "fx", "left", "out", "left");
+    connect(graph, "fx", "right", "out", "right");
+
+    soundgraph::PluginDescription plugin;
+    plugin.id = "reverb";
+    plugin.format = "VST3";
+    plugin.identity = "ABCDEF019182FAEB566D624153675854";
+    plugin.vendor = "Surge Synth Team";
+    plugin.name = "Surge XT";
+    graph.plugins.push_back(plugin);
+    return graph;
+}
+
+double rms_of(soundgraph::Graph& runtime, int frames) {
+    std::vector<float> left(static_cast<std::size_t>(frames));
+    std::vector<float> right(static_cast<std::size_t>(frames));
+    runtime.render(left.data(), right.data(), frames);
+    double total = 0.0;
+    for (float sample : left) total += sample * sample;
+    return std::sqrt(total / frames);
+}
+
+}  // namespace
+
+TEST(a_plugin_node_is_resolved_by_identity_and_driven) {
+    GraphDescription graph = plugin_chain();
+    set(graph, "fx", "slot3", 0.75);
+
+    OnePluginProvider provider;
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+
+    // Asked for by identity, with the hints along for the diagnostic's sake.
+    CHECK(provider.times_asked == 1);
+    CHECK(provider.asked_for.identity == "ABCDEF019182FAEB566D624153675854");
+    CHECK(provider.asked_for.format == "VST3");
+    CHECK(provider.asked_for.name == "Surge XT");
+
+    rms_of(runtime, 512);
+    // Prepared with the graph's own block size — no buffering up to something larger,
+    // because measurement said no plugin needed it. See docs/hosted-plugins-design.md.
+    CHECK(provider.last->prepared_block == soundgraph::kBlockSize);
+    // The slot reached the plugin, normalised, and the untouched ones did too.
+    CHECK(std::fabs(provider.last->controls[2] - 0.75f) < 1e-6);
+    CHECK(provider.last->controls.size() == 16);
+}
+
+TEST(a_plugin_node_passes_audio_through_when_there_is_no_plugin) {
+    // Three worlds that must agree: a provider that hands one over, a provider that
+    // cannot, and a target with no provider at all — the ESP32 and the browser.
+    GraphDescription graph = plugin_chain();
+
+    OnePluginProvider provider;
+    soundgraph::Graph hosted;
+    hosted.set_plugin_provider(&provider);
+    std::vector<Diagnostic> hosted_diagnostics;
+    CHECK(hosted.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                       hosted_diagnostics));
+    const double halved = rms_of(hosted, 4800);
+
+    EmptyProvider empty;
+    soundgraph::Graph without;
+    without.set_plugin_provider(&empty);
+    std::vector<Diagnostic> without_diagnostics;
+    CHECK(without.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        without_diagnostics));
+    const double dry = rms_of(without, 4800);
+
+    soundgraph::Graph no_provider;
+    std::vector<Diagnostic> no_provider_diagnostics;
+    CHECK(no_provider.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                            no_provider_diagnostics));
+    const double also_dry = rms_of(no_provider, 4800);
+
+    // The patch builds either way — a missing reverb costs you the reverb, not the patch.
+    // Relative, not absolute: what matters is that the dry path is audible and that the
+    // hosted path is exactly half it, whatever the oscillator's level happens to be.
+    CHECK(dry > 0.01);
+    CHECK(std::fabs(dry - also_dry) < 1e-6);
+    CHECK(std::fabs(halved - dry * 0.5) < dry * 0.01);
+
+    // And it says so, once, as a warning naming what is missing rather than a UID.
+    bool warned = false;
+    for (const Diagnostic& diagnostic : without_diagnostics) {
+        if (diagnostic.code == "plugin_unavailable") {
+            warned = true;
+            CHECK(diagnostic.severity == soundgraph::Severity::Warning);
+            CHECK(diagnostic.message.find("Surge XT") != std::string::npos);
+        }
+    }
+    CHECK(warned);
+    CHECK(!no_provider_diagnostics.empty());
+}
+
+TEST(a_plugin_node_bypass_is_not_the_same_as_absence) {
+    GraphDescription graph = plugin_chain();
+    set(graph, "fx", "bypass", 1.0);
+
+    OnePluginProvider provider;
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+    // Bypassed: the plugin is loaded and asked for, and simply not in the path.
+    CHECK(provider.times_asked == 1);
+    CHECK(rms_of(runtime, 4800) > 0.1);
+    bool complained = false;
+    for (const Diagnostic& diagnostic : diagnostics) {
+        complained = complained || diagnostic.code == "plugin_unavailable";
+    }
+    CHECK(!complained);
 }
 
 TEST_MAIN("graph tests")

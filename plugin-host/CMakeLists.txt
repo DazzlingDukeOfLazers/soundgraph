@@ -33,20 +33,41 @@ else()
             ${SOUNDGRAPH_VST3_SDK}/public.sdk/source/vst/hosting/module_linux.cpp)
 endif()
 
-add_executable(sg-host
-        src/main.cpp
+# The loaders, and the provider that turns them into something dsp-core can hold. A
+# library rather than part of sg-host, because sg-host is no longer the only caller:
+# anything that renders a patch containing a PluginEffect needs the same code.
+add_library(soundgraph-plugin-host STATIC
         src/host_clap.cpp
         src/host_vst3.cpp
+        src/desktop_provider.cpp
         ${SOUNDGRAPH_VST3_HOSTING})
-target_include_directories(sg-host PRIVATE
+target_include_directories(soundgraph-plugin-host PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        PRIVATE
         ${CMAKE_SOURCE_DIR}/runtime-clap/sdks/clap/include
         ${SOUNDGRAPH_VST3_SDK})
-target_link_libraries(sg-host PRIVATE soundgraph::wav base-sdk-vst3 ${CMAKE_DL_LIBS})
-target_compile_features(sg-host PRIVATE cxx_std_17)
+target_link_libraries(soundgraph-plugin-host
+        PUBLIC soundgraph::dsp
+        PRIVATE base-sdk-vst3 ${CMAKE_DL_LIBS})
+target_compile_features(soundgraph-plugin-host PUBLIC cxx_std_17)
 if(WIN32)
     # module_win32 walks bundle directories with the Shell API and reports versions
     # through the Version API; neither is linked by default.
-    target_link_libraries(sg-host PRIVATE shell32 ole32 version)
+    target_link_libraries(soundgraph-plugin-host PRIVATE shell32 ole32 version)
+endif()
+
+add_executable(sg-host src/main.cpp)
+target_include_directories(sg-host PRIVATE
+        ${CMAKE_SOURCE_DIR}/runtime-clap/sdks/clap/include)
+target_link_libraries(sg-host PRIVATE soundgraph-plugin-host soundgraph::wav)
+target_compile_features(sg-host PRIVATE cxx_std_17)
+
+# sg-render is declared before this directory, so the dependency is added from here
+# rather than there: the offline renderer gains real plugins exactly when the SDKs are
+# present, and needs no #ifdef of its own beyond one guard.
+if(TARGET sg-render)
+    target_link_libraries(sg-render PRIVATE soundgraph-plugin-host)
+    target_compile_definitions(sg-render PRIVATE SOUNDGRAPH_WITH_PLUGIN_HOST)
 endif()
 
 if(SOUNDGRAPH_BUILD_TESTS)
@@ -104,4 +125,92 @@ if(SOUNDGRAPH_BUILD_TESTS)
     set_tests_properties(sg_host_swaps_patches_through_the_vst3 PROPERTIES
             ENVIRONMENT "${SOUNDGRAPH_HOST_PATCHES}"
             FAIL_REGULAR_EXPRESSION "rms 0\\.16")
+    # ---- the provider, against a plugin this build made itself ----------------------
+    # The point is not the sound — our own plugin is an instrument, so as an effect it
+    # has nothing to say — but that a patch naming a plugin by identity causes a real
+    # shared library to be found, opened and matched. Using our own artifact keeps the
+    # test honest on a machine with no third-party plugins installed anywhere.
+    set(SOUNDGRAPH_HOSTED_PATCH ${CMAKE_CURRENT_BINARY_DIR}/hosted-patch.json)
+    file(WRITE ${SOUNDGRAPH_HOSTED_PATCH}
+"{
+"
+"  \"schema_version\": 4,
+"
+"  \"plugins\": { \"fx\": { \"format\": \"VST3\",
+"
+"      \"identity\": \"86A7F253842050FC89F71B2835D65C75\",
+"
+"      \"vendor\": \"MutantFactory.net\", \"name\": \"SoundGraph\" } },
+"
+"  \"nodes\": [
+"
+"    { \"id\": \"osc\", \"type\": \"SineOscillator\" },
+"
+"    { \"id\": \"fx\", \"type\": \"PluginEffect\", \"plugin\": \"fx\" },
+"
+"    { \"id\": \"out\", \"type\": \"StereoOutput\" }
+"
+"  ],
+"
+"  \"connections\": [
+"
+"    { \"from\": { \"node\": \"osc\", \"port\": \"out\" }, \"to\": { \"node\": \"fx\", \"port\": \"left\" } },
+"
+"    { \"from\": { \"node\": \"fx\", \"port\": \"left\" }, \"to\": { \"node\": \"out\", \"port\": \"left\" } }
+"
+"  ]
+"
+"}
+")
+
+    set(SOUNDGRAPH_BOGUS_PATCH ${CMAKE_CURRENT_BINARY_DIR}/hosted-patch-missing.json)
+    file(WRITE ${SOUNDGRAPH_BOGUS_PATCH}
+"{
+"
+"  \"schema_version\": 4,
+"
+"  \"plugins\": { \"fx\": { \"format\": \"VST3\",
+"
+"      \"identity\": \"00000000000000000000000000000000\",
+"
+"      \"vendor\": \"Nobody\", \"name\": \"A Plugin That Is Not Here\" } },
+"
+"  \"nodes\": [
+"
+"    { \"id\": \"osc\", \"type\": \"SineOscillator\" },
+"
+"    { \"id\": \"fx\", \"type\": \"PluginEffect\", \"plugin\": \"fx\" },
+"
+"    { \"id\": \"out\", \"type\": \"StereoOutput\" }
+"
+"  ],
+"
+"  \"connections\": [
+"
+"    { \"from\": { \"node\": \"osc\", \"port\": \"out\" }, \"to\": { \"node\": \"fx\", \"port\": \"left\" } },
+"
+"    { \"from\": { \"node\": \"fx\", \"port\": \"left\" }, \"to\": { \"node\": \"out\", \"port\": \"left\" } }
+"
+"  ]
+"
+"}
+")
+
+    if(TARGET sg-render)
+        add_test(NAME sg_render_resolves_a_plugin_by_identity
+                COMMAND sg-render ${SOUNDGRAPH_HOSTED_PATCH}
+                        ${CMAKE_CURRENT_BINARY_DIR}/hosted-render.wav --seconds 1)
+        set_tests_properties(sg_render_resolves_a_plugin_by_identity PROPERTIES
+                ENVIRONMENT "SOUNDGRAPH_PLUGIN_PATH=${CMAKE_BINARY_DIR}/plugins/VST3"
+                FAIL_REGULAR_EXPRESSION "not available here")
+
+        # And the half that matters more, because every target that cannot host a
+        # plugin lives here: the patch still renders, and says what is missing.
+        add_test(NAME sg_render_says_what_it_could_not_find
+                COMMAND sg-render ${SOUNDGRAPH_BOGUS_PATCH}
+                        ${CMAKE_CURRENT_BINARY_DIR}/missing-render.wav --seconds 1)
+        set_tests_properties(sg_render_says_what_it_could_not_find PROPERTIES
+                ENVIRONMENT "SOUNDGRAPH_PLUGIN_PATH=${CMAKE_BINARY_DIR}/plugins/VST3"
+                PASS_REGULAR_EXPRESSION "A Plugin That Is Not Here")
+    endif()
 endif()

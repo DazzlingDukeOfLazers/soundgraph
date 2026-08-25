@@ -66,6 +66,15 @@ const BufferDescription* GraphDescription::find_buffer(const std::string& buffer
     return nullptr;
 }
 
+const PluginDescription* GraphDescription::find_plugin(const std::string& plugin_id) const {
+    for (const PluginDescription& entry : plugins) {
+        if (entry.id == plugin_id) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 const NodeDescription* GraphDescription::find_node(const std::string& node_id) const {
     for (const NodeDescription& node : nodes) {
         if (node.id == node_id) {

@@ -2127,6 +2127,111 @@ TEST(every_registered_type_can_be_created_with_working_defaults) {
     }
 }
 
+// ---- PluginEffect --------------------------------------------------------------------
+// The node that cannot run everywhere, driven here with a plugin the test wrote itself.
+// What matters is the two behaviours that have nothing to do with any real plugin: that
+// controls arrive normalised and only when they move, and that a node with no plugin is
+// a wire rather than a hole.
+namespace {
+
+class RecordingPlugin : public soundgraph::HostedPluginInstance {
+public:
+    void prepare(double sample_rate, int max_block_frames) override {
+        rate = sample_rate;
+        block = max_block_frames;
+    }
+    void process(const float* const* inputs, int input_channels, float* const* outputs,
+                 int output_channels, int frames) override {
+        ++blocks;
+        for (int channel = 0; channel < output_channels; ++channel) {
+            const float* in = channel < input_channels ? inputs[channel] : nullptr;
+            for (int i = 0; i < frames; ++i) {
+                outputs[channel][i] = in != nullptr ? in[i] * 0.5f : 0.0f;
+            }
+        }
+    }
+    void set_control(int slot, float value) override {
+        controls.push_back({slot, value});
+    }
+
+    double rate = 0.0;
+    int block = 0;
+    int blocks = 0;
+    std::vector<std::pair<int, float>> controls;
+};
+
+}  // namespace
+
+TEST(plugin_effect_without_a_plugin_is_a_wire_not_a_hole) {
+    NodeHarness harness("PluginEffect", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.connect("left", 0.25f);
+    harness.connect("right", -0.5f);
+    harness.process();
+
+    // No plugin — every target that cannot host one, and every machine missing this
+    // one — and the audio arrives on the other side untouched.
+    CHECK_NEAR(harness.output("left")[0], 0.25, 1e-6);
+    CHECK_NEAR(harness.output("right")[0], -0.5, 1e-6);
+    CHECK_NEAR(harness.output("left")[63], 0.25, 1e-6);
+}
+
+TEST(plugin_effect_sends_slots_normalised_and_only_when_they_move) {
+    RecordingPlugin plugin;
+    NodeHarness harness("PluginEffect", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.bind_plugin(&plugin);
+    harness.connect("left", 1.0f);
+    harness.set("slot1", 0.5f);
+    harness.process();
+
+    CHECK(plugin.block == 64);
+    CHECK_NEAR(plugin.rate, kSampleRate, 1e-9);
+    // The first block sends all sixteen, because nothing had been sent before it.
+    CHECK(plugin.controls.size() == 16);
+    CHECK(plugin.controls[0].first == 0);
+    CHECK_NEAR(plugin.controls[0].second, 0.5, 1e-6);
+    CHECK_NEAR(harness.output("left")[0], 0.5, 1e-6);
+
+    // A block where nothing moved sends nothing at all.
+    plugin.controls.clear();
+    harness.process();
+    CHECK(plugin.controls.empty());
+
+    // And one where a single slot moved sends exactly that one.
+    harness.set("slot9", 0.25f);
+    harness.process();
+    CHECK(plugin.controls.size() == 1);
+    CHECK(plugin.controls[0].first == 8);
+    CHECK_NEAR(plugin.controls[0].second, 0.25, 1e-6);
+}
+
+TEST(plugin_effect_bypass_keeps_the_plugin_loaded_and_out_of_the_way) {
+    RecordingPlugin plugin;
+    NodeHarness harness("PluginEffect", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.bind_plugin(&plugin);
+    harness.connect("left", 0.8f);
+    harness.set("bypass", 1.0f);
+    harness.process();
+
+    CHECK(plugin.blocks == 0);                       // never asked to work
+    CHECK_NEAR(harness.output("left")[0], 0.8, 1e-6);  // and never in the path
+}
+
+TEST(plugin_effect_mix_holds_the_dry_signal_against_the_wet) {
+    RecordingPlugin plugin;   // halves whatever it is given
+    NodeHarness harness("PluginEffect", 64, kSampleRate);
+    CHECK(harness.valid());
+    harness.bind_plugin(&plugin);
+    harness.connect("left", 1.0f);
+    harness.set("mix", 0.5f);
+    harness.process();
+
+    // Half wet (0.5) and half dry (1.0): 0.5 * 0.5 + 0.5 * 1.0.
+    CHECK_NEAR(harness.output("left")[0], 0.75, 1e-6);
+}
+
 // Not a TEST, because it can only be asked once every test has run and TEST order is
 // declaration order — a check that depends on being last is a check that breaks when
 // somebody appends a case below it.

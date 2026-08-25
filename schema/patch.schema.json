@@ -184,6 +184,57 @@
         },
         "additionalProperties": false
       }
+    },
+    "plugins": {
+      "description": "Plugins the patch plays through, keyed by id. Named by identity and never by path: a path is a fine thing to remember and a terrible thing to depend on. A patch that names a plugin still opens where that plugin is absent - the node passes its audio through and says so. Requires schema_version 4.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "format",
+          "identity"
+        ],
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "CLAP",
+              "VST3"
+            ]
+          },
+          "identity": {
+            "type": "string",
+            "description": "The format's own unique id: a CLAP's reverse-DNS string, or a VST3 class UID as hex. The only field resolution uses."
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Hint, for diagnostics."
+          },
+          "name": {
+            "type": "string",
+            "description": "Hint, for diagnostics."
+          },
+          "version": {
+            "type": "string",
+            "description": "Hint, for diagnostics."
+          },
+          "path_hint": {
+            "type": "string",
+            "description": "Where it was last seen. Never load-bearing; being wrong is not an error."
+          },
+          "state": {
+            "type": "string",
+            "description": "The plugin's own opaque state, base64. Carried so the patch stays the artifact."
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Slot index to plugin parameter id; -1 for an unbound slot."
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -260,7 +311,7 @@
           "minLength": 1
         },
         "host": {
-          "description": "Only on a seam \u2014 a node of type \"Input\" or \"Output\". Names the side of the machine this edge meets: \"note\" or \"audio\" for an input, \"stereo\" for an output. A seam inside a module must not carry one, because a module's seams are its ports and binding one to the machine would mean every instance shared that one keyboard. A seam at the top level may or may not: with a host it is where the graph meets its machine, and becomes the matching terminal node when the patch is loaded; without one it is a socket nothing is currently plugged into, and is spliced out at load, so whatever it fed goes silent. Nothing downstream of the loader learns the word either way.",
+          "description": "Only on a seam — a node of type \"Input\" or \"Output\". Names the side of the machine this edge meets: \"note\" or \"audio\" for an input, \"stereo\" for an output. A seam inside a module must not carry one, because a module's seams are its ports and binding one to the machine would mean every instance shared that one keyboard. A seam at the top level may or may not: with a host it is where the graph meets its machine, and becomes the matching terminal node when the patch is loaded; without one it is a socket nothing is currently plugged into, and is spliced out at load, so whatever it fed goes silent. Nothing downstream of the loader learns the word either way.",
           "type": "string",
           "enum": [
             "note",
@@ -271,6 +322,10 @@
         "buffer": {
           "type": "string",
           "description": "Which of the patch's buffers this node plays. Only meaningful on types that play audio data, such as Sampler."
+        },
+        "plugin": {
+          "type": "string",
+          "description": "Which of the patch's plugins this node hosts. PluginEffect only. Requires schema_version 4."
         }
       }
     },
@@ -336,7 +391,7 @@
           "type": "string"
         },
         "group": {
-          "description": "Panel grouping. Controls sharing a group are drawn as one block on the performance surface, whatever nodes they target \u00e2\u20ac\u201d an operator's own knobs and the gain node that sets its level belong together on the panel even though they are separate nodes in the graph. Absent means the control groups with others targeting the same node. Panel organization, never graph semantics.",
+          "description": "Panel grouping. Controls sharing a group are drawn as one block on the performance surface, whatever nodes they target â€” an operator's own knobs and the gain node that sets its level belong together on the panel even though they are separate nodes in the graph. Absent means the control groups with others targeting the same node. Panel organization, never graph semantics.",
           "type": "string",
           "minLength": 1,
           "maxLength": 64
@@ -571,7 +626,7 @@
       }
     },
     "module_panel": {
-      "description": "The face an instance wears. Presentation only, like arrangement: it never changes what a patch sounds like and never changes the declared surface. An exported parameter left off the panel is still exported, still settable per instance, and still a legal control or automation target \u2014 it simply has no knob. Omit the whole object to get every export in declared order.",
+      "description": "The face an instance wears. Presentation only, like arrangement: it never changes what a patch sounds like and never changes the declared surface. An exported parameter left off the panel is still exported, still settable per instance, and still a legal control or automation target — it simply has no knob. Omit the whole object to get every export in declared order.",
       "type": "object",
       "additionalProperties": false,
       "properties": {

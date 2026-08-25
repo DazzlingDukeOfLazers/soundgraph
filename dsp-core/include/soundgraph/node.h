@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "soundgraph/events.h"
+#include "soundgraph/plugin_host.h"
 #include "soundgraph/types.h"
 
 namespace soundgraph {
@@ -55,6 +56,13 @@ struct PrepareContext {
     const float* buffer_data = nullptr;
     int buffer_frames = 0;
     double buffer_sample_rate = 0.0;
+
+    // The plugin this node's description names, resolved by the graph the same way the
+    // buffer above is. Null for every node without one, and — the case that matters —
+    // null on any target with no provider to ask. A node given null must still work:
+    // an effect passes its audio through, because a missing reverb should cost you the
+    // reverb and not the patch.
+    HostedPluginInstance* plugin = nullptr;
 };
 
 // Everything a node is allowed to touch during processing.
@@ -139,6 +147,12 @@ struct NodeTypeDescriptor {
     ResourceCost cost;
 
     std::unique_ptr<DspNode> (*create)();
+
+    // Declared after create() rather than beside role, where it belongs, because every
+    // descriptor in the registry is positional aggregate initialisation: a field added
+    // in the middle silently shifts forty-five of them. Last is the only safe place,
+    // and omitting it leaves it false, which is right for every node but the plugins.
+    bool requires_plugin_host;
 
     int find_input(const char* port_name) const;
     int find_output(const char* port_name) const;

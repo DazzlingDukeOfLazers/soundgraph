@@ -89,6 +89,17 @@ public:
         node_->prepare(context);
     }
 
+    // Re-prepares with a hosted plugin bound, the twin of bind_buffer: the graph
+    // resolves one and hands it down, and a test can hand down whatever it likes. The
+    // caller owns the instance and must outlive the harness.
+    void bind_plugin(soundgraph::HostedPluginInstance* plugin) {
+        soundgraph::PrepareContext context;
+        context.sample_rate = sample_rate_;
+        context.max_block_size = frames_;
+        context.plugin = plugin;
+        node_->prepare(context);
+    }
+
     // An input only counts as connected once it has been filled; that distinction is
     // exactly what the nodes key their parameter fallbacks off.
     void connect(const std::string& port, float value) {
