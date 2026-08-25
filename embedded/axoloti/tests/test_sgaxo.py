@@ -61,8 +61,9 @@ def toolchain():
         pytest.skip("sdk not fetched (tools/fetch-sdk.sh)")
 
 
-def run_case(board, case_name, patch_rel, frames, events=()):
-    binary, pid = codegen.build_patch(GOLDEN / patch_rel, frames=frames,
+def run_case(board, case_name, patch_rel, frames, events=(), patch_path=None):
+    path = patch_path if patch_path is not None else GOLDEN / patch_rel
+    binary, pid = codegen.build_patch(path, frames=frames,
                                       name=case_name, events=events)
     board.run_patch(binary, expect_patch_id=pid)
     deadline = time.monotonic() + 3.0 + frames / 48000.0
@@ -163,6 +164,37 @@ def test_first_synth_playable_over_midi(board, toolchain):
     peak = max(abs(s) for s in samples)
     print(f"\nlive MIDI note through the compiled patch: peak {peak:.3f}")
     assert peak > 0.05, "MIDI note produced no audio"
+
+
+SG_RENDER = GOLDEN.parent.parent / "build" / "bin" / "sg-render"
+
+
+def test_maths_nodes_match_native_render(board, toolchain, tmp_path):
+    """Constant, Add, Multiply and Mixer have no golden cases of their own, so
+    the reference is rendered on demand: the native sg-render runs the same
+    fixture patch silently and the board must match it sample for sample —
+    a golden-on-demand for every kernel the manifest doesn't cover."""
+    if not SG_RENDER.exists():
+        pytest.skip("native sg-render not built (build/bin/sg-render)")
+    import subprocess
+    fixture = _HERE / "fixtures" / "maths-mix.json"
+    wav = tmp_path / "native.wav"
+    subprocess.run([str(SG_RENDER), str(fixture), str(wav), "--seconds", "0.1",
+                    "--silent", "--float", "--quiet"], check=True)
+    # sg-render writes stereo float32; the board capture is the left channel.
+    data = wav.read_bytes()
+    pos, payload = 12, None
+    while pos + 8 <= len(data):
+        cid = data[pos:pos + 4]
+        size = struct.unpack_from("<I", data, pos + 4)[0]
+        if cid == b"data":
+            payload = data[pos + 8:pos + 8 + size]
+        pos += 8 + size + (size & 1)
+    stereo = struct.unpack(f"<{len(payload) // 4}f", payload)
+    golden = list(stereo[0::2])
+    rendered = run_case(board, "maths-mix", None, len(golden),
+                        patch_path=fixture)
+    compare(rendered, golden, "maths-mix")
 
 
 def test_unsupported_patch_is_refused(toolchain):

@@ -131,6 +131,31 @@ SUPPORTED = {
         "fixed": {},
         "outputs": ["out"],
     },
+    "Constant": {
+        "inputs": [], "connectable": set(),
+        "params": {"value": 1.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Add": {
+        "inputs": ["a", "b"], "connectable": {"a", "b"},
+        "params": {"offset": 0.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Multiply": {
+        "inputs": ["a", "b"], "connectable": {"a", "b"},
+        "params": {"factor": 1.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Mixer": {
+        "inputs": ["in1", "in2", "in3", "in4"],
+        "connectable": {"in1", "in2", "in3", "in4"},
+        "params": {"level1": 1.0, "level2": 1.0, "level3": 1.0, "level4": 1.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
     "SquareOscillator": {
         "inputs": ["frequency", "fm", "pm"],
         "connectable": {"frequency"},
@@ -367,6 +392,18 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             L.append(f"  sgaxo::k_ahd(st_{c}, {src(i, 'gate')}, {buf(i, 'out')}, "
                      f"{_lit(p['attack'])}, {_lit(p['hold'])}, "
                      f"{_lit(p['decay'])}, {_lit(p['punch'])}, {_lit(dt)});")
+        elif t == "Constant":
+            L.append(f"  sgaxo::k_constant({buf(i, 'out')}, {_lit(p['value'])});")
+        elif t == "Add":
+            L.append(f"  sgaxo::k_add({src(i, 'a')}, {src(i, 'b')}, "
+                     f"{buf(i, 'out')}, {_lit(p['offset'])});")
+        elif t == "Multiply":
+            L.append(f"  sgaxo::k_multiply({src(i, 'a')}, {src(i, 'b')}, "
+                     f"{buf(i, 'out')}, {_lit(p['factor'])});")
+        elif t == "Mixer":
+            ins = ", ".join(src(i, f"in{k}") for k in (1, 2, 3, 4))
+            lvls = ", ".join(_lit(p[f"level{k}"]) for k in (1, 2, 3, 4))
+            L.append(f"  sgaxo::k_mixer({ins}, {buf(i, 'out')}, {lvls});")
         elif t == "Retrigger":
             width_s = f32(f32(p["width"]) * f32(0.001))
             dt = f32(1.0 / SAMPLE_RATE)

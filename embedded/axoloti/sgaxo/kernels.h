@@ -506,6 +506,46 @@ inline void k_note_input(NoteState &s, float *frequency_out, float *gate_out,
   }
 }
 
+// --- Constant (sources.cpp ConstantNode) -------------------------------------
+
+inline void k_constant(float *out, float value) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] = value;
+}
+
+// --- Add / Multiply (amplitude.cpp AddNode / MultiplyNode) -------------------
+// The parameter stands in for the b input while it is unconnected.
+
+inline void k_add(const float *a, const float *b, float *out, float offset) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    out[i] = (a != 0 ? a[i] : 0.0f) + (b != 0 ? b[i] : offset);
+  }
+}
+
+inline void k_multiply(const float *a, const float *b, float *out,
+                       float factor) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    out[i] = (a != 0 ? a[i] : 0.0f) * (b != 0 ? b[i] : factor);
+  }
+}
+
+// --- Mixer (amplitude.cpp MixerNode) -----------------------------------------
+// Channel order is the accumulation order; float addition is not associative,
+// so it must match the node's channel loop exactly.
+
+inline void k_mixer(const float *in1, const float *in2, const float *in3,
+                    const float *in4, float *out, float level1, float level2,
+                    float level3, float level4) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] = 0.0f;
+  const float *ins[4] = {in1, in2, in3, in4};
+  const float levels[4] = {level1, level2, level3, level4};
+  for (int channel = 0; channel < 4; ++channel) {
+    const float *in = ins[channel];
+    if (in == 0) continue;
+    const float level = levels[channel];
+    for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] += in[i] * level;
+  }
+}
+
 // --- Gain (amplitude.cpp GainNode) ------------------------------------------
 
 inline void k_gain(const float *in, const float *gain_in, float *out,

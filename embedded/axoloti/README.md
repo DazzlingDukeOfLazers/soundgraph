@@ -100,7 +100,10 @@ the same note handler the golden events replay through.
 
 Supported today: Input(note)/Output seams, Sine/Saw/Square oscillators,
 Noise (white and pink), LFO (all shapes), StateVariableFilter, Delay
-(SDRAM-backed, 2 s), ADSR, AhdEnvelope, Retrigger, Gain. Everything else is
+(SDRAM-backed, 2 s), ADSR, AhdEnvelope, Retrigger, Gain, Constant, Add,
+Multiply, Mixer — fifteen node types, every one hardware-verified. Kernels
+without golden-manifest cases are verified against a native sg-render of the
+same patch (golden-on-demand, tests/fixtures/). Everything else is
 refused by name
 at compile time — the subset is a tested claim, not a vibe.
 
