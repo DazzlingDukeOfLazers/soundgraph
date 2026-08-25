@@ -367,6 +367,13 @@ public:
         return result == kResultOk || result == kNotImplemented;
     }
 
+    int latency_frames() override {
+        // getLatencySamples is a processor question and, per the SDK, is only answerable
+        // once setupProcessing has run — which is what activate() does here.
+        if (!processor_ || !active_) return 0;
+        return static_cast<int>(processor_->getLatencySamples());
+    }
+
     // ---- the plugin's own memory ------------------------------------------------
     //
     // The component owns the state; the controller keeps a shadow of it for the UI.

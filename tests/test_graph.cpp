@@ -654,6 +654,65 @@ public:
     HalvingPlugin* last = nullptr;
 };
 
+// A plugin that is late, and honest about it — it reports N frames of latency and its
+// output really is its input N frames later. Both halves matter: a fake that reported
+// latency without delaying anything would let a broken compensator look correct, and one
+// that delayed without reporting is the bug this whole feature exists to fix.
+class LatentPlugin : public soundgraph::HostedPluginInstance {
+public:
+    // `reported` is what it tells the host; `actual` is how late it really is. They are
+    // the same for an honest plugin, which is the default. They differ for the one test
+    // that asks what happens when a plugin reports a number nobody should believe —
+    // there, delaying by the reported amount would mean this fake allocating the
+    // hundreds of megabytes the graph is being tested for refusing to allocate.
+    explicit LatentPlugin(int reported, int actual = -1)
+        : reported_(reported), actual_(actual < 0 ? reported : actual) {}
+
+    void prepare(double, int) override {
+        for (auto& ring : rings_) {
+            ring.assign(static_cast<std::size_t>(std::max(actual_, 1)), 0.0f);
+        }
+        write_ = 0;
+    }
+
+    void process(const float* const* inputs, int input_channels, float* const* outputs,
+                 int output_channels, int frames) override {
+        for (int i = 0; i < frames; ++i) {
+            const int at = write_;
+            for (int channel = 0; channel < output_channels && channel < 2; ++channel) {
+                const float in = channel < input_channels ? inputs[channel][i] : 0.0f;
+                std::vector<float>& ring = rings_[static_cast<std::size_t>(channel)];
+                outputs[channel][i] = ring[static_cast<std::size_t>(at)];
+                ring[static_cast<std::size_t>(at)] = in;
+            }
+            write_ = write_ + 1 == std::max(actual_, 1) ? 0 : write_ + 1;
+        }
+    }
+
+    void set_control(int, float) override {}
+    int latency_frames() const override { return reported_; }
+
+private:
+    int reported_ = 0;
+    int actual_ = 0;
+    int write_ = 0;
+    std::vector<float> rings_[2];
+};
+
+class LatentProvider : public soundgraph::PluginProvider {
+public:
+    explicit LatentProvider(int reported, int actual = -1)
+        : reported_(reported), actual_(actual) {}
+    std::unique_ptr<soundgraph::HostedPluginInstance> acquire(
+        const soundgraph::PluginRequest&) override {
+        return std::make_unique<LatentPlugin>(reported_, actual_);
+    }
+
+private:
+    int reported_ = 0;
+    int actual_ = -1;
+};
+
 // A provider for a machine that does not have the plugin: it says so, politely.
 class EmptyProvider : public soundgraph::PluginProvider {
 public:
@@ -680,6 +739,31 @@ GraphDescription plugin_chain() {
     plugin.identity = "ABCDEF019182FAEB566D624153675854";
     plugin.vendor = "Surge Synth Team";
     plugin.name = "Surge XT";
+    graph.plugins.push_back(plugin);
+    return graph;
+}
+
+// The graph this whole feature is about: one signal, two paths to the output, and a
+// plugin in only one of them. `shared_port` puts both paths on the same input instead of
+// one per channel, which is the other thing the reader has to get right.
+GraphDescription forked_by_a_plugin(bool shared_port) {
+    GraphDescription graph;
+    graph.nodes.push_back(node("osc", "SineOscillator"));
+    graph.nodes.push_back(node("fx", "PluginEffect"));
+    graph.nodes.push_back(node("out", "StereoOutput"));
+    graph.nodes.back().parameters.push_back({"level", 1.0});
+    // The limiter would flatten the sum this test is measuring, and its being on by
+    // default is right for every patch that is not a measurement.
+    graph.nodes.back().parameters.push_back({"safety_limit", 0.0});
+    graph.nodes[1].plugin = "reverb";
+    connect(graph, "osc", "out", "fx", "left");
+    connect(graph, "fx", "left", "out", "left");
+    connect(graph, "osc", "out", "out", shared_port ? "left" : "right");
+
+    soundgraph::PluginDescription plugin;
+    plugin.id = "reverb";
+    plugin.format = "CLAP";
+    plugin.identity = "org.example.late";
     graph.plugins.push_back(plugin);
     return graph;
 }
@@ -761,6 +845,118 @@ TEST(the_graph_hands_out_the_plugin_a_node_is_playing_through) {
     CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
                         diagnostics));
     CHECK(runtime.plugin_for_node("fx") == provider.last);
+}
+
+TEST(a_late_plugin_does_not_drag_the_paths_beside_it_out_of_step) {
+    // Left goes through a plugin that is 100 frames late; right goes straight to the
+    // output. Compensated, the two channels carry the same samples at the same instants,
+    // which is the entire claim — and it is checked sample by sample rather than by rms,
+    // because two channels 100 frames apart have identical rms and sound wrong.
+    constexpr int kLate = 100;
+    GraphDescription graph = forked_by_a_plugin(false);
+
+    LatentProvider provider(kLate);
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+
+    CHECK(runtime.latency_frames() == kLate);
+
+    constexpr int kFrames = 2048;
+    std::vector<float> left(static_cast<std::size_t>(kFrames));
+    std::vector<float> right(static_cast<std::size_t>(kFrames));
+    runtime.render(left.data(), right.data(), kFrames);
+
+    double worst = 0.0;
+    double loudest = 0.0;
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        worst = std::max(worst, std::fabs(static_cast<double>(left[i] - right[i])));
+        loudest = std::max(loudest, std::fabs(static_cast<double>(left[i])));
+    }
+    CHECK(loudest > 0.1);  // it is actually playing, so the agreement means something
+    CHECK(worst < 1e-6);   // and the two paths agree, sample for sample
+}
+
+TEST(without_a_plugin_the_same_graph_is_untouched) {
+    // The invariant every golden vector depends on: no plugin, no latency, no delay
+    // lines, and a graph that behaves exactly as it did before any of this existed.
+    // Asserted here as well as implied by the corpus, because it is the thing this
+    // feature could most easily break without anybody noticing until four targets
+    // disagreed about a patch.
+    GraphDescription graph = forked_by_a_plugin(false);
+
+    EmptyProvider absent;
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&absent);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+    CHECK(runtime.latency_frames() == 0);
+
+    constexpr int kFrames = 512;
+    std::vector<float> left(static_cast<std::size_t>(kFrames));
+    std::vector<float> right(static_cast<std::size_t>(kFrames));
+    runtime.render(left.data(), right.data(), kFrames);
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        CHECK(std::fabs(static_cast<double>(left[i] - right[i])) < 1e-9);
+    }
+}
+
+TEST(two_sources_on_one_port_are_aligned_before_they_are_summed) {
+    // The other branch of the reader: two sources arriving at one port, one of them late.
+    // Summing them out of step is comb filtering — the signal partly cancels itself — so
+    // the wrong answer here is *quieter* than the right one rather than merely different.
+    constexpr int kLate = 64;
+    GraphDescription graph = forked_by_a_plugin(true);
+
+    LatentProvider provider(kLate);
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+
+    constexpr int kFrames = 4096;
+    std::vector<float> left(static_cast<std::size_t>(kFrames));
+    std::vector<float> right(static_cast<std::size_t>(kFrames));
+    runtime.render(left.data(), right.data(), kFrames);
+
+    // In step, the two copies are the same signal and sum to twice it. The oscillator
+    // peaks at 1.0, so near 2.0 is aligned and anything much below it is the comb.
+    double peak = 0.0;
+    for (std::size_t i = left.size() / 2; i < left.size(); ++i) {  // past the priming
+        peak = std::max(peak, std::fabs(static_cast<double>(left[i])));
+    }
+    CHECK(peak > 1.9);
+}
+
+TEST(a_plugin_claiming_absurd_latency_is_capped_and_reported) {
+    // The number comes from a stranger, and believing it means allocating whatever it
+    // said. A plugin reporting a hundred million frames is either misunderstanding the
+    // question or handing back uninitialised memory; either way the graph should survive
+    // it, say so, and carry on making a sound.
+    GraphDescription graph = forked_by_a_plugin(false);
+
+    LatentProvider provider(100 * 1000 * 1000, 0);
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+
+    bool said_so = false;
+    for (const Diagnostic& diagnostic : diagnostics) {
+        if (diagnostic.code == "implausible_latency") said_so = true;
+    }
+    CHECK(said_so);
+    CHECK(runtime.latency_frames() == 48000);  // a second, and not a byte more
+
+    // And it still runs: the point of a cap is that the patch keeps working.
+    std::vector<float> left(256);
+    std::vector<float> right(256);
+    runtime.render(left.data(), right.data(), 256);
 }
 
 TEST(a_plugin_node_passes_audio_through_when_there_is_no_plugin) {

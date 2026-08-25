@@ -177,6 +177,10 @@ public:
 
     bool save_state(std::string& bytes) override { return plugin_->save_state(bytes); }
 
+    // Asked after prepare(), which is where the plugin was activated and therefore the
+    // first moment it can answer. The graph does the aligning; this only reports.
+    int latency_frames() const override { return plugin_->latency_frames(); }
+
     // ---- the plugin's own face ------------------------------------------------
     // Straight through. The core declares these so an editor has something to ask,
     // and the loaders already know how to do them; this is only the join. The one

@@ -100,6 +100,19 @@ public:
     // Return to the state a freshly prepared node would be in, without reallocating.
     virtual void reset() {}
 
+    // How many frames later this node's output is than its input, once prepared.
+    //
+    // Almost nothing here has any: a filter and an oscillator answer on the same sample
+    // they were asked. A hosted plugin is the first thing in this project that does not,
+    // because a linear-phase EQ or a lookahead limiter genuinely cannot. The graph reads
+    // this after prepare() and inserts delay on every path that would otherwise arrive
+    // early, so a node saying nothing costs nothing — and on a target with no plugins
+    // every answer is zero, no delay exists, and the golden vectors do not move.
+    //
+    // Constant for the life of a prepared graph. A plugin that changes its mind mid-play
+    // is asking for a rebuild, which is the same answer a DAW gives.
+    virtual int latency_frames() const { return 0; }
+
     // Parameters are stored here so that every node gets consistent clamping and
     // defaults. Nodes that cache derived values override on_parameter_changed().
     void set_parameter(int index, float value);

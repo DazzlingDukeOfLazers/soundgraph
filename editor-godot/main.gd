@@ -170,6 +170,9 @@ var _subwindows_were_embedded := false  # what to put back when that panel close
 # fingerprint that decides whether an edit needs a reload at all. It joins the document
 # at the two moments that matter — reloading, and saving.
 var _plugin_states: Dictionary = {}
+# What the graph's own output latency is, in frames. Zero for every patch without a
+# hosted plugin in it, which is almost all of them.
+var _latency_frames := 0
 var widgets: Dictionary = {}           # patch node id -> GraphNode
 var ids: Dictionary = {}               # GraphNode.name -> patch node id
 
@@ -8249,6 +8252,7 @@ func _apply(same_sound_as: String = "") -> void:
 		_capture_plugin_states()
 		_close_plugin_face(true)
 		engine.load_patch(_patch_text_with_plugin_states(), 48000.0)
+		_note_latency()
 		# Loading puts the stored level back, so a mute has to be re-asserted or it lifts
 		# the first time anybody moves a node.
 		if muted:
@@ -8620,8 +8624,40 @@ func _refresh_status() -> void:
 
 ## The status strip spelled out, for whichever of its two parts is left to hover.
 func _status_sentence(running: bool, valid: bool) -> String:
-	return ("Audio %s · graph %s · 48000 Hz"
+	var sentence := ("Audio %s · graph %s · 48000 Hz"
 		% ["running" if running else "stopped", "valid" if valid else "has problems"])
+	# Only when there is something to say. The toolbar has eight pixels of room and a
+	# number that reads "0 frames late" in every patch anybody has ever opened would be
+	# spending them on nothing.
+	if _latency_frames > 0:
+		sentence += " · %d frames late (%.1f ms)" % [_latency_frames, _latency_ms()]
+	return sentence
+
+
+func _latency_ms() -> float:
+	return 1000.0 * float(_latency_frames) / 48000.0
+
+
+## Reads the graph's output latency, and mentions it the once, when it changes.
+##
+## Said out loud rather than left in a tooltip because it is a consequence the user did
+## not ask for: a plugin with lookahead in it makes the whole patch late, the graph lines
+## its own paths up but cannot hand back samples that do not exist yet, and anything
+## playing alongside SoundGraph has to be told. Once per change, not once per edit —
+## a number that has not moved is not news.
+func _note_latency() -> void:
+	if engine == null or not engine.is_loaded():
+		return
+	var info: Variant = JSON.parse_string(engine.get_info_json())
+	var now := 0
+	if typeof(info) == TYPE_DICTIONARY:
+		now = int(info.get("latency_frames", 0))
+	if now == _latency_frames:
+		return
+	_latency_frames = now
+	if now > 0:
+		_say("A plugin puts this patch %d frames (%.1f ms) behind; the graph lines its own paths up."
+			% [now, _latency_ms()])
 
 
 func _highlight(node_ids: Array) -> void:
@@ -8924,6 +8960,7 @@ func _load_text(text: String) -> void:
 	# sooner rather than later, and a Surge preset from the last file arriving in this one
 	# is the kind of wrong that looks like the editor inventing sounds.
 	_plugin_states.clear()
+	_latency_frames = 0
 	# A freshly opened document has no unsaved changes in it by definition, and every
 	# way of opening one lands here — the examples menu, the file dialog, the browser
 	# file input and module import all call this.

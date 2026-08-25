@@ -64,6 +64,12 @@ public:
     virtual bool process_audio(const float* const* inputs, int input_channels,
                                float* const* outputs, int output_channels, int frames) = 0;
 
+    // How many frames later this plugin's output is than its input.
+    //
+    // Only meaningful once activated: a plugin sizes its lookahead against the block
+    // size and the sample rate it was given, and several report zero until then.
+    virtual int latency_frames() = 0;
+
     // ---- the plugin's own memory ------------------------------------------------
     // Everything the plugin considers itself and no parameter can express: the preset,
     // the wavetable, the modulation routing a knob has no number for. Opaque bytes in

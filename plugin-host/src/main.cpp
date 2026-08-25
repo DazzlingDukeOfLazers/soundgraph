@@ -517,6 +517,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+
     // Sixty-four bit because --seconds is a double and nothing stops it being large:
     // an hour at 48 kHz is already 173 million frames, and int32 gives out at about
     // twelve hours. It overflowed silently when the watchdog test asked for 200000
@@ -577,6 +578,15 @@ int main(int argc, char** argv) {
                 ++sample_count;
             }
         }
+    }
+
+    // Asked after the render rather than after activation. Latency is a consequence of
+    // settings for plugins that have a choice about it — Surge XT's effects rack changes
+    // its answer with FX Type — and --param does not arrive until the first block.
+    const int latency = plugin->latency_frames();
+    if (latency > 0) {
+        std::printf("  latency %d frames (%.2f ms)\n", latency,
+                    1000.0 * latency / options.sample_rate);
     }
 
     const double rms = std::sqrt(sum_of_squares / std::max(sample_count, 1LL));

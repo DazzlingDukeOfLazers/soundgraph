@@ -274,7 +274,8 @@ bool SoundGraphEngine::load_patch(const String& patch_json, double sample_rate) 
                 connection.to_port + "\"}";
     }
     const soundgraph::ResourceCost cost = graph_.estimated_cost();
-    info += "],\"cost\":{\"cpu\":" + std::to_string(cost.cpu_cost) +
+    info += "],\"latency_frames\":" + std::to_string(graph_.latency_frames()) +
+            ",\"cost\":{\"cpu\":" + std::to_string(cost.cpu_cost) +
             ",\"state_bytes\":" + std::to_string(cost.state_bytes) +
             ",\"heap_bytes\":" + std::to_string(cost.heap_bytes) + "}" +
             ",\"sample_rate\":" + std::to_string(graph_.sample_rate()) +

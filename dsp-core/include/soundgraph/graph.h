@@ -158,6 +158,15 @@ public:
     // Aggregate resource estimate, for answering "does this fit on that board?".
     ResourceCost estimated_cost() const;
 
+    // How many frames later this graph's output is than its input, after compensation.
+    //
+    // Zero for every graph that contains no hosted plugin, which is every graph on the
+    // board, in the browser, and in almost every patch here. When it is not zero it is
+    // the number a host needs in order to line this graph up with everything else it is
+    // playing — a DAW's own delay compensation, one level up. Reported and not hidden:
+    // the delay is real, and a host that is not told cannot correct for it.
+    int latency_frames() const { return latency_frames_; }
+
     // The most recent block of output, for meters and waveform inspection.
     const float* master_left() const { return master_left_.data(); }
     const float* master_right() const { return master_right_.data(); }
@@ -172,11 +181,33 @@ public:
     int port_signal_length() const { return kBlockSize; }
 
 private:
+    // One source of one input port, held back so that it arrives when the others do.
+    //
+    // Per connection rather than per producing node, because the same signal can feed
+    // two places that need it at two different times: an oscillator going straight to
+    // the mixer and also through a plugin needs no delay on the second path and a full
+    // one on the first.
+    struct DelayedSource {
+        int line = -1;     // index into delay_lines_, or -1 for a source already on time
+        int scratch = -1;  // where the delayed copy is written
+    };
+
     struct InputBinding {
         // Resolved sources for one input port.
         std::vector<int> source_buffers;   // buffer indices; empty means unconnected
+        // Which node produced each of those, kept so that latency compensation can ask
+        // when it will be ready. Parallel to source_buffers, as is `delays`.
+        std::vector<int> source_nodes;
+        std::vector<DelayedSource> delays;
         int mix_buffer = -1;               // scratch for summing, or feedback snapshot
         bool is_feedback = false;
+    };
+
+    // A plain ring. Kept as its own allocation rather than in the block pool because a
+    // delay is as long as the plugin says and the pool is in kBlockSize windows.
+    struct DelayLine {
+        std::vector<float> ring;
+        int write = 0;
     };
 
     struct NodeSlot {
@@ -191,7 +222,13 @@ private:
     const float* buffer(int index) const;
     int allocate_buffer();
 
+    const float* read_source(const InputBinding& binding, std::size_t source, int frames);
     void process_block();
+    // Works out what arrives when, and inserts the delay that makes them agree. Called
+    // from build() once the graph is wired and every node has been prepared, which is
+    // the earliest moment a hosted plugin can be asked what it costs.
+    void compensate_latency(const std::vector<int>& order,
+                            std::vector<Diagnostic>& diagnostics);
     void drain_control_events();
     void snapshot_feedback();
     // Ensures the block FIFO has samples available, processing another block if not.
@@ -250,6 +287,9 @@ private:
 
     std::vector<float> buffer_pool_;
     int buffer_count_ = 0;
+
+    std::vector<DelayLine> delay_lines_;
+    int latency_frames_ = 0;
 
     // The patch's recorded audio, copied out of the description at build so that nodes
     // may point into it for the graph's whole life. One copy serves every voice.

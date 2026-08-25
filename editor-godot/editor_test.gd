@@ -9405,6 +9405,22 @@ func _initialize() -> void:
 	main._capture_plugin_states()
 	check(main._plugin_states.is_empty(), "a graph with no hosted plugin has no state to give")
 
+	# ---- latency ----------------------------------------------------------------------
+	# The plumbing only, which is all this machine can check: nothing installed here has
+	# any lookahead, so the interesting number is proven in the C++ suite against a fake
+	# plugin that is honestly late. What matters here is that the editor is *told* — a
+	# number the graph knows and the editor never reads is a number nobody acts on.
+	if main.engine.is_loaded():
+		var info: Variant = JSON.parse_string(main.engine.get_info_json())
+		check(typeof(info) == TYPE_DICTIONARY and info.has("latency_frames"),
+			"the graph tells the editor its own output latency")
+		check(int(info.get("latency_frames", -1)) == 0,
+			"and a patch with nothing late in it is not late")
+	main._note_latency()
+	check(main._latency_frames == 0, "so the editor has nothing to warn about")
+	check(not main._status_sentence(true, true).contains("late"),
+		"and the status strip does not spend its width saying so")
+
 	# Closing a panel that was never opened must not disturb the editor. The embedding
 	# setting is global and every dialog in this program depends on it, so the one path
 	# that turns it off has to be the only path that touches it.

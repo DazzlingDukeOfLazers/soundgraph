@@ -171,6 +171,14 @@ int main(int argc, char** argv) {
         for (const soundgraph::Diagnostic& diagnostic : diagnostics) {
             std::cout << diagnostic.format() << "\n\n";
         }
+        // Only when there is something to say. Every patch without a hosted plugin in it
+        // reports zero, and a line of output that is always the same teaches nobody
+        // anything.
+        if (graph.latency_frames() > 0) {
+            std::cout << "latency: " << graph.latency_frames() << " frames ("
+                      << (1000.0 * graph.latency_frames() / options.sample_rate)
+                      << " ms), compensated within the graph\n\n";
+        }
     }
 
     const int total_frames = static_cast<int>(options.seconds * options.sample_rate);

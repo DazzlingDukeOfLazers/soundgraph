@@ -379,11 +379,53 @@ about those particular parameters. That is correct and is the point of binding o
 it means a patch's sound is the plugin's state with the graph's slots on top, in that
 order, and neither half tells the whole story on its own.
 
-## Still open
+## Delay compensation
 
-- **Latency compensation.** Plugins report latency and the graph has no notion of it.
-  Irrelevant for a reverb, audible the moment two paths run in parallel and only one
-  has a plugin in it. Stage 2 can report latency and ignore it; Stage 3 cannot.
+The rule is one sentence. A node's inputs must all be describing the same instant, so
+every node has an **arrival time** — the latest of its sources' output times — and every
+source that would land earlier is delayed into line. A node's own output time is its
+arrival plus whatever it adds itself, which for everything in this project except a
+hosted plugin is nothing at all.
+
+Three things are deliberately left alone.
+
+**Feedback edges are not compensated.** They already carry the previous block by
+construction, which is what makes the cycle legal; adding delay on top would be inventing
+timing rather than restoring it, and a loop's period is something the author can hear.
+
+**The graph's own output latency is reported, not removed.** It cannot be removed —
+nobody can hand back samples that have not been computed yet — so the honest move is to
+say the number and let whatever is playing alongside line itself up. That is exactly what
+a DAW does with the same number one level further out. `Graph::latency_frames()` is where
+it lives; `sg-render` prints it, and the editor mentions it once when it changes and
+carries it in the status tooltip. It is *not* yet reported out through SoundGraph's own
+CLAP/VST3 plugin, for the plain reason that the plugin has no provider and so can never
+host anything late; the day it does, it should offer `clap_plugin_latency`.
+
+**A graph with no hosted plugin allocates nothing and behaves identically.** Every
+latency is zero, no delay line is created, and the golden vectors that four targets are
+checked against do not move by a sample. That invariant is why this is written as "delay
+the early ones" rather than as a rewrite of the wiring, and it has a test of its own
+rather than being left to the corpus to notice.
+
+**The number comes from a stranger, so it has a ceiling.** One second, warned about and
+clamped. Nothing musical needs a second of lookahead — a mastering limiter is a few
+milliseconds — and a plugin that says otherwise has either misunderstood the question or
+handed back uninitialised memory. Believing it means allocating whatever it said, which
+is a way for one bad plugin to take the whole program down rather than just itself.
+
+**What is proven, and what is not.** The compensation is proven by tests that fail
+without it: a fake plugin that reports N frames of latency *and is genuinely N frames
+late*, in one of two paths to the output, with the channels compared sample by sample —
+because two channels a hundred frames apart have identical rms and sound wrong. The query
+path is exercised against real plugins too: Surge XT and Dexed both publish CLAP's
+latency extension and the VST3 processor answers live. What is *not* proven end to end is
+a non-zero number arriving from a real plugin, because nothing installed on the
+development machine has any lookahead — Surge XT reports zero for every one of its thirty
+effect types, verified by confirming the type parameter really landed. That gap is about
+this machine's plugin collection, not about the code path.
+
+## Still open
 - **Resizing.** The host tells the plugin nothing about the window size, so dragging the
   panel's edge stretches the frame and not the plugin. Both formats have a call for it
   (`clap_plugin_gui::set_size`, `IPlugView::onSize`) and `HostedPlugin` has no verb for

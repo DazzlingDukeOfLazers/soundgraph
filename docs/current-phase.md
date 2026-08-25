@@ -557,6 +557,26 @@ initial patch is 50 KB of state, Dexed's 6 KB, Surge's effects rack 1 KB. The ed
 refuses above four mebibytes of base64 per plugin and says so — half a preset is not a
 smaller preset.
 
+**Delay compensation (2026-08-25).** A node's inputs must all describe the same
+instant, so each node has an arrival time — the latest of its sources' output times — and
+everything that would land early is delayed into line. Feedback edges are left alone;
+they already carry the previous block, and delaying them would invent timing rather than
+restore it. The graph's own output latency is reported rather than removed, because
+nobody can hand back samples that do not exist yet: `sg-render` prints it, and the editor
+says it once when it changes and keeps it in the status tooltip.
+
+The invariant that matters more than the feature: a graph with no hosted plugin allocates
+nothing, delays nothing, and produces the same samples it always did. It has its own test
+rather than being left to the golden corpus to notice.
+
+Reported latency is capped at one second with a warning, because the number comes from a
+stranger and believing it means allocating whatever it said.
+
+Nothing installed here has any lookahead — Surge XT reports zero for all thirty of its
+effect types, checked by confirming the type parameter really landed — so the non-zero
+case is proven against a fake plugin that is honestly late, in tests that go red when
+compensation is removed.
+
 `sg-host --save-state` / `--load-state` is how this was measured and is how it is tested:
 `sg_host_saves_and_restores_plugin_state` runs three processes, because a plugin that is
 never destroyed and reopened can round-trip by accident.

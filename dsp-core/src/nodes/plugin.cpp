@@ -88,6 +88,11 @@ public:
 
     void reset() override { sent_.fill(-1.0f); }
 
+    // The plugin's own, verbatim. The graph does the aligning; this only reports.
+    int latency_frames() const override {
+        return plugin_ != nullptr ? plugin_->latency_frames() : 0;
+    }
+
     void process(const ProcessContext& context) override {
         const int frames = context.frames;
         float* out_left = context.outputs[0];
@@ -215,6 +220,11 @@ public:
         if (plugin_ != nullptr) {
             plugin_->all_notes_off();
         }
+    }
+
+    // The plugin's own, verbatim. The graph does the aligning; this only reports.
+    int latency_frames() const override {
+        return plugin_ != nullptr ? plugin_->latency_frames() : 0;
     }
 
     // Delivered on the audio thread before the block they belong to, and delivered in

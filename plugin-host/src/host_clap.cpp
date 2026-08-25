@@ -425,6 +425,14 @@ public:
         return true;
     }
 
+    int latency_frames() override {
+        if (plugin_ == nullptr) return 0;
+        const auto* latency = static_cast<const clap_plugin_latency_t*>(
+            plugin_->get_extension(plugin_, CLAP_EXT_LATENCY));
+        if (latency == nullptr || latency->get == nullptr) return 0;
+        return static_cast<int>(latency->get(plugin_));
+    }
+
     // ---- the plugin's own memory ------------------------------------------------
 
     bool save_state(std::string& bytes) override {

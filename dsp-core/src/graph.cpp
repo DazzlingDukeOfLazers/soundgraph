@@ -753,6 +753,8 @@ bool Graph::build(const GraphDescription& description,
     note_receiver_nodes_.clear();
     buffer_pool_.clear();
     buffer_count_ = 0;
+    delay_lines_.clear();
+    latency_frames_ = 0;
     sample_buffers_ = description.buffers;
     plugin_descriptions_ = description.plugins;
     plugin_instances_.clear();
@@ -991,6 +993,8 @@ bool Graph::build(const GraphDescription& description,
         InputBinding& binding = destination.inputs[static_cast<std::size_t>(edge.to_port)];
         binding.source_buffers.push_back(
             nodes_[static_cast<std::size_t>(edge.from_node)].output_buffers[static_cast<std::size_t>(edge.from_port)]);
+        binding.delays.push_back(DelayedSource{});
+        binding.source_nodes.push_back(edge.from_node);
         if (feedback[e]) {
             binding.is_feedback = true;
             feedback_connections_.push_back(edge.connection_index);
@@ -1007,12 +1011,116 @@ bool Graph::build(const GraphDescription& description,
         }
     }
 
+    // Last, because it needs the wiring *and* the prepared nodes: a hosted plugin only
+    // knows what it costs once it has been activated, which prepare() is where it happens.
+    compensate_latency(order_, diagnostics);
+
     master_left_.assign(kBlockSize, 0.0f);
     master_right_.assign(kBlockSize, 0.0f);
     pending_read_ = kBlockSize;
 
     built_ = true;
     return true;
+}
+
+// Delay compensation: work out what arrives when, and hold back everything that would
+// otherwise be early.
+//
+// The rule is one sentence. A node's inputs must all be describing the same instant, so
+// each node has an *arrival time* — the latest of its sources' output times — and every
+// source earlier than that is delayed into line. A node's own output time is its arrival
+// plus whatever latency it adds itself, which for everything in this project except a
+// hosted plugin is nothing at all.
+//
+// Three things are deliberately left alone.
+//
+// Feedback edges are not compensated. They already carry the previous block by
+// construction, which is what makes the cycle legal; adding delay on top would be
+// inventing timing rather than restoring it, and the loop's period is a thing the author
+// can hear and reason about.
+//
+// The graph's own output latency is reported rather than removed. It cannot be removed —
+// nobody can hand back samples that have not been computed yet — so the honest thing is
+// to say the number and let a host that is playing other things line them up. That is
+// exactly what a DAW does with the same number one level further out.
+//
+// And a graph with no hosted plugin in it allocates nothing and behaves identically. Every
+// latency is zero, every delay is zero, no line is created, and the golden vectors that
+// four targets are checked against do not move by a sample. That invariant is the reason
+// this is written as "delay the early ones" rather than as a rewrite of the wiring.
+void Graph::compensate_latency(const std::vector<int>& order,
+                               std::vector<Diagnostic>& diagnostics) {
+    // A ceiling, because the number comes from a stranger. Nothing musical needs a
+    // second of lookahead — a mastering limiter is a few milliseconds — and a plugin
+    // that says otherwise has either misunderstood the question or is reporting
+    // uninitialised memory. Believing it means allocating whatever it said, which is a
+    // way for a bad plugin to take the whole program down rather than just itself.
+    constexpr int kMaxLatencyFrames = 48000;
+    const std::size_t count = nodes_.size();
+    std::vector<int> arrival(count, 0);  // when this node's inputs agree
+    std::vector<int> ready(count, 0);    // when its output is therefore available
+
+    bool any = false;
+    for (int node_index : order) {
+        const std::size_t n = static_cast<std::size_t>(node_index);
+        int latest = 0;
+        for (const InputBinding& binding : nodes_[n].inputs) {
+            if (binding.is_feedback) continue;
+            for (const int source : binding.source_nodes) {
+                latest = std::max(latest, ready[static_cast<std::size_t>(source)]);
+            }
+        }
+        arrival[n] = latest;
+        int own = nodes_[n].node != nullptr ? nodes_[n].node->latency_frames() : 0;
+        if (own > kMaxLatencyFrames) {
+            Diagnostic diagnostic;
+            diagnostic.severity = Severity::Warning;
+            diagnostic.code = "implausible_latency";
+            diagnostic.message = "Node " + quote(nodes_[n].id) + " reports " +
+                                 std::to_string(own) +
+                                 " frames of latency, which is not a plausible answer.";
+            diagnostic.suggestion = "Treated as " + std::to_string(kMaxLatencyFrames) +
+                                    " frames. The plugin is probably misreporting.";
+            diagnostic.node_ids = {nodes_[n].id};
+            diagnostics.push_back(diagnostic);
+            own = kMaxLatencyFrames;
+        }
+        if (own > 0) any = true;
+        ready[n] = latest + std::max(own, 0);
+    }
+
+    // Every sink lands on the same master bus, so they have to agree with each other too
+    // — two outputs in one patch are two halves of one sound. Sinks are terminal, so
+    // raising their arrival after the pass cannot invalidate anything downstream.
+    for (const int sink : host_sink_nodes_) {
+        latency_frames_ = std::max(latency_frames_, arrival[static_cast<std::size_t>(sink)]);
+    }
+    for (const int sink : host_sink_nodes_) {
+        arrival[static_cast<std::size_t>(sink)] = latency_frames_;
+    }
+
+    if (!any) {
+        return;  // nothing in this graph is late; nothing is allocated
+    }
+
+    for (std::size_t n = 0; n < count; ++n) {
+        for (InputBinding& binding : nodes_[n].inputs) {
+            if (binding.is_feedback) continue;
+            for (std::size_t s = 0; s < binding.source_nodes.size(); ++s) {
+                const int early = arrival[n] -
+                                  ready[static_cast<std::size_t>(binding.source_nodes[s])];
+                if (early <= 0) continue;
+                DelayLine line;
+                line.ring.assign(static_cast<std::size_t>(early), 0.0f);
+                binding.delays[s].line = static_cast<int>(delay_lines_.size());
+                delay_lines_.push_back(std::move(line));
+                // Its own scratch, because a delayed source must not be written back
+                // over the buffer its producer is still holding for everyone else.
+                binding.delays[s].scratch = allocate_buffer();
+                cost_.heap_bytes += static_cast<int>(early) * static_cast<int>(sizeof(float));
+            }
+        }
+    }
 }
 
 void Graph::reset() {
@@ -1022,6 +1130,12 @@ void Graph::reset() {
         }
     }
     std::fill(buffer_pool_.begin(), buffer_pool_.end(), 0.0f);
+    // A delay line holds real audio from before the reset. Leaving it would let the old
+    // sound arrive after the silence, which is precisely what a reset is asked to prevent.
+    for (DelayLine& line : delay_lines_) {
+        std::fill(line.ring.begin(), line.ring.end(), 0.0f);
+        line.write = 0;
+    }
     std::fill(master_left_.begin(), master_left_.end(), 0.0f);
     std::fill(master_right_.begin(), master_right_.end(), 0.0f);
     pending_read_ = kBlockSize;
@@ -1164,6 +1278,29 @@ void Graph::apply_parameter(int node_index, int parameter_index, float value) {
     }
 }
 
+// One source of one input, as this block should see it: straight from the producer, or
+// through the delay that puts it back in step with the port's other sources.
+//
+// Every delayed source is read exactly once per block, which is what keeps its ring
+// advancing in time with everything else. A source with no delay costs one branch.
+const float* Graph::read_source(const InputBinding& binding, std::size_t source, int frames) {
+    const float* raw = buffer(binding.source_buffers[source]);
+    const DelayedSource& delayed = binding.delays[source];
+    if (delayed.line < 0) {
+        return raw;
+    }
+    DelayLine& line = delay_lines_[static_cast<std::size_t>(delayed.line)];
+    float* out = buffer(delayed.scratch);
+    const int length = static_cast<int>(line.ring.size());
+    for (int i = 0; i < frames; ++i) {
+        const std::size_t at = static_cast<std::size_t>(line.write);
+        out[i] = line.ring[at];
+        line.ring[at] = raw[i];
+        line.write = line.write + 1 == length ? 0 : line.write + 1;
+    }
+    return out;
+}
+
 void Graph::process_block() {
     constexpr int frames = kBlockSize;
     drain_control_events();
@@ -1185,15 +1322,15 @@ void Graph::process_block() {
             if (binding.is_feedback) {
                 input_pointers[port] = buffer(binding.mix_buffer);
             } else if (binding.source_buffers.size() == 1) {
-                input_pointers[port] = buffer(binding.source_buffers[0]);
+                input_pointers[port] = read_source(binding, 0, frames);
             } else if (binding.source_buffers.size() > 1) {
                 float* mix = buffer(binding.mix_buffer);
-                const float* first = buffer(binding.source_buffers[0]);
+                const float* first = read_source(binding, 0, frames);
                 for (int i = 0; i < frames; ++i) {
                     mix[i] = first[i];
                 }
                 for (std::size_t s = 1; s < binding.source_buffers.size(); ++s) {
-                    const float* source = buffer(binding.source_buffers[s]);
+                    const float* source = read_source(binding, s, frames);
                     for (int i = 0; i < frames; ++i) {
                         mix[i] += source[i];
                     }
