@@ -44,6 +44,7 @@
 #include "pluginterfaces/vst/vsttypes.h"
 #include "public.sdk/source/vst/hosting/eventlist.h"
 #include "public.sdk/source/vst/hosting/hostclasses.h"
+#include "public.sdk/source/common/memorystream.h"
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/hosting/parameterchanges.h"
 #include "public.sdk/source/vst/hosting/processdata.h"
@@ -364,6 +365,42 @@ public:
         events_.clear();
         parameter_changes_.clearQueue();
         return result == kResultOk || result == kNotImplemented;
+    }
+
+    // ---- the plugin's own memory ------------------------------------------------
+    //
+    // The component owns the state; the controller keeps a shadow of it for the UI.
+    // Restoring only the first gives a plugin that sounds right and looks wrong — the
+    // knobs still show whatever they showed before — which is exactly the class of bug
+    // the component/controller connection above exists to prevent. So both are told,
+    // from the same bytes, with the stream rewound in between because setState leaves
+    // the cursor at the end.
+    //
+    // Steinberg's MemoryStream is used rather than a stream of our own: it is already
+    // compiled into this library, and IBStream has more corners than it looks.
+
+    bool save_state(std::string& bytes) override {
+        if (!component_) return false;
+        MemoryStream stream;
+        if (component_->getState(&stream) != kResultOk) return false;
+        bytes.assign(stream.getData(), static_cast<std::size_t>(stream.getSize()));
+        return true;
+    }
+
+    bool load_state(const std::string& bytes) override {
+        if (!component_ || bytes.empty()) return false;
+        // Copied because MemoryStream's reuse constructor takes a mutable pointer and
+        // will not promise not to touch it. One allocation on a preset load is nothing;
+        // a const_cast into somebody else's stream implementation is a bet.
+        std::vector<char> buffer(bytes.begin(), bytes.end());
+        MemoryStream stream(buffer.data(), static_cast<TSize>(buffer.size()));
+        stream.seek(0, IBStream::kIBSeekSet, nullptr);
+        if (component_->setState(&stream) != kResultOk) return false;
+        if (controller_) {
+            stream.seek(0, IBStream::kIBSeekSet, nullptr);
+            controller_->setComponentState(&stream);
+        }
+        return true;
     }
 
     // ---- the plugin's own face -------------------------------------------------

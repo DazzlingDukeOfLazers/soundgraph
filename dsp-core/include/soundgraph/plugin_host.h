@@ -69,6 +69,23 @@ public:
     // Reported, and not yet compensated for. See the design doc.
     virtual int latency_frames() const { return 0; }
 
+    // ---- the plugin's own memory --------------------------------------------------
+    // What the plugin considers itself, as bytes it wrote and only it can read. The
+    // patch carries this so that a saved graph reopens sounding the way it was left;
+    // sixteen slots can hold a performance, not a preset.
+    //
+    // Only saving is asked of an instance. Restoring happens once, at the moment the
+    // provider hands the instance over — PluginRequest::state is already there for it —
+    // because a plugin being told what it is halfway through a render is a different and
+    // much worse question.
+    //
+    // Main thread. False is an ordinary answer, and means "this plugin has no state to
+    // give", not that anything went wrong.
+    virtual bool save_state(std::string& bytes) {
+        (void)bytes;
+        return false;
+    }
+
     // ---- the plugin's own face --------------------------------------------------
     // A hosted plugin usually draws itself, and an editor that can only offer sixteen
     // numbered slots has hidden the instrument behind a mixing desk. So the editor

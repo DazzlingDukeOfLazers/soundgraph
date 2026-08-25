@@ -64,6 +64,17 @@ public:
     virtual bool process_audio(const float* const* inputs, int input_channels,
                                float* const* outputs, int output_channels, int frames) = 0;
 
+    // ---- the plugin's own memory ------------------------------------------------
+    // Everything the plugin considers itself and no parameter can express: the preset,
+    // the wavetable, the modulation routing a knob has no number for. Opaque bytes in
+    // both directions — a host that inspects them is a host that will one day be wrong
+    // about a plugin it has never seen.
+    //
+    // Main thread, and false is an ordinary answer: a plugin that offers no state
+    // extension has none to give, which is not a failure of anything.
+    virtual bool save_state(std::string& bytes) = 0;
+    virtual bool load_state(const std::string& bytes) = 0;
+
     // ---- the plugin's own face -------------------------------------------------
     // A plugin draws itself, into a window the host owns. What the host provides is a
     // parent — an HWND on Windows, an NSView on macOS — and the plugin fills it. None

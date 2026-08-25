@@ -142,6 +142,51 @@ private:
     clap_input_events_t in_{};
 };
 
+// CLAP hands state through a pair of stream callbacks rather than a buffer, so that a
+// plugin with a hundred megabytes of samples is not obliged to assemble them in memory
+// first. Ours are the simplest honest implementations: a std::string on each side.
+//
+// Both must obey the contract exactly. read() returning 0 means end of stream, and a
+// plugin loops until it sees that — return a short count instead of zero at the end and
+// a well-written plugin never stops asking.
+struct ClapWriteStream {
+    clap_ostream_t stream;
+    std::string* bytes;
+
+    static int64_t write(const clap_ostream_t* stream, const void* buffer, uint64_t size) {
+        auto* self = static_cast<ClapWriteStream*>(stream->ctx);
+        self->bytes->append(static_cast<const char*>(buffer), static_cast<std::size_t>(size));
+        return static_cast<int64_t>(size);
+    }
+
+    explicit ClapWriteStream(std::string& into) : bytes(&into) {
+        stream.ctx = this;
+        stream.write = &ClapWriteStream::write;
+    }
+};
+
+struct ClapReadStream {
+    clap_istream_t stream;
+    const std::string* bytes;
+    std::size_t position = 0;
+
+    static int64_t read(const clap_istream_t* stream, void* buffer, uint64_t size) {
+        auto* self = static_cast<ClapReadStream*>(stream->ctx);
+        const std::size_t left = self->bytes->size() - self->position;
+        const std::size_t take = left < static_cast<std::size_t>(size)
+                                     ? left
+                                     : static_cast<std::size_t>(size);
+        std::memcpy(buffer, self->bytes->data() + self->position, take);
+        self->position += take;
+        return static_cast<int64_t>(take);
+    }
+
+    explicit ClapReadStream(const std::string& from) : bytes(&from) {
+        stream.ctx = this;
+        stream.read = &ClapReadStream::read;
+    }
+};
+
 class ClapPlugin final : public HostedPlugin {
 public:
     ~ClapPlugin() override {
@@ -380,6 +425,23 @@ public:
         return true;
     }
 
+    // ---- the plugin's own memory ------------------------------------------------
+
+    bool save_state(std::string& bytes) override {
+        const clap_plugin_state_t* state = state_extension();
+        if (state == nullptr) return false;
+        bytes.clear();
+        ClapWriteStream sink(bytes);
+        return state->save(plugin_, &sink.stream);
+    }
+
+    bool load_state(const std::string& bytes) override {
+        const clap_plugin_state_t* state = state_extension();
+        if (state == nullptr || bytes.empty()) return false;
+        ClapReadStream source(bytes);
+        return state->load(plugin_, &source.stream);
+    }
+
     // ---- the plugin's own face -------------------------------------------------
     // The sequence is the one gui.h documents, and every step of it matters: a plugin
     // asked to show before it has been given a parent draws into nothing, and one given
@@ -474,6 +536,12 @@ private:
         for (const ClapTimer& timer : due) {
             timers->on_timer(plugin_, timer.id);
         }
+    }
+
+    const clap_plugin_state_t* state_extension() {
+        if (plugin_ == nullptr) return nullptr;
+        return static_cast<const clap_plugin_state_t*>(
+            plugin_->get_extension(plugin_, CLAP_EXT_STATE));
     }
 
     const clap_plugin_gui_t* gui_extension() {

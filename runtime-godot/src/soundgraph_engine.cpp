@@ -99,6 +99,8 @@ void SoundGraphEngine::_bind_methods() {
                          &SoundGraphEngine::close_plugin_gui);
     ClassDB::bind_method(D_METHOD("plugin_gui_size", "node_id"),
                          &SoundGraphEngine::plugin_gui_size);
+    ClassDB::bind_method(D_METHOD("plugin_state", "node_id"),
+                         &SoundGraphEngine::plugin_state);
     ClassDB::bind_method(D_METHOD("tick_plugins"), &SoundGraphEngine::tick_plugins);
 
     ClassDB::bind_method(D_METHOD("get_scope", "samples"), &SoundGraphEngine::get_scope);
@@ -547,6 +549,17 @@ Vector2i SoundGraphEngine::plugin_gui_size(const String& node_id) {
         return Vector2i(0, 0);
     }
     return Vector2i(width, height);
+}
+
+String SoundGraphEngine::plugin_state(const String& node_id) {
+    soundgraph::HostedPluginInstance* plugin = graph_.plugin_for_node(to_utf8(node_id));
+    std::string bytes;
+    if (plugin == nullptr || !plugin->save_state(bytes) || bytes.empty()) {
+        return String();
+    }
+    // Encoded here rather than in GDScript so that there is one spelling of a patch's
+    // state in the project, and it is the one patch-io reads back.
+    return String(soundgraph::to_base64(bytes).c_str());
 }
 
 void SoundGraphEngine::tick_plugins() { graph_.tick_plugins(); }

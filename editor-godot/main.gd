@@ -1,6 +1,16 @@
 extends Control
 const PluginPicker := preload("res://plugin_picker.gd")
 const PluginWindow := preload("res://plugin_window.gd")
+
+## How much of a plugin's own state a patch will carry, in base64 characters — four
+## mebibytes, or about three of the plugin's own bytes for every four of these.
+##
+## A number with a measurement behind it rather than a feeling: Surge XT's initial patch
+## is 50 KB of state, Dexed's is 6 KB, Surge's effects rack 1 KB. Four mebibytes is
+## eighty Surges, which leaves room for the wavetable synth nobody here has tested while
+## keeping a patch a document somebody can open, read and send to a friend. Raise it when
+## a real plugin is measured needing more, not before.
+const MAX_PLUGIN_STATE_CHARS := 4 * 1024 * 1024
 ## SoundGraph — Godot editor.
 ##
 ## The primary editor, and deliberately not the authority on anything. Every question this
@@ -154,6 +164,12 @@ var patch: Dictionary = {}             # the document, in patch-format shape
 var _plugin_scan: Array = []           # what this machine has, asked once
 var _plugin_face: Window = null        # the one plugin panel that is open, if any
 var _subwindows_were_embedded := false  # what to put back when that panel closes
+# Plugin key -> the plugin's own state, base64, as last captured from the running graph.
+# Kept beside the document rather than in it: the plugin's own doing is not an editor
+# gesture, so it does not belong on the undo stack, and it must not change the flattened
+# fingerprint that decides whether an edit needs a reload at all. It joins the document
+# at the two moments that matter — reloading, and saving.
+var _plugin_states: Dictionary = {}
 var widgets: Dictionary = {}           # patch node id -> GraphNode
 var ids: Dictionary = {}               # GraphNode.name -> patch node id
 
@@ -4692,6 +4708,48 @@ func _choose_plugin_for(node_id: String) -> void:
 	dialog.popup_centered()
 
 
+## Asks every hosted plugin in the running graph what it currently considers itself.
+##
+## Called before a reload and before a save, which are the only two moments the answer is
+## needed. Not on a timer: assembling a preset is real work — Surge XT's is fifty
+## kilobytes — and a plugin has better things to do between frames.
+func _capture_plugin_states() -> void:
+	if engine == null or not engine.is_loaded() or not engine.can_host_plugins():
+		return
+	for node in patch.get("nodes", []):
+		var key := str(node.get("plugin", ""))
+		if key == "":
+			continue
+		var captured: String = engine.plugin_state(str(node.get("id", "")))
+		if captured == "":
+			continue
+		if captured.length() > MAX_PLUGIN_STATE_CHARS:
+			# Refused rather than truncated: half a preset is not a smaller preset, it is
+			# a corrupt one, and a plugin handed it may do anything at all.
+			_plugin_states.erase(key)
+			_say("%s keeps more state than a patch can carry (%d KB) — it will open at its defaults."
+				% [key, captured.length() / 1024])
+			continue
+		_plugin_states[key] = captured
+
+
+## The patch as text, with each plugin's captured state written into it.
+##
+## A copy, always: the document itself never carries state between an edit and a save,
+## because a plugin quietly rewriting the patch on every graph change would make every
+## edit look like two.
+func _patch_text_with_plugin_states() -> String:
+	if _plugin_states.is_empty():
+		return JSON.stringify(patch, "  ")
+	var copy: Dictionary = patch.duplicate(true)
+	var table: Dictionary = copy.get("plugins", {})
+	for key in table.keys():
+		if _plugin_states.has(key):
+			table[key]["state"] = _plugin_states[key]
+	copy["plugins"] = table
+	return JSON.stringify(copy, "  ")
+
+
 ## Opens the plugin's own panel for a node, in a window of its own.
 ##
 ## One at a time: the editor has one place to put such a window, and a second press is
@@ -4774,26 +4832,40 @@ func _use_plugin(node_id: String, entry: Dictionary) -> void:
 	_begin_edit()
 	var table: Dictionary = patch.get("plugins", {})
 	var key := PluginPicker.table_key(entry)
-	# Reuse the entry when this patch already carries the same plugin, so choosing it on
-	# a second node does not accumulate near-identical rows.
-	var existing := ""
-	for id in table.keys():
-		if str(table[id].get("identity", "")) == str(entry.get("identity", "")):
-			existing = str(id)
-			break
-	if existing == "":
-		var unique := key
-		var n := 2
-		while table.has(unique):
-			unique = key + "-" + str(n)
-			n += 1
-		table[unique] = PluginPicker.table_entry(entry)
-		existing = unique
+	# One entry per node, even when two nodes name the same plugin.
+	#
+	# This used to reuse an existing entry for the same identity, on the grounds that a
+	# patch should not accumulate near-identical rows. That was an argument about
+	# tidiness, and state settles it against them: an entry carries the plugin's own
+	# preset and its slot bindings, so two Surges sharing one row cannot have two
+	# different sounds — and two Surges with two different sounds is the whole reason a
+	# patch has two of them. An entry is an instance, not a kind.
+	var unique := key
+	var n := 2
+	while table.has(unique):
+		unique = key + "-" + str(n)
+		n += 1
+	table[unique] = PluginPicker.table_entry(entry)
+	var existing := unique
 	patch["plugins"] = table
+	var replaced := ""
 	for node in patch.get("nodes", []):
 		if str(node.get("id", "")) == node_id:
+			replaced = str(node.get("plugin", ""))
 			node["plugin"] = existing
 			break
+	# One entry per node cuts both ways: changing a node's mind leaves the old row behind
+	# unless somebody sweeps it, and a patch that grows a dead plugin entry every time
+	# the user browses is worse than the duplicates this replaced.
+	if replaced != "" and replaced != existing:
+		var still_used := false
+		for node in patch.get("nodes", []):
+			if str(node.get("plugin", "")) == replaced:
+				still_used = true
+				break
+		if not still_used:
+			table.erase(replaced)
+			_plugin_states.erase(replaced)
 	# Schema 4 is where a patch may name a plugin; a reader that predates it must refuse
 	# rather than quietly drop the node that makes the sound.
 	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 4)
@@ -8170,8 +8242,13 @@ func _apply(same_sound_as: String = "") -> void:
 	_show_diagnostics(diagnostics)
 
 	if typeof(report) == TYPE_DICTIONARY and report["ok"]:
+		# The plugins are asked what they are *before* the graph that owns them is
+		# rebuilt, and the answers go back in with the patch. Without this every edit
+		# anywhere in the graph would return every hosted plugin to its defaults, which
+		# for a user who has spent ten minutes in Surge is not a reload, it is a loss.
+		_capture_plugin_states()
 		_close_plugin_face(true)
-		engine.load_patch(text, 48000.0)
+		engine.load_patch(_patch_text_with_plugin_states(), 48000.0)
 		# Loading puts the stored level back, so a mute has to be re-asserted or it lifts
 		# the first time anybody moves a node.
 		if muted:
@@ -8638,7 +8715,12 @@ func _on_file_selected(path: String) -> void:
 			return
 		# Written through the core's serialiser, not Godot's: the patch format is the
 		# product, and it should read the same whichever editor saved it.
-		out.store_string(engine.format_patch(JSON.stringify(patch, "  ")))
+		#
+		# The plugins are asked what they are on the way out. A saved patch that reopens
+		# with every hosted plugin back at its defaults has not saved the sound, and the
+		# sound is what a patch is for.
+		_capture_plugin_states()
+		out.store_string(engine.format_patch(_patch_text_with_plugin_states()))
 		_set_document_name(path.get_file())
 		_say("saved")
 		return
@@ -8782,7 +8864,11 @@ func _import_module(text: String, module_name: String) -> void:
 
 func _web_save() -> void:
 	_capture_positions()
-	var text: String = engine.format_patch(JSON.stringify(patch, "  "))
+	# The browser cannot host a plugin, so there is never anything to capture here — but
+	# a patch opened on the desktop, edited in a browser and saved back should not lose
+	# the state it arrived with, and going through the same path is what keeps it.
+	_capture_plugin_states()
+	var text: String = engine.format_patch(_patch_text_with_plugin_states())
 	var name: String = patch.get("metadata", {}).get("name", "patch")
 	var file_name := name.to_lower().replace(" ", "-") + ".json"
 	JavaScriptBridge.download_buffer(text.to_utf8_buffer(), file_name, "application/json")
@@ -8833,6 +8919,11 @@ func _load_text(text: String) -> void:
 		return
 	patch = parsed
 	_home_values.clear()
+	# Captured state belongs to the document it came out of. The keys are the patch's own
+	# short names — "surge", "verb" — so two unrelated patches will collide on them
+	# sooner rather than later, and a Surge preset from the last file arriving in this one
+	# is the kind of wrong that looks like the editor inventing sounds.
+	_plugin_states.clear()
 	# A freshly opened document has no unsaved changes in it by definition, and every
 	# way of opening one lands here — the examples menu, the file dialog, the browser
 	# file input and module import all call this.

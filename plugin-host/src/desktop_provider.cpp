@@ -175,6 +175,8 @@ public:
         plugin_->queue_parameter(static_cast<uint32_t>(binding.parameter), plain);
     }
 
+    bool save_state(std::string& bytes) override { return plugin_->save_state(bytes); }
+
     // ---- the plugin's own face ------------------------------------------------
     // Straight through. The core declares these so an editor has something to ask,
     // and the loaders already know how to do them; this is only the join. The one
@@ -270,6 +272,14 @@ private:
             if (i != 0) {
                 plugin = open_by_format(request.format, path, static_cast<int>(i), error);
                 if (plugin == nullptr) return nullptr;
+            }
+            // Told what it is before it is told to play. The patch's state is the
+            // plugin's own bytes, so this either works or the plugin refuses it — and a
+            // refusal is not fatal: a preset that no longer loads, because the plugin
+            // was updated under the patch, still leaves an instrument that makes a
+            // sound. Losing the preset is bad; losing the patch would be worse.
+            if (!request.state.empty()) {
+                plugin->load_state(request.state);
             }
             auto bindings = bind_slots(*plugin, request.slots);
             return std::make_unique<HostedInstance>(std::move(plugin), std::move(bindings));

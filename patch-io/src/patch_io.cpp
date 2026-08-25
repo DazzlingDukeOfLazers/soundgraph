@@ -151,7 +151,19 @@ bool read_plugins(const json::Value& root,
         if (const json::Value* name = body.find("name")) plugin.name = name->as_string();
         if (const json::Value* version = body.find("version")) plugin.version = version->as_string();
         if (const json::Value* path = body.find("path_hint")) plugin.path_hint = path->as_string();
-        if (const json::Value* state = body.find("state")) plugin.state = state->as_string();
+        if (const json::Value* state = body.find("state")) {
+            // Base64 on the wire, the plugin's own bytes in memory. A state that will
+            // not decode is reported and dropped rather than handed on: a plugin given
+            // half a preset is worse than a plugin given none, and the patch still
+            // opens either way.
+            if (!from_base64(state->as_string(), plugin.state)) {
+                plugin.state.clear();
+                diagnostics.push_back(warning(
+                    "unreadable_plugin_state",
+                    "Plugin '" + plugin.id + "' carries state that is not valid base64.",
+                    "The plugin opens with its own defaults instead."));
+            }
+        }
         if (const json::Value* slots = body.find("slots")) {
             if (slots->is_array()) {
                 for (const json::Value& slot : slots->array()) {
@@ -1257,6 +1269,21 @@ bool expand_modules(GraphDescription& description, std::vector<Diagnostic>& diag
 
 }  // namespace
 
+// The same base64 the sample buffers have always used, offered by name so that a
+// hosted plugin's state travels the same road — and so that the Godot editor, which
+// holds a patch as JSON-shaped values and has to put a captured state into one, spells
+// it exactly the way the reader below expects.
+std::string to_base64(const std::string& bytes) {
+    return base64_encode(std::vector<unsigned char>(bytes.begin(), bytes.end()));
+}
+
+bool from_base64(const std::string& text, std::string& bytes) {
+    std::vector<unsigned char> decoded;
+    if (!base64_decode(text, decoded)) return false;
+    bytes.assign(decoded.begin(), decoded.end());
+    return true;
+}
+
 bool parse_patch(const std::string& text,
                  GraphDescription& out,
                  std::vector<Diagnostic>& diagnostics) {
@@ -1843,7 +1870,9 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
             if (!plugin.name.empty()) entry.set("name", json::Value(plugin.name));
             if (!plugin.version.empty()) entry.set("version", json::Value(plugin.version));
             if (!plugin.path_hint.empty()) entry.set("path_hint", json::Value(plugin.path_hint));
-            if (!plugin.state.empty()) entry.set("state", json::Value(plugin.state));
+            if (!plugin.state.empty()) {
+                entry.set("state", json::Value(to_base64(plugin.state)));
+            }
             if (!plugin.slots.empty()) {
                 json::Value slots = json::Value::make_array();
                 for (int slot : plugin.slots) {

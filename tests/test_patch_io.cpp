@@ -1648,7 +1648,8 @@ TEST(a_plugin_is_named_by_identity_and_survives_a_round_trip) {
     CHECK(graph.plugins[0].format == "VST3");
     CHECK(graph.plugins[0].identity == "ABCDEF019182FAEB566D624153675854");
     CHECK(graph.plugins[0].name == "Surge XT Effects");
-    CHECK(graph.plugins[0].state == "c3VyZ2U=");
+    // Base64 on the wire, the plugin's own bytes in memory: "c3VyZ2U=" is "surge".
+    CHECK(graph.plugins[0].state == "surge");
     CHECK(graph.plugins[0].slots.size() == 3 && graph.plugins[0].slots[0] == 12 &&
           graph.plugins[0].slots[1] == -1);
     CHECK(graph.find_node("fx") != nullptr && graph.find_node("fx")->plugin == "verb");
@@ -1664,6 +1665,61 @@ TEST(a_plugin_is_named_by_identity_and_survives_a_round_trip) {
     CHECK(again.plugins[0].state == graph.plugins[0].state);
     CHECK(again.plugins[0].slots == graph.plugins[0].slots);
     CHECK(again.find_node("fx")->plugin == "verb");
+}
+
+TEST(plugin_state_is_bytes_and_survives_being_written_down) {
+    // The point of the encoding, in the one case that breaks a naive one: a plugin's
+    // state is arbitrary bytes, including the zero byte and everything above 127. Put
+    // straight into a JSON string it would end the string early, or produce a document
+    // that is not valid UTF-8 and cannot be read back by anything.
+    GraphDescription graph;
+    graph.nodes.push_back(soundgraph::NodeDescription{});
+    graph.nodes[0].id = "fx";
+    graph.nodes[0].type = "PluginEffect";
+    graph.nodes[0].plugin = "verb";
+
+    soundgraph::PluginDescription plugin;
+    plugin.id = "verb";
+    plugin.format = "CLAP";
+    plugin.identity = "org.surge-synth-team.surge-xt-fx";
+    std::string bytes;
+    for (int i = 0; i < 256; ++i) {
+        bytes.push_back(static_cast<char>(i));
+    }
+    plugin.state = bytes;
+    graph.plugins.push_back(plugin);
+
+    const std::string text = write_patch(graph, true);
+    // Nothing raw got out: the zero byte in particular never reaches the document.
+    CHECK(text.find('\0') == std::string::npos);
+
+    GraphDescription again;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(text, again, diagnostics));
+    CHECK(again.plugins.size() == 1);
+    CHECK(again.plugins[0].state == bytes);
+}
+
+TEST(plugin_state_that_will_not_decode_is_reported_and_dropped) {
+    // A hand-edited patch, or one truncated by something in the middle. The patch still
+    // opens — losing a preset is bad, losing the graph would be worse — and it says so
+    // rather than handing the plugin half a preset.
+    const std::string text = R"({
+        "schema_version": 4,
+        "plugins": {
+            "verb": { "format": "CLAP", "identity": "org.example.verb",
+                      "state": "not base64 at all!!" }
+        },
+        "nodes": [ { "id": "fx", "type": "PluginEffect", "plugin": "verb" } ],
+        "connections": []
+    })";
+
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(text, graph, diagnostics));
+    CHECK(graph.plugins.size() == 1);
+    CHECK(graph.plugins[0].state.empty());
+    CHECK(has_code(diagnostics, "unreadable_plugin_state"));
 }
 
 TEST(a_plugin_without_an_identity_is_refused) {

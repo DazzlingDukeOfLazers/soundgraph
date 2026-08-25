@@ -206,6 +206,8 @@ struct Options {
     int timeout = 60;       // seconds of wall clock before giving up; 0 disables
     std::vector<int> notes{60};
     std::vector<std::pair<std::string, double>> params;  // by display name
+    std::string load_state_path;
+    std::string save_state_path;
 };
 
 void usage() {
@@ -221,7 +223,33 @@ void usage() {
         "                         VALUE is in the range --list prints for it\n"
         "  --wav PATH             write the rendered audio as 32-bit float WAV\n"
         "  --rms-min X            fail (exit 1) if the render's RMS is below X\n"
-        "  --env NAME=VALUE       set an environment variable first, repeatable\n");
+        "  --env NAME=VALUE       set an environment variable first, repeatable\n"
+        "  --load-state PATH      hand the plugin a state blob before it plays\n"
+        "  --save-state PATH      write the plugin's own state out after the render\n");
+}
+
+// Whole-file reads and writes, binary. A plugin's state is bytes, and nothing here is
+// entitled to an opinion about them — in particular not about newlines, which is why
+// both sides open in binary mode on the platform that would otherwise translate them.
+bool read_file(const std::string& path, std::string& bytes) {
+    std::FILE* file = std::fopen(path.c_str(), "rb");
+    if (file == nullptr) return false;
+    char buffer[8192];
+    std::size_t got = 0;
+    while ((got = std::fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        bytes.append(buffer, got);
+    }
+    std::fclose(file);
+    return true;
+}
+
+bool write_file(const std::string& path, const std::string& bytes) {
+    std::FILE* file = std::fopen(path.c_str(), "wb");
+    if (file == nullptr) return false;
+    const std::size_t written =
+        bytes.empty() ? 0 : std::fwrite(bytes.data(), 1, bytes.size(), file);
+    std::fclose(file);
+    return written == bytes.size();
 }
 
 bool ends_with(const std::string& text, const std::string& suffix) {
@@ -310,6 +338,14 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
             const char* v = value("--rms-min");
             if (!v) return false;
             options.rms_min = std::atof(v);
+        } else if (arg == "--load-state") {
+            const char* v = value("--load-state");
+            if (!v) return false;
+            options.load_state_path = v;
+        } else if (arg == "--save-state") {
+            const char* v = value("--save-state");
+            if (!v) return false;
+            options.save_state_path = v;
         } else if (arg == "--wav") {
             const char* v = value("--wav");
             if (!v) return false;
@@ -429,6 +465,23 @@ int main(int argc, char** argv) {
     std::printf("  %zu parameter(s), %d output channel(s)\n", parameters.size(),
                 plugin->channel_count());
 
+    // Before anything is set and before the plugin is activated, which is the order the
+    // desktop provider uses too: a plugin is told what it is, and then told to play.
+    if (!options.load_state_path.empty()) {
+        std::string bytes;
+        if (!read_file(options.load_state_path, bytes)) {
+            std::printf("sg-host: could not read %s\n", options.load_state_path.c_str());
+            return 1;
+        }
+        if (!plugin->load_state(bytes)) {
+            std::printf("sg-host: the plugin refused the state in %s\n",
+                        options.load_state_path.c_str());
+            return 1;
+        }
+        std::printf("  loaded %zu bytes of state from %s\n", bytes.size(),
+                    options.load_state_path.c_str());
+    }
+
     if (options.gui) {
         // A plugin's editor usually wants the plugin activated behind it — the face is
         // a view onto something running, not a picture.
@@ -537,6 +590,26 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::printf("  wrote %s\n", options.wav_path.c_str());
+    }
+
+    // After the render rather than before it, so that a --param has actually travelled
+    // through a process call — and, for a format that defers that work to a timer,
+    // through the settle that follows it. State written any earlier would be the state
+    // the plugin had when it was opened, which is the one nobody asked for.
+    if (!options.save_state_path.empty()) {
+        std::string bytes;
+        if (!plugin->save_state(bytes)) {
+            std::printf("sg-host: this plugin has no state to give\n");
+            plugin->deactivate();
+            return 1;
+        }
+        if (!write_file(options.save_state_path, bytes)) {
+            std::printf("sg-host: could not write %s\n", options.save_state_path.c_str());
+            plugin->deactivate();
+            return 1;
+        }
+        std::printf("  wrote %zu bytes of state to %s\n", bytes.size(),
+                    options.save_state_path.c_str());
     }
 
     plugin->deactivate();

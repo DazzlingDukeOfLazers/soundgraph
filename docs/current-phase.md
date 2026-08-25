@@ -50,6 +50,8 @@ node tools/verify-roundtrip.mjs
 tools/get-plugin-sdks.sh                                   # once per clone
 cmake -S . -B build-clap -DSOUNDGRAPH_CLAP=ON && cmake --build build-clap
 build-clap/bin/sg-host --scan                              # what this machine has
+build-clap/bin/sg-host <plugin> --save-state s.bin         # its preset, as bytes
+build-clap/bin/sg-host <plugin> --load-state s.bin         # and back again
 SOUNDGRAPH_PLUGIN_PATH=/path/to/plugins build-clap/bin/sg-host "Surge XT.clap" --gui
 # and then, so the Godot extension picks the same SDKs up:
 cmake -S runtime-godot -B runtime-godot/build     # prints "soundgraph: hosting plugins"
@@ -542,10 +544,22 @@ plugin is an instrument with no audio inputs and Surge's FX rack roared at peak 
 Surge's Global Volume is `-810883302` — and for two stages that looked exactly like slot
 control not working; only the exact `-1` a patch writes means unbound now.
 
-**Not saved yet: the plugin's own state.** `PluginDescription::state` is in the schema
-and nothing writes it, so every graph edit returns the plugin to its defaults. The
-editor says so when it happens rather than letting the panel vanish unexplained. This is
-the next piece of work on this feature.
+**State is saved (2026-08-25).** A patch carries each plugin's own bytes — its preset,
+its wavetable, everything a knob cannot say — base64 at the JSON boundary and raw
+everywhere inside. The editor captures at the two moments that need it, reloading and
+saving, and keeps the states beside the document rather than in it so that a plugin
+rewriting itself never lands on the undo stack. Verified with Surge XT in the Godot
+editor: a driven slot changes Surge's state, an unrelated graph edit rebuilds everything,
+and the state that comes back is byte-identical.
+
+Measured sizes, because the ceiling wanted a number rather than a feeling: Surge XT's
+initial patch is 50 KB of state, Dexed's 6 KB, Surge's effects rack 1 KB. The editor
+refuses above four mebibytes of base64 per plugin and says so — half a preset is not a
+smaller preset.
+
+`sg-host --save-state` / `--load-state` is how this was measured and is how it is tested:
+`sg_host_saves_and_restores_plugin_state` runs three processes, because a plugin that is
+never destroyed and reopened can round-trip by accident.
 
 ## Axoloti (2026-08-25)
 

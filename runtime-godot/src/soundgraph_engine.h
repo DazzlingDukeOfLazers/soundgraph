@@ -131,6 +131,15 @@ public:
     // meaningful once the editor is open, which is the plugin's rule and not ours.
     godot::Vector2i plugin_gui_size(const godot::String& node_id);
 
+    // What the plugin currently considers itself, spelled the way a patch spells it:
+    // base64. Empty when the node names no plugin, when the plugin is not on this
+    // machine, or when it has no state to give — three different situations that all
+    // mean the same thing to a caller, which is "nothing to write down".
+    //
+    // Asking is not free — a plugin assembles its whole preset — so this is for saving
+    // and for the moment before a reload, not for a frame loop.
+    godot::String plugin_state(const godot::String& node_id);
+
     // Every hosted plugin gets the main thread, once. Call it from _process: a plugin
     // that has been clicked defers work and waits, so an editor nobody ticks is one
     // whose knobs move and whose sound does not follow.

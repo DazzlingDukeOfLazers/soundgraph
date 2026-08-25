@@ -328,24 +328,62 @@ windows than it does about DLLs.
   aware and sg-host's is not. Both are right. The request is clamped to the usable screen
   anyway: a window larger than the screen is one whose title bar cannot be reached.
 
-**The gap this opens, said out loud.** A graph edit rebuilds the graph, which re-acquires
-every plugin, which discards whatever the user did inside the plugin's panel — because
-`PluginDescription::state` is in the schema and nothing writes it yet. Before the panel
-existed this was theoretical; now it is the first thing a user will hit, and the editor
-says so when it happens rather than letting a panel vanish unexplained. Saving and
-restoring plugin state is the next piece of work, not a defect in this one.
+## The plugin's own memory
+
+The panel made this urgent: ten minutes of work inside Surge, thrown away by adding a
+node somewhere else in the graph. `PluginDescription::state` had been in the schema since
+the design was written and nothing wrote it.
+
+**Both formats already have the call.** CLAP passes a pair of stream callbacks so that a
+plugin with a hundred megabytes of samples need not assemble them in memory first; VST3
+passes an `IBStream`, and the state has to be given to the *component* and the
+*controller* both — restore only the first and the plugin sounds right and looks wrong,
+its knobs still showing what they showed before. That is the same class of bug the
+component/controller connection exists to prevent, so it is fixed the same way.
+
+**Raw bytes in memory, base64 on the wire.** `PluginDescription::state` is the plugin's
+own bytes everywhere inside the program; patch-io encodes at the JSON boundary, using the
+same base64 the sample buffers have always used. This is not only tidiness — a plugin's
+state contains zero bytes and everything above 127, so putting it straight into a JSON
+string ends the string early and produces a document that is not valid UTF-8 and cannot
+be read back by anything. A state that will not decode is a warning and an empty preset,
+never a refused patch: losing a preset is bad, losing the graph would be worse.
+
+**Captured beside the document, joined to it twice.** The editor keeps states in a table
+next to the patch rather than in it. A plugin rewriting the patch on every knob turn
+would put the plugin's doing on the editor's undo stack, and would change the flattened
+fingerprint that decides whether an edit needs a reload at all. The two moments the
+states join the document are the two that need them: reloading, and saving.
+
+That closes the wart the panel opened. An ordinary graph edit now captures every hosted
+plugin's state, rebuilds, and hands each plugin back what it had. Verified with Surge XT
+inside the Godot editor: a bound slot moves Surge's own filter cutoff, the state changes
+to match, an unrelated node is added to the graph, and the state that comes back is
+byte-identical to the state that went in — and is not the untouched one.
+
+**An entry is an instance, not a kind.** Choosing the same plugin on a second node used
+to reuse the first node's table entry, to avoid rows that differ only by a number. State
+settles that the other way: an entry carries a preset and a set of slot bindings, so two
+Surges sharing one row cannot have two different sounds — and two Surges with two
+different sounds is the whole reason a patch has two of them.
+
+**The ceiling, with a measurement behind it.** Four mebibytes of base64 per plugin,
+refused rather than truncated, because half a preset is not a smaller preset. The number
+comes from asking real plugins rather than from a feeling: Surge XT's initial patch is
+50 KB of state, Dexed's 6 KB, Surge's effects rack 1 KB. Four mebibytes is eighty Surges.
+Raise it when a real plugin is measured needing more.
+
+**What state does not cover.** A hosted plugin's *bound* slots are driven by the graph
+and are pushed on the first block after a restore, overwriting whatever the state said
+about those particular parameters. That is correct and is the point of binding one — but
+it means a patch's sound is the plugin's state with the graph's slots on top, in that
+order, and neither half tells the whole story on its own.
 
 ## Still open
 
 - **Latency compensation.** Plugins report latency and the graph has no notion of it.
   Irrelevant for a reverb, audible the moment two paths run in parallel and only one
   has a plugin in it. Stage 2 can report latency and ignore it; Stage 3 cannot.
-- **Plugin state is not saved.** `PluginDescription::state` exists in the schema and
-  nothing reads or writes it. Every graph edit therefore returns the plugin to its
-  defaults. This was theoretical until the panel shipped; it is now the most visible
-  thing missing.
-- **How much state is too much.** The embedded-state ceiling wants a number taken from
-  real plugin presets rather than invented here.
 - **Resizing.** The host tells the plugin nothing about the window size, so dragging the
   panel's edge stretches the frame and not the plugin. Both formats have a call for it
   (`clap_plugin_gui::set_size`, `IPlugView::onSize`) and `HostedPlugin` has no verb for

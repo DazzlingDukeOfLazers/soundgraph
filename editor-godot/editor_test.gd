@@ -9333,12 +9333,21 @@ func _initialize() -> void:
 		"the node names the entry")
 	check(int(main.patch.get("schema_version", 1)) == 4, "the schema version rises to 4")
 
-	# The same plugin on a second node reuses the entry rather than accumulating rows
-	# that differ only by a number.
+	# The same plugin on a second node gets its own entry. This used to share one, to
+	# avoid rows that differ only by a number; state settled it the other way, because an
+	# entry carries a preset and two instruments in one patch are usually two sounds.
 	main._use_plugin("fx2", surge_entry)
-	check(main.patch["plugins"].size() == 1, "one entry serves both nodes")
-	check(str(main.patch["nodes"][1].get("plugin", "")) == "surge-xt",
-		"the second node names the same entry")
+	check(main.patch["plugins"].size() == 2, "a second node gets a second entry")
+	check(str(main.patch["nodes"][1].get("plugin", "")) == "surge-xt-2",
+		"and the second node names it")
+
+	# Changing a node's mind must not leave the old row behind: one entry per node only
+	# works if the entry goes when the node stops naming it.
+	main._use_plugin("fx2", found_plugins[0])
+	check(main.patch["plugins"].size() == 2, "swapping a node's plugin does not add a third row")
+	check(not main.patch["plugins"].has("surge-xt-2"), "the abandoned entry is swept away")
+	check(main.patch["plugins"].has("surge-xt"), "and the entry another node still uses stays")
+	main._use_plugin("fx2", surge_entry)
 
 	# Slots: -1 is the only unbound, and a real id that happens to be negative is kept.
 	main._set_plugin_slots("surge-xt", [-810883302, -1, 1746267673, -1, -1])
@@ -9375,6 +9384,26 @@ func _initialize() -> void:
 	check(not main.engine.open_plugin_gui("no-such-node", 0),
 		"a window handle of zero is refused rather than passed on")
 	main.engine.tick_plugins()  # nothing hosted: has to be a quiet no-op, not a crash
+
+	# ---- the plugin's own state -------------------------------------------------------
+	# Captured beside the document and joined to it only when the patch is reloaded or
+	# saved, so that a plugin quietly rewriting itself never looks like an edit.
+	main._plugin_states = {"surge-xt": "c3VyZ2U="}
+	var with_state: Variant = JSON.parse_string(main._patch_text_with_plugin_states())
+	check(typeof(with_state) == TYPE_DICTIONARY, "the patch with state is still a patch")
+	check(str(with_state["plugins"]["surge-xt"].get("state", "")) == "c3VyZ2U=",
+		"and carries the captured state")
+	check(not main.patch["plugins"]["surge-xt"].has("state"),
+		"while the document itself is left alone — state is not an edit")
+	main._plugin_states = {}
+	var without_state: Variant = JSON.parse_string(main._patch_text_with_plugin_states())
+	check(not without_state["plugins"]["surge-xt"].has("state"),
+		"and nothing is invented when there is nothing to write down")
+
+	# Asking a graph with no plugins in it is a quiet nothing, not a crash: this is the
+	# path every machine without the SDKs takes.
+	main._capture_plugin_states()
+	check(main._plugin_states.is_empty(), "a graph with no hosted plugin has no state to give")
 
 	# Closing a panel that was never opened must not disturb the editor. The embedding
 	# setting is global and every dialog in this program depends on it, so the one path

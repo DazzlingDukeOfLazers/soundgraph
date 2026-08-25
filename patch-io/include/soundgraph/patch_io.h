@@ -47,4 +47,19 @@ bool save_patch(const std::string& path,
 
 #endif  // SOUNDGRAPH_NO_FILE_IO
 
+// ---- binary in a text format ---------------------------------------------------
+// A hosted plugin's state is bytes it wrote and only it can read — and JSON holds text,
+// so the two have to meet somewhere. They meet here, at the boundary that already owns
+// the question of how a patch is spelled: PluginDescription::state is the plugin's own
+// bytes everywhere in memory, and base64 only on the way to and from a file.
+//
+// Exposed rather than kept private because the Godot editor holds a patch as a
+// dictionary of JSON-shaped values and needs to put a captured state into it, in the
+// spelling the file will use.
+std::string to_base64(const std::string& bytes);
+
+// False on anything that is not base64 — which for a hand-edited patch is a thing worth
+// saying rather than quietly loading a plugin with half a preset.
+bool from_base64(const std::string& text, std::string& bytes);
+
 }  // namespace soundgraph

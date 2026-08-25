@@ -90,6 +90,24 @@ if(SOUNDGRAPH_BUILD_TESTS)
     set_tests_properties(sg_host_swaps_patches_through_the_vst3 PROPERTIES
             ENVIRONMENT "${SOUNDGRAPH_HOST_PATCHES}"
             FAIL_REGULAR_EXPRESSION "rms 0\\.16")
+    # ---- the plugin's own state ------------------------------------------------------
+    # Round-tripped rather than compared to a stored blob: a plugin's state is its own
+    # business and a golden file of somebody's preset would break every time they
+    # changed their minds about their own format. What is being tested is that the
+    # bytes make the journey, which is a property of this host and not of that plugin.
+    #
+    # Our own plugin, because it is the one every machine building this has. Its state
+    # is the patch it is playing, so --param Patch swaps it to something else first and
+    # the saved state has to be of the patch it ended on rather than the one it opened
+    # with — which is the failure this ordering exists to catch.
+    add_test(NAME sg_host_saves_and_restores_plugin_state
+            COMMAND ${CMAKE_COMMAND}
+                -DHOST=$<TARGET_FILE:sg-host>
+                -DPLUGIN=$<TARGET_FILE:soundgraph-plugin_clap>
+                -DPATCHES=${CMAKE_SOURCE_DIR}/examples/patches/synths
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/state-roundtrip
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/state-roundtrip.cmake)
+
     # ---- the provider, against a plugin this build made itself ----------------------
     # The point is not the sound — our own plugin is an instrument, so as an effect it
     # has nothing to say — but that a patch naming a plugin by identity causes a real
