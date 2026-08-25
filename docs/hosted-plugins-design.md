@@ -158,12 +158,18 @@ same patch with the plugin unreachable renders at 0.800 — different audio, and
 second says why. Two ctests hold it, both using only artifacts this build makes:
 `sg_render_resolves_a_plugin_by_identity` and `sg_render_says_what_it_could_not_find`.
 
-Not yet demonstrated: a slot moving a real plugin's sound. The mapping is unit-tested
-either side of the seam — the node sends slot indices, the provider turns them into the
-plugin's own parameter ids — but the only effect plugin on this machine is Surge XT
-Effects, whose generic "FX Parameter N" controls do nothing until an effect type is
-chosen, and that choice lives in plugin state rather than in a parameter. It wants a
-second effect plugin to confirm against, not more code.
+Slot control is demonstrated (2026-08-25). Surge XT hosted as a `PluginInstrument`
+with its Global Volume on slot 1 renders at rms 0.068, 0.0043, 0.00082 and 0.00036 as
+the slot moves 1.0 → 0.5 → 0.2 → 0.05. It did not work before, and the reason was ours
+rather than the plugin's: **a CLAP parameter id is a uint32, so through an int it is
+usually negative** — Surge XT's Global Volume is -810883302 — and the provider read
+"negative" as "unbound", silently dropping most of the real ids on the machine. From
+the outside that was indistinguishable from a slot that did nothing, which is exactly
+how it was described here for two stages. Only the -1 a patch writes for an empty slot
+means unbound now, and `an_unbound_slot_is_only_the_one_the_patch_marks_unbound` holds
+it. A second fix rode along: CLAP publishes plain parameter ranges where VST3
+normalises everything, so a slot's 0..1 is mapped onto whatever range the plugin
+actually declares.
 
 **Stage 3 — `PluginInstrument`. Built, 2026-08-25.** Decided in favour of the **voice
 boundary**: a hosted instrument is the second place in the graph where the polyphonic

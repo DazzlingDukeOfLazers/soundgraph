@@ -854,4 +854,25 @@ TEST(a_voice_boundary_keeps_what_follows_it_out_of_the_voice_system) {
     CHECK(filters == 1);
 }
 
+TEST(an_unbound_slot_is_only_the_one_the_patch_marks_unbound) {
+    // A CLAP parameter id is a uint32, so through an int it is very often negative —
+    // Surge XT's Global Volume is -810883302. The provider once read "negative" as
+    // "unbound" and silently dropped most of the real ids on the machine, which looked
+    // from the outside exactly like a slot that did nothing. Only -1 means unbound, and
+    // the graph must pass every other id through untouched.
+    GraphDescription graph = plugin_chain();
+    graph.plugins[0].slots = {-810883302, -1, 7};
+    set(graph, "fx", "slot1", 0.25);
+
+    OnePluginProvider provider;
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+    CHECK(provider.asked_for.slots.size() == 3);
+    CHECK(provider.asked_for.slots[0] == -810883302);
+    CHECK(provider.asked_for.slots[1] == -1);
+}
+
 TEST_MAIN("graph tests")

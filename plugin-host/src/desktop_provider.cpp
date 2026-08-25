@@ -117,9 +117,22 @@ std::unique_ptr<HostedPlugin> open_by_format(const std::string& format, const st
 
 // ---- the adapter -------------------------------------------------------------------
 
+// What a slot needs to know to speak to one particular parameter: which one, and in
+// what units. A node always sends 0..1, because a knob in SoundGraph is 0..1. VST3
+// agrees and reports every parameter as 0..1, but CLAP reports plain ranges — "FX Type"
+// on Surge XT Effects runs 0..30 — so sending a normalised value straight through would
+// have reached only the first two of thirty effects and looked, from the outside,
+// exactly like a slot that did nothing.
+struct SlotBinding {
+    bool bound = false;
+    int parameter = -1;
+    double minimum = 0.0;
+    double maximum = 1.0;
+};
+
 class HostedInstance final : public soundgraph::HostedPluginInstance {
 public:
-    HostedInstance(std::unique_ptr<HostedPlugin> plugin, std::vector<int> slots)
+    HostedInstance(std::unique_ptr<HostedPlugin> plugin, std::vector<SlotBinding> slots)
         : plugin_(std::move(plugin)), slots_(std::move(slots)) {}
 
     void prepare(double sample_rate, int max_block_frames) override {
@@ -139,6 +152,11 @@ public:
             return;
         }
         plugin_->process_audio(inputs, input_channels, outputs, output_channels, frames);
+        // A plugin that was asked to change something structural — Surge XT rebuilding
+        // its effect chain when FX Type moves — asks for the main thread and waits.
+        // Offline this is that thread, so answering here is right and the change lands
+        // in the next block. A live host will want this moved off the audio callback.
+        plugin_->main_thread_tick();
     }
 
     void note_on(int note, float velocity) override {
@@ -150,16 +168,48 @@ public:
 
     void set_control(int slot, float value) override {
         if (slot < 0 || slot >= static_cast<int>(slots_.size())) return;
-        const int parameter = slots_[static_cast<std::size_t>(slot)];
-        if (parameter < 0) return;  // an unbound slot drives nothing, quietly
-        plugin_->queue_parameter(static_cast<uint32_t>(parameter), value);
+        const SlotBinding& binding = slots_[static_cast<std::size_t>(slot)];
+        if (!binding.bound) return;  // an unbound slot drives nothing, quietly
+        std::fprintf(stderr, "[dbg] set_control slot=%d value=%f param=%d\n", slot, value,
+                     binding.parameter);
+        const double plain =
+            binding.minimum + static_cast<double>(value) * (binding.maximum - binding.minimum);
+        plugin_->queue_parameter(static_cast<uint32_t>(binding.parameter), plain);
     }
 
 private:
     std::unique_ptr<HostedPlugin> plugin_;
-    std::vector<int> slots_;
+    std::vector<SlotBinding> slots_;
     bool active_ = false;
 };
+
+// Resolves the patch's slot table against the ranges this plugin actually publishes.
+std::vector<SlotBinding> bind_slots(const HostedPlugin& plugin, const std::vector<int>& wanted) {
+    const std::vector<Parameter> parameters = plugin.parameters();
+    std::vector<SlotBinding> bindings;
+    bindings.reserve(wanted.size());
+    for (const int id : wanted) {
+        SlotBinding binding;
+        // A CLAP parameter id is a uint32 and is very often negative once it has been
+        // through an int — Surge XT's Global Volume is -810883302. So "negative means
+        // unbound" was a sentinel that collided with most of the real ids on this
+        // machine, and silently dropped them. Only the exact -1 the patch writes for an
+        // empty slot means unbound.
+        binding.bound = id != -1;
+        binding.parameter = id;
+        for (const Parameter& parameter : parameters) {
+            if (static_cast<int>(parameter.id) == id) {
+                binding.minimum = parameter.minimum;
+                binding.maximum = parameter.maximum;
+                break;
+            }
+        }
+        std::fprintf(stderr, "[dbg] bind slot -> param=%d range %f..%f\n", binding.parameter,
+                     binding.minimum, binding.maximum);
+        bindings.push_back(binding);
+    }
+    return bindings;
+}
 
 // ---- the provider ------------------------------------------------------------------
 
@@ -206,13 +256,47 @@ private:
                 plugin = open_by_format(request.format, path, static_cast<int>(i), error);
                 if (plugin == nullptr) return nullptr;
             }
-            return std::make_unique<HostedInstance>(std::move(plugin), request.slots);
+            auto bindings = bind_slots(*plugin, request.slots);
+            return std::make_unique<HostedInstance>(std::move(plugin), std::move(bindings));
         }
         return nullptr;
     }
 };
 
 }  // namespace
+
+std::vector<PluginSummary> scan_installed_plugins() {
+    std::vector<PluginSummary> found;
+    for (const char* format : {"CLAP", "VST3"}) {
+        for (const fs::path& path : candidates(format)) {
+            std::string error;
+            std::unique_ptr<HostedPlugin> plugin = open_by_format(format, path.string(), 0, error);
+            if (plugin == nullptr) continue;  // not a plugin, or one that refused to open
+            const auto& available = plugin->available();
+            for (std::size_t i = 0; i < available.size(); ++i) {
+                PluginSummary summary;
+                summary.format = format;
+                summary.identity = available[i].id;
+                summary.name = available[i].name;
+                summary.vendor = available[i].vendor;
+                summary.path = path.string();
+                // Parameters come from the instance that is open; for a file holding
+                // several, only the first is described rather than opening all of them
+                // during a scan that is already the slowest thing here.
+                if (i == 0) {
+                    for (const Parameter& parameter : plugin->parameters()) {
+                        if (parameter.hidden) continue;
+                        summary.parameters.emplace_back(static_cast<int>(parameter.id),
+                                                        parameter.name);
+                    }
+                    summary.is_instrument = plugin->channel_count() > 0;
+                }
+                found.push_back(std::move(summary));
+            }
+        }
+    }
+    return found;
+}
 
 std::unique_ptr<soundgraph::PluginProvider> make_desktop_plugin_provider() {
     return std::make_unique<DesktopProvider>();

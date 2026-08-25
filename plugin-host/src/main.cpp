@@ -26,6 +26,7 @@
 #include <thread>
 #include <vector>
 
+#include "desktop_provider.h"
 #include "hosted_plugin.h"
 #include "wav.h"
 
@@ -106,6 +107,7 @@ constexpr int kSettleMilliseconds = 60;
 
 struct Options {
     std::string plugin_path;
+    bool scan = false;
     std::string wav_path;
     bool list = false;
     int index = 0;
@@ -140,10 +142,42 @@ bool ends_with(const std::string& text, const std::string& suffix) {
                       [](char a, char b) { return std::tolower(a) == std::tolower(b); });
 }
 
+// Escapes a string for JSON. Small on purpose: plugin names contain quotes and
+// backslashes often enough to matter, and everything else here is ASCII from a
+// filesystem or a vendor's descriptor.
+std::string json_escape(const std::string& text) {
+    std::string out;
+    out.reserve(text.size() + 8);
+    for (const char c : text) {
+        switch (c) {
+            case 0x22: out += "\\\""; break;   // a quote
+            case 0x5C: out += "\\\\"; break;   // a backslash
+            case 0x0A: out += "\\n"; break;
+            case 0x0D: out += "\\r"; break;
+            case 0x09: out += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buffer[8];
+                    std::snprintf(buffer, sizeof(buffer), "\\u%04x", c);
+                    out += buffer;
+                } else {
+                    out += c;
+                }
+        }
+    }
+    return out;
+}
+
 bool parse(int argc, char** argv, Options& options, std::string& error) {
     if (argc < 2) {
         error = "no plugin path given";
         return false;
+    }
+    // --scan is the one mode with nothing to point at: it is asking about the machine
+    // rather than about a file.
+    if (std::strcmp(argv[1], "--scan") == 0) {
+        options.scan = true;
+        return true;
     }
     options.plugin_path = argv[1];
     for (int i = 2; i < argc; ++i) {
@@ -240,6 +274,34 @@ int main(int argc, char** argv) {
     }
 
     silence_system_dialogs();
+
+    // Scanning is its own program, really: it opens every plugin on the machine and
+    // says what it found, in a shape an editor can read. Out of process on purpose —
+    // opening a stranger's plugin is exactly the act that hangs or crashes, and an
+    // editor should not be the process it happens in. Podolski is the standing proof.
+    if (options.scan) {
+        Watchdog scan_watchdog(options.timeout > 0 ? options.timeout * 4 : 0,
+                               "the plugin scan");
+        const auto found = soundgraph::host::scan_installed_plugins();
+        std::printf("[\n");
+        for (std::size_t i = 0; i < found.size(); ++i) {
+            const auto& plugin = found[i];
+            std::printf("  {\"format\": \"%s\", \"identity\": \"%s\", \"name\": \"%s\",\n"
+                        "   \"vendor\": \"%s\", \"path\": \"%s\", \"parameters\": [",
+                        json_escape(plugin.format).c_str(), json_escape(plugin.identity).c_str(),
+                        json_escape(plugin.name).c_str(), json_escape(plugin.vendor).c_str(),
+                        json_escape(plugin.path).c_str());
+            for (std::size_t j = 0; j < plugin.parameters.size(); ++j) {
+                std::printf("%s{\"id\": %d, \"name\": \"%s\"}", j == 0 ? "" : ", ",
+                            plugin.parameters[j].first,
+                            json_escape(plugin.parameters[j].second).c_str());
+            }
+            std::printf("]}%s\n", i + 1 == found.size() ? "" : ",");
+        }
+        std::printf("]\n");
+        return 0;
+    }
+
     // Armed before the library is even opened: loading is one of the places a plugin
     // can decide to ask the user something.
     Watchdog watchdog(options.timeout, options.plugin_path);
