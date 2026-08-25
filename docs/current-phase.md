@@ -1,7 +1,9 @@
 # Current Phase
 
-**Features until the show.** Work happens on `dev` and merges to `main` at milestones —
-the two are in sync as of the `spoken-roll` tag (2026-08-23). Knobcon is Sep 11; the
+**Features until the show.** Work happens on short-lived branches off `main`, each
+landing with its tests and a tag named for itself. `dev` was the integration branch until
+the `spoken-roll` tag (2026-08-23) and has not moved since; `main` is 52 commits ahead of
+it, and everything now goes there directly. Knobcon is Sep 11; the
 Sep 4 feature freeze was deliberately relaxed ("it's a great marketing tool and we don't
 need hardware to make it spread itself"), so features keep landing: since the freeze
 decision the vocabulary grew from 25 to 44 node types (through the maths family, Clock,
@@ -20,7 +22,7 @@ architectures:
 
 | target | how it runs | verified by |
 |---|---|---|
-| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 24 ctest suites, 18 golden vectors |
+| Windows x64 | `sg-play`, `sg-render`, `sg-validate` | 25 ctest cases (34 with the plugin SDKs), 18 golden vectors |
 | Browser | WebAssembly in an AudioWorklet | `verify-goldens.mjs`, 18 cases, worst 2.09e-7 |
 | Godot 4.7 | GDExtension | ~1170 editor checks, plus design and layout suites |
 | ESP32-S3 | generic firmware, Waveshare audio board | `sg-serial.py verify-goldens`, all 18 cases, worst 9.16e-5 |
@@ -419,6 +421,13 @@ These all cost real time once and are written up in `decisions.md` or the compon
 READMEs. Collected here because the pattern is the same each time — the symptom pointed
 somewhere other than the cause.
 
+- **The web page runs whatever `editor-web/soundgraph.wasm` is on disk.** It is
+  gitignored build output, so a clone or a machine that has not run the WebAssembly build
+  lately is serving a core from whenever it last did — and nothing says so. On 2026-08-25
+  this machine's copy was from Aug 10, which predates `Clock` and `StepSequencer`, so the
+  onboarding tour's own tutorial patch could not have loaded. `verify-onboarding.mjs` does
+  not catch it: it checks the tour against the patch file, not against the compiled core.
+  Rebuild before believing anything the browser shows.
 - **An embedded Godot subwindow has no window behind it.** `Window.is_embedded()` is
   true by default, `DisplayServer.window_get_native_handle` then returns the *main*
   window's, and a plugin handed it draws over the whole editor. Turning
