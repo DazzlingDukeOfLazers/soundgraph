@@ -64,7 +64,23 @@ template and `docs/decisions.md` records what a mismatch costs — plus CMake 4.
 1.13.2 from winget, both user-scope, no elevation.
 
 Still missing, so **the native build, ctest and therefore `tools/pre-push.sh` cannot run
-here**: there is no C++ compiler at all — no MSVC, no gcc, no clang — and no ESP-IDF. What
+here**: there is no C++ compiler at all — no MSVC, no gcc, no clang — and no ESP-IDF.
+
+**Installing one is not a free action on this box, and both obvious routes are blocked.**
+`winget install Microsoft.VisualStudio.2022.BuildTools` needs UAC elevation and returns
+1602 from a non-interactive shell. MinGW-w64 installs fine at user scope and then cannot
+run at all: **Smart App Control is on** (`HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy`,
+`VerifiedAndReputablePolicyState = 1`), and it blocks the unsigned binaries — every one of
+them exits `0xC0E90002` with no output, and
+`Microsoft-Windows-CodeIntegrity/Operational` names the file:
+`x86_64-w64-mingw32-g++.exe attempted to load libwinpthread-1.dll that did not meet the
+Enterprise signing level requirements`.
+
+So the desktop extension needs **Daniel at the keyboard**, approving the Build Tools
+installer. That is also the toolchain this project documents. Smart App Control could be
+turned off instead — but it is **one-way**: Windows offers no supported route back to On
+short of reinstalling, so it should not be traded for a build. Emscripten, CMake and Ninja
+are unaffected: emcc runs through Python, and the Kitware and Ninja binaries are signed. What
 does work is the browser half end to end: configure with the Emscripten toolchain file
 directly rather than through `emcmake`, which is worth knowing because `emsdk_env.bat`
 detects MSYS and emits *bash* exports, so calling it from `cmd` sets nothing and leaves
