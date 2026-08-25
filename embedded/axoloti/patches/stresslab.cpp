@@ -23,6 +23,11 @@
 
 #define STRESSLAB_ID 0x53545231u  // "STR1"
 
+// Firmware MIDI layer (midi.h at 1.0.12-2), via --just-symbols.
+extern "C" {
+void MidiSend3(int32_t dev, uint8_t port, uint8_t b0, uint8_t b1, uint8_t b2);
+}
+
 #define MAX_OSC 1024
 #define SDRAM_BASE ((volatile uint32_t *)0xC0000000u)
 #define SDRAM_RING_WORDS (1u << 20)          // 4 MB of the 8 MB chip
@@ -64,6 +69,48 @@ static inline uint32_t bits_from_f(float f) {
   union { uint32_t u; float f; } c;
   c.f = f;
   return c.u;
+}
+
+// The burst trigger: CC 119 on channel 16. When it arrives (over any
+// transport — in practice the USB device port, which needs no hardware), the
+// handler transmits the whole burst described by ctrl_midi_tx synchronously.
+// This runs in the firmware's MIDI input thread, never the DSP thread, so the
+// blocking sends (DIN's sdWrite at 31250 baud, USB's bulk write) are harmless
+// backpressure rather than an audio dropout. The firmware's own MIDI-thru
+// objects write from this same context.
+#define MIDI_BURST_TRIGGER_CC 119
+
+static void run_midi_burst(void) {
+  uint32_t req = SHM->ctrl_midi_tx;
+  const int32_t dev = (int32_t)(req >> 24);
+  uint32_t remaining = req & 0x00FFFFFFu;
+  uint32_t i = 0;
+  while (remaining > 0) {
+    MidiSend3(dev, 1, 0x90, (uint8_t)((i * 7) % 128),
+              (uint8_t)(((i * 13) % 127) + 1));
+    i++;
+    remaining--;
+    SHM->ctrl_midi_tx = remaining ? (((uint32_t)dev << 24) | remaining) : 0;
+  }
+}
+
+// Called by the firmware from its input threads (one per transport), never
+// from the DSP thread. Counts, checksums, and optionally echoes.
+static void midi_in(midi_device_t dev, uint8_t port, uint8_t b0, uint8_t b1,
+                    uint8_t b2) {
+  if ((b0 & 0xFF) == 0xBF && b1 == MIDI_BURST_TRIGGER_CC) {
+    run_midi_burst();  // the trigger itself is not counted
+    return;
+  }
+  const uint32_t word = ((uint32_t)dev << 24) | ((uint32_t)b0 << 16) |
+                        ((uint32_t)b1 << 8) | b2;
+  if (dev == 1) SHM->cum_midi_din = SHM->cum_midi_din + 1;
+  else if (dev == 2) SHM->cum_midi_usbd = SHM->cum_midi_usbd + 1;
+  else if (dev == 3) SHM->cum_midi_usbh = SHM->cum_midi_usbh + 1;
+  SHM->midi_checksum = SHM->midi_checksum * 31u + word;
+  SHM->midi_last = word;
+  if (SHM->ctrl_midi_echo & (1 << dev))
+    MidiSend3(dev, port, b0, b1, b2);
 }
 
 static void run_load_bank(void) {
@@ -181,7 +228,7 @@ static void init_oscs(void) {
   }
 }
 
-AXO_PATCH(STRESSLAB_ID, dsp, dispose, {
+AXO_PATCH_MIDI(STRESSLAB_ID, dsp, dispose, midi_in, {
   init_shm(STRESSLAB_ID);
   init_oscs();
 })

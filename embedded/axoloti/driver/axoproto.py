@@ -202,6 +202,22 @@ class Axoloti:
             payload = struct.unpack("<3i", buf[4:16])
             self._rx = buf[16:]
             return "Q", payload
+        if kind == "d":                      # SD filesystem stats header
+            if len(buf) < 16:
+                return None
+            clusters, csize, bsize = struct.unpack("<III", buf[4:16])
+            self._rx = buf[16:]
+            return "d", (clusters, csize, bsize)
+        if kind == "f":                      # SD file/dir entry, NUL-terminated
+            if len(buf) < 12:
+                return None
+            end = buf.find(b"\x00", 12)
+            if end < 0:
+                return None
+            size, stamp = struct.unpack("<iI", buf[4:12])
+            name = buf[12:end].decode("ascii", errors="replace")
+            self._rx = buf[end + 1:]
+            return "f", (name, size, stamp)
         # Unknown/unexpected kind: drop the header and resync.
         self._rx = buf[4:]
         return "?", kind
@@ -282,6 +298,68 @@ class Axoloti:
         self._send(b"Axos")
         _, ack = self._wait_packet("A", timeout_s)
         return ack
+
+    # --- SD card file operations ---------------------------------------------
+    # File data rides through the patch RAM buffer on the board, so run these
+    # only with the patch stopped. Names are absolute paths on the card.
+
+    def sd_create(self, path, prealloc=0, timeout_s=5.0):
+        """Create/truncate `path` and leave it open for sd_append."""
+        self._send(b"AxoC" + struct.pack("<I", prealloc)
+                   + path.encode("ascii") + b"\x00")
+        self._wait_packet("A", timeout_s)
+
+    def sd_append(self, data, timeout_s=10.0):
+        self._send(b"AxoA" + struct.pack("<I", len(data)) + bytes(data))
+        self._wait_packet("A", timeout_s)
+
+    def sd_close(self, timeout_s=5.0):
+        self._send(b"Axoc")
+        self._wait_packet("A", timeout_s)
+
+    def _sd_attr_op(self, op, path, extra=b"\x00\x00\x00\x00", timeout_s=5.0):
+        # Attribute form: NUL first, then the op char, four bytes of
+        # date/time (unused here), then the NUL-terminated path.
+        self._send(b"AxoC" + struct.pack("<I", 0) + b"\x00" + op + extra
+                   + path.encode("ascii") + b"\x00")
+
+    def sd_delete(self, path, timeout_s=5.0):
+        self._sd_attr_op(b"D", path)
+        self._wait_packet("A", timeout_s)
+
+    def sd_mkdir(self, path, timeout_s=5.0):
+        self._sd_attr_op(b"d", path)
+        self._wait_packet("A", timeout_s)
+
+    def sd_info(self, path, timeout_s=5.0):
+        """Return (size, timestamp) for `path`, or None if it does not exist."""
+        self._sd_attr_op(b"I", path)
+        result = []
+        kind, payload = self._wait_packet("fA", timeout_s)
+        if kind == "f":
+            result.append(payload)
+            self._wait_packet("A", timeout_s)
+        if not result:
+            return None
+        _name, size, stamp = result[0]
+        return size, stamp
+
+    def sd_dir_listing(self, timeout_s=10.0):
+        """Walk the whole card. Returns (fs_stats, entries) where fs_stats is
+        (free_clusters, cluster_size, block_size) and entries are
+        (name, size, timestamp), directories with a trailing '/'.
+
+        Note: this command stops any running patch (firmware behavior), and
+        sends no acknowledge — the terminating root entry ends the stream.
+        """
+        self._send(b"Axod")
+        _, stats = self._wait_packet("d", timeout_s)
+        entries = []
+        while True:
+            _, (name, size, stamp) = self._wait_packet("f", timeout_s)
+            if name == "/" and size == 0:
+                return stats, entries
+            entries.append((name, size, stamp))
 
     # --- conveniences --------------------------------------------------------
 

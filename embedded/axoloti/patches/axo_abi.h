@@ -64,6 +64,36 @@ extern uint32_t _pbss_end;
 
 // Boilerplate: entry point in .boot (must be the first code in the binary),
 // bss clear, and patchMeta wiring. `body` runs before fptr_dsp_process is set.
+// AXO_PATCH_MIDI additionally wires a real MIDI-in handler, which the firmware
+// calls from its input threads (DIN uart, USB device, USB host) — not the DSP
+// thread, so the handler must be thread-tolerant but need not be realtime.
+#define AXO_PATCH_MIDI(patch_id_, dsp_fn_, dispose_fn_, midi_fn_, body_)      \
+  extern "C" void xpatch_init2(int32_t fwid);                                 \
+  extern "C" __attribute__((section(".boot"))) void xpatch_init(int32_t fwid) \
+  {                                                                           \
+    xpatch_init2(fwid);                                                       \
+  }                                                                           \
+  static void axo_null_preset(int32_t) {}                                     \
+  extern "C" void xpatch_init2(int32_t fwid)                                  \
+  {                                                                           \
+    if (fwid != (int32_t)SG_EXPECTED_FWID)                                    \
+      return;                                                                 \
+    for (volatile uint32_t *p = &_pbss_start; p < &_pbss_end; p++)            \
+      *p = 0;                                                                 \
+    patchMeta.numPEx = 0;                                                     \
+    patchMeta.pPExch = 0;                                                     \
+    patchMeta.pDisplayVector = 0;                                             \
+    patchMeta.npresets = 0;                                                   \
+    patchMeta.npreset_entries = 0;                                            \
+    patchMeta.pPresets = 0;                                                   \
+    patchMeta.patchID = (patch_id_);                                          \
+    patchMeta.fptr_applyPreset = axo_null_preset;                             \
+    patchMeta.fptr_MidiInHandler = (midi_fn_);                                \
+    patchMeta.fptr_patch_dispose = (dispose_fn_);                             \
+    body_;                                                                    \
+    patchMeta.fptr_dsp_process = (dsp_fn_);                                   \
+  }
+
 #define AXO_PATCH(patch_id_, dsp_fn_, dispose_fn_, body_)                     \
   extern "C" void xpatch_init2(int32_t fwid);                                 \
   extern "C" __attribute__((section(".boot"))) void xpatch_init(int32_t fwid) \

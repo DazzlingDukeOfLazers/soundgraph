@@ -17,8 +17,10 @@ STRESSLAB_ID = 0x53545231    # "STR1"
 # msq_l, msq_r, peak_l, peak_r, zerocross_l, dcsum_l (8-aligned at 48), sink,
 # then the stress block: ctrl_step, ctrl_amp, ctrl_coeff, ctrl_slope_max,
 # ctrl_floor, ctrl_sdram_words, cum_clicks, cum_dropouts, cum_sdram_errs,
-# goertzel_sig, goertzel_tot
-_FMT = "<IIiiiiIIIiiIqI" + "IiIiiIIIIII"
+# goertzel_sig, goertzel_tot, then the MIDI block: ctrl_midi_echo,
+# ctrl_midi_tx, cum_midi_din, cum_midi_usbd, cum_midi_usbh, midi_checksum,
+# midi_last
+_FMT = "<IIiiiiIIIiiIqI" + "IiIiiIIIIII" + "iIIIIII"
 SIZE = struct.calcsize(_FMT)
 
 OFF_CTRL_TONE = 8
@@ -32,6 +34,13 @@ OFF_CTRL_SLOPE_MAX = 72
 OFF_CTRL_FLOOR = 76
 OFF_CTRL_SDRAM_WORDS = 80
 OFF_CUM_COUNTERS = 84        # clicks, dropouts, sdram_errs — three u32s
+OFF_CTRL_MIDI_ECHO = 104
+OFF_CTRL_MIDI_TX = 108
+OFF_CUM_MIDI = 112           # din, usbd, usbh counters + checksum + last
+
+MIDI_DEV_DIN = 1
+MIDI_DEV_USB_DEVICE = 2
+MIDI_DEV_USB_HOST = 3
 
 SAMPLE_RATE = 48000
 Q27 = 1 << 27
@@ -64,6 +73,13 @@ class Shm:
     cum_sdram_errs: int
     goertzel_sig: int
     goertzel_tot: int
+    ctrl_midi_echo: int
+    ctrl_midi_tx: int
+    cum_midi_din: int
+    cum_midi_usbd: int
+    cum_midi_usbh: int
+    midi_checksum: int
+    midi_last: int
 
     def sinad_db(self):
         """SINAD of the last window from the on-board Goertzel, in dB.
@@ -166,6 +182,35 @@ def set_sdram_words(board, words):
 
 def clear_counters(board):
     board.write_mem(SHM_ADDR + OFF_CUM_COUNTERS, struct.pack("<III", 0, 0, 0))
+
+
+def set_midi_echo(board, device_mask):
+    board.write_mem(SHM_ADDR + OFF_CTRL_MIDI_ECHO, struct.pack("<i", device_mask))
+
+
+def start_midi_burst(board, device, count):
+    """Ask the patch to transmit `count` deterministic NoteOn messages on
+    `device`. Poll ctrl_midi_tx (offset OFF_CTRL_MIDI_TX) for 0 = done."""
+    board.write_mem(SHM_ADDR + OFF_CTRL_MIDI_TX,
+                    struct.pack("<I", (device << 24) | count))
+
+
+def burst_message(i):
+    """Message i of the deterministic burst, as (status, note, velocity)."""
+    return 0x90, (i * 7) % 128, ((i * 13) % 127) + 1
+
+
+def clear_midi_counters(board):
+    board.write_mem(SHM_ADDR + OFF_CUM_MIDI, struct.pack("<5I", 0, 0, 0, 0, 0))
+
+
+def midi_checksum(messages, device):
+    """Mirror of the patch's rolling checksum over (status, d1, d2) tuples."""
+    chk = 0
+    for b0, b1, b2 in messages:
+        word = (device << 24) | (b0 << 16) | (b1 << 8) | b2
+        chk = (chk * 31 + word) & 0xFFFFFFFF
+    return chk
 
 
 def slope_max_for(freq_hz, amp_dbfs, margin=3.0):

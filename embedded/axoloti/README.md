@@ -10,12 +10,37 @@ a self-declared ABI (`patches/axo_abi.h`), linked against the stock firmware's
 symbols. Protocol and ABI reference: `firmware/pconnection.c` and
 `firmware/patch.h` at tag `1.0.12-2` of https://github.com/axoloti/axoloti.
 
-## Wiring
+## Wiring and rig shopping list
 
 USB to the board's device port. Audio out -> audio in with a patch cable
 (mono is fine — the tests use the left channel and report what the right one
 carries). The loopback lets the on-board analyzer verify real audio without
 any host audio interface.
+
+The full rig, in order of usefulness per dollar:
+
+- **Nothing** — the USB device port already carries the test protocol *and*
+  class-compliant USB MIDI, so `test_midi.py`'s USB tier runs today.
+- **6.35 mm TRS male-male patch cable** — upgrades the mono loop to stereo,
+  so the right channel gets the same analyzer treatment as the left.
+- **5-pin DIN MIDI cable, male-male** — MIDI OUT looped to MIDI IN. The DIN
+  tests self-detect it and light up: burst integrity, wire-speed throughput,
+  behavior under DSP load.
+- **3.5 mm TRS male → 6.35 mm TRS male cable** — headphone out looped into
+  line in, to exercise the codec's headphone driver path. Swap with the main
+  loop between runs; the analyzer's level/channel signature says what's
+  connected.
+- **microSD card, 32 GB or smaller, any name brand** — must be FAT32 (the
+  1.0.12 FatFs has no exFAT, so SDXC needs reformatting). Speed class is
+  irrelevant here: host-side writes are USB-bound at ~62 KB/s and the F427's
+  SDIO tops out far below modern card ratings — a plain Class 10/UHS-I is
+  already overkill. Two cards beat one big one (A/B swaps, one sacrificial).
+- **USB MIDI device for the host (A) port** — anything class-compliant:
+  Korg nanoKEY2 / Akai LPK25 (USB mini-B), Arturia MiniLab 3 or Novation
+  Launchpad Mini MK3 (USB-C). For *automated* testing the best device is a
+  Raspberry Pi Pico (~$5) or a spare ESP32-S3 devkit running as a TinyUSB
+  MIDI gadget — programmable to send deterministic bursts and echo, which
+  turns the skipped USB-host test into a real closed loop.
 
 ## Setup
 

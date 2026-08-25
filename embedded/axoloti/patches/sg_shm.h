@@ -46,6 +46,16 @@ typedef struct {
   uint32_t cum_sdram_errs;
   uint32_t goertzel_sig;     // last window: Goertzel power at the tone, float bits
   uint32_t goertzel_tot;     // last window: total power (mean-square * N), float bits
+
+  // MIDI (stresslab). Devices: 1 = DIN, 2 = USB device port, 3 = USB host.
+  int32_t ctrl_midi_echo;    // bitmask by device: echo received back to sender
+  uint32_t ctrl_midi_tx;     // (dev<<24)|count: send a deterministic note burst;
+                             // the patch counts it down to zero as it transmits
+  uint32_t cum_midi_din;     // received-message counters, cleared by host write
+  uint32_t cum_midi_usbd;
+  uint32_t cum_midi_usbh;
+  uint32_t midi_checksum;    // chk = chk*31 + (dev<<24|b0<<16|b1<<8|b2), all rx
+  uint32_t midi_last;        // most recent (dev<<24|b0<<16|b1<<8|b2)
 } sg_shm_t;
 
 // One analyzer window = 300 dsp cycles = 4800 samples = 100 ms at 48 kHz.
