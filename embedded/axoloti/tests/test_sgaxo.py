@@ -66,7 +66,7 @@ def run_case(board, case_name, patch_rel, frames, events=(), patch_path=None):
     binary, pid, buffers = codegen.build_patch(path, frames=frames,
                                                name=case_name, events=events)
     board.stop_patch()
-    for addr, blob in buffers:
+    for addr, blob, _sd in buffers:
         board.write_mem(addr, blob)
         assert board.read_mem(addr, len(blob)) == blob, "buffer upload corrupt"
     board.run_patch(binary, expect_patch_id=pid)
@@ -315,6 +315,34 @@ def test_polyphonic_warehouse_compiles_and_renders(board, toolchain, tmp_path):
     rendered = run_case(board, "warehouse", None, len(golden), events=events,
                         patch_path=patch)
     compare(rendered, golden, "warehouse", tolerance=5e-4)
+
+
+def test_bank_bakes_standalone_artifacts(toolchain, tmp_path):
+    """The SD bank layout, host-side: start.bin, the quirky index format
+    (last four characters stripped, /patch.bin appended), per-entry dirs, and
+    buffer sidecars for the patches that carry sound as data."""
+    import subprocess
+    out = tmp_path / "bank"
+    root = GOLDEN.parent.parent
+    result = subprocess.run(
+        [sys.executable, str(_HERE.parent / "tools" / "bake-bank.py"),
+         str(out),
+         str(root / "examples" / "patches" / "first-synth.json"),
+         str(root / "examples" / "patches" / "nodes" / "Sampler.json")],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    index = (out / "index.axb").read_text()
+    assert index == "first-synth.axp\nSampler.axp\n"
+    assert (out / "start.bin").read_bytes() == \
+        (out / "first-synth" / "patch.bin").read_bytes()
+    for entry in ("first-synth", "Sampler"):
+        binary = (out / entry / "patch.bin").read_bytes()
+        assert 0 < len(binary) <= 0xB000
+    # The Sampler's hit rides as a sidecar the patch reads at init.
+    raw = (out / "Sampler" / "b0.raw").read_bytes()
+    assert len(raw) == 14400 * 4
+    # Baked binaries reference their sidecars by absolute card path.
+    assert b"/Sampler/b0.raw" in (out / "Sampler" / "patch.bin").read_bytes()
 
 
 def test_unsupported_patch_is_refused(toolchain):

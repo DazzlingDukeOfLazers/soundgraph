@@ -134,6 +134,24 @@ at compile time — the subset is a tested claim, not a vibe.
 python3 sgaxo/codegen.py path/to/patch.json   # -> sgaxo/build/patch.bin
 ```
 
+## Shipping standalone: the SD bank
+
+`tools/bake-bank.py OUT_DIR patch1.json patch2.json ...` turns editor patches
+into a card a customer can use with no computer:
+
+- `/start.bin` — entry 0, booted at power-on
+- `/index.axb` + `/<name>/patch.bin` — the bank; MIDI Program Change on any
+  transport switches entries through the firmware's own loader (program 0 =
+  first entry, bad loads fall back to start.bin)
+- `/<name>/b<N>.raw` — sample and phrase buffers as raw float32; baked
+  patches load them into SDRAM at init through FatFs, chunked and
+  watchdog-fed, so Sampler and Speech patches ship standalone too
+
+Fastest path is baking to a directory and copying with a card reader;
+`--board` writes over USB (~60 KB/s) and size-verifies every file. Baked
+patches keep live MIDI, real audio input (`zero_input=False`), and the whole
+verified vocabulary.
+
 ## How the pieces talk
 
 - Host -> board: `AxoW` (memory write) uploads, `Axos`/`AxoS` start/stop,

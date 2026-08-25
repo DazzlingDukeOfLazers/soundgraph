@@ -38,15 +38,68 @@ typedef struct {
 static volatile sgaxo_shm_t *const SGX = (volatile sgaxo_shm_t *)SGAXO_SHM_ADDR;
 static volatile float *const SGX_CAP = (volatile float *)SGAXO_CAPTURE_BASE;
 
+#ifdef SGAXO_SD_BUFFERS
+// Standalone buffer loading: no host to ship SDRAM samples, so the patch
+// reads its own sidecar files at init through the firmware's FatFs
+// (sdcard_loadPatch1 has already mounted the card; the table's paths are
+// absolute regardless of the working directory it left behind). Chunked,
+// feeding the watchdog: init runs in the DSP thread and a long uninterrupted
+// read would starve it.
+extern "C" {
+int f_open(void *fil, const char *path, unsigned char mode);
+int f_read(void *fil, void *buff, unsigned int btr, unsigned int *br);
+int f_close(void *fil);
+void watchdog_feed(void);
+}
+
+static void sgaxo_load_sd_buffers(void) {
+  // FatFs FIL is ~560 bytes in this firmware build; 1024 aligned is safe.
+  static uint8_t fil[1024] __attribute__((aligned(8)));
+  for (int i = 0; i < SGAXO_SD_BUFFER_COUNT; i++) {
+    const sgaxo_sd_buffer_t *b = &sgaxo_sd_buffers[i];
+    uint8_t *out = (uint8_t *)b->addr;
+    unsigned remaining = b->bytes;
+    if (f_open(fil, b->path, 0x01 /* FA_READ|FA_OPEN_EXISTING */) != 0) {
+      LogTextMessage("sgaxo: missing %s", b->path);
+    } else {
+      while (remaining) {
+        const unsigned chunk = remaining > 4096u ? 4096u : remaining;
+        unsigned got = 0;
+        if (f_read(fil, out, chunk, &got) != 0 || got == 0) break;
+        out += got;
+        remaining -= got;
+        watchdog_feed();
+      }
+      f_close(fil);
+    }
+    while (remaining) { *out++ = 0; remaining--; }  // short/missing -> silence
+  }
+}
+#endif  // SGAXO_SD_BUFFERS
+
 // Live MIDI -> DSP thread, single-producer single-consumer.
 typedef struct { int on; int note; float velocity; } sgaxo_midi_note_t;
 static sgaxo_midi_note_t sgaxo_midi_ring[16];
 static volatile uint32_t sgaxo_midi_wr, sgaxo_midi_rd;
 
+#ifdef SGAXO_BANK
+extern "C" void LoadPatchIndexed(uint32_t index);
+#endif
+
 static void sgaxo_midi_in(midi_device_t dev, uint8_t port, uint8_t b0,
                           uint8_t b1, uint8_t b2) {
   (void)dev; (void)port;
   const uint8_t status = b0 & 0xF0;
+#ifdef SGAXO_BANK
+  // Program Change walks the SD bank: the firmware stops this patch, reads
+  // index.axb, and loads line b1's directory's patch.bin — /start.bin on any
+  // failure. Called from the MIDI input thread, the same context the
+  // patcher's own program-change objects use.
+  if (status == 0xC0) {
+    LoadPatchIndexed(b1);
+    return;
+  }
+#endif
   int on;
   if (status == 0x90 && b2 > 0) on = 1;
   else if (status == 0x80 || (status == 0x90 && b2 == 0)) on = 0;
@@ -106,13 +159,19 @@ static void sgaxo_dsp(int32_t *inbuf, int32_t *outbuf) {
     outbuf[i * 2] = ((int32_t)(cl * 134217728.0f)) << 4;
     outbuf[i * 2 + 1] = ((int32_t)(cr * 134217728.0f)) << 4;
     // Golden capture: the unclamped left channel, bit for bit.
+#if SGAXO_FRAMES_TARGET > 0
     if (done < SGAXO_FRAMES_TARGET) {
       SGX_CAP[done] = l;
       done++;
     }
+#endif
   }
   SGX->frames_done = done;
+#if SGAXO_FRAMES_TARGET > 0
   if (done >= SGAXO_FRAMES_TARGET) SGX->status = 1;
+#else
+  SGX->status = 1;  // baked patches capture nothing; report ready at once
+#endif
   SGX->heartbeat = SGX->heartbeat + 1;
 }
 
@@ -122,6 +181,9 @@ AXO_PATCH_MIDI(SGAXO_PATCH_ID, sgaxo_dsp, sgaxo_dispose, sgaxo_midi_in, {
   volatile uint32_t *p = (volatile uint32_t *)SGAXO_SHM_ADDR;
   for (unsigned i = 0; i < sizeof(sgaxo_shm_t) / 4; i++) p[i] = 0;
   sgaxo_fifo_pos = SGAXO_FRAMES;  // .bss is zeroed; mark the FIFO empty
+#ifdef SGAXO_SD_BUFFERS
+  sgaxo_load_sd_buffers();  // before sg_graph_init: Speech scans its bank
+#endif
   sg_graph_init();
   SGX->frames_target = SGAXO_FRAMES_TARGET;
   SGX->capture_base = SGAXO_CAPTURE_BASE;
