@@ -39,8 +39,9 @@ struct PluginRequest {
 
 // One loaded, activated plugin. The runtime hands these out; the node just uses one.
 //
-// Deliberately narrower than the plugin formats themselves: an effect needs audio in,
-// audio out, and controls. Notes arrive when instruments do, in Stage 3.
+// Deliberately narrower than the plugin formats themselves: audio in, audio out,
+// controls, and notes. An effect never receives the last of those, which is why they
+// are virtual rather than pure.
 class HostedPluginInstance {
 public:
     virtual ~HostedPluginInstance() = default;
@@ -59,7 +60,13 @@ public:
     // sends these only when they change.
     virtual void set_control(int slot, float value) = 0;
 
-    // Reported, and for Stage 2 not yet compensated for. See the design doc.
+    // Notes, for an instrument. One instance receives all of them — the plugin does
+    // its own voice allocation, which is the whole reason it is not cloned per voice.
+    virtual void note_on(int note, float velocity) { (void)note; (void)velocity; }
+    virtual void note_off(int note) { (void)note; }
+    virtual void all_notes_off() {}
+
+    // Reported, and not yet compensated for. See the design doc.
     virtual int latency_frames() const { return 0; }
 };
 

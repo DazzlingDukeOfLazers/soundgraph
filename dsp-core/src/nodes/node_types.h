@@ -23,6 +23,7 @@ extern const NodeTypeDescriptor kFormant;
 extern const NodeTypeDescriptor kSpeech;
 extern const NodeTypeDescriptor kMidiCc;
 extern const NodeTypeDescriptor kPluginEffect;
+extern const NodeTypeDescriptor kPluginInstrument;
 extern const NodeTypeDescriptor kDelay;
 extern const NodeTypeDescriptor kComb;
 extern const NodeTypeDescriptor kAllpass;

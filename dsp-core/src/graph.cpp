@@ -84,7 +84,10 @@ std::set<std::string> voice_cone(const GraphDescription& description,
     std::map<std::string, bool> is_sink;
     for (const NodeDescription& node : description.nodes) {
         const NodeTypeDescriptor* type = registry.find(node.type);
-        is_sink[node.id] = type != nullptr && type->role == NodeRole::HostAudioSink;
+        // Sinks and voice boundaries stop the cone for the same reason: past either
+        // one, there are no longer several voices to be a copy of.
+        is_sink[node.id] = type != nullptr &&
+                           (type->role == NodeRole::HostAudioSink || type->is_voice_boundary);
     }
     std::set<std::string> cone;
     std::vector<std::string> frontier;

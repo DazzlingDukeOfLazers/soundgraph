@@ -165,9 +165,22 @@ Effects, whose generic "FX Parameter N" controls do nothing until an effect type
 chosen, and that choice lives in plugin state rather than in a parameter. It wants a
 second effect plugin to confirm against, not more code.
 
-**Stage 3 — `PluginInstrument`.** Note input, and the voice-clone exemption that
-requires. *Exit test: a plugin instrument plays a chord as one instance, and
-`voices` on the NoteInput above it changes nothing about the plugin's own voice count.*
+**Stage 3 — `PluginInstrument`. Built, 2026-08-25.** Decided in favour of the **voice
+boundary**: a hosted instrument is the second place in the graph where the polyphonic
+world collapses into one signal, exactly as the audio output has always been. The cone
+that gets cloned per voice now stops at either, `NodeTypeDescriptor::is_voice_boundary`
+says which nodes do that, and the rest fell out of machinery that already existed — the
+engine has always given a note receiver the replicator never copied *every* note rather
+than one voice's share.
+
+The cost, stated where it is felt: nothing downstream of a hosted instrument is
+per-note, so a SoundGraph filter after one filters the whole chord. That is inherent to
+hosting a polyphonic instrument. The escape hatch discussed — a per-node switch for
+somebody who deliberately wants N copies of a cheap mono plugin so they *can* filter
+each note — is not built, and wants a real use before it is.
+
+*Exit test: met. `a_plugin_instrument_is_one_instance_however_many_voices` asks for
+eight voices, gets one plugin, and plays a three-note chord into it.*
 
 **Stage 4 — editor.** Browse installed plugins, pick one, bind slots, show the
 plugin's own window. This is where the feature becomes usable by a person, and it is

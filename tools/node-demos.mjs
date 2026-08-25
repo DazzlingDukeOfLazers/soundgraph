@@ -601,6 +601,29 @@ const DEMOS = {
       ],
     }),
   },
+  PluginInstrument: {
+    summary: 'A VST3 or CLAP synth from elsewhere, played from the keyboard.',
+    // Silent offline for the same reason AudioInput is: the thing that makes the sound
+    // is not in the patch. Without a plugin chosen there is nothing to play.
+    silentOffline: true,
+    try: 'Choose an installed synth and play it. It takes every note itself rather than '
+      + 'one per voice, because a hosted synth does its own polyphony — so voices on a '
+      + 'NoteInput above it change nothing, and a filter after it filters the whole '
+      + 'chord rather than each note. With no plugin chosen it stays silent, which is '
+      + 'the node waiting rather than the patch being broken.',
+    build: () => ({
+      nodes: [
+        node('demo', 'PluginInstrument', {}, 0, 0),
+        node('tone', 'StateVariableFilter', { cutoff: 3000, resonance: 0.2 }, 1, 0),
+        out(2),
+      ],
+      connections: [
+        wire('demo', 'left', 'tone', 'in'),
+        wire('tone', 'out', 'out', 'left'),
+        wire('demo', 'right', 'out', 'right'),
+      ],
+    }),
+  },
   PluginEffect: {
     summary: 'A VST3 or CLAP plugin from elsewhere, wired in like any other node.',
     try: 'Choose a plugin and bind its controls to the sixteen slots, then modulate '
@@ -1164,6 +1187,7 @@ const PROBES = {
   LFO: { parameter: 'amount', value: 0.5 },
   Constant: { parameter: 'value', value: -1.0 },
   MidiCC: { parameter: 'resting', value: 1 },
+  PluginInstrument: { probeless: 'silent without a plugin, so no parameter of it can change anything' },
   PluginEffect: { probeless: 'with no plugin chosen it passes audio through, so no parameter of it can change anything — which is the property worth demonstrating' },
 
   Add: { parameter: 'offset', value: 1.0 },

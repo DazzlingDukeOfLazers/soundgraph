@@ -612,7 +612,12 @@ public:
         }
     }
     void set_control(int slot, float value) override { controls[slot] = value; }
+    void note_on(int note, float) override { notes_on.push_back(note); ++live; }
+    void note_off(int note) override { notes_off.push_back(note); --live; }
 
+    std::vector<int> notes_on;
+    std::vector<int> notes_off;
+    int live = 0;
     double prepared_rate = 0.0;
     int prepared_block = 0;
     std::map<int, float> controls;
@@ -765,6 +770,88 @@ TEST(a_plugin_node_bypass_is_not_the_same_as_absence) {
         complained = complained || diagnostic.code == "plugin_unavailable";
     }
     CHECK(!complained);
+}
+
+TEST(a_plugin_instrument_is_one_instance_however_many_voices) {
+    // Sixteen voices, and the whole point: sixteen copies of Vital would be sixteen
+    // copies of a synth that was already told to play the chord.
+    GraphDescription graph;
+    graph.nodes.push_back(node("kb", "NoteInput"));
+    graph.nodes.back().parameters.push_back({"voices", 8.0});
+    graph.nodes.push_back(node("synth", "PluginInstrument"));
+    graph.nodes.back().plugin = "vital";
+    graph.nodes.push_back(node("out", "StereoOutput"));
+    connect(graph, "synth", "left", "out", "left");
+    connect(graph, "synth", "right", "out", "right");
+
+    soundgraph::PluginDescription plugin;
+    plugin.id = "vital";
+    plugin.format = "CLAP";
+    plugin.identity = "audio.vital.synth";
+    plugin.name = "Vital";
+    graph.plugins.push_back(plugin);
+
+    OnePluginProvider provider;
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+
+    // Asked for exactly once, however many voices the NoteInput wanted.
+    CHECK(provider.times_asked == 1);
+
+    // And it hears every note of a chord, not one voice's share — which is what the
+    // allocator would have handed a node it had cloned.
+    runtime.note_on(60, 1.0f);
+    runtime.note_on(64, 1.0f);
+    runtime.note_on(67, 1.0f);
+    rms_of(runtime, 256);
+    CHECK(provider.last->notes_on.size() == 3);
+    CHECK(provider.last->live == 3);
+
+    runtime.note_off(64);
+    rms_of(runtime, 256);
+    CHECK(provider.last->notes_off.size() == 1);
+    CHECK(provider.last->notes_off[0] == 64);
+    CHECK(provider.last->live == 2);
+}
+
+TEST(a_voice_boundary_keeps_what_follows_it_out_of_the_voice_system) {
+    // A filter after a hosted instrument must not be cloned either: by then the notes
+    // are already mixed, and eight copies of a filter fed one chord is eight times the
+    // chord. The proof is that the provider is asked once and the graph stays small.
+    GraphDescription graph;
+    graph.nodes.push_back(node("kb", "NoteInput"));
+    graph.nodes.back().parameters.push_back({"voices", 8.0});
+    graph.nodes.push_back(node("synth", "PluginInstrument"));
+    graph.nodes.back().plugin = "vital";
+    graph.nodes.push_back(node("tone", "StateVariableFilter"));
+    graph.nodes.push_back(node("out", "StereoOutput"));
+    connect(graph, "synth", "left", "tone", "in");
+    connect(graph, "tone", "out", "out", "left");
+
+    soundgraph::PluginDescription plugin;
+    plugin.id = "vital";
+    plugin.format = "CLAP";
+    plugin.identity = "audio.vital.synth";
+    graph.plugins.push_back(plugin);
+
+    OnePluginProvider provider;
+    soundgraph::Graph runtime;
+    runtime.set_plugin_provider(&provider);
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+                        diagnostics));
+
+    CHECK(provider.times_asked == 1);
+    // One synth, one filter, one output, one keyboard: nothing past the boundary was
+    // copied. Eight voices of a cloned filter would have shown up here as eight more.
+    int filters = 0;
+    for (int index : runtime.execution_order()) {
+        if (runtime.node_id(index).find("tone") != std::string::npos) ++filters;
+    }
+    CHECK(filters == 1);
 }
 
 TEST_MAIN("graph tests")

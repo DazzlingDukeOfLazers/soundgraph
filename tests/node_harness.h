@@ -100,6 +100,24 @@ public:
         node_->prepare(context);
     }
 
+    // Notes, delivered the way the graph delivers them: on the audio thread, before
+    // the block they belong to. Only nodes whose descriptor sets receives_notes are
+    // offered these, which the graph enforces and a jig may simply rely on.
+    void note_on(int note, float velocity) {
+        soundgraph::NoteEvent event;
+        event.kind = soundgraph::NoteEvent::Kind::NoteOn;
+        event.note = note;
+        event.velocity = velocity;
+        node_->handle_note_event(event);
+    }
+
+    void note_off(int note) {
+        soundgraph::NoteEvent event;
+        event.kind = soundgraph::NoteEvent::Kind::NoteOff;
+        event.note = note;
+        node_->handle_note_event(event);
+    }
+
     // An input only counts as connected once it has been filled; that distinction is
     // exactly what the nodes key their parameter fallbacks off.
     void connect(const std::string& port, float value) {
