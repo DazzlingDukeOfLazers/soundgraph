@@ -381,7 +381,9 @@ class Axoloti:
         self.start_patch()
         time.sleep(settle_s)
         ack = self.ping()
-        if expect_patch_id is not None and ack.patch_id != expect_patch_id:
+        # The ack carries patchID as a signed word; compare as 32-bit values.
+        if (expect_patch_id is not None
+                and (ack.patch_id & 0xFFFFFFFF) != (expect_patch_id & 0xFFFFFFFF)):
             raise ProtocolError(
                 f"patch did not start: patch_id={ack.patch_id:#x} "
                 f"expected {expect_patch_id:#x} (log: {list(self.log_messages)[-3:]})")
