@@ -261,6 +261,10 @@ def _mirror_schedule(total_frames, notes, gate=0.7, velocity=0.9):
     # Sampler: the buffer ships to SDRAM over USB, the read head runs in
     # libgcc soft-double, and the notes trigger it through NoteInput.trigger.
     ("examples/patches/nodes/Sampler.json", [60, 64], 0.6, TOLERANCE),
+    # Speech: the TMS5220 voice, phrase bank in SDRAM, notes cueing phrases.
+    # 5e-5 headroom for the derived per-trigger log2 and the lattice's float
+    # accumulation order under -ffp-contract=off vs the host's fma.
+    ("examples/patches/nodes/Speech.json", [48, 50], 1.0, 5e-5),
 ])
 def test_editor_patch_matches_native_render(board, toolchain, tmp_path, rel,
                                             notes, seconds, tolerance):

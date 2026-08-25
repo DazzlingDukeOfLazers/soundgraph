@@ -257,6 +257,13 @@ SUPPORTED = {
         "fixed": {},
         "outputs": ["left", "right"],
     },
+    "Speech": {
+        "inputs": ["trigger", "note"], "connectable": {"trigger", "note"},
+        "params": {"pitch": 1.0, "speed": 1.0, "level": 1.0, "loop": 0.0,
+                   "root": 130.81},
+        "fixed": {},
+        "outputs": ["out"],
+    },
     "Sampler": {
         "inputs": ["gate", "frequency", "slice"],
         "connectable": {"gate", "frequency", "slice"},
@@ -495,6 +502,14 @@ def _emit(nodes, bindings, order, frames, patch_id, events, zero_input,
             L.append(f"static sgaxo::RetriggerState st_{c};")
         elif t == "Sampler":
             L.append(f"static sgaxo::SamplerState st_{c};")
+        elif t == "Speech":
+            L.append(f"static sgaxo::SpeechState st_{c};")
+            if n["buffer"] and n["buffer"] in buffer_placements:
+                addr, bframes, _rs = buffer_placements[n["buffer"]]
+                init.append(f"sgaxo::speech_init(st_{c}, "
+                            f"(const float *){addr:#010x}u, {bframes});")
+            else:
+                init.append(f"sgaxo::speech_init(st_{c}, 0, 0);")
 
     if sdram_bytes > 0x400000:
         raise Unsupported(
@@ -653,6 +668,14 @@ def _emit(nodes, bindings, order, frames, patch_id, events, zero_input,
             L.append(f"  sgaxo::k_stereo_level({src(i, 'left')}, "
                      f"{src(i, 'right')}, {buf(i, 'left')}, {buf(i, 'right')}, "
                      f"{_lit(p['level'])});")
+        elif t == "Speech":
+            speed = f32(p["speed"])
+            step = f32(8000.0 / SAMPLE_RATE)
+            loop = 1 if p["loop"] > 0.5 else 0
+            L.append(f"  sgaxo::k_speech(st_{c}, {src(i, 'trigger')}, "
+                     f"{src(i, 'note')}, {buf(i, 'out')}, {_lit(p['pitch'])}, "
+                     f"{_lit(speed)}, {_lit(p['level'])}, {loop}, "
+                     f"{_lit(p['root'])}, {_lit(step)});")
         elif t == "Sampler":
             if n["buffer"] and n["buffer"] in buffer_placements:
                 addr, bframes, rate_step = buffer_placements[n["buffer"]]

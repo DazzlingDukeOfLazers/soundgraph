@@ -20,7 +20,8 @@
 
 #include <stdint.h>
 
-#include "sine_table.h"  // dsp-core's committed table, via -I
+#include "sine_table.h"          // dsp-core's committed table, via -I
+#include "nodes/speech_tables.h" // the TMS5220 ROM, same single source
 
 #define SGAXO_FRAMES 64  // == soundgraph::kBlockSize
 
@@ -863,6 +864,243 @@ inline void k_sampler(SamplerState &s, const float *gate,
         s.playing = 0;
       }
     }
+  }
+}
+
+// --- Speech (speech.cpp SpeechNode) ------------------------------------------
+// The TMS5220-style LPC voice, restated whole: bitstream reader, phrase scan,
+// interpolation ladder, chirp/noise excitation, ten-stage lattice, and the
+// 8 kHz -> host-rate lerp. The phrase bank ships to SDRAM like any buffer.
+// Its two libm calls are replaced: lround runs on exactly-integral doubles
+// (byte reconstruction from pcm16 floats), and the per-trigger log2 uses a
+// derived polynomial (worst error 2.5e-6 — phrase rounding needs 0.02).
+
+inline float log2f_approx(float x) {
+  union { float f; uint32_t u; } c;
+  c.f = x;
+  const int e = (int)((c.u >> 23) & 0xFF) - 127;
+  c.u = (c.u & 0x007FFFFF) | 0x3F800000;  // mantissa in [1,2)
+  const float t = c.f - 1.0f;
+  const float p =
+      t * (1.4425348043441772f +
+      t * (-0.7180336117744446f +
+      t * (0.4571581184864044f +
+      t * (-0.2773416340351105f +
+      t * (0.12147293984889984f +
+      t * -0.02579234167933464f)))));
+  return (float)e + p;
+}
+
+using soundgraph::nodes::kSpeechChirp;
+using soundgraph::nodes::kSpeechEnergy;
+using soundgraph::nodes::kSpeechGlide;
+using soundgraph::nodes::kSpeechKBits;
+using soundgraph::nodes::kSpeechKTables;
+using soundgraph::nodes::kSpeechPeriodLength;
+using soundgraph::nodes::kSpeechPitch;
+using soundgraph::nodes::kSpeechRate;
+
+struct SpeechState {
+  const float *data;
+  int data_frames;
+  int phrase_starts[64];
+  int phrase_count;
+  int current_phrase;
+  int playing;
+  int trigger_was_open;
+  int bit_position;
+  int period_index;
+  int period_sample;
+  int chirp_position;
+  int voiced;
+  int loop;  // latched from the parameter each process call
+  unsigned noise;
+  float k_now[10], k_target[10], lattice[10];
+  float energy_now, energy_target, pitch_now, pitch_target;
+  float resample_phase, held, previous;
+};
+
+// One byte per pcm16 sample, low eight bits. data[i]*32768 is exactly the
+// original int16, so the round is exact (std::lround on an integral value).
+inline int speech_byte(const float *data, int index) {
+  const double v = (double)data[index] * 32768.0;
+  const long r = (long)(v >= 0.0 ? v + 0.5 : v - 0.5);
+  return (int)r & 0xff;
+}
+
+inline void speech_read_frame(SpeechState &s);
+
+inline void speech_start(SpeechState &s, int phrase) {
+  s.current_phrase = s.phrase_count > 0
+      ? (phrase < s.phrase_count ? phrase : s.phrase_count - 1) : 0;
+  s.bit_position = s.phrase_count > 0 ? s.phrase_starts[s.current_phrase] : 0;
+  s.period_index = 0;
+  s.period_sample = 0;
+  s.chirp_position = 0;
+  s.playing = s.data != 0 && s.data_frames > 0;
+  s.energy_now = 0.0f;
+  if (s.playing) {
+    speech_read_frame(s);
+    for (int i = 0; i < 10; ++i) s.k_now[i] = s.k_target[i];
+    s.energy_now = s.energy_target;
+    s.pitch_now = s.pitch_target;
+  }
+}
+
+inline int speech_read_bits(SpeechState &s, int count) {
+  int value = 0;
+  for (int b = 0; b < count; ++b) {
+    const int index = s.bit_position >> 3;
+    if (index >= s.data_frames) {
+      s.playing = 0;
+      return value;
+    }
+    const int byte = speech_byte(s.data, index);
+    value |= ((byte >> (s.bit_position & 7)) & 1) << b;
+    ++s.bit_position;
+  }
+  return value;
+}
+
+inline void speech_read_frame(SpeechState &s) {
+  const int energy = speech_read_bits(s, 4);
+  if (!s.playing) return;
+  if (energy == 15) {
+    if (s.loop) {
+      speech_start(s, s.current_phrase);
+    } else {
+      s.energy_target = 0.0f;
+      s.playing = 0;
+    }
+    return;
+  }
+  s.energy_target = kSpeechEnergy[energy] / 128.0f;
+  if (energy == 0) return;
+  const int repeat = speech_read_bits(s, 1);
+  const int pitch = kSpeechPitch[speech_read_bits(s, 6) & 63];
+  s.voiced = pitch != 0;
+  s.pitch_target = s.voiced ? (float)pitch : s.pitch_target;
+  if (repeat != 0) return;
+  const int stages = s.voiced ? 10 : 4;
+  for (int i = 0; i < stages; ++i) {
+    const int index = speech_read_bits(s, kSpeechKBits[i]);
+    s.k_target[i] = (float)kSpeechKTables[i][index] / 512.0f;
+  }
+  for (int i = stages; i < 10; ++i) s.k_target[i] = 0.0f;
+}
+
+// scan_phrases, at init: records where each stop-delimited phrase begins.
+inline void speech_init(SpeechState &s, const float *data, int data_frames) {
+  s.data = data;
+  s.data_frames = data_frames;
+  s.noise = 0x1234u;
+  s.pitch_now = 40.0f;
+  s.pitch_target = 40.0f;
+  s.resample_phase = 1.0f;
+  s.phrase_count = 0;
+  if (data == 0 || data_frames <= 0) return;
+  int bit = 0;
+  const int total_bits = data_frames * 8;
+  s.phrase_starts[s.phrase_count++] = 0;
+  while (bit + 4 <= total_bits && s.phrase_count < 64) {
+    int energy = 0;
+    for (int b = 0; b < 4 && bit < total_bits; ++b, ++bit) {
+      energy |= ((speech_byte(data, bit >> 3) >> (bit & 7)) & 1) << b;
+    }
+    if (energy == 15) {
+      if (bit + 12 <= total_bits) s.phrase_starts[s.phrase_count++] = bit;
+      continue;
+    }
+    if (energy == 0) continue;
+    int repeat = 0;
+    for (int b = 0; b < 1 && bit < total_bits; ++b, ++bit) {
+      repeat |= ((speech_byte(data, bit >> 3) >> (bit & 7)) & 1) << b;
+    }
+    int pitch_index = 0;
+    for (int b = 0; b < 6 && bit < total_bits; ++b, ++bit) {
+      pitch_index |= ((speech_byte(data, bit >> 3) >> (bit & 7)) & 1) << b;
+    }
+    const int pitch = kSpeechPitch[pitch_index & 63];
+    if (repeat != 0) continue;
+    const int stages = pitch != 0 ? 10 : 4;
+    for (int i = 0; i < stages; ++i) {
+      bit += kSpeechKBits[i];
+      if (bit > total_bits) bit = total_bits;
+    }
+  }
+}
+
+inline float speech_synthesize(SpeechState &s, float pitch_param,
+                               float speed_param) {
+  if (!s.playing && s.energy_now < 0.0005f) return 0.0f;
+  if (s.period_sample == 0) {
+    const float glide = kSpeechGlide[s.period_index];
+    for (int i = 0; i < 10; ++i) {
+      s.k_now[i] += (s.k_target[i] - s.k_now[i]) * glide;
+    }
+    s.energy_now += (s.energy_target - s.energy_now) * glide;
+    s.pitch_now += (s.pitch_target - s.pitch_now) * glide;
+  }
+  const int period_length = (int)((float)kSpeechPeriodLength / speed_param);
+  if (++s.period_sample >= (period_length > 1 ? period_length : 1)) {
+    s.period_sample = 0;
+    if (++s.period_index >= 8) {
+      s.period_index = 0;
+      if (s.playing) speech_read_frame(s);
+    }
+  }
+  float excitation;
+  if (s.voiced) {
+    const int period = (int)(s.pitch_now / pitch_param);
+    if (++s.chirp_position >= (period > 2 ? period : 2)) {
+      s.chirp_position = 0;
+    }
+    excitation = s.chirp_position < 52
+        ? (float)kSpeechChirp[s.chirp_position] / 128.0f
+        : 0.0f;
+  } else {
+    s.noise ^= s.noise << 13;
+    s.noise ^= s.noise >> 17;
+    s.noise ^= s.noise << 5;
+    excitation = (s.noise & 1) != 0 ? 0.5f : -0.5f;
+  }
+  float forward = excitation * s.energy_now;
+  for (int i = 9; i >= 0; --i) {
+    forward -= s.k_now[i] * s.lattice[i];
+    if (i < 9) s.lattice[i + 1] = s.lattice[i] + s.k_now[i] * forward;
+  }
+  s.lattice[0] = forward;
+  return clampf(forward, -1.2f, 1.2f);
+}
+
+inline void k_speech(SpeechState &s, const float *trigger, const float *note,
+                     float *out, float pitch_param, float speed_param,
+                     float level, int loop, float root, float step) {
+  s.loop = loop;
+  if (trigger != 0) {
+    const int open = trigger[0] > 0.5f;
+    if (open && !s.trigger_was_open) {
+      int phrase = 0;
+      if (note != 0 && note[0] > 0.0f) {
+        const float semis = 12.0f * log2f_approx(note[0] / root);
+        phrase = (int)(semis >= 0.0f ? semis + 0.5f : semis - 0.5f);
+      }
+      if (phrase < 0) phrase = 0;
+      if (phrase >= s.phrase_count && s.phrase_count > 0) {
+        phrase = s.phrase_count - 1;
+      }
+      speech_start(s, phrase);
+    }
+    s.trigger_was_open = open;
+  }
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    s.resample_phase += step;
+    while (s.resample_phase >= 1.0f) {
+      s.resample_phase -= 1.0f;
+      s.previous = s.held;
+      s.held = speech_synthesize(s, pitch_param, speed_param);
+    }
+    out[i] = (s.previous + (s.held - s.previous) * s.resample_phase) * level;
   }
 }
 

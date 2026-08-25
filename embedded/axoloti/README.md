@@ -116,8 +116,9 @@ schema version compile through the patch-io resolver, including Sampler
 patches: buffers ship to a 3.5 MB SDRAM pool over USB before start
 (verified by readback), and the read head runs in libgcc soft-double —
 IEEE-exact against native, ~10-15% CPU per sampler, hit-verified bit-exact
-on hardware. Still refused by name: Speech, polyphony (voices > 1), hosted
-plugins. Kernels
+on hardware. The Speech node speaks too: the TMS5220 phrase bank
+rides the same SDRAM pool, and the demo verifies at 2.4e-7 over a second of
+voice. Still refused by name: polyphony (voices > 1) and hosted plugins. Kernels
 without golden-manifest cases are verified against a native sg-render of the
 same patch (golden-on-demand, tests/fixtures/). Everything else is
 refused by name
