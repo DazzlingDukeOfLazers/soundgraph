@@ -64,3 +64,7 @@ run/
 # plugin SDKs, fetched by tools/get-plugin-sdks.sh; _fetch holds clap-wrapper's own
 # pinned downloads (VST3 SDK, Apple AudioUnitSDK) so a deleted build dir does not refetch
 runtime-clap/sdks/
+
+# Reaper drops this beside whatever it considers its working directory, and a
+# blanket "git add -A" swept the empty husk into a commit once already.
+MIDI Programs/
