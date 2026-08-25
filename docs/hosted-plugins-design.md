@@ -203,10 +203,26 @@ XT installed on whatever machine runs it. `class_name` is deliberately not used:
 headless `--script` run never builds Godot's class cache, so the global would not exist
 and the suite could not load.
 
-Still to do: **the plugin's own window, embedded in a Godot sub-window** — the decision
-recorded above. It needs the Godot extension to link the hosting code, which is a build
-change rather than a UI one, and is better done deliberately than tacked onto the end of
-this.
+**Hosting a plugin's editor works (2026-08-25), outside Godot so far.** `sg-host
+<plugin> --gui` opens the plugin's own interface in a plain window of ours: Surge XT
+draws its whole 1141x711 face, animates, and answers the mouse — clicking Filter 1
+opens Surge's own filter-type menu. Dexed reports 866x674 and our own VST3 560x460, so
+both formats and three vendors work. That was worth proving here rather than inside the
+editor, where a failure would have looked like Godot's fault.
+
+Two host-side lessons, both found by a segfault. A plugin with a face expects the host
+to offer **`clap_host_timer_support`** — an editor is a timer and a redraw, and Surge XT
+registers one the moment its window opens — and **`clap_host_gui`**; a host offering
+neither is a host it was not written against. And `clap_host_thread_check` is
+deliberately *not* offered: sg-host does everything on one thread, so every answer it
+could give is a lie, and Surge rightly complained about being told it was off the audio
+thread during start_processing. Offering nothing lets a plugin keep its own counsel.
+
+Still to do: **giving that window to Godot instead of ours.** The remaining work is a
+build change — the Godot extension has to link the hosting code — plus handing over
+`DisplayServer.window_get_native_handle` in place of the HWND sg-host creates. The hard
+half, making a stranger's editor draw and respond inside a window it did not create, is
+done.
 
 ## Decided, 2026-08-25
 

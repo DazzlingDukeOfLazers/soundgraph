@@ -8,8 +8,11 @@
 // happens. main_thread_tick is where we keep that promise.
 #include <clap/clap.h>
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <thread>
+#include <vector>
 
 #include "hosted_plugin.h"
 
@@ -23,11 +26,66 @@
 namespace soundgraph::host {
 namespace {
 
+struct ClapTimer {
+    clap_id id = 0;
+    uint32_t period_ms = 0;
+    uint64_t next_ms = 0;
+};
+
 struct ClapHost {
     clap_host_t host{};
     bool callback_requested = false;
     int rescan_count = 0;
+    // A plugin's editor is usually a timer and a redraw. Surge XT registers one the
+    // moment its window opens, and a host that offers no timer support at all is a host
+    // it was not written against — which is how asking for a GUI came to segfault
+    // before any of this existed.
+    std::vector<ClapTimer> timers;
+    clap_id next_timer_id = 1;
+    std::thread::id main_thread = std::this_thread::get_id();
 };
+
+// The host extensions a plugin with a face expects to find. Missing ones are not a
+// polite degradation: a plugin that asks for timer support and is told there is none
+// may simply not draw, and one that assumes thread-check exists may do worse.
+const clap_host_timer_support_t kHostTimer = {
+    /*register_timer*/ [](const clap_host_t* host, uint32_t period_ms, clap_id* id) {
+        auto* self = static_cast<ClapHost*>(host->host_data);
+        ClapTimer timer;
+        timer.id = self->next_timer_id++;
+        timer.period_ms = period_ms < 8 ? 8 : period_ms;
+        timer.next_ms = 0;
+        self->timers.push_back(timer);
+        *id = timer.id;
+        return true;
+    },
+    /*unregister_timer*/ [](const clap_host_t* host, clap_id id) {
+        auto* self = static_cast<ClapHost*>(host->host_data);
+        for (std::size_t i = 0; i < self->timers.size(); ++i) {
+            if (self->timers[i].id == id) {
+                self->timers.erase(self->timers.begin() + static_cast<long>(i));
+                return true;
+            }
+        }
+        return false;
+    },
+};
+
+const clap_host_gui_t kHostGui = {
+    /*resize_hints_changed*/ [](const clap_host_t*) {},
+    // A plugin may ask to be a different size than it first said. This host says yes
+    // and does nothing about it, which is honest for a window nobody is laying out.
+    /*request_resize*/ [](const clap_host_t*, uint32_t, uint32_t) { return true; },
+    /*request_show*/ [](const clap_host_t*) { return true; },
+    /*request_hide*/ [](const clap_host_t*) { return true; },
+    /*closed*/ [](const clap_host_t*, bool) {},
+};
+
+// Thread check is deliberately NOT offered. This host does everything on one thread —
+// there is no audio thread to be on — so every answer it could give is a lie, and a
+// plugin told "you are not on the audio thread" during start_processing rightly
+// complains. Offering nothing lets a plugin keep its own counsel, which is the honest
+// position for a host that genuinely has one thread.
 
 const clap_host_params_t kHostParams = {
     /*rescan*/ [](const clap_host_t* host, clap_param_rescan_flags) {
@@ -171,6 +229,8 @@ public:
         host_.host.get_extension = [](const clap_host_t*, const char* id) -> const void* {
             if (std::strcmp(id, CLAP_EXT_PARAMS) == 0) return &kHostParams;
             if (std::strcmp(id, CLAP_EXT_LOG) == 0) return &kHostLog;
+            if (std::strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) return &kHostTimer;
+            if (std::strcmp(id, CLAP_EXT_GUI) == 0) return &kHostGui;
             return nullptr;
         };
         host_.host.request_restart = [](const clap_host_t*) {};
@@ -320,10 +380,68 @@ public:
         return true;
     }
 
+    // ---- the plugin's own face -------------------------------------------------
+    // The sequence is the one gui.h documents, and every step of it matters: a plugin
+    // asked to show before it has been given a parent draws into nothing, and one given
+    // a parent before create() has nowhere to put it.
+    bool has_gui() override { return gui_extension() != nullptr; }
+
+    bool open_gui(void* parent) override {
+        const clap_plugin_gui_t* gui = gui_extension();
+        if (gui == nullptr || parent == nullptr) return false;
+#if defined(_WIN32)
+        const char* api = CLAP_WINDOW_API_WIN32;
+#elif defined(__APPLE__)
+        const char* api = CLAP_WINDOW_API_COCOA;
+#else
+        const char* api = CLAP_WINDOW_API_X11;
+#endif
+        if (!gui->is_api_supported(plugin_, api, false)) return false;
+        if (!gui->create(plugin_, api, false)) return false;
+        gui_open_ = true;
+        gui->set_scale(plugin_, 1.0);
+
+        clap_window_t window{};
+        window.api = api;
+#if defined(_WIN32)
+        window.win32 = parent;
+#elif defined(__APPLE__)
+        window.cocoa = parent;
+#else
+        window.x11 = reinterpret_cast<unsigned long>(parent);
+#endif
+        if (!gui->set_parent(plugin_, &window)) {
+            close_gui();
+            return false;
+        }
+        gui->show(plugin_);
+        return true;
+    }
+
+    void close_gui() override {
+        const clap_plugin_gui_t* gui = gui_extension();
+        if (gui == nullptr || !gui_open_) return;
+        gui->hide(plugin_);
+        gui->destroy(plugin_);
+        gui_open_ = false;
+    }
+
+    bool gui_size(unsigned& width, unsigned& height) override {
+        const clap_plugin_gui_t* gui = gui_extension();
+        if (gui == nullptr || !gui_open_) return false;
+        uint32_t w = 0, h = 0;
+        if (!gui->get_size(plugin_, &w, &h)) return false;
+        width = w;
+        height = h;
+        return true;
+    }
+
     void main_thread_tick() override {
-        if (!host_.callback_requested) return;
-        host_.callback_requested = false;
-        plugin_->on_main_thread(plugin_);
+        if (host_.callback_requested) {
+            host_.callback_requested = false;
+            plugin_->on_main_thread(plugin_);
+        }
+        fire_due_timers();
     }
 
     void settle(int) override {
@@ -333,6 +451,38 @@ public:
     }
 
 private:
+    // Whatever the plugin registered, fired when it is due. Without this a plugin's
+    // editor is a still photograph: it draws once and never updates.
+    void fire_due_timers() {
+        if (host_.timers.empty()) return;
+        const auto* timers = static_cast<const clap_plugin_timer_support_t*>(
+            plugin_->get_extension(plugin_, CLAP_EXT_TIMER_SUPPORT));
+        if (timers == nullptr) return;
+        const uint64_t now = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+        // Copied because on_timer may register or unregister one, and a plugin
+        // rearranging the list underneath the loop walking it is a crash.
+        std::vector<ClapTimer> due;
+        for (ClapTimer& timer : host_.timers) {
+            if (now >= timer.next_ms) {
+                timer.next_ms = now + timer.period_ms;
+                due.push_back(timer);
+            }
+        }
+        for (const ClapTimer& timer : due) {
+            timers->on_timer(plugin_, timer.id);
+        }
+    }
+
+    const clap_plugin_gui_t* gui_extension() {
+        if (plugin_ == nullptr) return nullptr;
+        return static_cast<const clap_plugin_gui_t*>(
+            plugin_->get_extension(plugin_, CLAP_EXT_GUI));
+    }
+
+    bool gui_open_ = false;
 #if defined(_WIN32)
     HMODULE library_ = nullptr;
 #else

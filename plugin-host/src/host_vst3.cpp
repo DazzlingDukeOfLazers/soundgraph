@@ -39,6 +39,7 @@
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
+#include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/vst/vsttypes.h"
 #include "public.sdk/source/vst/hosting/eventlist.h"
@@ -365,6 +366,54 @@ public:
         return result == kResultOk || result == kNotImplemented;
     }
 
+    // ---- the plugin's own face -------------------------------------------------
+    // VST3 puts the editor on the *controller*, not the processor, which is the same
+    // split that decides where parameters live. A view is created, attached to a
+    // platform window, and told nothing else — resizing is a conversation this host
+    // does not yet hold.
+    bool has_gui() override {
+        if (!controller_) return false;
+        IPtr<IPlugView> view = owned(controller_->createView(ViewType::kEditor));
+        return view != nullptr;
+    }
+
+    bool open_gui(void* parent) override {
+        if (!controller_ || parent == nullptr) return false;
+        view_ = owned(controller_->createView(ViewType::kEditor));
+        if (!view_) return false;
+#if defined(_WIN32)
+        const FIDString platform = kPlatformTypeHWND;
+#elif defined(__APPLE__)
+        const FIDString platform = kPlatformTypeNSView;
+#else
+        const FIDString platform = kPlatformTypeX11EmbedWindowID;
+#endif
+        if (view_->isPlatformTypeSupported(platform) != kResultTrue) {
+            view_ = nullptr;
+            return false;
+        }
+        if (view_->attached(parent, platform) != kResultOk) {
+            view_ = nullptr;
+            return false;
+        }
+        return true;
+    }
+
+    void close_gui() override {
+        if (!view_) return;
+        view_->removed();
+        view_ = nullptr;
+    }
+
+    bool gui_size(unsigned& width, unsigned& height) override {
+        if (!view_) return false;
+        ViewRect rect{};
+        if (view_->getSize(&rect) != kResultOk) return false;
+        width = static_cast<unsigned>(rect.getWidth());
+        height = static_cast<unsigned>(rect.getHeight());
+        return true;
+    }
+
     void main_thread_tick() override { pump_messages(); }
 
     void settle(int milliseconds) override {
@@ -399,6 +448,7 @@ private:
     // an unambiguous upcast, and the SDK offers no unknownCast() on this class.
     FUnknown* host_context() { return static_cast<IHostApplication*>(&host_application_); }
 
+    IPtr<IPlugView> view_;
     VST3::Hosting::Module::Ptr module_;
     HostApplication host_application_;
     IPtr<IComponent> component_;

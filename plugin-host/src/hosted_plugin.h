@@ -64,6 +64,21 @@ public:
     virtual bool process_audio(const float* const* inputs, int input_channels,
                                float* const* outputs, int output_channels, int frames) = 0;
 
+    // ---- the plugin's own face -------------------------------------------------
+    // A plugin draws itself, into a window the host owns. What the host provides is a
+    // parent — an HWND on Windows, an NSView on macOS — and the plugin fills it. None
+    // of this is testable headlessly, which is exactly why it is kept behind an
+    // interface small enough to reason about: ask, open, size, close.
+    virtual bool has_gui() = 0;
+
+    // `parent` is an HWND / NSView. Returns false when the plugin has no editor, or
+    // refuses this platform, or simply declines — all of which are ordinary answers.
+    virtual bool open_gui(void* parent) = 0;
+    virtual void close_gui() = 0;
+
+    // What the plugin would like to be, in pixels. Only meaningful once open.
+    virtual bool gui_size(unsigned& width, unsigned& height) = 0;
+
     // Between blocks: the host's main thread. Formats that ask for a callback from
     // the audio thread — CLAP's request_callback, and anything a VST3 defers — get
     // answered here, which is the promise a real host makes.

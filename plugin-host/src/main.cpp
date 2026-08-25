@@ -101,6 +101,92 @@ void silence_system_dialogs() {
 #endif
 }
 
+// Shows a plugin's own window in a window of ours.
+//
+// The point is not the tool — nobody needs sg-host to look at Surge XT — but the
+// proof. Hosting a plugin's editor is the one part of this feature that cannot be
+// tested headlessly, so it is worth being able to see it working somewhere small
+// before it is asked to work inside the editor, where a failure looks like Godot's
+// fault. What the editor will do differently is hand over its own window handle
+// instead of this one.
+int show_gui(soundgraph::host::HostedPlugin& plugin, const std::string& title,
+             int seconds) {
+#if defined(_WIN32)
+    if (!plugin.has_gui()) {
+        std::printf("  this plugin has no editor to show\n");
+        return 1;
+    }
+
+    WNDCLASSEXW window_class{};
+    window_class.cbSize = sizeof(window_class);
+    window_class.lpfnWndProc = [](HWND window, UINT message, WPARAM w, LPARAM l) -> LRESULT {
+        if (message == WM_CLOSE) {
+            ::PostQuitMessage(0);
+            return 0;
+        }
+        return ::DefWindowProcW(window, message, w, l);
+    };
+    window_class.hInstance = ::GetModuleHandleW(nullptr);
+    window_class.lpszClassName = L"sg-host-plugin-window";
+    window_class.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
+    ::RegisterClassExW(&window_class);
+
+    const std::wstring wide(title.begin(), title.end());
+    HWND frame = ::CreateWindowExW(0, window_class.lpszClassName, wide.c_str(),
+                                   WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 900, 700,
+                                   nullptr, nullptr, window_class.hInstance, nullptr);
+    if (frame == nullptr) {
+        std::printf("  could not make a window to put it in\n");
+        return 1;
+    }
+
+    if (!plugin.open_gui(frame)) {
+        std::printf("  the plugin declined to open its editor here\n");
+        ::DestroyWindow(frame);
+        return 1;
+    }
+
+    // Fit the frame around whatever the plugin says it wants, rather than leaving it
+    // in a window of an arbitrary size with its face in one corner.
+    unsigned width = 0, height = 0;
+    if (plugin.gui_size(width, height) && width > 0 && height > 0) {
+        RECT wanted{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
+        ::AdjustWindowRect(&wanted, WS_OVERLAPPEDWINDOW, FALSE);
+        ::SetWindowPos(frame, nullptr, 0, 0, wanted.right - wanted.left,
+                       wanted.bottom - wanted.top, SWP_NOMOVE | SWP_NOZORDER);
+        std::printf("  editor is %u x %u\n", width, height);
+    }
+    ::ShowWindow(frame, SW_SHOW);
+    ::UpdateWindow(frame);
+
+    const DWORD deadline = seconds > 0 ? ::GetTickCount() + seconds * 1000u : 0;
+    MSG message;
+    while (true) {
+        while (::PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            if (message.message == WM_QUIT) {
+                plugin.close_gui();
+                ::DestroyWindow(frame);
+                return 0;
+            }
+            ::TranslateMessage(&message);
+            ::DispatchMessageW(&message);
+        }
+        plugin.main_thread_tick();
+        if (deadline != 0 && ::GetTickCount() > deadline) break;
+        ::Sleep(10);
+    }
+    plugin.close_gui();
+    ::DestroyWindow(frame);
+    return 0;
+#else
+    (void)plugin;
+    (void)title;
+    (void)seconds;
+    std::printf("  --gui is Windows-only so far\n");
+    return 1;
+#endif
+}
+
 // Long enough for a 20 ms timer to fire twice, which is what clap-wrapper's VST3 shim
 // needs to deliver deferred main-thread work. Paid once per run, never per block.
 constexpr int kSettleMilliseconds = 60;
@@ -108,6 +194,8 @@ constexpr int kSettleMilliseconds = 60;
 struct Options {
     std::string plugin_path;
     bool scan = false;
+    bool gui = false;
+    int gui_seconds = 0;
     std::string wav_path;
     bool list = false;
     int index = 0;
@@ -189,7 +277,14 @@ bool parse(int argc, char** argv, Options& options, std::string& error) {
             }
             return argv[++i];
         };
-        if (arg == "--list") {
+        if (arg == "--gui") {
+            options.gui = true;
+        } else if (arg == "--gui-seconds") {
+            const char* v = value("--gui-seconds");
+            if (!v) return false;
+            options.gui_seconds = std::atoi(v);
+            options.gui = true;
+        } else if (arg == "--list") {
             options.list = true;
         } else if (arg == "--index") {
             const char* v = value("--index");
@@ -333,6 +428,14 @@ int main(int argc, char** argv) {
     const auto parameters = plugin->parameters();
     std::printf("  %zu parameter(s), %d output channel(s)\n", parameters.size(),
                 plugin->channel_count());
+
+    if (options.gui) {
+        // A plugin's editor usually wants the plugin activated behind it — the face is
+        // a view onto something running, not a picture.
+        std::string activate_error;
+        plugin->activate(options.sample_rate, options.block, activate_error);
+        return show_gui(*plugin, plugin->chosen().name, options.gui_seconds);
+    }
 
     if (options.list) {
         for (const auto& parameter : parameters) {
