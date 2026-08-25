@@ -56,6 +56,27 @@ Toolchains live outside the repository: ESP-IDF v5.5 at `C:\Users\danie\esp-idf`
 Emscripten at `C:\Users\danie\emsdk`, Godot 4.7.1 under `C:\Users\danie\Downloads\gofo\`,
 and a repo-local `.venv` with pyserial and esptool.
 
+**What is actually on the Windows box as of 2026-08-25**, because the paragraph above
+described the machine it was written on and this clone found none of it. Reinstalled this
+session: Emscripten **4.0.20** at `C:\Users\danie\emsdk` — that version and not `latest`,
+because the Godot extension must be built against the same Emscripten as the 4.7.1 export
+template and `docs/decisions.md` records what a mismatch costs — plus CMake 4.4.2 and Ninja
+1.13.2 from winget, both user-scope, no elevation.
+
+Still missing, so **the native build, ctest and therefore `tools/pre-push.sh` cannot run
+here**: there is no C++ compiler at all — no MSVC, no gcc, no clang — and no ESP-IDF. What
+does work is the browser half end to end: configure with the Emscripten toolchain file
+directly rather than through `emcmake`, which is worth knowing because `emsdk_env.bat`
+detects MSYS and emits *bash* exports, so calling it from `cmd` sets nothing and leaves
+`emcc` off PATH while looking like it succeeded.
+
+```bash
+cmake -S . -B build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=C:/Users/danie/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+cmake --build build-wasm          # writes editor-web/soundgraph.wasm
+node runtime-wasm/verify-goldens.mjs
+```
+
 The native `build/` directory on the Windows machine is **Ninja + MSVC**, so `cmake
 --build build` only works from a shell that has the VS environment loaded — run it from a
 "x64 Native Tools" prompt, or wrap it:
@@ -173,12 +194,19 @@ gesture. Synthetic events do not lift that; only a person clicking does.
 
 - **The Web Serial deploy button has never been clicked.** It is gesture-gated by design,
   so it needs a human. Everything around it is verified; the button itself is not.
-- **The introduction has never been heard.** Every step of it has been walked, but this
-  machine has no Emscripten, so `editor-web/soundgraph.wasm` could not be built and the tour
-  ran its silent path throughout. The registry and validator were stood in for. What is
-  unverified is specifically the audible half: whether the Start Here patch sounds good,
-  whether one octave of cutoff is the right threshold *by ear*, and whether the pulse is
-  recognisable inside two minutes. Build the wasm and play it before the show.
+- **The introduction has not been heard through a browser.** The wasm now builds here (see
+  the toolchain note below), all 21 golden cases match the native vectors, and the tutorial
+  patch has been rendered and measured through the same module — it builds, it pulses evenly
+  (0.77 to 0.99 across the eight steps), it peaks at 0.715 with the limiter idle, and one
+  octave of cutoff takes the 880 Hz band from 0.6 to 3.5. The editor page loads that module,
+  types its cables from the real registry and builds its controls from the real validator.
+
+  What is still missing is a person clicking Start and listening. The AudioContext path
+  needs a trusted user gesture, which is exactly what a driven browser cannot supply, so
+  everything downstream of `engine.start()` — worklet, context, the meter — is inferred from
+  the module being correct rather than observed. Two minutes with headphones settles it, and
+  `docs/decisions.md` records that Godot's audio needed the same and behaved differently
+  than every automated check predicted.
 - **Nothing has been stored in the feedback service, and that is the tested half.** A funnel
   row from `http://localhost:8177` reaches `feedback.mutantfactory.net` and comes back
   `202 {"discarded": true}` — the preflight passes, the response is readable, and the row is
