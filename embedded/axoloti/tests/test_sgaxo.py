@@ -63,8 +63,12 @@ def toolchain():
 
 def run_case(board, case_name, patch_rel, frames, events=(), patch_path=None):
     path = patch_path if patch_path is not None else GOLDEN / patch_rel
-    binary, pid = codegen.build_patch(path, frames=frames,
-                                      name=case_name, events=events)
+    binary, pid, buffers = codegen.build_patch(path, frames=frames,
+                                               name=case_name, events=events)
+    board.stop_patch()
+    for addr, blob in buffers:
+        board.write_mem(addr, blob)
+        assert board.read_mem(addr, len(blob)) == blob, "buffer upload corrupt"
     board.run_patch(binary, expect_patch_id=pid)
     deadline = time.monotonic() + 3.0 + frames / 48000.0
     while board.read_u32(SGX_SHM + OFF_STATUS) != 1:
@@ -140,7 +144,7 @@ def test_first_synth_playable_over_midi(board, toolchain):
                 None)
     if name is None:
         pytest.skip("no CoreMIDI port for the board")
-    binary, pid = codegen.build_patch(
+    binary, pid, _buffers = codegen.build_patch(
         GOLDEN / "../../examples/patches/first-synth.json",
         frames=4800, name="first-synth-live")
     board.run_patch(binary, expect_patch_id=pid)
@@ -254,6 +258,9 @@ def _mirror_schedule(total_frames, notes, gate=0.7, velocity=0.9):
     # input on both sides, so this proves the wiring runs clean (no NaN, no
     # garbage) rather than exercising audio content.
     ("examples/patches/delay-echo.json", None, 0.25, TOLERANCE),
+    # Sampler: the buffer ships to SDRAM over USB, the read head runs in
+    # libgcc soft-double, and the notes trigger it through NoteInput.trigger.
+    ("examples/patches/nodes/Sampler.json", [60, 64], 0.6, TOLERANCE),
 ])
 def test_editor_patch_matches_native_render(board, toolchain, tmp_path, rel,
                                             notes, seconds, tolerance):

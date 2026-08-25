@@ -799,6 +799,73 @@ inline void k_allpass(AllpassState &s, float *line, const float *in,
   }
 }
 
+// --- Sampler (sources.cpp SamplerNode, stage 1) ------------------------------
+// The read head is double-precision, exactly like the node: the M4F has no
+// double FPU, so these run through libgcc's soft-float — IEEE-compliant, so
+// the golden comparison stays meaningful. Budget ~10-15% CPU per sampler.
+// The buffer itself lives in SDRAM, shipped by the host before start.
+
+struct SamplerState {
+  double position;
+  double play_begin;
+  double play_end;
+  int playing;
+  int gate_was_open;
+};
+
+inline void k_sampler(SamplerState &s, const float *gate,
+                      const float *frequency_in, const float *slice_in,
+                      float *out, float level, int loop, float root,
+                      int slices, float start, float length,
+                      const float *data, int frames, float rate_step) {
+  if (data == 0 || frames < 2) {
+    for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] = 0.0f;
+    return;
+  }
+  const double last = (double)(frames - 1);
+  const double slice_frames = (double)frames / slices;
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    const int open = gate != 0 && gate[i] >= 0.5f;
+    if (open && !s.gate_was_open) {
+      int slice = 0;
+      if (slice_in != 0) {
+        slice = (int)(clampf(slice_in[i], 0.0f, 1.0f) * (float)slices);
+        slice = slice >= slices ? slices - 1 : slice;
+      }
+      const double begin = slice * slice_frames;
+      s.play_begin = begin + start * slice_frames;
+      s.play_end = begin + clampf(start + length, 0.0f, 1.0f) * slice_frames;
+      s.play_end = s.play_end > last ? last : s.play_end;
+      s.position = s.play_begin;
+      s.playing = s.play_end > s.play_begin;
+    }
+    s.gate_was_open = open;
+
+    if (!s.playing) {
+      out[i] = 0.0f;
+      continue;
+    }
+
+    const int index = (int)s.position;
+    const float fraction = (float)(s.position - index);
+    const float sample =
+        data[index] * (1.0f - fraction) + data[index + 1] * fraction;
+    out[i] = sample * level;
+
+    const float pitch =
+        frequency_in != 0 ? clampf(frequency_in[i], 0.0f, 24000.0f) / root
+                          : 1.0f;
+    s.position += (double)(rate_step * pitch);
+    if (s.position >= s.play_end) {
+      if (loop) {
+        s.position = s.play_begin + (s.position - s.play_end);
+      } else {
+        s.playing = 0;
+      }
+    }
+  }
+}
+
 // --- Constant (sources.cpp ConstantNode) -------------------------------------
 
 inline void k_constant(float *out, float value) {

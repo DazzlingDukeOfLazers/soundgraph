@@ -260,6 +260,29 @@ int main(int argc, char** argv) {
             }
             out += "}}";
         }
+        out += "\n  ],\n  \"buffers\": [";
+        first = true;
+        int buffer_index = 0;
+        for (const soundgraph::BufferDescription& buffer : description.buffers) {
+            const std::string sidecar =
+                resolve_path + ".buf" + std::to_string(buffer_index++);
+            FILE* bf = std::fopen(sidecar.c_str(), "wb");
+            if (bf == nullptr) {
+                std::cerr << "cannot write " << sidecar << "\n";
+                return 1;
+            }
+            std::fwrite(buffer.samples.data(), sizeof(float),
+                        buffer.samples.size(), bf);
+            std::fclose(bf);
+            if (!first) out += ",";
+            first = false;
+            char rate[64];
+            std::snprintf(rate, sizeof rate, "%.17g", buffer.sample_rate);
+            out += "\n    {\"id\": \"" + json_escape(buffer.id) +
+                   "\", \"sample_rate\": " + rate +
+                   ", \"frames\": " + std::to_string(buffer.samples.size()) +
+                   ", \"file\": \"" + json_escape(sidecar) + "\"}";
+        }
         out += "\n  ],\n  \"connections\": [";
         first = true;
         for (const soundgraph::ConnectionDescription& connection : description.connections) {

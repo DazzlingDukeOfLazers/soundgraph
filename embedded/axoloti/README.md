@@ -112,8 +112,12 @@ Drive, Crush, Slide, Arpeggio, ADSR, AhdEnvelope, Retrigger, Gain, Constant,
 Add, Multiply, Mixer — twenty-four node types, every one hardware-verified:
 eleven manifest goldens bit-exact, slide 9e-6, first-synth 2e-6, and three
 fixtures against the native render at or under 1e-5. Editor patches at any
-schema version compile through the patch-io resolver; still refused by name:
-Sampler/Speech (buffers), polyphony (voices > 1), hosted plugins. Kernels
+schema version compile through the patch-io resolver, including Sampler
+patches: buffers ship to a 3.5 MB SDRAM pool over USB before start
+(verified by readback), and the read head runs in libgcc soft-double —
+IEEE-exact against native, ~10-15% CPU per sampler, hit-verified bit-exact
+on hardware. Still refused by name: Speech, polyphony (voices > 1), hosted
+plugins. Kernels
 without golden-manifest cases are verified against a native sg-render of the
 same patch (golden-on-demand, tests/fixtures/). Everything else is
 refused by name
