@@ -61,8 +61,9 @@ def toolchain():
         pytest.skip("sdk not fetched (tools/fetch-sdk.sh)")
 
 
-def run_case(board, case_name, patch_rel, frames, events=()):
-    binary, pid = codegen.build_patch(GOLDEN / patch_rel, frames=frames,
+def run_case(board, case_name, patch_rel, frames, events=(), patch_path=None):
+    path = patch_path if patch_path is not None else GOLDEN / patch_rel
+    binary, pid = codegen.build_patch(path, frames=frames,
                                       name=case_name, events=events)
     board.run_patch(binary, expect_patch_id=pid)
     deadline = time.monotonic() + 3.0 + frames / 48000.0
@@ -165,7 +166,58 @@ def test_first_synth_playable_over_midi(board, toolchain):
     assert peak > 0.05, "MIDI note produced no audio"
 
 
+SG_RENDER = GOLDEN.parent.parent / "build" / "bin" / "sg-render"
+
+
+def _native_reference(fixture, wav):
+    """Golden-on-demand: sg-render renders the fixture silently; the board
+    must match its left channel sample for sample."""
+    if not SG_RENDER.exists():
+        pytest.skip("native sg-render not built (build/bin/sg-render)")
+    import subprocess
+    subprocess.run([str(SG_RENDER), str(fixture), str(wav), "--seconds", "0.1",
+                    "--silent", "--float", "--quiet"], check=True)
+    # sg-render writes stereo float32; the board capture is the left channel.
+    data = wav.read_bytes()
+    pos, payload = 12, None
+    while pos + 8 <= len(data):
+        cid = data[pos:pos + 4]
+        size = struct.unpack_from("<I", data, pos + 4)[0]
+        if cid == b"data":
+            payload = data[pos + 8:pos + 8 + size]
+        pos += 8 + size + (size & 1)
+    stereo = struct.unpack(f"<{len(payload) // 4}f", payload)
+    return list(stereo[0::2])
+
+
+@pytest.mark.parametrize("fixture_name,tolerance", [
+    ("maths-mix", TOLERANCE),       # pure arithmetic; ~1 ULP fma residue
+    ("effects-chain", TOLERANCE),   # measured 4.2e-7: tanh/exp ride exp2f_approx
+])
+def test_fixture_matches_native_render(board, toolchain, tmp_path,
+                                       fixture_name, tolerance):
+    fixture = _HERE / "fixtures" / f"{fixture_name}.json"
+    golden = _native_reference(fixture, tmp_path / "native.wav")
+    rendered = run_case(board, fixture_name, None, len(golden),
+                        patch_path=fixture)
+    compare(rendered, golden, fixture_name, tolerance=tolerance)
+
+
+@pytest.mark.parametrize("case,tolerance", [
+    # Slide's per-sample pow(2,x) runs through exp2f_approx; a downstream
+    # oscillator integrates the tiny frequency error into coherent phase
+    # drift. Measured 9e-6 with the degree-8 polynomial (the first, worse
+    # polynomial produced 5e-3 here — this case is the exp2 accuracy meter).
+    ("slide", 5e-5),
+    ("noise-oscillator", 5e-5),
+])
+def test_slide_family_golden_on_hardware(board, toolchain, case, tolerance):
+    golden = read_golden_wav(GOLDEN / "vectors" / f"{case}.wav")
+    rendered = run_case(board, case, f"cases/{case}.json", len(golden))
+    compare(rendered, golden, case, tolerance=tolerance)
+
+
 def test_unsupported_patch_is_refused(toolchain):
     """The subset gate must refuse, by name, what the target cannot run."""
     with pytest.raises(codegen.Unsupported, match="not in the Axoloti subset"):
-        codegen.build_patch(GOLDEN / "cases" / "slide.json", name="refused")
+        codegen.build_patch(GOLDEN / "cases" / "arpeggio.json", name="refused")

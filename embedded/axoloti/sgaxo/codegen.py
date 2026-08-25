@@ -131,6 +131,31 @@ SUPPORTED = {
         "fixed": {},
         "outputs": ["out"],
     },
+    "Constant": {
+        "inputs": [], "connectable": set(),
+        "params": {"value": 1.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Add": {
+        "inputs": ["a", "b"], "connectable": {"a", "b"},
+        "params": {"offset": 0.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Multiply": {
+        "inputs": ["a", "b"], "connectable": {"a", "b"},
+        "params": {"factor": 1.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Mixer": {
+        "inputs": ["in1", "in2", "in3", "in4"],
+        "connectable": {"in1", "in2", "in3", "in4"},
+        "params": {"level1": 1.0, "level2": 1.0, "level3": 1.0, "level4": 1.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
     "SquareOscillator": {
         "inputs": ["frequency", "fm", "pm"],
         "connectable": {"frequency"},
@@ -163,6 +188,38 @@ SUPPORTED = {
         "params": {"rate": 8.0, "width": 1.0},
         "fixed": {},
         "outputs": ["gate"],
+    },
+    "Drive": {
+        "inputs": ["in", "drive"], "connectable": {"in", "drive"},
+        "params": {"drive": 4.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "OnePoleFilter": {
+        "inputs": ["in", "cutoff"], "connectable": {"in", "cutoff"},
+        "params": {"cutoff": 1000.0, "mode": 0.0, "cutoff_sweep": 0.0},
+        "fixed": {"cutoff_sweep": 0.0},
+        "outputs": ["out"],
+    },
+    "Phaser": {
+        "inputs": ["in", "offset"], "connectable": {"in", "offset"},
+        "params": {"offset": 0.0, "sweep": 0.0, "depth": 1.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Slide": {
+        "inputs": ["frequency", "gate"], "connectable": {"frequency", "gate"},
+        "params": {"slide": 0.0, "acceleration": 0.0, "limit": 0.0,
+                   "frequency": 440.0},
+        "fixed": {},
+        "outputs": ["frequency"],
+    },
+    "NoiseOscillator": {
+        "inputs": ["frequency", "fm", "pm"],
+        "connectable": {"frequency"},
+        "params": {"frequency": 440.0, "steps": 32.0, "seed": 12345.0},
+        "fixed": {},
+        "outputs": ["out"],
     },
     "StereoOutput": {
         "inputs": ["left", "right"], "connectable": {"left", "right"},
@@ -314,6 +371,17 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             L.append(f"static sgaxo::AhdState st_{c};")
         elif t == "Retrigger":
             L.append(f"static sgaxo::RetriggerState st_{c};")
+        elif t == "OnePoleFilter":
+            L.append(f"static sgaxo::OnePoleState st_{c};")
+        elif t == "Phaser":
+            L.append(f"static sgaxo::PhaserState st_{c};")
+        elif t == "Slide":
+            L.append(f"static sgaxo::SlideState st_{c};")
+        elif t == "NoiseOscillator":
+            L.append(f"static sgaxo::NoiseOscState st_{c};")
+            seed = int(f32(n["params"]["seed"])) & 0xFFFFFFFF
+            init.append(f"st_{c}.rng.seed({seed}u);")
+            init.append(f"st_{c}.last_phase = 1.0f;")
 
     L.append("")
     L.append("static void sg_graph_process(float *out_l, float *out_r) {")
@@ -367,6 +435,38 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             L.append(f"  sgaxo::k_ahd(st_{c}, {src(i, 'gate')}, {buf(i, 'out')}, "
                      f"{_lit(p['attack'])}, {_lit(p['hold'])}, "
                      f"{_lit(p['decay'])}, {_lit(p['punch'])}, {_lit(dt)});")
+        elif t == "Constant":
+            L.append(f"  sgaxo::k_constant({buf(i, 'out')}, {_lit(p['value'])});")
+        elif t == "Add":
+            L.append(f"  sgaxo::k_add({src(i, 'a')}, {src(i, 'b')}, "
+                     f"{buf(i, 'out')}, {_lit(p['offset'])});")
+        elif t == "Multiply":
+            L.append(f"  sgaxo::k_multiply({src(i, 'a')}, {src(i, 'b')}, "
+                     f"{buf(i, 'out')}, {_lit(p['factor'])});")
+        elif t == "Mixer":
+            ins = ", ".join(src(i, f"in{k}") for k in (1, 2, 3, 4))
+            lvls = ", ".join(_lit(p[f"level{k}"]) for k in (1, 2, 3, 4))
+            L.append(f"  sgaxo::k_mixer({ins}, {buf(i, 'out')}, {lvls});")
+        elif t == "Drive":
+            L.append(f"  sgaxo::k_drive({src(i, 'in')}, {src(i, 'drive')}, "
+                     f"{buf(i, 'out')}, {_lit(p['drive'])});")
+        elif t == "OnePoleFilter":
+            L.append(f"  sgaxo::k_onepole(st_{c}, {src(i, 'in')}, "
+                     f"{src(i, 'cutoff')}, {buf(i, 'out')}, {_lit(p['cutoff'])}, "
+                     f"{int(p['mode'])}, {_lit(SAMPLE_RATE)});")
+        elif t == "Phaser":
+            L.append(f"  sgaxo::k_phaser(st_{c}, {src(i, 'in')}, "
+                     f"{src(i, 'offset')}, {buf(i, 'out')}, {_lit(p['offset'])}, "
+                     f"{_lit(p['sweep'])}, {_lit(p['depth'])}, {_lit(SAMPLE_RATE)});")
+        elif t == "Slide":
+            L.append(f"  sgaxo::k_slide(st_{c}, {src(i, 'frequency')}, "
+                     f"{src(i, 'gate')}, {buf(i, 'frequency')}, {_lit(p['slide'])}, "
+                     f"{_lit(p['acceleration'])}, {_lit(p['limit'])}, "
+                     f"{_lit(p['frequency'])}, {_lit(SAMPLE_RATE)});")
+        elif t == "NoiseOscillator":
+            L.append(f"  sgaxo::k_noise_osc(st_{c}, {src(i, 'frequency')}, "
+                     f"{buf(i, 'out')}, {_lit(p['frequency'])}, "
+                     f"{_lit(p['steps'])}, {_lit(SAMPLE_RATE)});")
         elif t == "Retrigger":
             width_s = f32(f32(p["width"]) * f32(0.001))
             dt = f32(1.0 / SAMPLE_RATE)

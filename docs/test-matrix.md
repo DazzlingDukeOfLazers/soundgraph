@@ -13,7 +13,7 @@
 | Safari        | —      | —         | —              | —          | not yet exercised |
 | Firefox       | —      | —         | —              | —          | not yet exercised |
 | ESP32-S3      | —      | —         | —              | —          | Milestone F |
-| Axoloti Core  | patches via arm-none-eabi-gcc 16 |  53 hardware-in-loop | — (analog loopback instead) | yes (on-board analyzer) | programming + limits proven 2026-08-25 (176 raw osc / 48 Sine nodes / 28 voices; sgaxo goldens: 6 of 7 bit-exact incl. SDRAM delay, first-synth 2e-6); see embedded/axoloti/ |
+| Axoloti Core  | patches via arm-none-eabi-gcc 16 |  57 hardware-in-loop | — (analog loopback instead) | yes (on-board analyzer) | programming + limits proven 2026-08-25 (176 raw osc / 48 Sine nodes / 28 voices; sgaxo goldens: 6 of 7 bit-exact incl. SDRAM delay, first-synth 2e-6); see embedded/axoloti/ |
 
 ## Tolerances
 

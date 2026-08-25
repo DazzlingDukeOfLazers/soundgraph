@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "sgaxo maths fixture",
+    "description": "Exercises Constant, Add, Multiply and Mixer — connected inputs, parameter fallbacks, and a skipped mixer channel — deterministically (no notes).",
+    "tags": ["test"]
+  },
+  "nodes": [
+    { "id": "osc1", "type": "SineOscillator", "parameters": { "frequency": 220 } },
+    { "id": "osc2", "type": "SawOscillator", "parameters": { "frequency": 331 } },
+    { "id": "const", "type": "Constant", "parameters": { "value": 0.35 } },
+    { "id": "mul", "type": "Multiply", "parameters": {} },
+    { "id": "add", "type": "Add", "parameters": { "offset": 0.05 } },
+    { "id": "mulp", "type": "Multiply", "parameters": { "factor": 0.4 } },
+    { "id": "mix", "type": "Mixer", "parameters": { "level1": 0.8, "level2": 0.3, "level4": 0.5 } },
+    { "id": "out", "type": "StereoOutput", "parameters": { "level": 0.9, "safety_limit": 0 } }
+  ],
+  "connections": [
+    { "from": { "node": "osc1", "port": "out" }, "to": { "node": "mul", "port": "a" } },
+    { "from": { "node": "const", "port": "out" }, "to": { "node": "mul", "port": "b" } },
+    { "from": { "node": "osc2", "port": "out" }, "to": { "node": "mulp", "port": "a" } },
+    { "from": { "node": "mulp", "port": "out" }, "to": { "node": "add", "port": "a" } },
+    { "from": { "node": "mul", "port": "out" }, "to": { "node": "mix", "port": "in1" } },
+    { "from": { "node": "add", "port": "out" }, "to": { "node": "mix", "port": "in2" } },
+    { "from": { "node": "osc1", "port": "out" }, "to": { "node": "mix", "port": "in4" } },
+    { "from": { "node": "mix", "port": "out" }, "to": { "node": "out", "port": "left" } }
+  ]
+}

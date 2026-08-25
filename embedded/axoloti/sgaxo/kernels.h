@@ -93,20 +93,25 @@ class Xorshift32 {
 
 // --- board-side transcendentals (per-block modulation only) ------------------
 
-// 2^x. Exact for integer x (the polynomial is 1 at 0); relative error < 4e-8
-// on the fractional part — far inside golden tolerance for modulated cutoffs.
+// 2^x. Exact for integer x (the polynomial is 1 at 0); measured worst
+// relative error 7.4e-8 on the fractional part in float32 Horner — near the
+// rounding floor. (The first version of this used remembered coefficients
+// good to only 8e-6, which the slide golden case exposed as 5e-3 of coherent
+// oscillator phase drift: derive constants, never recall them.)
 inline float exp2f_approx(float x) {
   const float xf = x < -126.0f ? -126.0f : (x > 127.0f ? 127.0f : x);
   const int ip = (int)xf - (xf < (float)(int)xf ? 1 : 0);  // floor
   const float r = xf - (float)ip;                          // [0,1)
-  // Degree-6 minimax for 2^r on [0,1), constrained to 1 at r=0.
+  // Degree-8 least-squares fit of 2^r - 1 on Chebyshev nodes, exact at r=0.
   const float p = 1.0f +
-      r * (0.69314718056f +
-      r * (0.24022650695f +
-      r * (0.05550411502f +
-      r * (0.00961804886f +
-      r * (0.00133335581f +
-      r *  0.00015400290f)))));
+      r * (0.6931471824645996f +
+      r * (0.24022649228572845f +
+      r * (0.05550418421626091f +
+      r * (0.009617937728762627f +
+      r * (0.0013334822142496705f +
+      r * (0.00015432936197612435f +
+      r * (1.461843385186512e-05f +
+      r *  1.7707471897665528e-06f)))))));
   union { uint32_t u; float f; } s;
   s.u = (uint32_t)(ip + 127) << 23;  // 2^ip
   return p * s.f;
@@ -503,6 +508,216 @@ inline void k_note_input(NoteState &s, float *frequency_out, float *gate_out,
     if (velocity_out) velocity_out[i] = s.velocity;
     if (trigger_out) trigger_out[i] = s.trigger_remaining > 0 ? 1.0f : 0.0f;
     if (s.trigger_remaining > 0) --s.trigger_remaining;
+  }
+}
+
+// --- Drive (amplitude.cpp DriveNode) -----------------------------------------
+// Per-sample tanh through the exp2 polynomial; the makeup normalization is
+// per-block, exactly like the node.
+
+inline void k_drive(const float *in, const float *drive_in, float *out,
+                    float drive_param) {
+  if (in == 0) {
+    for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] = 0.0f;
+    return;
+  }
+  float drive = drive_in != 0 ? drive_in[0] : drive_param;
+  drive = drive < 1.0f ? 1.0f : (drive > 30.0f ? 30.0f : drive);
+  const float makeup = 1.0f / tanhf_approx(drive);
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    out[i] = tanhf_approx(in[i] * drive) * makeup;
+  }
+}
+
+// --- OnePoleFilter (filters.cpp OnePoleFilterNode) ---------------------------
+// Supported subset: cutoff_sweep must be 0 (same reason as the SVF's).
+
+struct OnePoleState {
+  float state;
+  float previous_input;
+};
+
+inline void k_onepole(OnePoleState &s, const float *in, const float *cutoff_in,
+                      float *out, float cutoff_param, int mode,
+                      float sample_rate) {
+  if (in == 0) {
+    for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] = 0.0f;
+    return;
+  }
+  float cutoff = cutoff_in != 0 ? cutoff_in[0] : cutoff_param;
+  cutoff = clampf(cutoff, 0.1f, sample_rate * 0.45f);
+  const float w = 6.28318530717958647692f * cutoff / sample_rate;
+  const float r = exp2f_approx(-w * 1.44269504088896341f);  // exp(-w)
+  if (mode == 0) {
+    const float a = 1.0f - r;
+    for (int i = 0; i < SGAXO_FRAMES; ++i) {
+      s.state += (in[i] - s.state) * a;
+      out[i] = s.state;
+    }
+  } else {
+    for (int i = 0; i < SGAXO_FRAMES; ++i) {
+      s.state = r * (s.state + in[i] - s.previous_input);
+      s.previous_input = in[i];
+      out[i] = s.state;
+    }
+  }
+}
+
+// --- Phaser (shaping.cpp PhaserNode) -----------------------------------------
+// The swept line is small (24 ms) and lives in CCM .bss.
+
+#define SGAXO_PHASER_CAPACITY 1154  // int(48000 * 24ms) + 2, as prepare() sizes it
+
+struct PhaserState {
+  int write_index;
+  uint32_t sample_index;
+  float line[SGAXO_PHASER_CAPACITY];
+};
+
+inline void k_phaser(PhaserState &s, const float *in, const float *offset_in,
+                     float *out, float start_offset, float sweep, float depth,
+                     float sample_rate) {
+  if (in == 0) {
+    for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] = 0.0f;
+    return;
+  }
+  const int capacity = SGAXO_PHASER_CAPACITY;
+  const float max_ms = 24.0f;
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    const float swept =
+        start_offset + sweep * (float)s.sample_index / sample_rate;
+    const float offset_ms =
+        offset_in != 0 ? offset_in[i] : clampf(swept, 0.0f, max_ms);
+    const float delay_samples = clampf(offset_ms, 0.0f, max_ms) * 0.001f *
+                                sample_rate;
+    s.line[s.write_index] = in[i];
+    float read_position = (float)s.write_index - delay_samples;
+    while (read_position < 0.0f) read_position += (float)capacity;
+    const int index0 = (int)read_position % capacity;
+    const int index1 = (index0 + 1) % capacity;
+    // std::floor of a non-negative value.
+    const float fraction = read_position - (float)(int)read_position;
+    const float delayed = s.line[index0] * (1.0f - fraction) +
+                          s.line[index1] * fraction;
+    out[i] = in[i] + delayed * depth;
+    s.write_index = (s.write_index + 1) % capacity;
+    s.sample_index++;
+  }
+}
+
+// --- Slide (shaping.cpp SlideNode) -------------------------------------------
+// The per-sample pow(2, x) runs through exp2f_approx (~4e-8 relative); when a
+// downstream oscillator integrates the bent frequency the error drifts the
+// phase coherently, so slide-driven golden cases carry a wider tolerance —
+// the same phenomenon that puts the ESP32's worst case near 1e-4.
+
+struct SlideState {
+  uint32_t sample_index;
+  float start_frequency;
+  int gate_was_open;
+  int started;
+};
+
+inline void k_slide(SlideState &s, const float *frequency, const float *gate,
+                    float *out, float slide, float acceleration, float limit,
+                    float base_frequency, float sample_rate) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    const float pitch = frequency != 0 ? frequency[i] : base_frequency;
+    const int open = gate != 0 && gate[i] >= 0.5f;
+    if ((open && !s.gate_was_open) || !s.started) {
+      s.sample_index = 0;
+      s.started = 1;
+      s.start_frequency = pitch;
+    }
+    s.gate_was_open = open;
+    const float t = (float)s.sample_index / sample_rate;
+    const float semitones = (slide + 0.5f * acceleration * t) * t;
+    float bent = pitch * exp2f_approx(semitones / 12.0f);
+    if (limit > 0.0f) {
+      if (s.start_frequency >= limit) {
+        bent = bent < limit ? limit : bent;
+      } else {
+        bent = bent > limit ? limit : bent;
+      }
+    }
+    out[i] = bent;
+    s.sample_index++;
+  }
+}
+
+// --- NoiseOscillator (sources.cpp NoiseOscillator) ---------------------------
+// The OscillatorBase spine with the periodic-noise render: a table refilled on
+// every phase wrap. Init must seed the rng and set last_phase to 1.0 (bss is
+// zeroed; 1.0 forces the first-sample refill exactly like reset()).
+
+struct NoiseOscState {
+  OscState osc;
+  Xorshift32 rng;
+  float table[64];
+  float last_phase;
+};
+
+inline void k_noise_osc(NoiseOscState &s, const float *frequency_in,
+                        float *out, float base_frequency, float steps_param,
+                        float sample_rate) {
+  const float nyquist = sample_rate * 0.5f;
+  const int steps = (int)clampf(steps_param, 2.0f, 64.0f);
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    float frequency = frequency_in != 0 ? frequency_in[i] : base_frequency;
+    frequency = clampf(frequency, 0.0f, nyquist);
+    const float increment = frequency / sample_rate;
+    const float phase = s.osc.phase;
+    if (phase < s.last_phase) {
+      for (int k = 0; k < steps; ++k) s.table[k] = s.rng.next_bipolar();
+    }
+    s.last_phase = phase;
+    int index = (int)(phase * (float)steps);
+    if (index < 0) index = 0;
+    if (index >= steps) index = steps - 1;
+    out[i] = s.table[index];
+    s.osc.hist_b = s.osc.hist_a;
+    s.osc.hist_a = out[i];
+    s.osc.phase = wrap01(s.osc.phase + increment);
+  }
+}
+
+// --- Constant (sources.cpp ConstantNode) -------------------------------------
+
+inline void k_constant(float *out, float value) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] = value;
+}
+
+// --- Add / Multiply (amplitude.cpp AddNode / MultiplyNode) -------------------
+// The parameter stands in for the b input while it is unconnected.
+
+inline void k_add(const float *a, const float *b, float *out, float offset) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    out[i] = (a != 0 ? a[i] : 0.0f) + (b != 0 ? b[i] : offset);
+  }
+}
+
+inline void k_multiply(const float *a, const float *b, float *out,
+                       float factor) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    out[i] = (a != 0 ? a[i] : 0.0f) * (b != 0 ? b[i] : factor);
+  }
+}
+
+// --- Mixer (amplitude.cpp MixerNode) -----------------------------------------
+// Channel order is the accumulation order; float addition is not associative,
+// so it must match the node's channel loop exactly.
+
+inline void k_mixer(const float *in1, const float *in2, const float *in3,
+                    const float *in4, float *out, float level1, float level2,
+                    float level3, float level4) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] = 0.0f;
+  const float *ins[4] = {in1, in2, in3, in4};
+  const float levels[4] = {level1, level2, level3, level4};
+  for (int channel = 0; channel < 4; ++channel) {
+    const float *in = ins[channel];
+    if (in == 0) continue;
+    const float level = levels[channel];
+    for (int i = 0; i < SGAXO_FRAMES; ++i) out[i] += in[i] * level;
   }
 }
 

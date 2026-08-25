@@ -98,9 +98,14 @@ modulation math (SVF tan/exp2) runs on the board, as short polynomials.
 Compiled patches are playable instruments: live MIDI (any transport) drives
 the same note handler the golden events replay through.
 
-Supported today: Input(note)/Output seams, Sine/Saw/Square oscillators,
-Noise (white and pink), LFO (all shapes), StateVariableFilter, Delay
-(SDRAM-backed, 2 s), ADSR, AhdEnvelope, Retrigger, Gain. Everything else is
+Supported today: Input(note)/Output seams, Sine/Saw/Square/Noise
+oscillators, Noise (white and pink), LFO (all shapes), StateVariableFilter,
+OnePoleFilter, Delay (SDRAM-backed, 2 s), Phaser, Drive, Slide, ADSR,
+AhdEnvelope, Retrigger, Gain, Constant, Add, Multiply, Mixer — twenty node
+types, every one hardware-verified (seven manifest goldens: six bit-exact;
+slide 9e-6; fixtures vs native render at or under 1e-5). Kernels
+without golden-manifest cases are verified against a native sg-render of the
+same patch (golden-on-demand, tests/fixtures/). Everything else is
 refused by name
 at compile time — the subset is a tested claim, not a vibe.
 
