@@ -678,8 +678,16 @@ const tour = new Onboarding({
     graphElement: () => ui.graph,
     startAudio,
     audioRunning: () => started,
-    stopAudio: () => engine.suspend(),
-    resumeAudio: () => engine.context?.resume(),
+    // The worklet stops posting meter readings while the context is suspended, so the bar
+    // holds whatever it last said — a frozen level reads as signal. Zero it on the way out.
+    stopAudio: async () => {
+        await engine.suspend();
+        ui.meterFill.style.width = '0%';
+        ui.meterFill.classList.remove('hot');
+    },
+    // Through start() rather than context.resume(), so resuming gets the same refusal
+    // timeout as starting. A resume that never settles hangs just as silently.
+    resumeAudio: () => engine.start(),
     loadTutorialPatch: () => loadExample(TUTORIAL_PATCH),
     controlElement: (id) => controlSurfaces.get(id)?.slider ?? null,
     controlValue: (id) => controlSurfaces.get(id)?.value ?? null,

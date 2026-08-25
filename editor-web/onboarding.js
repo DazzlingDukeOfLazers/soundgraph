@@ -445,15 +445,20 @@ export class Onboarding {
         for (const element of this.modal.querySelectorAll('button')) {
             element.disabled = true;
         }
+        // Everything, not just the audio. This used to end at startAudio, so anything that
+        // failed afterwards left the modal on screen with both its buttons disabled and no
+        // error anywhere — a dead end with no way out and nothing to read. Whatever goes
+        // wrong between the click and the first coach mark, the visitor gets a screen with
+        // a way forward on it.
         try {
             await this.host.startAudio();
             milestone(MILESTONES.AUDIO_STARTED);
             this.silent = false;
+            await this.host.loadTutorialPatch();
         } catch (error) {
             this.showAudioFailure(error);
             return;
         }
-        await this.host.loadTutorialPatch();
         this.showHear();
     }
 
