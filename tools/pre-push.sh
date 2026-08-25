@@ -54,14 +54,35 @@ if [ -d "$build" ]; then
         # Spelled 8.3 and unredirected on purpose — see tools/rebuild-extensions.sh
         # for the three MSYS traps this line walks around (quote mangling, spaces,
         # and `>nul` becoming /dev/null inside the argument).
-        vcvars="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat"
-        if [ -f "$vcvars" ]; then
-            cmd //c 'C:\PROGRA~1\MICROS~4\2022\COMMUN~1\VC\Auxiliary\Build\vcvars64.bat && cmake --build build' || {
+        # Asked for rather than assumed. The Community edition was hard-coded here, and
+        # this machine has Build Tools under Program Files (x86) instead — so the fallback
+        # silently did not apply and the gate reported a build failure whose real cause was
+        # a path that had stopped existing. vswhere ships with every installation since
+        # 2017 and is itself at a fixed location, which is the one path worth hard-coding.
+        vswhere="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+        vsroot=""
+        if [ -x "$vswhere" ]; then
+            vsroot=$("$vswhere" -latest -products '*' \
+                -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+                -property installationPath 2>/dev/null | tr -d '\r')
+        fi
+        vcvars="$vsroot/VC/Auxiliary/Build/vcvars64.bat"
+        if [ -n "$vsroot" ] && [ -f "$vcvars" ]; then
+            # Through a batch file rather than inline: the 8.3 spelling this used to need
+            # only existed to dodge the spaces, and a discovered path can contain anything.
+            # See tools/rebuild-extensions.sh for the MSYS quoting traps either way.
+            runner=$(mktemp --suffix=.bat)
+            printf '@echo off\r\ncall "%s" >nul\r\ncmake --build build\r\n' \
+                "$(cygpath -w "$vcvars")" > "$runner"
+            cmd //c "$(cygpath -w "$runner")" || {
+                rm -f "$runner"
                 echo "build failed — fix it before pushing" >&2
                 exit 1
             }
+            rm -f "$runner"
         else
             echo "build failed — run cmake --build $build to see why" >&2
+            echo "  (no Visual Studio with the C++ tools found via vswhere)" >&2
             exit 1
         fi
     fi

@@ -3,15 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SoundGraph — browser runtime</title>
+<title>SoundGraph — see the sound, change the sound</title>
 <link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./onboarding.css">
 </head>
 <body>
 
 <header>
   <div class="brand">
     <h1>SoundGraph</h1>
-    <p class="tagline">The web app isn't the synth. The graph is the synth.</p>
+    <p class="tagline">See the sound. Change the sound.</p>
   </div>
   <div class="transport">
     <button id="start" class="primary">Start audio</button>
@@ -20,23 +21,43 @@
   </div>
 </header>
 
+<nav class="actions-bar" aria-label="Patch actions">
+  <button id="new-patch">New patch</button>
+  <select id="examples" aria-label="Factory patches"></select>
+  <button id="save-local">Save locally</button>
+  <button id="open-full" hidden>Open in the full editor</button>
+  <span class="spacer"></span>
+  <button id="help">Help</button>
+  <button id="about">About</button>
+  <button id="join">Join the mailing list</button>
+</nav>
+
 <main>
-  <section class="panel patch">
+  <!-- The pitch, on the page rather than behind a dialog. This is the page a QR code
+       points at, so the thing it is has to be legible before anything is clicked. -->
+  <section class="hero">
+    <h2>Draw a sound. Understand every connection.</h2>
+    <p class="lede">
+      Most synthesizers expose controls. SoundGraph exposes relationships: where a signal
+      begins, what changes it, and why the result sounds the way it does.
+    </p>
+    <p class="hint">
+      Below is a working patch. Press <strong>Start audio</strong>, then move the filter
+      cutoff and watch which part of the graph lights up.
+    </p>
+    <ul id="surfaces" class="surfaces"></ul>
+  </section>
+
+  <section class="panel graph-panel">
     <div class="panel-head">
-      <h2>Patch</h2>
-      <div class="panel-actions">
-        <select id="examples" aria-label="Example patches"></select>
-        <button id="apply">Apply</button>
-        <button id="save">Save .json</button>
-        <button id="deploy" hidden>Deploy to board</button>
-        <label class="file-button">
-          Open&hellip;
-          <input type="file" id="open" accept="application/json,.json">
-        </label>
-      </div>
+      <h2>The graph</h2>
+      <span id="graph-name" class="status"></span>
     </div>
-    <textarea id="patch" spellcheck="false" aria-label="Patch JSON"></textarea>
-    <div id="diagnostics" class="diagnostics"></div>
+    <div id="graph" class="graph"></div>
+    <p class="hint">
+      Audio runs along the thick lines, control along the thin ones. Select a node to find
+      it in the patch source.
+    </p>
   </section>
 
   <section class="panel performance">
@@ -56,7 +77,112 @@
     <div class="panel-head"><h2>What the graph is doing</h2></div>
     <div id="info" class="info"></div>
   </section>
+
+  <!-- Collapsed by default. The patch format is the product, so it stays one click away
+       and never behind a mode — but a JSON pane is the first thing a visitor sees only if
+       this page is a developer tool, and it is not one any more. -->
+  <section class="panel patch">
+    <details id="source">
+      <summary>
+        <span class="summary-title">Patch source</span>
+        <span class="hint">The file itself. Editing it here changes what you hear.</span>
+      </summary>
+      <div class="panel-head">
+        <h2>JSON</h2>
+        <div class="panel-actions">
+          <button id="apply">Apply</button>
+          <button id="save">Save .json</button>
+          <button id="deploy" hidden>Deploy to board</button>
+          <label class="file-button">
+            Open&hellip;
+            <input type="file" id="open" accept="application/json,.json">
+          </label>
+        </div>
+      </div>
+      <textarea id="patch" spellcheck="false" aria-label="Patch JSON"></textarea>
+      <div id="diagnostics" class="diagnostics"></div>
+    </details>
+  </section>
 </main>
+
+<div id="about-sheet" class="sheet" hidden>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <h2 id="about-title">About SoundGraph</h2>
+    <p>
+      SoundGraph is a visual synthesizer project for building, hearing, and learning signal
+      flow. The central artifact is a portable patch file: the same graph runs in this
+      browser, in the full editor, on the desktop, and on cheap embedded hardware.
+    </p>
+
+    <h3>What runs where</h3>
+    <ul id="about-surfaces"></ul>
+
+    <h3>What this page stores</h3>
+    <p>
+      In your browser, and nowhere else unless you ask: a random id so a repeated report
+      updates in place rather than becoming two, how far the introduction got, the patch you
+      last saved locally, and whether you answered the mailing-list invitation. Clearing
+      site data clears all of it.
+    </p>
+    <p>
+      If you join the mailing list, your address is sent to the Mutant Factory feedback
+      service and read by a person. Nothing else leaves this page — not your patch, not
+      your audio, not what you played.
+    </p>
+
+    <p>
+      SoundGraph is a Mutant Factory project: new interfaces for things that already exist,
+      with the machinery left open whenever possible.
+    </p>
+
+    <p class="build">Build <span id="about-build">development</span></p>
+
+    <div class="sheet-actions">
+      <button id="about-join" class="primary">Join project updates</button>
+      <button id="about-forget">Forget what this page stored</button>
+      <button id="about-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="help-sheet" class="sheet" hidden>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <h2 id="help-title">Help</h2>
+
+    <h3>Playing</h3>
+    <ul>
+      <li>Press <strong>Start audio</strong> first — browsers will not make sound until you do.</li>
+      <li>The on-screen keys, your computer keyboard and any connected MIDI keyboard all play the patch.</li>
+      <li><kbd>z</kbd> and <kbd>x</kbd> shift the keyboard an octave.</li>
+    </ul>
+
+    <h3>Reading the graph</h3>
+    <ul>
+      <li>Signal runs left to right. Thick lines carry audio; thin ones carry control.</li>
+      <li>Selecting a node finds it in the patch source.</li>
+      <li>Moving a control lights the node it drives.</li>
+    </ul>
+
+    <h3>What this page cannot do</h3>
+    <p>
+      This page <em>reads</em> a graph. It does not let you add a node or drag a cable —
+      that is the full editor's job, and keeping the two apart is why a patch means the
+      same thing in both. See <strong>About</strong> for what runs where.
+    </p>
+
+    <h3>No sound?</h3>
+    <ul>
+      <li>Check the system volume and which output device the browser is using.</li>
+      <li>The level meter beside <strong>Start audio</strong> moves when the patch is making signal, even if you cannot hear it.</li>
+      <li>A patch with errors does not play. The problems appear under the patch source.</li>
+    </ul>
+
+    <div class="sheet-actions">
+      <button id="help-restart" class="primary">Restart introduction</button>
+      <button id="help-close">Close</button>
+    </div>
+  </div>
+</div>
 
 <script type="module" src="./app.js"></script>
 </body>

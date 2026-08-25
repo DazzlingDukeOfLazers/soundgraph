@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-// Writes editor-godot/build_stamp.json: what this build came from and when.
+// Writes a build stamp: what this build came from and when.
 //
-//   node tools/stamp-build.mjs [--target web|desktop]
+//   node tools/stamp-build.mjs [--target web|desktop|web-editor]
+//
+// `web` and `desktop` stamp the Godot editor. `web-editor` stamps editor-web, which needs
+// one for a different reason: it is the `app_version` on every report that page sends, and
+// the feedback envelope is blunt about it — a report you cannot pin to an exact build is
+// close to worthless. Same file, same shape, same reason not to commit it.
 //
 // "Am I running a stale build" is not a question anyone should have to answer by
 // reasoning about their browser cache. It is especially not answerable for the web
@@ -20,10 +25,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const out = join(root, 'editor-godot', 'build_stamp.json');
 
 const targetIndex = process.argv.indexOf('--target');
 const target = targetIndex >= 0 ? process.argv[targetIndex + 1] : 'desktop';
+
+const out = target === 'web-editor'
+    ? join(root, 'editor-web', 'build_stamp.json')
+    : join(root, 'editor-godot', 'build_stamp.json');
 
 // Every git call is allowed to fail: a tarball with no .git is a legitimate way to have
 // this source, and the stamp should degrade to "what it could find out" rather than

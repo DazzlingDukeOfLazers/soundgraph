@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "author": "Mutant Factory",
+    "created": "2026-08-25",
+    "description": "The patch a first-time visitor meets. A clocked eight-step line through a saw oscillator and a resonant lowpass — small enough to read left to right in one glance, and loud enough about the filter that dragging the cutoff is unmistakable. The onboarding tour teaches this patch and nothing else.",
+    "name": "Start Here",
+    "tags": [
+      "onboarding",
+      "demo",
+      "sequence"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "clock",
+      "type": "Clock",
+      "name": "Sequence",
+      "parameters": {
+        "bpm": 112,
+        "division": 4,
+        "swing": 0,
+        "width": 5
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "seq",
+      "type": "StepSequencer",
+      "name": "Eight Steps",
+      "parameters": {
+        "length": 8,
+        "step1": 0,
+        "step2": 0,
+        "step3": 1,
+        "step4": 0,
+        "step5": 0.25,
+        "step6": 0,
+        "step7": 0.4166667,
+        "step8": 0.25
+      },
+      "position": {
+        "x": 440,
+        "y": 0
+      }
+    },
+    {
+      "id": "env",
+      "type": "AhdEnvelope",
+      "name": "Pluck",
+      "parameters": {
+        "attack": 0.002,
+        "hold": 0.03,
+        "decay": 0.16,
+        "punch": 0.4
+      },
+      "position": {
+        "x": 880,
+        "y": 400
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "name": "Oscillator",
+      "parameters": {
+        "frequency": 55
+      },
+      "position": {
+        "x": 880,
+        "y": 0
+      }
+    },
+    {
+      "id": "filter",
+      "type": "StateVariableFilter",
+      "name": "Filter",
+      "parameters": {
+        "cutoff": 420,
+        "mode": 0,
+        "resonance": 0.72
+      },
+      "position": {
+        "x": 1320,
+        "y": 0
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "name": "Amplifier",
+      "parameters": {
+        "gain": 0.7
+      },
+      "position": {
+        "x": 1760,
+        "y": 0
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "host": "stereo",
+      "name": "Output",
+      "parameters": {
+        "level": 0.35,
+        "safety_limit": 1
+      },
+      "position": {
+        "x": 2200,
+        "y": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "seq",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "seq",
+        "port": "out"
+      },
+      "to": {
+        "node": "osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "filter",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "filter",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "cutoff",
+      "label": "Filter Cutoff",
+      "kind": "knob",
+      "target": {
+        "node": "filter",
+        "parameter": "cutoff"
+      },
+      "min": 80,
+      "max": 8000,
+      "default": 420,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 74,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "resonance",
+      "label": "Resonance",
+      "kind": "knob",
+      "target": {
+        "node": "filter",
+        "parameter": "resonance"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.72,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 71,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "tempo",
+      "label": "Tempo",
+      "kind": "knob",
+      "target": {
+        "node": "clock",
+        "parameter": "bpm"
+      },
+      "min": 60,
+      "max": 160,
+      "default": 112,
+      "scaling": "linear"
+    },
+    {
+      "id": "master",
+      "label": "Master",
+      "kind": "knob",
+      "target": {
+        "node": "out",
+        "parameter": "level"
+      },
+      "min": 0,
+      "max": 1.2,
+      "default": 0.35,
+      "scaling": "logarithmic",
+      "binding": {
+        "midi_cc": 7,
+        "midi_channel": 1
+      }
+    }
+  ]
+}

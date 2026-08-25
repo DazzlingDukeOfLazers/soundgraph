@@ -25,13 +25,36 @@ const PATCHES = ['first-synth.json', 'delay-echo.json', 'game/jump.json'];
 const RENDER_SECONDS = 2;
 const NOTES = '45,52,57';
 
+// Godot is found the same way the gate finds it, which it previously was not. This read
+// only `GODOT`, while tools/pre-push.sh reads `SOUNDGRAPH_GODOT` then `git config
+// soundgraph.godot`, and tools/export-web.mjs reads `SOUNDGRAPH_GODOT` then `--godot`.
+// Three spellings for one answer, and setting the wrong one here does not say so: the
+// hard-coded fallback below has moved, `godot` is not on the PATH under that name on
+// Windows, and execFileSync on a command that does not exist reports `status: null` — the
+// same thing it reports for a timeout. All three patches then "could not round trip",
+// which reads like the editor mangling them rather than Godot never having run at all.
 function findGodot() {
+    if (process.env.SOUNDGRAPH_GODOT) return process.env.SOUNDGRAPH_GODOT;
     if (process.env.GODOT) return process.env.GODOT;
+
+    try {
+        const configured = execFileSync('git', ['config', '--get', 'soundgraph.godot'],
+            { cwd: repoRoot, encoding: 'utf8' }).trim();
+        if (configured) return configured;
+    } catch {
+        // No such setting, or no git. Fall through to looking for it.
+    }
+
     const candidates = [
         'C:\\Users\\danie\\Downloads\\gofo\\Godot_v4.7.1-stable_win64.exe\\Godot_v4.7.1-stable_win64_console.exe',
         'C:\\Users\\danie\\Downloads\\gofo\\Godot_v4.7.1-stable_win64.exe\\Godot_v4.7.1-stable_win64.exe',
+        // What winget installs it as. `godot` is not one of the names it ships under.
+        process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Microsoft', 'WinGet',
+            'Packages', 'GodotEngine.GodotEngine_Microsoft.Winget.Source_8wekyb3d8bbwe',
+            'Godot_v4.7.1-stable_win64_console.exe'),
         'godot',
-    ];
+    ].filter(Boolean);
+
     for (const candidate of candidates) {
         if (candidate === 'godot' || existsSync(candidate)) return candidate;
     }
