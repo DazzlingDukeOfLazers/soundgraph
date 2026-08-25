@@ -100,10 +100,13 @@ the same note handler the golden events replay through.
 
 Supported today: Input(note)/Output seams, Sine/Saw/Square/Noise
 oscillators, Noise (white and pink), LFO (all shapes), StateVariableFilter,
-OnePoleFilter, Delay (SDRAM-backed, 2 s), Phaser, Drive, Slide, ADSR,
-AhdEnvelope, Retrigger, Gain, Constant, Add, Multiply, Mixer — twenty node
-types, every one hardware-verified (seven manifest goldens: six bit-exact;
-slide 9e-6; fixtures vs native render at or under 1e-5). Kernels
+OnePoleFilter, Delay/Comb/Allpass (SDRAM-backed lines, 4 MB budget), Phaser,
+Drive, Crush, Slide, Arpeggio, ADSR, AhdEnvelope, Retrigger, Gain, Constant,
+Add, Multiply, Mixer — twenty-four node types, every one hardware-verified:
+eleven manifest goldens bit-exact, slide 9e-6, first-synth 2e-6, and three
+fixtures against the native render at or under 1e-5. Note: sgaxo reads
+schema_version 1 (the golden/case format); editor patches at schema_version 3
+need patch-io's loader before this target — a known gap. Kernels
 without golden-manifest cases are verified against a native sg-render of the
 same patch (golden-on-demand, tests/fixtures/). Everything else is
 refused by name

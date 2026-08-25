@@ -681,6 +681,124 @@ inline void k_noise_osc(NoiseOscState &s, const float *frequency_in,
   }
 }
 
+// std::floor for values of either sign (the positive-only cast is not enough
+// once quantized audio goes negative).
+inline float floorf_signed(float v) {
+  const int t = (int)v;
+  return (float)(t - (v < (float)t ? 1 : 0));
+}
+
+// --- Arpeggio (shaping.cpp ArpeggioNode) -------------------------------------
+// ratio = pow(2, interval/12) is parameter-derived: codegen-baked.
+
+struct ArpeggioState {
+  float elapsed;
+  int stepped;
+  int gate_was_open;
+};
+
+inline void k_arpeggio(ArpeggioState &s, const float *frequency,
+                       const float *gate, float *out, float time, float ratio,
+                       float base_frequency, float dt) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    const float pitch = frequency != 0 ? frequency[i] : base_frequency;
+    const int open = gate != 0 && gate[i] >= 0.5f;
+    if (open && !s.gate_was_open) {
+      s.elapsed = 0.0f;
+      s.stepped = 0;
+    }
+    s.gate_was_open = open;
+    if (!s.stepped && s.elapsed >= time) s.stepped = 1;
+    out[i] = s.stepped ? pitch * ratio : pitch;
+    s.elapsed += dt;
+  }
+}
+
+// --- Crush (amplitude.cpp CrushNode) -----------------------------------------
+// increment and levels are parameter-derived: codegen-baked. Init must set
+// phase to 1.0 so the first sample is captured (reset() semantics; bss is 0).
+
+struct CrushState {
+  float phase;
+  float held;
+};
+
+inline void k_crush(CrushState &s, const float *in, float *out,
+                    float increment, float levels) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    s.phase += increment;
+    if (s.phase >= 1.0f) {
+      s.phase -= floorf_signed(s.phase);
+      const float x = in != 0 ? in[i] : 0.0f;
+      s.held = floorf_signed(x * levels + 0.5f) / levels;
+    }
+    out[i] = s.held;
+  }
+}
+
+// --- Comb (filters.cpp CombNode) ---------------------------------------------
+// Integer delay with a one-pole in the loop; the line lives in SDRAM.
+
+#define SGAXO_COMB_CAPACITY 4804  // int(48000 * 0.1s) + 4, as prepare() sizes it
+
+struct CombState {
+  int write_index;
+  float lowpass;
+};
+
+inline void k_comb(CombState &s, float *line, const float *in,
+                   const float *frequency_in, const float *feedback_in,
+                   const float *damp_in, float *out, float time_param,
+                   float feedback_param, float damp_param, float sample_rate) {
+  const int capacity = SGAXO_COMB_CAPACITY;
+  const float max_samples = (float)(capacity - 1);
+  int delay_samples =
+      (int)clampf(time_param * sample_rate, 1.0f, max_samples);
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    if (frequency_in != 0) {
+      const float f = frequency_in[i] > 10.0f ? frequency_in[i] : 10.0f;
+      delay_samples = (int)clampf(sample_rate / f, 1.0f, max_samples);
+    }
+    const float feedback = clampf(
+        feedback_in != 0 ? feedback_in[i] : feedback_param, 0.0f, 0.98f);
+    const float damp =
+        clampf(damp_in != 0 ? damp_in[i] : damp_param, 0.0f, 1.0f);
+    int read_index = s.write_index - delay_samples;
+    if (read_index < 0) read_index += capacity;
+    const float delayed = line[read_index];
+    s.lowpass = delayed * (1.0f - damp) + s.lowpass * damp;
+    line[s.write_index] = (in != 0 ? in[i] : 0.0f) + s.lowpass * feedback;
+    s.write_index = (s.write_index + 1) % capacity;
+    out[i] = delayed;
+  }
+}
+
+// --- Allpass (filters.cpp AllpassNode) ---------------------------------------
+// The canonical Schroeder section; the line lives in SDRAM.
+
+#define SGAXO_ALLPASS_CAPACITY 2404  // int(48000 * 0.05s) + 4
+
+struct AllpassState {
+  int write_index;
+};
+
+inline void k_allpass(AllpassState &s, float *line, const float *in,
+                      float *out, float time_param, float gain,
+                      float sample_rate) {
+  const int capacity = SGAXO_ALLPASS_CAPACITY;
+  const int delay_samples = (int)clampf(time_param * sample_rate, 1.0f,
+                                        (float)(capacity - 1));
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    int read_index = s.write_index - delay_samples;
+    if (read_index < 0) read_index += capacity;
+    const float delayed = line[read_index];
+    const float feedforward = (in != 0 ? in[i] : 0.0f) + gain * delayed;
+    line[s.write_index] = feedforward;
+    s.write_index = (s.write_index + 1) % capacity;
+    out[i] = -gain * feedforward + delayed;
+  }
+}
+
 // --- Constant (sources.cpp ConstantNode) -------------------------------------
 
 inline void k_constant(float *out, float value) {

@@ -101,11 +101,15 @@ def test_sine_golden_on_hardware(board, toolchain):
 
 
 @pytest.mark.parametrize("case,frames_hint", [
+    ("saw", None),            # polyBLEP: exact arithmetic
     ("noise", None),          # Xorshift + float scale: exact arithmetic
     ("noise-pink", None),     # Kellet pink filter: exact arithmetic
     ("square", None),         # polyBLEP: exact arithmetic
+    ("lfo", None),            # triangle shape: exact arithmetic
+    ("adsr", None),           # codegen-baked exp coefficients
     ("delay-feedback", None), # noise -> gain -> SDRAM delay line, no libm
     ("ahd-envelope", None),   # Retrigger clock -> AHD: exact arithmetic
+    ("arpeggio", None),       # codegen-baked pow(2, interval/12)
 ])
 def test_golden_case_on_hardware(board, toolchain, case, frames_hint):
     golden = read_golden_wav(GOLDEN / "vectors" / f"{case}.wav")
@@ -193,6 +197,7 @@ def _native_reference(fixture, wav):
 @pytest.mark.parametrize("fixture_name,tolerance", [
     ("maths-mix", TOLERANCE),       # pure arithmetic; ~1 ULP fma residue
     ("effects-chain", TOLERANCE),   # measured 4.2e-7: tanh/exp ride exp2f_approx
+    ("comb-room", TOLERANCE),       # Crush/Comb/Allpass: exact arithmetic
 ])
 def test_fixture_matches_native_render(board, toolchain, tmp_path,
                                        fixture_name, tolerance):
@@ -219,5 +224,13 @@ def test_slide_family_golden_on_hardware(board, toolchain, case, tolerance):
 
 def test_unsupported_patch_is_refused(toolchain):
     """The subset gate must refuse, by name, what the target cannot run."""
+    import json
+    patch = {"schema_version": 1,
+             "nodes": [{"id": "s", "type": "Sampler"},
+                       {"id": "out", "type": "StereoOutput"}],
+             "connections": []}
+    bad = pathlib.Path(codegen.BUILD) / "refused-input.json"
+    bad.parent.mkdir(exist_ok=True)
+    bad.write_text(json.dumps(patch))
     with pytest.raises(codegen.Unsupported, match="not in the Axoloti subset"):
-        codegen.build_patch(GOLDEN / "cases" / "arpeggio.json", name="refused")
+        codegen.build_patch(bad, name="refused")

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "sgaxo comb room fixture",
+    "description": "Exercises Crush, two Combs (one pitch-tracked), and an Allpass diffuser deterministically (no notes).",
+    "tags": ["test"]
+  },
+  "nodes": [
+    { "id": "osc", "type": "SquareOscillator", "parameters": { "frequency": 110, "pulse_width": 0.4 } },
+    { "id": "grit", "type": "Crush", "parameters": { "bits": 9, "rate": 11025 } },
+    { "id": "pitch", "type": "Constant", "parameters": { "value": 220 } },
+    { "id": "comb1", "type": "Comb", "parameters": { "time": 0.029, "feedback": 0.8, "damp": 0.25 } },
+    { "id": "comb2", "type": "Comb", "parameters": { "feedback": 0.75, "damp": 0.3 } },
+    { "id": "diff", "type": "Allpass", "parameters": { "time": 0.0047, "gain": 0.5 } },
+    { "id": "mix", "type": "Mixer", "parameters": { "level1": 0.5, "level2": 0.35, "level3": 0.35 } },
+    { "id": "out", "type": "StereoOutput", "parameters": { "level": 0.6, "safety_limit": 0 } }
+  ],
+  "connections": [
+    { "from": { "node": "osc", "port": "out" }, "to": { "node": "grit", "port": "in" } },
+    { "from": { "node": "grit", "port": "out" }, "to": { "node": "comb1", "port": "in" } },
+    { "from": { "node": "grit", "port": "out" }, "to": { "node": "comb2", "port": "in" } },
+    { "from": { "node": "pitch", "port": "out" }, "to": { "node": "comb2", "port": "frequency" } },
+    { "from": { "node": "comb1", "port": "out" }, "to": { "node": "diff", "port": "in" } },
+    { "from": { "node": "grit", "port": "out" }, "to": { "node": "mix", "port": "in1" } },
+    { "from": { "node": "diff", "port": "out" }, "to": { "node": "mix", "port": "in2" } },
+    { "from": { "node": "comb2", "port": "out" }, "to": { "node": "mix", "port": "in3" } },
+    { "from": { "node": "mix", "port": "out" }, "to": { "node": "out", "port": "left" } }
+  ]
+}

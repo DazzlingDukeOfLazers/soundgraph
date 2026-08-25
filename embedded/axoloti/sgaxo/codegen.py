@@ -221,6 +221,31 @@ SUPPORTED = {
         "fixed": {},
         "outputs": ["out"],
     },
+    "Arpeggio": {
+        "inputs": ["frequency", "gate"], "connectable": {"frequency", "gate"},
+        "params": {"time": 0.05, "interval": 7.0, "frequency": 440.0},
+        "fixed": {},
+        "outputs": ["frequency"],
+    },
+    "Crush": {
+        "inputs": ["in"], "connectable": {"in"},
+        "params": {"bits": 16.0, "rate": 48000.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Comb": {
+        "inputs": ["in", "frequency", "feedback", "damp"],
+        "connectable": {"in", "frequency", "feedback", "damp"},
+        "params": {"time": 0.03, "feedback": 0.84, "damp": 0.2},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Allpass": {
+        "inputs": ["in"], "connectable": {"in"},
+        "params": {"time": 0.005, "gain": 0.5},
+        "fixed": {},
+        "outputs": ["out"],
+    },
     "StereoOutput": {
         "inputs": ["left", "right"], "connectable": {"left", "right"},
         "params": {"level": 1.0, "safety_limit": 1.0},
@@ -318,7 +343,7 @@ def _emit(nodes, wires, order, frames, patch_id, events):
          '#include "kernels.h"', ""]
     init = []
     note_nodes = []
-    delay_count = 0
+    sdram_bytes = 0
 
     used_outputs = {(s, sp) for (s, sp) in wires.values()}
 
@@ -356,11 +381,7 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             seed = int(f32(n["params"]["seed"])) & 0xFFFFFFFF
             init.append(f"st_{c}.rng.seed({seed}u);")
         elif t == "Delay":
-            delay_count += 1
-            if delay_count > 10:
-                raise Unsupported(
-                    "more than 10 Delay nodes: their SDRAM lines would "
-                    "collide with the capture buffer at 0xC0400000")
+            sdram_bytes += 96004 * 4
             L.append(f"static sgaxo::DelayState st_{c};")
             L.append(f"__attribute__((section(\".sdram\"))) "
                      f"static float line_{c}[SGAXO_DELAY_CAPACITY];")
@@ -371,6 +392,25 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             L.append(f"static sgaxo::AhdState st_{c};")
         elif t == "Retrigger":
             L.append(f"static sgaxo::RetriggerState st_{c};")
+        elif t == "Arpeggio":
+            L.append(f"static sgaxo::ArpeggioState st_{c};")
+        elif t == "Crush":
+            L.append(f"static sgaxo::CrushState st_{c};")
+            init.append(f"st_{c}.phase = 1.0f;")
+        elif t == "Comb":
+            sdram_bytes += 4804 * 4
+            L.append(f"static sgaxo::CombState st_{c};")
+            L.append(f"__attribute__((section(\".sdram\"))) "
+                     f"static float line_{c}[SGAXO_COMB_CAPACITY];")
+            init.append(f"for (int j = 0; j < SGAXO_COMB_CAPACITY; j++) "
+                        f"line_{c}[j] = 0.0f;")
+        elif t == "Allpass":
+            sdram_bytes += 2404 * 4
+            L.append(f"static sgaxo::AllpassState st_{c};")
+            L.append(f"__attribute__((section(\".sdram\"))) "
+                     f"static float line_{c}[SGAXO_ALLPASS_CAPACITY];")
+            init.append(f"for (int j = 0; j < SGAXO_ALLPASS_CAPACITY; j++) "
+                        f"line_{c}[j] = 0.0f;")
         elif t == "OnePoleFilter":
             L.append(f"static sgaxo::OnePoleState st_{c};")
         elif t == "Phaser":
@@ -383,6 +423,10 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             init.append(f"st_{c}.rng.seed({seed}u);")
             init.append(f"st_{c}.last_phase = 1.0f;")
 
+    if sdram_bytes > 0x400000:
+        raise Unsupported(
+            f"delay/comb/allpass lines need {sdram_bytes} bytes of SDRAM — "
+            "more than the 4 MB below the capture buffer at 0xC0400000")
     L.append("")
     L.append("static void sg_graph_process(float *out_l, float *out_r) {")
     for i in order:
@@ -467,6 +511,26 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             L.append(f"  sgaxo::k_noise_osc(st_{c}, {src(i, 'frequency')}, "
                      f"{buf(i, 'out')}, {_lit(p['frequency'])}, "
                      f"{_lit(p['steps'])}, {_lit(SAMPLE_RATE)});")
+        elif t == "Arpeggio":
+            ratio = f32(2.0 ** f32(f32(p["interval"]) / 12.0))
+            dt = f32(1.0 / SAMPLE_RATE)
+            L.append(f"  sgaxo::k_arpeggio(st_{c}, {src(i, 'frequency')}, "
+                     f"{src(i, 'gate')}, {buf(i, 'frequency')}, {_lit(p['time'])}, "
+                     f"{_lit(ratio)}, {_lit(p['frequency'])}, {_lit(dt)});")
+        elif t == "Crush":
+            inc = f32(min(max(f32(p["rate"]), 500.0), SAMPLE_RATE) / SAMPLE_RATE)
+            levels = f32(2.0 ** f32(f32(p["bits"]) - 1.0))
+            L.append(f"  sgaxo::k_crush(st_{c}, {src(i, 'in')}, {buf(i, 'out')}, "
+                     f"{_lit(inc)}, {_lit(levels)});")
+        elif t == "Comb":
+            L.append(f"  sgaxo::k_comb(st_{c}, line_{c}, {src(i, 'in')}, "
+                     f"{src(i, 'frequency')}, {src(i, 'feedback')}, "
+                     f"{src(i, 'damp')}, {buf(i, 'out')}, {_lit(p['time'])}, "
+                     f"{_lit(p['feedback'])}, {_lit(p['damp'])}, {_lit(SAMPLE_RATE)});")
+        elif t == "Allpass":
+            L.append(f"  sgaxo::k_allpass(st_{c}, line_{c}, {src(i, 'in')}, "
+                     f"{buf(i, 'out')}, {_lit(p['time'])}, {_lit(p['gain'])}, "
+                     f"{_lit(SAMPLE_RATE)});")
         elif t == "Retrigger":
             width_s = f32(f32(p["width"]) * f32(0.001))
             dt = f32(1.0 / SAMPLE_RATE)
