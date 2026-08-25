@@ -71,6 +71,28 @@ the environment. That is exactly how the macos-support merge first presented on 
 
 ## Done in this phase
 
+- **The web editor has an introduction, and draws the graph.** `editor-web` now opens on a
+  prepared patch (`examples/patches/start-here.json`) and a six-step tour: hear it, read it
+  left to right, drag the filter cutoff, compare against the original, decide what to keep.
+  Above the JSON pane there is a read-only picture of the patch — nodes at their authored
+  positions, cables weighted and dashed by signal type from the registry — so "the filter"
+  is something on screen rather than a word in a label. Persistent actions (New patch,
+  factory patches, Save locally, Help, About, Join) sit in a bar under the header, and
+  **Help → Restart introduction** runs the tour again. Signups and one funnel row per visit
+  go to the feedback service. Three decisions in `docs/decisions.md` (2026-08-25).
+
+  Verified by walking the whole tour in a browser: the audio-failure recovery screen and its
+  silent path, the four highlighted groups, the one-octave golden-moment threshold, the
+  Original/Your version toggle, the bypass lesson rewiring the graph and putting it back
+  exactly, the mailing panel's decline and error states, the skip path, and a returning
+  visitor opening into their locally saved patch. Four defects came out of that walk and are
+  fixed: the spoken signal order was breadth-first and announced the amplifier before the
+  filter; the status line blamed the patch when the engine was what failed to load; a
+  malformed address was headed "that did not connect" when nothing had been sent; and a
+  coach mark pointed at a control below the fold without scrolling to it. A fifth — the 808
+  kit rendering as a 330-pixel stamp with 3-pixel lettering — was an SVG with a viewBox and
+  no width/height attributes, so `height: auto` had no ratio to keep.
+
 - Device reliability: malformed-patch abuse suite, thirty-cycle power soak with **0 bytes**
   of heap drift, and a truncated upload no longer wedges the console. Both re-run against
   the firmware carrying all eighteen embedded golden patches — the earlier numbers were a
@@ -151,9 +173,17 @@ gesture. Synthetic events do not lift that; only a person clicking does.
 
 - **The Web Serial deploy button has never been clicked.** It is gesture-gated by design,
   so it needs a human. Everything around it is verified; the button itself is not.
-- **The web editor has never been looked at.** The Godot editor now has, repeatedly; the
-  browser page has only ever been checked element by element from a script. It matters less
-  than it did, now that the Godot editor is itself reachable from a URL.
+- **The introduction has never been heard.** Every step of it has been walked, but this
+  machine has no Emscripten, so `editor-web/soundgraph.wasm` could not be built and the tour
+  ran its silent path throughout. The registry and validator were stood in for. What is
+  unverified is specifically the audible half: whether the Start Here patch sounds good,
+  whether one octave of cutoff is the right threshold *by ear*, and whether the pulse is
+  recognisable inside two minutes. Build the wasm and play it before the show.
+- **Nothing has been posted to the feedback service.** Reporting was switched off for the
+  whole browser session on purpose, so no funnel row and no signup has ever reached
+  `feedback.mutantfactory.net` from this page. The envelope is built to the contract and the
+  failure paths are exercised locally, but the round trip is untested, and the origin that
+  ends up serving the page still has to be added to `ALLOWED_ORIGINS`.
 - The **sandbox's** sounds have not been heard in a browser. They use the same generator and
   the same `playback_type` as the editor's synth, which is confirmed audible, so this is a
   reasonable inference rather than a verified fact — pressing Space in the Sandbox tab would

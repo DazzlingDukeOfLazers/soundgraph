@@ -57,6 +57,7 @@ editor-godot/.godot/
 # stamp that lies is worse than none — it turns "I am unsure what I am running" into
 # "I am sure, and mistaken". Absent, the editor says "development build".
 editor-godot/build_stamp.json
+editor-web/build_stamp.json
 
 # the editor's working directory: the status badge, in-progress patches, rescue autosaves
 run/

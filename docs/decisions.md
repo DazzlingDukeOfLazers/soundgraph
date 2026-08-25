@@ -1,5 +1,88 @@
 # Decision Log
 
+## 2026-08-25 — The web editor draws the graph, and still does not edit it
+
+Decision:
+`editor-web/graph-view.js` renders the patch as nodes and typed cables, above the JSON
+pane. Read-only: selecting a node finds it in the text, moving a control lights the node it
+drives, and nothing adds, removes or rewires anything. Layout uses the patch's own
+`position` hints; cable weight and dash come from the registry's port types.
+
+Reason:
+The onboarding has to be able to say "the filter" and point at something. Before this, the
+page knew every fact about a graph and could not show one — execution order was a line of
+text and a control was labelled `filter.cutoff` without saying where that was. The claim
+the whole project is built on is that SoundGraph exposes relationships, and the zero-install
+doorway was the one surface that did not.
+
+Alternatives:
+Put the onboarding in the Godot editor instead, which already draws graphs — rejected for
+now: it is a 46 MB first load, it is already Knobcon-critical, and the About copy says the
+dedicated graph editor is still in development. Point the coach marks at the controls panel
+only — rejected: the golden moment's second half is *understanding where the change
+happened*, and that needs a picture.
+
+Consequences:
+Two programs now draw a graph. This one is deliberately the lesser: no editing, no palette,
+no layout engine, and it reads the registry rather than keeping its own vocabulary, so a
+node added to the core appears here without JavaScript changing. If it ever grows an edit
+affordance, that is the moment to stop and ask whether it should exist at all.
+
+## 2026-08-25 — The introduction earns the email, and the funnel is one row per visit
+
+Decision:
+The mailing-list panel cannot appear until the golden moment is complete and the visitor
+has chosen to continue — the only exception is the "Join the mailing list" button, which is
+somebody asking. Signups and the ten measurement milestones both go to the Mutant Factory
+feedback service (`schema/envelope.v1.md`), the signup as one report carrying the address in
+its own field, the funnel as **one** report per visit, updated in place via a stable
+`report_id`, keyed `element_key: onboarding/funnel`.
+
+Reason:
+The plan's rule was "never ask for an email before the first sound", and the cheapest way to
+keep a rule like that is to make it structural rather than remembered: `offerMailingList()`
+is reachable from exactly one place in the state machine. Reusing the feedback service means
+no second backend and no new privacy surface — the envelope was written so a second
+application could conform to it without sharing code, and this is that.
+
+Alternatives:
+A dedicated mailing provider — rejected for now: none is chosen (the website's AGENTS.md
+still lists it open), and inventing one would be a commitment made by a tour. One report per
+event — rejected: ten rows per visitor would swamp a store a human reads daily.
+
+Consequences:
+Machine-written rows now live in a store built for words people wrote. `triage.py --app`
+keeps other products' reads clean and `groups` buckets these into two rows, but the default
+`new` view will carry them. `FUNNEL_REPORTS` in `editor-web/reporting.js` turns them off
+without touching signups. Whatever origin serves the page must be added to the service's
+`ALLOWED_ORIGINS`; `localhost` and `private` are already on it. The page also mints a random
+`install_id` in localStorage — the About panel says so, in those words, because "no
+tracking" would be a claim and this is a description.
+
+## 2026-08-25 — The tutorial patch is seven nodes, and the tour teaches four things
+
+Decision:
+`examples/patches/start-here.json` is Clock, StepSequencer, AhdEnvelope, SawOscillator,
+StateVariableFilter, Gain, Output. The tour's four sentences group them —
+sequence/oscillator/filter/output — rather than the patch being cut down to four nodes.
+
+Reason:
+The plan asked for three or four visible nodes. Reaching that meant dropping the envelope
+and the amplifier, which turns the demo from a plucked eight-step line into a continuous saw
+whose pitch steps. The filter is the thing being taught, and a resonant filter opening on
+each note is dramatically more legible than one opening on a drone. The count was a proxy
+for readability; the grouping keeps the readability and pays for it with two more boxes.
+
+Alternatives:
+Group the nodes in the picture too, so four cards are drawn over seven nodes — rejected: a
+graph view that lies about how many nodes there are, in a project whose whole claim is
+exposing relationships, is the wrong thing to be clever about.
+
+Consequences:
+`editor-web/verify-onboarding.mjs` asserts every node in the patch is named by some
+sentence, so adding an eighth node to the tutorial patch fails the suite rather than
+quietly leaving something drawn but unexplained.
+
 ## 2026-08-09 — The sfxr oracle carries its own sine
 
 Decision:

@@ -5,9 +5,18 @@
 // file and must mean the same thing by it.
 //
 // Nothing here knows any DSP. Controls are generated from the patch's own control
-// surfaces, and every diagnostic shown comes from the same validator the command line
-// tools use.
+// surfaces, the picture is generated from the patch's own nodes and cables, and every
+// diagnostic shown comes from the same validator the command line tools use.
 import { SoundGraph } from './soundgraph.js';
+import { GraphView } from './graph-view.js';
+import { Onboarding } from './onboarding.js';
+import { MILESTONES, flushFunnel, loadBuildStamp, milestone } from './reporting.js';
+import {
+    forgetEverything,
+    onboardingProgress,
+    savePatchLocally,
+    savedPatch,
+} from './local-store.js';
 
 const engine = new SoundGraph();
 
@@ -30,15 +39,74 @@ const ui = {
     keyboard: document.getElementById('keyboard'),
     info: document.getElementById('info'),
     midiStatus: document.getElementById('midi-status'),
+    graph: document.getElementById('graph'),
+    graphName: document.getElementById('graph-name'),
+    newPatch: document.getElementById('new-patch'),
+    saveLocal: document.getElementById('save-local'),
+    help: document.getElementById('help'),
+    about: document.getElementById('about'),
+    join: document.getElementById('join'),
+    aboutSheet: document.getElementById('about-sheet'),
+    helpSheet: document.getElementById('help-sheet'),
 };
 
+// The patch the introduction teaches. Named here rather than in the tour, because the page
+// also offers it in the menu and a second spelling of the path is a second thing to keep
+// in step.
+const TUTORIAL_PATCH = '../examples/patches/start-here.json';
+
+// A short, curated menu rather than all 280. The Godot editor scans the corpus, which is
+// the right answer for an editor; a first visit wants five good ones and a way out.
 const EXAMPLES = [
+    { label: 'Start Here', path: TUTORIAL_PATCH },
     { label: 'First Synth', path: '../examples/patches/first-synth.json' },
+    { label: 'Plucked String', path: '../examples/patches/plucked-string.json' },
     { label: 'Delay Echo', path: '../examples/patches/delay-echo.json' },
+    { label: 'Poly Five', path: '../examples/patches/synths/poly-five.json' },
+    { label: 'Acid Bass', path: '../examples/patches/synths/acid-bass.json' },
+    { label: 'Warehouse', path: '../examples/patches/warehouse.json' },
+    { label: '808 Kit', path: '../examples/patches/drums/kit.json' },
 ];
+
+// What "New patch" means: the smallest thing that is still a patch and still makes a
+// sound. An empty canvas is a worse starting point than one cable.
+const NEW_PATCH = {
+    schema_version: 1,
+    metadata: { name: 'New Patch', description: 'One oscillator, straight to the output.' },
+    nodes: [
+        { id: 'osc', type: 'SawOscillator', name: 'Oscillator',
+          parameters: { frequency: 220 }, position: { x: 0, y: 0 } },
+        { id: 'out', type: 'Output', host: 'stereo', name: 'Output',
+          parameters: { level: 0.4, safety_limit: 1 }, position: { x: 440, y: 0 } },
+    ],
+    connections: [
+        { from: { node: 'osc', port: 'out' }, to: { node: 'out', port: 'left' } },
+        { from: { node: 'osc', port: 'out' }, to: { node: 'out', port: 'right' } },
+    ],
+    controls: [
+        { id: 'pitch', label: 'Pitch', kind: 'knob',
+          target: { node: 'osc', parameter: 'frequency' },
+          min: 40, max: 2000, default: 220, scaling: 'exponential' },
+        { id: 'master', label: 'Master', kind: 'knob',
+          target: { node: 'out', parameter: 'level' },
+          min: 0, max: 1.2, default: 0.4, scaling: 'logarithmic' },
+    ],
+};
+
+const graph = new GraphView(ui.graph);
+
+// Exposed for the same reason the engine is: the console is where you check what the page
+// thinks the graph looks like, and a picture that can only be inspected by squinting at it
+// is a picture nothing can be asserted about.
+window.soundgraphView = graph;
 
 let started = false;
 let currentPatch = null;
+
+// Control id -> everything needed to read or move that control from outside the panel.
+// The tour drives one of these; so does anything else that wants to move a knob without
+// knowing how the panel is built.
+const controlSurfaces = new Map();
 
 // ---------------------------------------------------------------------------------
 // Validation feedback
@@ -130,6 +198,7 @@ function format(value) {
 
 function buildControls(patch) {
     ui.controls.replaceChildren();
+    controlSurfaces.clear();
     const controls = patch.controls ?? [];
 
     if (controls.length === 0) {
@@ -170,10 +239,30 @@ function buildControls(patch) {
         target.className = 'target';
         target.textContent = `${node}.${parameter}`;
 
+        const surface = {
+            control,
+            slider,
+            value: initial,
+            // Moving a control from code has to look identical to moving it by hand,
+            // including to anything listening — the tour compares two values by calling
+            // this, and a comparison you cannot hear is not a comparison.
+            set(next) {
+                surface.value = next;
+                slider.value = String(Math.min(1, Math.max(0, toPosition(control, next))));
+                readout.textContent = format(next);
+                engine.setParameter(node, parameter, next);
+                graph.setActive(node);
+            },
+        };
+
         slider.addEventListener('input', () => {
             const value = toValue(control, Number(slider.value));
+            surface.value = value;
             readout.textContent = format(value);
             engine.setParameter(node, parameter, value);
+            // The point of the picture: the knob you are holding lights the node it drives.
+            graph.setActive(node);
+            milestone(MILESTONES.FIRST_PARAMETER_CHANGED);
         });
         // Release focus when the drag ends, so arrow keys go back to being arrow keys
         // instead of nudging the last-touched knob.
@@ -181,6 +270,7 @@ function buildControls(patch) {
 
         wrapper.append(label, slider, target);
         ui.controls.append(wrapper);
+        controlSurfaces.set(control.id, surface);
     }
 }
 
@@ -390,26 +480,47 @@ async function connectMidi() {
 
 function applyPatch() {
     const result = validateCurrentText();
+    // The picture is drawn from whatever parses, even when validation objects: a patch
+    // with a bad cable is exactly when seeing the cables helps most. It is only refused
+    // when the text is not JSON at all, because then there is nothing to draw.
+    let parsed = null;
+    try {
+        parsed = JSON.parse(ui.patch.value);
+    } catch {
+        parsed = null;
+    }
+    if (parsed) {
+        currentPatch = parsed;
+        graph.render(parsed);
+        ui.graphName.textContent = parsed.metadata?.name ?? '';
+    }
     if (!result?.ok) {
-        ui.status.textContent = 'patch has errors';
+        // Only the validator may call a patch broken. With no module loaded there is no
+        // validator, and saying "patch has errors" there blames the file for the engine
+        // having failed to arrive — which sends anybody debugging it to the wrong place.
+        if (engine.tooling) {
+            ui.status.textContent = 'patch has errors';
+        }
         return;
     }
-    currentPatch = JSON.parse(ui.patch.value);
     if (started) {
         engine.loadPatch(ui.patch.value);
     }
     buildControls(currentPatch);
 }
 
-async function loadExample(path) {
-    const response = await fetch(path);
-    const text = await response.text();
+function setPatchText(text) {
     ui.patch.value = text.trimEnd();
     // A textarea keeps its scroll position when its value is replaced, so
     // without this a freshly loaded patch opens wherever the previous one
     // happened to be — mid-file, looking like the top.
     ui.patch.scrollTop = 0;
     applyPatch();
+}
+
+async function loadExample(path) {
+    const response = await fetch(path);
+    setPatchText(await response.text());
 }
 
 ui.apply.addEventListener('click', applyPatch);
@@ -428,17 +539,54 @@ ui.save.addEventListener('click', () => {
 ui.open.addEventListener('change', async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    ui.patch.value = (await file.text()).trimEnd();
-    ui.patch.scrollTop = 0;
-    applyPatch();
+    setPatchText(await file.text());
     event.target.value = '';
 });
 
 ui.examples.addEventListener('change', () => {
     loadExample(ui.examples.value);
+    // "Second" means a different one. Re-picking the patch the tour taught is not the
+    // thing this measure is asking about.
+    if (ui.examples.value !== TUTORIAL_PATCH) {
+        milestone(MILESTONES.SECOND_PATCH_LOADED);
+    }
     // A focused <select> turns letter keys into type-ahead option changes, which would
     // swap the patch mid-performance.
     ui.examples.blur();
+});
+
+ui.newPatch.addEventListener('click', () => {
+    setPatchText(JSON.stringify(NEW_PATCH, null, 2));
+    ui.newPatch.blur();
+});
+
+function saveLocally() {
+    const ok = savePatchLocally(ui.patch.value, currentPatch?.metadata?.name);
+    ui.status.textContent = ok ? 'saved in this browser' : 'this browser refused to store it';
+    if (ok) milestone(MILESTONES.PATCH_SAVED);
+    return ok;
+}
+
+ui.saveLocal.addEventListener('click', () => {
+    saveLocally();
+    ui.saveLocal.blur();
+});
+
+// Selecting a node finds it in the patch text. The picture and the JSON are two views of
+// one document, and moving between them by hand means scrolling and counting braces.
+graph.addEventListener('nodeselect', (event) => {
+    const id = event.detail;
+    const needle = `"id": "${id}"`;
+    const at = ui.patch.value.indexOf(needle);
+    if (at < 0) return;
+    ui.patch.focus();
+    ui.patch.setSelectionRange(at, at + needle.length);
+    // setSelectionRange scrolls the caret into view only in some browsers; this is the part
+    // that reliably moves the box. The line height is read rather than assumed — a
+    // hardcoded one silently stops pointing at the right line the day the CSS changes.
+    const line = parseFloat(getComputedStyle(ui.patch).lineHeight) || 19;
+    const before = ui.patch.value.slice(0, at).split('\n').length;
+    ui.patch.scrollTop = Math.max(0, (before - 4) * line);
 });
 
 // Buttons hold focus after a click too, where Enter would re-trigger them.
@@ -452,7 +600,7 @@ ui.patch.addEventListener('input', () => {
     validateTimer = setTimeout(validateCurrentText, 250);
 });
 
-ui.start.addEventListener('click', async () => {
+async function startAudio() {
     ui.start.disabled = true;
     try {
         await engine.start();
@@ -460,12 +608,16 @@ ui.start.addEventListener('click', async () => {
         engine.loadPatch(ui.patch.value);
         buildControls(currentPatch ?? JSON.parse(ui.patch.value));
         ui.start.textContent = 'Audio running';
+        milestone(MILESTONES.AUDIO_STARTED);
         connectMidi();
     } catch (error) {
         ui.status.textContent = String(error.message ?? error);
         ui.start.disabled = false;
+        throw error;
     }
-});
+}
+
+ui.start.addEventListener('click', () => { startAudio().catch(() => {}); });
 
 engine.addEventListener('loaded', (event) => {
     const { ok, diagnostics, info } = event.detail;
@@ -485,6 +637,106 @@ engine.addEventListener('engineerror', (event) => {
 });
 
 // ---------------------------------------------------------------------------------
+// The structural lesson
+//
+// One edit, performed on the patch document rather than mimed at it: the filter comes out
+// of the audio path and the oscillator reaches the amplifier directly. The filter node
+// stays where it is with nothing running through it, which is the part worth seeing — a
+// bypass is a rewire, not a mute.
+// ---------------------------------------------------------------------------------
+
+let connectionsBeforeBypass = null;
+
+function setBypass(on) {
+    if (!currentPatch) return false;
+
+    if (!on) {
+        if (!connectionsBeforeBypass) return false;
+        currentPatch.connections = connectionsBeforeBypass;
+        connectionsBeforeBypass = null;
+    } else {
+        const connections = currentPatch.connections ?? [];
+        const intoFilter = connections.find((c) => c.to.node === 'filter' && c.to.port === 'in');
+        const outOfFilter = connections.find((c) => c.from.node === 'filter');
+        if (!intoFilter || !outOfFilter) return false;
+
+        connectionsBeforeBypass = connections;
+        currentPatch.connections = connections
+            .filter((c) => c !== intoFilter && c !== outOfFilter)
+            .concat([{ from: intoFilter.from, to: outOfFilter.to }]);
+    }
+
+    setPatchText(JSON.stringify(currentPatch, null, 2));
+    return true;
+}
+
+// ---------------------------------------------------------------------------------
+// The introduction
+// ---------------------------------------------------------------------------------
+
+const tour = new Onboarding({
+    graphElement: () => ui.graph,
+    startAudio,
+    audioRunning: () => started,
+    stopAudio: () => engine.suspend(),
+    resumeAudio: () => engine.context?.resume(),
+    loadTutorialPatch: () => loadExample(TUTORIAL_PATCH),
+    controlElement: (id) => controlSurfaces.get(id)?.slider ?? null,
+    controlValue: (id) => controlSurfaces.get(id)?.value ?? null,
+    setControlValue: (id, value) => controlSurfaces.get(id)?.set(value),
+    focusNodes: (ids) => graph.setFocus(ids),
+    activeNode: (id) => graph.setActive(id),
+    savePatchLocally: saveLocally,
+    setBypass,
+});
+
+ui.join.addEventListener('click', () => {
+    tour.openMailingList();
+    ui.join.blur();
+});
+
+// ---------------------------------------------------------------------------------
+// Sheets
+// ---------------------------------------------------------------------------------
+
+function openSheet(sheet) {
+    sheet.hidden = false;
+    sheet.querySelector('button')?.focus();
+}
+
+function closeSheet(sheet) {
+    sheet.hidden = true;
+}
+
+for (const [trigger, sheet] of [[ui.about, ui.aboutSheet], [ui.help, ui.helpSheet]]) {
+    trigger.addEventListener('click', () => { openSheet(sheet); trigger.blur(); });
+    // Clicking the backdrop closes; clicking the panel does not. Escape closes either.
+    sheet.addEventListener('click', (event) => {
+        if (event.target === sheet) closeSheet(sheet);
+    });
+}
+window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    closeSheet(ui.aboutSheet);
+    closeSheet(ui.helpSheet);
+});
+
+document.getElementById('about-close').addEventListener('click', () => closeSheet(ui.aboutSheet));
+document.getElementById('help-close').addEventListener('click', () => closeSheet(ui.helpSheet));
+document.getElementById('about-join').addEventListener('click', () => {
+    closeSheet(ui.aboutSheet);
+    tour.openMailingList();
+});
+document.getElementById('help-restart').addEventListener('click', () => {
+    closeSheet(ui.helpSheet);
+    tour.restart();
+});
+document.getElementById('about-forget').addEventListener('click', () => {
+    forgetEverything();
+    ui.status.textContent = 'this browser has forgotten everything';
+});
+
+// ---------------------------------------------------------------------------------
 // Deploy to hardware
 //
 // The demo's whole point, as one click: the patch in this page, over Web Serial, into
@@ -493,6 +745,8 @@ engine.addEventListener('engineerror', (event) => {
 // which are the same diagnostics this page shows, because they come from the same core.
 // Chrome-only; the button simply does not exist elsewhere.
 // ---------------------------------------------------------------------------------
+
+const encoder = new TextEncoder();
 
 async function deployToBoard() {
     const validation = validateCurrentText();
@@ -629,15 +883,44 @@ async function boot() {
         ui.examples.append(option);
     }
     buildKeyboard();
+    loadBuildStamp().then((stamp) => {
+        document.getElementById('about-build').textContent = stamp;
+    });
+
+    const progress = onboardingProgress();
+    const returning = progress.completed || progress.skipped;
+    const stored = savedPatch();
 
     try {
         const tooling = await engine.loadModule();
+        graph.setRegistry(tooling.registry());
         ui.status.textContent = `schema v${tooling.schemaVersion}, block ${tooling.blockSize}`;
-        await loadExample(EXAMPLES[0].path);
     } catch (error) {
+        // No module means no validation and no audio — but the patch still parses and the
+        // picture still draws, and a page that shows the graph is worth more than a page
+        // that shows an error. The Start button is what goes away.
         ui.status.textContent = String(error.message ?? error);
         ui.start.disabled = true;
     }
+
+    // A returning visitor opens into their own patch, or a sensible default. A first-time
+    // visitor opens into the one the introduction teaches.
+    if (returning && stored) {
+        setPatchText(stored.text);
+        ui.graphName.textContent = `${stored.name} (saved here)`;
+    } else {
+        await loadExample(TUTORIAL_PATCH);
+    }
+
+    if (!progress.started) {
+        tour.start();
+    } else {
+        tour.offerResume();
+    }
 }
+
+// Anything the funnel collected during a visit that ends without any of the tour's own
+// exits — a reload, a closed tab, a link away — still gets one row.
+window.addEventListener('pagehide', () => { flushFunnel({ keepalive: true }); });
 
 boot();

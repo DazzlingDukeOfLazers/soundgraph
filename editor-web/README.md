@@ -8,10 +8,55 @@ This directory contains **no DSP**. The graph runs as WebAssembly compiled from 
 
 ```text
 index.html / app.js        page, controls, keyboard, MIDI      main thread
+graph-view.js              the patch, drawn: nodes and cables  main thread
+onboarding.js / .css       the first two minutes               main thread
+local-store.js             the four things this page remembers main thread
+reporting.js               the only code here that posts       main thread
 soundgraph.js              AudioContext + worklet + tooling    main thread
 soundgraph-worklet.js      instantiates the module, renders    audio thread
 soundgraph.wasm            dsp-core + patch-io                 built, not committed
 ```
+
+## The picture
+
+`graph-view.js` draws the patch above the JSON: nodes where the patch's own `position`
+hints put them, cables weighted and dashed by the signal type the registry declares.
+Selecting a node finds it in the text; moving a control lights the node it drives.
+
+It is **read-only on purpose**. Rewiring belongs to the Godot editor, and a second program
+with opinions about what a graph means is the thing this repository is arranged to avoid.
+Without the WebAssembly module it still draws — it just cannot tell an audio cable from a
+control one, and says so by drawing them all the same.
+
+## The introduction
+
+A first-time visitor gets `examples/patches/start-here.json` and a six-step tour: hear the
+patch, read it left to right, drag the filter cutoff, hear the difference, decide what to
+keep. Only the first screen is a modal — the rest are coach marks over a page that stays
+usable. Progress lives in localStorage, **Help → Restart introduction** runs it again, and
+the mailing-list panel cannot appear before the golden moment.
+
+`node editor-web/verify-onboarding.mjs` holds the tour, the patch it teaches and the
+measurement plan's ten event names against each other. It runs in the main ctest suite as
+`web_onboarding_matches_its_patch`, and it exists because renaming a node in the patch would
+otherwise leave the tour highlighting an empty set with no error anywhere.
+
+## What leaves this page
+
+Two POSTs, both to the Mutant Factory feedback service, both described in `reporting.js`:
+one report per visit carrying how far the introduction got, and one when somebody joins the
+mailing list. No patch contents, no audio, and no device data beyond a browser family.
+Whatever origin serves this page must be named in that service's `ALLOWED_ORIGINS` —
+`localhost` and `private` are already there, so a dev server works untouched.
+`FUNNEL_REPORTS` turns the first one off; signups are separate.
+
+Reports carry a build stamp, so write one before serving a build anybody will use:
+
+```bash
+node tools/stamp-build.mjs --target web-editor
+```
+
+Without it the page reports `development`, which is the truth when running from source.
 
 ## Build and run
 

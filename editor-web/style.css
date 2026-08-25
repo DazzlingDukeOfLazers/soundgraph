@@ -197,3 +197,99 @@ input[type=range] {
     color: var(--muted); margin: 0.8rem 0 0.3rem; font-family: var(--font);
 }
 .info h3:first-child { margin-top: 0; }
+
+/* The graph, drawn. See graph-view.js.
+ *
+ * Signal types are told apart by weight and dash as well as hue, per the UX principles:
+ * a reader who cannot separate the colours still gets the distinction. */
+/* Full width above the two columns: the picture is the thing a first-time visitor should
+ * meet, and a graph squeezed into half the page is a graph nobody reads. */
+.graph-panel { grid-column: 1 / -1; }
+
+/* The height cap and the scrollbar belong to the BOX, not to the drawing. Capping the
+ * drawing instead makes a large patch letterbox itself down to a stamp — the 808 kit is
+ * 53 nodes and eight screens tall, and shrunk to fit it is a picture of nothing. Scrolled,
+ * it stays at the same scale as every other patch. */
+.graph {
+    background: #101216;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.5rem;
+    /* Tall enough that the tutorial patch does not need a scrollbar on a laptop, capped so
+     * the picture never pushes the controls entirely off a short window. */
+    max-height: min(52vh, 520px);
+    overflow: auto;
+}
+.graph-svg { display: block; width: 100%; height: auto; }
+
+.graph-node .node-body {
+    fill: var(--panel-2);
+    stroke: var(--line);
+    stroke-width: 3;
+    transition: fill 160ms ease, stroke 160ms ease;
+}
+.graph-node text { font-family: var(--font); }
+.graph-node .node-name { fill: var(--text); font-size: 34px; font-weight: 600; }
+.graph-node .node-type { fill: var(--muted); font-size: 26px; }
+.graph-node .node-id { fill: var(--accent-dim); font-size: 24px; font-family: var(--mono); }
+
+.graph-node { cursor: pointer; }
+.graph-node:hover .node-body { stroke: var(--muted); }
+.graph-node:focus-visible { outline: none; }
+.graph-node:focus-visible .node-body { stroke: var(--accent); stroke-width: 5; }
+
+/* Dimmed, never hidden. The tour is saying "look here", not "the rest is gone" — and a
+ * node that vanished while being explained would take its cables with it. */
+.graph-node.dim { opacity: 0.28; }
+.graph-node.active .node-body { fill: #1b3a32; stroke: var(--accent); stroke-width: 5; }
+
+.cable {
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 5;
+    stroke-linecap: round;
+}
+.cable.audio { stroke: var(--text); stroke-width: 7; }
+.cable.control { stroke: var(--accent-dim); stroke-width: 4; }
+.cable.event, .cable.note { stroke: var(--warning); stroke-width: 4; stroke-dasharray: 16 14; }
+.cable.dim { opacity: 0.18; }
+.cable.active { stroke: var(--accent); stroke-width: 8; }
+
+/* Persistent actions. Always available, tour or no tour — the introduction is a thing you
+ * can restart, not a thing you have to have finished. */
+.actions-bar {
+    display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+    padding: 0.6rem 1.5rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+}
+.actions-bar button { min-height: 36px; padding: 0.35rem 0.7rem; font-size: 0.88rem; }
+.actions-bar .spacer { flex: 1; }
+
+/* About, and the two panels that open over the page from the actions bar. */
+.sheet {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 3rem 1.5rem;
+    background: rgba(10, 12, 15, 0.82);
+    overflow-y: auto;
+}
+.sheet[hidden] { display: none; }
+.sheet-panel {
+    width: min(640px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1.75rem;
+}
+.sheet-panel h2 { font-size: 1.3rem; text-transform: none; letter-spacing: 0; color: var(--text); margin: 0 0 0.75rem; }
+.sheet-panel h3 {
+    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin: 1.25rem 0 0.4rem;
+}
+.sheet-panel p { color: var(--muted); margin: 0 0 0.75rem; }
+.sheet-panel ul { color: var(--muted); margin: 0 0 0.75rem; padding-left: 1.15rem; }
+.sheet-panel li { margin: 0.2rem 0; }
+.sheet-panel .lede { color: var(--text); font-size: 1.05rem; }
+.sheet-panel .build { font-family: var(--mono); font-size: 0.78rem; color: var(--accent-dim); }
+.sheet-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.25rem; }
