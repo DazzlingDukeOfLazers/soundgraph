@@ -92,6 +92,32 @@ the environment. That is exactly how the macos-support merge first presented on 
 
 ## Done in this phase
 
+- **The full editor is exported to `/soundgraph/editor`, and the handoff works end to end.**
+  Moving a knob on the lite page and pressing "Open in the full editor" carries the patch
+  across: the Godot editor boots, reads `soundgraph.handoff.v1`, clears it, and opens that
+  document instead of its default example. Confirmed from outside the canvas —
+  `window.soundgraphEditor` reported `document: start-here.json, nodes: 7, from: handoff`.
+
+  Three things that had never been established on this machine, now established:
+  the web GDExtension builds (godot-cpp has **no 4.7 branch** — 4.7 support is on `master`,
+  which ships `extension_api-4-7.json` describing 4.7.0 against a 4.7.1 engine, which is
+  fine within a minor version); it **loads**, with no `function signature mismatch`, the
+  browser reporting `Emscripten 4.0.20, single-threaded, GDExtension support`; and the
+  export lands below the lite page so its service worker's scope is `/editor-web/editor/`
+  and cannot reach the page above it. The template's own `godot.js` contains `4.0.20`,
+  confirming the version pinned when Emscripten was reinstalled.
+
+  **The PWA caching is unverified.** Service worker registration fails in the browser used
+  for this session — for *any* script, on a plain `http.server` as well as `tools/serve.py`,
+  in a secure context with the script serving 200 as `text/javascript`. That is the harness,
+  not the export, but it means "cached from the second visit" and the offline behaviour have
+  not been re-confirmed here. Check in an ordinary Chrome before relying on them.
+
+  Two loose ends: the **desktop** extension was not rebuilt, so opening `editor-godot` in
+  the Godot editor still reports a missing DLL (the web export is unaffected — it packs the
+  web library). And `/soundgraph/desktop` has nothing to point at until there is a numbered
+  release.
+
 - **`/soundgraph` is the front door, and says what is behind it.** The page now leads with
   the pitch and the graph; the JSON source is collapsed below it. Three surfaces are
   declared in `editor-web/surfaces.js` — this page, the full editor, the desktop

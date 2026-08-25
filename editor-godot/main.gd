@@ -391,7 +391,11 @@ func _ready() -> void:
 	_apply_theme()
 	_build_ui()
 	_start_audio()
-	_load_example("First Synth")
+	# A patch carried here from /soundgraph wins over the default example: somebody who
+	# pressed "open in the full editor" asked for their patch, and opening First Synth over
+	# it would throw away the thing they had just made.
+	if not _load_handed_off_patch():
+		_load_example("First Synth")
 
 
 ## One theme on the root, inherited by everything — including the GraphNodes generated for
@@ -8416,6 +8420,63 @@ var _web_callback   # must outlive the call; a collected callback crashes the br
 
 func _on_web() -> bool:
 	return OS.has_feature("web")
+
+
+## Picks up a patch handed over by the lite page at /soundgraph.
+##
+## The two surfaces share an origin, so they share localStorage, and the patch itself is
+## the whole protocol — both read the same file and ask the same core about it, so there is
+## nothing else to agree on. `soundgraph.handoff.v1` is deliberately not the key the lite
+## page saves to: this one is consumed and cleared, and clobbering somebody's saved work
+## with a patch they were only passing through would be a poor trade.
+##
+## Returns true when a patch was loaded, so the caller knows not to open the default.
+func _load_handed_off_patch() -> bool:
+	if not _on_web():
+		return false
+
+	# Read and clear in one step. A handoff that survived its own load would reopen on
+	# every later visit, quietly overriding whatever the person had gone on to make.
+	var raw: Variant = JavaScriptBridge.eval("""
+		(function () {
+			try {
+				const held = window.localStorage.getItem('soundgraph.handoff.v1');
+				if (!held) { return ''; }
+				window.localStorage.removeItem('soundgraph.handoff.v1');
+				return held;
+			} catch (error) {
+				return '';   // storage refused; there is simply no handoff
+			}
+		})();
+	""", true)
+
+	if typeof(raw) != TYPE_STRING or str(raw).is_empty():
+		return false
+
+	var envelope: Variant = JSON.parse_string(str(raw))
+	if typeof(envelope) != TYPE_DICTIONARY or not envelope.has("text"):
+		return false
+
+	var carried_name := str(envelope.get("name", "")).strip_edges()
+	var file_name := "handed-over.json"
+	if not carried_name.is_empty():
+		file_name = "%s.json" % carried_name.to_lower().replace(" ", "-")
+
+	_set_document_name(file_name)
+	_load_text(str(envelope["text"]))
+	_say("opened %s from the browser page" %
+		(carried_name if not carried_name.is_empty() else "a patch"))
+
+	# Exposed for the same reason `window.soundgraph` is in the lite page: from outside the
+	# canvas there is otherwise no way to tell a patch that arrived from one that was
+	# dropped. Consuming the handoff key proves the read ran, not that the document loaded —
+	# and those are exactly the two things worth telling apart when this breaks.
+	JavaScriptBridge.eval("window.soundgraphEditor = %s;" % JSON.stringify({
+		"document": document_name,
+		"nodes": patch.get("nodes", []).size(),
+		"from": "handoff",
+	}), true)
+	return true
 
 
 func _install_web_file_bridge() -> void:

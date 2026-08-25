@@ -34,6 +34,11 @@ runtime-godot/third_party/godot-cpp/
 # web (later)
 node_modules/
 editor-web/dist/
+# The Godot editor exported into the lite page's directory, so the local layout
+# matches production: /soundgraph and /soundgraph/editor. ~46 MB of build output,
+# and its service worker's scope is confined to this subdirectory, which is the
+# whole reason it lives below the page rather than beside it.
+editor-web/editor/
 
 # ESP-IDF build output; sdkconfig.defaults is the source
 embedded/esp32-s3/sdkconfig

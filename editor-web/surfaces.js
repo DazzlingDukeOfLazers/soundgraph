@@ -37,16 +37,23 @@ export const SURFACES = [
         name: 'The full editor',
         summary: 'Build patches visually — add nodes, drag cables, search by what you want.',
         detail: 'The same editor as the desktop application, running in this browser.',
-        // e.g. './editor/' once it is deployed. Must be BELOW this page — see above.
-        url: null,
+        // Below this page, so the export's service worker scope cannot reach it.
+        // `node tools/export-web.mjs --out editor-web/editor` puts it here.
+        url: './editor/',
         // Roughly 10 MB gzipped on the first visit, then cached by its service worker.
         // Said out loud rather than sprung on somebody halfway through a download.
         cost: 'About 10 MB the first time. After that it works offline.',
-        // Files to warm once a visitor has shown they are interested. Left empty on
-        // purpose: the names come from the Godot export and guessing them would produce a
-        // prefetch that quietly fetches nothing, which is worse than no prefetch at all.
-        // Fill from the export directory — index.wasm, index.pck and index.side.wasm.
-        preload: [],
+        // Warmed once a visitor has shown they are interested — never before, and never on
+        // a metered connection. These are the names Godot's exporter actually emits, read
+        // off the export rather than guessed: `index` is `executable` in export_presets,
+        // so renaming that renames all of these. Biggest first, since that is the one whose
+        // download decides whether the click feels instant.
+        preload: [
+            'index.side.wasm',                              // ~44 MB, the engine
+            'index.pck',                                    // ~4 MB, the editor itself
+            'index.wasm',                                   // ~1.5 MB, the loader
+            'soundgraph_godot.web.wasm32.nothreads.wasm',   // ~1.3 MB, dsp-core
+        ],
     },
     {
         id: 'desktop',
