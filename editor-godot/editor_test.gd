@@ -1,4 +1,5 @@
 extends SceneTree
+const PluginPicker := preload("res://plugin_picker.gd")
 
 ## The authoring transforms, reached directly so a collapse can be checked without going
 ## through a menu. main.gd preloads the same file.
@@ -9287,6 +9288,73 @@ func _initialize() -> void:
 	var preset := FileAccess.open("res://export_presets.cfg", FileAccess.READ)
 	check(preset != null and preset.get_as_text().contains("build_stamp.json"),
 		"and the web export is still set up to carry the stamp")
+
+	# ---- hosted plugins: choosing one, and binding its knobs ------------------------
+	# Parsing is tested without a plugin on the machine on purpose. Every other part of
+	# this feature can be exercised from a canned scan, which is what makes it testable
+	# at all — a suite that needed Surge XT installed would be a suite nobody could run.
+	var scan_json := """[
+	  {"format": "CLAP", "identity": "org.surge-synth-team.surge-xt", "name": "Surge XT",
+	   "vendor": "Surge Synth Team", "path": "C:/plugins/Surge XT.clap",
+	   "parameters": [{"id": -810883302, "name": "Global Volume"},
+	                  {"id": 1746267673, "name": "Active Scene"}]},
+	  {"format": "VST3", "identity": "ABCD", "name": "Another Thing", "vendor": "Someone",
+	   "path": "C:/plugins/Another.vst3", "parameters": []}
+	]"""
+	var found_plugins := PluginPicker.parse_scan(scan_json)
+	check(found_plugins.size() == 2, "a scan yields both plugins")
+	check(str(found_plugins[0]["name"]) == "Another Thing", "the list is sorted by name")
+	check(int(found_plugins[1]["parameters"][0]["id"]) == -810883302,
+		"a negative parameter id survives parsing")
+	check(PluginPicker.parse_scan("not json at all").is_empty(),
+		"a scan that is not JSON yields nothing rather than breaking")
+	check(PluginPicker.parse_scan('[{"name": "no identity"}]').is_empty(),
+		"a plugin that cannot say what it is cannot be named by a patch")
+
+	var surge_entry: Dictionary = found_plugins[1]
+	check(PluginPicker.table_key(surge_entry) == "surge-xt", "the table key comes from the name")
+	var table_row := PluginPicker.table_entry(surge_entry)
+	check(str(table_row["identity"]) == "org.surge-synth-team.surge-xt",
+		"the entry is keyed on identity")
+	check(str(table_row["path_hint"]) == "C:/plugins/Surge XT.clap",
+		"the path is remembered as a hint")
+
+	# Choosing one writes both halves and lifts the schema, because a patch that names a
+	# plugin is the first that a reader may have to refuse.
+	main.patch = {
+		"schema_version": 1,
+		"nodes": [{"id": "fx", "type": "PluginEffect"}, {"id": "fx2", "type": "PluginEffect"}],
+		"connections": [],
+	}
+	main._plugin_scan = found_plugins
+	main._use_plugin("fx", surge_entry)
+	check(main.patch.get("plugins", {}).has("surge-xt"), "the patch carries the plugin")
+	check(str(main.patch["nodes"][0].get("plugin", "")) == "surge-xt",
+		"the node names the entry")
+	check(int(main.patch.get("schema_version", 1)) == 4, "the schema version rises to 4")
+
+	# The same plugin on a second node reuses the entry rather than accumulating rows
+	# that differ only by a number.
+	main._use_plugin("fx2", surge_entry)
+	check(main.patch["plugins"].size() == 1, "one entry serves both nodes")
+	check(str(main.patch["nodes"][1].get("plugin", "")) == "surge-xt",
+		"the second node names the same entry")
+
+	# Slots: -1 is the only unbound, and a real id that happens to be negative is kept.
+	main._set_plugin_slots("surge-xt", [-810883302, -1, 1746267673, -1, -1])
+	var slot_ids: Array = main.patch["plugins"]["surge-xt"]["slots"]
+	check(slot_ids.size() == 3, "trailing unbound slots are trimmed")
+	check(int(slot_ids[0]) == -810883302, "a negative parameter id is a binding, not a blank")
+	check(int(slot_ids[1]) == -1, "the blank in the middle stays blank")
+
+	# And it is one undo step, like every other edit here. Asserted on the stack rather
+	# than by undoing: this runs at the tail of the suite, where the audio engine has
+	# already been shut down, and executing an undo from there needs an engine to
+	# re-apply into. The claim being tested is that the edit was committed once, under
+	# its own name, which the stack says directly.
+	check(main.undo_redo.has_undo(), "binding slots leaves something to undo")
+	check(str(main.undo_redo.get_current_action_name()) == "bind plugin slots",
+		"and it is one step, under its own name")
 
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with

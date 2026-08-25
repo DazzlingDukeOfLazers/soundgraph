@@ -1,4 +1,5 @@
 extends Control
+const PluginPicker := preload("res://plugin_picker.gd")
 ## SoundGraph — Godot editor.
 ##
 ## The primary editor, and deliberately not the authority on anything. Every question this
@@ -149,6 +150,7 @@ const KEY_NOTES := {
 var engine
 var registry: Dictionary = {}          # type name -> descriptor from the core
 var patch: Dictionary = {}             # the document, in patch-format shape
+var _plugin_scan: Array = []           # what this machine has, asked once
 var widgets: Dictionary = {}           # patch node id -> GraphNode
 var ids: Dictionary = {}               # GraphNode.name -> patch node id
 
@@ -3331,6 +3333,27 @@ func _create_widget(node: Dictionary) -> void:
 		if has_output:
 			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
 
+	if str(node.get("type", "")) in ["PluginEffect", "PluginInstrument"]:
+		var plugin_line := HBoxContainer.new()
+		plugin_line.set_meta("row", "steps")
+		plugin_line.set_meta("has_slot", false)
+		plugin_line.alignment = BoxContainer.ALIGNMENT_CENTER
+		var chosen := str(node.get("plugin", ""))
+		var entry: Dictionary = patch.get("plugins", {}).get(chosen, {})
+		var choose := Button.new()
+		choose.text = "Choose plugin…" if chosen == "" else str(entry.get("name", chosen))
+		choose.tooltip_text = "Pick an installed VST3 or CLAP for this node. The patch " 			+ "remembers it by identity, so it still opens where the plugin is absent — " 			+ "the audio passes through and the patch says so."
+		var choose_id := str(node["id"])
+		choose.pressed.connect(func() -> void: _choose_plugin_for(choose_id))
+		plugin_line.add_child(_defocus(choose))
+		if chosen != "":
+			var slots := Button.new()
+			slots.text = "Slots…"
+			slots.tooltip_text = "Say which of the plugin's own controls each slot " 				+ "drives. A bound slot is an ordinary control input, so an LFO or a " 				+ "MidiCC node can move it."
+			slots.pressed.connect(func() -> void: _bind_plugin_slots(choose_id))
+			plugin_line.add_child(_defocus(slots))
+		widget.add_child(plugin_line)
+
 	if str(node.get("type", "")) == "MidiCC":
 		var learn_line := HBoxContainer.new()
 		learn_line.set_meta("row", "steps")
@@ -4617,6 +4640,155 @@ func _on_learn_requested(node_id: String, parameter: String) -> void:
 
 ## A MidiCC node's Learn button landed here: the next CC the hardware sends
 ## becomes the node's controller number.
+## Offers what this machine has, and writes the choice into the patch.
+##
+## The scan is remembered for the session because it opens every plugin installed, which
+## is slow and is the one part of this feature that can misbehave — it happens in
+## sg-host, out of process, so the worst a bad plugin can do to the editor is fail to
+## appear in a list.
+func _choose_plugin_for(node_id: String) -> void:
+	if _plugin_scan.is_empty():
+		_plugin_scan = PluginPicker.scan()
+	if _plugin_scan.is_empty():
+		if PluginPicker.host_path() == "":
+			_say("No plugin scanner here — this build has no sg-host to ask.")
+		else:
+			_say("No VST3 or CLAP plugins found on this machine.")
+		return
+
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Choose a plugin"
+	dialog.ok_button_text = "Use this one"
+	var list := ItemList.new()
+	list.custom_minimum_size = Vector2(420, 320)
+	for entry in _plugin_scan:
+		var vendor := str(entry.get("vendor", ""))
+		var label := str(entry["name"]) + ("" if vendor == "" else "  —  " + vendor)
+		list.add_item(label + "   [" + str(entry["format"]) + "]")
+	dialog.add_child(list)
+	dialog.confirmed.connect(func() -> void:
+		var picked := list.get_selected_items()
+		if not picked.is_empty():
+			_use_plugin(node_id, _plugin_scan[picked[0]])
+		dialog.queue_free())
+	dialog.canceled.connect(func() -> void: dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+## Writes a chosen plugin into the patch: one table entry, one node field, one undo step.
+func _use_plugin(node_id: String, entry: Dictionary) -> void:
+	_begin_edit()
+	var table: Dictionary = patch.get("plugins", {})
+	var key := PluginPicker.table_key(entry)
+	# Reuse the entry when this patch already carries the same plugin, so choosing it on
+	# a second node does not accumulate near-identical rows.
+	var existing := ""
+	for id in table.keys():
+		if str(table[id].get("identity", "")) == str(entry.get("identity", "")):
+			existing = str(id)
+			break
+	if existing == "":
+		var unique := key
+		var n := 2
+		while table.has(unique):
+			unique = key + "-" + str(n)
+			n += 1
+		table[unique] = PluginPicker.table_entry(entry)
+		existing = unique
+	patch["plugins"] = table
+	for node in patch.get("nodes", []):
+		if str(node.get("id", "")) == node_id:
+			node["plugin"] = existing
+			break
+	# Schema 4 is where a patch may name a plugin; a reader that predates it must refuse
+	# rather than quietly drop the node that makes the sound.
+	patch["schema_version"] = maxi(int(patch.get("schema_version", 1)), 4)
+	_commit_edit("choose %s" % str(entry.get("name", "plugin")))
+	_apply()
+	_say("%s plays through %s now" % [node_id, str(entry.get("name", "the plugin"))])
+
+
+## Says which of the plugin's own controls each slot drives.
+##
+## Sixteen rows because there are sixteen slots, each an ordinary control input once it
+## is bound — which is the point of the feature: an LFO modulating a stranger's synth
+## needs no special case anywhere.
+func _bind_plugin_slots(node_id: String) -> void:
+	var chosen := ""
+	for node in patch.get("nodes", []):
+		if str(node.get("id", "")) == node_id:
+			chosen = str(node.get("plugin", ""))
+			break
+	var table: Dictionary = patch.get("plugins", {})
+	if chosen == "" or not table.has(chosen):
+		return
+	var entry: Dictionary = table[chosen]
+
+	# The parameter list comes from the scan, matched by identity — the patch remembers
+	# what the plugin is, not what its knobs are called.
+	var parameters: Array = []
+	for scanned in _plugin_scan:
+		if str(scanned.get("identity", "")) == str(entry.get("identity", "")):
+			parameters = scanned.get("parameters", [])
+			break
+	if parameters.is_empty():
+		_say("Rescan needed: this machine has not been asked what %s offers."
+			% str(entry.get("name", chosen)))
+		return
+
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Slots on " + str(entry.get("name", chosen))
+	dialog.ok_button_text = "Bind"
+	var grid := GridContainer.new()
+	grid.columns = 2
+	var pickers: Array = []
+	var slots: Array = entry.get("slots", [])
+	for slot in 16:
+		var label := Label.new()
+		label.text = "slot%d" % (slot + 1)
+		grid.add_child(label)
+		var option := OptionButton.new()
+		option.add_item("—", 0)          # unbound, and the default
+		for i in parameters.size():
+			option.add_item(str(parameters[i]["name"]), i + 1)
+		var current := int(slots[slot]) if slot < slots.size() else -1
+		for i in parameters.size():
+			if int(parameters[i]["id"]) == current:
+				option.select(i + 1)
+				break
+		grid.add_child(option)
+		pickers.append(option)
+	dialog.add_child(grid)
+	dialog.confirmed.connect(func() -> void:
+		var bound: Array = []
+		for slot in 16:
+			var index: int = pickers[slot].get_selected_id()
+			# -1 is the only value that means unbound. A real parameter id is a uint32
+			# and is very often negative through an int, which is a distinction the
+			# provider learned the hard way.
+			bound.append(-1 if index <= 0 else int(parameters[index - 1]["id"]))
+		_set_plugin_slots(chosen, bound)
+		dialog.queue_free())
+	dialog.canceled.connect(func() -> void: dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+## Writes a slot table, trimmed of the trailing unbound slots nobody chose.
+func _set_plugin_slots(plugin_id: String, bound: Array) -> void:
+	while not bound.is_empty() and int(bound[bound.size() - 1]) == -1:
+		bound.remove_at(bound.size() - 1)
+	_begin_edit()
+	var table: Dictionary = patch.get("plugins", {})
+	if table.has(plugin_id):
+		table[plugin_id]["slots"] = bound
+	patch["plugins"] = table
+	_commit_edit("bind plugin slots")
+	_apply()
+	_say("%d slot(s) bound" % bound.size())
+
+
 func _learn_midicc_node(node_id: String) -> void:
 	_learning = {"node": node_id}
 	_say("MIDI learn: turn the knob you mean — the next controller heard becomes "

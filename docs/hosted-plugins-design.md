@@ -188,9 +188,25 @@ each note — is not built, and wants a real use before it is.
 *Exit test: met. `a_plugin_instrument_is_one_instance_however_many_voices` asks for
 eight voices, gets one plugin, and plays a three-note chord into it.*
 
-**Stage 4 — editor.** Browse installed plugins, pick one, bind slots, show the
-plugin's own window. This is where the feature becomes usable by a person, and it is
-deliberately last: everything before it is testable from a command line.
+**Stage 4 — editor. Picking and binding built, 2026-08-25; the plugin's own window
+is not.** A plugin node grows a row: a button naming the chosen plugin, and a Slots…
+button once there is one. Choosing runs `sg-host --scan` **out of process** — the
+editor never loads a plugin, never links the hosting SDKs, and cannot be brought down
+by one, which matters more here than anywhere else because the editor is the thing with
+unsaved work in it. Both writes are ordinary undo steps, the patch's schema version
+lifts to 4 on the first choice, and choosing the same plugin on a second node reuses the
+one table entry.
+
+`editor-godot/plugin_picker.gd` keeps the parsing separate from the running, so the
+editor suite tests choosing and binding against a canned scan rather than needing Surge
+XT installed on whatever machine runs it. `class_name` is deliberately not used: a
+headless `--script` run never builds Godot's class cache, so the global would not exist
+and the suite could not load.
+
+Still to do: **the plugin's own window, embedded in a Godot sub-window** — the decision
+recorded above. It needs the Godot extension to link the hosting code, which is a build
+change rather than a UI one, and is better done deliberately than tacked onto the end of
+this.
 
 ## Decided, 2026-08-25
 
