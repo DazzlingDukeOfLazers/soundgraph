@@ -67,6 +67,12 @@ struct ProcessContext {
     double sample_rate = 48000.0;
     const float* const* inputs = nullptr;   // kMaxInputs entries; null where unconnected
     float* const* outputs = nullptr;        // one writable buffer per declared output
+
+    // The hardware controller surface: 129 entries (128 MIDI CCs, then the pitch
+    // bend), each 0..1, or negative for a controller the hardware has never
+    // spoken — which is a fact a node may care about, not an error. Null when the
+    // host has no controllers, which every node must survive.
+    const float* cc_values = nullptr;
 };
 
 class DspNode {

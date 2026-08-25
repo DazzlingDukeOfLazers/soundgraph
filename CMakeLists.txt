@@ -22,6 +22,16 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 option(SOUNDGRAPH_BUILD_TESTS "Build the test suite" ON)
 option(SOUNDGRAPH_BUILD_TOOLS "Build the command line tools" ON)
 option(SOUNDGRAPH_BUILD_NATIVE_RUNTIME "Build the native live-audio host" ON)
+# Off by default: needs SDKs the ordinary build must not depend on. See runtime-clap/.
+option(SOUNDGRAPH_CLAP "Build the CLAP/VST3/AU plugin" OFF)
+
+# One CRT for the whole plugin. clap-wrapper statically links the MSVC runtime for
+# everything under its own roof, but the wrapper *entry* objects are compiled in this
+# project's scope — without this they default to the DLL runtime and the VST3 dies in
+# a hail of LNK2038 mismatches. Set before any target exists so every object agrees.
+if(SOUNDGRAPH_CLAP AND MSVC AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 # A WebAssembly configuration builds only the core and the browser binding. Everything
 # else — device hosts, file tools, the test runners — is a native concern.
@@ -48,7 +58,22 @@ if(SOUNDGRAPH_BUILD_NATIVE_RUNTIME)
     add_subdirectory(runtime-native)
 endif()
 
+# Before any directory that registers tests: enable_testing() only covers directories
+# added after it.
 if(SOUNDGRAPH_BUILD_TESTS)
     enable_testing()
+endif()
+
+if(SOUNDGRAPH_CLAP AND NOT EMSCRIPTEN)
+    if(APPLE)
+        # clap-wrapper's AU and standalone shells are Objective-C++. Enabling the
+        # languages from within a subdirectory leaves later sibling directories without
+        # compile rules, so it happens here at the top.
+        enable_language(OBJC OBJCXX)
+    endif()
+    add_subdirectory(runtime-clap)
+endif()
+
+if(SOUNDGRAPH_BUILD_TESTS)
     add_subdirectory(tests)
 endif()

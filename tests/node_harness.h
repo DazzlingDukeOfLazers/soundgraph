@@ -2,6 +2,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -62,6 +63,18 @@ public:
     }
 
     bool valid() const { return type_ != nullptr && node_ != nullptr; }
+
+    // Sets one controller on the surface the harness hands to process(), the way
+    // the graph does. Until the first set, process() sees no surface at all.
+    void set_cc(int cc, float value) {
+        if (!cc_touched_) {
+            cc_values_.fill(-1.0f);
+            cc_touched_ = true;
+        }
+        if (cc >= 0 && cc <= 128) {
+            cc_values_[static_cast<std::size_t>(cc)] = value;
+        }
+    }
 
     // Re-prepares with a sample buffer bound, the way the graph binds one to a node
     // whose description names it. For testing buffer-fed nodes without a graph.
@@ -131,6 +144,9 @@ public:
         context.sample_rate = sample_rate_;
         context.inputs = input_pointers;
         context.outputs = output_pointers;
+        if (cc_touched_) {
+            context.cc_values = cc_values_.data();
+        }
         node_->process(context);
     }
 
@@ -155,6 +171,8 @@ private:
     int frames_ = 0;
     double sample_rate_ = 48000.0;
     std::vector<float> buffer_;
+    std::array<float, 129> cc_values_{};
+    bool cc_touched_ = false;
 };
 
 // Common measurements used across node tests.

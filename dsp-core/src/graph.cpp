@@ -1,4 +1,5 @@
 #include "soundgraph/graph.h"
+#include <array>
 
 #include <algorithm>
 #include <cstring>
@@ -736,6 +737,7 @@ bool Graph::build(const GraphDescription& description,
     buffer_count_ = 0;
     sample_buffers_ = description.buffers;
     control_queue_.clear();
+    cc_values_.fill(-1.0f);
     cost_ = ResourceCost{};
 
     for (int slot = 0; slot < kTapSlots; ++slot) {
@@ -945,6 +947,7 @@ void Graph::reset() {
     std::fill(master_right_.begin(), master_right_.end(), 0.0f);
     pending_read_ = kBlockSize;
     control_queue_.clear();
+    cc_values_.fill(-1.0f);
     for (VoiceState& state : voice_states_) {
         state = VoiceState{};
     }
@@ -963,6 +966,8 @@ void Graph::drain_control_events() {
     while (control_queue_.pop(event)) {
         if (event.kind == ControlEvent::Kind::Note) {
             route_note(event.note);
+        } else if (event.kind == ControlEvent::Kind::ControlChange) {
+            cc_values_[static_cast<std::size_t>(event.cc)] = event.value;
         } else {
             apply_parameter(event.node_index, event.parameter_index, event.value);
         }
@@ -1148,6 +1153,7 @@ void Graph::process_block() {
         process_context.sample_rate = sample_rate_;
         process_context.inputs = input_pointers;
         process_context.outputs = output_pointers;
+        process_context.cc_values = cc_values_.data();
         slot.node->process(process_context);
     }
 
@@ -1356,6 +1362,17 @@ void Graph::render_interleaved(float* destination, int frames) {
         pending_read_ += available;
         written += available;
     }
+}
+
+void Graph::control_change(int cc, float value) {
+    if (cc < 0 || cc > 128) {
+        return;
+    }
+    ControlEvent event;
+    event.kind = ControlEvent::Kind::ControlChange;
+    event.cc = cc;
+    event.value = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+    control_queue_.push(event);
 }
 
 void Graph::note_on(int note, float velocity) {

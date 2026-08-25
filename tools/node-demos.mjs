@@ -574,6 +574,33 @@ const DEMOS = {
       ],
     }),
   },
+  MidiCC: {
+    summary: 'A hardware knob as a node: one controller number off your MIDI '
+      + 'surface, held, scaled and smoothed.',
+    try: 'Plug in a controller and wiggle its first knob — the filter follows your '
+      + 'hand. Learn (on the node) rebinds it to any knob you turn next; the '
+      + 'sideways joystick answers to number 128. Without hardware, '
+      + 'resting stands in for the knob.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('osc', 'SawOscillator', { frequency: 220 }, 1, 0),
+        node('voice', 'StateVariableFilter',
+          { cutoff: 700, resonance: 0.6, mode: 0 }, 2, 0),
+        node('demo', 'MidiCC', { cc: 1, low: -1, high: 3, resting: 0.2, glide: 15 },
+          1, 2),
+        envelope(2),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('osc', 'out', 'voice', 'in'),
+        wire('demo', 'out', 'voice', 'cutoff_mod'),
+        ...tail('voice'),
+      ],
+    }),
+  },
   Constant: {
     summary: 'A fixed value — the thing you reach for to offset or scale a modulation.',
     try: 'The LFO swings either side of zero; adding this constant lifts it so the filter '
@@ -1114,6 +1141,7 @@ const PROBES = {
   Retrigger: { parameter: 'rate', value: 2 },
   LFO: { parameter: 'amount', value: 0.5 },
   Constant: { parameter: 'value', value: -1.0 },
+  MidiCC: { parameter: 'resting', value: 1 },
 
   Add: { parameter: 'offset', value: 1.0 },
   Multiply: { parameter: 'factor', value: 0 },

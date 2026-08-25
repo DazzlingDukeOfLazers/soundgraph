@@ -154,6 +154,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kEuclid,
         &nodes::kLfo,
         &nodes::kConstant,
+        &nodes::kMidiCc,
         &nodes::kAdd,
         &nodes::kMultiply,
         &nodes::kClip,

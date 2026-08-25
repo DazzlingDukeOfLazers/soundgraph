@@ -548,4 +548,40 @@ TEST(resource_estimates_grow_with_the_patch) {
     CHECK(large_runtime.estimated_cost().heap_bytes > small_runtime.estimated_cost().heap_bytes);
 }
 
+TEST(control_change_reaches_a_midicc_node_through_the_queue) {
+    // The whole path: the host calls control_change, the event drains at the
+    // block boundary, the node reads the surface. Wired into a Gain so the
+    // answer is audible rather than inspected.
+    GraphDescription graph;
+    graph.nodes.push_back(node("knob", "MidiCC"));
+    graph.nodes.push_back(node("tone", "SineOscillator"));
+    graph.nodes.push_back(node("amp", "Gain"));
+    graph.nodes.push_back(node("out", "StereoOutput"));
+    set(graph, "knob", "cc", 74.0);
+    set(graph, "knob", "glide", 0.0);
+    // Gain's input MULTIPLIES its parameter, so the parameter stays 1 and the
+    // knob owns the level entirely: resting 0 is silence, knob up is the tone.
+    set(graph, "amp", "gain", 1.0);
+    connect(graph, "tone", "out", "amp", "in");
+    connect(graph, "knob", "out", "amp", "gain");
+    connect(graph, "amp", "out", "out", "left");
+
+    soundgraph::Graph runtime;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(runtime.build(graph, NodeRegistry::builtin(), soundgraph::PrepareContext(),
+        diagnostics));
+
+    std::vector<float> left(4800), right(4800);
+    runtime.render(left.data(), right.data(), 4800);
+    double quiet = 0.0;
+    for (float sample : left) quiet += sample * sample;
+    CHECK(std::sqrt(quiet / 4800.0) < 0.001);   // knob never spoken: resting 0
+
+    runtime.control_change(74, 1.0f);
+    runtime.render(left.data(), right.data(), 4800);
+    double loud = 0.0;
+    for (float sample : left) loud += sample * sample;
+    CHECK(std::sqrt(loud / 4800.0) > 0.1);      // knob up: the tone arrives
+}
+
 TEST_MAIN("graph tests")

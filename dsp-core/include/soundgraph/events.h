@@ -19,7 +19,7 @@ struct NoteEvent {
 };
 
 struct ControlEvent {
-    enum class Kind : std::uint8_t { Note, ParameterSet };
+    enum class Kind : std::uint8_t { Note, ParameterSet, ControlChange };
     Kind kind = Kind::Note;
 
     NoteEvent note{};
@@ -27,6 +27,10 @@ struct ControlEvent {
     int node_index = -1;
     int parameter_index = -1;
     float value = 0.0f;
+
+    // ControlChange: which controller. 0..127 are MIDI CCs, 128 is the pitch bend
+    // wheel wearing a controller number so one table serves the whole surface.
+    int cc = -1;
 };
 
 // Capacity is generous relative to one audio block: a stuck or bursty producer drops

@@ -62,6 +62,8 @@ void SoundGraphEngine::_bind_methods() {
                          &SoundGraphEngine::render_block);
     ClassDB::bind_method(D_METHOD("lpc_encode", "samples", "sample_rate"),
                          &SoundGraphEngine::lpc_encode);
+    ClassDB::bind_method(D_METHOD("control_change", "cc", "value"),
+                         &SoundGraphEngine::control_change);
     ClassDB::bind_method(D_METHOD("fill_playback", "playback", "max_frames"),
                          &SoundGraphEngine::fill_playback);
     ClassDB::bind_method(D_METHOD("get_peak"), &SoundGraphEngine::get_peak);
@@ -254,6 +256,15 @@ String SoundGraphEngine::get_info_json() const {
 
 void SoundGraphEngine::note_on(int note, double velocity) {
     graph_.note_on(note, static_cast<float>(velocity));
+}
+
+// A hardware controller moved. 0..127 are MIDI CCs, 128 the pitch bend, value 0..1;
+// queued into the graph like a note, applied at the block boundary.
+void SoundGraphEngine::control_change(int cc, float value) {
+    if (!loaded_) {
+        return;
+    }
+    graph_.control_change(cc, value);
 }
 
 void SoundGraphEngine::note_off(int note) {

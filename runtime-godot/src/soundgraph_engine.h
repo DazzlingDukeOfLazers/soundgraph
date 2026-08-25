@@ -91,6 +91,7 @@ public:
     godot::PackedFloat32Array render_block(int frames);
     godot::PackedByteArray lpc_encode(const godot::PackedFloat32Array& samples,
                                       float sample_rate);
+    void control_change(int cc, float value);
     int fill_playback(const godot::Ref<godot::AudioStreamGeneratorPlayback>& playback,
                       int max_frames);
 
