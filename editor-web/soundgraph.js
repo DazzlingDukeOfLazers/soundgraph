@@ -74,6 +74,8 @@ export class SoundGraph extends EventTarget {
         this.parameterHandles = new Map();
         this.pendingBinds = new Map();
         this.nextBindId = 1;
+        // The in-flight start, if there is one. See start().
+        this.starting = null;
     }
 
     // Fetches and compiles the module. Safe to call before any user gesture — no
@@ -135,8 +137,33 @@ export class SoundGraph extends EventTarget {
         }
     }
 
-    // Must be called from a user gesture: browsers will not start audio otherwise.
+    /**
+     * Must be called from a user gesture: browsers will not start audio otherwise.
+     *
+     * SINGLE-FLIGHT, AND IT HAS TO BE. Two overlapping calls each used to build their own
+     * AudioContext, worklet and graph, and each connected to the destination — the same
+     * patch playing twice, slightly out of phase, with the first copy unstoppable because
+     * only the last is remembered in `this.node`. Nothing downstream can recover from that;
+     * even reloading the patch only reaches one of them.
+     *
+     * The window is real rather than theoretical: `this.context` is not assigned until
+     * after `loadModule()` awaits, so a second caller arriving during that await sees a
+     * blank instance and starts again from the top. A second call now joins the first.
+     */
     async start(workletUrl = './soundgraph-worklet.js') {
+        if (this.starting) {
+            return this.starting;
+        }
+        this.starting = this.startOnce(workletUrl);
+        try {
+            return await this.starting;
+        } finally {
+            this.starting = null;
+        }
+    }
+
+    async startOnce(workletUrl) {
+        // Covers the resume case and, with the guard above, guarantees at most one node.
         if (this.context) {
             await this.resumeContext();
             return;

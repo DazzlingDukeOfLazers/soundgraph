@@ -204,6 +204,23 @@ export function isGoldenChange(originalHz, currentHz, octaves = GOLDEN_OCTAVES) 
 const reducedMotion = () =>
     window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 
+/**
+ * Reject rather than wait forever.
+ *
+ * The arrival screen disables its buttons the moment it is pressed, so any promise that
+ * never settles leaves a dead modal with no way out — the worst possible place for it,
+ * since it is the first thing a visitor ever sees. `AudioContext.resume()` is one known
+ * source and is handled at its own layer; this exists because it will not be the last, and
+ * "audio took too long" is a survivable answer while silence is not.
+ */
+export function withTimeout(promise, milliseconds, message) {
+    let timer = 0;
+    const expiry = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), milliseconds);
+    });
+    return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+}
+
 // ---------------------------------------------------------------------------------
 // Small DOM helpers
 // ---------------------------------------------------------------------------------
@@ -451,10 +468,14 @@ export class Onboarding {
         // wrong between the click and the first coach mark, the visitor gets a screen with
         // a way forward on it.
         try {
-            await this.host.startAudio();
+            // Longer than the engine's own five-second refusal timeout, so that when the
+            // cause IS a refused context the specific message wins and this never fires.
+            await withTimeout(this.host.startAudio(), 8000,
+                'starting audio did not finish, and the browser gave no reason');
             milestone(MILESTONES.AUDIO_STARTED);
             this.silent = false;
-            await this.host.loadTutorialPatch();
+            await withTimeout(this.host.loadTutorialPatch(), 8000,
+                'the tutorial patch did not load');
         } catch (error) {
             this.showAudioFailure(error);
             return;
