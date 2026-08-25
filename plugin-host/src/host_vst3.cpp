@@ -18,6 +18,7 @@
 // VST3 parameter values are always normalised 0..1 (the plain value exists only as a
 // string the plugin formats), and the controller — not the processor — is the thing
 // that knows a parameter exists at all.
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -277,6 +278,25 @@ public:
     }
 
     bool process(int frames, std::vector<std::vector<float>>& channels) override {
+        // Silence every input bus, every block. HostProcessData allocates these
+        // buffers but does not clear them, and a plugin handed uninitialised memory
+        // processes it as audio: Surge XT's effects rack, given nothing, produced a
+        // full-scale roar out of whatever the allocator happened to be holding. Every
+        // block rather than once, because VST3 permits processing in place � a plugin
+        // may legitimately write over its own input.
+        for (int32 bus = 0; bus < data_.numInputs; ++bus) {
+            AudioBusBuffers& buffers = data_.inputs[bus];
+            for (int32 channel = 0; channel < buffers.numChannels; ++channel) {
+                if (buffers.channelBuffers32[channel] != nullptr) {
+                    std::fill_n(buffers.channelBuffers32[channel], frames, 0.0f);
+                }
+            }
+            // And say so: silenceFlags is how a host tells a plugin the quiet is
+            // deliberate, which lets it skip work rather than guess.
+            buffers.silenceFlags = buffers.numChannels >= 64
+                                       ? ~static_cast<uint64>(0)
+                                       : (static_cast<uint64>(1) << buffers.numChannels) - 1;
+        }
         data_.numSamples = frames;
         const tresult result = processor_->process(data_);
 

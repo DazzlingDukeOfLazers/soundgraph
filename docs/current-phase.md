@@ -410,6 +410,18 @@ Four ctests ride the CLAP build (`sg_host_plays_the_built_clap`,
 Result worth keeping: rendering the same notes through the CLAP and through the VST3
 produces **byte-identical WAV files**, so the wrapper is transparent on this path.
 
+sg-host is not ours-only: pointed at Surge XT 1.3.4 (`C:\Users\danie\Tools\surge-xt\`,
+plugins-only zip, no installer) it loads and plays both the VST3 and the CLAP, and
+`--param "Global Volume=0.05"` takes a foreign synth to near silence. That first
+third-party contact immediately found a bug of ours: `HostProcessData` allocates input
+buses but does not clear them, so an *effect* — which our own instrument never exercised,
+having no audio inputs — was handed uninitialised memory and processed it as audio.
+Surge XT Effects roared at peak 2.0 given nothing at all. Inputs are now zeroed and
+their `silenceFlags` set every block (in place processing is legal, so once is not
+enough), and the same plugin now renders exact silence. No automated test covers this:
+the repository cannot depend on a third-party plugin, so the guard is this note and the
+comment in `host_vst3.cpp`.
+
 Trap the tool found on its first day, and the reason `settle()` exists: on Windows
 clap-wrapper services CLAP's `request_callback` from `onIdle`, which it drives from a
 20 ms `WM_TIMER` on a message-only window (`detail/os/windows.cpp`). A headless host
