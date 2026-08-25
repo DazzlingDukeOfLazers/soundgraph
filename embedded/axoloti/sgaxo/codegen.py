@@ -131,6 +131,39 @@ SUPPORTED = {
         "fixed": {},
         "outputs": ["out"],
     },
+    "SquareOscillator": {
+        "inputs": ["frequency", "fm", "pm"],
+        "connectable": {"frequency"},
+        "params": {"frequency": 440.0, "pulse_width": 0.5,
+                   "pulse_width_sweep": 0.0},
+        "fixed": {"pulse_width_sweep": 0.0},
+        "outputs": ["out"],
+    },
+    "Noise": {
+        "inputs": [], "connectable": set(),
+        "params": {"colour": 0.0, "seed": 12345.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Delay": {
+        "inputs": ["in", "time", "feedback"],
+        "connectable": {"in", "time", "feedback"},
+        "params": {"time": 0.25, "feedback": 0.35, "mix": 0.35},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "AhdEnvelope": {
+        "inputs": ["gate"], "connectable": {"gate"},
+        "params": {"attack": 0.0, "hold": 0.1, "decay": 0.3, "punch": 0.0},
+        "fixed": {},
+        "outputs": ["out"],
+    },
+    "Retrigger": {
+        "inputs": ["rate"], "connectable": {"rate"},
+        "params": {"rate": 8.0, "width": 1.0},
+        "fixed": {},
+        "outputs": ["gate"],
+    },
     "StereoOutput": {
         "inputs": ["left", "right"], "connectable": {"left", "right"},
         "params": {"level": 1.0, "safety_limit": 1.0},
@@ -228,6 +261,7 @@ def _emit(nodes, wires, order, frames, patch_id, events):
          '#include "kernels.h"', ""]
     init = []
     note_nodes = []
+    delay_count = 0
 
     used_outputs = {(s, sp) for (s, sp) in wires.values()}
 
@@ -249,7 +283,7 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             init += [f"st_{c}.target_note = 60.0f;",
                      f"st_{c}.current_note = 60.0f;"]
             note_nodes.append(i)
-        elif t in ("SineOscillator", "SawOscillator"):
+        elif t in ("SineOscillator", "SawOscillator", "SquareOscillator"):
             L.append(f"static sgaxo::OscState st_{c};")
         elif t == "LFO":
             L.append(f"static sgaxo::LfoState st_{c};")
@@ -258,6 +292,25 @@ def _emit(nodes, wires, order, frames, patch_id, events):
             L.append(f"static sgaxo::SvfState st_{c};")
         elif t == "ADSR":
             L.append(f"static sgaxo::AdsrState st_{c};")
+        elif t == "Noise":
+            L.append(f"static sgaxo::NoiseState st_{c};")
+            init.append(f"st_{c}.rng.seed({int(n['params']['seed'])}u);")
+        elif t == "Delay":
+            delay_count += 1
+            if delay_count > 10:
+                raise Unsupported(
+                    "more than 10 Delay nodes: their SDRAM lines would "
+                    "collide with the capture buffer at 0xC0400000")
+            L.append(f"static sgaxo::DelayState st_{c};")
+            L.append(f"__attribute__((section(\".sdram\"))) "
+                     f"static float line_{c}[SGAXO_DELAY_CAPACITY];")
+            # .sdram is NOLOAD: this is DelayNode::reset(), done at init.
+            init.append(f"for (int j = 0; j < SGAXO_DELAY_CAPACITY; j++) "
+                        f"line_{c}[j] = 0.0f;")
+        elif t == "AhdEnvelope":
+            L.append(f"static sgaxo::AhdState st_{c};")
+        elif t == "Retrigger":
+            L.append(f"static sgaxo::RetriggerState st_{c};")
 
     L.append("")
     L.append("static void sg_graph_process(float *out_l, float *out_r) {")
@@ -294,6 +347,29 @@ def _emit(nodes, wires, order, frames, patch_id, events):
         elif t == "Gain":
             L.append(f"  sgaxo::k_gain({src(i, 'in')}, {src(i, 'gain')}, "
                      f"{buf(i, 'out')}, {_lit(p['gain'])});")
+        elif t == "SquareOscillator":
+            L.append(f"  sgaxo::k_square(st_{c}, {src(i, 'frequency')}, "
+                     f"{buf(i, 'out')}, {_lit(p['frequency'])}, "
+                     f"{_lit(p['pulse_width'])}, {_lit(SAMPLE_RATE)});")
+        elif t == "Noise":
+            pink = 1 if p["colour"] >= 0.5 else 0
+            L.append(f"  sgaxo::k_noise(st_{c}, {buf(i, 'out')}, {pink});")
+        elif t == "Delay":
+            L.append(f"  sgaxo::k_delay(st_{c}, line_{c}, {src(i, 'in')}, "
+                     f"{src(i, 'time')}, {src(i, 'feedback')}, {buf(i, 'out')}, "
+                     f"{_lit(p['time'])}, {_lit(p['feedback'])}, "
+                     f"{_lit(p['mix'])}, {_lit(SAMPLE_RATE)});")
+        elif t == "AhdEnvelope":
+            dt = f32(1.0 / SAMPLE_RATE)
+            L.append(f"  sgaxo::k_ahd(st_{c}, {src(i, 'gate')}, {buf(i, 'out')}, "
+                     f"{_lit(p['attack'])}, {_lit(p['hold'])}, "
+                     f"{_lit(p['decay'])}, {_lit(p['punch'])}, {_lit(dt)});")
+        elif t == "Retrigger":
+            width_s = f32(f32(p["width"]) * f32(0.001))
+            dt = f32(1.0 / SAMPLE_RATE)
+            L.append(f"  sgaxo::k_retrigger(st_{c}, {src(i, 'rate')}, "
+                     f"{buf(i, 'gate')}, {_lit(p['rate'])}, {_lit(width_s)}, "
+                     f"{_lit(dt)});")
         elif t in ("StereoOutput", "Output"):
             limit = 1 if p["safety_limit"] >= 0.5 else 0
             L.append(f"  sgaxo::k_stereo_output({src(i, 'left')}, "

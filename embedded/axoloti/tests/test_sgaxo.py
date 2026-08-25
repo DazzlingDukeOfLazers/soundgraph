@@ -24,7 +24,7 @@ import codegen  # noqa: E402
 GOLDEN = _HERE.parent.parent.parent / "tests" / "golden"
 
 SGX_SHM = 0x2001C000
-SGX_CAPTURE = 0xC0000000
+SGX_CAPTURE = 0xC0400000
 OFF_FRAMES_DONE = 8
 OFF_STATUS = 20
 
@@ -99,6 +99,19 @@ def test_sine_golden_on_hardware(board, toolchain):
     compare(rendered, golden, "sine")
 
 
+@pytest.mark.parametrize("case,frames_hint", [
+    ("noise", None),          # Xorshift + float scale: exact arithmetic
+    ("noise-pink", None),     # Kellet pink filter: exact arithmetic
+    ("square", None),         # polyBLEP: exact arithmetic
+    ("delay-feedback", None), # noise -> gain -> SDRAM delay line, no libm
+    ("ahd-envelope", None),   # Retrigger clock -> AHD: exact arithmetic
+])
+def test_golden_case_on_hardware(board, toolchain, case, frames_hint):
+    golden = read_golden_wav(GOLDEN / "vectors" / f"{case}.wav")
+    rendered = run_case(board, case, f"cases/{case}.json", len(golden))
+    compare(rendered, golden, case)
+
+
 def test_first_synth_golden_on_hardware(board, toolchain):
     """The flagship example — note input, saw, LFO-modulated filter, ADSR,
     gain, soft-limited output — compiled from JSON and verified against the
@@ -155,5 +168,4 @@ def test_first_synth_playable_over_midi(board, toolchain):
 def test_unsupported_patch_is_refused(toolchain):
     """The subset gate must refuse, by name, what the target cannot run."""
     with pytest.raises(codegen.Unsupported, match="not in the Axoloti subset"):
-        codegen.build_patch(GOLDEN / "cases" / "delay-feedback.json",
-                            name="refused")
+        codegen.build_patch(GOLDEN / "cases" / "slide.json", name="refused")

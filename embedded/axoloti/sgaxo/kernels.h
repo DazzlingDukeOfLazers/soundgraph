@@ -182,6 +182,150 @@ inline void k_saw(OscState &s, const float *frequency_in, float *out,
         });
 }
 
+inline void k_square(OscState &s, const float *frequency_in, float *out,
+                     float base_frequency, float width_param,
+                     float sample_rate) {
+  // SquareOscillator::render with pulse_width_sweep == 0 (codegen-enforced).
+  const float width = clampf(width_param, 0.01f, 0.99f);
+  k_osc(s, frequency_in, out, base_frequency, sample_rate,
+        [width](float phase, float increment) {
+          float value = phase < width ? 1.0f : -1.0f;
+          value += poly_blep(phase, increment);
+          value -= poly_blep(wrap01(phase + (1.0f - width)), increment);
+          return value;
+        });
+}
+
+// --- Noise (sources.cpp NoiseNode) ------------------------------------------
+
+struct NoiseState {
+  Xorshift32 rng;       // generated init body seeds with the seed parameter
+  float pink_state[3];
+};
+
+inline void k_noise(NoiseState &s, float *out, int pink) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    const float white = s.rng.next_bipolar();
+    if (!pink) {
+      out[i] = white;
+      continue;
+    }
+    s.pink_state[0] = 0.99765f * s.pink_state[0] + white * 0.0990460f;
+    s.pink_state[1] = 0.96300f * s.pink_state[1] + white * 0.2965164f;
+    s.pink_state[2] = 0.57000f * s.pink_state[2] + white * 1.0526913f;
+    out[i] = (s.pink_state[0] + s.pink_state[1] + s.pink_state[2] +
+              white * 0.1848f) * 0.25f;
+  }
+}
+
+// --- Delay (filters.cpp DelayNode) ------------------------------------------
+// The line lives in SDRAM (.sdram section, NOLOAD — the generated init body
+// zeroes it, which is DelayNode::reset()). Capacity mirrors prepare():
+// int(sample_rate * 2.0s) + 4.
+
+#define SGAXO_DELAY_CAPACITY 96004
+
+struct DelayState {
+  int write_index;
+};
+
+inline void k_delay(DelayState &s, float *line, const float *in,
+                    const float *time_in, const float *feedback_in, float *out,
+                    float time_param, float feedback_param, float mix,
+                    float sample_rate) {
+  const int capacity = SGAXO_DELAY_CAPACITY;
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    const float time = time_in != 0 ? time_in[i] : time_param;
+    const float feedback =
+        clampf(feedback_in != 0 ? feedback_in[i] : feedback_param, 0.0f, 0.99f);
+    const float delay_samples = clampf(time, 0.001f, 2.0f) * sample_rate;
+    float read_position = (float)s.write_index - delay_samples;
+    while (read_position < 0.0f) read_position += (float)capacity;
+    const int index0 = (int)read_position;
+    const int index1 = (index0 + 1) % capacity;
+    const float fraction = read_position - (float)index0;
+    const float delayed = line[index0 % capacity] * (1.0f - fraction) +
+                          line[index1] * fraction;
+    const float dry = in != 0 ? in[i] : 0.0f;
+    line[s.write_index] = dry + delayed * feedback;
+    s.write_index = (s.write_index + 1) % capacity;
+    out[i] = dry * (1.0f - mix) + delayed * mix;
+  }
+}
+
+// --- AhdEnvelope (shaping.cpp AhdEnvelopeNode) -------------------------------
+
+struct AhdState {
+  int stage;  // 0 idle, 1 attack, 2 hold, 3 decay
+  float elapsed;
+  float level;
+  int gate_was_open;
+};
+
+inline void k_ahd(AhdState &s, const float *gate, float *out, float attack,
+                  float hold, float decay, float punch, float dt) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    const int open = gate != 0 && gate[i] >= 0.5f;
+    if (open && !s.gate_was_open) {
+      s.stage = 1;
+      s.elapsed = 0.0f;
+    }
+    s.gate_was_open = open;
+    switch (s.stage) {
+      case 0:
+        s.level = 0.0f;
+        break;
+      case 1:
+        if (s.elapsed >= attack) {
+          s.stage = 2;
+          s.elapsed = 0.0f;
+          s.level = 1.0f + 2.0f * punch;
+        } else {
+          s.level = s.elapsed / attack;
+        }
+        break;
+      case 2:
+        if (s.elapsed >= hold) {
+          s.stage = 3;
+          s.elapsed = 0.0f;
+          s.level = 1.0f;
+        } else {
+          s.level = 1.0f + 2.0f * punch * (1.0f - s.elapsed / hold);
+        }
+        break;
+      case 3:
+        if (s.elapsed >= decay) {
+          s.stage = 0;
+          s.elapsed = 0.0f;
+          s.level = 0.0f;
+        } else {
+          s.level = 1.0f - s.elapsed / decay;
+        }
+        break;
+    }
+    out[i] = s.level;
+    s.elapsed += dt;
+  }
+}
+
+// --- Retrigger (shaping.cpp RetriggerNode) -----------------------------------
+
+struct RetriggerState {
+  float elapsed;
+};
+
+inline void k_retrigger(RetriggerState &s, const float *rate_in, float *out,
+                        float rate_param, float width_seconds, float dt) {
+  for (int i = 0; i < SGAXO_FRAMES; ++i) {
+    const float rate =
+        clampf(rate_in != 0 ? rate_in[i] : rate_param, 0.1f, 200.0f);
+    const float interval = 1.0f / rate;
+    out[i] = s.elapsed < width_seconds ? 1.0f : 0.0f;
+    s.elapsed += dt;
+    if (s.elapsed >= interval) s.elapsed -= interval;
+  }
+}
+
 // --- LFO (sources.cpp LfoNode) ----------------------------------------------
 
 struct LfoState {
