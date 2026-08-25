@@ -874,6 +874,7 @@ bool Graph::build(const GraphDescription& description,
                 request.name = wanted->name;
                 request.path_hint = wanted->path_hint;
                 request.state = wanted->state;
+                request.slots = wanted->slots;
                 instance = plugin_provider_->acquire(request);
             }
 

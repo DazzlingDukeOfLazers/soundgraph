@@ -647,7 +647,7 @@ GraphDescription plugin_chain() {
     graph.nodes.push_back(node("osc", "SineOscillator"));
     graph.nodes.push_back(node("fx", "PluginEffect"));
     graph.nodes.push_back(node("out", "StereoOutput"));
-    graph.nodes.back().parameters.push_back({"gain", 1.0});
+    graph.nodes.back().parameters.push_back({"level", 1.0});
     graph.nodes[1].plugin = "reverb";
     connect(graph, "osc", "out", "fx", "left");
     connect(graph, "fx", "left", "out", "left");

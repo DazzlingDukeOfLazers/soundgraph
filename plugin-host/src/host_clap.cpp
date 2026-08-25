@@ -288,6 +288,38 @@ public:
         return true;
     }
 
+    bool process_audio(const float* const* inputs, int input_channels, float* const* outputs,
+                       int output_channels, int frames) override {
+        clap_audio_buffer_t out{};
+        out.data32 = const_cast<float**>(outputs);
+        out.channel_count = static_cast<uint32_t>(output_channels);
+
+        // CLAP takes input buffers as non-const, though a well-behaved plugin only
+        // reads them; the graph's buffers are ours and this is the documented shape.
+        clap_audio_buffer_t in{};
+        in.data32 = const_cast<float**>(inputs);
+        in.channel_count = static_cast<uint32_t>(input_channels);
+
+        clap_output_events_t out_events{};
+        out_events.try_push = [](const clap_output_events_t*, const clap_event_header_t*) {
+            return false;
+        };
+
+        clap_process_t process{};
+        process.steady_time = steady_time_;
+        process.frames_count = static_cast<uint32_t>(frames);
+        process.audio_inputs = inputs != nullptr ? &in : nullptr;
+        process.audio_inputs_count = inputs != nullptr ? 1u : 0u;
+        process.audio_outputs = &out;
+        process.audio_outputs_count = 1;
+        process.in_events = events_.list();
+        process.out_events = &out_events;
+        plugin_->process(plugin_, &process);
+        steady_time_ += frames;
+        events_.clear();
+        return true;
+    }
+
     void main_thread_tick() override {
         if (!host_.callback_requested) return;
         host_.callback_requested = false;

@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace soundgraph {
 
@@ -30,6 +31,10 @@ struct PluginRequest {
     std::string name;       // hint
     std::string path_hint;  // hint
     std::string state;      // the plugin's own opaque state, empty for its defaults
+    // Slot index to the plugin's own parameter id; -1 for an unbound slot. The provider
+    // needs these because it, not the node, knows how to speak to that plugin — the
+    // node only ever counts from zero.
+    std::vector<int> slots;
 };
 
 // One loaded, activated plugin. The runtime hands these out; the node just uses one.

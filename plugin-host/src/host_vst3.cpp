@@ -320,6 +320,51 @@ public:
         return result == kResultOk || result == kNotImplemented;
     }
 
+    bool process_audio(const float* const* inputs, int input_channels, float* const* outputs,
+                       int output_channels, int frames) override {
+        // Fill the input buses from the caller rather than silencing them. Same
+        // discipline as the silent path: every channel gets defined audio, because a
+        // plugin handed an untouched buffer processes whatever was in that memory.
+        for (int32 bus = 0; bus < data_.numInputs; ++bus) {
+            AudioBusBuffers& buffers = data_.inputs[bus];
+            uint64 silent = 0;
+            for (int32 channel = 0; channel < buffers.numChannels; ++channel) {
+                float* destination = buffers.channelBuffers32[channel];
+                if (destination == nullptr) continue;
+                const float* source =
+                    (bus == 0 && inputs != nullptr && channel < input_channels)
+                        ? inputs[channel]
+                        : nullptr;
+                if (source != nullptr) {
+                    std::copy_n(source, frames, destination);
+                } else {
+                    std::fill_n(destination, frames, 0.0f);
+                    silent |= static_cast<uint64>(1) << channel;
+                }
+            }
+            buffers.silenceFlags = silent;
+        }
+
+        data_.numSamples = frames;
+        const tresult result = processor_->process(data_);
+
+        if (data_.numOutputs > 0 && data_.outputs && data_.outputs[0].channelBuffers32) {
+            const int32 available = data_.outputs[0].numChannels;
+            for (int channel = 0; channel < output_channels; ++channel) {
+                if (channel < available && data_.outputs[0].channelBuffers32[channel] != nullptr) {
+                    std::copy_n(data_.outputs[0].channelBuffers32[channel], frames,
+                                outputs[channel]);
+                } else {
+                    std::fill_n(outputs[channel], frames, 0.0f);
+                }
+            }
+        }
+
+        events_.clear();
+        parameter_changes_.clearQueue();
+        return result == kResultOk || result == kNotImplemented;
+    }
+
     void main_thread_tick() override { pump_messages(); }
 
     void settle(int milliseconds) override {

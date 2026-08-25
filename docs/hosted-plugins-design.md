@@ -145,11 +145,25 @@ Two consequences, and they decide the staging below:
 gate at four tests, and has already found three bugs. Nothing touches the graph. *Exit
 test: done — `sg_host_plays_the_built_vst3` and friends are green.*
 
-**Stage 2 — `PluginEffect`.** Audio in, audio out, sixteen slots, desktop runtimes
-only, embedded state, resolved by identity. No notes, so no polyphony question. **In
-scope before Knobcon.** *Exit test: a patch with our own drum kit through Surge XT's
-reverb renders on Windows and macOS, and the same patch opens on the ESP32 build with
-one warning and audible silence rather than a failure.*
+**Stage 2 — `PluginEffect`. Built, 2026-08-25.** Audio in, audio out, sixteen slots,
+desktop runtimes only, resolved by identity. The node is in dsp-core; the provider that
+actually loads anything is `plugin-host/src/desktop_provider.cpp`, which walks the
+platform's plugin folders (and `SOUNDGRAPH_PLUGIN_PATH`, which is how a test points at
+plugins nobody installed), opens each candidate, and keeps the one whose identity
+matches. `sg-render` picks it up whenever the build has the SDKs, so an offline render
+of a patch containing a plugin is a real render through a real plugin.
+
+Proven end to end: a sine through Surge XT Effects renders at peak 0.717 where the
+same patch with the plugin unreachable renders at 0.800 — different audio, and the
+second says why. Two ctests hold it, both using only artifacts this build makes:
+`sg_render_resolves_a_plugin_by_identity` and `sg_render_says_what_it_could_not_find`.
+
+Not yet demonstrated: a slot moving a real plugin's sound. The mapping is unit-tested
+either side of the seam — the node sends slot indices, the provider turns them into the
+plugin's own parameter ids — but the only effect plugin on this machine is Surge XT
+Effects, whose generic "FX Parameter N" controls do nothing until an effect type is
+chosen, and that choice lives in plugin state rather than in a parameter. It wants a
+second effect plugin to confirm against, not more code.
 
 **Stage 3 — `PluginInstrument`.** Note input, and the voice-clone exemption that
 requires. *Exit test: a plugin instrument plays a chord as one instance, and
