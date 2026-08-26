@@ -251,6 +251,11 @@ void audio_task(void*) {
             interleaved[i * 2 + 1] = static_cast<int16_t>(r * 32767.0f);
         }
 
+        // The reference for the echo canceller, taken here because here is where the
+        // samples are known: this is exactly what the amplifier is about to play, and
+        // therefore exactly what the microphone is about to hear.
+        speech_push_playback(interleaved, kBlock);
+
         std::size_t written = 0;
         // Blocking write: the DMA queue's backpressure is the timing of this loop.
         i2s_channel_write(g_tx_channel, interleaved, sizeof(interleaved), &written, portMAX_DELAY);
@@ -1065,6 +1070,21 @@ void console_task(void*) {
                     std::printf("\n");
                 }
             }
+        } else if (command == "aec") {
+            if (tokens.size() >= 2 && std::strcmp(tokens[1], "on") == 0) {
+                speech_set_cancellation(true);
+                std::printf("OK cancelling\n");
+                continue;
+            }
+            if (tokens.size() >= 2 && std::strcmp(tokens[1], "off") == 0) {
+                speech_set_cancellation(false);
+                std::printf("OK not cancelling\n");
+                continue;
+            }
+            if (tokens.size() >= 2) {
+                speech_set_reference_lag(std::atoi(tokens[1]));
+            }
+            std::printf("AEC reference lag %d ms\n", speech_reference_lag());
         } else if (command == "mic") {
             if (tokens.size() >= 3 && std::strcmp(tokens[1], "gain") == 0) {
                 std::printf("%s", mic_set_gain(static_cast<float>(std::atof(tokens[2])))

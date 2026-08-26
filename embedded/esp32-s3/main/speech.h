@@ -15,6 +15,8 @@
 // Every function here is a no-op on a board with no microphone, and says so.
 #pragma once
 
+#include <cstdint>
+
 // What the board can be told to do. Ids rather than strings at the call site, so a
 // renamed phrase is one edit in speech.cpp and not a search across the firmware.
 enum SpeechCommand {
@@ -45,6 +47,29 @@ bool speech_available();
 // board rendering a heavy patch may want its cycles back.
 void speech_set_listening(bool listening);
 bool speech_listening();
+
+// ---- hearing over its own voice -------------------------------------------------
+// What the board just sent to its own speaker, handed over so the front end can subtract
+// it from what the microphone heard.
+//
+// A smart speaker with no echo cancellation is deaf while it plays, and this board has no
+// hardware loopback of its amplifier — but it does not need one, because the audio task
+// has the exact samples it wrote. This is that tap. Called from the audio task, once per
+// block, and it does nothing but copy into a ring.
+void speech_push_playback(const int16_t* interleaved_stereo, int frames);
+
+// How far behind the microphone the reference is assumed to be, in milliseconds.
+//
+// The sound the microphone hears now left the speaker a little while ago: through the
+// output DMA, across the air, back through the input DMA. The canceller estimates the
+// rest itself, but it has to be given roughly the right stretch of audio to work on.
+// Tunable because the right number is a property of this board and this room, and the
+// only way to find it is to try some.
+void speech_set_reference_lag(int milliseconds);
+int speech_reference_lag();
+
+// Turn the canceller off, which is only worth doing to find out what it was worth.
+void speech_set_cancellation(bool on);
 
 // The canonical phrase behind an id, for a console that wants to list what it knows.
 const char* speech_phrase(int command);

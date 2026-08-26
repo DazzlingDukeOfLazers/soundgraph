@@ -7,6 +7,10 @@
 // No microphone, no listening. Every board without capture hardware compiles the models
 // and the recogniser out entirely rather than carrying megabytes it can never use.
 bool speech_start(SpeechCommandHandler) { return false; }
+void speech_push_playback(const int16_t*, int) {}
+void speech_set_reference_lag(int) {}
+int speech_reference_lag() { return 0; }
+void speech_set_cancellation(bool) {}
 bool speech_available() { return false; }
 void speech_set_listening(bool) {}
 bool speech_listening() { return false; }
@@ -15,6 +19,7 @@ int speech_phrasings(int, const char**, int) { return 0; }
 
 #else
 
+#include <atomic>
 #include <cstring>
 
 #include "freertos/FreeRTOS.h"
@@ -91,6 +96,50 @@ const char* canonical(int command) {
 // clock domain, so the capture cannot simply be reconfigured. Three-to-one it is.
 constexpr int kDecimation = SG_AUDIO_SAMPLE_RATE / 16000;
 
+// The playback ring. A quarter of a second at 48 kHz, mono: long enough to hold any
+// plausible round trip and short enough to be an afterthought in PSRAM.
+//
+// Single producer (the audio task), single consumer (the feed task), and no lock. The
+// write cursor only ever grows; a reader works out where to look from it, and a reader
+// that has fallen off the end gets silence rather than a stale block, because stale audio
+// subtracted from a microphone is worse than nothing subtracted at all.
+// Echo cancellation: built, measured, and off.
+//
+// The idea is sound and the plumbing works. This board has no hardware loopback of its
+// amplifier, but the audio task holds the exact samples it just sent, so those become the
+// reference channel and the front end is configured "MR" — one microphone, one playback
+// reference — with AEC in the pipeline. All of that runs.
+//
+// It does not help. Asked to hear "Hi ESP, turn it down" over its own arpeggio, twice at
+// each volume, with the canceller switched on and off at runtime:
+//
+//     volume 30    on 2/2    off 2/2
+//     volume 45    on 1/2    off 2/2
+//     volume 60    on 0/2    off 0/2
+//
+// The same or slightly worse, and never better. The reference alignment was swept from 0
+// to 90 ms and made no difference at any setting, so it is not a timing mistake. The
+// likely reason is physical: the speaker is a couple of centimetres from the microphones
+// and driven hard, so what comes back is not a delayed copy of the reference but a
+// distorted one, and a linear canceller cannot subtract distortion. AFE_TYPE_SR says as
+// much in its own documentation — it excludes nonlinear noise suppression, and the
+// pipeline duly reports NLP_OFF.
+//
+// So it is off, and the cost of that decision is nothing: the board was already deaf
+// above volume 45 and still is. What turning it on *did* cost was the always-listening
+// mode — the extra work overflowed the feed ring and forced the matcher back behind a
+// wake word, which is a real feature traded for no measurable gain.
+//
+// Left in place rather than deleted, because the next attempt should start from here.
+// Worth trying: AFE_TYPE_VC, which includes the nonlinear stage; a real loopback if the
+// board is ever revised; or simply a speaker further from the microphones.
+constexpr bool kUseEchoCancellation = false;
+
+constexpr int kReferenceFrames = 12288;
+int16_t g_reference[kReferenceFrames];
+std::atomic<uint32_t> g_reference_written{0};
+std::atomic<int> g_reference_lag_ms{30};
+
 SpeechCommandHandler g_handler = nullptr;
 const esp_afe_sr_iface_t* g_afe = nullptr;
 esp_afe_sr_data_t* g_afe_data = nullptr;
@@ -134,20 +183,40 @@ void feed_task(void*) {
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
+        // Where in the ring the reference for this chunk starts: as far back as the
+        // lag says, counted from whatever the audio task has written by now.
+        uint32_t reference_start = 0;
+        bool reference_ready = false;
+        if (kUseEchoCancellation) {
+            const uint32_t written = g_reference_written.load(std::memory_order_acquire);
+            const int lag_frames = g_reference_lag_ms.load(std::memory_order_relaxed) *
+                                   SG_AUDIO_SAMPLE_RATE / 1000;
+            reference_start = written - static_cast<uint32_t>(lag_frames + frames);
+            reference_ready = written >= static_cast<uint32_t>(lag_frames + frames);
+        }
+
         for (int i = 0; i < chunk; ++i) {
-            int sum = 0;
+            int microphone = 0;
+            int playback = 0;
             for (int step = 0; step < kDecimation; ++step) {
                 // Channel zero only. Both microphones work, but the front end is
                 // configured for one; giving it two would buy beamforming and cost
                 // another decimation pass, which is a trade to make with a measurement
                 // rather than in advance.
-                const std::size_t at =
-                    static_cast<std::size_t>(i * kDecimation + step) * SG_AUDIO_IN_CHANNELS;
-                sum += capture[at];
+                const int frame = i * kDecimation + step;
+                microphone +=
+                    capture[static_cast<std::size_t>(frame) * SG_AUDIO_IN_CHANNELS];
+                if (kUseEchoCancellation && reference_ready) {
+                    playback += g_reference[(reference_start + frame) % kReferenceFrames];
+                }
             }
-            const int16_t value = static_cast<int16_t>(sum / kDecimation);
-            for (int channel = 0; channel < channels; ++channel) {
-                fed[static_cast<std::size_t>(i) * channels + channel] = value;
+            const int16_t heard = static_cast<int16_t>(microphone / kDecimation);
+            const int16_t played = static_cast<int16_t>(playback / kDecimation);
+            // Interleaved the way "MR" declares it: the microphone, then what the
+            // speaker was doing at the same moment.
+            fed[static_cast<std::size_t>(i) * channels] = heard;
+            if (channels > 1) {
+                fed[static_cast<std::size_t>(i) * channels + 1] = played;
             }
         }
         g_afe->feed(g_afe_data, fed);
@@ -240,16 +309,19 @@ bool speech_start(SpeechCommandHandler handler) {
         return false;
     }
 
-    // One microphone, no reference channel. "MR" would give the front end the playback
-    // signal to cancel, which is what a smart speaker needs to hear itself over — but
-    // this board offers no loopback of what the amplifier is doing, so there is nothing
-    // honest to put in that channel. Recognising over our own output is the next problem,
-    // and it is a hardware conversation as much as a software one.
-    afe_config_t* config = afe_config_init("M", models, AFE_TYPE_SR, AFE_MODE_LOW_COST);
+    // One microphone and one reference channel: "MR". The reference is not a second
+    // microphone and not a hardware loopback — this board has neither — but the samples
+    // the audio task just handed to the amplifier, which is the same signal by a shorter
+    // route. That is what lets the front end subtract the board's own music from what the
+    // microphone heard, and it is the difference between a speaker you can interrupt and
+    // one that is deaf whenever it is playing.
+    afe_config_t* config = afe_config_init(kUseEchoCancellation ? "MR" : "M", models,
+                                          AFE_TYPE_SR, AFE_MODE_LOW_COST);
     if (config == nullptr) {
         ESP_LOGE(TAG, "could not configure the audio front end");
         return false;
     }
+    config->aec_init = kUseEchoCancellation;
 
     g_afe = esp_afe_handle_from_config(config);
     g_afe_data = g_afe != nullptr ? g_afe->create_from_config(config) : nullptr;
@@ -325,6 +397,41 @@ bool speech_start(SpeechCommandHandler handler) {
     ESP_LOGI(TAG, "listening for \"Hi ESP\", %d command(s) in %d phrasing(s)",
              kSpeechCommandCount, kPhraseCount);
     return true;
+}
+
+void speech_push_playback(const int16_t* interleaved_stereo, int frames) {
+    // Costs the audio task nothing when the canceller is off, which it is. The call site
+    // stays regardless: it is one line in the right place, and the next attempt at this
+    // should not have to find it again.
+    if (!kUseEchoCancellation) return;
+    if (interleaved_stereo == nullptr || frames <= 0) return;
+    uint32_t at = g_reference_written.load(std::memory_order_relaxed);
+    for (int i = 0; i < frames; ++i) {
+        // Mono, because the reference only has to describe what the room heard and the
+        // room heard both speakers at once. Halved before summing rather than after, so
+        // a loud block cannot wrap on the way.
+        const int mixed = (interleaved_stereo[i * 2] / 2) + (interleaved_stereo[i * 2 + 1] / 2);
+        g_reference[(at + static_cast<uint32_t>(i)) % kReferenceFrames] =
+            static_cast<int16_t>(mixed);
+    }
+    g_reference_written.store(at + static_cast<uint32_t>(frames), std::memory_order_release);
+}
+
+void speech_set_reference_lag(int milliseconds) {
+    if (milliseconds < 0) milliseconds = 0;
+    if (milliseconds > 200) milliseconds = 200;
+    g_reference_lag_ms.store(milliseconds, std::memory_order_relaxed);
+}
+
+int speech_reference_lag() { return g_reference_lag_ms.load(std::memory_order_relaxed); }
+
+void speech_set_cancellation(bool on) {
+    if (g_afe == nullptr || g_afe_data == nullptr) return;
+    if (on) {
+        g_afe->enable_aec(g_afe_data);
+    } else {
+        g_afe->disable_aec(g_afe_data);
+    }
 }
 
 bool speech_available() { return g_afe_data != nullptr; }

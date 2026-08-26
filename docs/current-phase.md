@@ -889,11 +889,41 @@ The lesson is the cheap one to write and the expensive one to learn: "it does no
 a measurement, not an impression, and a spare core is worth checking before believing the
 first arrangement was the only one.
 
-**And it does not work over its own music.** With the arpeggiator playing at volume 70 the
-board hears its own speaker and neither the wake word nor the command lands. That is the
-echo cancellation gap: the front end is configured for one microphone and no reference
-channel, because this board offers no loopback of what its amplifier is doing. A duck that
-happens *after* the phrase is recognised does not help the phrase get recognised.
+**It goes deaf as it gets louder, and echo cancellation does not fix that.**
+
+Measured, asking it to hear "turn it down" over its own arpeggio, twice per volume:
+volume 30 is 2/2, volume 45 is 1/2 to 2/2, volume 60 is 0/2. So it can be talked over
+while it plays quietly and not while it plays loudly, which for a show floor is the wrong
+half.
+
+Echo cancellation was the obvious fix and it was built: this board has no hardware
+loopback of its amplifier, but the audio task holds the exact samples it just sent, so
+those become the reference channel, the front end runs as "MR" — one microphone, one
+reference — and AEC joins the pipeline. All of it works, in the sense that it runs.
+
+It buys nothing. With the canceller switched on and off at runtime against the same
+volumes: 2/2 and 2/2 at 30, **1/2 and 2/2** at 45, 0/2 and 0/2 at 60. The same or slightly
+worse, never better. The reference alignment was swept from 0 to 90 ms with no difference
+at any setting, so it is not a timing mistake.
+
+The likely reason is physical rather than fixable in software. The speaker sits a couple of
+centimetres from the microphones and is driven hard, so what returns is not a delayed copy
+of the reference but a distorted one, and a linear canceller cannot subtract distortion —
+`AFE_TYPE_SR` says as much in its own documentation, and the pipeline duly reports
+`NLP_OFF`. Turning it on also cost the always-listening mode, because the extra work
+overflowed the feed ring and forced the matcher back behind a wake word: a real feature
+traded for no measurable gain.
+
+So it is off, behind `kUseEchoCancellation` in `speech.cpp` with those numbers written
+beside it, and the plumbing is left standing for the next attempt. Worth trying:
+`AFE_TYPE_VC`, which includes the nonlinear stage; a real loopback if the board is revised;
+or simply moving the speaker away from the microphones.
+
+**Continuous matching runs at the edge.** With the matcher on every chunk the feed ring
+occasionally reports itself full, which means chunks are being dropped. Recognition still
+works — that is what the numbers above are — but it is not comfortable, and the fix is
+either a cheaper matcher or accepting the wake word back. Worth knowing before blaming a
+missed phrase on the room.
 
 **Not done.** "next patch" and "previous patch" are recognised and then print "not wired
 yet": switching patches from the recognition task would rebuild the graph underneath the
