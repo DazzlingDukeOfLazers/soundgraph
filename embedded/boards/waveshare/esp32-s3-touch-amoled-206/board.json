@@ -21,7 +21,7 @@
     "chip": "ES7210",
     "i2c_address": 64,
     "i2s": { "din": 42 },
-    "notes": "Dual digital microphone array sharing the ES8311's MCLK/BCLK/LRCK. Not yet driven by the firmware; AudioInput nodes produce silence on this board for now, exactly as on the AUDIO-Board."
+    "notes": "Dual digital microphone array sharing the ES8311's MCLK/BCLK/LRCK. Not yet driven by the firmware, though the pins are all it needs: the AUDIO-Board drives the same ES7210 as of 2026-08-26, so building for this board should mostly be a matter of trying it."
   },
   "psram": { "present": true, "mode": "octal", "megabytes": 8 },
   "controls": [
