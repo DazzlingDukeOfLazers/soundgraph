@@ -4,7 +4,23 @@
 # line when their feedback scaling added six nodes each (13.5KB of JSON failed to
 # re-store over its 13.1KB predecessor). 64KB holds both copies of any patch the
 # 2048-node expansion cap can produce, with room for the phy data unchanged.
+#
+# The app outgrew 1500K when esp-sr arrived: the AFE, WakeNet and MultiNet code is a
+# couple of megabytes on its own before any model is loaded. 3M leaves the same kind of
+# headroom 1500K used to.
+#
+# `model` is not ours to name. esp-sr looks for a partition with exactly that label,
+# packs whichever models Kconfig selected into srmodels.bin, and adds the flash step
+# itself; a table without it fails the build with "Failed to find model in partition
+# table file". 4M holds the English MultiNet7 (2.7M) and the Hi ESP wake word (289K)
+# with room for a second wake word later.
+#
+# Total is 7.4M of the 8M this firmware configures, which is what the smallest supported
+# board has. The Waveshare board has 16M and could be more generous; the table is shared,
+# so it is sized for the smaller one.
+#
 # Name,   Type, SubType, Offset,  Size, Flags
 nvs,      data, nvs,     ,        0x10000,
 phy_init, data, phy,     ,        0x1000,
-factory,  app,  factory, ,        1500K,
+factory,  app,  factory, ,        3M,
+model,    data, spiffs,  ,        4M,

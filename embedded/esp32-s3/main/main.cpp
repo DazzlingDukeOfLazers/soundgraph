@@ -52,6 +52,7 @@
 
 #include "board_config.h"
 #include "codec_init.h"
+#include "speech.h"
 #include "soundgraph/patch_io.h"
 #include "soundgraph/soundgraph.h"
 
@@ -185,6 +186,9 @@ private:
 std::atomic<soundgraph::Graph*> g_live_graph{nullptr};
 Sequencer g_sequencer;
 i2s_chan_handle_t g_tx_channel = nullptr;
+// Output volume as last set, so a relative change has something to be relative to.
+// codec_init starts the codec at 55.
+float g_volume = 55.0f;
 i2s_chan_handle_t g_rx_channel = nullptr;
 
 // ---------------------------------------------------------------------------------
@@ -685,6 +689,49 @@ void command_mic(int milliseconds) {
     heap_caps_free(buffer);
 }
 
+// What the board does when it hears one of its own phrases.
+//
+// Deliberately the same verbs the console already has, reaching the graph the same way a
+// typed command does. A voice command is a control source and nothing more — it earns no
+// private path into the engine, which is what keeps "what happens when I say this" the
+// same question as "what happens when I type this".
+void on_speech_command(int command, const char* phrase, float probability) {
+    std::printf("HEARD %s (%.2f)\n", phrase, probability);
+
+    soundgraph::Graph* graph = g_live_graph.load(std::memory_order_acquire);
+    switch (command) {
+        case kSpeechLouder:
+            g_volume = g_volume + 10.0f > 100.0f ? 100.0f : g_volume + 10.0f;
+            codec_set_volume(g_volume);
+            std::printf("  volume %.0f\n", g_volume);
+            break;
+        case kSpeechQuieter:
+            g_volume = g_volume - 10.0f < 0.0f ? 0.0f : g_volume - 10.0f;
+            codec_set_volume(g_volume);
+            std::printf("  volume %.0f\n", g_volume);
+            break;
+        case kSpeechStartPlaying:
+            g_sequencer.set_running(true);
+            break;
+        case kSpeechStopPlaying:
+            g_sequencer.set_running(false);
+            if (graph != nullptr) {
+                graph->all_notes_off();
+            }
+            break;
+        case kSpeechNextPatch:
+        case kSpeechPreviousPatch:
+            // The embedded patches are there and switching between them is a few lines,
+            // but doing it from this task would rebuild the graph underneath the audio
+            // task. The console's own `load` path already solves that; this wants to go
+            // through it rather than around it, and that is the next piece of work.
+            std::printf("  not wired yet\n");
+            break;
+        default:
+            break;
+    }
+}
+
 void console_task(void*) {
     char line[512];
     std::printf("\nSoundGraph on %s — type 'info'\n", SG_BOARD_NAME);
@@ -743,6 +790,28 @@ void console_task(void*) {
         } else if (command == "bpm" && tokens.size() >= 2) {
             g_sequencer.set_bpm(std::atof(tokens[1]));
             std::printf("OK\n");
+        } else if (command == "listen") {
+            if (!speech_available()) {
+                std::printf("ERR this board is not listening\n");
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "off") == 0) {
+                speech_set_listening(false);
+                std::printf("OK deaf\n");
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "on") == 0) {
+                speech_set_listening(true);
+                std::printf("OK listening\n");
+            } else {
+                std::printf("LISTEN %s, wake word \"Hi ESP\"\n",
+                            speech_listening() ? "on" : "off");
+                for (int i = 0; i < kSpeechCommandCount; ++i) {
+                    const char* phrasings[4];
+                    const int count = speech_phrasings(i, phrasings, 4);
+                    std::printf("  %d", i);
+                    for (int p = 0; p < count; ++p) {
+                        std::printf("%s %s", p == 0 ? "" : "  /", phrasings[p]);
+                    }
+                    std::printf("\n");
+                }
+            }
         } else if (command == "mic") {
             if (tokens.size() >= 3 && std::strcmp(tokens[1], "gain") == 0) {
                 std::printf("%s", mic_set_gain(static_cast<float>(std::atof(tokens[2])))
@@ -752,7 +821,8 @@ void console_task(void*) {
                 command_mic(tokens.size() >= 2 ? std::atoi(tokens[1]) : 250);
             }
         } else if (command == "vol" && tokens.size() >= 2) {
-            if (codec_set_volume(static_cast<float>(std::atof(tokens[1])))) {
+            g_volume = static_cast<float>(std::atof(tokens[1]));
+            if (codec_set_volume(g_volume)) {
                 std::printf("OK\n");
             } else {
                 std::printf("ERR this board has no volume hardware; use `set out level`\n");
@@ -831,6 +901,13 @@ extern "C" void app_main(void) {
         // codec_init is the one to create. Not fatal — a board that cannot hear can
         // still play, and saying so is better than refusing to start.
         ESP_LOGW(TAG, "microphone startup failed; capture is unavailable");
+    }
+
+    // After the microphone, which speech_start checks for, and after the graph, so a
+    // command heard early has something to act on. Not fatal: a board that cannot listen
+    // is a board with a console, which is how every other board is driven anyway.
+    if (!speech_start(on_speech_command)) {
+        ESP_LOGI(TAG, "speech recognition unavailable on this board");
     }
 
     g_sequencer.configure(SG_AUDIO_SAMPLE_RATE);

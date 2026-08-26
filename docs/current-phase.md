@@ -61,6 +61,7 @@ cmake -S runtime-godot -B runtime-godot/build     # prints "soundgraph: hosting 
 # hardware (board on COM3)
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 cmd mic 250   # what it hears
 .venv/Scripts/python tools/esp32/tone-check.py --port COM3              # does it hear us
+.venv/Scripts/python tools/esp32/voice-check.py --port COM3             # does it understand
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 verify-goldens
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 abuse
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 soak --cycles 30
@@ -789,6 +790,62 @@ low, so what reaches the microphone really is mostly the octave.
 
 **Not done:** `AudioInput` nodes still see silence. Capture works and nothing routes it
 into a graph yet.
+
+## Command words, on the chip (2026-08-26)
+
+The board listens for "Hi ESP" and then for one of six commands, entirely on its own
+silicon. No audio leaves it, there is no network, and nothing is recorded — which is the
+reason this is esp-sr on a microcontroller rather than a microphone pointed at somebody's
+API. Espressif's stack does the work: WakeNet for the wake word, MultiNet7 English for the
+commands, and the AFE cleaning the microphone up before either sees it.
+
+**Where it sits.** `main/speech.cpp`, and nowhere near dsp-core. A voice command is a
+*control source* in exactly the sense a button or a MIDI CC is: it reaches the graph
+through the same verbs the console already uses, so "what happens when I say this" stays
+the same question as "what happens when I type this". The core learns nothing about
+speech. That is the split hosted plugins use on the desktop, applied again.
+
+**What it cost.** The app went from 583 KB to 2.5 MB and needs a 3 M partition; the models
+are another 3.05 MB in a `model` partition that esp-sr insists on finding by that exact
+name. Total 7.4 M of the 8 M this firmware configures, which is what the smallest
+supported board has — the Waveshare has 16 M and could be more generous, but the table is
+shared. The recogniser wants 16 kHz and the graph runs the I2S at 48 kHz in one clock
+domain, so the feed decimates three-to-one with a box filter on the way.
+
+**The CPU question, answered.** All 21 golden cases still match with recognition running:
+the audio task on core 0, the feed and fetch tasks on core 1. The DSP and the recogniser
+genuinely fit on one chip.
+
+**The bug worth keeping.** The command window was six seconds, on the reasoning that
+somebody might need a moment. Saying the wake word every four and a half seconds then
+produced detected, missed, detected, missed — perfect alternation, which is a state
+machine and never a room. WakeNet is disabled while the window is open, so every second
+wake word arrived at a recogniser still waiting for the first one's command. Somebody who
+repeats the wake word has given up on the last one; the board should have too. Three and a
+half seconds, and the alternation is gone.
+
+**Several phrasings per command, because some words simply do not survive the model.**
+"previous patch" measured nought out of three against a wake word that fired every time —
+accepted by the model, then never matched. There is no way to see that by reading it. So
+each command answers to more than one name, and "last patch" and "go back" both work.
+
+**How it is verified.** `tools/esp32/voice-check.py` says every phrasing through the
+Windows OS voice and reports what came back — and samples the microphone's noise floor
+immediately before each attempt, because "the recogniser did not match" and "the room was
+too loud to wake" look identical from outside. That distinction earned its keep at once: a
+run that looked like steady decay was the room. The ten successful wakes sat at a floor of
+0.0022 to 0.0029; the three failures at 0.0174, 0.0051 and 0.0153.
+
+Latest clean run: **wake word 13/13, commands 9/13 phrasings, and all six commands
+reachable** by at least one of their names.
+
+**Not done.** "next patch" and "previous patch" are recognised and then print "not wired
+yet": switching patches from the recognition task would rebuild the graph underneath the
+audio task, and the console's own `load` path already solves that properly. It wants to go
+through that rather than around it. There is also no echo cancellation — the front end is
+configured for one microphone and no reference channel, because this board offers no
+loopback of what its amplifier is doing, so recognising over its own output is a hardware
+conversation as much as a software one.
 
 ## Axoloti: from roadmap footnote to shipping target (2026-08-25)
 

@@ -11,6 +11,19 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
+# ---- speech recognition ---------------------------------------------------------------
+# On the chip and nowhere else. The wake word is "Hi ESP" — one of the ready-made English
+# models, chosen over "Alexa" because a room with an Echo in it is a room where the wrong
+# device answers. The command words themselves are not here: MultiNet7 takes them at
+# runtime, so they live in speech.cpp where the code that acts on them is.
+#
+# Chinese models are turned off explicitly. The default is a Chinese MultiNet, and
+# leaving it on packs a second few megabytes into a partition sized for one language.
+CONFIG_MODEL_IN_FLASH=y
+CONFIG_SR_WN_WN9_HIESP=y
+CONFIG_SR_MN_EN_MULTINET7_QUANT=y
+CONFIG_SR_MN_CN_NONE=y
+
 # Delay lines are the big allocations (a 2 s stereo-rate line is ~384 KB), far beyond
 # internal SRAM. With SPIRAM_USE_MALLOC they land in PSRAM automatically; small hot
 # allocations stay internal.

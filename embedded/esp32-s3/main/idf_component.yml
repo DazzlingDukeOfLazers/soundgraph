@@ -8,3 +8,8 @@
 dependencies:
   idf: "^5.5"
   espressif/esp_codec_dev: "^1.3"
+  # Speech recognition, on the chip and nowhere else. WakeNet listens for the wake word,
+  # MultiNet matches a short list of commands this firmware defines, and the AFE cleans
+  # the microphone up before either sees it. No audio leaves the board — which is the
+  # whole reason this is here rather than a cloud API with a nicer accuracy figure.
+  espressif/esp-sr: "^2"
