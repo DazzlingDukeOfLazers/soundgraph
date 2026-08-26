@@ -28,8 +28,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-swiftc -O -o "$APP/Contents/MacOS/bench-cam" "$HERE/main.swift" \
-    -framework AVFoundation -framework CoreImage -framework ImageIO
+swiftc -O -o "$APP/Contents/MacOS/bench-cam" "$HERE/main.swift" "$HERE/preview.swift" \
+    -framework AVFoundation -framework AppKit -framework CoreImage -framework ImageIO
 
 # Ad-hoc signature. TCC keys its record on the signature; an unsigned bundle gets a new
 # identity whenever the binary changes, so the grant would have to be given again after

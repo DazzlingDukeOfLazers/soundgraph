@@ -11,6 +11,13 @@
 //
 //   bench-cam --list
 //   bench-cam shot.jpg [--device "HD Pro Webcam C920"] [--warmup 12] [--crop x,y,w,h]
+//   bench-cam shot.jpg --preview        # a window with a shutter, for setting up the shot
+//
+// There is deliberately no --exposure or --iso. macOS does not offer them: manual
+// exposure duration and ISO are iOS-only on AVCaptureDevice, and a UVC webcam here can
+// only be told to hold whatever exposure it has already chosen. Which makes the clipping
+// meter in the preview the whole game — the fix for a blown-out photograph of a screen is
+// to change the light in the room, and the meter is what says when that has worked.
 
 import AVFoundation
 import CoreImage
@@ -91,6 +98,7 @@ func cameras() -> [AVCaptureDevice] {
 var args = Array(CommandLine.arguments.dropFirst())
 var wanted: String?, path: String?, warmup = 10
 var crop: (Int, Int, Int, Int)?
+var preview = false
 
 while let arg = args.first {
     args.removeFirst()
@@ -99,6 +107,7 @@ while let arg = args.first {
         for device in cameras() { print(device.localizedName) }
         exit(0)
     case "--device": wanted = args.isEmpty ? nil : args.removeFirst()
+    case "--preview": preview = true
     case "--warmup": warmup = Int(args.isEmpty ? "10" : args.removeFirst()) ?? 10
     case "--crop":
         let parts = (args.isEmpty ? "" : args.removeFirst()).split(separator: ",").compactMap { Int($0) }
@@ -106,7 +115,7 @@ while let arg = args.first {
     default: path = arg
     }
 }
-guard let destination = path else { fail("usage: bench-cam <out.jpg> [--device NAME] [--warmup N] [--crop x,y,w,h]") }
+guard let destination = path else { fail("usage: bench-cam <out.jpg> [--device NAME] [--warmup N] [--crop x,y,w,h] [--preview]") }
 
 // ---- permission -------------------------------------------------------------------
 // Asking explicitly, and waiting: the first run is the one that raises the system
@@ -122,6 +131,8 @@ guard granted else {
 let devices = cameras()
 guard !devices.isEmpty else { fail("no cameras found") }
 let device = wanted.flatMap { name in devices.first { $0.localizedName.contains(name) } } ?? devices[0]
+
+if preview { runPreview(device: device, destination: destination, crop: crop) }
 
 do {
     var image = try Shooter(device: device, warmup: warmup).shoot()
