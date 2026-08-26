@@ -4,9 +4,14 @@
 
 #if !SG_AUDIO_IS_CODEC
 
-// A bare I2S DAC needs no introduction.
+// A bare I2S DAC needs no introduction, and a board with no codec has no capture
+// hardware for this firmware to find either.
 bool codec_init(i2s_chan_handle_t, int) { return true; }
 bool codec_set_volume(float) { return false; }
+bool mic_init(i2s_chan_handle_t, int) { return false; }
+bool mic_available() { return false; }
+int mic_read(int16_t*, int, int) { return -1; }
+bool mic_set_gain(float) { return false; }
 
 #else
 
@@ -21,6 +26,7 @@ const char* const TAG = "sg-codec";
 
 i2c_master_bus_handle_t g_i2c_bus = nullptr;
 esp_codec_dev_handle_t g_codec = nullptr;
+esp_codec_dev_handle_t g_mic = nullptr;
 
 // TCA9555 I/O expander: pins 0-7 are port 0, 8-15 are port 1. A bit set in the config
 // register makes that pin an input, so the enable pin's bit must be cleared there and
@@ -166,5 +172,108 @@ bool codec_set_volume(float percent) {
     if (percent > 100.0f) percent = 100.0f;
     return esp_codec_dev_set_out_vol(g_codec, percent) == ESP_CODEC_DEV_OK;
 }
+
+// ---- the microphone ------------------------------------------------------------------
+
+#if SG_AUDIO_IN_PRESENT
+
+bool mic_init(i2s_chan_handle_t rx_handle, int sample_rate) {
+    if (g_i2c_bus == nullptr) {
+        ESP_LOGE(TAG, "mic_init before codec_init: the two share the I2C bus");
+        return false;
+    }
+
+    audio_codec_i2c_cfg_t i2c_config = {};
+    i2c_config.port = 0;
+    i2c_config.addr = SG_AUDIO_IN_I2C_ADDRESS << 1;  // esp_codec_dev wants the 8-bit form
+    i2c_config.bus_handle = g_i2c_bus;
+    const audio_codec_ctrl_if_t* control_interface = audio_codec_new_i2c_ctrl(&i2c_config);
+
+    // Its own data interface, pointed at the receive channel. The ES8311's was built
+    // around the transmit one; they are two directions of the same I2S port and each
+    // side wants the handle it actually reads or writes.
+    audio_codec_i2s_cfg_t i2s_config = {};
+    i2s_config.port = 0;
+    i2s_config.rx_handle = rx_handle;
+    const audio_codec_data_if_t* data_interface = audio_codec_new_i2s_data(&i2s_config);
+
+    if (control_interface == nullptr || data_interface == nullptr) {
+        ESP_LOGE(TAG, "could not build the %s interfaces", SG_AUDIO_IN_CHIP);
+        return false;
+    }
+
+    es7210_codec_cfg_t adc_config = {};
+    adc_config.ctrl_if = control_interface;
+    adc_config.master_mode = false;  // the ESP drives the clocks for both chips
+    // Only the inputs the board actually wired. The ES7210 is a quad part used here for
+    // a pair, and selecting the other two would mix in two channels of nothing — which
+    // reads as a quiet microphone rather than as a configuration mistake.
+    adc_config.mic_selected = ES7210_SEL_MIC1 | ES7210_SEL_MIC2;
+    adc_config.mclk_div = 256;
+
+    const audio_codec_if_t* adc_interface = es7210_codec_new(&adc_config);
+    if (adc_interface == nullptr) {
+        ESP_LOGE(TAG, "the %s did not answer at 0x%02x", SG_AUDIO_IN_CHIP,
+                 SG_AUDIO_IN_I2C_ADDRESS);
+        return false;
+    }
+
+    esp_codec_dev_cfg_t device_config = {};
+    device_config.dev_type = ESP_CODEC_DEV_TYPE_IN;
+    device_config.codec_if = adc_interface;
+    device_config.data_if = data_interface;
+    g_mic = esp_codec_dev_new(&device_config);
+
+    esp_codec_dev_sample_info_t sample_info = {};
+    sample_info.bits_per_sample = 16;
+    sample_info.channel = SG_AUDIO_IN_CHANNELS;
+    sample_info.channel_mask = (1 << SG_AUDIO_IN_CHANNELS) - 1;
+    sample_info.sample_rate = static_cast<uint32_t>(sample_rate);
+
+    if (g_mic == nullptr || esp_codec_dev_open(g_mic, &sample_info) != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "could not open the %s at %d Hz", SG_AUDIO_IN_CHIP, sample_rate);
+        g_mic = nullptr;
+        return false;
+    }
+
+    // A MEMS microphone into a 3.3 V ADC is a small signal; the part exists to amplify
+    // it. 30 dB is loud enough to see a voice across a room without the room's own hiss
+    // arriving with it, and `mic gain` moves it.
+    esp_codec_dev_set_in_gain(g_mic, 30.0);
+
+    ESP_LOGI(TAG, "%s up at %d Hz, %d channel(s)", SG_AUDIO_IN_CHIP, sample_rate,
+             SG_AUDIO_IN_CHANNELS);
+    return true;
+}
+
+bool mic_available() { return g_mic != nullptr; }
+
+int mic_read(int16_t* destination, int frames, int timeout_ms) {
+    (void)timeout_ms;  // esp_codec_dev_read blocks until the DMA has it
+    if (g_mic == nullptr || destination == nullptr || frames <= 0) {
+        return -1;
+    }
+    const int bytes = frames * SG_AUDIO_IN_CHANNELS * static_cast<int>(sizeof(int16_t));
+    if (esp_codec_dev_read(g_mic, destination, bytes) != ESP_CODEC_DEV_OK) {
+        return -1;
+    }
+    return frames;
+}
+
+bool mic_set_gain(float decibels) {
+    if (g_mic == nullptr) return false;
+    if (decibels < 0.0f) decibels = 0.0f;
+    if (decibels > 37.5f) decibels = 37.5f;
+    return esp_codec_dev_set_in_gain(g_mic, decibels) == ESP_CODEC_DEV_OK;
+}
+
+#else  // SG_AUDIO_IN_PRESENT
+
+bool mic_init(i2s_chan_handle_t, int) { return false; }
+bool mic_available() { return false; }
+int mic_read(int16_t*, int, int) { return -1; }
+bool mic_set_gain(float) { return false; }
+
+#endif  // SG_AUDIO_IN_PRESENT
 
 #endif  // SG_AUDIO_IS_CODEC

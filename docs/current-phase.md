@@ -59,6 +59,7 @@ SOUNDGRAPH_PLUGIN_PATH=/path/to/plugins build-clap/bin/sg-host "Surge XT.clap" -
 cmake -S runtime-godot -B runtime-godot/build     # prints "soundgraph: hosting plugins"
 
 # hardware (board on COM3)
+.venv/Scripts/python tools/esp32/sg-serial.py --port COM3 cmd mic 250   # what it hears
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 verify-goldens
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 abuse
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 soak --cycles 30
@@ -358,8 +359,9 @@ gesture. Synthetic events do not lift that; only a person clicking does.
 - macOS and Linux have never been compiled — CMake and miniaudio cover them, unexercised.
 - `AudioInput` in the browser has no `getUserMedia`, so `delay-echo.json` loads and
   schedules correctly but has nothing to process.
-- The Waveshare board's ES7210 microphone array is described in its board profile but not
-  driven by the firmware.
+- `AudioInput` nodes still produce silence on the ESP32 board. The ES7210 microphone
+  array is driven now — `mic` on the console captures from it — but nothing routes those
+  samples into a graph yet, so the node has a source and no wire to it.
 
 ## Next features, in order (agreed 2026-08-20)
 
@@ -732,6 +734,41 @@ compensation is removed.
 `sg-host --save-state` / `--load-state` is how this was measured and is how it is tested:
 `sg_host_saves_and_restores_plugin_state` runs three processes, because a plugin that is
 never destroyed and reopened can round-trip by accident.
+
+## The microphone (2026-08-26)
+
+The Waveshare board's ES7210 dual-mic array is driven. It was described in the board
+profile and read by nothing; the profile now also carries the channel count, the
+generator emits an `SG_AUDIO_IN_*` block, and boards without capture hardware compile the
+whole path out rather than carry a driver for something that is not there.
+
+The I2S receive channel is asked for in the same `i2s_new_channel` call as the transmit
+one, which is what makes them share a port and therefore a clock domain — one bclk, one
+ws, one mclk, two data lines, exactly as the board wires it. Asking separately would want
+a second port and the second port would find the pins taken. Bringing capture up is
+deliberately not fatal: a board that cannot hear can still play, and it says so.
+
+`esp_codec_dev` already carried the ES7210 driver, so this is configuration rather than a
+register-level port. Only the two inputs the board wired are selected; the part is a quad
+ADC used here for a pair, and selecting the other two mixes in two channels of nothing,
+which reads as a quiet microphone rather than as a mistake.
+
+**How it is verified, and why that shape.** A microphone is the one part of a board that
+cannot be checked by reading a register — the chip reports itself present while the wire
+from it is dead. So `mic [ms]` captures and reports level, DC offset and the strongest
+frequency, and the check that settles it is the board listening to *itself*: silent
+0.0026 rms, playing its own arpeggio 0.059 and 0.068 on the two channels with peaks
+above 0.2, silent again 0.0024. Both channels move together; a dead one reads exactly
+zero.
+
+The frequency estimate is a 32-bin Goertzel sweep, 80 Hz to 8 kHz, log spaced. Held notes
+put it within a bin at 880 Hz. At 220 and 440 it reports the *second* harmonic, which is
+not an estimator fault: a 28 mm speaker does not radiate a fundamental that low, and what
+reaches the microphone really is mostly the octave. Worth remembering before trusting it
+as a pitch detector.
+
+**Not done:** `AudioInput` nodes still see silence. Capture works and nothing routes it
+into a graph yet.
 
 ## Axoloti: from roadmap footnote to shipping target (2026-08-25)
 

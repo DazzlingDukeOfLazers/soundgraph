@@ -88,6 +88,26 @@ def main() -> None:
         else:
             lines += ["#define SG_AMP_KIND 0  // always on"]
 
+    # The microphone side, when the board has one. Absent on every board that does not,
+    # and the firmware compiles the whole capture path out rather than carrying a driver
+    # for hardware that is not there — SG_AUDIO_IN_PRESENT is what it tests.
+    audio_in = board.get("audio_in")
+    if audio_in:
+        in_i2s = audio_in.get("i2s", {})
+        lines += [
+            "",
+            "#define SG_AUDIO_IN_PRESENT 1",
+            f'#define SG_AUDIO_IN_CHIP "{audio_in.get("chip", "unknown")}"',
+            f"#define SG_AUDIO_IN_I2C_ADDRESS {audio_in.get('i2c_address', -1)}",
+            f"#define SG_I2S_DIN {in_i2s.get('din', -1)}",
+            # How many of the ADC's four inputs are wired to microphones. The ES7210 is a
+            # quad part used here for a pair, and asking for channels that are not there
+            # returns silence rather than an error, which is a confusing way to find out.
+            f"#define SG_AUDIO_IN_CHANNELS {audio_in.get('channels', 2)}",
+        ]
+    else:
+        lines += ["", "#define SG_AUDIO_IN_PRESENT 0"]
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"board-generator: {board['id']} -> {output_path}")

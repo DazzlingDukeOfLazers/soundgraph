@@ -185,6 +185,7 @@ private:
 std::atomic<soundgraph::Graph*> g_live_graph{nullptr};
 Sequencer g_sequencer;
 i2s_chan_handle_t g_tx_channel = nullptr;
+i2s_chan_handle_t g_rx_channel = nullptr;
 
 // ---------------------------------------------------------------------------------
 // Audio
@@ -222,7 +223,13 @@ void audio_task(void*) {
 
 bool start_i2s() {
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
-    if (i2s_new_channel(&channel_config, &g_tx_channel, nullptr) != ESP_OK) {
+
+    // Both directions from one call, when the board has a microphone. That is what makes
+    // them share a port and therefore a clock domain, which is what the board wires: one
+    // bclk, one ws, one mclk, two data lines. Asking for the receive channel separately
+    // would want a second port, and the second port would find the pins taken.
+    i2s_chan_handle_t* receive = SG_AUDIO_IN_PRESENT ? &g_rx_channel : nullptr;
+    if (i2s_new_channel(&channel_config, &g_tx_channel, receive) != ESP_OK) {
         ESP_LOGE(TAG, "could not create the I2S channel");
         return false;
     }
@@ -236,7 +243,8 @@ bool start_i2s() {
             .bclk = static_cast<gpio_num_t>(SG_I2S_BCLK),
             .ws = static_cast<gpio_num_t>(SG_I2S_WS),
             .dout = static_cast<gpio_num_t>(SG_I2S_DOUT),
-            .din = I2S_GPIO_UNUSED,
+            .din = SG_AUDIO_IN_PRESENT ? static_cast<gpio_num_t>(SG_I2S_DIN)
+                                       : I2S_GPIO_UNUSED,
             .invert_flags = {.mclk_inv = false, .bclk_inv = false, .ws_inv = false},
         },
     };
@@ -246,6 +254,17 @@ bool start_i2s() {
         ESP_LOGE(TAG, "could not start I2S on bclk=%d ws=%d dout=%d",
                  SG_I2S_BCLK, SG_I2S_WS, SG_I2S_DOUT);
         return false;
+    }
+
+    // The receive side is not fatal. A board whose microphone refuses still plays, and a
+    // silent capture path is a much smaller loss than a silent speaker — so this is
+    // logged and stepped over rather than returned as a startup failure.
+    if (g_rx_channel != nullptr) {
+        if (i2s_channel_init_std_mode(g_rx_channel, &std_config) != ESP_OK ||
+            i2s_channel_enable(g_rx_channel) != ESP_OK) {
+            ESP_LOGE(TAG, "could not start I2S capture on din=%d", SG_I2S_DIN);
+            g_rx_channel = nullptr;
+        }
     }
     return true;
 }
@@ -533,6 +552,98 @@ void command_load(int byte_count) {
     std::printf("OK deployed, %d nodes\n", g_live_graph.load()->node_count());
 }
 
+// Listens for a moment and says what it heard.
+//
+// A microphone is the one part of a board that cannot be verified by reading a register:
+// the chip will happily report itself present while the wire from it is dead. So this
+// reports what actually arrived — level, and the strongest frequency in it — which is a
+// claim somebody can check by making a noise at it.
+//
+// The frequency estimate is a Goertzel sweep rather than an FFT. A few dozen single-bin
+// evaluations cost nothing, need no buffer of their own, and answer the only question
+// being asked here, which is "is this the tone I am playing at it?".
+void command_mic(int milliseconds) {
+    if (!mic_available()) {
+        std::printf("ERR no microphone on this board\n");
+        return;
+    }
+    if (milliseconds < 10) milliseconds = 10;
+    if (milliseconds > 2000) milliseconds = 2000;
+
+    const int channels = SG_AUDIO_IN_CHANNELS;
+    const int frames = SG_AUDIO_SAMPLE_RATE * milliseconds / 1000;
+    const std::size_t samples = static_cast<std::size_t>(frames) * channels;
+
+    // PSRAM: two seconds of stereo is 384 KB, which internal RAM would rather not lose.
+    int16_t* buffer = static_cast<int16_t*>(
+        heap_caps_malloc(samples * sizeof(int16_t), MALLOC_CAP_SPIRAM));
+    if (buffer == nullptr) {
+        std::printf("ERR could not allocate %u bytes for the capture\n",
+                    static_cast<unsigned>(samples * sizeof(int16_t)));
+        return;
+    }
+
+    const int got = mic_read(buffer, frames, 2000);
+    if (got <= 0) {
+        std::printf("ERR the microphone returned nothing\n");
+        heap_caps_free(buffer);
+        return;
+    }
+
+    std::printf("MIC frames=%d rate=%d channels=%d\n", got, SG_AUDIO_SAMPLE_RATE, channels);
+
+    double best_strength = 0.0;
+    double best_frequency = 0.0;
+    for (int channel = 0; channel < channels; ++channel) {
+        // The mean comes out first: a DC offset is an ADC's resting state, and counting
+        // it as signal makes a silent room look loud.
+        double mean = 0.0;
+        for (int i = 0; i < got; ++i) {
+            mean += buffer[static_cast<std::size_t>(i) * channels + channel];
+        }
+        mean /= got;
+
+        double sum_of_squares = 0.0;
+        double peak = 0.0;
+        for (int i = 0; i < got; ++i) {
+            const double value =
+                (buffer[static_cast<std::size_t>(i) * channels + channel] - mean) / 32768.0;
+            sum_of_squares += value * value;
+            const double magnitude = value < 0.0 ? -value : value;
+            if (magnitude > peak) peak = magnitude;
+        }
+        std::printf("  ch%d rms=%.5f peak=%.5f dc=%.1f\n", channel,
+                    std::sqrt(sum_of_squares / got), peak, mean);
+
+        // Thirty-two bins from 80 Hz to 8 kHz, logarithmically spaced: speech and any
+        // test tone somebody is likely to play both live in there, and log spacing puts
+        // the resolution where the ear has it.
+        for (int bin = 0; bin < 32; ++bin) {
+            const double frequency = 80.0 * std::pow(100.0, bin / 31.0);
+            const double omega = 2.0 * 3.14159265358979 * frequency / SG_AUDIO_SAMPLE_RATE;
+            const double coefficient = 2.0 * std::cos(omega);
+            double s1 = 0.0;
+            double s2 = 0.0;
+            for (int i = 0; i < got; ++i) {
+                const double value =
+                    (buffer[static_cast<std::size_t>(i) * channels + channel] - mean) / 32768.0;
+                const double s0 = value + coefficient * s1 - s2;
+                s2 = s1;
+                s1 = s0;
+            }
+            const double strength =
+                std::sqrt(s1 * s1 + s2 * s2 - coefficient * s1 * s2) / got;
+            if (strength > best_strength) {
+                best_strength = strength;
+                best_frequency = frequency;
+            }
+        }
+    }
+
+    std::printf("  loudest ~%.0f Hz at %.5f\n", best_frequency, best_strength);
+    heap_caps_free(buffer);
+}
+
 void console_task(void*) {
     char line[512];
     std::printf("\nSoundGraph on %s — type 'info'\n", SG_BOARD_NAME);
@@ -591,6 +702,14 @@ void console_task(void*) {
         } else if (command == "bpm" && tokens.size() >= 2) {
             g_sequencer.set_bpm(std::atof(tokens[1]));
             std::printf("OK\n");
+        } else if (command == "mic") {
+            if (tokens.size() >= 3 && std::strcmp(tokens[1], "gain") == 0) {
+                std::printf("%s", mic_set_gain(static_cast<float>(std::atof(tokens[2])))
+                                      ? "OK\n"
+                                      : "ERR no microphone on this board\n");
+            } else {
+                command_mic(tokens.size() >= 2 ? std::atoi(tokens[1]) : 250);
+            }
         } else if (command == "vol" && tokens.size() >= 2) {
             if (codec_set_volume(static_cast<float>(std::atof(tokens[1])))) {
                 std::printf("OK\n");
@@ -666,6 +785,11 @@ extern "C" void app_main(void) {
         ESP_LOGE(TAG, "audio startup failed; the console still works");
     } else if (!codec_init(g_tx_channel, SG_AUDIO_SAMPLE_RATE)) {
         ESP_LOGE(TAG, "codec startup failed; I2S runs but the speaker may stay silent");
+    } else if (g_rx_channel != nullptr && !mic_init(g_rx_channel, SG_AUDIO_SAMPLE_RATE)) {
+        // After the codec, and only after it: the two chips share an I2C bus that
+        // codec_init is the one to create. Not fatal — a board that cannot hear can
+        // still play, and saying so is better than refusing to start.
+        ESP_LOGW(TAG, "microphone startup failed; capture is unavailable");
     }
 
     g_sequencer.configure(SG_AUDIO_SAMPLE_RATE);

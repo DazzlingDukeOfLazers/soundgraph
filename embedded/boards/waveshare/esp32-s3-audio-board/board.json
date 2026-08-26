@@ -33,7 +33,8 @@
     "chip": "ES7210",
     "i2c_address": 64,
     "i2s": { "din": 15 },
-    "notes": "Dual-mic array. Not yet driven by the firmware; AudioInput nodes produce silence on this board for now."
+    "channels": 2,
+    "notes": "Dual-mic array on the ES7210's first two inputs; the other two are unwired. Driven since 2026-08-26 — the `mic` console command captures from it."
   },
   "psram": {
     "present": true,
