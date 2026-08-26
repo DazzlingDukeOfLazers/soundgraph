@@ -841,35 +841,53 @@ reachable** by at least one of their names.
 
 ### Being called by name (2026-08-26)
 
-Say "Hi ESP, hey mom" and the music ducks to 18% while the board answers "yes dear?" in
+Say "hey mom" — no wake word — and the music ducks to 18% while the board answers "yes dear?" in
 its own voice — a Speak & Spell LPC phrase, 194 bytes, played by a Speech node in
 `examples/patches/yes-dear.json`. The reply is a *patch*, built once at boot into a second
 Graph and mixed over the live one by the same audio task. The board answers using
 SoundGraph, not a text-to-speech engine bolted to the side.
 
-Verified the way the microphone makes possible: called by name, the board woke, matched
-"hey mom" at 0.14, and the mic then read rms 0.048 and peak 0.311 against a silent room at
-0.0025. It said the thing, and it heard itself say it. All 21 golden cases still match
-with the reply mixer in the audio task.
+Verified the way the microphone makes possible: called by name, the board matched
+"hey mom" and the mic then read rms 0.048 and peak 0.311 against a silent room at 0.0025.
+It said the thing, and it heard itself say it. All 21 golden cases still match with the
+reply mixer in the audio task and the front end beside it.
 
-**"Hey Mom" is a command, not a wake word, and that is a hardware fact rather than a
-choice.** WakeNet wake words are pre-trained neural models; Espressif ships a fixed
-English list — Alexa, Hi ESP, Computer, Hey Willow, Hey Wanda, Hey Ivy, Hey Ily, Hey
-Kira, Hi Andy, Hi Fairy, Hi Jason, Hi Jolly — and `wn9_customword` is a placeholder for
-one they train to order. There is no "Hey Mom" and none can be made here.
+`tools/esp32/voice-check.py` now says every phrase without a wake word: nine to eleven of
+sixteen phrasings depending on the room, and all seven commands reachable by at least one
+of their names in every run.
 
-The obvious way round it was to run MultiNet continuously so any phrase could be a wake
-word. It does not fit on this chip. Matching every chunk starved the idle task on its own
-core and the watchdog called it a hang inside twenty seconds. Gating on the AFE's voice
-detector fixed the quiet room and then failed the moment anybody spoke — "Ringbuffer of
-AFE(FEED) is full", the pipeline being fed faster than it can chew. `switch_loader_mode`
-trades memory rather than cycles and there is no cheaper search method to select. MultiNet
-is built on the assumption that a wake word gates it: the wake word is cheap and the
-matcher is not, and the window is the whole arrangement, not an inconvenience in it.
+**"Hey Mom" is a command rather than a wake word, and no wake word is needed.** WakeNet
+words are pre-trained neural models; Espressif ships a fixed English list — Alexa, Hi ESP,
+Computer, Hey Willow, Hey Wanda, Hey Ivy, Hey Ily, Hey Kira, Hi Andy, Hi Fairy, Hi Jason,
+Hi Jolly — and `wn9_customword` is a placeholder for one they train to order. There is no
+"Hey Mom" and none can be made here. So it had to be a command, and a command that answers
+on its own has to be listened for continuously.
 
-So the options for a real "Hey Mom" are: commission a custom WakeNet model from Espressif,
-substitute one of the shipped names, or say "Hi ESP" first. It currently says "Hi ESP"
-first.
+**That took two wrong conclusions to get right, and the second one was mine.** Matching
+every chunk starved the idle task and the watchdog called it a hang; gating on the AFE's
+voice detector fixed the quiet room and then overran the moment anybody spoke —
+"Ringbuffer of AFE(FEED) is full". This was written up as "MultiNet is not realtime on
+this chip", which is **wrong**, and it was wrong because it was never measured.
+
+Measured, the matcher takes 25.7 ms against a 32 ms slice: **0.80x realtime**, with a
+fifth of a core to spare. The problem was never speed. It was that both the front end —
+the AFE's noise suppression *and* WakeNet, each running on every chunk — and the matcher
+were pinned to core 1, while the watchdog dump showed core 0 sitting idle. Together they
+do not fit on one core; apart they do. The front end now runs beside the graph on core 0
+and the matcher has core 1 to itself, and all 21 golden cases still match with the front
+end sharing the graph's core.
+
+Two smaller things fell out of it. `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1` is off,
+because a core deliberately given over to a matcher has an idle task that genuinely does
+not run and a watchdog looking for a fault this board does not have — Espressif set it the
+same way in their own speech examples. And the `mic` console command now pauses listening
+while it captures: two readers of one microphone split the stream between them, which
+showed up as a noise floor of exactly zero, a reading that looks like broken hardware and
+is a broken measurement.
+
+The lesson is the cheap one to write and the expensive one to learn: "it does not fit" is
+a measurement, not an impression, and a spare core is worth checking before believing the
+first arrangement was the only one.
 
 **And it does not work over its own music.** With the arpeggiator playing at volume 70 the
 board hears its own speaker and neither the wake word nor the command lands. That is the

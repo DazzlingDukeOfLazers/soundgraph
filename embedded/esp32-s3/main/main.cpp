@@ -641,7 +641,19 @@ void command_mic(int milliseconds) {
         return;
     }
 
+    // The recogniser is reading the same microphone. Two readers split the stream
+    // between them and both get holes — which showed up as a noise floor of exactly
+    // zero, a reading that looks like a broken microphone and is a broken measurement.
+    // Listening pauses for the length of the capture and resumes after.
+    const bool was_listening = speech_listening();
+    if (was_listening) {
+        speech_set_listening(false);
+        vTaskDelay(pdMS_TO_TICKS(60));   // let the feed task notice and let go
+    }
     const int got = mic_read(buffer, frames, 2000);
+    if (was_listening) {
+        speech_set_listening(true);
+    }
     if (got <= 0) {
         std::printf("ERR the microphone returned nothing\n");
         heap_caps_free(buffer);

@@ -19,6 +19,12 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 #
 # Chinese models are turned off explicitly. The default is a Chinese MultiNet, and
 # leaving it on packs a second few megabytes into a partition sized for one language.
+# Core 1 is given over to the matcher, so its idle task genuinely does not run much and
+# the watchdog check that notices is watching for a problem this board does not have.
+# Espressif set this the same way in their own speech examples, for the same reason.
+# Core 0 is still watched, and core 0 is where an accidental hang would matter.
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
+
 CONFIG_MODEL_IN_FLASH=y
 CONFIG_SR_WN_WN9_HIESP=y
 CONFIG_SR_MN_EN_MULTINET7_QUANT=y

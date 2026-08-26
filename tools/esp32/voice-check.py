@@ -50,6 +50,9 @@ VOCABULARY = [
     ("play the sound", "start playing"),
     ("stop playing", "stop playing"),
     ("be quiet", "stop playing"),
+    ("hey mom", "hey mom"),
+    ("hey mum", "hey mom"),
+    ("hello mother", "hey mom"),
 ]
 
 # Above this, a miss is the room's fault rather than the recogniser's. Taken from the
@@ -111,9 +114,8 @@ def main() -> int:
                         floor = float(token[4:])
 
         mark = len(lines)
-        # One utterance, the way a person addresses one of these. Said as two, the
-        # process launch between them eats most of the board's command window.
-        speak(f"Hi ESP, {spoken}")
+        # No wake word: the matcher listens continuously, so a phrase stands alone.
+        speak(spoken)
         time.sleep(2.5)
 
         woke = any("awake" in line for line in lines[mark:])

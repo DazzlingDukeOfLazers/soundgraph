@@ -24,9 +24,11 @@ int speech_phrasings(int, const char**, int) { return 0; }
 #include "esp_afe_sr_iface.h"
 #include "esp_afe_sr_models.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_mn_iface.h"
 #include "esp_mn_models.h"
 #include "esp_mn_speech_commands.h"
+#include "esp_vad.h"
 #include "model_path.h"
 
 #include "codec_init.h"
@@ -156,28 +158,25 @@ void feed_task(void*) {
     vTaskDelete(nullptr);
 }
 
-// Takes cleaned audio back out, watches for the wake word, and runs the matcher inside
-// the window it opens.
+// Takes cleaned audio back out and runs the matcher on it.
 //
-// The matcher runs only inside that window, and the attempt to change that is worth
-// recording. "Hey Mom" cannot be a WakeNet wake word — those are pre-trained neural
-// models and Espressif ships a fixed English list (Alexa, Hi ESP, Computer, Hey Willow
-// and friends), with the custom slot a placeholder for one they train to order. So the
-// obvious move was to run MultiNet continuously and make "hey mom" an ordinary command
-// that needs no wake word.
+// The matcher runs whenever somebody is talking, rather than only inside a window a wake
+// word opened. That is what lets "hey mom" be said on its own — WakeNet words are
+// pre-trained models from a fixed list and no "Hey Mom" exists, so a phrase of one's own
+// has to be a command, and a command that needs no wake word has to be listened for.
 //
-// It does not fit. Running the matcher on every chunk starved the idle task on its own
-// core and the watchdog called it a hang within twenty seconds. Gating it on the AFE's
-// voice detector — only match while somebody is actually talking — stopped the starvation
-// in a quiet room and then failed the moment anybody spoke: "Ringbuffer of AFE(FEED) is
-// full", which is the pipeline saying it is being fed faster than it can chew. MultiNet
-// is not realtime on this chip beside a running graph, and it is built on the assumption
-// that it will not have to be: a wake word is cheap, a matcher is not, and the window is
-// the whole point of the arrangement.
+// It took two measurements to get here. Matching every chunk starved the idle task and
+// the watchdog called it a hang; gating on the AFE's voice detector fixed the quiet room
+// and then overran the moment anybody spoke. The reason was not that the matcher is too
+// slow — it measures 25.7 ms against a 32 ms slice, which is 0.80x realtime and fits —
+// but that it was sharing a core with the front end, which is itself doing noise
+// suppression and running WakeNet on every chunk. The two together do not fit; apart they
+// do. The front end now runs beside the graph on core 0 and the matcher has core 1.
 //
-// So "hey mom" is a command like any other, and answering to it costs a wake word first.
+// The wake word still works and still opens a window. What changed is that the matcher no
+// longer waits for one.
 void fetch_task(void*) {
-    bool inside_window = false;
+    bool matching = false;
 
     while (g_running) {
         afe_fetch_result_t* result = g_afe->fetch(g_afe_data);
@@ -186,20 +185,22 @@ void fetch_task(void*) {
             continue;
         }
 
-        if (!inside_window && result->wakeup_state == WAKENET_DETECTED) {
-            // The wake word is switched off for the duration. Leaving it on means the
-            // matcher and the detector both chewing on the same audio, and the wake word
-            // being heard again inside its own window.
-            inside_window = true;
-            g_afe->disable_wakenet(g_afe_data);
-            g_multinet->clean(g_model_data);
+        if (result->wakeup_state == WAKENET_DETECTED) {
+            // Still worth saying: it is the clearest sign the room is quiet enough and
+            // the board is hearing properly.
             ESP_LOGI(TAG, "awake");
-            continue;
         }
 
-        if (!inside_window) {
-            continue;
-        }
+        // No voice gate. It was tried, and it cost more than it saved: the detector
+        // opens a fraction late, the matcher then starts halfway into the first word,
+        // and a phrase heard from its second syllable is not the phrase. Running on
+        // every chunk costs 0.80x of this core and leaves the fifth of it the idle task
+        // needs, which is only true because the front end moved to the other core.
+
+        // Once a phrase has started, keep matching through the gaps inside it: the voice
+        // detector dips between words, and stopping at every dip would cut every phrase
+        // in half. It ends when the matcher has an answer or has waited long enough.
+        matching = true;
 
         const esp_mn_state_t state = g_multinet->detect(g_model_data, result->data);
         if (state == ESP_MN_STATE_DETECTING) {
@@ -216,10 +217,10 @@ void fetch_task(void*) {
             }
         }
 
-        // Detected or timed out, the window closes the same way: back to listening for
-        // the wake word. A command is one utterance, not a mode.
-        inside_window = false;
-        g_afe->enable_wakenet(g_afe_data);
+        // Answered or timed out, the matcher starts afresh and waits for a voice again.
+        // Timing out is the ordinary case here rather than a failure, so it says nothing.
+        g_multinet->clean(g_model_data);
+        matching = false;
     }
 
     vTaskDelete(nullptr);
@@ -306,10 +307,19 @@ bool speech_start(SpeechCommandHandler handler) {
     g_running = true;
     g_listening = true;
 
-    // Pinned to core 1. The audio task renders on core 0 and must not miss a block
-    // because the recogniser was thinking; giving each a core is the simplest way to
-    // find out whether they genuinely fit, and to see it in the numbers if they do not.
-    xTaskCreatePinnedToCore(feed_task, "sg_sr_feed", 4096, nullptr, 5, nullptr, 1);
+    // The two halves are split across the cores, and which half goes where is the
+    // result of a measurement rather than a preference.
+    //
+    // Both started on core 1, leaving core 0 to the graph. That put the front end — the
+    // AFE's noise suppression and WakeNet, both of which run on every chunk — on the same
+    // core as the matcher, which measures at 0.80x realtime on its own. Together they
+    // exceed a core, the idle task never runs, and the watchdog calls it a hang.
+    //
+    // So the front end joins the graph on core 0, which the watchdog dump showed sitting
+    // idle while core 1 drowned, and the matcher gets core 1 to itself. The graph is a
+    // fixed, small cost with a high priority; the front end is steady; the matcher is the
+    // spiky one and now has a core of its own to be spiky in.
+    xTaskCreatePinnedToCore(feed_task, "sg_sr_feed", 4096, nullptr, 5, nullptr, 0);
     xTaskCreatePinnedToCore(fetch_task, "sg_sr_fetch", 8192, nullptr, 5, nullptr, 1);
 
     ESP_LOGI(TAG, "listening for \"Hi ESP\", %d command(s) in %d phrasing(s)",
