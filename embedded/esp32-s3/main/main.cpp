@@ -369,88 +369,354 @@ soundgraph::Graph* build_graph(const char* patch_text, std::string& error_out) {
 // same shape a panel knob has, for the same reason — the angle is readable at a glance
 // from across a room, and a number is not.
 
-constexpr float kKnobStart = -135.0f;   // travel, in the arc's own convention
-constexpr float kKnobEnd = 135.0f;
+// The house knob, as the rack and the plugin panel already draw it: 270 degrees of
+// travel starting down-left, a dim track, the used part in the accent, a body with one
+// pixel of highlight, and a pointer. Representational rather than skeuomorphic, and
+// deliberately so on this hardware — an AMOLED spends power only on lit pixels, so a
+// black ground is free and a broad grey bevel is not; at this size the angle carries
+// the information that shading would only decorate; and a finger covers the body while
+// it drags, which is exactly when a photoreal knob would have nothing left to say. The
+// arc survives the fingertip because it lives outside it.
+constexpr float kKnobStart = 135.0f;             // down-left, screen convention
+constexpr float kKnobSweep = 270.0f;
 
-// Where the last draw put each knob, so a finger can be matched to one. Written by
-// draw_face on the console/UI task and read by the same task; no locking needed.
+// Palettes.
+//
+// The first cut used one accent for the arc, the pointer, the label and the readout,
+// on nine knobs at once, and it read as garish for a reason worth writing down: neon
+// is bright because it is *scarce*. Light every element and the eye has nowhere to
+// rest, so nothing glows. What the cyberpunk look actually rests on is darkness with
+// small areas of intense light, one dominant hue, and a hierarchy built from
+// brightness rather than from more colours — a phosphor terminal is a single hue at
+// several luminances.
+//
+// So in every theme below the accent is spent on one thing: the part of the arc that
+// carries the value. The pointer is ink, because it is a piece of the knob rather than
+// data. Labels are dim. The bloom under the arc is the one indulgence, and on an AMOLED
+// against true black it is what a neon tube actually does to the air around it.
+struct Theme {
+    const char* name;
+    uint32_t ground, body, body_lit, track, accent, ink, ink_dim;
+};
+
+const Theme kThemes[] = {
+    // Phosphor: one hue, many luminances. The terminal that cyberpunk grew out of.
+    {"phosphor", display_rgb(0, 0, 0),    display_rgb(16, 26, 20),
+     display_rgb(24, 38, 30),  display_rgb(16, 62, 44),
+     display_rgb(80, 255, 170), display_rgb(198, 255, 224), display_rgb(88, 128, 104)},
+    // Amber on cool graphite: the Blade Runner pairing — warm light, cold room.
+    {"amber",    display_rgb(0, 0, 0),    display_rgb(28, 27, 24),
+     display_rgb(40, 38, 33),  display_rgb(64, 44, 14),
+     display_rgb(255, 176, 60), display_rgb(255, 236, 206), display_rgb(138, 122, 98)},
+    // Neon pair: cyan-lit bodies, magenta value. Complementary, so the value separates
+    // without either colour having to shout.
+    {"neon",     display_rgb(0, 0, 0),    display_rgb(16, 22, 34),
+     display_rgb(24, 32, 48),  display_rgb(18, 58, 70),
+     display_rgb(255, 64, 160), display_rgb(196, 240, 255), display_rgb(92, 124, 152)},
+    // Ice: near-monochrome with a cold accent, for when the room is bright.
+    {"ice",      display_rgb(0, 0, 0),    display_rgb(22, 25, 30),
+     display_rgb(32, 36, 43),  display_rgb(28, 48, 60),
+     display_rgb(96, 208, 255), display_rgb(228, 240, 250), display_rgb(112, 126, 144)},
+};
+constexpr int kThemeCount = sizeof(kThemes) / sizeof(kThemes[0]);
+int g_theme = 0;
+
+const Theme& theme() { return kThemes[g_theme]; }
+
+// A colour scaled toward black, for the bloom under the arc. Cheap in RGB565 and
+// perfectly convincing when the ground really is black.
+uint32_t dimmed(uint32_t colour, int percent) {
+    const int r = ((colour >> 16) & 0xFF) * percent / 100;
+    const int g = ((colour >> 8) & 0xFF) * percent / 100;
+    const int b = (colour & 0xFF) * percent / 100;
+    return display_rgb(r, g, b);
+}
+
 struct KnobHit { int cx = 0; int cy = 0; int radius = 0; };
 std::vector<KnobHit> g_knob_hits;
+int g_active_knob = -1;   // what a finger is holding, for the big readout
 
-void draw_knob(int cx, int cy, int radius, const UiControl& control) {
-    const uint16_t track = display_rgb(38, 40, 52);
-    const uint16_t ink = display_rgb(120, 200, 255);
-    const uint16_t label_ink = display_rgb(150, 155, 175);
-    const uint16_t face = display_rgb(20, 21, 28);
+void format_value(char* out, std::size_t size, float value) {
+    if (value >= 100.0f)     std::snprintf(out, size, "%d", static_cast<int>(value + 0.5f));
+    else if (value >= 10.0f) std::snprintf(out, size, "%.1f", value);
+    else                     std::snprintf(out, size, "%.2f", value);
+}
 
+void draw_knob(int cx, int cy, int radius, const UiControl& control, bool active) {
     const float span = control.max_value - control.min_value;
     float fraction = span > 0.0f ? (control.value - control.min_value) / span : 0.0f;
     if (fraction < 0.0f) fraction = 0.0f;
     if (fraction > 1.0f) fraction = 1.0f;
-    const float angle = kKnobStart + fraction * (kKnobEnd - kKnobStart);
+    const float angle = kKnobStart + kKnobSweep * fraction;
 
-    display_disc(cx, cy, radius - 2, face);
-    display_arc(cx, cy, radius, 4, kKnobStart, kKnobEnd, track);
-    display_arc(cx, cy, radius, 4, kKnobStart, angle, ink);
+    const Theme& t = theme();
+    const float track_radius = static_cast<float>(radius) + 6.0f;
+    display_arc(cx, cy, track_radius, 3.0f, kKnobStart, kKnobStart + kKnobSweep, t.track);
 
-    // The pointer, from the middle of the face to the rim.
-    const float rad = (angle + 90.0f) * 3.14159265f / 180.0f;
-    for (int r = radius / 3; r < radius - 5; ++r) {
-        display_pixel(cx + static_cast<int>(std::cos(rad) * r),
-                      cy + static_cast<int>(std::sin(rad) * r), ink);
-    }
+    // The bloom: a wide, dim pass under the crisp one. Against unlit AMOLED pixels this
+    // is what a tube does to the air around it, and it costs two arcs.
+    display_arc(cx, cy, track_radius, 8.0f, kKnobStart, angle, dimmed(t.accent, 10));
+    display_arc(cx, cy, track_radius, 5.0f, kKnobStart, angle, dimmed(t.accent, 26));
+    display_arc(cx, cy, track_radius, 3.0f, kKnobStart, angle, t.accent);
 
-    char text[16];
-    const float shown = control.value;
-    if (shown >= 100.0f) {
-        std::snprintf(text, sizeof text, "%d", static_cast<int>(shown + 0.5f));
-    } else if (shown >= 10.0f) {
-        std::snprintf(text, sizeof text, "%.1f", shown);
-    } else {
-        std::snprintf(text, sizeof text, "%.2f", shown);
-    }
-    display_text(cx - display_text_width(text, 1) / 2, cy - 3, text, 1,
-                 display_rgb(230, 235, 245));
+    // Body, then the highlight a pixel above it. One pixel is the whole bevel: enough
+    // to read as an object, not enough to cost a gradient.
+    display_disc(cx, cy, static_cast<float>(radius), t.body);
+    display_disc(cx, cy - 1, static_cast<float>(radius) - 4.0f, t.body_lit);
 
-    char label[12];
+    // The pointer is ink, not accent: it is part of the knob, not part of the reading,
+    // and giving it the accent too was half of what made the first cut shout.
+    const float rad = angle * 3.14159265f / 180.0f;
+    const float c = std::cos(rad), sn = std::sin(rad);
+    display_line(cx + c * (radius * 0.34f), cy + sn * (radius * 0.34f),
+                 cx + c * (radius - 3.0f), cy + sn * (radius - 3.0f),
+                 2.5f, active ? t.ink : t.ink_dim);
+
+    char label[14];
     std::snprintf(label, sizeof label, "%s", control.label.c_str());
-    display_text(cx - display_text_width(label, 1) / 2, cy + radius + 6, label, 1,
-                 label_ink);
+    display_text(cx - display_text_width(label, 2) / 2, cy + radius + 10, label, 2,
+                 active ? t.ink : t.ink_dim);
+}
+
+// ---------------------------------------------------------------------------------
+// The swatch grid
+// ---------------------------------------------------------------------------------
+//
+// Colour chosen by looking rather than by reasoning. Every cell draws the thing we are
+// actually colouring — a stroke with its bloom, on black — because a colour judged as a
+// filled square lies about how it will read as a thin bright line. Two axes per grid,
+// labelled, so a verdict can be given as "column 3, row 2" and turned straight into a
+// constant.
+
+uint32_t from_hsv(float h, float s, float v) {
+    h = std::fmod(h, 360.0f);
+    if (h < 0.0f) h += 360.0f;
+    const float c = v * s;
+    const float x = c * (1.0f - std::fabs(std::fmod(h / 60.0f, 2.0f) - 1.0f));
+    const float m = v - c;
+    float r = 0, g = 0, b = 0;
+    if (h < 60)       { r = c; g = x; }
+    else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; }
+    else              { r = c; b = x; }
+    return display_rgb(static_cast<int>((r + m) * 255.0f),
+                       static_cast<int>((g + m) * 255.0f),
+                       static_cast<int>((b + m) * 255.0f));
+}
+
+void draw_swatch_grid(int mode) {
+    if (!display_available()) return;
+    const int w = display_width(), h = display_height();
+    display_clear(display_rgb(0, 0, 0));
+
+    constexpr int kCols = 7;
+    constexpr int kRows = 6;
+    const int left = 26, top = 46;
+    const int cell_w = (w - left - 8) / kCols;
+    const int cell_h = (h - top - 14) / kRows;
+
+    const char* title = "";
+    const char* x_axis = "";
+    const char* y_axis = "";
+    switch (mode) {
+        case 0: title = "HUE X SAT";  x_axis = "HUE 90-180"; y_axis = "SAT 100-30"; break;
+        case 1: title = "HUE X VAL";  x_axis = "HUE 90-180"; y_axis = "VAL 100-35"; break;
+        default: title = "SAT X VAL"; x_axis = "SAT 100-25"; y_axis = "VAL 100-35"; break;
+    }
+    display_text(8, 8, title, 2, display_rgb(150, 160, 170));
+    display_text(8, 26, x_axis, 1, display_rgb(90, 100, 110));
+    display_text(8 + display_text_width(x_axis, 1) + 12, 26, y_axis, 1,
+                 display_rgb(90, 100, 110));
+
+    for (int col = 0; col < kCols; ++col) {
+        char n[4];
+        std::snprintf(n, sizeof n, "%d", col);
+        display_text(left + cell_w * col + cell_w / 2 - 3, top - 14, n, 1,
+                     display_rgb(110, 120, 130));
+    }
+
+    for (int row = 0; row < kRows; ++row) {
+        char n[4];
+        std::snprintf(n, sizeof n, "%d", row);
+        display_text(6, top + cell_h * row + cell_h / 2 - 3, n, 1,
+                     display_rgb(110, 120, 130));
+
+        for (int col = 0; col < kCols; ++col) {
+            const float fx = static_cast<float>(col) / (kCols - 1);
+            const float fy = static_cast<float>(row) / (kRows - 1);
+            uint32_t colour;
+            if (mode == 0) {
+                colour = from_hsv(90.0f + fx * 90.0f, 1.0f - fy * 0.70f, 1.0f);
+            } else if (mode == 1) {
+                colour = from_hsv(90.0f + fx * 90.0f, 0.85f, 1.0f - fy * 0.65f);
+            } else {
+                colour = from_hsv(150.0f, 1.0f - fx * 0.75f, 1.0f - fy * 0.65f);
+            }
+
+            // The stroke, drawn exactly as a value arc is: wide dim bloom, then narrower,
+            // then the crisp line. A colour that survives this survives the knob.
+            const int cx = left + cell_w * col + cell_w / 2;
+            const int cy = top + cell_h * row + cell_h / 2;
+            const float half = cell_w * 0.30f;
+            display_line(cx - half, cy, cx + half, cy, 9.0f, dimmed(colour, 16));
+            display_line(cx - half, cy, cx + half, cy, 5.0f, dimmed(colour, 38));
+            display_line(cx - half, cy, cx + half, cy, 3.0f, colour);
+        }
+    }
+    display_present();
+}
+
+// Six greens, drawn as the thing they would actually be.
+//
+// The swatch grids were a bad instrument: forty-two near-identical cells is a test of
+// patience rather than of colour, and a colour judged as a bare stroke lies about how it
+// reads once it is an arc wrapped around a lit knob body. Six candidates, far enough
+// apart to tell apart, each drawn as a real knob at a real size — pick by pointing.
+struct GreenCandidate { const char* name; uint32_t colour; };
+
+const GreenCandidate kGreens[] = {
+    {"P1",      display_rgb(51, 255, 51)},    // the CRT phosphor: pure, no blue at all
+    {"MINT",    display_rgb(110, 232, 184)},  // cyan-leaning; what the rack uses today
+    {"EMERALD", display_rgb(0, 210, 140)},    // deeper and bluer
+    {"LIME",    display_rgb(160, 255, 70)},   // yellow-leaning: maximum apparent glow
+    {"SAGE",    display_rgb(140, 200, 150)},  // desaturated: is "garish" about saturation?
+    {"JADE",    display_rgb(60, 200, 120)},   // between mint and emerald
+};
+constexpr int kGreenCount = sizeof(kGreens) / sizeof(kGreens[0]);
+
+void draw_green_choices() {
+    if (!display_available()) return;
+    const int w = display_width(), h = display_height();
+    display_clear(display_rgb(0, 0, 0));
+    display_text(10, 8, "WHICH GREEN", 2, display_rgb(150, 160, 170));
+
+    const int columns = 2, rows = 3;
+    const int top = 40;
+    const int cell_w = w / columns, cell_h = (h - top - 6) / rows;
+    const int radius = 46;
+
+    for (int i = 0; i < kGreenCount; ++i) {
+        const int cx = cell_w * (i % columns) + cell_w / 2;
+        const int cy = top + cell_h * (i / columns) + cell_h / 2 - 10;
+        const uint32_t colour = kGreens[i].colour;
+
+        // Held at three-quarters, which shows both the lit arc and the dim remainder.
+        const float angle = kKnobStart + kKnobSweep * 0.75f;
+        const float track_radius = static_cast<float>(radius) + 6.0f;
+        display_arc(cx, cy, track_radius, 3.0f, kKnobStart, kKnobStart + kKnobSweep,
+                    dimmed(colour, 18));
+        display_arc(cx, cy, track_radius, 9.0f, kKnobStart, angle, dimmed(colour, 16));
+        display_arc(cx, cy, track_radius, 5.0f, kKnobStart, angle, dimmed(colour, 38));
+        display_arc(cx, cy, track_radius, 3.0f, kKnobStart, angle, colour);
+
+        display_disc(cx, cy, static_cast<float>(radius), display_rgb(16, 26, 20));
+        display_disc(cx, cy - 1, static_cast<float>(radius) - 4.0f, display_rgb(24, 38, 30));
+
+        const float rad = angle * 3.14159265f / 180.0f;
+        display_line(cx + std::cos(rad) * (radius * 0.34f),
+                     cy + std::sin(rad) * (radius * 0.34f),
+                     cx + std::cos(rad) * (radius - 3.0f),
+                     cy + std::sin(rad) * (radius - 3.0f),
+                     2.5f, display_rgb(198, 255, 224));
+
+        char caption[16];
+        std::snprintf(caption, sizeof caption, "%d %s", i + 1, kGreens[i].name);
+        display_text(cx - display_text_width(caption, 2) / 2, cy + radius + 12,
+                     caption, 2, display_rgb(150, 160, 170));
+    }
+    display_present();
+}
+
+// A green ramp, at whatever depth the panel is being driven.
+//
+// This began as sixty-four bands because RGB565 gives green six bits, and the steps
+// were visible — which is what sent the panel to 24 bits. At eight bits per channel
+// there are 256 levels and the screen has 502 rows, so the ramp is now continuous:
+// one level per two rows, with nothing left to band.
+void draw_green_ramp(int tint) {
+    if (!display_available()) return;
+    const int w = display_width(), h = display_height();
+    display_clear(display_rgb(0, 0, 0));
+
+    // Levels are mapped onto the full height rather than given a row each: at 256
+    // levels on a 502-row panel a row-per-level covered half the screen and left the
+    // rest showing whatever was there before, which reads as noise rather than as a
+    // short ramp.
+    constexpr int kLevels = 256;  // eight bits of green, at 24-bit
+    const int top = 0;
+
+    for (int level = 0; level < kLevels; ++level) {
+        const int g = level;
+        // A little red leans the green yellow, a little blue leans it cyan; the tint is
+        // scaled off the level so the hue stays put as it dims.
+        const int r = tint > 0 ? g * tint / 100 : 0;
+        const int b = tint < 0 ? g * (-tint) / 100 : 0;
+        const int y = top + (h * (kLevels - 1 - level)) / kLevels;
+        const int next = top + (h * (kLevels - level)) / kLevels;
+        display_rect(0, y, w - 46, (next - y) > 0 ? (next - y) : 1, display_rgb(r, g, b));
+
+        if (level % 32 == 0 || level == kLevels - 1) {
+            char label[8];
+            std::snprintf(label, sizeof label, "%d", level);
+            display_text(w - 40, y - 3, label, 1, display_rgb(150, 160, 170));
+        }
+    }
 }
 
 void draw_face() {
     if (!display_available()) return;
     const int w = display_width(), h = display_height();
-    display_clear(display_rgb(8, 8, 11));
-
-    const char* title = "WRIST ARPEGGIO";
-    display_text((w - display_text_width(title, 2)) / 2, 10, title, 2,
-                 display_rgb(90, 95, 115));
+    const Theme& t = theme();
+    display_clear(t.ground);
 
     if (g_ui_controls.empty()) {
-        const char* none = "PATCH DECLARES NO CONTROLS";
-        display_text((w - display_text_width(none, 1)) / 2, h / 2, none, 1,
-                     display_rgb(150, 155, 175));
+        const char* none = "NO CONTROLS";
+        display_text((w - display_text_width(none, 2)) / 2, h / 2, none, 2, t.ink_dim);
         display_present();
         return;
     }
 
-    // Three by three, however many of the nine the patch actually declared.
+    // The header carries the held knob's name and value at a size that reads from
+    // across a desk — and it sits at the top, where the hand that is dragging is not.
+    if (g_active_knob >= 0 && g_active_knob < static_cast<int>(g_ui_controls.size())) {
+        const UiControl& control = g_ui_controls[static_cast<std::size_t>(g_active_knob)];
+        char value[16];
+        format_value(value, sizeof value, control.value);
+        char name[14];
+        std::snprintf(name, sizeof name, "%s", control.label.c_str());
+        // The name dim, the number in ink. The accent stays on the arcs: a slab of
+        // saturated type is the other half of what made the first cut shout.
+        display_text((w - display_text_width(name, 2)) / 2, 12, name, 2, t.ink_dim);
+        display_text((w - display_text_width(value, 5)) / 2, 32, value, 5, t.ink);
+    } else {
+        const char* title = "WRIST ARPEGGIO";
+        display_text((w - display_text_width(title, 2)) / 2, 26, title, 2,
+                     dimmed(t.ink_dim, 62));
+    }
+
+    // A safe inset, because the glass is a rounded rectangle and the corners are not
+    // there. Drawn edge to edge, the bottom row's labels lost their first and last
+    // letters to the curve — CUTOFF read as TOFF — which is invisible in a framebuffer
+    // and obvious in a photograph.
+    constexpr int kSideInset = 22;
+    constexpr int kBottomInset = 30;
     const int columns = 3;
     const int rows = (static_cast<int>(g_ui_controls.size()) + columns - 1) / columns;
-    const int top = 40;
-    const int cell_w = w / columns;
-    const int cell_h = (h - top - 10) / (rows > 0 ? rows : 1);
-    int radius = (cell_w < cell_h ? cell_w : cell_h) / 2 - 14;
-    if (radius < 12) radius = 12;
+    const int top = 66;
+    const int cell_w = (w - kSideInset * 2) / columns;
+    const int cell_h = (h - top - kBottomInset) / (rows > 0 ? rows : 1);
+    int radius = (cell_w < cell_h ? cell_w : cell_h) / 2 - 20;
+    if (radius < 14) radius = 14;
 
     g_knob_hits.assign(g_ui_controls.size(), KnobHit{});
     for (std::size_t i = 0; i < g_ui_controls.size(); ++i) {
         const int col = static_cast<int>(i) % columns;
         const int row = static_cast<int>(i) / columns;
-        const int cx = cell_w * col + cell_w / 2;
-        const int cy = top + cell_h * row + cell_h / 2 - 6;
-        draw_knob(cx, cy, radius, g_ui_controls[i]);
+        const int cx = kSideInset + cell_w * col + cell_w / 2;
+        const int cy = top + cell_h * row + cell_h / 2 - 10;
+        draw_knob(cx, cy, radius, g_ui_controls[i], static_cast<int>(i) == g_active_knob);
         g_knob_hits[i] = KnobHit{cx, cy, radius};
     }
     display_present();
@@ -478,6 +744,8 @@ void touch_task(void*) {
                         held = static_cast<int>(i);
                         last_y = y;
                         held_start_value = g_ui_controls[i].value;
+                        g_active_knob = held;
+                        draw_face();
                         break;
                     }
                 }
@@ -499,8 +767,10 @@ void touch_task(void*) {
                     draw_face();
                 }
             }
-        } else {
+        } else if (held >= 0) {
             held = -1;
+            g_active_knob = -1;
+            draw_face();          // back to the title once the finger lifts
         }
         vTaskDelay(pdMS_TO_TICKS(30));
     }
@@ -1003,6 +1273,29 @@ void console_task(void*) {
                 display_set_rotation(std::atoi(tokens[2]));
                 draw_face();
                 std::printf("OK rotation %d\n", display_rotation());
+            } else if (tokens.size() >= 3 && std::strcmp(tokens[1], "theme") == 0) {
+                const int wanted = std::atoi(tokens[2]);
+                if (wanted >= 0 && wanted < kThemeCount) {
+                    g_theme = wanted;
+                    draw_face();
+                    std::printf("OK theme %d (%s)\n", g_theme, theme().name);
+                } else {
+                    std::printf("ERR themes 0..%d\n", kThemeCount - 1);
+                    for (int i = 0; i < kThemeCount; ++i) {
+                        std::printf("  %d %s\n", i, kThemes[i].name);
+                    }
+                }
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "ramp") == 0) {
+                const int tint = tokens.size() >= 3 ? std::atoi(tokens[2]) : 0;
+                draw_green_ramp(tint);
+                display_present();
+                std::printf("OK ramp tint %d (64 levels)\n", tint);
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "greens") == 0) {
+                draw_green_choices();
+                std::printf("OK greens\n");
+            } else if (tokens.size() >= 3 && std::strcmp(tokens[1], "grid") == 0) {
+                draw_swatch_grid(std::atoi(tokens[2]));
+                std::printf("OK grid %s\n", tokens[2]);
             } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "face") == 0) {
                 draw_face();
                 std::printf("OK face\n");
@@ -1010,8 +1303,8 @@ void console_task(void*) {
                 display_set_brightness(std::atoi(tokens[2]));
                 std::printf("OK brightness %s\n", tokens[2]);
             } else {
-                std::printf("usage: screen test | face | rotate 0-270 | "
-                            "fill RRGGBB | bright 0-100\n");
+                std::printf("usage: screen test | face | theme 0-%d | rotate 0-270 | "
+                            "fill RRGGBB | bright 0-100\n", kThemeCount - 1);
             }
         } else if (command == "note" && tokens.size() >= 2 && graph != nullptr) {
             const float velocity = tokens.size() >= 3 ? std::atof(tokens[2]) : 0.9f;

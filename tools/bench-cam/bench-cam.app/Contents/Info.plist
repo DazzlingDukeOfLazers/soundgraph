@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>bench-cam</string>
+  <key>CFBundleIdentifier</key><string>net.mutantfactory.soundgraph.benchcam</string>
+  <key>CFBundleName</key><string>bench-cam</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <!-- The string the permission dialog shows. Without this key macOS kills the process
+       rather than asking, which looks exactly like a denial. -->
+  <key>NSCameraUsageDescription</key>
+  <string>bench-cam photographs hardware on the bench so the build can check its own work.</string>
+  <!-- No dock icon, no menu bar: this is a shutter, not an application. -->
+  <key>LSUIElement</key><true/>
+</dict>
+</plist>

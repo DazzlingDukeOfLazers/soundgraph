@@ -10,13 +10,14 @@ int display_width() { return 0; }
 int display_height() { return 0; }
 void display_set_rotation(int) {}
 int display_rotation() { return 0; }
-void display_clear(uint16_t) {}
-void display_pixel(int, int, uint16_t) {}
-void display_rect(int, int, int, int, uint16_t) {}
-void display_disc(int, int, int, uint16_t) {}
-void display_ring(int, int, int, int, uint16_t) {}
-void display_arc(int, int, int, int, float, float, uint16_t) {}
-int display_text(int, int, const char*, int, uint16_t) { return 0; }
+void display_clear(uint32_t) {}
+void display_pixel(int, int, uint32_t) {}
+void display_rect(int, int, int, int, uint32_t) {}
+void display_blend(int, int, uint32_t, int) {}
+void display_disc(int, int, float, uint32_t) {}
+void display_arc(int, int, float, float, float, float, uint32_t) {}
+void display_line(float, float, float, float, float, uint32_t) {}
+int display_text(int, int, const char*, int, uint32_t) { return 0; }
 int display_text_width(const char*, int) { return 0; }
 bool display_present() { return false; }
 bool display_set_brightness(int) { return false; }
@@ -58,6 +59,10 @@ const sh8601_lcd_init_cmd_t kPanelInit[] = {
     {0x2B, (uint8_t[]){0x00, 0x00, 0x01, 0xF5}, 4, 0},
     {0x29, (uint8_t[]){0x00}, 0, 10},
     {0x51, (uint8_t[]){0xFF}, 1, 0},
+    // COLMOD last, and ours. The driver sets the pixel format before this sequence
+    // runs and something in the sequence puts it back; forcing it here is what makes
+    // 24-bit stick. 0x77 is RGB888.
+    {0x3A, (uint8_t[]){0x77}, 1, 10},
 };
 
 // 5x7, column-major, one byte per column, bit 0 at the top. Uppercase, digits and the
@@ -139,10 +144,12 @@ esp_lcd_panel_handle_t g_panel = nullptr;
 esp_lcd_panel_io_handle_t g_io = nullptr;
 
 // Physical layout, always: the framebuffer matches the glass, and rotation happens on
-// the way in rather than on the way out, so presenting is one straight memcpy-and-blit.
-uint16_t* g_fb = nullptr;
-uint16_t* g_band = nullptr;      // internal, DMA-capable bounce for the PSRAM framebuffer
-constexpr int kBandRows = 16;
+// the way in rather than on the way out, so presenting is one straight blit.
+//
+// Three bytes a pixel, R then G then B: COLMOD 0x77, which is what makes this a
+// 16.7-million-colour panel rather than a 65-thousand-colour one.
+uint8_t* g_fb = nullptr;
+constexpr int kBytesPerPixel = 3;
 
 // draw_bitmap only *queues* the transfer. The bounce buffer must not be refilled until
 // the DMA that is reading it has finished, or bands arrive carrying their successor's
@@ -159,9 +166,12 @@ bool IRAM_ATTR on_trans_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_d
 
 int g_rotation = 0;
 
-inline void put_physical(int px, int py, uint16_t colour) {
+inline void put_physical(int px, int py, uint32_t colour) {
     if (px < 0 || py < 0 || px >= SG_DISPLAY_WIDTH || py >= SG_DISPLAY_HEIGHT) return;
-    g_fb[py * SG_DISPLAY_WIDTH + px] = colour;
+    uint8_t* p = g_fb + (py * SG_DISPLAY_WIDTH + px) * kBytesPerPixel;
+    p[0] = static_cast<uint8_t>(colour >> 16);
+    p[1] = static_cast<uint8_t>(colour >> 8);
+    p[2] = static_cast<uint8_t>(colour);
 }
 
 }  // namespace
@@ -182,7 +192,7 @@ void display_set_rotation(int degrees) {
 
 int display_rotation() { return g_rotation; }
 
-void display_pixel(int x, int y, uint16_t colour) {
+void display_pixel(int x, int y, uint32_t colour) {
     if (g_fb == nullptr) return;
     switch (g_rotation) {
         case 90:  put_physical(SG_DISPLAY_WIDTH - 1 - y, x, colour); break;
@@ -192,51 +202,104 @@ void display_pixel(int x, int y, uint16_t colour) {
     }
 }
 
-void display_clear(uint16_t colour) {
+void display_clear(uint32_t colour) {
     if (g_fb == nullptr) return;
-    const int count = SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT;
-    for (int i = 0; i < count; ++i) g_fb[i] = colour;
+    const uint8_t r = static_cast<uint8_t>(colour >> 16);
+    const uint8_t g = static_cast<uint8_t>(colour >> 8);
+    const uint8_t b = static_cast<uint8_t>(colour);
+    uint8_t* p = g_fb;
+    for (int i = 0; i < SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT; ++i) {
+        *p++ = r; *p++ = g; *p++ = b;
+    }
 }
 
-void display_rect(int x, int y, int width, int height, uint16_t colour) {
+void display_rect(int x, int y, int width, int height, uint32_t colour) {
     for (int row = 0; row < height; ++row) {
         for (int col = 0; col < width; ++col) display_pixel(x + col, y + row, colour);
     }
 }
 
-void display_disc(int cx, int cy, int radius, uint16_t colour) {
-    for (int dy = -radius; dy <= radius; ++dy) {
-        const int span = static_cast<int>(std::sqrt(
-            static_cast<float>(radius * radius - dy * dy)));
-        for (int dx = -span; dx <= span; ++dx) display_pixel(cx + dx, cy + dy, colour);
+void display_blend(int x, int y, uint32_t colour, int alpha) {
+    if (g_fb == nullptr || alpha <= 0) return;
+    if (alpha >= 255) { display_pixel(x, y, colour); return; }
+    // Read-modify-write through the same rotation the writer uses, so blending happens
+    // in logical space and no caller has to think about the panel's mounting.
+    int px = x, py = y;
+    switch (g_rotation) {
+        case 90:  px = SG_DISPLAY_WIDTH - 1 - y; py = x; break;
+        case 180: px = SG_DISPLAY_WIDTH - 1 - x; py = SG_DISPLAY_HEIGHT - 1 - y; break;
+        case 270: px = y; py = SG_DISPLAY_HEIGHT - 1 - x; break;
+        default: break;
     }
+    if (px < 0 || py < 0 || px >= SG_DISPLAY_WIDTH || py >= SG_DISPLAY_HEIGHT) return;
+    uint8_t* p = g_fb + (py * SG_DISPLAY_WIDTH + px) * kBytesPerPixel;
+    const int cr = (colour >> 16) & 0xFF, cg = (colour >> 8) & 0xFF, cb = colour & 0xFF;
+    p[0] = static_cast<uint8_t>((cr * alpha + p[0] * (255 - alpha)) / 255);
+    p[1] = static_cast<uint8_t>((cg * alpha + p[1] * (255 - alpha)) / 255);
+    p[2] = static_cast<uint8_t>((cb * alpha + p[2] * (255 - alpha)) / 255);
 }
 
-void display_ring(int cx, int cy, int radius, int thickness, uint16_t colour) {
-    const int inner = radius - thickness;
-    const int inner_sq = inner > 0 ? inner * inner : 0;
-    const int outer_sq = radius * radius;
-    for (int dy = -radius; dy <= radius; ++dy) {
-        for (int dx = -radius; dx <= radius; ++dx) {
-            const int d = dx * dx + dy * dy;
-            if (d <= outer_sq && d >= inner_sq) display_pixel(cx + dx, cy + dy, colour);
+namespace {
+// Coverage of one pixel by an edge, as a soft step across a single pixel. Cheap, and
+// indistinguishable from a real area calculation at these radii.
+inline int edge_alpha(float distance, float edge) {
+    const float d = edge + 0.5f - distance;
+    if (d <= 0.0f) return 0;
+    if (d >= 1.0f) return 255;
+    return static_cast<int>(d * 255.0f);
+}
+}  // namespace
+
+void display_disc(int cx, int cy, float radius, uint32_t colour) {
+    const int r = static_cast<int>(radius) + 2;
+    for (int dy = -r; dy <= r; ++dy) {
+        for (int dx = -r; dx <= r; ++dx) {
+            const int a = edge_alpha(
+                std::sqrt(static_cast<float>(dx * dx + dy * dy)), radius);
+            if (a > 0) display_blend(cx + dx, cy + dy, colour, a);
         }
     }
 }
 
-void display_arc(int cx, int cy, int radius, int thickness,
-                 float start_degrees, float end_degrees, uint16_t colour) {
-    if (end_degrees < start_degrees) return;
-    // Step finely enough that the outermost pixels still touch.
-    const float step = radius > 0 ? 40.0f / radius : 4.0f;
-    for (float a = start_degrees; a <= end_degrees; a += step) {
-        const float rad = (a + 90.0f) * 3.14159265f / 180.0f;
-        const float c = std::cos(rad), s = std::sin(rad);
-        for (int t = 0; t < thickness; ++t) {
-            const float r = static_cast<float>(radius - t);
-            display_pixel(cx + static_cast<int>(c * r),
-                          cy + static_cast<int>(s * r), colour);
+void display_arc(int cx, int cy, float radius, float thickness,
+                 float start_degrees, float end_degrees, uint32_t colour) {
+    if (end_degrees <= start_degrees) return;
+    const float outer = radius + thickness * 0.5f;
+    const float inner = radius - thickness * 0.5f;
+    const int r = static_cast<int>(outer) + 2;
+    for (int dy = -r; dy <= r; ++dy) {
+        for (int dx = -r; dx <= r; ++dx) {
+            const float d = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+            int a = edge_alpha(d, outer);
+            if (a == 0) continue;
+            const float di = d - inner + 0.5f;
+            if (di <= 0.0f) continue;
+            if (di < 1.0f) a = static_cast<int>(a * di);
+
+            float angle = std::atan2(static_cast<float>(dy), static_cast<float>(dx))
+                          * 180.0f / 3.14159265f;
+            while (angle < start_degrees) angle += 360.0f;
+            if (angle > end_degrees) {
+                // Feather the caps by about a pixel of arc length; stopping hard is
+                // what makes short arcs look chewed.
+                const float over = (angle - end_degrees) * 3.14159265f / 180.0f * d;
+                if (over >= 1.0f) continue;
+                a = static_cast<int>(a * (1.0f - over));
+            }
+            if (a > 0) display_blend(cx + dx, cy + dy, colour, a);
         }
+    }
+}
+
+void display_line(float x0, float y0, float x1, float y1, float width, uint32_t colour) {
+    const float dx = x1 - x0, dy = y1 - y0;
+    const float length = std::sqrt(dx * dx + dy * dy);
+    if (length < 0.001f) return;
+    const int steps = static_cast<int>(length * 2.0f) + 1;
+    for (int i = 0; i <= steps; ++i) {
+        const float t = static_cast<float>(i) / steps;
+        display_disc(static_cast<int>(x0 + dx * t + 0.5f),
+                     static_cast<int>(y0 + dy * t + 0.5f), width * 0.5f, colour);
     }
 }
 
@@ -244,7 +307,7 @@ int display_text_width(const char* text, int scale) {
     return static_cast<int>(std::strlen(text)) * 6 * scale;
 }
 
-int display_text(int x, int y, const char* text, int scale, uint16_t colour) {
+int display_text(int x, int y, const char* text, int scale, uint32_t colour) {
     int cursor = x;
     for (const char* p = text; *p != '\0'; ++p) {
         const uint8_t* glyph = kFont[glyph_index(*p)];
@@ -261,23 +324,21 @@ int display_text(int x, int y, const char* text, int scale, uint16_t colour) {
 }
 
 bool display_present() {
-    if (g_panel == nullptr || g_fb == nullptr || g_band == nullptr) return false;
-    // Band at a time through internal memory: the framebuffer lives in PSRAM, and the
-    // bands keep every transfer an even number of rows, which is what the panel wants.
-    for (int y = 0; y < SG_DISPLAY_HEIGHT; y += kBandRows) {
-        int rows = SG_DISPLAY_HEIGHT - y;
-        if (rows > kBandRows) rows = kBandRows;
-        rows &= ~1;
-        if (rows == 0) break;
-        std::memcpy(g_band, g_fb + y * SG_DISPLAY_WIDTH,
-                    rows * SG_DISPLAY_WIDTH * sizeof(uint16_t));
-        if (esp_lcd_panel_draw_bitmap(g_panel, 0, y, SG_DISPLAY_WIDTH, y + rows,
-                                      g_band) != ESP_OK) {
-            return false;
-        }
-        // Wait for the DMA to let go of the bounce buffer before refilling it.
-        xSemaphoreTake(g_trans_done, pdMS_TO_TICKS(200));
+    if (g_panel == nullptr || g_fb == nullptr) return false;
+    // Straight from the framebuffer, in one transfer, with no bounce buffer.
+    //
+    // The bounce was a bug worth remembering: a band at 24 bits is nearly 20 KB, which
+    // the SPI driver splits into several transactions, while this code waited for a
+    // single completion before refilling the buffer. Early bands were overwritten
+    // in flight and arrived as noise; only the last, where the timing happened to work
+    // out, drew correctly — knobs over a white, seething ground. Nothing writes the
+    // framebuffer during a present, so DMA can read it where it lies, and the whole
+    // class of hazard goes away with the copy.
+    if (esp_lcd_panel_draw_bitmap(g_panel, 0, 0, SG_DISPLAY_WIDTH, SG_DISPLAY_HEIGHT,
+                                  g_fb) != ESP_OK) {
+        return false;
     }
+    xSemaphoreTake(g_trans_done, pdMS_TO_TICKS(1000));
     return true;
 }
 
@@ -288,7 +349,7 @@ bool display_init() {
     bus.data1_io_num = SG_DISPLAY_QSPI_D1;
     bus.data2_io_num = SG_DISPLAY_QSPI_D2;
     bus.data3_io_num = SG_DISPLAY_QSPI_D3;
-    bus.max_transfer_sz = SG_DISPLAY_WIDTH * kBandRows * static_cast<int>(sizeof(uint16_t));
+    bus.max_transfer_sz = SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT * kBytesPerPixel;
     if (spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
         ESP_LOGE(TAG, "QSPI bus would not start");
         return false;
@@ -319,7 +380,7 @@ bool display_init() {
     // BGR, not RGB: this glass wires the channels the other way round, and a red fill
     // arrives blue if you take the vendor BSP's word for it. Measured on the board.
     panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
-    panel_config.bits_per_pixel = 16;
+    panel_config.bits_per_pixel = 24;
     panel_config.vendor_config = &vendor;
     if (esp_lcd_new_panel_sh8601(g_io, &panel_config, &g_panel) != ESP_OK) {
         ESP_LOGE(TAG, "%s would not initialise", SG_DISPLAY_CHIP);
@@ -333,13 +394,10 @@ bool display_init() {
     esp_lcd_panel_set_gap(g_panel, SG_DISPLAY_X_OFFSET, SG_DISPLAY_Y_OFFSET);
     esp_lcd_panel_disp_on_off(g_panel, true);
 
-    g_fb = static_cast<uint16_t*>(heap_caps_malloc(
-        SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT * sizeof(uint16_t), MALLOC_CAP_SPIRAM));
-    g_band = static_cast<uint16_t*>(heap_caps_malloc(
-        SG_DISPLAY_WIDTH * kBandRows * sizeof(uint16_t),
-        MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+    g_fb = static_cast<uint8_t*>(heap_caps_malloc(
+        SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT * kBytesPerPixel, MALLOC_CAP_SPIRAM));
     g_trans_done = xSemaphoreCreateBinary();
-    if (g_fb == nullptr || g_band == nullptr || g_trans_done == nullptr) {
+    if (g_fb == nullptr || g_trans_done == nullptr) {
         ESP_LOGE(TAG, "no memory for the framebuffer");
         return false;
     }
@@ -347,7 +405,7 @@ bool display_init() {
 
     ESP_LOGI(TAG, "%s up, %dx%d, %d KB framebuffer in PSRAM", SG_DISPLAY_CHIP,
              SG_DISPLAY_WIDTH, SG_DISPLAY_HEIGHT,
-             SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT * 2 / 1024);
+             SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT * kBytesPerPixel / 1024);
     return true;
 }
 
