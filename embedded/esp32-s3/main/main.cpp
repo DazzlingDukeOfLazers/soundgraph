@@ -559,9 +559,23 @@ void command_load(int byte_count) {
 // reports what actually arrived — level, and the strongest frequency in it — which is a
 // claim somebody can check by making a noise at it.
 //
-// The frequency estimate is a Goertzel sweep rather than an FFT. A few dozen single-bin
-// evaluations cost nothing, need no buffer of their own, and answer the only question
-// being asked here, which is "is this the tone I am playing at it?".
+// The frequency estimate is a Goertzel bank rather than an FFT: single-bin evaluations
+// need no scratch buffer and no library, and the question being asked is only "is this
+// the tone I am playing at it?".
+//
+// The bins have to tile the spectrum, though, and the first version of this did not.
+// It swept 32 logarithmically-spaced frequencies across the *whole* capture, which made
+// each one a filter 2.5 Hz wide (48000/19200) sitting in gaps 66 Hz apart at 440 Hz and
+// 337 Hz apart at 2500 Hz. A tone registered only if it landed almost exactly on a bin:
+// a 1 kHz test tone read perfectly, because bin 17 happened to be 999.7 Hz, while 440
+// and 2500 read as room rumble with a clearly elevated level right there in the same
+// output. A diagnostic that confidently reports the wrong answer is worse than one that
+// reports nothing.
+//
+// So the bins are now the natural DFT bin centres of a short window — 1536 samples at
+// 48 kHz, so 31.25 Hz apart and 31.25 Hz wide, which is a sieve with no holes in it.
+// Magnitudes are averaged over as many windows as the capture holds, which trades the
+// resolution nothing needs here for a steadier answer on a noisy one.
 void command_mic(int milliseconds) {
     if (!mic_available()) {
         std::printf("ERR no microphone on this board\n");
@@ -569,6 +583,16 @@ void command_mic(int milliseconds) {
     }
     if (milliseconds < 10) milliseconds = 10;
     if (milliseconds > 2000) milliseconds = 2000;
+
+    // Four windows, and single precision throughout the bank below.
+    //
+    // The first version of this used doubles and eight windows, which is six million
+    // emulated operations: the ESP32-S3's FPU is single-precision only, so every double
+    // is a library call, and the console task held CPU 0 long enough for the idle task's
+    // watchdog to fire. Nothing about a frequency readout needs more than a float, and
+    // the bank yields between bins so that a long analysis is merely slow rather than
+    // fatal — the same lesson command_render already carries.
+    constexpr int kMaxWindows = 4;
 
     const int channels = SG_AUDIO_IN_CHANNELS;
     const int frames = SG_AUDIO_SAMPLE_RATE * milliseconds / 1000;
@@ -615,27 +639,44 @@ void command_mic(int milliseconds) {
         std::printf("  ch%d rms=%.5f peak=%.5f dc=%.1f\n", channel,
                     std::sqrt(sum_of_squares / got), peak, mean);
 
-        // Thirty-two bins from 80 Hz to 8 kHz, logarithmically spaced: speech and any
-        // test tone somebody is likely to play both live in there, and log spacing puts
-        // the resolution where the ear has it.
-        for (int bin = 0; bin < 32; ++bin) {
-            const double frequency = 80.0 * std::pow(100.0, bin / 31.0);
-            const double omega = 2.0 * 3.14159265358979 * frequency / SG_AUDIO_SAMPLE_RATE;
-            const double coefficient = 2.0 * std::cos(omega);
-            double s1 = 0.0;
-            double s2 = 0.0;
-            for (int i = 0; i < got; ++i) {
-                const double value =
-                    (buffer[static_cast<std::size_t>(i) * channels + channel] - mean) / 32768.0;
-                const double s0 = value + coefficient * s1 - s2;
-                s2 = s1;
-                s1 = s0;
+        // The bank. Bin k sits at k * rate / kWindow and is that wide, so the range it
+        // covers — 62 Hz to 5 kHz, which holds speech and any test tone worth playing —
+        // has nothing falling between the bins.
+        constexpr int kWindow = 1536;
+        constexpr int kFirstBin = 2;    // 62.5 Hz
+        constexpr int kLastBin = 160;   // 5000 Hz
+        const int windows = got / kWindow < kMaxWindows ? got / kWindow : kMaxWindows;
+        if (windows == 0) {
+            continue;  // too short a capture to say anything about frequency
+        }
+        const float centre = static_cast<float>(mean);
+        for (int bin = kFirstBin; bin <= kLastBin; ++bin) {
+            const float omega = 2.0f * 3.14159265f * static_cast<float>(bin) / kWindow;
+            const float coefficient = 2.0f * std::cos(omega);
+            float total = 0.0f;
+            for (int window = 0; window < windows; ++window) {
+                float s1 = 0.0f;
+                float s2 = 0.0f;
+                const int start = window * kWindow;
+                for (int i = 0; i < kWindow; ++i) {
+                    const std::size_t at =
+                        static_cast<std::size_t>(start + i) * channels + channel;
+                    const float value = (buffer[at] - centre) * (1.0f / 32768.0f);
+                    const float s0 = value + coefficient * s1 - s2;
+                    s2 = s1;
+                    s1 = s0;
+                }
+                total += std::sqrt(s1 * s1 + s2 * s2 - coefficient * s1 * s2) / kWindow;
             }
-            const double strength =
-                std::sqrt(s1 * s1 + s2 * s2 - coefficient * s1 * s2) / got;
+            const double strength = total / windows;
             if (strength > best_strength) {
                 best_strength = strength;
-                best_frequency = frequency;
+                best_frequency = static_cast<double>(bin) * SG_AUDIO_SAMPLE_RATE / kWindow;
+            }
+            // The idle task needs a turn. Without this the console holds its core for
+            // long enough that the watchdog calls it a hang, which it is not.
+            if ((bin & 15) == 0) {
+                vTaskDelay(1);
             }
         }
     }

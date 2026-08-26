@@ -60,6 +60,7 @@ cmake -S runtime-godot -B runtime-godot/build     # prints "soundgraph: hosting 
 
 # hardware (board on COM3)
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 cmd mic 250   # what it hears
+.venv/Scripts/python tools/esp32/tone-check.py --port COM3              # does it hear us
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 verify-goldens
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 abuse
 .venv/Scripts/python tools/esp32/sg-serial.py --port COM3 soak --cycles 30
@@ -761,11 +762,30 @@ frequency, and the check that settles it is the board listening to *itself*: sil
 above 0.2, silent again 0.0024. Both channels move together; a dead one reads exactly
 zero.
 
-The frequency estimate is a 32-bin Goertzel sweep, 80 Hz to 8 kHz, log spaced. Held notes
-put it within a bin at 880 Hz. At 220 and 440 it reports the *second* harmonic, which is
-not an estimator fault: a 28 mm speaker does not radiate a fundamental that low, and what
-reaches the microphone really is mostly the octave. Worth remembering before trusting it
-as a pitch detector.
+The frequency estimate is a Goertzel bank over the natural DFT bin centres of a
+1536-sample window: 31.25 Hz apart, 31.25 Hz wide, covering 62 Hz to 5 kHz with nothing
+falling between them. `tools/esp32/tone-check.py` closes the loop through the air — the
+computer plays a tone, the board says what it heard — and 440, 1000 and 2500 Hz come back
+as 438, 1000 and 2500.
+
+**Two bugs on the way there, both worth keeping.** The first version swept 32
+logarithmically-spaced bins across the whole capture, which made each one a filter 2.5 Hz
+wide sitting in gaps 66 Hz apart at 440 Hz and 337 Hz apart at 2500 Hz. A tone registered
+only if it landed almost exactly on a bin — and one did: a 1 kHz test tone read
+perfectly, because bin 17 happened to be 999.7 Hz, while 440 and 2500 read as room rumble
+with a clearly elevated level in the very same output. One confident right answer among
+two confident wrong ones is the worst shape a diagnostic can have, and it is only
+visible if the tones are chosen to disagree.
+
+The second was performance. Tiling the spectrum properly meant far more bins, and in
+double precision that is six million emulated operations — the ESP32-S3's FPU is
+single-precision only, so every double is a library call. The console task held its core
+long enough for the idle watchdog to call it a hang. Floats and a yield every sixteen
+bins fixed it; nothing about a frequency readout ever needed more than a float.
+
+Held notes from the board's own speaker still report the *second* harmonic at 220 and
+440 Hz, and that one is not a bug: a 28 mm speaker does not radiate a fundamental that
+low, so what reaches the microphone really is mostly the octave.
 
 **Not done:** `AudioInput` nodes still see silence. Capture works and nothing routes it
 into a graph yet.
