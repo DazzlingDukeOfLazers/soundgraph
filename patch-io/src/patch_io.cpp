@@ -1501,6 +1501,46 @@ bool parse_patch(const std::string& text,
     }
 
 
+    // The roll. Read before the controls only because it has to be read somewhere; the
+    // order of top-level sections in a document has never meant anything.
+    if (const json::Value* sequence = root.find("sequence")) {
+        if (sequence->is_object()) {
+            out.has_sequence = true;
+            if (const json::Value* tempo = sequence->find("tempo")) {
+                out.sequence.tempo = tempo->as_number(120.0);
+            }
+            if (const json::Value* steps = sequence->find("steps")) {
+                out.sequence.steps = static_cast<int>(steps->as_number(16.0));
+            }
+            if (const json::Value* division = sequence->find("division")) {
+                out.sequence.division = static_cast<int>(division->as_number(4.0));
+            }
+            if (const json::Value* notes = sequence->find("notes")) {
+                if (notes->is_array()) {
+                    for (const json::Value& entry : notes->array()) {
+                        if (!entry.is_object()) continue;
+                        SequenceNote note;
+                        if (const json::Value* step = entry.find("step")) {
+                            note.step = static_cast<int>(step->as_number(0.0));
+                        }
+                        if (const json::Value* pitch = entry.find("note")) {
+                            note.note = static_cast<int>(pitch->as_number(60.0));
+                        }
+                        if (const json::Value* length = entry.find("length")) {
+                            note.length = static_cast<int>(length->as_number(1.0));
+                        }
+                        out.sequence.notes.push_back(note);
+                    }
+                }
+            }
+        } else {
+            diagnostics.push_back(warning(
+                "sequence_not_an_object",
+                "The document's \"sequence\" is not an object, so the roll was ignored.",
+                "A sequence is {\"tempo\": 120, \"steps\": 16, \"notes\": [...]}."));
+        }
+    }
+
     if (const json::Value* controls = root.find("controls")) {
         if (controls->is_array()) {
             for (const json::Value& entry : controls->array()) {
@@ -1917,6 +1957,26 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
             controls.push_back(std::move(entry));
         }
         root.set("controls", std::move(controls));
+    }
+
+    // Written only when the document had one, so a patch with no roll does not acquire an
+    // empty one by being saved.
+    if (description.has_sequence) {
+        json::Value sequence = json::Value::make_object();
+        sequence.set("tempo", json::Value(description.sequence.tempo));
+        sequence.set("steps", json::Value(static_cast<double>(description.sequence.steps)));
+        sequence.set("division",
+                     json::Value(static_cast<double>(description.sequence.division)));
+        json::Value notes = json::Value::make_array();
+        for (const SequenceNote& note : description.sequence.notes) {
+            json::Value entry = json::Value::make_object();
+            entry.set("step", json::Value(static_cast<double>(note.step)));
+            entry.set("note", json::Value(static_cast<double>(note.note)));
+            entry.set("length", json::Value(static_cast<double>(note.length)));
+            notes.push_back(std::move(entry));
+        }
+        sequence.set("notes", std::move(notes));
+        root.set("sequence", std::move(sequence));
     }
 
     if (!automation_out.empty()) {

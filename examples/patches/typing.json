@@ -463,5 +463,187 @@
         "midi_channel": 1
       }
     }
-  ]
+  ],
+  "sequence": {
+    "tempo": 120.0,
+    "steps": 101,
+    "division": 16,
+    "notes": [
+      {
+        "step": 0,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 3,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 5,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 7,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 10,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 12,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 16,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 18,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 20,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 23,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 25,
+        "note": 48,
+        "length": 1
+      },
+      {
+        "step": 32,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 34,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 37,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 39,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 41,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 44,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 46,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 51,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 53,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 55,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 58,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 59,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 62,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 64,
+        "note": 48,
+        "length": 1
+      },
+      {
+        "step": 72,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 74,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 77,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 79,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 81,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 84,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 86,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 88,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 92,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 94,
+        "note": 60,
+        "length": 1
+      }
+    ]
+  }
 }

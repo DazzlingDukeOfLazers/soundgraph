@@ -212,6 +212,7 @@ var roll_button: MenuButton
 var roll_play: Button
 var roll_capture: Button
 var roll_tempo: ValueField
+var roll_division: ValueField
 var roll_bars_menu: PopupMenu
 var midi_dialog: FileDialog
 var roll_open := false
@@ -5115,6 +5116,7 @@ func _set_roll_open(open: bool) -> void:
 	roll_play.visible = open
 	roll_capture.visible = open
 	roll_tempo.visible = open
+	roll_division.visible = open
 	Settings.store("piano_roll", open)
 	_sync_roll_menu()
 	piano_roll.sequence = patch.get("sequence", {})
@@ -5178,10 +5180,51 @@ func _set_roll_playing(playing: bool) -> void:
 		piano_roll.playing_step = -1
 
 
+## How long one step of the roll lasts.
+##
+## Four steps to the beat was hard-coded, which put the shortest note at 62 ms even with
+## the tempo against its ceiling — comfortable for drums and far too slow for typing,
+## where the whole point is a burst of keys faster than a beat. The division is part of
+## the document now, so a roll can be sixteenths, thirty-seconds or sixty-fourths and
+## still say what it is when it is opened somewhere else.
 func _roll_step_seconds() -> float:
-	var tempo: float = float(patch.get("sequence", {}).get("tempo", 120.0))
-	# Sixteenth notes: four steps to the beat.
-	return 60.0 / clampf(tempo, 40.0, 240.0) / 4.0
+	var sequence: Dictionary = patch.get("sequence", {})
+	var tempo: float = float(sequence.get("tempo", 120.0))
+	var division: float = float(sequence.get("division", 4))
+	return 60.0 / clampf(tempo, 40.0, 240.0) / clampf(division, 1.0, 16.0)
+
+
+## Steps to the beat: 4 is sixteenths, 8 thirty-seconds, 16 sixty-fourths.
+func _roll_division() -> int:
+	return int(clampi(int(_roll_sequence().get("division", 4)), 1, 16))
+
+
+func _set_roll_division(value: float) -> void:
+	_begin_edit()
+	# Powers of two only. The roll is drawn on a grid and the grid is drawn in halves;
+	# a division of five would be a lattice nobody asked for.
+	var wanted := int(round(clampf(value, 1.0, 16.0)))
+	var allowed := [1, 2, 4, 8, 16]
+	var nearest: int = allowed[0]
+	for option in allowed:
+		if absi(option - wanted) < absi(nearest - wanted):
+			nearest = option
+	_roll_sequence()["division"] = nearest
+	_commit_edit("roll division")
+	_refresh_roll_tempo_text()
+	piano_roll.sequence = patch.get("sequence", {})
+	piano_roll.queue_redraw()
+	_say("%s to the bar" % _division_name(nearest))
+
+
+func _division_name(division: int) -> String:
+	match division:
+		1: return "quarter notes"
+		2: return "eighths"
+		4: return "sixteenths"
+		8: return "thirty-seconds"
+		16: return "sixty-fourths"
+	return "%d to the beat" % division
 
 
 ## The roll, rendered instead of played: a second engine walks the same steps the
@@ -5262,6 +5305,14 @@ func _refresh_roll_tempo_text() -> void:
 	var tempo: float = float(patch.get("sequence", {}).get("tempo", 120.0))
 	roll_tempo.text = "%d bpm" % int(round(tempo))
 	roll_tempo.position_now = roll_tempo.to_position.call(tempo)
+	if roll_division != null:
+		var division := _roll_division()
+		roll_division.text = "1/%d" % (division * 4)
+		roll_division.position_now = roll_division.to_position.call(float(division))
+		roll_division.tooltip_text = ("%s: %d ms a step at this tempo. Typing wants "
+			+ "thirty-seconds or faster; drums rarely do.") % [
+				_division_name(division).capitalize(),
+				int(round(_roll_step_seconds() * 1000.0))]
 
 
 ## The piece grows a bar at a time under notes placed past its end: the window can
@@ -5630,6 +5681,23 @@ func _build_keyboard_bar() -> Control:
 	roll_tempo.value_submitted.connect(_set_roll_tempo)
 	roll_tempo.visible = false
 	bar.add_child(roll_tempo)
+
+	# Beside the tempo, because they are the same question asked twice: how fast, and how
+	# finely. Typing wants the second one and drums rarely do, which is why it defaults to
+	# the sixteenths everything was already using.
+	roll_division = ValueField.new()
+	roll_division.centred = true
+	roll_division.custom_minimum_size.x = Design.scale(84)
+	roll_division.text = "1/16"
+	roll_division.default_value = 4.0
+	roll_division.position_now = 0.5
+	roll_division.to_value = func(position: float) -> float:
+		return 1.0 + 15.0 * clampf(position, 0.0, 1.0)
+	roll_division.to_position = func(value: float) -> float:
+		return clampf((value - 1.0) / 15.0, 0.0, 1.0)
+	roll_division.value_submitted.connect(_set_roll_division)
+	roll_division.visible = false
+	bar.add_child(roll_division)
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(gap)
