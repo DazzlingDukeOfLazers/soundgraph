@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Typing",
+    "description": "One keystroke, two layers: a filtered noise burst for the thock and a short square blip for the click. Each key varies."
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "NoteInput"
+    },
+    {
+      "id": "wobble",
+      "type": "LFO",
+      "parameters": {
+        "rate": 37.0,
+        "shape": 4,
+        "amount": 1.0
+      }
+    },
+    {
+      "id": "hold",
+      "type": "SampleHold"
+    },
+    {
+      "id": "spread",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 900.0
+      }
+    },
+    {
+      "id": "centre",
+      "type": "Add",
+      "parameters": {
+        "offset": 2200.0
+      }
+    },
+    {
+      "id": "hiss",
+      "type": "Noise",
+      "parameters": {
+        "colour": 0.0
+      }
+    },
+    {
+      "id": "body",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "mode": 2,
+        "resonance": 0.55
+      }
+    },
+    {
+      "id": "thock",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.0,
+        "hold": 0.004,
+        "decay": 0.035
+      }
+    },
+    {
+      "id": "thock_amp",
+      "type": "Gain"
+    },
+    {
+      "id": "clicker",
+      "type": "SquareOscillator",
+      "parameters": {
+        "frequency": 620.0,
+        "pulse_width": 0.25
+      }
+    },
+    {
+      "id": "click",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.0,
+        "hold": 0.001,
+        "decay": 0.012
+      }
+    },
+    {
+      "id": "click_amp",
+      "type": "Gain"
+    },
+    {
+      "id": "mix",
+      "type": "Mixer",
+      "parameters": {
+        "level1": 1.0,
+        "level2": 0.35
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 0.9
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "thock",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "click",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "wobble",
+        "port": "out"
+      },
+      "to": {
+        "node": "hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "spread",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "spread",
+        "port": "out"
+      },
+      "to": {
+        "node": "centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "centre",
+        "port": "out"
+      },
+      "to": {
+        "node": "body",
+        "port": "cutoff"
+      }
+    },
+    {
+      "from": {
+        "node": "hiss",
+        "port": "out"
+      },
+      "to": {
+        "node": "body",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "body",
+        "port": "out"
+      },
+      "to": {
+        "node": "thock_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "thock",
+        "port": "out"
+      },
+      "to": {
+        "node": "thock_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "clicker",
+        "port": "out"
+      },
+      "to": {
+        "node": "click_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "click",
+        "port": "out"
+      },
+      "to": {
+        "node": "click_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thock_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "click_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ]
+}

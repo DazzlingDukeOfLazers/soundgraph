@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Babble",
+    "description": "Nonsense speech from a formant filter: a syllable rate, a random vowel and a random pitch held for each one."
+  },
+  "nodes": [
+    {
+      "id": "syl",
+      "type": "Retrigger",
+      "parameters": {
+        "rate": 7.0,
+        "width": 2.0
+      }
+    },
+    {
+      "id": "vowel_source",
+      "type": "LFO",
+      "parameters": {
+        "rate": 31.0,
+        "shape": 4,
+        "amount": 1.0
+      }
+    },
+    {
+      "id": "pitch_source",
+      "type": "LFO",
+      "parameters": {
+        "rate": 23.0,
+        "shape": 4,
+        "amount": 1.0
+      }
+    },
+    {
+      "id": "vowel_hold",
+      "type": "SampleHold"
+    },
+    {
+      "id": "pitch_hold",
+      "type": "SampleHold"
+    },
+    {
+      "id": "vowel_scale",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 2.0
+      }
+    },
+    {
+      "id": "vowel_centre",
+      "type": "Add",
+      "parameters": {
+        "offset": 2.0
+      }
+    },
+    {
+      "id": "pitch_scale",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 90.0
+      }
+    },
+    {
+      "id": "pitch_centre",
+      "type": "Add",
+      "parameters": {
+        "offset": 250.0
+      }
+    },
+    {
+      "id": "voice",
+      "type": "SawOscillator"
+    },
+    {
+      "id": "mouth",
+      "type": "Formant",
+      "parameters": {
+        "emphasis": 0.8
+      }
+    },
+    {
+      "id": "env",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.005,
+        "hold": 0.03,
+        "decay": 0.06
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain"
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 0.9
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "syl",
+        "port": "gate"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "syl",
+        "port": "gate"
+      },
+      "to": {
+        "node": "vowel_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "syl",
+        "port": "gate"
+      },
+      "to": {
+        "node": "pitch_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_source",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_source",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_scale",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_centre",
+        "port": "out"
+      },
+      "to": {
+        "node": "mouth",
+        "port": "morph"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_scale",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_centre",
+        "port": "out"
+      },
+      "to": {
+        "node": "voice",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "voice",
+        "port": "out"
+      },
+      "to": {
+        "node": "mouth",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "mouth",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ]
+}
