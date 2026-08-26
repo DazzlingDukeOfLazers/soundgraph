@@ -8,7 +8,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PORT=${SG_PORT:-/dev/cu.usbmodem101}
-CROP=${SG_CROP:-700,180,720,800}
+CROP=${SG_CROP:-560,250,700,800}
 # pyserial lives in the IDF virtualenv rather than in the system python.
 CMD=$1
 OUT=$2
@@ -24,7 +24,13 @@ s.close()
 PY
 
 rm -f "$OUT"
-open -a "$HERE/bench-cam.app" --args "$OUT" --warmup 12 --crop "$CROP"
+# SG_CROP=none takes the whole frame, which is what you want after the camera moves:
+# a stale crop of a moved camera photographs the desk.
+if [ "$CROP" = none ]; then
+    open -a "$HERE/bench-cam.app" --args "$OUT" --warmup 12
+else
+    open -a "$HERE/bench-cam.app" --args "$OUT" --warmup 12 --crop "$CROP"
+fi
 for _ in $(seq 40); do [ -s "$OUT" ] && break; sleep 0.25; done
 [ -s "$OUT" ] || { echo "shoot: no image at $OUT" >&2; exit 1; }
 echo "shot $OUT"

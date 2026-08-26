@@ -379,7 +379,7 @@ bool display_init() {
     panel_config.reset_gpio_num = SG_DISPLAY_RESET;
     // BGR, not RGB: this glass wires the channels the other way round, and a red fill
     // arrives blue if you take the vendor BSP's word for it. Measured on the board.
-    panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
+    panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
     panel_config.bits_per_pixel = 24;
     panel_config.vendor_config = &vendor;
     if (esp_lcd_new_panel_sh8601(g_io, &panel_config, &g_panel) != ESP_OK) {

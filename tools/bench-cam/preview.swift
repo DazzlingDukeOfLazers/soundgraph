@@ -46,7 +46,14 @@ final class PreviewController: NSObject, NSApplicationDelegate,
 
     func applicationDidFinishLaunching(_ note: Notification) {
         session.beginConfiguration()
-        if session.canSetSessionPreset(.hd1920x1080) { session.sessionPreset = .hd1920x1080 }
+        // Whatever the sensor will give. A 4K camera downsampled to 1080p and then cropped
+        // to a two-inch watch leaves a couple of hundred pixels to judge a colour by; the
+        // same crop off the full sensor is four times the evidence.
+        for preset in [AVCaptureSession.Preset.hd4K3840x2160, .hd1920x1080, .high]
+        where session.canSetSessionPreset(preset) {
+            session.sessionPreset = preset
+            break
+        }
         guard let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else {
             fatal("camera will not attach")
         }

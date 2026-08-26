@@ -40,7 +40,14 @@ final class Shooter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         session.beginConfiguration()
         // The highest the camera offers: reading a small screen from across a desk needs
         // every pixel it can get.
-        if session.canSetSessionPreset(.hd1920x1080) { session.sessionPreset = .hd1920x1080 }
+        // Whatever the sensor will give. A 4K camera downsampled to 1080p and then cropped
+        // to a two-inch watch leaves a couple of hundred pixels to judge a colour by; the
+        // same crop off the full sensor is four times the evidence.
+        for preset in [AVCaptureSession.Preset.hd4K3840x2160, .hd1920x1080, .high]
+        where session.canSetSessionPreset(preset) {
+            session.sessionPreset = preset
+            break
+        }
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else { throw Failure("camera will not attach") }
         session.addInput(input)
