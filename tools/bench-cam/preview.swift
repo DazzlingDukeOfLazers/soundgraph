@@ -31,6 +31,9 @@ final class PreviewController: NSObject, NSApplicationDelegate,
     private var window: NSWindow!
     private var readout: NSTextField!
     private var lockBox: NSButton!
+    private var videoLayer: AVCaptureVideoPreviewLayer!
+    private var cropLayer: CAShapeLayer!
+    private var videoView: NSView!
 
     private let frameLock = NSLock()
     private var latest: CVImageBuffer?
@@ -93,11 +96,22 @@ final class PreviewController: NSObject, NSApplicationDelegate,
 
         let video = NSView(frame: NSRect(x: 0, y: panelHeight, width: width, height: videoHeight))
         video.wantsLayer = true
-        let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.frame = video.bounds
-        layer.videoGravity = .resizeAspect
-        layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        video.layer?.addSublayer(layer)
+        videoLayer = AVCaptureVideoPreviewLayer(session: session)
+        videoLayer.frame = video.bounds
+        videoLayer.videoGravity = .resizeAspect
+        videoLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        video.layer?.addSublayer(videoLayer)
+
+        // The crop is the only part of the frame that survives to the file, so it is the
+        // only part worth aiming. Drawn over the feed, tuning the camera distance becomes
+        // "fill this box" rather than "shoot, look, guess, shoot again".
+        cropLayer = CAShapeLayer()
+        cropLayer.fillColor = NSColor.clear.cgColor
+        cropLayer.strokeColor = NSColor.systemYellow.cgColor
+        cropLayer.lineWidth = 2
+        cropLayer.lineDashPattern = [6, 4]
+        video.layer?.addSublayer(cropLayer)
+        videoView = video
         video.autoresizingMask = [.width, .height]
         content.addSubview(video)
 
@@ -132,6 +146,31 @@ final class PreviewController: NSObject, NSApplicationDelegate,
 
         window.contentView = content
         window.makeKeyAndOrderFront(nil)
+        drawCropBox()
+    }
+
+    // ---- crop box -----------------------------------------------------------------
+
+    // Sensor pixels to view points. resizeAspect letterboxes the feed inside the view, so
+    // the mapping has to account for the bars — and the origin flips, because Core
+    // Graphics counts up from the bottom while an image counts down from the top.
+    private func drawCropBox() {
+        guard let (x, y, w, h) = crop else { cropLayer.path = nil; return }
+        let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+        let sensor = CGSize(width: CGFloat(size.width), height: CGFloat(size.height))
+        guard sensor.width > 0, sensor.height > 0 else { return }
+
+        let bounds = videoView.bounds
+        let scale = min(bounds.width / sensor.width, bounds.height / sensor.height)
+        let shown = CGSize(width: sensor.width * scale, height: sensor.height * scale)
+        let originX = (bounds.width - shown.width) / 2
+        let originY = (bounds.height - shown.height) / 2
+
+        let rect = CGRect(x: originX + CGFloat(x) * scale,
+                          y: originY + (sensor.height - CGFloat(y + h)) * scale,
+                          width: CGFloat(w) * scale, height: CGFloat(h) * scale)
+        cropLayer.frame = bounds
+        cropLayer.path = CGPath(rect: rect, transform: nil)
     }
 
     // ---- exposure -----------------------------------------------------------------
@@ -159,8 +198,8 @@ final class PreviewController: NSObject, NSApplicationDelegate,
                         : "clean"
             let held = self.device.exposureMode == .locked ? "held" : "auto"
             self.readout.stringValue = String(
-                format: "%5.2f%% at the ceiling   %@   |  exposure %@  |  %d saved",
-                clipped * 100, verdict, held, self.saved)
+                format: "%5.2f%% at the ceiling   %@   |  exposure %@  |  crop %@  |  %d saved",
+                clipped * 100, verdict, held, self.cropDescription, self.saved)
             self.readout.textColor = clipped > 0.02 ? .systemRed
                                    : clipped > 0.002 ? .systemYellow : .systemGreen
         }
@@ -185,6 +224,11 @@ final class PreviewController: NSObject, NSApplicationDelegate,
             }
         }
         return seen == 0 ? 0 : Double(hot) / Double(seen)
+    }
+
+    private var cropDescription: String {
+        guard let (_, _, w, h) = crop else { return "whole frame" }
+        return "\(w)x\(h)"
     }
 
     // ---- shutter ------------------------------------------------------------------
