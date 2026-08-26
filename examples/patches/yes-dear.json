@@ -1,0 +1,117 @@
+{
+  "schema_version": 3,
+  "metadata": {
+    "name": "Yes Dear",
+    "description": "Mother answers. The Speak & Spell voice saying \"yes dear?\", for the board to reply with when somebody calls it."
+  },
+  "buffers": {
+    "phrase": {
+      "sample_rate": 8000,
+      "channels": 1,
+      "format": "pcm16",
+      "data": "IgD4ALEAFQCnALYAGQDOACcAEwA5AC0AuwA4AAwACgC7AEkAigDbAGoAIAB8AKYAaABOALsAZwCqAB0AtQA5AAwApwAyAG0AjADmAKwAmwAsANEAMQCTAKMAagBCAMwAvgBsAG4AogDsAE4AWwDAALUAaQAiADwA5AAIAIsAgAAsABkAEQCQAF8AbwBSALIAZQDcAK0AVQDoAMgA0gBTADcARwARAEAAPwDPAHAA5QBCAGQAhgDrAAQA0AChAGIAAgB6AOQAXQCiAC4AQgDYADoAqgCJANgAhADxAJ8AtgAWAOYAFADWAJ4A2gAaAIgAUwBUAPMAagBsAB8AZgBhALsArACtAH0AFwBKACkAdgC2AOYAWQApAMYAxgCSAJoAVwBnACwAGgBDAGsAXQC1AHEATACLAJAAcQBUAEYA5gBsALIAxQDRABkAeAC1AEEA1QBWAGsAHADWAAoAPACaAK0AUwA5AMgAzABkAPYAkgChACQAIQCCAFkAjACUAIMAFAAeAA=="
+    }
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "Input",
+      "host": "note",
+      "position": {
+        "x": 0,
+        "y": 360
+      }
+    },
+    {
+      "id": "demo",
+      "type": "Speech",
+      "buffer": "phrase",
+      "position": {
+        "x": 560,
+        "y": 0
+      },
+      "parameters": {
+        "pitch": 1,
+        "speed": 1,
+        "level": 1,
+        "loop": 0
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "position": {
+        "x": 1120,
+        "y": 0
+      },
+      "parameters": {
+        "gain": 0.9
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "host": "stereo",
+      "position": {
+        "x": 1680,
+        "y": 0
+      },
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "demo",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "demo",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "demo",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ]
+}

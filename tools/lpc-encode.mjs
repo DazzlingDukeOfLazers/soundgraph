@@ -215,7 +215,7 @@ const wavPaths = args.filter((a) => a !== '--stats');
 if (wavPaths.length === 0) {
   console.error('usage: node tools/lpc-encode.mjs voice.wav [more.wav ...] [--stats]');
   console.error('  several WAVs become one bank: each file is a stop-delimited phrase,');
-  console.error('  and the Speech node's note input picks one.');
+  console.error("  and the Speech node's note input picks one.");
   process.exit(2);
 }
 const bytes = [];

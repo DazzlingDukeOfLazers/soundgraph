@@ -24,6 +24,9 @@ enum SpeechCommand {
     kSpeechQuieter,
     kSpeechStartPlaying,
     kSpeechStopPlaying,
+    // Not an instruction — an address. Calling the board by name makes it duck whatever
+    // it is playing and answer, which is the whole of what it does.
+    kSpeechHeyMom,
     kSpeechCommandCount,
 };
 

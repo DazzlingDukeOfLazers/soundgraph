@@ -37,13 +37,16 @@ endif()
 file(READ ${SG_ROOT}/tests/golden/cases.json SG_GOLDEN_MANIFEST)
 string(JSON SG_CASE_COUNT LENGTH "${SG_GOLDEN_MANIFEST}" cases)
 
-set(SG_EMBED_PATCHES ${SG_ROOT}/examples/patches/first-synth.json)
+# The boot patch, and the board's own reply. yes-dear.json is a Speech node with 194
+# bytes of LPC in it — what the board says when somebody calls it by name.
+set(SG_EMBED_PATCHES ${SG_ROOT}/examples/patches/first-synth.json
+                     ${SG_ROOT}/examples/patches/yes-dear.json)
 set(SG_PATCH_EXTERNS "")
 set(SG_PATCH_TABLE "")
 
 # The boot patch is not a golden case, so it is named explicitly; the rest come from the
 # manifest in its own order.
-set(SG_PATCH_NAMES "first-synth")
+set(SG_PATCH_NAMES "first-synth" "yes-dear")
 math(EXPR SG_LAST_CASE "${SG_CASE_COUNT} - 1")
 foreach(index RANGE ${SG_LAST_CASE})
     string(JSON SG_CASE_NAME GET "${SG_GOLDEN_MANIFEST}" cases ${index} name)

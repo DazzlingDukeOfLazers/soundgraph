@@ -839,6 +839,44 @@ run that looked like steady decay was the room. The ten successful wakes sat at 
 Latest clean run: **wake word 13/13, commands 9/13 phrasings, and all six commands
 reachable** by at least one of their names.
 
+### Being called by name (2026-08-26)
+
+Say "Hi ESP, hey mom" and the music ducks to 18% while the board answers "yes dear?" in
+its own voice — a Speak & Spell LPC phrase, 194 bytes, played by a Speech node in
+`examples/patches/yes-dear.json`. The reply is a *patch*, built once at boot into a second
+Graph and mixed over the live one by the same audio task. The board answers using
+SoundGraph, not a text-to-speech engine bolted to the side.
+
+Verified the way the microphone makes possible: called by name, the board woke, matched
+"hey mom" at 0.14, and the mic then read rms 0.048 and peak 0.311 against a silent room at
+0.0025. It said the thing, and it heard itself say it. All 21 golden cases still match
+with the reply mixer in the audio task.
+
+**"Hey Mom" is a command, not a wake word, and that is a hardware fact rather than a
+choice.** WakeNet wake words are pre-trained neural models; Espressif ships a fixed
+English list — Alexa, Hi ESP, Computer, Hey Willow, Hey Wanda, Hey Ivy, Hey Ily, Hey
+Kira, Hi Andy, Hi Fairy, Hi Jason, Hi Jolly — and `wn9_customword` is a placeholder for
+one they train to order. There is no "Hey Mom" and none can be made here.
+
+The obvious way round it was to run MultiNet continuously so any phrase could be a wake
+word. It does not fit on this chip. Matching every chunk starved the idle task on its own
+core and the watchdog called it a hang inside twenty seconds. Gating on the AFE's voice
+detector fixed the quiet room and then failed the moment anybody spoke — "Ringbuffer of
+AFE(FEED) is full", the pipeline being fed faster than it can chew. `switch_loader_mode`
+trades memory rather than cycles and there is no cheaper search method to select. MultiNet
+is built on the assumption that a wake word gates it: the wake word is cheap and the
+matcher is not, and the window is the whole arrangement, not an inconvenience in it.
+
+So the options for a real "Hey Mom" are: commission a custom WakeNet model from Espressif,
+substitute one of the shipped names, or say "Hi ESP" first. It currently says "Hi ESP"
+first.
+
+**And it does not work over its own music.** With the arpeggiator playing at volume 70 the
+board hears its own speaker and neither the wake word nor the command lands. That is the
+echo cancellation gap: the front end is configured for one microphone and no reference
+channel, because this board offers no loopback of what its amplifier is doing. A duck that
+happens *after* the phrase is recognised does not help the phrase get recognised.
+
 **Not done.** "next patch" and "previous patch" are recognised and then print "not wired
 yet": switching patches from the recognition task would rebuild the graph underneath the
 audio task, and the console's own `load` path already solves that properly. It wants to go

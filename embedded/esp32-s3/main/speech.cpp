@@ -70,6 +70,9 @@ const Phrase kPhrases[] = {
     {kSpeechStartPlaying, "play the sound"},
     {kSpeechStopPlaying, "stop playing"},
     {kSpeechStopPlaying, "be quiet"},
+    {kSpeechHeyMom, "hey mom"},
+    {kSpeechHeyMom, "hey mum"},
+    {kSpeechHeyMom, "hello mother"},
 };
 
 constexpr int kPhraseCount = sizeof(kPhrases) / sizeof(kPhrases[0]);
@@ -155,6 +158,24 @@ void feed_task(void*) {
 
 // Takes cleaned audio back out, watches for the wake word, and runs the matcher inside
 // the window it opens.
+//
+// The matcher runs only inside that window, and the attempt to change that is worth
+// recording. "Hey Mom" cannot be a WakeNet wake word — those are pre-trained neural
+// models and Espressif ships a fixed English list (Alexa, Hi ESP, Computer, Hey Willow
+// and friends), with the custom slot a placeholder for one they train to order. So the
+// obvious move was to run MultiNet continuously and make "hey mom" an ordinary command
+// that needs no wake word.
+//
+// It does not fit. Running the matcher on every chunk starved the idle task on its own
+// core and the watchdog called it a hang within twenty seconds. Gating it on the AFE's
+// voice detector — only match while somebody is actually talking — stopped the starvation
+// in a quiet room and then failed the moment anybody spoke: "Ringbuffer of AFE(FEED) is
+// full", which is the pipeline saying it is being fed faster than it can chew. MultiNet
+// is not realtime on this chip beside a running graph, and it is built on the assumption
+// that it will not have to be: a wake word is cheap, a matcher is not, and the window is
+// the whole point of the arrangement.
+//
+// So "hey mom" is a command like any other, and answering to it costs a wake word first.
 void fetch_task(void*) {
     bool inside_window = false;
 
@@ -196,14 +217,9 @@ void fetch_task(void*) {
         }
 
         // Detected or timed out, the window closes the same way: back to listening for
-        // the wake word. A command is one utterance, not a mode. Logged either way,
-        // because "the board did not hear me" and "the board was not listening yet" look
-        // identical from outside and are fixed by opposite things.
+        // the wake word. A command is one utterance, not a mode.
         inside_window = false;
         g_afe->enable_wakenet(g_afe_data);
-        if (state == ESP_MN_STATE_TIMEOUT) {
-            ESP_LOGI(TAG, "nothing said; listening for the wake word again");
-        }
     }
 
     vTaskDelete(nullptr);

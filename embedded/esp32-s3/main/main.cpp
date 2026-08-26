@@ -186,6 +186,20 @@ private:
 std::atomic<soundgraph::Graph*> g_live_graph{nullptr};
 Sequencer g_sequencer;
 i2s_chan_handle_t g_tx_channel = nullptr;
+// Mother's own graph: the yes-dear patch, built once at boot and left standing. It is a
+// SoundGraph patch like any other — a Speech node with 194 bytes of LPC in it — which is
+// the point. The board answers in its own voice rather than in a text-to-speech engine's.
+soundgraph::Graph* g_reply = nullptr;
+// Frames of reply left to render. Nonzero means she is talking; the music ducks for
+// exactly as long as that lasts. Written by the console and speech tasks, read by the
+// audio task, which is why it is atomic and why nothing else about her is.
+std::atomic<int> g_reply_frames{0};
+
+// How far the music drops while she speaks, and how long her line takes. A duck rather
+// than a mute: a parent talking over the radio does not switch the radio off.
+constexpr float kDuck = 0.18f;
+constexpr int kReplyFrames = SG_AUDIO_SAMPLE_RATE * 3 / 2;  // a second and a half
+
 // Output volume as last set, so a relative change has something to be relative to.
 // codec_init starts the codec at 55.
 float g_volume = 55.0f;
@@ -209,6 +223,22 @@ void audio_task(void*) {
 
         g_sequencer.advance(*graph, kBlock);
         graph->render(left, right, kBlock);
+
+        // Her reply, over the top, with the music pulled down under it. Both graphs are
+        // rendered by this one task, so there is no second audio thread and nothing to
+        // synchronise beyond the frame counter.
+        int replying = g_reply_frames.load(std::memory_order_acquire);
+        if (replying > 0 && g_reply != nullptr) {
+            float reply_left[kBlock];
+            float reply_right[kBlock];
+            g_reply->render(reply_left, reply_right, kBlock);
+            for (int i = 0; i < kBlock; ++i) {
+                left[i] = left[i] * kDuck + reply_left[i];
+                right[i] = right[i] * kDuck + reply_right[i];
+            }
+            replying -= kBlock;
+            g_reply_frames.store(replying > 0 ? replying : 0, std::memory_order_release);
+        }
 
         for (int i = 0; i < kBlock; ++i) {
             float l = left[i];
@@ -700,6 +730,15 @@ void on_speech_command(int command, const char* phrase, float probability) {
 
     soundgraph::Graph* graph = g_live_graph.load(std::memory_order_acquire);
     switch (command) {
+        case kSpeechHeyMom:
+            // Answering is the whole action. The note is what starts the Speech node —
+            // the reply is a patch, and a patch is played, not printed.
+            if (g_reply != nullptr) {
+                g_reply->reset();
+                g_reply->note_on(60, 1.0f);
+                g_reply_frames.store(kReplyFrames, std::memory_order_release);
+            }
+            break;
         case kSpeechLouder:
             g_volume = g_volume + 10.0f > 100.0f ? 100.0f : g_volume + 10.0f;
             codec_set_volume(g_volume);
@@ -908,6 +947,16 @@ extern "C" void app_main(void) {
     // is a board with a console, which is how every other board is driven anyway.
     if (!speech_start(on_speech_command)) {
         ESP_LOGI(TAG, "speech recognition unavailable on this board");
+    }
+
+    // Her graph, built once and kept. Not fatal if it will not build: a board that
+    // cannot answer is a board that still plays, and it says which of the two happened.
+    {
+        std::string reply_error;
+        g_reply = build_graph(find_embedded_patch("yes-dear"), reply_error);
+        if (g_reply == nullptr) {
+            ESP_LOGW(TAG, "no reply patch: %s", reply_error.c_str());
+        }
     }
 
     g_sequencer.configure(SG_AUDIO_SAMPLE_RATE);
