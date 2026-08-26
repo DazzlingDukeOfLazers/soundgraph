@@ -2,9 +2,13 @@
   "schema_version": 1,
   "metadata": {
     "name": "R2-D2",
-    "description": "A droid. Swooping tones with a metallic edge: sine pairs in phase modulation, bent up on the beats and down on the offbeats, at a rate that reads as speech."
+    "description": "A droid, played. Hold a key and he chatters in that register: swooping tones with a metallic edge, sine pairs in phase modulation, bent up on the beats and down on the offbeats."
   },
   "nodes": [
+    {
+      "id": "kb",
+      "type": "NoteInput"
+    },
     {
       "id": "pulse",
       "type": "Retrigger",
@@ -55,7 +59,7 @@
       "id": "where_centre",
       "type": "Add",
       "parameters": {
-        "offset": 1250.0
+        "offset": 0.0
       }
     },
     {
@@ -137,6 +141,14 @@
       "parameters": {
         "level": 0.85
       }
+    },
+    {
+      "id": "talking_up",
+      "type": "Multiply"
+    },
+    {
+      "id": "talking_down",
+      "type": "Multiply"
     }
   ],
   "connections": [
@@ -192,16 +204,6 @@
     },
     {
       "from": {
-        "node": "where_scale",
-        "port": "out"
-      },
-      "to": {
-        "node": "where_centre",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
         "node": "where_centre",
         "port": "out"
       },
@@ -218,46 +220,6 @@
       "to": {
         "node": "down",
         "port": "frequency"
-      }
-    },
-    {
-      "from": {
-        "node": "asking",
-        "port": "gate"
-      },
-      "to": {
-        "node": "up",
-        "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "answering",
-        "port": "gate"
-      },
-      "to": {
-        "node": "down",
-        "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "asking",
-        "port": "gate"
-      },
-      "to": {
-        "node": "env_up",
-        "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "answering",
-        "port": "gate"
-      },
-      "to": {
-        "node": "env_down",
-        "port": "gate"
       }
     },
     {
@@ -389,6 +351,106 @@
         "node": "out",
         "port": "right"
       }
+    },
+    {
+      "from": {
+        "node": "asking",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking_up",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking_up",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "answering",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking_down",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking_down",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "talking_up",
+        "port": "out"
+      },
+      "to": {
+        "node": "up",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking_up",
+        "port": "out"
+      },
+      "to": {
+        "node": "env_up",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking_down",
+        "port": "out"
+      },
+      "to": {
+        "node": "down",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking_down",
+        "port": "out"
+      },
+      "to": {
+        "node": "env_down",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "where_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "where_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "where_centre",
+        "port": "b"
+      }
     }
   ],
   "controls": [
@@ -414,13 +476,13 @@
       "label": "Register",
       "kind": "knob",
       "target": {
-        "node": "where_centre",
-        "parameter": "offset"
+        "node": "kb",
+        "parameter": "transpose"
       },
-      "min": 400.0,
-      "max": 2400.0,
-      "default": 1250.0,
-      "scaling": "exponential",
+      "min": -24.0,
+      "max": 36.0,
+      "default": 12.0,
+      "scaling": "linear",
       "binding": {
         "midi_cc": 71,
         "midi_channel": 1

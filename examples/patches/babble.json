@@ -2,9 +2,13 @@
   "schema_version": 1,
   "metadata": {
     "name": "Babble",
-    "description": "Nonsense speech. A vowel and a pitch drawn fresh for every syllable, a consonant burst in front of each, and a slow contour underneath so the phrase rises and falls the way a sentence does."
+    "description": "Nonsense speech, played. Hold a key and it talks at that pitch: a vowel and a pitch drawn fresh for every syllable, a consonant burst in front of each, and a slow contour underneath so the phrase rises and falls the way a sentence does."
   },
   "nodes": [
+    {
+      "id": "kb",
+      "type": "NoteInput"
+    },
     {
       "id": "syl",
       "type": "Retrigger",
@@ -77,7 +81,7 @@
       "id": "pitch_centre",
       "type": "Add",
       "parameters": {
-        "offset": 215.0
+        "offset": 0.0
       }
     },
     {
@@ -147,49 +151,13 @@
       "parameters": {
         "level": 0.9
       }
+    },
+    {
+      "id": "talking",
+      "type": "Multiply"
     }
   ],
   "connections": [
-    {
-      "from": {
-        "node": "syl",
-        "port": "gate"
-      },
-      "to": {
-        "node": "env",
-        "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "syl",
-        "port": "gate"
-      },
-      "to": {
-        "node": "consonant",
-        "port": "gate"
-      }
-    },
-    {
-      "from": {
-        "node": "syl",
-        "port": "gate"
-      },
-      "to": {
-        "node": "vowel_hold",
-        "port": "trigger"
-      }
-    },
-    {
-      "from": {
-        "node": "syl",
-        "port": "gate"
-      },
-      "to": {
-        "node": "pitch_hold",
-        "port": "trigger"
-      }
-    },
     {
       "from": {
         "node": "vowel_rand",
@@ -268,26 +236,6 @@
       "to": {
         "node": "pitch_sum",
         "port": "b"
-      }
-    },
-    {
-      "from": {
-        "node": "pitch_sum",
-        "port": "out"
-      },
-      "to": {
-        "node": "pitch_centre",
-        "port": "a"
-      }
-    },
-    {
-      "from": {
-        "node": "pitch_centre",
-        "port": "out"
-      },
-      "to": {
-        "node": "cords",
-        "port": "frequency"
       }
     },
     {
@@ -389,6 +337,86 @@
         "node": "out",
         "port": "right"
       }
+    },
+    {
+      "from": {
+        "node": "syl",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "consonant",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "pitch_centre",
+        "port": "b"
+      }
     }
   ],
   "controls": [
@@ -414,13 +442,13 @@
       "label": "Voice",
       "kind": "knob",
       "target": {
-        "node": "pitch_centre",
-        "parameter": "offset"
+        "node": "kb",
+        "parameter": "transpose"
       },
-      "min": 90.0,
-      "max": 480.0,
-      "default": 215.0,
-      "scaling": "exponential",
+      "min": -24.0,
+      "max": 24.0,
+      "default": 0.0,
+      "scaling": "linear",
       "binding": {
         "midi_cc": 71,
         "midi_channel": 1
