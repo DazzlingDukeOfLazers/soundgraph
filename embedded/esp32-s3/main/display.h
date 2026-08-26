@@ -40,6 +40,13 @@ void display_disc(int cx, int cy, float radius, uint32_t rgb);
 void display_arc(int cx, int cy, float radius, float thickness,
                  float start_degrees, float end_degrees, uint32_t rgb);
 void display_line(float x0, float y0, float x1, float y1, float width, uint32_t rgb);
+
+// A line with a halo. Not the same thing as a thick line: the core is the signal and the
+// halo is light spilling off it, so they are lit and shaped independently — `width` is
+// the bright core, `glow` how far the spill reaches past it, `intensity` how bright the
+// spill starts (0-100).
+void display_glow_line(float x0, float y0, float x1, float y1,
+                       float width, float glow, int intensity, uint32_t rgb);
 // 5x7 glyphs, integer-scaled. Returns the width drawn.
 int display_text(int x, int y, const char* text, int scale, uint32_t rgb);
 int display_text_width(const char* text, int scale);
@@ -49,6 +56,16 @@ bool display_present();
 
 bool display_set_brightness(int percent);
 bool display_test_card();
+
+// A colour scaled toward black. Correct against a true black ground, which an AMOLED
+// gives for free, and the basis of every halo and dim label in the interface.
+static inline uint32_t display_dim(uint32_t colour, int percent) {
+    const int r = static_cast<int>((colour >> 16) & 0xFF) * percent / 100;
+    const int g = static_cast<int>((colour >> 8) & 0xFF) * percent / 100;
+    const int b = static_cast<int>(colour & 0xFF) * percent / 100;
+    return (static_cast<uint32_t>(r & 0xFF) << 16) |
+           (static_cast<uint32_t>(g & 0xFF) << 8) | static_cast<uint32_t>(b & 0xFF);
+}
 
 static inline uint32_t display_rgb(int r, int g, int b) {
     return (static_cast<uint32_t>(r & 0xFF) << 16) |

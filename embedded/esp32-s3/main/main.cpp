@@ -423,14 +423,7 @@ int g_theme = 0;
 
 const Theme& theme() { return kThemes[g_theme]; }
 
-// A colour scaled toward black, for the bloom under the arc. Cheap in RGB565 and
-// perfectly convincing when the ground really is black.
-uint32_t dimmed(uint32_t colour, int percent) {
-    const int r = ((colour >> 16) & 0xFF) * percent / 100;
-    const int g = ((colour >> 8) & 0xFF) * percent / 100;
-    const int b = (colour & 0xFF) * percent / 100;
-    return display_rgb(r, g, b);
-}
+uint32_t dimmed(uint32_t colour, int percent) { return display_dim(colour, percent); }
 
 struct KnobHit { int cx = 0; int cy = 0; int radius = 0; };
 std::vector<KnobHit> g_knob_hits;
@@ -722,6 +715,144 @@ void draw_face() {
     display_present();
 }
 
+// ---------------------------------------------------------------------------------
+// The glow lab.
+//
+// Every glow in this interface is currently a guess baked into a call site — three
+// hard-coded arcs at widths 8, 5 and 3 with brightnesses 10, 26 and 100. Those numbers
+// were chosen by writing them down, flashing, and squinting, which is a slow way to
+// choose six numbers and a hopeless way to choose them *together*: a halo that is right
+// at one core width is wrong at another, and photographs of a lit screen lie about
+// intensity besides. So the parameters get knobs, and the specimen is a scope graticule
+// — a rectangular grid of straight lines, which is the plainest possible thing to judge
+// a line against and happens to be the shape the interface will actually want.
+//
+// The knobs here are deliberately NOT UiControls sourced from a patch. There is no patch
+// behind them; they are the renderer's own dials, and pretending otherwise would put a
+// second, fake control surface next to the real one.
+
+struct LabState {
+    float width = 2.0f;      // the bright core
+    float glow = 9.0f;       // how far the spill reaches past it
+    float level = 55.0f;     // how bright the spill starts, 0-100
+    float cells = 4.0f;      // grid divisions
+    float hue = 50.0f;       // along a green family, yellow-green to teal
+    float bright = 100.0f;   // the core's own brightness
+};
+LabState g_lab;
+
+std::vector<UiControl> g_lab_controls;
+
+void lab_controls_init() {
+    auto add = [](const char* label, float lo, float hi, float value) {
+        UiControl c;
+        c.label = label;
+        c.min_value = lo;
+        c.max_value = hi;
+        c.value = value;
+        g_lab_controls.push_back(c);
+    };
+    g_lab_controls.clear();
+    add("WIDTH",  0.5f,  8.0f,   g_lab.width);
+    add("GLOW",   0.0f,  28.0f,  g_lab.glow);
+    add("LEVEL",  0.0f,  100.0f, g_lab.level);
+    add("CELLS",  1.0f,  8.0f,   g_lab.cells);
+    add("HUE",    0.0f,  100.0f, g_lab.hue);
+    add("BRIGHT", 20.0f, 100.0f, g_lab.bright);
+}
+
+void lab_pull() {
+    if (g_lab_controls.size() < 6) return;
+    g_lab.width  = g_lab_controls[0].value;
+    g_lab.glow   = g_lab_controls[1].value;
+    g_lab.level  = g_lab_controls[2].value;
+    g_lab.cells  = g_lab_controls[3].value;
+    g_lab.hue    = g_lab_controls[4].value;
+    g_lab.bright = g_lab_controls[5].value;
+}
+
+// One knob across the green family rather than three across all of colour space. The
+// sweep runs yellow-green to teal with green pinned at full, because that is the arc
+// the eye reads as "which green" — the rest of RGB space is not under discussion.
+uint32_t lab_colour() {
+    const float t = g_lab.hue / 100.0f;
+    const int r = static_cast<int>(170.0f * (1.0f - t) + 0.5f);
+    const int b = static_cast<int>(40.0f + 150.0f * t + 0.5f);
+    return display_dim(display_rgb(r, 255, b), static_cast<int>(g_lab.bright + 0.5f));
+}
+
+void draw_lab() {
+    if (!display_available()) return;
+    const int w = display_width(), h = display_height();
+    display_clear(display_rgb(0, 0, 0));
+
+    const uint32_t colour = lab_colour();
+    const int cells = static_cast<int>(g_lab.cells + 0.5f);
+    const int intensity = static_cast<int>(g_lab.level + 0.5f);
+
+    // The graticule. Inset from the glass edge, and given room below for the dials.
+    const int left = 26, right = w - 26, top = 30;
+    const int bottom = top + 190;
+
+    for (int i = 0; i <= cells; ++i) {
+        const float fx = left + (right - left) * static_cast<float>(i) / cells;
+        display_glow_line(fx, static_cast<float>(top), fx, static_cast<float>(bottom),
+                          g_lab.width, g_lab.glow, intensity, colour);
+    }
+    for (int i = 0; i <= cells; ++i) {
+        const float fy = top + (bottom - top) * static_cast<float>(i) / cells;
+        display_glow_line(static_cast<float>(left), fy, static_cast<float>(right), fy,
+                          g_lab.width, g_lab.glow, intensity, colour);
+    }
+
+    // The readout names the six numbers, because the point of the exercise is to leave
+    // with numbers that can be typed into the interface — not with a screen that looked
+    // right once.
+    char line[48];
+    std::snprintf(line, sizeof line, "W%.1f G%.0f L%.0f C%d H%.0f B%.0f",
+                  static_cast<double>(g_lab.width), static_cast<double>(g_lab.glow),
+                  static_cast<double>(g_lab.level), cells,
+                  static_cast<double>(g_lab.hue), static_cast<double>(g_lab.bright));
+    display_text((w - display_text_width(line, 1)) / 2, bottom + 10, line, 1,
+                 display_rgb(120, 132, 140));
+
+    const int columns = 3;
+    const int knob_top = bottom + 28;
+    const int cell_w = (w - 44) / columns;
+    const int cell_h = (h - knob_top - 22) / 2;
+    int radius = (cell_w < cell_h ? cell_w : cell_h) / 2 - 16;
+    if (radius < 14) radius = 14;
+
+    g_knob_hits.assign(g_lab_controls.size(), KnobHit{});
+    for (std::size_t i = 0; i < g_lab_controls.size(); ++i) {
+        const int cx = 22 + cell_w * (static_cast<int>(i) % columns) + cell_w / 2;
+        const int cy = knob_top + cell_h * (static_cast<int>(i) / columns) + cell_h / 2 - 8;
+        draw_knob(cx, cy, radius, g_lab_controls[i], static_cast<int>(i) == g_active_knob);
+        g_knob_hits[i] = KnobHit{cx, cy, radius};
+    }
+    display_present();
+}
+
+// ---------------------------------------------------------------------------------
+// Which set of knobs the finger is on.
+//
+// The touch task used to reach straight into the patch's controls and call draw_face,
+// which made a second screen impossible without duplicating it. A surface is the three
+// things a screen of knobs needs: what the knobs are, how to draw them, and where a
+// change goes. The face sends changes to the running graph; the lab keeps them.
+struct Surface {
+    std::vector<UiControl>* controls;
+    void (*redraw)();
+    void (*changed)();
+};
+
+void face_changed();
+void lab_changed() { lab_pull(); }
+
+const Surface kFaceSurface{&g_ui_controls, draw_face, face_changed};
+const Surface kLabSurface{&g_lab_controls, draw_lab, lab_changed};
+const Surface* g_surface = &kFaceSurface;
+
 // A finger on a knob. Vertical drag rather than rotation: turning a real knob is a
 // wrist movement, but on glass a straight drag is what the hand actually does, and it
 // gives the whole screen height of travel instead of a thumb-sized arc. The value goes
@@ -732,25 +863,26 @@ void touch_task(void*) {
     float held_start_value = 0.0f;
 
     for (;;) {
+        std::vector<UiControl>& controls = *g_surface->controls;
         int x = 0, y = 0;
         if (touch_read(&x, &y)) {
             if (held < 0) {
                 // Generous hit radius: fingers are wider than knobs.
-                for (std::size_t i = 0; i < g_knob_hits.size(); ++i) {
+                for (std::size_t i = 0; i < g_knob_hits.size() && i < controls.size(); ++i) {
                     const KnobHit& hit = g_knob_hits[i];
                     const int dx = x - hit.cx, dy = y - hit.cy;
                     const int reach = hit.radius + 12;
                     if (dx * dx + dy * dy <= reach * reach) {
                         held = static_cast<int>(i);
                         last_y = y;
-                        held_start_value = g_ui_controls[i].value;
+                        held_start_value = controls[i].value;
                         g_active_knob = held;
-                        draw_face();
+                        g_surface->redraw();
                         break;
                     }
                 }
-            } else if (held < static_cast<int>(g_ui_controls.size())) {
-                UiControl& control = g_ui_controls[static_cast<std::size_t>(held)];
+            } else if (held < static_cast<int>(controls.size())) {
+                UiControl& control = controls[static_cast<std::size_t>(held)];
                 const float span = control.max_value - control.min_value;
                 // A full screen height covers the whole range; upward is more.
                 const float travel = static_cast<float>(last_y - y) / display_height();
@@ -760,19 +892,27 @@ void touch_task(void*) {
 
                 if (next != control.value) {
                     control.value = next;
-                    soundgraph::Graph* graph = g_live_graph.load(std::memory_order_acquire);
-                    if (graph != nullptr) {
-                        graph->set_parameter(control.node, control.parameter, next);
-                    }
-                    draw_face();
+                    g_surface->changed();
+                    g_surface->redraw();
                 }
             }
         } else if (held >= 0) {
             held = -1;
             g_active_knob = -1;
-            draw_face();          // back to the title once the finger lifts
+            g_surface->redraw();   // back to the title once the finger lifts
         }
         vTaskDelay(pdMS_TO_TICKS(30));
+    }
+}
+
+// The face's changes are the ones that make sound: straight into the running graph, so
+// it follows the finger.
+void face_changed() {
+    if (g_active_knob < 0 || g_active_knob >= static_cast<int>(g_ui_controls.size())) return;
+    const UiControl& control = g_ui_controls[static_cast<std::size_t>(g_active_knob)];
+    soundgraph::Graph* graph = g_live_graph.load(std::memory_order_acquire);
+    if (graph != nullptr) {
+        graph->set_parameter(control.node, control.parameter, control.value);
     }
 }
 
@@ -1297,14 +1437,32 @@ void console_task(void*) {
                 draw_swatch_grid(std::atoi(tokens[2]));
                 std::printf("OK grid %s\n", tokens[2]);
             } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "face") == 0) {
+                g_surface = &kFaceSurface;
+                g_active_knob = -1;
                 draw_face();
                 std::printf("OK face\n");
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "lab") == 0) {
+                if (g_lab_controls.empty()) lab_controls_init();
+                g_surface = &kLabSurface;
+                g_active_knob = -1;
+                // Typed arguments set the dials directly, because "W2.5 G14 L60" from a
+                // photograph needs to be reproducible without six drags.
+                for (std::size_t i = 0; i + 2 < tokens.size() && i < g_lab_controls.size(); ++i) {
+                    g_lab_controls[i].value = static_cast<float>(std::atof(tokens[i + 2]));
+                }
+                lab_pull();
+                draw_lab();
+                std::printf("OK lab W%.1f G%.0f L%.0f C%.0f H%.0f B%.0f\n",
+                            static_cast<double>(g_lab.width), static_cast<double>(g_lab.glow),
+                            static_cast<double>(g_lab.level), static_cast<double>(g_lab.cells),
+                            static_cast<double>(g_lab.hue), static_cast<double>(g_lab.bright));
             } else if (tokens.size() >= 3 && std::strcmp(tokens[1], "bright") == 0) {
                 display_set_brightness(std::atoi(tokens[2]));
                 std::printf("OK brightness %s\n", tokens[2]);
             } else {
-                std::printf("usage: screen test | face | theme 0-%d | rotate 0-270 | "
-                            "fill RRGGBB | bright 0-100\n", kThemeCount - 1);
+                std::printf("usage: screen test | face | lab [W G L C H B] | "
+                            "theme 0-%d | rotate 0-270 | fill RRGGBB | bright 0-100\n",
+                            kThemeCount - 1);
             }
         } else if (command == "note" && tokens.size() >= 2 && graph != nullptr) {
             const float velocity = tokens.size() >= 3 ? std::atof(tokens[2]) : 0.9f;

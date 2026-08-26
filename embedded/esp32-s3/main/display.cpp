@@ -17,8 +17,64 @@ void display_blend(int, int, uint32_t, int) {}
 void display_disc(int, int, float, uint32_t) {}
 void display_arc(int, int, float, float, float, float, uint32_t) {}
 void display_line(float, float, float, float, float, uint32_t) {}
+void display_glow_line(float, float, float, float, float, float, int, uint32_t) {}
 int display_text(int, int, const char*, int, uint32_t) { return 0; }
 int display_text_width(const char*, int) { return 0; }
+// Distance from a point to a segment. The glow is a field around the line rather than a
+// stack of strokes, so every pixel needs to know how far off the line it is.
+namespace {
+float distance_to_segment(float px, float py, float x0, float y0, float x1, float y1) {
+    const float dx = x1 - x0, dy = y1 - y0;
+    const float len2 = dx * dx + dy * dy;
+    float t = len2 > 0.0f ? ((px - x0) * dx + (py - y0) * dy) / len2 : 0.0f;
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    const float ax = px - (x0 + dx * t), ay = py - (y0 + dy * t);
+    return std::sqrt(ax * ax + ay * ay);
+}
+}  // namespace
+
+void display_glow_line(float x0, float y0, float x1, float y1,
+                       float width, float glow, int intensity, uint32_t colour) {
+    const float half = width * 0.5f;
+    const float spill = glow > 0.0f ? glow : 0.0f;
+    const float reach = half + spill;
+
+    // One pass over the bounding box. Stamping concentric wider strokes — the obvious
+    // way — costs passes x length x radius^2 blends, and still bands visibly because a
+    // handful of strokes cannot approximate a smooth falloff. Evaluating the field costs
+    // the area once and is continuous by construction.
+    const int x_lo = static_cast<int>(std::floor((x0 < x1 ? x0 : x1) - reach - 1.0f));
+    const int x_hi = static_cast<int>(std::ceil((x0 > x1 ? x0 : x1) + reach + 1.0f));
+    const int y_lo = static_cast<int>(std::floor((y0 < y1 ? y0 : y1) - reach - 1.0f));
+    const int y_hi = static_cast<int>(std::ceil((y0 > y1 ? y0 : y1) + reach + 1.0f));
+
+    for (int y = y_lo; y <= y_hi; ++y) {
+        for (int x = x_lo; x <= x_hi; ++x) {
+            const float d = distance_to_segment(static_cast<float>(x) + 0.5f,
+                                                static_cast<float>(y) + 0.5f,
+                                                x0, y0, x1, y1);
+            if (d > reach + 0.5f) continue;
+
+            // The core, with a pixel of anti-aliasing at its edge.
+            float coverage = half + 0.5f - d;
+            coverage = coverage < 0.0f ? 0.0f : (coverage > 1.0f ? 1.0f : coverage);
+            int alpha = static_cast<int>(coverage * 255.0f + 0.5f);
+
+            // The halo. Squared falloff because scattering falls off fast; a linear ramp
+            // reads as a fat soft line rather than as a lit thin one.
+            if (spill > 0.0f && d > half) {
+                const float u = (d - half) / spill;
+                if (u < 1.0f) {
+                    const float fall = (1.0f - u) * (1.0f - u);
+                    const int halo = static_cast<int>(255.0f * fall * intensity / 100.0f);
+                    if (halo > alpha) alpha = halo;
+                }
+            }
+            if (alpha > 0) display_blend(x, y, colour, alpha);
+        }
+    }
+}
+
 bool display_present() { return false; }
 bool display_set_brightness(int) { return false; }
 bool display_test_card() { return false; }
@@ -323,6 +379,61 @@ int display_text(int x, int y, const char* text, int scale, uint32_t colour) {
     return cursor - x;
 }
 
+// Distance from a point to a segment. The glow is a field around the line rather than a
+// stack of strokes, so every pixel needs to know how far off the line it is.
+namespace {
+float distance_to_segment(float px, float py, float x0, float y0, float x1, float y1) {
+    const float dx = x1 - x0, dy = y1 - y0;
+    const float len2 = dx * dx + dy * dy;
+    float t = len2 > 0.0f ? ((px - x0) * dx + (py - y0) * dy) / len2 : 0.0f;
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    const float ax = px - (x0 + dx * t), ay = py - (y0 + dy * t);
+    return std::sqrt(ax * ax + ay * ay);
+}
+}  // namespace
+
+void display_glow_line(float x0, float y0, float x1, float y1,
+                       float width, float glow, int intensity, uint32_t colour) {
+    const float half = width * 0.5f;
+    const float spill = glow > 0.0f ? glow : 0.0f;
+    const float reach = half + spill;
+
+    // One pass over the bounding box. Stamping concentric wider strokes — the obvious
+    // way — costs passes x length x radius^2 blends, and still bands visibly because a
+    // handful of strokes cannot approximate a smooth falloff. Evaluating the field costs
+    // the area once and is continuous by construction.
+    const int x_lo = static_cast<int>(std::floor((x0 < x1 ? x0 : x1) - reach - 1.0f));
+    const int x_hi = static_cast<int>(std::ceil((x0 > x1 ? x0 : x1) + reach + 1.0f));
+    const int y_lo = static_cast<int>(std::floor((y0 < y1 ? y0 : y1) - reach - 1.0f));
+    const int y_hi = static_cast<int>(std::ceil((y0 > y1 ? y0 : y1) + reach + 1.0f));
+
+    for (int y = y_lo; y <= y_hi; ++y) {
+        for (int x = x_lo; x <= x_hi; ++x) {
+            const float d = distance_to_segment(static_cast<float>(x) + 0.5f,
+                                                static_cast<float>(y) + 0.5f,
+                                                x0, y0, x1, y1);
+            if (d > reach + 0.5f) continue;
+
+            // The core, with a pixel of anti-aliasing at its edge.
+            float coverage = half + 0.5f - d;
+            coverage = coverage < 0.0f ? 0.0f : (coverage > 1.0f ? 1.0f : coverage);
+            int alpha = static_cast<int>(coverage * 255.0f + 0.5f);
+
+            // The halo. Squared falloff because scattering falls off fast; a linear ramp
+            // reads as a fat soft line rather than as a lit thin one.
+            if (spill > 0.0f && d > half) {
+                const float u = (d - half) / spill;
+                if (u < 1.0f) {
+                    const float fall = (1.0f - u) * (1.0f - u);
+                    const int halo = static_cast<int>(255.0f * fall * intensity / 100.0f);
+                    if (halo > alpha) alpha = halo;
+                }
+            }
+            if (alpha > 0) display_blend(x, y, colour, alpha);
+        }
+    }
+}
+
 bool display_present() {
     if (g_panel == nullptr || g_fb == nullptr) return false;
     // Straight from the framebuffer, in one transfer, with no bounce buffer.
@@ -379,6 +490,19 @@ bool display_init() {
     panel_config.reset_gpio_num = SG_DISPLAY_RESET;
     // BGR, not RGB: this glass wires the channels the other way round, and a red fill
     // arrives blue if you take the vendor BSP's word for it. Measured on the board.
+    // RGB, not BGR — and the opposite of what this panel needed at 16 bits.
+    //
+    // `screen fill FF0000` photographs as pure blue with BGR here and pure red with RGB,
+    // so the driver plainly does act on this field; an earlier note in the history
+    // claiming it ignores the field at 24 bits is wrong, and flipping the flag is what
+    // disproved it. What is established is only that the correct value flipped when the
+    // pixel format did. Why it flipped — a byte order in the 565 path that the 888 path
+    // does not share is the obvious suspect — is not established, and guessing at it in
+    // a comment is how the last wrong explanation got written down.
+    //
+    // Worth knowing that this failed silently for hours: the interface is green arcs and
+    // white pointers on black, and green, white and black are all unchanged by swapping
+    // red with blue. It took six greens chosen to differ before anything looked wrong.
     panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
     panel_config.bits_per_pixel = 24;
     panel_config.vendor_config = &vendor;
