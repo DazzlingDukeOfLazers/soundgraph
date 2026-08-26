@@ -7,6 +7,7 @@
 // A bare I2S DAC needs no introduction, and a board with no codec has no capture
 // hardware for this firmware to find either.
 bool codec_init(i2s_chan_handle_t, int) { return true; }
+i2c_master_bus_handle_t codec_i2c_bus() { return nullptr; }
 bool codec_set_volume(float) { return false; }
 bool mic_init(i2s_chan_handle_t, int) { return false; }
 bool mic_available() { return false; }
@@ -15,6 +16,7 @@ bool mic_set_gain(float) { return false; }
 
 #else
 
+#include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
@@ -275,5 +277,7 @@ int mic_read(int16_t*, int, int) { return -1; }
 bool mic_set_gain(float) { return false; }
 
 #endif  // SG_AUDIO_IN_PRESENT
+
+i2c_master_bus_handle_t codec_i2c_bus() { return g_i2c_bus; }
 
 #endif  // SG_AUDIO_IS_CODEC

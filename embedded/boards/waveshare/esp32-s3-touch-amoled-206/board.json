@@ -5,26 +5,72 @@
   "vendor": "waveshare",
   "url": "https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.06",
   "target": "esp32-s3",
-  "notes": "The watch: ESP32-S3R8 (8 MB octal PSRAM) in a wrist form factor with a 410x502 CO5300 AMOLED on QSPI, FT3168 capacitive touch, QMI8658C 6-axis IMU, PCF85063ATL RTC and an AXP2101 PMIC, all sharing one I2C bus on SDA=15/SCL=14. Audio is the same ES8311-out/ES7210-in pair as the AUDIO-Board, so codec_init.cpp already knows the chip — but the pins differ and the NS4150B amp enable is a direct GPIO (46) here rather than living behind an I/O expander, which makes the speaker one pin away instead of an I2C transaction. Two things this board has that no earlier profile did: a screen, and a power management chip. The AXP2101 gates rails, so a build that assumes peripherals are powered at boot may find the codec silent for reasons that are not the codec's; bring the PMIC up before blaming the audio path. The display is deliberately absent from this manifest — the firmware has no display layer yet, and inventing schema for one before the code exists would be a guess."
-  ,
+  "notes": "The watch: ESP32-S3R8 (8 MB octal PSRAM) in a wrist form factor with a 410x502 CO5300 AMOLED on QSPI, FT3168 capacitive touch, QMI8658C 6-axis IMU, PCF85063ATL RTC and an AXP2101 PMIC, all sharing one I2C bus on SDA=15/SCL=14. Audio is the same ES8311-out/ES7210-in pair as the AUDIO-Board, so codec_init.cpp already knows the chip \u2014 but the pins differ and the NS4150B amp enable is a direct GPIO (46) here rather than living behind an I/O expander, which makes the speaker one pin away instead of an I2C transaction. Two things this board has that no earlier profile did: a screen, and a power management chip. The AXP2101 gates rails, so a build that assumes peripherals are powered at boot may find the codec silent for reasons that are not the codec's; bring the PMIC up before blaming the audio path. The display is here now that a firmware layer exists to consume it: the panel is driven as an SH8601 over quad SPI \u2014 the wiki calls the controller CO5300, but Waveshare's own BSP drives it with the SH8601 driver and a panel-specific init sequence, and the panel is the thing that has to agree. Its column address starts at 22, hence x_offset; the panel is mounted a half turn from its natural orientation, hence rotation 180, found by eye on the bench rather than from a drawing; the FT3168 touch controller shares the I2C bus with everything else.",
   "audio_out": {
     "kind": "codec",
     "chip": "ES8311",
     "sample_rate": 48000,
     "bits": 16,
-    "i2s": { "mclk": 16, "bclk": 41, "ws": 45, "dout": 40 },
-    "i2c": { "sda": 15, "scl": 14, "address": 24 },
-    "amp": { "gpio": 46 }
+    "i2s": {
+      "mclk": 16,
+      "bclk": 41,
+      "ws": 45,
+      "dout": 40
+    },
+    "i2c": {
+      "sda": 15,
+      "scl": 14,
+      "address": 24
+    },
+    "amp": {
+      "gpio": 46
+    }
   },
   "audio_in": {
     "kind": "codec",
     "chip": "ES7210",
     "i2c_address": 64,
-    "i2s": { "din": 42 },
+    "i2s": {
+      "din": 42
+    },
     "notes": "Dual digital microphone array sharing the ES8311's MCLK/BCLK/LRCK. Not yet driven by the firmware, though the pins are all it needs: the AUDIO-Board drives the same ES7210 as of 2026-08-26, so building for this board should mostly be a matter of trying it."
   },
-  "psram": { "present": true, "mode": "octal", "megabytes": 8 },
+  "psram": {
+    "present": true,
+    "mode": "octal",
+    "megabytes": 8
+  },
   "controls": [
-    { "id": "screen", "kind": "touch", "pin": 38 }
-  ]
+    {
+      "id": "screen",
+      "kind": "touch",
+      "pin": 38
+    }
+  ],
+  "display": {
+    "kind": "qspi",
+    "chip": "SH8601",
+    "width": 410,
+    "height": 502,
+    "qspi": {
+      "sclk": 11,
+      "cs": 12,
+      "d0": 4,
+      "d1": 5,
+      "d2": 6,
+      "d3": 7
+    },
+    "reset": 8,
+    "te": 13,
+    "touch": {
+      "chip": "FT3168",
+      "i2c_address": 56,
+      "sda": 15,
+      "scl": 14,
+      "interrupt": 38,
+      "reset": 9
+    },
+    "x_offset": 22,
+    "rotation": 180
+  }
 }

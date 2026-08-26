@@ -13,3 +13,8 @@ dependencies:
   # the microphone up before either sees it. No audio leaves the board — which is the
   # whole reason this is here rather than a cloud API with a nicer accuracy figure.
   espressif/esp-sr: "^2"
+  # The watch's panel and its touch controller. The wiki calls the display driver
+  # CO5300; Waveshare's own BSP drives this glass as an SH8601, and the panel is the
+  # thing that has to agree.
+  espressif/esp_lcd_sh8601: "^1.0"
+  espressif/esp_lcd_touch_ft5x06: "^1.0"

@@ -52,7 +52,9 @@
 
 #include "board_config.h"
 #include "codec_init.h"
+#include "display.h"
 #include "speech.h"
+#include "touch.h"
 #include "soundgraph/patch_io.h"
 #include "soundgraph/soundgraph.h"
 
@@ -307,6 +309,19 @@ bool start_i2s() {
 // Patch loading
 // ---------------------------------------------------------------------------------
 
+// What the patch says its knobs are. The screen renders this rather than a copy kept
+// in the firmware: the patch is the artifact, and a control surface invented here would
+// be a second definition free to drift from it.
+struct UiControl {
+    std::string label;
+    std::string node;
+    std::string parameter;
+    float min_value = 0.0f;
+    float max_value = 1.0f;
+    float value = 0.0f;
+};
+std::vector<UiControl> g_ui_controls;
+
 soundgraph::Graph* build_graph(const char* patch_text, std::string& error_out) {
     soundgraph::GraphDescription description;
     std::vector<soundgraph::Diagnostic> diagnostics;
@@ -324,7 +339,166 @@ soundgraph::Graph* build_graph(const char* patch_text, std::string& error_out) {
         error_out = soundgraph::write_diagnostics(diagnostics, false);
         return nullptr;
     }
+
+    g_ui_controls.clear();
+    for (const soundgraph::ControlDescription& control : description.controls) {
+        UiControl entry;
+        entry.label = control.label.empty() ? control.id : control.label;
+        entry.node = control.target.node;
+        entry.parameter = control.target.parameter;
+        entry.min_value = static_cast<float>(control.has_range ? control.min_value : 0.0);
+        entry.max_value = static_cast<float>(control.has_range ? control.max_value : 1.0);
+        entry.value = static_cast<float>(control.has_default ? control.default_value
+                                                            : entry.min_value);
+        g_ui_controls.push_back(entry);
+    }
     return graph.release();
+}
+
+// ---------------------------------------------------------------------------------
+// The face
+// ---------------------------------------------------------------------------------
+//
+// Nine knobs in a three-by-three grid, drawn from whatever the patch declared. A knob
+// is a ring with the used part of its travel filled and a pointer at the value: the
+// same shape a panel knob has, for the same reason — the angle is readable at a glance
+// from across a room, and a number is not.
+
+constexpr float kKnobStart = -135.0f;   // travel, in the arc's own convention
+constexpr float kKnobEnd = 135.0f;
+
+// Where the last draw put each knob, so a finger can be matched to one. Written by
+// draw_face on the console/UI task and read by the same task; no locking needed.
+struct KnobHit { int cx = 0; int cy = 0; int radius = 0; };
+std::vector<KnobHit> g_knob_hits;
+
+void draw_knob(int cx, int cy, int radius, const UiControl& control) {
+    const uint16_t track = display_rgb(38, 40, 52);
+    const uint16_t ink = display_rgb(120, 200, 255);
+    const uint16_t label_ink = display_rgb(150, 155, 175);
+    const uint16_t face = display_rgb(20, 21, 28);
+
+    const float span = control.max_value - control.min_value;
+    float fraction = span > 0.0f ? (control.value - control.min_value) / span : 0.0f;
+    if (fraction < 0.0f) fraction = 0.0f;
+    if (fraction > 1.0f) fraction = 1.0f;
+    const float angle = kKnobStart + fraction * (kKnobEnd - kKnobStart);
+
+    display_disc(cx, cy, radius - 2, face);
+    display_arc(cx, cy, radius, 4, kKnobStart, kKnobEnd, track);
+    display_arc(cx, cy, radius, 4, kKnobStart, angle, ink);
+
+    // The pointer, from the middle of the face to the rim.
+    const float rad = (angle + 90.0f) * 3.14159265f / 180.0f;
+    for (int r = radius / 3; r < radius - 5; ++r) {
+        display_pixel(cx + static_cast<int>(std::cos(rad) * r),
+                      cy + static_cast<int>(std::sin(rad) * r), ink);
+    }
+
+    char text[16];
+    const float shown = control.value;
+    if (shown >= 100.0f) {
+        std::snprintf(text, sizeof text, "%d", static_cast<int>(shown + 0.5f));
+    } else if (shown >= 10.0f) {
+        std::snprintf(text, sizeof text, "%.1f", shown);
+    } else {
+        std::snprintf(text, sizeof text, "%.2f", shown);
+    }
+    display_text(cx - display_text_width(text, 1) / 2, cy - 3, text, 1,
+                 display_rgb(230, 235, 245));
+
+    char label[12];
+    std::snprintf(label, sizeof label, "%s", control.label.c_str());
+    display_text(cx - display_text_width(label, 1) / 2, cy + radius + 6, label, 1,
+                 label_ink);
+}
+
+void draw_face() {
+    if (!display_available()) return;
+    const int w = display_width(), h = display_height();
+    display_clear(display_rgb(8, 8, 11));
+
+    const char* title = "WRIST ARPEGGIO";
+    display_text((w - display_text_width(title, 2)) / 2, 10, title, 2,
+                 display_rgb(90, 95, 115));
+
+    if (g_ui_controls.empty()) {
+        const char* none = "PATCH DECLARES NO CONTROLS";
+        display_text((w - display_text_width(none, 1)) / 2, h / 2, none, 1,
+                     display_rgb(150, 155, 175));
+        display_present();
+        return;
+    }
+
+    // Three by three, however many of the nine the patch actually declared.
+    const int columns = 3;
+    const int rows = (static_cast<int>(g_ui_controls.size()) + columns - 1) / columns;
+    const int top = 40;
+    const int cell_w = w / columns;
+    const int cell_h = (h - top - 10) / (rows > 0 ? rows : 1);
+    int radius = (cell_w < cell_h ? cell_w : cell_h) / 2 - 14;
+    if (radius < 12) radius = 12;
+
+    g_knob_hits.assign(g_ui_controls.size(), KnobHit{});
+    for (std::size_t i = 0; i < g_ui_controls.size(); ++i) {
+        const int col = static_cast<int>(i) % columns;
+        const int row = static_cast<int>(i) / columns;
+        const int cx = cell_w * col + cell_w / 2;
+        const int cy = top + cell_h * row + cell_h / 2 - 6;
+        draw_knob(cx, cy, radius, g_ui_controls[i]);
+        g_knob_hits[i] = KnobHit{cx, cy, radius};
+    }
+    display_present();
+}
+
+// A finger on a knob. Vertical drag rather than rotation: turning a real knob is a
+// wrist movement, but on glass a straight drag is what the hand actually does, and it
+// gives the whole screen height of travel instead of a thumb-sized arc. The value goes
+// straight into the running graph, so the sound follows the finger.
+void touch_task(void*) {
+    int held = -1;
+    int last_y = 0;
+    float held_start_value = 0.0f;
+
+    for (;;) {
+        int x = 0, y = 0;
+        if (touch_read(&x, &y)) {
+            if (held < 0) {
+                // Generous hit radius: fingers are wider than knobs.
+                for (std::size_t i = 0; i < g_knob_hits.size(); ++i) {
+                    const KnobHit& hit = g_knob_hits[i];
+                    const int dx = x - hit.cx, dy = y - hit.cy;
+                    const int reach = hit.radius + 12;
+                    if (dx * dx + dy * dy <= reach * reach) {
+                        held = static_cast<int>(i);
+                        last_y = y;
+                        held_start_value = g_ui_controls[i].value;
+                        break;
+                    }
+                }
+            } else if (held < static_cast<int>(g_ui_controls.size())) {
+                UiControl& control = g_ui_controls[static_cast<std::size_t>(held)];
+                const float span = control.max_value - control.min_value;
+                // A full screen height covers the whole range; upward is more.
+                const float travel = static_cast<float>(last_y - y) / display_height();
+                float next = held_start_value + travel * span * 1.4f;
+                if (next < control.min_value) next = control.min_value;
+                if (next > control.max_value) next = control.max_value;
+
+                if (next != control.value) {
+                    control.value = next;
+                    soundgraph::Graph* graph = g_live_graph.load(std::memory_order_acquire);
+                    if (graph != nullptr) {
+                        graph->set_parameter(control.node, control.parameter, next);
+                    }
+                    draw_face();
+                }
+            }
+        } else {
+            held = -1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
 }
 
 // Swaps the live graph and frees the old one once the audio task cannot still be inside
@@ -584,6 +758,7 @@ void command_load(int byte_count) {
     }
     make_live(graph);
     std::printf("OK deployed, %d nodes\n", g_live_graph.load()->node_count());
+    draw_face();
 }
 
 // Listens for a moment and says what it heard.
@@ -794,6 +969,33 @@ void console_task(void*) {
 
         if (command == "info") {
             print_info();
+        } else if (command == "screen") {
+            // Panel bring-up without a reflash: the difference between iterating on a
+            // screen in seconds and in minutes.
+            if (!display_available()) {
+                std::printf("ERR this board has no display\n");
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "test") == 0) {
+                display_test_card();
+                std::printf("OK test card\n");
+            } else if (tokens.size() >= 3 && std::strcmp(tokens[1], "fill") == 0) {
+                const long rgb = std::strtol(tokens[2], nullptr, 16);
+                display_clear(display_rgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF));
+                display_present();
+                std::printf("OK filled %06lx\n", rgb);
+            } else if (tokens.size() >= 3 && std::strcmp(tokens[1], "rotate") == 0) {
+                display_set_rotation(std::atoi(tokens[2]));
+                draw_face();
+                std::printf("OK rotation %d\n", display_rotation());
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "face") == 0) {
+                draw_face();
+                std::printf("OK face\n");
+            } else if (tokens.size() >= 3 && std::strcmp(tokens[1], "bright") == 0) {
+                display_set_brightness(std::atoi(tokens[2]));
+                std::printf("OK brightness %s\n", tokens[2]);
+            } else {
+                std::printf("usage: screen test | face | rotate 0-270 | "
+                            "fill RRGGBB | bright 0-100\n");
+            }
         } else if (command == "note" && tokens.size() >= 2 && graph != nullptr) {
             const float velocity = tokens.size() >= 3 ? std::atof(tokens[2]) : 0.9f;
             g_sequencer.set_running(false);
@@ -942,6 +1144,18 @@ extern "C" void app_main(void) {
         ESP_LOGW(TAG, "microphone startup failed; capture is unavailable");
     }
 
+    // The panel, after the audio: a screen that fails to start is a cosmetic problem,
+    // and an instrument that refuses to play because of one would be a worse instrument.
+    if (display_init()) {
+        // Rotation so the face is upright on a wrist: the panel is mounted with its
+        // long axis across the strap, and this is the one place that fact lives.
+        display_set_rotation(SG_DISPLAY_ROTATION);
+        // After the codec, which owns the I2C bus the touch controller shares.
+        if (!touch_init()) {
+            ESP_LOGW(TAG, "touch unavailable; the face is readable but not playable");
+        }
+    }
+
     // After the microphone, which speech_start checks for, and after the graph, so a
     // command heard early has something to act on. Not fatal: a board that cannot listen
     // is a board with a console, which is how every other board is driven anyway.
@@ -982,8 +1196,14 @@ extern "C" void app_main(void) {
         g_live_graph.store(graph, std::memory_order_release);
     }
 
+    // The face, once there is a patch to have a face for.
+    draw_face();
+
     // Audio gets its own core; the console shares core 0 with the system.
     xTaskCreatePinnedToCore(audio_task, "sg_audio", 8192, nullptr, configMAX_PRIORITIES - 2,
                             nullptr, 1);
     xTaskCreatePinnedToCore(console_task, "sg_console", 8192, nullptr, 5, nullptr, 0);
+    if (touch_available()) {
+        xTaskCreatePinnedToCore(touch_task, "sg_touch", 4096, nullptr, 4, nullptr, 0);
+    }
 }
