@@ -1158,6 +1158,7 @@ extern "C" void app_main(void) {
 
     // The panel, after the audio: a screen that fails to start is a cosmetic problem,
     // and an instrument that refuses to play because of one would be a worse instrument.
+#if SG_DISPLAY_PRESENT
     if (display_init()) {
         // Rotation so the face is upright on a wrist: the panel is mounted with its
         // long axis across the strap, and this is the one place that fact lives.
@@ -1167,6 +1168,7 @@ extern "C" void app_main(void) {
             ESP_LOGW(TAG, "touch unavailable; the face is readable but not playable");
         }
     }
+#endif  // SG_DISPLAY_PRESENT
 
     // After the microphone, which speech_start checks for, and after the graph, so a
     // command heard early has something to act on. Not fatal: a board that cannot listen
