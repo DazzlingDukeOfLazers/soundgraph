@@ -1,0 +1,515 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "R2-D2",
+    "description": "A droid. Swooping tones with a metallic edge: sine pairs in phase modulation, bent up on the beats and down on the offbeats, at a rate that reads as speech."
+  },
+  "nodes": [
+    {
+      "id": "pulse",
+      "type": "Retrigger",
+      "parameters": {
+        "rate": 5.0,
+        "width": 2.0
+      }
+    },
+    {
+      "id": "asking",
+      "type": "Euclid",
+      "parameters": {
+        "steps": 8,
+        "fill": 3,
+        "rotate": 0
+      }
+    },
+    {
+      "id": "answering",
+      "type": "Euclid",
+      "parameters": {
+        "steps": 8,
+        "fill": 2,
+        "rotate": 3
+      }
+    },
+    {
+      "id": "where_rand",
+      "type": "LFO",
+      "parameters": {
+        "rate": 29.0,
+        "shape": 4,
+        "amount": 1.0
+      }
+    },
+    {
+      "id": "where_hold",
+      "type": "SampleHold"
+    },
+    {
+      "id": "where_scale",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 700.0
+      }
+    },
+    {
+      "id": "where_centre",
+      "type": "Add",
+      "parameters": {
+        "offset": 1250.0
+      }
+    },
+    {
+      "id": "up",
+      "type": "Slide",
+      "parameters": {
+        "slide": 900.0,
+        "limit": 3600.0
+      }
+    },
+    {
+      "id": "down",
+      "type": "Slide",
+      "parameters": {
+        "slide": -750.0,
+        "limit": 260.0
+      }
+    },
+    {
+      "id": "both",
+      "type": "Add"
+    },
+    {
+      "id": "ratio",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 1.414
+      }
+    },
+    {
+      "id": "metal",
+      "type": "SineOscillator"
+    },
+    {
+      "id": "voice",
+      "type": "SineOscillator",
+      "parameters": {
+        "feedback": 0.12
+      }
+    },
+    {
+      "id": "env_up",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.004,
+        "hold": 0.05,
+        "decay": 0.09
+      }
+    },
+    {
+      "id": "env_down",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.004,
+        "hold": 0.04,
+        "decay": 0.12
+      }
+    },
+    {
+      "id": "env",
+      "type": "Add"
+    },
+    {
+      "id": "amp",
+      "type": "Gain"
+    },
+    {
+      "id": "room",
+      "type": "Delay",
+      "parameters": {
+        "time": 0.09,
+        "feedback": 0.22,
+        "mix": 0.16
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 0.85
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "pulse",
+        "port": "gate"
+      },
+      "to": {
+        "node": "asking",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "pulse",
+        "port": "gate"
+      },
+      "to": {
+        "node": "answering",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "pulse",
+        "port": "gate"
+      },
+      "to": {
+        "node": "where_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "where_rand",
+        "port": "out"
+      },
+      "to": {
+        "node": "where_hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "where_hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "where_scale",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "where_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "where_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "where_centre",
+        "port": "out"
+      },
+      "to": {
+        "node": "up",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "where_centre",
+        "port": "out"
+      },
+      "to": {
+        "node": "down",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "asking",
+        "port": "gate"
+      },
+      "to": {
+        "node": "up",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "answering",
+        "port": "gate"
+      },
+      "to": {
+        "node": "down",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "asking",
+        "port": "gate"
+      },
+      "to": {
+        "node": "env_up",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "answering",
+        "port": "gate"
+      },
+      "to": {
+        "node": "env_down",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "up",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "both",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "down",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "both",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "both",
+        "port": "out"
+      },
+      "to": {
+        "node": "voice",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "both",
+        "port": "out"
+      },
+      "to": {
+        "node": "ratio",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "ratio",
+        "port": "out"
+      },
+      "to": {
+        "node": "metal",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "metal",
+        "port": "out"
+      },
+      "to": {
+        "node": "voice",
+        "port": "pm"
+      }
+    },
+    {
+      "from": {
+        "node": "env_up",
+        "port": "out"
+      },
+      "to": {
+        "node": "env",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "env_down",
+        "port": "out"
+      },
+      "to": {
+        "node": "env",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "voice",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "room",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "room",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "room",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "rate",
+      "label": "Chatter",
+      "kind": "knob",
+      "target": {
+        "node": "pulse",
+        "parameter": "rate"
+      },
+      "min": 1.5,
+      "max": 12.0,
+      "default": 5.0,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 74,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "pitch",
+      "label": "Register",
+      "kind": "knob",
+      "target": {
+        "node": "where_centre",
+        "parameter": "offset"
+      },
+      "min": 400.0,
+      "max": 2400.0,
+      "default": 1250.0,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 71,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "range",
+      "label": "Leap",
+      "kind": "knob",
+      "target": {
+        "node": "where_scale",
+        "parameter": "factor"
+      },
+      "min": 0.0,
+      "max": 1400.0,
+      "default": 700.0,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 76,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "metal",
+      "label": "Metal",
+      "kind": "knob",
+      "target": {
+        "node": "ratio",
+        "parameter": "factor"
+      },
+      "min": 0.5,
+      "max": 4.0,
+      "default": 1.414,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 77,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "rise",
+      "label": "Rise",
+      "kind": "knob",
+      "target": {
+        "node": "up",
+        "parameter": "slide"
+      },
+      "min": 100.0,
+      "max": 2400.0,
+      "default": 900.0,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 93,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "fall",
+      "label": "Fall",
+      "kind": "knob",
+      "target": {
+        "node": "down",
+        "parameter": "slide"
+      },
+      "min": -2400.0,
+      "max": -100.0,
+      "default": -750.0,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 18,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "room",
+      "label": "Room",
+      "kind": "knob",
+      "target": {
+        "node": "room",
+        "parameter": "mix"
+      },
+      "min": 0.0,
+      "max": 0.6,
+      "default": 0.16,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 91,
+        "midi_channel": 1
+      }
+    }
+  ]
+}
