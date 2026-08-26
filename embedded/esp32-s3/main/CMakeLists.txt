@@ -71,7 +71,7 @@ configure_file(${CMAKE_CURRENT_LIST_DIR}/embedded_patches.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_patches.h @ONLY)
 
 idf_component_register(
-    SRCS main.cpp codec_init.cpp speech.cpp
+    SRCS main.cpp codec_init.cpp speech.cpp display.cpp touch.cpp
     INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/generated
     PRIV_REQUIRES soundgraph-core driver nvs_flash esp_timer
     EMBED_TXTFILES ${SG_EMBED_PATCHES}

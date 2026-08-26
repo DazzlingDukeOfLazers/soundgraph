@@ -6,6 +6,8 @@
 // expander rather than a chip GPIO.
 #pragma once
 
+#include "driver/i2c_master.h"
+
 #include <cstdint>
 
 #include "driver/i2s_std.h"
@@ -41,3 +43,8 @@ int mic_read(int16_t* destination, int frames, int timeout_ms);
 
 // Capture gain in dB. The ES7210's range is 0-37.5 dB in 3 dB steps; it rounds.
 bool mic_set_gain(float decibels);
+
+// The board's one I2C bus, created by codec_init. Everything else on those two pins —
+// the touch controller, the RTC, the PMIC — shares it rather than creating a second
+// master on the same wires, which would be a hardware fault rather than a software one.
+i2c_master_bus_handle_t codec_i2c_bus();

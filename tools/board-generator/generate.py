@@ -91,6 +91,46 @@ def main() -> None:
     # The microphone side, when the board has one. Absent on every board that does not,
     # and the firmware compiles the whole capture path out rather than carrying a driver
     # for hardware that is not there — SG_AUDIO_IN_PRESENT is what it tests.
+    # The panel, when the board has one. A board with no display compiles the UI out
+    # entirely — SG_DISPLAY_PRESENT is what the firmware tests — for the same reason the
+    # capture path disappears on boards with no microphone.
+    display = board.get("display")
+    if display:
+        qspi = display.get("qspi", {})
+        touch = display.get("touch", {})
+        lines += [
+            "",
+            "#define SG_DISPLAY_PRESENT 1",
+            f'#define SG_DISPLAY_CHIP "{display["chip"]}"',
+            f"#define SG_DISPLAY_WIDTH {display['width']}",
+            f"#define SG_DISPLAY_HEIGHT {display['height']}",
+            f"#define SG_DISPLAY_X_OFFSET {display.get('x_offset', 0)}",
+            f"#define SG_DISPLAY_Y_OFFSET {display.get('y_offset', 0)}",
+            f"#define SG_DISPLAY_QSPI_SCLK {qspi.get('sclk', -1)}",
+            f"#define SG_DISPLAY_QSPI_CS {qspi.get('cs', -1)}",
+            f"#define SG_DISPLAY_QSPI_D0 {qspi.get('d0', -1)}",
+            f"#define SG_DISPLAY_QSPI_D1 {qspi.get('d1', -1)}",
+            f"#define SG_DISPLAY_QSPI_D2 {qspi.get('d2', -1)}",
+            f"#define SG_DISPLAY_QSPI_D3 {qspi.get('d3', -1)}",
+            f"#define SG_DISPLAY_RESET {display.get('reset', -1)}",
+            f"#define SG_DISPLAY_TE {display.get('te', -1)}",
+            f"#define SG_DISPLAY_ROTATION {display.get('rotation', 0)}",
+        ]
+        if touch:
+            lines += [
+                f"#define SG_TOUCH_PRESENT 1",
+                f'#define SG_TOUCH_CHIP "{touch.get("chip", "unknown")}"',
+                f"#define SG_TOUCH_I2C_ADDRESS {touch.get('i2c_address', -1)}",
+                f"#define SG_TOUCH_I2C_SDA {touch.get('sda', -1)}",
+                f"#define SG_TOUCH_I2C_SCL {touch.get('scl', -1)}",
+                f"#define SG_TOUCH_INTERRUPT {touch.get('interrupt', -1)}",
+                f"#define SG_TOUCH_RESET {touch.get('reset', -1)}",
+            ]
+        else:
+            lines += ["#define SG_TOUCH_PRESENT 0"]
+    else:
+        lines += ["", "#define SG_DISPLAY_PRESENT 0", "#define SG_TOUCH_PRESENT 0"]
+
     audio_in = board.get("audio_in")
     if audio_in:
         in_i2s = audio_in.get("i2s", {})
