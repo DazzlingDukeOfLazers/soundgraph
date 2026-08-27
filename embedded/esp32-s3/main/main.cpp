@@ -65,6 +65,12 @@ const char* const TAG = "soundgraph";
 constexpr int kBlock = soundgraph::kBlockSize;
 constexpr char kNvsNamespace[] = "soundgraph";
 constexpr char kNvsPatchKey[] = "patch";
+// A board that has been told to be quiet should still be quiet after somebody trips over
+// the cable. Opening the serial port resets this chip, so "muted" lasted exactly until
+// the next time anything connected to it — which, on a desk with a laptop next to it, is
+// not long. These two live in NVS beside the deployed patch.
+constexpr char kNvsVolumeKey[] = "vol";
+constexpr char kNvsListenKey[] = "listen";
 
 // ---------------------------------------------------------------------------------
 // Embedded patches
@@ -953,6 +959,31 @@ bool store_deployed_patch(const std::string& text) {
     return ok;
 }
 
+// Small settings, stored the same way the patch is. Failing to read one is not worth a
+// diagnostic: it means nobody has set it yet, and the default is the answer.
+int load_setting(const char* key, int fallback) {
+    nvs_handle_t handle;
+    if (nvs_open(kNvsNamespace, NVS_READONLY, &handle) != ESP_OK) {
+        return fallback;
+    }
+    int32_t value = fallback;
+    if (nvs_get_i32(handle, key, &value) != ESP_OK) {
+        value = fallback;
+    }
+    nvs_close(handle);
+    return static_cast<int>(value);
+}
+
+void store_setting(const char* key, int value) {
+    nvs_handle_t handle;
+    if (nvs_open(kNvsNamespace, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    nvs_set_i32(handle, key, static_cast<int32_t>(value));
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
 void erase_deployed_patch() {
     nvs_handle_t handle;
     if (nvs_open(kNvsNamespace, NVS_READWRITE, &handle) == ESP_OK) {
@@ -1504,9 +1535,11 @@ void console_task(void*) {
                 std::printf("ERR this board is not listening\n");
             } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "off") == 0) {
                 speech_set_listening(false);
+                store_setting(kNvsListenKey, 0);
                 std::printf("OK deaf\n");
             } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "on") == 0) {
                 speech_set_listening(true);
+                store_setting(kNvsListenKey, 1);
                 std::printf("OK listening\n");
             } else {
                 std::printf("LISTEN %s, wake word \"Hi ESP\"\n",
@@ -1521,6 +1554,24 @@ void console_task(void*) {
                     std::printf("\n");
                 }
             }
+        } else if (command == "mute" || command == "unmute") {
+            // One word, because "be quiet" is one thought. Silencing a board means the
+            // speaker *and* the microphone: a muted board that still answers to its name
+            // is not muted, it is sulking.
+            const bool quiet = command == "mute";
+            g_sequencer.set_running(!quiet && g_sequencer.running());
+            if (quiet) {
+                if (soundgraph::Graph* live = g_live_graph.load(std::memory_order_acquire)) {
+                    live->all_notes_off();
+                }
+                g_reply_frames.store(0, std::memory_order_release);
+            }
+            g_volume = quiet ? 0.0f : 55.0f;
+            codec_set_volume(g_volume);
+            store_setting(kNvsVolumeKey, static_cast<int>(g_volume));
+            speech_set_listening(!quiet);
+            store_setting(kNvsListenKey, quiet ? 0 : 1);
+            std::printf("OK %s\n", quiet ? "muted, and not listening" : "unmuted");
         } else if (command == "aec") {
             if (tokens.size() >= 2 && std::strcmp(tokens[1], "on") == 0) {
                 speech_set_cancellation(true);
@@ -1546,6 +1597,7 @@ void console_task(void*) {
             }
         } else if (command == "vol" && tokens.size() >= 2) {
             g_volume = static_cast<float>(std::atof(tokens[1]));
+            store_setting(kNvsVolumeKey, static_cast<int>(g_volume));
             if (codec_set_volume(g_volume)) {
                 std::printf("OK\n");
             } else {
@@ -1656,6 +1708,20 @@ extern "C" void app_main(void) {
         if (g_reply == nullptr) {
             ESP_LOGW(TAG, "no reply patch: %s", reply_error.c_str());
         }
+    }
+
+    // After the codec and after speech_start, both of which set their own defaults, so
+    // that what a person last asked for is the last word.
+    const int stored_volume = load_setting(kNvsVolumeKey, -1);
+    if (stored_volume >= 0) {
+        g_volume = static_cast<float>(stored_volume);
+        codec_set_volume(g_volume);
+    }
+    if (load_setting(kNvsListenKey, 1) == 0) {
+        speech_set_listening(false);
+    }
+    if (stored_volume == 0 || load_setting(kNvsListenKey, 1) == 0) {
+        ESP_LOGI(TAG, "muted from last time — `unmute` when you want it back");
     }
 
     g_sequencer.configure(SG_AUDIO_SAMPLE_RATE);
