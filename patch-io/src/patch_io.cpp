@@ -1501,6 +1501,46 @@ bool parse_patch(const std::string& text,
     }
 
 
+    if (const json::Value* presets = root.find("presets")) {
+        if (presets->is_array()) {
+            for (const json::Value& entry : presets->array()) {
+                if (!entry.is_object()) continue;
+                PresetDescription preset;
+                if (const json::Value* name = entry.find("name")) {
+                    preset.name = name->as_string();
+                }
+                if (preset.name.empty()) {
+                    diagnostics.push_back(warning(
+                        "preset_without_a_name",
+                        "A preset has no name, so nothing could show it.",
+                        "Every preset needs a name; it is what the button says."));
+                    continue;
+                }
+                if (const json::Value* author = entry.find("author")) {
+                    preset.author = author->as_string();
+                }
+                if (const json::Value* tags = entry.find("tags")) {
+                    if (tags->is_array()) {
+                        for (const json::Value& tag : tags->array()) {
+                            preset.tags.push_back(tag.as_string());
+                        }
+                    }
+                }
+                if (const json::Value* values = entry.find("values")) {
+                    if (values->is_object()) {
+                        for (const auto& pair : values->object()) {
+                            PresetValue value;
+                            value.control = pair.first;
+                            value.value = pair.second.as_number(0.0);
+                            preset.values.push_back(value);
+                        }
+                    }
+                }
+                out.presets.push_back(std::move(preset));
+            }
+        }
+    }
+
     // The roll. Read before the controls only because it has to be read somewhere; the
     // order of top-level sections in a document has never meant anything.
     if (const json::Value* sequence = root.find("sequence")) {
@@ -1957,6 +1997,31 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
             controls.push_back(std::move(entry));
         }
         root.set("controls", std::move(controls));
+    }
+
+    if (!description.presets.empty()) {
+        json::Value presets = json::Value::make_array();
+        for (const PresetDescription& preset : description.presets) {
+            json::Value entry = json::Value::make_object();
+            entry.set("name", json::Value(preset.name));
+            if (!preset.author.empty()) {
+                entry.set("author", json::Value(preset.author));
+            }
+            if (!preset.tags.empty()) {
+                json::Value tags = json::Value::make_array();
+                for (const std::string& tag : preset.tags) {
+                    tags.push_back(json::Value(tag));
+                }
+                entry.set("tags", std::move(tags));
+            }
+            json::Value values = json::Value::make_object();
+            for (const PresetValue& value : preset.values) {
+                values.set(value.control, json::Value(value.value));
+            }
+            entry.set("values", std::move(values));
+            presets.push_back(std::move(entry));
+        }
+        root.set("presets", std::move(presets));
     }
 
     // Written only when the document had one, so a patch with no roll does not acquire an

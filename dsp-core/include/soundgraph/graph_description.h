@@ -204,6 +204,28 @@ struct ModuleDescription {
     const ModuleParameterDescription* find_parameter(const std::string& parameter_name) const;
 };
 
+// One named snapshot of the performance surface: the sound bank.
+//
+// Values are keyed by *control id*, never by node, so the graph underneath can be
+// rewired without breaking the bank. Structure lives in nodes and connections;
+// character lives here.
+//
+// It is in the core for the same reason the roll is, and it was missing for the same
+// reason: the schema described it, the editor wrote it, an example shipped four of them,
+// and patch-io deleted the section on the first save. That was the last one — every
+// other top-level section in the schema round-trips.
+struct PresetValue {
+    std::string control;
+    double value = 0.0;
+};
+
+struct PresetDescription {
+    std::string name;
+    std::string author;
+    std::vector<std::string> tags;
+    std::vector<PresetValue> values;
+};
+
 // One note in the roll: where it starts, what it is, and how long it lasts, all
 // counted in steps rather than seconds so that changing the tempo moves the music
 // instead of rewriting it.
@@ -248,6 +270,8 @@ struct GraphDescription {
     // grow an empty one the first time it is saved.
     bool has_sequence = false;
     SequenceDescription sequence;
+
+    std::vector<PresetDescription> presets;
 
     // Modules, and the document as authored. When `modules` is non-empty, the vectors
     // above hold the *flattened* view — instances expanded into plain nodes, which is

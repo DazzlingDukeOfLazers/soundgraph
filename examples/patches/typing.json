@@ -462,6 +462,23 @@
         "midi_cc": 91,
         "midi_channel": 1
       }
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "out",
+        "parameter": "level"
+      },
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.85,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 7,
+        "midi_channel": 1
+      }
     }
   ],
   "sequence": {
@@ -645,5 +662,87 @@
         "length": 1
       }
     ]
-  }
+  },
+  "presets": [
+    {
+      "name": "Mechanical",
+      "tags": [
+        "default"
+      ],
+      "values": {
+        "body": 1900.0,
+        "vary": 700.0,
+        "ring": 0.5,
+        "decay": 0.028,
+        "switch": 540.0,
+        "click": 0.3,
+        "tick": 0.5,
+        "level": 0.9
+      }
+    },
+    {
+      "name": "Membrane",
+      "tags": [
+        "soft"
+      ],
+      "values": {
+        "body": 1100.0,
+        "vary": 400.0,
+        "ring": 0.2,
+        "decay": 0.05,
+        "switch": 300.0,
+        "click": 0.08,
+        "tick": 0.12,
+        "level": 0.95
+      }
+    },
+    {
+      "name": "Typewriter",
+      "tags": [
+        "loud"
+      ],
+      "values": {
+        "body": 2600.0,
+        "vary": 1100.0,
+        "ring": 0.75,
+        "decay": 0.07,
+        "switch": 900.0,
+        "click": 0.85,
+        "tick": 0.9,
+        "level": 0.7
+      }
+    },
+    {
+      "name": "Laptop",
+      "tags": [
+        "thin"
+      ],
+      "values": {
+        "body": 3100.0,
+        "vary": 500.0,
+        "ring": 0.15,
+        "decay": 0.012,
+        "switch": 1100.0,
+        "click": 0.2,
+        "tick": 0.65,
+        "level": 0.9
+      }
+    },
+    {
+      "name": "Derpy",
+      "tags": [
+        "game"
+      ],
+      "values": {
+        "body": 800.0,
+        "vary": 1500.0,
+        "ring": 0.9,
+        "decay": 0.02,
+        "switch": 260.0,
+        "click": 1.2,
+        "tick": 0.0,
+        "level": 0.62
+      }
+    }
+  ]
 }

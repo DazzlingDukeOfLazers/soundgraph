@@ -572,6 +572,121 @@
         "midi_cc": 91,
         "midi_channel": 1
       }
+    },
+    {
+      "id": "level",
+      "label": "Level",
+      "kind": "knob",
+      "target": {
+        "node": "out",
+        "parameter": "level"
+      },
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.85,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 7,
+        "midi_channel": 1
+      }
+    }
+  ],
+  "presets": [
+    {
+      "name": "Chirpy",
+      "tags": [
+        "default"
+      ],
+      "values": {
+        "rate": 6.0,
+        "pitch": 12.0,
+        "range": 700.0,
+        "metal": 1.414,
+        "rise": 1100.0,
+        "fall": -800.0,
+        "room": 0.16,
+        "level": 0.62
+      }
+    },
+    {
+      "name": "Excited",
+      "tags": [
+        "fast"
+      ],
+      "values": {
+        "rate": 10.0,
+        "pitch": 24.0,
+        "range": 1200.0,
+        "metal": 1.6,
+        "rise": 1900.0,
+        "fall": -900.0,
+        "room": 0.1,
+        "level": 0.34
+      }
+    },
+    {
+      "name": "Worried",
+      "tags": [
+        "slow"
+      ],
+      "values": {
+        "rate": 3.5,
+        "pitch": 0.0,
+        "range": 400.0,
+        "metal": 2.1,
+        "rise": 400.0,
+        "fall": -1400.0,
+        "room": 0.3,
+        "level": 0.72
+      }
+    },
+    {
+      "name": "Sad",
+      "tags": [
+        "slow"
+      ],
+      "values": {
+        "rate": 2.2,
+        "pitch": -7.0,
+        "range": 300.0,
+        "metal": 1.1,
+        "rise": 200.0,
+        "fall": -1900.0,
+        "room": 0.42,
+        "level": 0.85
+      }
+    },
+    {
+      "name": "Scolding",
+      "tags": [
+        "harsh"
+      ],
+      "values": {
+        "rate": 9.0,
+        "pitch": 7.0,
+        "range": 250.0,
+        "metal": 3.2,
+        "rise": 1400.0,
+        "fall": -1300.0,
+        "room": 0.08,
+        "level": 0.36
+      }
+    },
+    {
+      "name": "Long Whistle",
+      "tags": [
+        "sparse"
+      ],
+      "values": {
+        "rate": 1.8,
+        "pitch": 19.0,
+        "range": 900.0,
+        "metal": 0.7,
+        "rise": 2300.0,
+        "fall": -300.0,
+        "room": 0.35,
+        "level": 0.9
+      }
     }
   ]
 }

@@ -10,6 +10,7 @@
 
 using soundgraph::Diagnostic;
 using soundgraph::GraphDescription;
+using soundgraph::PresetValue;
 
 namespace {
 
@@ -1665,6 +1666,66 @@ TEST(a_plugin_is_named_by_identity_and_survives_a_round_trip) {
     CHECK(again.plugins[0].state == graph.plugins[0].state);
     CHECK(again.plugins[0].slots == graph.plugins[0].slots);
     CHECK(again.find_node("fx")->plugin == "verb");
+}
+
+TEST(the_preset_bank_survives_being_saved) {
+    // The roll's twin, found the same way and one commit later. `presets` was the last
+    // top-level section in the schema that patch-io did not implement, so a bank of
+    // sounds was deleted by the save that was meant to keep it — kit-chopper ships four.
+    //
+    // Values are keyed by control id rather than by node on purpose: that is what lets
+    // the graph be rewired without the bank going stale, and it is the one thing about
+    // this section worth testing beyond the round trip.
+    const std::string text = R"({
+        "schema_version": 1,
+        "presets": [
+            {"name": "Chirpy", "tags": ["default"], "values": {"rate": 6.0, "metal": 1.414}},
+            {"name": "Sad", "author": "nobody", "values": {"rate": 2.2, "metal": 1.1}}
+        ],
+        "nodes": [ { "id": "out", "type": "StereoOutput" } ],
+        "connections": []
+    })";
+
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(text, graph, diagnostics));
+    CHECK(graph.presets.size() == 2);
+    CHECK(graph.presets[0].name == "Chirpy");
+    CHECK(graph.presets[0].tags.size() == 1 && graph.presets[0].tags[0] == "default");
+    CHECK(graph.presets[1].author == "nobody");
+    CHECK(graph.presets[1].values.size() == 2);
+
+    GraphDescription again;
+    std::vector<Diagnostic> more;
+    CHECK(parse_patch(write_patch(graph, true), again, more));
+    CHECK(again.presets.size() == 2);
+    CHECK(again.presets[1].name == "Sad");
+    CHECK(again.presets[1].author == "nobody");
+    bool found_metal = false;
+    for (const PresetValue& value : again.presets[1].values) {
+        if (value.control == "metal") {
+            found_metal = true;
+            CHECK(std::fabs(value.value - 1.1) < 1e-9);
+        }
+    }
+    CHECK(found_metal);
+}
+
+TEST(a_preset_with_no_name_is_refused_and_said_so) {
+    // A nameless preset is a button with nothing written on it. Dropping it quietly
+    // would leave a bank one shorter than the file for no visible reason.
+    const std::string text = R"({
+        "schema_version": 1,
+        "presets": [ {"values": {"rate": 6.0}} ],
+        "nodes": [ { "id": "out", "type": "StereoOutput" } ],
+        "connections": []
+    })";
+
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(text, graph, diagnostics));
+    CHECK(graph.presets.empty());
+    CHECK(has_code(diagnostics, "preset_without_a_name"));
 }
 
 TEST(the_piano_roll_survives_being_saved) {
