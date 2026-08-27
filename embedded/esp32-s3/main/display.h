@@ -54,6 +54,15 @@ int display_text_width(const char* text, int scale);
 // Pushes the framebuffer to the glass.
 bool display_present();
 
+// Push only these logical rows. A full frame is 602 KB over QSPI and costs 32 ms, which
+// is most of a drag's latency spent redelivering pixels that did not change. Rows rather
+// than a rectangle because the framebuffer is row-major: a band of rows is already
+// contiguous and needs no staging copy, while a rectangle would need one.
+bool display_present_rows(int y, int height);
+
+// Clear only these logical rows, for the same reason.
+void display_clear_rows(int y, int height, uint32_t rgb);
+
 bool display_set_brightness(int percent);
 bool display_test_card();
 

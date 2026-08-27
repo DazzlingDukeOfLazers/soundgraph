@@ -41,6 +41,9 @@
 #include "driver/i2s_std.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_clk_tree.h"
+#include "esp_private/esp_clk.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
@@ -787,41 +790,60 @@ uint32_t lab_colour() {
     return display_dim(display_rgb(r, 255, b), static_cast<int>(g_lab.bright + 0.5f));
 }
 
-void draw_lab() {
-    if (!display_available()) return;
-    const int w = display_width(), h = display_height();
-    display_clear(display_rgb(0, 0, 0));
+// The graticule and its readout, on their own band. Split out of draw_lab because a
+// drag needs to redraw it without redrawing six knobs around it.
+constexpr int kLabGridTop = 30;
+constexpr int kLabGridBottom = kLabGridTop + 190;
+constexpr int kLabBandTop = kLabGridTop - 12;
+constexpr int kLabBandHeight = (kLabGridBottom + 26) - kLabBandTop;
 
+// Paints into the framebuffer and presents nothing. Both the full redraw and the drag
+// path need these pixels; only one of them owns the clear and the push.
+void paint_lab_grid() {
+    const int w = display_width();
     const uint32_t colour = lab_colour();
     const int cells = static_cast<int>(g_lab.cells + 0.5f);
     const int intensity = static_cast<int>(g_lab.level + 0.5f);
-
-    // The graticule. Inset from the glass edge, and given room below for the dials.
-    const int left = 26, right = w - 26, top = 30;
-    const int bottom = top + 190;
+    const int left = 26, right = w - 26;
 
     for (int i = 0; i <= cells; ++i) {
         const float fx = left + (right - left) * static_cast<float>(i) / cells;
-        display_glow_line(fx, static_cast<float>(top), fx, static_cast<float>(bottom),
+        display_glow_line(fx, static_cast<float>(kLabGridTop), fx,
+                          static_cast<float>(kLabGridBottom),
                           g_lab.width, g_lab.glow, intensity, colour);
     }
     for (int i = 0; i <= cells; ++i) {
-        const float fy = top + (bottom - top) * static_cast<float>(i) / cells;
+        const float fy = kLabGridTop +
+                         (kLabGridBottom - kLabGridTop) * static_cast<float>(i) / cells;
         display_glow_line(static_cast<float>(left), fy, static_cast<float>(right), fy,
                           g_lab.width, g_lab.glow, intensity, colour);
     }
 
-    // The readout names the six numbers, because the point of the exercise is to leave
-    // with numbers that can be typed into the interface — not with a screen that looked
-    // right once.
+    // The six numbers, because the point of the exercise is to leave with numbers that
+    // can be typed into the interface, not with a screen that looked right once.
     char line[48];
     std::snprintf(line, sizeof line, "W%.1f G%.0f L%.0f C%d H%.0f B%.0f",
                   static_cast<double>(g_lab.width), static_cast<double>(g_lab.glow),
                   static_cast<double>(g_lab.level), cells,
                   static_cast<double>(g_lab.hue), static_cast<double>(g_lab.bright));
-    display_text((w - display_text_width(line, 1)) / 2, bottom + 10, line, 1,
+    display_text((w - display_text_width(line, 1)) / 2, kLabGridBottom + 10, line, 1,
                  display_rgb(120, 132, 140));
+}
 
+void draw_lab_grid() {
+    if (!display_available()) return;
+    display_clear_rows(kLabBandTop, kLabBandHeight, display_rgb(0, 0, 0));
+    paint_lab_grid();
+    display_present_rows(kLabBandTop, kLabBandHeight);
+}
+
+void draw_lab() {
+    if (!display_available()) return;
+    const int w = display_width(), h = display_height();
+    display_clear(display_rgb(0, 0, 0));
+    paint_lab_grid();
+
+    const int bottom = kLabGridBottom;
     const int columns = 3;
     const int knob_top = bottom + 28;
     const int cell_w = (w - 44) / columns;
@@ -839,6 +861,55 @@ void draw_lab() {
     display_present();
 }
 
+// The band of rows one knob occupies, label included. Rows rather than a rectangle
+// because the framebuffer is row-major, so a band needs no staging copy.
+struct Band { int y; int height; };
+
+Band knob_band(int index) {
+    if (index < 0 || index >= static_cast<int>(g_knob_hits.size())) return Band{0, 0};
+    const KnobHit& hit = g_knob_hits[static_cast<std::size_t>(index)];
+    const int top = hit.cy - hit.radius - 12;
+    const int bottom = hit.cy + hit.radius + 32;   // the label sits under the knob
+    return Band{top < 0 ? 0 : top, bottom - (top < 0 ? 0 : top)};
+}
+
+void redraw_one_knob(const std::vector<UiControl>& controls, int index) {
+    const Band band = knob_band(index);
+    if (band.height <= 0) return;
+    const KnobHit& hit = g_knob_hits[static_cast<std::size_t>(index)];
+    display_clear_rows(band.y, band.height, theme().ground);
+    draw_knob(hit.cx, hit.cy, hit.radius, controls[static_cast<std::size_t>(index)], true);
+    display_present_rows(band.y, band.height);
+}
+
+// The face: the moving knob, and the header that reads out its value. Two bands, and
+// nothing else on the screen has changed.
+void face_redraw_moving(int index) {
+    if (index < 0 || index >= static_cast<int>(g_ui_controls.size())) return;
+    const Theme& t = theme();
+    const UiControl& control = g_ui_controls[static_cast<std::size_t>(index)];
+    const int w = display_width();
+
+    display_clear_rows(0, 62, t.ground);
+    char value[16];
+    format_value(value, sizeof value, control.value);
+    display_text((w - display_text_width(control.label.c_str(), 2)) / 2, 12,
+                 control.label.c_str(), 2, t.ink_dim);
+    display_text((w - display_text_width(value, 5)) / 2, 32, value, 5, t.ink);
+    display_present_rows(0, 62);
+
+    redraw_one_knob(g_ui_controls, index);
+}
+
+// The lab is harder: every dial changes the graticule, so the specimen is genuinely
+// stale each time. The knob and the readout still go first and go alone, so the thing
+// under the finger keeps up; the grid follows on its own band.
+void lab_redraw_moving(int index) {
+    if (index < 0 || index >= static_cast<int>(g_lab_controls.size())) return;
+    redraw_one_knob(g_lab_controls, index);
+    draw_lab_grid();
+}
+
 // ---------------------------------------------------------------------------------
 // Which set of knobs the finger is on.
 //
@@ -850,13 +921,21 @@ struct Surface {
     std::vector<UiControl>* controls;
     void (*redraw)();
     void (*changed)();
+    // Redraw for the case that actually needs to be quick: one knob is moving and
+    // everything else on screen is already correct. Measured, a full face is 268 ms of
+    // drawing plus 32 ms of QSPI, and nearly all of it redelivers pixels that did not
+    // change. Null means the surface has nothing cheaper to offer than the whole thing.
+    void (*redraw_moving)(int index);
 };
 
 void face_changed();
 void lab_changed() { lab_pull(); }
 
-const Surface kFaceSurface{&g_ui_controls, draw_face, face_changed};
-const Surface kLabSurface{&g_lab_controls, draw_lab, lab_changed};
+void face_redraw_moving(int index);
+void lab_redraw_moving(int index);
+
+const Surface kFaceSurface{&g_ui_controls, draw_face, face_changed, face_redraw_moving};
+const Surface kLabSurface{&g_lab_controls, draw_lab, lab_changed, lab_redraw_moving};
 const Surface* g_surface = &kFaceSurface;
 
 // A finger on a knob. Vertical drag rather than rotation: turning a real knob is a
@@ -899,7 +978,11 @@ void touch_task(void*) {
                 if (next != control.value) {
                     control.value = next;
                     g_surface->changed();
-                    g_surface->redraw();
+                    if (g_surface->redraw_moving != nullptr) {
+                        g_surface->redraw_moving(held);
+                    } else {
+                        g_surface->redraw();
+                    }
                 }
             }
         } else if (held >= 0) {
@@ -907,7 +990,10 @@ void touch_task(void*) {
             g_active_knob = -1;
             g_surface->redraw();   // back to the title once the finger lifts
         }
-        vTaskDelay(pdMS_TO_TICKS(30));
+        // Idle, the poll rate only decides how quickly a touch is noticed, and 30 ms is
+        // imperceptible for that. Under a finger it decides how far behind the drawing
+        // runs, and there the delay adds directly to the lag the hand feels.
+        vTaskDelay(pdMS_TO_TICKS(held >= 0 ? 8 : 30));
     }
 }
 
@@ -1487,11 +1573,60 @@ void console_task(void*) {
                             static_cast<double>(g_lab.width), static_cast<double>(g_lab.glow),
                             static_cast<double>(g_lab.level), static_cast<double>(g_lab.cells),
                             static_cast<double>(g_lab.hue), static_cast<double>(g_lab.bright));
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "time") == 0) {
+                // Where a drag's latency actually goes. "It feels slow" has at least
+                // four candidate causes here — clearing the framebuffer, drawing the
+                // shapes, rendering text, pushing pixels over QSPI — and they have
+                // nothing in common as fixes. Timing them separately is cheaper than
+                // being wrong about which one it is.
+                const int runs = 8;
+                UiControl probe;
+                probe.label = "PROBE";
+                probe.min_value = 0.0f; probe.max_value = 1.0f; probe.value = 0.6f;
+
+                const int64_t a0 = esp_timer_get_time();
+                for (int i = 0; i < runs; ++i) display_clear(display_rgb(0, 0, 0));
+                const int64_t a1 = esp_timer_get_time();
+                for (int i = 0; i < runs; ++i) draw_knob(120, 120, 42, probe, false);
+                const int64_t a2 = esp_timer_get_time();
+                for (int i = 0; i < runs; ++i) display_text(4, 4, "ABCDEFGHIJKL", 2,
+                                                           display_rgb(200, 200, 200));
+                const int64_t a3 = esp_timer_get_time();
+                for (int i = 0; i < runs; ++i) display_present();
+                const int64_t a4 = esp_timer_get_time();
+                for (int i = 0; i < runs; ++i) g_surface->redraw();
+                const int64_t a5 = esp_timer_get_time();
+                for (int i = 0; i < runs; ++i) display_disc(120, 120, 42.0f, 0x101010);
+                const int64_t a6 = esp_timer_get_time();
+                for (int i = 0; i < runs; ++i)
+                    display_arc(120, 120, 48.0f, 8.0f, 135.0f, 405.0f, 0x101010);
+                const int64_t a7 = esp_timer_get_time();
+                // 10k bare blends: the framebuffer traffic on its own, with no geometry
+                // in front of it, so the memory cost and the arithmetic cost separate.
+                for (int i = 0; i < runs; ++i)
+                    for (int k = 0; k < 10000; ++k) display_blend(k % 400, k / 400, 0x202020, 128);
+                const int64_t a8 = esp_timer_get_time();
+                // The number that actually decides whether a drag feels laggy.
+                g_active_knob = 0;
+                for (int i = 0; i < runs; ++i) {
+                    if (g_surface->redraw_moving != nullptr) g_surface->redraw_moving(0);
+                }
+                const int64_t a9 = esp_timer_get_time();
+                g_active_knob = -1;
+
+                const double ms = 1000.0 * runs;
+                std::printf("OK cpu %d MHz | clear %.1f | knob %.1f | text %.1f | "
+                            "present %.1f | whole %.1f | disc %.1f | arc %.1f | "
+                            "10k blends %.1f | DRAG STEP %.1f ms\n",
+                            esp_clk_cpu_freq() / 1000000,
+                            (a1 - a0) / ms, (a2 - a1) / ms, (a3 - a2) / ms,
+                            (a4 - a3) / ms, (a5 - a4) / ms, (a6 - a5) / ms,
+                            (a7 - a6) / ms, (a8 - a7) / ms, (a9 - a8) / ms);
             } else if (tokens.size() >= 3 && std::strcmp(tokens[1], "bright") == 0) {
                 display_set_brightness(std::atoi(tokens[2]));
                 std::printf("OK brightness %s\n", tokens[2]);
             } else {
-                std::printf("usage: screen test | face | lab [W G L C H B] | "
+                std::printf("usage: screen test | face | lab [W G L C H B] | time | "
                             "theme 0-%d | rotate 0-270 | fill RRGGBB | bright 0-100\n",
                             kThemeCount - 1);
             }

@@ -26,6 +26,8 @@ int display_text_width(const char*, int) { return 0; }
 // holds stubs; anything real in it is a paste that landed one #if too early.
 
 bool display_present() { return false; }
+bool display_present_rows(int, int) { return false; }
+void display_clear_rows(int, int, uint32_t) {}
 bool display_set_brightness(int) { return false; }
 bool display_test_card() { return false; }
 
@@ -256,15 +258,47 @@ inline int edge_alpha(float distance, float edge) {
 }
 }  // namespace
 
+// Row by row, with the row's span solved rather than searched. Sweeping the bounding
+// square instead costs a square root and a call per pixel to discover that four pixels
+// in five are outside the shape — which is affordable once and ruinous nine times a
+// frame while a finger is moving.
 void display_disc(int cx, int cy, float radius, uint32_t colour) {
-    const int r = static_cast<int>(radius) + 2;
+    const float outer = radius + 1.0f;
+    const int r = static_cast<int>(outer) + 1;
     for (int dy = -r; dy <= r; ++dy) {
-        for (int dx = -r; dx <= r; ++dx) {
+        const float fy = static_cast<float>(dy);
+        const float span = outer * outer - fy * fy;
+        if (span <= 0.0f) continue;
+        const int reach = static_cast<int>(std::sqrt(span)) + 1;
+        for (int dx = -reach; dx <= reach; ++dx) {
             const int a = edge_alpha(
                 std::sqrt(static_cast<float>(dx * dx + dy * dy)), radius);
             if (a > 0) display_blend(cx + dx, cy + dy, colour, a);
         }
     }
+}
+
+// atan2 accurate to about a fifth of a degree, which is all an arc needs.
+//
+// The exact one was the whole cost of drawing a knob. An arc visits its annulus — some
+// eight thousand pixels across the four arcs of one knob — and called newlib's atan2f at
+// every one of them; at several hundred cycles each that was around 24 of the 32 ms a
+// knob took, dwarfing the framebuffer traffic I had assumed was to blame. Nine knobs a
+// frame made it the reason a drag felt slow.
+//
+// This is the standard minimax cubic on [0,1] with the octant folded in: worst error
+// ~0.0038 rad, so at the outer edge of the largest knob the arc's end lands within a
+// quarter of a pixel of where it should. The caps are feathered over a whole pixel of
+// arc length, so that error is invisible — and being invisible is the entire
+// specification. Exactness here buys nothing and costs everything.
+float fast_atan2(float y, float x) {
+    const float ax = std::fabs(x), ay = std::fabs(y);
+    if (ax + ay < 1e-6f) return 0.0f;
+    const float z = ax > ay ? ay / ax : ax / ay;
+    float r = z * (0.7853981634f - (z - 1.0f) * (0.2447f + 0.0663f * z));
+    if (ay > ax) r = 1.5707963268f - r;
+    if (x < 0.0f) r = 3.1415926536f - r;
+    return y < 0.0f ? -r : r;
 }
 
 void display_arc(int cx, int cy, float radius, float thickness,
@@ -274,7 +308,24 @@ void display_arc(int cx, int cy, float radius, float thickness,
     const float inner = radius - thickness * 0.5f;
     const int r = static_cast<int>(outer) + 2;
     for (int dy = -r; dy <= r; ++dy) {
-        for (int dx = -r; dx <= r; ++dx) {
+        const float fy = static_cast<float>(dy);
+
+        // The row's outer span, solved. Beyond it there is nothing to draw.
+        const float out_span = (outer + 1.0f) * (outer + 1.0f) - fy * fy;
+        if (out_span <= 0.0f) continue;
+        const int reach = static_cast<int>(std::sqrt(out_span)) + 1;
+
+        // And the row's inner span, which is the part worth skipping: an arc is a thin
+        // ring, so the disc it encloses is most of the bounding box and none of the
+        // shape. A 3px ring at radius 48 is about 900 pixels inside a box of 11,881.
+        const float in_span = (inner - 1.0f) * (inner - 1.0f) - fy * fy;
+        const int hole = in_span > 0.0f ? static_cast<int>(std::sqrt(in_span)) : 0;
+
+        for (int dx = -reach; dx <= reach; ++dx) {
+            if (hole > 0 && dx > -hole && dx < hole) {
+                dx = hole - 1;      // the loop's ++dx lands on the far wall
+                continue;
+            }
             const float d = std::sqrt(static_cast<float>(dx * dx + dy * dy));
             int a = edge_alpha(d, outer);
             if (a == 0) continue;
@@ -282,7 +333,7 @@ void display_arc(int cx, int cy, float radius, float thickness,
             if (di <= 0.0f) continue;
             if (di < 1.0f) a = static_cast<int>(a * di);
 
-            float angle = std::atan2(static_cast<float>(dy), static_cast<float>(dx))
+            float angle = fast_atan2(static_cast<float>(dy), static_cast<float>(dx))
                           * 180.0f / 3.14159265f;
             while (angle < start_degrees) angle += 360.0f;
             if (angle > end_degrees) {
@@ -342,11 +393,79 @@ float distance_to_segment(float px, float py, float x0, float y0, float x1, floa
 }
 }  // namespace
 
+// The alpha a pixel gets at a given distance from the line's centre: the core, with a
+// pixel of anti-aliasing at its edge, then the halo falling off squared.
+int glow_alpha(float d, float half, float spill, int intensity) {
+    float coverage = half + 0.5f - d;
+    coverage = coverage < 0.0f ? 0.0f : (coverage > 1.0f ? 1.0f : coverage);
+    int alpha = static_cast<int>(coverage * 255.0f + 0.5f);
+    if (spill > 0.0f && d > half) {
+        const float u = (d - half) / spill;
+        if (u < 1.0f) {
+            const float fall = (1.0f - u) * (1.0f - u);
+            const int halo = static_cast<int>(255.0f * fall * intensity / 100.0f);
+            if (halo > alpha) alpha = halo;
+        }
+    }
+    return alpha;
+}
+
+// Axis-aligned glow, which is every line the graticule draws.
+//
+// For a straight horizontal or vertical segment the distance field is one-dimensional:
+// every row of a vertical line has the identical profile across it, so the falloff can be
+// solved once into a small table and then read. The general path was spending a square
+// root, a divide and a projection per pixel to rediscover the same few hundred numbers
+// over and over — on the lab screen that was most of a 197 ms drag step, and the
+// graticule is the one thing there that has to keep up with the finger.
+//
+// Only the caps still need real geometry, and they are a couple of rows at each end.
+void glow_axis_line(float fixed, float from, float to, bool vertical,
+                    float half, float spill, int intensity, uint32_t colour) {
+    const float reach = half + spill;
+    const int span = static_cast<int>(reach) + 2;
+
+    int profile[96];
+    const int entries = span + 1 < 96 ? span + 1 : 96;
+    for (int i = 0; i < entries; ++i) {
+        profile[i] = glow_alpha(static_cast<float>(i), half, spill, intensity);
+    }
+
+    const int centre = static_cast<int>(fixed + 0.5f);
+    const int lo = static_cast<int>(from < to ? from : to);
+    const int hi = static_cast<int>(from > to ? from : to);
+
+    for (int along = lo - span; along <= hi + span; ++along) {
+        // Past the ends the distance stops being one-dimensional, so those few rows go
+        // the honest way.
+        const float overshoot = along < lo ? static_cast<float>(lo - along)
+                              : along > hi ? static_cast<float>(along - hi) : 0.0f;
+        for (int off = -span; off <= span; ++off) {
+            int alpha;
+            if (overshoot == 0.0f) {
+                const int index = off < 0 ? -off : off;
+                if (index >= entries) continue;
+                alpha = profile[index];
+            } else {
+                const float fo = static_cast<float>(off);
+                alpha = glow_alpha(std::sqrt(fo * fo + overshoot * overshoot),
+                                   half, spill, intensity);
+            }
+            if (alpha <= 0) continue;
+            if (vertical) display_blend(centre + off, along, colour, alpha);
+            else          display_blend(along, centre + off, colour, alpha);
+        }
+    }
+}
+
 void display_glow_line(float x0, float y0, float x1, float y1,
                        float width, float glow, int intensity, uint32_t colour) {
     const float half = width * 0.5f;
     const float spill = glow > 0.0f ? glow : 0.0f;
     const float reach = half + spill;
+
+    if (x0 == x1) { glow_axis_line(x0, y0, y1, true, half, spill, intensity, colour); return; }
+    if (y0 == y1) { glow_axis_line(y0, x0, x1, false, half, spill, intensity, colour); return; }
 
     // One pass over the bounding box. Stamping concentric wider strokes — the obvious
     // way — costs passes x length x radius^2 blends, and still bands visibly because a
@@ -382,6 +501,66 @@ void display_glow_line(float x0, float y0, float x1, float y1,
             if (alpha > 0) display_blend(x, y, colour, alpha);
         }
     }
+}
+
+// Logical rows to physical ones. The framebuffer is stored physically, so a band that
+// is contiguous on screen is only contiguous in memory when the rotation is a half turn
+// or none — at a quarter turn a row of the screen is a column of memory, and there is no
+// band to push. Those rotations fall back to the whole frame rather than pretending.
+namespace {
+bool physical_rows(int y, int height, int* out_y0, int* out_y1) {
+    if (height <= 0) return false;
+    int y0 = y, y1 = y + height;
+    if (g_rotation == 180) {
+        y0 = SG_DISPLAY_HEIGHT - (y + height);
+        y1 = SG_DISPLAY_HEIGHT - y;
+    }
+    if (y0 < 0) y0 = 0;
+    if (y1 > SG_DISPLAY_HEIGHT) y1 = SG_DISPLAY_HEIGHT;
+    if (y1 <= y0) return false;
+
+    // The panel addresses in a 2x2 grid. An odd start or an odd height is accepted and
+    // silently discarded — the failure that looks like the draw never happened — so the
+    // band is grown outward to even bounds rather than trusted as given.
+    y0 &= ~1;
+    if (((y1 - y0) & 1) != 0) {
+        // Grow, never shrink: a band one row short of the damage leaves a stale line
+        // exactly where the eye is already looking.
+        if (y1 < SG_DISPLAY_HEIGHT) ++y1; else --y0;
+    }
+    if (y1 <= y0) return false;
+
+    *out_y0 = y0;
+    *out_y1 = y1;
+    return true;
+}
+}  // namespace
+
+void display_clear_rows(int y, int height, uint32_t colour) {
+    if (g_fb == nullptr) return;
+    int y0 = 0, y1 = 0;
+    if (!physical_rows(y, height, &y0, &y1)) return;
+    const uint8_t r = static_cast<uint8_t>(colour >> 16);
+    const uint8_t g = static_cast<uint8_t>(colour >> 8);
+    const uint8_t b = static_cast<uint8_t>(colour);
+    uint8_t* p = g_fb + static_cast<std::size_t>(y0) * SG_DISPLAY_WIDTH * kBytesPerPixel;
+    for (int i = 0; i < (y1 - y0) * SG_DISPLAY_WIDTH; ++i) {
+        *p++ = r; *p++ = g; *p++ = b;
+    }
+}
+
+bool display_present_rows(int y, int height) {
+    if (g_panel == nullptr || g_fb == nullptr) return false;
+    if (g_rotation == 90 || g_rotation == 270) return display_present();
+    int y0 = 0, y1 = 0;
+    if (!physical_rows(y, height, &y0, &y1)) return true;
+
+    uint8_t* rows = g_fb + static_cast<std::size_t>(y0) * SG_DISPLAY_WIDTH * kBytesPerPixel;
+    if (esp_lcd_panel_draw_bitmap(g_panel, 0, y0, SG_DISPLAY_WIDTH, y1, rows) != ESP_OK) {
+        return false;
+    }
+    xSemaphoreTake(g_trans_done, pdMS_TO_TICKS(1000));
+    return true;
 }
 
 bool display_present() {
