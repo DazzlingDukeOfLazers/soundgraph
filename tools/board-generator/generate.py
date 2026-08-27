@@ -114,6 +114,9 @@ def main() -> None:
             f"#define SG_DISPLAY_QSPI_D3 {qspi.get('d3', -1)}",
             f"#define SG_DISPLAY_RESET {display.get('reset', -1)}",
             f"#define SG_DISPLAY_TE {display.get('te', -1)}",
+            # A transmissive panel needs a backlight pin; an AMOLED sets brightness with
+            # a command and has none. -1 says which kind of panel this is.
+            f"#define SG_DISPLAY_BACKLIGHT {display.get('backlight', -1)}",
             f"#define SG_DISPLAY_ROTATION {display.get('rotation', 0)}",
         ]
         if touch:
@@ -125,6 +128,23 @@ def main() -> None:
                 f"#define SG_TOUCH_I2C_SCL {touch.get('scl', -1)}",
                 f"#define SG_TOUCH_INTERRUPT {touch.get('interrupt', -1)}",
                 f"#define SG_TOUCH_RESET {touch.get('reset', -1)}",
+            ]
+        if "expander" in display:
+            # Panel control lines that live on an I2C expander rather than a chip GPIO.
+            # Worth a separate define rather than folding into SG_DISPLAY_RESET: an
+            # expander line costs a transaction, cannot be driven from an ISR, and is not
+            # available until I2C is up — so a panel reset that lives here constrains the
+            # bring-up order in a way a GPIO never does.
+            expander = display["expander"]
+            lines += [
+                "",
+                "#define SG_DISPLAY_EXPANDER_PRESENT 1",
+                f'#define SG_DISPLAY_EXPANDER_CHIP "{expander.get("chip", "")}"',
+                f"#define SG_DISPLAY_EXPANDER_ADDRESS {expander.get('i2c_address', 32)}",
+                f"#define SG_DISPLAY_EXPANDER_INT {expander.get('interrupt', -1)}",
+                f"#define SG_DISPLAY_EXPANDER_RESET_PIN {expander.get('reset_pin', -1)}",
+                f"#define SG_DISPLAY_EXPANDER_BL_PIN "
+                f"{expander.get('backlight_enable_pin', -1)}",
             ]
         else:
             lines += ["#define SG_TOUCH_PRESENT 0"]

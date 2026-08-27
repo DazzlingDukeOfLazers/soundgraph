@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "esp32-s3-touch-lcd-349",
+  "name": "Waveshare ESP32-S3-Touch-LCD-3.49",
+  "vendor": "waveshare",
+  "url": "https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.49",
+  "target": "esp32-s3",
+  "notes": "The first revision. It differs from V2 in exactly the two places that would be worst to get wrong: panel reset is a chip GPIO here (21) and backlight is GPIO 8, whereas V2 moves reset onto the I/O expander and puts the expander's own interrupt on 8 and the tearing line on 21. Drive a V2 with this profile and you toggle its TE line expecting a reset and hold its expander interrupt low expecting a backlight \u2014 two silent, plausible failures. The boards are separate profiles for that reason, and the expander answering at 0x20 is not the discriminator: both revisions carry one. Audio is the third board to use the ES8311-out/ES7210-in pair, and the first to put both on their own I2C bus (47/48) separate from the touch bus (17/18) \u2014 every earlier board hung everything off one. The NS4150 amp enable sits on a TCA9554 at 0x20, pin 7, exactly like the AUDIO-Board's TCA9555: the speaker stays silent until an I2C transaction says otherwise, which is a fact about the board and not a fault in the firmware. The panel is an AXS15231B on quad SPI, a controller no profile has driven yet, and it is its own touch controller too \u2014 one part answering at 0x3b on the touch bus, rather than the separate FT3168 the watch carries. 172x640 is a bar: taller than it is wide by nearly four to one, which is a different interface problem from the watch's near-square and worth designing for rather than scaling into. Pins are read out of Waveshare's own repository for this board rather than the wiki, after the wiki named the wrong controller for the watch and cost an evening.",
+  "audio_out": {
+    "kind": "codec",
+    "chip": "ES8311",
+    "sample_rate": 48000,
+    "bits": 16,
+    "i2s": {
+      "mclk": 7,
+      "bclk": 15,
+      "ws": 46,
+      "dout": 45
+    },
+    "i2c": {
+      "sda": 47,
+      "scl": 48,
+      "address": 24
+    },
+    "amp": {
+      "expander": "tca9554",
+      "i2c_address": 32,
+      "pin": 7
+    }
+  },
+  "audio_in": {
+    "kind": "codec",
+    "chip": "ES7210",
+    "i2c_address": 64,
+    "i2s": {
+      "din": 6
+    },
+    "notes": "Shares the ES8311's MCLK/BCLK/LRCK, as on every board so far."
+  },
+  "psram": {
+    "present": true,
+    "mode": "octal",
+    "megabytes": 8
+  },
+  "controls": [
+    {
+      "id": "screen",
+      "kind": "touch",
+      "pin": -1
+    }
+  ],
+  "display": {
+    "kind": "qspi",
+    "chip": "AXS15231B",
+    "width": 172,
+    "height": 640,
+    "qspi": {
+      "sclk": 10,
+      "cs": 9,
+      "d0": 11,
+      "d1": 12,
+      "d2": 13,
+      "d3": 14
+    },
+    "reset": 21,
+    "te": -1,
+    "backlight": 8,
+    "touch": {
+      "chip": "AXS15231B",
+      "i2c_address": 59,
+      "sda": 17,
+      "scl": 18,
+      "interrupt": -1,
+      "reset": -1
+    },
+    "rotation": 0
+  }
+}

@@ -64,9 +64,11 @@
         "sample_rate": {
           "type": "integer",
           "enum": [
+            32000,
             44100,
             48000
-          ]
+          ],
+          "description": "32000 is here because a board earned it: the watch runs both its instruments only at 32 kHz, and on a fingernail speaker there is nothing above 16 kHz to lose. Nothing validates this file, so the enum is a claim about what the firmware is known to do rather than a gate."
         },
         "bits": {
           "type": "integer",
@@ -296,6 +298,34 @@
             270
           ],
           "description": "Degrees to rotate the UI so it is upright in use. A panel is soldered in whatever orientation the mechanical design wanted; this is where that fact lives."
+        },
+        "backlight": {
+          "type": "integer",
+          "description": "PWM backlight GPIO. AMOLED panels set brightness with a command and have none; a transmissive LCD needs the pin."
+        },
+        "expander": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Some panel control lines live on an I2C I/O expander rather than a chip GPIO. Where they do, `reset` and `backlight` above are -1 and the pin is named here instead \u2014 the distinction matters because an expander line costs an I2C transaction and cannot be driven from an ISR.",
+          "properties": {
+            "chip": {
+              "type": "string"
+            },
+            "i2c_address": {
+              "type": "integer"
+            },
+            "interrupt": {
+              "type": "integer",
+              "description": "Expander's own INT line, when wired."
+            },
+            "reset_pin": {
+              "type": "integer",
+              "description": "Expander pin carrying panel reset."
+            },
+            "backlight_enable_pin": {
+              "type": "integer"
+            }
+          }
         }
       }
     }
