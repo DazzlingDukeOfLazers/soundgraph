@@ -12,12 +12,33 @@ bool touch_read(int*, int*) { return false; }
 
 #include "codec_init.h"
 #include "display.h"
+#include "driver/gpio.h"
 #include "esp_lcd_touch_ft5x06.h"
 #include "esp_log.h"
 
 namespace {
 const char* const TAG = "sg-touch";
 esp_lcd_touch_handle_t g_touch = nullptr;
+
+// Read the controller only when it says it has something.
+//
+// esp_lcd_touch_read_data does an unconditional I2C transaction, and the FT3168 NAKs
+// when no finger is present — so polling at 30 ms filled the console with I2C errors
+// that were not errors, three lines of driver noise per line of real output, and put
+// pointless traffic on the bus the codec shares.
+//
+// The catch is that FT-series parts differ in what the interrupt line means: some hold
+// it asserted for the duration of a touch, others pulse it once per report. Gating on
+// the level is right for the first and would drop most of a drag for the second, and
+// this board's datasheet is not to hand. So the gate carries a probe — when the line is
+// idle, one read still goes through every so often, and if that read finds a finger the
+// line has proved itself a pulse and the gate turns itself off for good. Worst case is
+// half a second of coarse tracking once, rather than a touchscreen that quietly stops
+// working.
+bool g_int_gated = true;
+bool g_int_proven = false;   // the line has delivered a touch, so it holds; stop probing
+int g_probe_countdown = 0;
+constexpr int kProbeEvery = 16;   // at a 30 ms poll, about twice a second
 }  // namespace
 
 bool touch_init() {
@@ -67,12 +88,41 @@ bool touch_available() { return g_touch != nullptr; }
 
 bool touch_read(int* out_x, int* out_y) {
     if (g_touch == nullptr) return false;
+
+    bool probing = false;
+    if (g_int_gated && SG_TOUCH_INTERRUPT >= 0) {
+        const bool asserted =
+            gpio_get_level(static_cast<gpio_num_t>(SG_TOUCH_INTERRUPT)) == 0;
+        if (asserted) {
+            g_probe_countdown = kProbeEvery;
+        } else if (g_int_proven) {
+            return false;
+        } else if (g_probe_countdown > 0) {
+            --g_probe_countdown;
+            return false;
+        } else {
+            g_probe_countdown = kProbeEvery;
+            probing = true;
+        }
+    }
+
     esp_lcd_touch_read_data(g_touch);
 
     uint16_t xs[1] = {0}, ys[1] = {0};
     uint8_t count = 0;
     if (!esp_lcd_touch_get_coordinates(g_touch, xs, ys, nullptr, &count, 1) || count == 0) {
         return false;
+    }
+
+    // A finger the interrupt line never mentioned. It pulses rather than holds, so the
+    // gate is wrong for this part and stays off from here on.
+    if (probing) {
+        g_int_gated = false;
+        ESP_LOGW(TAG, "%s pulses its interrupt; polling the bus instead", SG_TOUCH_CHIP);
+    } else {
+        // The gate delivered a touch, so the line holds while a finger is down and the
+        // probe has nothing left to discover. One drag pays for the rest of the session.
+        g_int_proven = true;
     }
 
     // Panel coordinates into logical ones: the same rotation the framebuffer applies,

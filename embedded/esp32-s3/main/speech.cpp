@@ -248,6 +248,14 @@ void fetch_task(void*) {
     bool matching = false;
 
     while (g_running) {
+        // Deaf means deaf at both ends. The feed side already honoured this; this side
+        // did not, so `listen off` left fetch() spinning on a ring nobody was filling —
+        // a warning per call, and enough CPU on core 1 to trip the idle watchdog. Half
+        // a switch is worse than none: it looks off and behaves worse than on.
+        if (!g_listening) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
         afe_fetch_result_t* result = g_afe->fetch(g_afe_data);
         if (result == nullptr || result->ret_value == ESP_FAIL) {
             vTaskDelay(pdMS_TO_TICKS(10));
