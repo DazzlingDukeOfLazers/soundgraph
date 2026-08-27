@@ -9,7 +9,7 @@
   "audio_out": {
     "kind": "codec",
     "chip": "ES8311",
-    "sample_rate": 48000,
+    "sample_rate": 44100,
     "bits": 16,
     "i2s": {
       "mclk": 7,
