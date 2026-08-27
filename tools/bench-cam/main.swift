@@ -32,10 +32,20 @@ final class Shooter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let done = DispatchSemaphore(value: 0)
     private var seen = 0
     private var warmup: Int
-    private var latest: CVImageBuffer?
+    private let settle: TimeInterval
+    // The finished picture, not the buffer it came from.
+    //
+    // Holding a CVImageBuffer past its delegate callback holds a slot in the capture
+    // pool, and with late-frame dropping disabled the pool is the only thing throttling
+    // the camera. A short run never noticed; a ten-second settle starved it, and the
+    // process died without reaching any of its own error paths — no photograph, no
+    // complaint. Rendering once and releasing the buffer keeps exactly what is wanted.
+    private var captured: CGImage?
+    private let context = CIContext()
 
-    init(device: AVCaptureDevice, warmup: Int) throws {
+    init(device: AVCaptureDevice, warmup: Int, settle: TimeInterval) throws {
         self.warmup = warmup
+        self.settle = settle
         super.init()
         session.beginConfiguration()
         // The highest the camera offers: reading a small screen from across a desk needs
@@ -53,7 +63,7 @@ final class Shooter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         session.addInput(input)
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String:
                                 kCVPixelFormatType_32BGRA]
-        output.alwaysDiscardsLateVideoFrames = false
+        output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: queue)
         guard session.canAddOutput(output) else { throw Failure("no video output") }
         session.addOutput(output)
@@ -69,29 +79,54 @@ final class Shooter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                        from c: AVCaptureConnection) {
         guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         seen += 1
-        latest = buffer
         // Early frames are exposed for whatever the camera saw before it woke up; a
         // dark room and a bright little screen need several before auto-exposure settles.
-        if seen >= warmup { done.signal() }
+        guard seen >= warmup, captured == nil else { return }
+        let ci = CIImage(cvImageBuffer: buffer)
+        captured = context.createCGImage(ci, from: ci.extent)
+        done.signal()
     }
 
     func shoot(timeout: TimeInterval = 12.0) throws -> CGImage {
         session.startRunning()
         defer { session.stopRunning() }
-        if done.wait(timeout: .now() + timeout) == .timedOut, seen == 0 {
-            throw Failure("no frames arrived in \(Int(timeout))s")
+
+        // Some cameras need wall-clock time, not frames.
+        //
+        // The OBSBOT sleeps with its head down and a shutter across the lens, and wakes
+        // on a motor when a stream opens. It delivers frames the whole time it is waking,
+        // so a warm-up counted in frames is satisfied by ninety pictures of the inside of
+        // a shutter and the app exits before the lens ever sees the room. Counting frames
+        // measures the wrong thing for a camera that has to physically move.
+        if settle > 0 {
+            Thread.sleep(forTimeInterval: settle)
+            queue.sync { seen = 0; captured = nil }
         }
-        guard let buffer = latest else { throw Failure("no frame captured") }
-        let ci = CIImage(cvImageBuffer: buffer)
-        guard let cg = CIContext().createCGImage(ci, from: ci.extent) else {
-            throw Failure("could not convert the frame")
+
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            throw Failure("no usable frame in \(Int(timeout))s (saw \(seen) frames)")
         }
-        return cg
+        guard let image = queue.sync(execute: { captured }) else {
+            throw Failure("no frame captured")
+        }
+        return image
     }
 }
 
+// Where a failure gets written down.
+//
+// The bundle is launched through LaunchServices, which is the whole reason the camera
+// grant applies — and LaunchServices discards stderr. So every failure in here has been
+// invisible: the caller sees no file appear and no reason why, which is how a broken
+// --settle looked identical to a camera that would not wake. A note next to the missing
+// photograph costs nothing and is the difference between a diagnosis and a guess.
+var errorSidecar: String?
+
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("bench-cam: \(message)\n".utf8))
+    if let sidecar = errorSidecar {
+        try? "bench-cam: \(message)\n".write(toFile: sidecar, atomically: true, encoding: .utf8)
+    }
     exit(1)
 }
 
@@ -106,6 +141,7 @@ var args = Array(CommandLine.arguments.dropFirst())
 var wanted: String?, path: String?, warmup = 10
 var crop: (Int, Int, Int, Int)?
 var preview = false
+var settle: TimeInterval = 0
 
 while let arg = args.first {
     args.removeFirst()
@@ -116,13 +152,15 @@ while let arg = args.first {
     case "--device": wanted = args.isEmpty ? nil : args.removeFirst()
     case "--preview": preview = true
     case "--warmup": warmup = Int(args.isEmpty ? "10" : args.removeFirst()) ?? 10
+    case "--settle": settle = Double(args.isEmpty ? "0" : args.removeFirst()) ?? 0
     case "--crop":
         let parts = (args.isEmpty ? "" : args.removeFirst()).split(separator: ",").compactMap { Int($0) }
         if parts.count == 4 { crop = (parts[0], parts[1], parts[2], parts[3]) }
     default: path = arg
     }
 }
-guard let destination = path else { fail("usage: bench-cam <out.jpg> [--device NAME] [--warmup N] [--crop x,y,w,h] [--preview]") }
+if let known = path { errorSidecar = known + ".err" }
+guard let destination = path else { fail("usage: bench-cam <out.jpg> [--device NAME] [--warmup N] [--crop x,y,w,h] [--settle S] [--preview]") }
 
 // ---- permission -------------------------------------------------------------------
 // Asking explicitly, and waiting: the first run is the one that raises the system
@@ -141,8 +179,11 @@ let device = wanted.flatMap { name in devices.first { $0.localizedName.contains(
 
 if preview { runPreview(device: device, destination: destination, crop: crop) }
 
+// A previous run's complaint must not be mistaken for this one's.
+if let sidecar = errorSidecar { try? FileManager.default.removeItem(atPath: sidecar) }
+
 do {
-    var image = try Shooter(device: device, warmup: warmup).shoot()
+    var image = try Shooter(device: device, warmup: warmup, settle: settle).shoot()
     if let (x, y, w, h) = crop, let cropped = image.cropping(
         to: CGRect(x: x, y: y, width: w, height: h)) {
         image = cropped

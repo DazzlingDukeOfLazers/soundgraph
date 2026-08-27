@@ -31,9 +31,12 @@ PLIST
 swiftc -O -o "$APP/Contents/MacOS/bench-cam" "$HERE/main.swift" "$HERE/preview.swift" \
     -framework AVFoundation -framework AppKit -framework CoreImage -framework ImageIO
 
-# Ad-hoc signature. TCC keys its record on the signature; an unsigned bundle gets a new
-# identity whenever the binary changes, so the grant would have to be given again after
-# every rebuild.
+# Ad-hoc signature, with a stable identifier so the bundle keeps its name. Be warned:
+# this does NOT preserve the camera grant across rebuilds. TCC keys on the designated
+# requirement, which for an ad-hoc signature includes the code hash, so every build is a
+# new app to it — and because this is an LSUIElement bundle launched through
+# LaunchServices, the re-prompt cannot be presented and the process simply hangs.
+# Rebuild sparingly, and expect to re-allow the camera in System Settings when you do.
 codesign --force --sign - --identifier net.mutantfactory.soundgraph.benchcam "$APP"
 
 echo "built $APP"
