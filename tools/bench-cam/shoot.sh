@@ -13,6 +13,10 @@ CROP=${SG_CROP:-560,250,700,800}
 CMD=$1
 OUT=$2
 
+# An empty command is just a photograph. Requiring the board to be attached in order
+# to look at the bench is backwards, and it failed exactly when the board was in
+# pieces on the desk being identified.
+if [ -n "$CMD" ]; then
 "${SG_PYTHON:-$HOME/.espressif/python_env/idf5.5_py3.9_env/bin/python}" - "$PORT" "$CMD" <<'PY'
 import sys, time, serial
 port, cmd = sys.argv[1], sys.argv[2]
@@ -22,6 +26,7 @@ s.write((cmd + "\n").encode())
 time.sleep(1.5)
 s.close()
 PY
+fi
 
 rm -f "$OUT"
 # SG_CROP=none takes the whole frame, which is what you want after the camera moves:

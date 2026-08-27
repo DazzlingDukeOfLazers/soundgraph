@@ -190,40 +190,49 @@ final class PreviewController: NSObject, NSApplicationDelegate,
         guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         frameLock.lock(); latest = buffer; frameLock.unlock()
 
-        let clipped = PreviewController.clippedFraction(buffer)
+        let (clipped, mean) = PreviewController.levels(buffer)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let verdict = clipped > 0.02 ? "CLIPPED — the colour is gone, darken it"
+                        : mean < 6.0 ? "DARK — nothing is lit, add light"
                         : clipped > 0.002 ? "nearly clipping"
                         : "clean"
             let held = self.device.exposureMode == .locked ? "held" : "auto"
             self.readout.stringValue = String(
-                format: "%5.2f%% at the ceiling   %@   |  exposure %@  |  crop %@  |  %d saved",
-                clipped * 100, verdict, held, self.cropDescription, self.saved)
-            self.readout.textColor = clipped > 0.02 ? .systemRed
+                format: "%5.2f%% at the ceiling  mean %3.0f   %@   |  exposure %@  |  crop %@  |  %d saved",
+                clipped * 100, mean, verdict, held, self.cropDescription, self.saved)
+            self.readout.textColor = (clipped > 0.02 || mean < 6.0) ? .systemRed
                                    : clipped > 0.002 ? .systemYellow : .systemGreen
         }
     }
 
     // Every 64th pixel is plenty: this is looking for a region of blown highlights, not
     // for a stray one, and it runs on every frame.
-    private static func clippedFraction(_ buffer: CVImageBuffer) -> Double {
+    //
+    // It reports the mean level too, because a meter that only knows about clipping calls
+    // a photograph of an unlit room "clean". Both ends are failures and only one of them
+    // was worth naming until the subject stopped being a lit screen and became a circuit
+    // board, which does not emit anything.
+    private static func levels(_ buffer: CVImageBuffer) -> (clipped: Double, mean: Double) {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return 0 }
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return (0, 0) }
         let stride = CVPixelBufferGetBytesPerRow(buffer)
         let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
         let bytes = base.assumingMemoryBound(to: UInt8.self)
         var hot = 0, seen = 0
+        var total = 0
         for y in Swift.stride(from: 0, to: height, by: 8) {
             let row = bytes + y * stride
             for x in Swift.stride(from: 0, to: width, by: 8) {
                 let p = row + x * 4
                 if p[0] >= 250 || p[1] >= 250 || p[2] >= 250 { hot += 1 }
+                total += (Int(p[0]) + Int(p[1]) + Int(p[2])) / 3
                 seen += 1
             }
         }
-        return seen == 0 ? 0 : Double(hot) / Double(seen)
+        if seen == 0 { return (0, 0) }
+        return (Double(hot) / Double(seen), Double(total) / Double(seen))
     }
 
     private var cropDescription: String {
