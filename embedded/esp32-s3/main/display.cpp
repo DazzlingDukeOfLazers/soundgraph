@@ -28,6 +28,8 @@ int display_text_width(const char*, int) { return 0; }
 bool display_present() { return false; }
 bool display_present_rows(int, int) { return false; }
 void display_clear_rows(int, int, uint32_t) {}
+void display_set_clip_rows(int, int) {}
+void display_clear_clip() {}
 bool display_set_brightness(int) { return false; }
 bool display_test_card() { return false; }
 
@@ -174,6 +176,11 @@ bool IRAM_ATTR on_trans_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_d
 
 int g_rotation = 0;
 
+// Logical rows the drawing primitives are allowed to touch. Half-open, and wide open by
+// default so nothing has to know about it.
+int g_clip_lo = -1000000;
+int g_clip_hi = 1000000;
+
 inline void put_physical(int px, int py, uint32_t colour) {
     if (px < 0 || py < 0 || px >= SG_DISPLAY_WIDTH || py >= SG_DISPLAY_HEIGHT) return;
     uint8_t* p = g_fb + (py * SG_DISPLAY_WIDTH + px) * kBytesPerPixel;
@@ -201,7 +208,7 @@ void display_set_rotation(int degrees) {
 int display_rotation() { return g_rotation; }
 
 void display_pixel(int x, int y, uint32_t colour) {
-    if (g_fb == nullptr) return;
+    if (g_fb == nullptr || y < g_clip_lo || y >= g_clip_hi) return;
     switch (g_rotation) {
         case 90:  put_physical(SG_DISPLAY_WIDTH - 1 - y, x, colour); break;
         case 180: put_physical(SG_DISPLAY_WIDTH - 1 - x, SG_DISPLAY_HEIGHT - 1 - y, colour); break;
@@ -228,7 +235,7 @@ void display_rect(int x, int y, int width, int height, uint32_t colour) {
 }
 
 void display_blend(int x, int y, uint32_t colour, int alpha) {
-    if (g_fb == nullptr || alpha <= 0) return;
+    if (g_fb == nullptr || alpha <= 0 || y < g_clip_lo || y >= g_clip_hi) return;
     if (alpha >= 255) { display_pixel(x, y, colour); return; }
     // Read-modify-write through the same rotation the writer uses, so blending happens
     // in logical space and no caller has to think about the panel's mounting.
@@ -435,7 +442,19 @@ void glow_axis_line(float fixed, float from, float to, bool vertical,
     const int lo = static_cast<int>(from < to ? from : to);
     const int hi = static_cast<int>(from > to ? from : to);
 
-    for (int along = lo - span; along <= hi + span; ++along) {
+    // Bounded by the clip rather than trusting the caller to shorten the line. Clipping
+    // the geometry as well was what broke the sliders: a bar inset by its own cap, then
+    // also cut to a narrow band, produced an empty segment that got skipped whole — cap
+    // included — so the bar ate itself from the top as it rose. The clip is the only
+    // thing that decides which pixels happen; this just avoids walking rows it will
+    // refuse anyway.
+    int first = lo - span, last = hi + span;
+    if (vertical) {
+        if (first < g_clip_lo) first = g_clip_lo;
+        if (last >= g_clip_hi) last = g_clip_hi - 1;
+    }
+
+    for (int along = first; along <= last; ++along) {
         // Past the ends the distance stops being one-dimensional, so those few rows go
         // the honest way.
         const float overshoot = along < lo ? static_cast<float>(lo - along)
@@ -548,6 +567,18 @@ void display_clear_rows(int y, int height, uint32_t colour) {
         *p++ = r; *p++ = g; *p++ = b;
     }
 }
+
+void display_set_clip_rows(int y, int height) {
+    // One row of slack at each end, because the clear does not clear exactly what it is
+    // asked to. The panel addresses in a 2x2 grid, so a band is grown outward to even
+    // bounds before it is cleared or pushed — up to a row at each end. An exact clip then
+    // refuses to paint the row the clear just blanked, and every drag step leaves a dark
+    // line behind it. The two ranges have to agree, and the safe direction is the one
+    // that paints a row nobody will see rather than blanking one everybody will.
+    g_clip_lo = y - 1;
+    g_clip_hi = y + height + 1;
+}
+void display_clear_clip() { g_clip_lo = -1000000; g_clip_hi = 1000000; }
 
 bool display_present_rows(int y, int height) {
     if (g_panel == nullptr || g_fb == nullptr) return false;

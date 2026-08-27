@@ -63,6 +63,17 @@ bool display_present_rows(int y, int height);
 // Clear only these logical rows, for the same reason.
 void display_clear_rows(int y, int height, uint32_t rgb);
 
+// Refuse to write outside these logical rows until the clip is released.
+//
+// Banded redraw is only sound if the drawing is actually confined to the band, and
+// clipping the *geometry* is not the same thing. A glow line draws rounded caps past its
+// endpoints, so a bar shortened to the band still painted its cap above the band top —
+// into rows nobody had cleared and nobody would clear, one more cap per drag step, until
+// the slider trailed a ladder of them. Clipping at the pixel is the only version that
+// cannot be got wrong by a caller who forgets what their primitive draws.
+void display_set_clip_rows(int y, int height);
+void display_clear_clip();
+
 bool display_set_brightness(int percent);
 bool display_test_card();
 

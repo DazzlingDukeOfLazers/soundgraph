@@ -833,7 +833,9 @@ void paint_lab_grid() {
 void draw_lab_grid() {
     if (!display_available()) return;
     display_clear_rows(kLabBandTop, kLabBandHeight, display_rgb(0, 0, 0));
+    display_set_clip_rows(kLabBandTop, kLabBandHeight);
     paint_lab_grid();
+    display_clear_clip();
     display_present_rows(kLabBandTop, kLabBandHeight);
 }
 
@@ -878,7 +880,9 @@ void redraw_one_knob(const std::vector<UiControl>& controls, int index) {
     if (band.height <= 0) return;
     const KnobHit& hit = g_knob_hits[static_cast<std::size_t>(index)];
     display_clear_rows(band.y, band.height, theme().ground);
+    display_set_clip_rows(band.y, band.height);
     draw_knob(hit.cx, hit.cy, hit.radius, controls[static_cast<std::size_t>(index)], true);
+    display_clear_clip();
     display_present_rows(band.y, band.height);
 }
 
@@ -891,11 +895,13 @@ void face_redraw_moving(int index) {
     const int w = display_width();
 
     display_clear_rows(0, 62, t.ground);
+    display_set_clip_rows(0, 62);
     char value[16];
     format_value(value, sizeof value, control.value);
     display_text((w - display_text_width(control.label.c_str(), 2)) / 2, 12,
                  control.label.c_str(), 2, t.ink_dim);
     display_text((w - display_text_width(value, 5)) / 2, 32, value, 5, t.ink);
+    display_clear_clip();
     display_present_rows(0, 62);
 
     redraw_one_knob(g_ui_controls, index);
@@ -926,8 +932,8 @@ void lab_redraw_moving(int index) {
 // previous occupant moves to the right. The two most recent choices are always the two
 // under your hands, and there is no mode to be in and nothing to arm.
 
-constexpr int kListX = 8;
-constexpr int kListW = 146;
+constexpr int kListX = 22;
+constexpr int kListW = 134;
 constexpr int kListTop = 46;
 constexpr int kRowHeight = 42;
 constexpr int kSlotX[2] = {166, 290};
@@ -978,25 +984,38 @@ void paint_sliders(int lo, int hi) {
             char value[16];
             format_value(value, sizeof value, control.value);
             const int centre = kSlotX[slot] + kSlotW / 2;
-            display_text(centre - display_text_width(control.label.c_str(), 1) / 2,
-                         kReadoutTop + 4, control.label.c_str(), 1, t.ink_dim);
+            display_text(centre - display_text_width(control.label.c_str(), 2) / 2,
+                         kReadoutTop + 2, control.label.c_str(), 2, t.ink_dim);
             display_text(centre - display_text_width(value, 3) / 2,
-                         kReadoutTop + 20, value, 3, t.ink);
+                         kReadoutTop + 24, value, 3, t.ink);
         }
 
-        // The unlit remainder of the travel, then the lit part over it. Clipped to the
-        // band at both ends; a bar's profile is uniform along its length, so a clipped
-        // bar is exactly the same pixels as the un-clipped one where they overlap.
-        const int track_a = kTrackTop > lo ? kTrackTop : lo;
-        const int track_b = kTrackBottom < hi ? kTrackBottom : hi;
+        // The unlit remainder of the travel, then the lit part over it.
+        //
+        // Endpoints inset by the whole reach — half the bar plus the glow's spill — so
+        // that a bar asked to run from A to B occupies exactly A to B, caps and halo
+        // included. Drawn the naive way the cap hangs past the end, and past the bottom
+        // of the track that put it in rows no band ever owns: a sweep would clear part of
+        // it, decline to repaint it under the clip, and leave the slider with a squared
+        // off foot that only a full redraw could restore. A footprint that stays inside
+        // its own declared extent is repairable by any band that covers it.
+        const float spill = g_lab.glow;
+        const float lit_reach = kBarWidth * 0.5f + (spill > 0.0f ? spill : 0.0f);
+        const float dim_reach = kBarWidth * 0.5f;
+
+        // Drawn whole every time. Shortening them to the band as well was the bug: the
+        // pixel clip already decides what lands, and a second, cruder clip on the
+        // geometry could empty a bar in a band that its cap alone should have filled, so
+        // the bar ate itself from the top as it rose. One thing decides.
+        const float track_a = static_cast<float>(kTrackTop) + dim_reach;
+        const float track_b = static_cast<float>(kTrackBottom) - dim_reach;
         if (track_b > track_a) {
-            display_glow_line(cx, static_cast<float>(track_a), cx, static_cast<float>(track_b),
-                              kBarWidth, 0.0f, 0, display_dim(lit, 20));
+            display_glow_line(cx, track_a, cx, track_b, kBarWidth, 0.0f, 0, display_dim(lit, 20));
         }
-        const int lit_a = fill_y > lo ? fill_y : lo;
-        if (track_b > lit_a) {
-            display_glow_line(cx, static_cast<float>(lit_a), cx, static_cast<float>(track_b),
-                              static_cast<float>(kBarWidth), g_lab.glow,
+        const float lit_a = static_cast<float>(fill_y) + lit_reach;
+        const float lit_b = static_cast<float>(kTrackBottom) - lit_reach;
+        if (lit_b > lit_a) {
+            display_glow_line(cx, lit_a, cx, lit_b, static_cast<float>(kBarWidth), spill,
                               static_cast<int>(g_lab.level + 0.5f), lit);
         }
         if (fill_y >= lo && fill_y < hi) {
@@ -1079,12 +1098,16 @@ void sliders_redraw_moving(int index) {
     if (hi > kTrackBottom + 6) hi = kTrackBottom + 6;
     if (hi > lo) {
         display_clear_rows(lo, hi - lo, theme().ground);
+        display_set_clip_rows(lo, hi - lo);
         paint_sliders(lo, hi);
+        display_clear_clip();
         display_present_rows(lo, hi - lo);
     }
 
     display_clear_rows(kReadoutTop, kReadoutHeight, theme().ground);
+    display_set_clip_rows(kReadoutTop, kReadoutHeight);
     paint_sliders(kReadoutTop, kReadoutTop + kReadoutHeight);
+    display_clear_clip();
     display_present_rows(kReadoutTop, kReadoutHeight);
 }
 
@@ -1941,6 +1964,34 @@ void console_task(void*) {
                 g_active_knob = -1;
                 draw_face();
                 std::printf("OK face\n");
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "sweep") == 0) {
+                // A drag without a finger. The trail of end caps the sliders left behind
+                // was only ever visible mid-gesture, which meant it could not be seen in
+                // a still photograph and could not be checked without asking someone to
+                // hold the screen. Driving the same redraw path from here makes it a
+                // thing that can be reproduced and therefore fixed.
+                std::vector<UiControl>& list = *g_surface->controls;
+                if (g_surface->redraw_moving == nullptr || list.empty()) {
+                    std::printf("ERR this screen has no moving redraw\n");
+                } else {
+                    const int which = tokens.size() >= 3 ? std::atoi(tokens[2]) : 0;
+                    const int steps = tokens.size() >= 4 ? std::atoi(tokens[3]) : 60;
+                    if (which >= 0 && which < static_cast<int>(list.size())) {
+                        UiControl& c = list[static_cast<std::size_t>(which)];
+                        const float lo = c.min_value, hi = c.max_value;
+                        g_active_knob = which;
+                        for (int i = 0; i <= steps; ++i) {
+                            c.value = lo + (hi - lo) * static_cast<float>(i) / steps;
+                            g_surface->changed();
+                            g_surface->redraw_moving(which);
+                            vTaskDelay(pdMS_TO_TICKS(12));
+                        }
+                        g_active_knob = -1;
+                        std::printf("OK swept %s over %d steps\n", c.label.c_str(), steps);
+                    } else {
+                        std::printf("ERR control 0..%d\n", static_cast<int>(list.size()) - 1);
+                    }
+                }
             } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "xy") == 0) {
                 g_surface = &kXySurface;
                 g_active_knob = -1;
@@ -2030,7 +2081,7 @@ void console_task(void*) {
                 display_set_brightness(std::atoi(tokens[2]));
                 std::printf("OK brightness %s\n", tokens[2]);
             } else {
-                std::printf("usage: screen test | face | sliders [a b] | xy [x y] | lab [W G L C H B] | time | "
+                std::printf("usage: screen test | face | sliders [a b] | xy [x y] | lab [...] | sweep [n steps] | time | "
                             "theme 0-%d | rotate 0-270 | fill RRGGBB | bright 0-100\n",
                             kThemeCount - 1);
             }
