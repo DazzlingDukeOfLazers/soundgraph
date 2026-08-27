@@ -15,6 +15,11 @@ editor-web/soundgraph.wasm
 # host tooling venv (pyserial + esptool); see embedded/README.md
 .venv/
 
+# Python bytecode. The host tools are scripts, not a package; nothing here is
+# imported often enough for a cached .pyc to be worth carrying in the history.
+__pycache__/
+*.pyc
+
 # editors / os
 .vs/
 .vscode/
