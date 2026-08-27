@@ -7457,6 +7457,44 @@ func _initialize() -> void:
 		for i in 6:
 			await process_frame
 
+	# ---- babble ships what the driver actually says -----------------------------
+	# Babble's line is not hand-drawn dots that happen to look like speech: it is the
+	# text driver's own output for a phrase, saved. Checked against the driver rather
+	# than against a copy of its numbers, so if the mapping ever changes and the
+	# shipped line stops being something the driver would produce, this says so.
+	#
+	# Read from the file rather than loaded into the editor, because the claim is about
+	# what ships, and loading it would put the suite on a different document.
+	const BABBLE_LINE := "hello! how are you today? i am very well, thank you."
+	var babble_file := FileAccess.open("res://examples-mirror/babble.json", FileAccess.READ)
+	if babble_file == null:
+		check(false, "res://examples-mirror/babble.json is missing")
+	else:
+		var shipped: Dictionary = JSON.parse_string(babble_file.get_as_text())
+		babble_file.close()
+		var line: Dictionary = shipped.get("sequence", {})
+		var driver: Dictionary = SpeakText.to_sequence(BABBLE_LINE, 60, 2048)
+		var shipped_notes: Array = line.get("notes", [])
+		var driver_notes: Array = driver["notes"]
+		var same := shipped_notes.size() == driver_notes.size()
+		if same:
+			for i in shipped_notes.size():
+				for key in ["step", "note", "length"]:
+					if int(shipped_notes[i][key]) != int(driver_notes[i][key]):
+						same = false
+		check(same and not shipped_notes.is_empty(),
+			"babble ships the driver's own words — %d syllables, note for note"
+				% shipped_notes.size())
+		check(int(line.get("division", 0)) == int(driver["division"])
+			and int(line.get("steps", 0)) == int(driver["steps"]),
+			"at the driver's own cadence, 1/%d over %d steps"
+				% [int(driver["division"]) * 4, int(driver["steps"])])
+		# It reaches full voice at this length. Babble's envelope decays in 70 ms and its
+		# own syllable engine runs at 7.5 a second; the driver's three-step syllable is
+		# 94 ms, which measured as the knee where the instrument stops losing level.
+		check(not line.has("dropped"),
+			"and the driver's tally did not follow the words into the file")
+
 	main.roll_button.get_popup().id_pressed.emit(2)
 	for i in 3:
 		await process_frame
