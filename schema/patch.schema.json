@@ -106,10 +106,15 @@
           "maximum": 240
         },
         "steps": {
-          "description": "Loop length, in sixteenth-note steps.",
+          "description": "Loop length, counted in steps of whatever the division says.",
           "type": "integer",
           "minimum": 1,
           "maximum": 256
+        },
+        "division": {
+          "description": "Steps to the beat: 4 is sixteenths, 8 thirty-seconds, 16 sixty-fourths. Absent means 4, because every roll written before this field existed was played as sixteenths and must keep sounding that way.",
+          "type": "integer",
+          "enum": [1, 2, 4, 8, 16]
         },
         "notes": {
           "description": "The notes on the grid.",

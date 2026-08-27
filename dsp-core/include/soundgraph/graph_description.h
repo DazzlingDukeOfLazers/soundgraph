@@ -204,6 +204,34 @@ struct ModuleDescription {
     const ModuleParameterDescription* find_parameter(const std::string& parameter_name) const;
 };
 
+// One note in the roll: where it starts, what it is, and how long it lasts, all
+// counted in steps rather than seconds so that changing the tempo moves the music
+// instead of rewriting it.
+struct SequenceNote {
+    int step = 0;
+    int note = 60;
+    int length = 1;
+};
+
+// The piano roll, as the document carries it.
+//
+// The core does not play this — the editor does, and so does whatever renders a bar
+// offline. It lives here because it lives in the *file*, and anything in the file that
+// patch-io does not know about is quietly deleted the next time somebody saves. That is
+// exactly what happened: `sequence` had been written by hand into shipped examples and
+// read by the editor, and the first save through the core's own serialiser dropped every
+// note of it.
+//
+// `division` is how many steps go to a beat: 4 is sixteenths, 8 thirty-seconds, 16
+// sixty-fourths. It defaults to 4 because that is what the editor did before it could be
+// asked, and a file that does not mention it must keep sounding the way it did.
+struct SequenceDescription {
+    double tempo = 120.0;
+    int steps = 16;
+    int division = 4;
+    std::vector<SequenceNote> notes;
+};
+
 struct GraphDescription {
     int schema_version = kSchemaVersion;
     Arrangement arrangement;
@@ -215,6 +243,11 @@ struct GraphDescription {
     std::vector<AutomationLane> automation;
     std::vector<BufferDescription> buffers;
     std::vector<PluginDescription> plugins;
+
+    // Present only when the document had one. A patch that never had a roll must not
+    // grow an empty one the first time it is saved.
+    bool has_sequence = false;
+    SequenceDescription sequence;
 
     // Modules, and the document as authored. When `modules` is non-empty, the vectors
     // above hold the *flattened* view — instances expanded into plain nodes, which is

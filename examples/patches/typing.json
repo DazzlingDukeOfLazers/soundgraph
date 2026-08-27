@@ -1,0 +1,649 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Typing",
+    "description": "A keyboard. Filtered noise for the thock, a square blip for the switch and a high tick for the cap, with the noise band moving on every key so no two are the same. One keystroke to a note."
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "NoteInput"
+    },
+    {
+      "id": "vary",
+      "type": "LFO",
+      "parameters": {
+        "rate": 37.0,
+        "shape": 4,
+        "amount": 1.0
+      }
+    },
+    {
+      "id": "hold",
+      "type": "SampleHold"
+    },
+    {
+      "id": "spread",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 700.0
+      }
+    },
+    {
+      "id": "centre",
+      "type": "Add",
+      "parameters": {
+        "offset": 1900.0
+      }
+    },
+    {
+      "id": "hiss",
+      "type": "Noise",
+      "parameters": {
+        "colour": 0.0
+      }
+    },
+    {
+      "id": "body",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "mode": 2,
+        "resonance": 0.5
+      }
+    },
+    {
+      "id": "thock",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.0,
+        "hold": 0.003,
+        "decay": 0.028
+      }
+    },
+    {
+      "id": "thock_amp",
+      "type": "Gain"
+    },
+    {
+      "id": "switch",
+      "type": "SquareOscillator",
+      "parameters": {
+        "frequency": 540.0,
+        "pulse_width": 0.22
+      }
+    },
+    {
+      "id": "click",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.0,
+        "hold": 0.001,
+        "decay": 0.009
+      }
+    },
+    {
+      "id": "click_amp",
+      "type": "Gain"
+    },
+    {
+      "id": "cap",
+      "type": "Noise",
+      "parameters": {
+        "colour": 0.0
+      }
+    },
+    {
+      "id": "bright",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "mode": 1,
+        "cutoff": 5200.0,
+        "resonance": 0.2
+      }
+    },
+    {
+      "id": "tick",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.0,
+        "hold": 0.0005,
+        "decay": 0.005
+      }
+    },
+    {
+      "id": "tick_amp",
+      "type": "Gain"
+    },
+    {
+      "id": "mix",
+      "type": "Mixer",
+      "parameters": {
+        "level1": 1.0,
+        "level2": 0.3,
+        "level3": 0.5
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 0.9
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "thock",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "click",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "tick",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "vary",
+        "port": "out"
+      },
+      "to": {
+        "node": "hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "spread",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "spread",
+        "port": "out"
+      },
+      "to": {
+        "node": "centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "centre",
+        "port": "out"
+      },
+      "to": {
+        "node": "body",
+        "port": "cutoff"
+      }
+    },
+    {
+      "from": {
+        "node": "hiss",
+        "port": "out"
+      },
+      "to": {
+        "node": "body",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "body",
+        "port": "out"
+      },
+      "to": {
+        "node": "thock_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "thock",
+        "port": "out"
+      },
+      "to": {
+        "node": "thock_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "switch",
+        "port": "out"
+      },
+      "to": {
+        "node": "click_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "click",
+        "port": "out"
+      },
+      "to": {
+        "node": "click_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "cap",
+        "port": "out"
+      },
+      "to": {
+        "node": "bright",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "bright",
+        "port": "out"
+      },
+      "to": {
+        "node": "tick_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "tick",
+        "port": "out"
+      },
+      "to": {
+        "node": "tick_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "thock_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "click_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "tick_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "body",
+      "label": "Thock",
+      "kind": "knob",
+      "target": {
+        "node": "centre",
+        "parameter": "offset"
+      },
+      "min": 600.0,
+      "max": 4200.0,
+      "default": 1900.0,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 74,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "vary",
+      "label": "Variation",
+      "kind": "knob",
+      "target": {
+        "node": "spread",
+        "parameter": "factor"
+      },
+      "min": 0.0,
+      "max": 1600.0,
+      "default": 700.0,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 76,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "ring",
+      "label": "Hollow",
+      "kind": "knob",
+      "target": {
+        "node": "body",
+        "parameter": "resonance"
+      },
+      "min": 0.0,
+      "max": 0.95,
+      "default": 0.5,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 71,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "decay",
+      "label": "Weight",
+      "kind": "knob",
+      "target": {
+        "node": "thock",
+        "parameter": "decay"
+      },
+      "min": 0.008,
+      "max": 0.12,
+      "default": 0.028,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 77,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "switch",
+      "label": "Switch",
+      "kind": "knob",
+      "target": {
+        "node": "switch",
+        "parameter": "frequency"
+      },
+      "min": 180.0,
+      "max": 1600.0,
+      "default": 540.0,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 93,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "click",
+      "label": "Click",
+      "kind": "knob",
+      "target": {
+        "node": "mix",
+        "parameter": "level2"
+      },
+      "min": 0.0,
+      "max": 1.2,
+      "default": 0.3,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 18,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "tick",
+      "label": "Cap",
+      "kind": "knob",
+      "target": {
+        "node": "mix",
+        "parameter": "level3"
+      },
+      "min": 0.0,
+      "max": 1.2,
+      "default": 0.5,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 91,
+        "midi_channel": 1
+      }
+    }
+  ],
+  "sequence": {
+    "tempo": 120.0,
+    "steps": 101,
+    "division": 16,
+    "notes": [
+      {
+        "step": 0,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 3,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 5,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 7,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 10,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 12,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 16,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 18,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 20,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 23,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 25,
+        "note": 48,
+        "length": 1
+      },
+      {
+        "step": 32,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 34,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 37,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 39,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 41,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 44,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 46,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 51,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 53,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 55,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 58,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 59,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 62,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 64,
+        "note": 48,
+        "length": 1
+      },
+      {
+        "step": 72,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 74,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 77,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 79,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 81,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 84,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 86,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 88,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 92,
+        "note": 60,
+        "length": 1
+      },
+      {
+        "step": 94,
+        "note": 60,
+        "length": 1
+      }
+    ]
+  }
+}

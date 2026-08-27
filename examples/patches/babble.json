@@ -1,0 +1,526 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Babble",
+    "description": "Nonsense speech, played. Hold a key and it talks at that pitch: a vowel and a pitch drawn fresh for every syllable, a consonant burst in front of each, and a slow contour underneath so the phrase rises and falls the way a sentence does."
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "type": "NoteInput"
+    },
+    {
+      "id": "syl",
+      "type": "Retrigger",
+      "parameters": {
+        "rate": 7.5,
+        "width": 2.0
+      }
+    },
+    {
+      "id": "vowel_rand",
+      "type": "LFO",
+      "parameters": {
+        "rate": 31.0,
+        "shape": 4,
+        "amount": 1.0
+      }
+    },
+    {
+      "id": "pitch_rand",
+      "type": "LFO",
+      "parameters": {
+        "rate": 23.0,
+        "shape": 4,
+        "amount": 1.0
+      }
+    },
+    {
+      "id": "vowel_hold",
+      "type": "SampleHold"
+    },
+    {
+      "id": "pitch_hold",
+      "type": "SampleHold"
+    },
+    {
+      "id": "vowel_scale",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 2.0
+      }
+    },
+    {
+      "id": "vowel_centre",
+      "type": "Add",
+      "parameters": {
+        "offset": 2.0
+      }
+    },
+    {
+      "id": "contour",
+      "type": "LFO",
+      "parameters": {
+        "rate": 0.31,
+        "shape": 0,
+        "amount": 45.0
+      }
+    },
+    {
+      "id": "pitch_scale",
+      "type": "Multiply",
+      "parameters": {
+        "factor": 55.0
+      }
+    },
+    {
+      "id": "pitch_sum",
+      "type": "Add"
+    },
+    {
+      "id": "pitch_centre",
+      "type": "Add",
+      "parameters": {
+        "offset": 0.0
+      }
+    },
+    {
+      "id": "cords",
+      "type": "SawOscillator"
+    },
+    {
+      "id": "breath",
+      "type": "Noise",
+      "parameters": {
+        "colour": 0.0
+      }
+    },
+    {
+      "id": "consonant",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.0,
+        "hold": 0.004,
+        "decay": 0.022
+      }
+    },
+    {
+      "id": "breath_amp",
+      "type": "Gain"
+    },
+    {
+      "id": "throat",
+      "type": "Mixer",
+      "parameters": {
+        "level1": 1.0,
+        "level2": 0.5
+      }
+    },
+    {
+      "id": "mouth",
+      "type": "Formant",
+      "parameters": {
+        "emphasis": 0.85
+      }
+    },
+    {
+      "id": "lips",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "mode": 0,
+        "cutoff": 3200.0,
+        "resonance": 0.1
+      }
+    },
+    {
+      "id": "env",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.008,
+        "hold": 0.035,
+        "decay": 0.07
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain"
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "parameters": {
+        "level": 0.9
+      }
+    },
+    {
+      "id": "talking",
+      "type": "Multiply"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "vowel_rand",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_rand",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_scale",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_centre",
+        "port": "out"
+      },
+      "to": {
+        "node": "mouth",
+        "port": "morph"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_scale",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_sum",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "contour",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_sum",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "cords",
+        "port": "out"
+      },
+      "to": {
+        "node": "throat",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "breath",
+        "port": "out"
+      },
+      "to": {
+        "node": "breath_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "consonant",
+        "port": "out"
+      },
+      "to": {
+        "node": "breath_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "breath_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "throat",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "throat",
+        "port": "out"
+      },
+      "to": {
+        "node": "mouth",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "mouth",
+        "port": "out"
+      },
+      "to": {
+        "node": "lips",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "lips",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    },
+    {
+      "from": {
+        "node": "syl",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "consonant",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "pitch_centre",
+        "port": "b"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "rate",
+      "label": "Syllables",
+      "kind": "knob",
+      "target": {
+        "node": "syl",
+        "parameter": "rate"
+      },
+      "min": 2.0,
+      "max": 16.0,
+      "default": 7.5,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 74,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "pitch",
+      "label": "Voice",
+      "kind": "knob",
+      "target": {
+        "node": "kb",
+        "parameter": "transpose"
+      },
+      "min": -24.0,
+      "max": 24.0,
+      "default": 0.0,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 71,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "spread",
+      "label": "Wander",
+      "kind": "knob",
+      "target": {
+        "node": "pitch_scale",
+        "parameter": "factor"
+      },
+      "min": 0.0,
+      "max": 160.0,
+      "default": 55.0,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 76,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "colour",
+      "label": "Vowel Edge",
+      "kind": "knob",
+      "target": {
+        "node": "mouth",
+        "parameter": "emphasis"
+      },
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.85,
+      "scaling": "linear",
+      "binding": {
+        "midi_cc": 77,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "brightness",
+      "label": "Mouth",
+      "kind": "knob",
+      "target": {
+        "node": "lips",
+        "parameter": "cutoff"
+      },
+      "min": 700.0,
+      "max": 9000.0,
+      "default": 3200.0,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 93,
+        "midi_channel": 1
+      }
+    },
+    {
+      "id": "length",
+      "label": "Syllable Length",
+      "kind": "knob",
+      "target": {
+        "node": "env",
+        "parameter": "decay"
+      },
+      "min": 0.02,
+      "max": 0.3,
+      "default": 0.07,
+      "scaling": "exponential",
+      "binding": {
+        "midi_cc": 18,
+        "midi_channel": 1
+      }
+    }
+  ]
+}

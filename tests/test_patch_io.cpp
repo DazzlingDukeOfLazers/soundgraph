@@ -1667,6 +1667,86 @@ TEST(a_plugin_is_named_by_identity_and_survives_a_round_trip) {
     CHECK(again.find_node("fx")->plugin == "verb");
 }
 
+TEST(the_piano_roll_survives_being_saved) {
+    // It did not. `sequence` was written by hand into shipped examples and read by the
+    // editor, and patch-io had never heard of it — so the first save through the core's
+    // own serialiser deleted every note. kit-chopper carries twenty of them.
+    //
+    // The lesson generalises past this key: anything the file carries and patch-io does
+    // not know about is not "ignored", it is *destroyed* the next time somebody saves.
+    // There is no passthrough for unknown sections and there should not be one; the
+    // schema is the contract. This is the test that says so out loud.
+    const std::string text = R"({
+        "schema_version": 1,
+        "sequence": {
+            "tempo": 128,
+            "steps": 32,
+            "division": 8,
+            "notes": [
+                {"step": 0, "note": 48, "length": 1},
+                {"step": 7, "note": 55, "length": 3}
+            ]
+        },
+        "nodes": [ { "id": "out", "type": "StereoOutput" } ],
+        "connections": []
+    })";
+
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(text, graph, diagnostics));
+    CHECK(graph.has_sequence);
+    CHECK(std::fabs(graph.sequence.tempo - 128.0) < 1e-9);
+    CHECK(graph.sequence.steps == 32);
+    CHECK(graph.sequence.division == 8);
+    CHECK(graph.sequence.notes.size() == 2);
+    CHECK(graph.sequence.notes[1].step == 7);
+    CHECK(graph.sequence.notes[1].note == 55);
+    CHECK(graph.sequence.notes[1].length == 3);
+
+    GraphDescription again;
+    std::vector<Diagnostic> more;
+    CHECK(parse_patch(write_patch(graph, true), again, more));
+    CHECK(again.has_sequence);
+    CHECK(again.sequence.steps == graph.sequence.steps);
+    CHECK(again.sequence.division == graph.sequence.division);
+    CHECK(again.sequence.notes.size() == graph.sequence.notes.size());
+    CHECK(again.sequence.notes[1].note == 55);
+}
+
+TEST(a_patch_with_no_roll_does_not_grow_one) {
+    // The other half of the contract. Every patch in the library would otherwise gain an
+    // empty sequence the first time it was opened and saved, which is a diff in every
+    // file and a lie in all of them.
+    const std::string text = R"({
+        "schema_version": 1,
+        "nodes": [ { "id": "out", "type": "StereoOutput" } ],
+        "connections": []
+    })";
+
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(text, graph, diagnostics));
+    CHECK(!graph.has_sequence);
+    CHECK(write_patch(graph, true).find("sequence") == std::string::npos);
+}
+
+TEST(a_division_the_document_does_not_mention_is_sixteenths) {
+    // Every roll written before the division existed means sixteenths, because that is
+    // what the editor played. A default that changed the sound of an existing file would
+    // be a worse bug than the one this feature fixed.
+    const std::string text = R"({
+        "schema_version": 1,
+        "sequence": { "tempo": 120, "steps": 16, "notes": [] },
+        "nodes": [ { "id": "out", "type": "StereoOutput" } ],
+        "connections": []
+    })";
+
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(text, graph, diagnostics));
+    CHECK(graph.sequence.division == 4);
+}
+
 TEST(plugin_state_is_bytes_and_survives_being_written_down) {
     // The point of the encoding, in the one case that breaks a naive one: a plugin's
     // state is arbitrary bytes, including the zero byte and everything above 127. Put
