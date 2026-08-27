@@ -1,0 +1,652 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Wrist arpeggio and kit",
+    "description": "Both instruments in one graph, to measure whether the watch can carry them at once."
+  },
+  "nodes": [
+    {
+      "id": "a_clock",
+      "type": "Clock",
+      "parameters": {
+        "bpm": 96,
+        "division": 4,
+        "swing": 0.12,
+        "beats_per_bar": 4
+      }
+    },
+    {
+      "id": "a_prog",
+      "type": "StepSequencer",
+      "parameters": {
+        "length": 4,
+        "step1": 0,
+        "step2": 0.75,
+        "step3": 0.417,
+        "step4": 0.583
+      }
+    },
+    {
+      "id": "a_arp",
+      "type": "StepSequencer",
+      "parameters": {
+        "length": 4,
+        "step1": 0,
+        "step2": 0.333,
+        "step3": 0.583,
+        "step4": 1.0
+      }
+    },
+    {
+      "id": "a_sum",
+      "type": "Add",
+      "parameters": {}
+    },
+    {
+      "id": "a_quant",
+      "type": "ScaleQuantizer",
+      "parameters": {
+        "scale": 1,
+        "root": 0
+      }
+    },
+    {
+      "id": "a_osc",
+      "type": "SawOscillator",
+      "parameters": {
+        "frequency": 261.63
+      }
+    },
+    {
+      "id": "a_env",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0.002,
+        "hold": 0.03,
+        "decay": 0.18,
+        "punch": 0.3
+      }
+    },
+    {
+      "id": "a_filt",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "cutoff": 2400,
+        "resonance": 0.35,
+        "mode": 0
+      }
+    },
+    {
+      "id": "a_vca",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "d_clock",
+      "type": "Clock",
+      "parameters": {
+        "bpm": 96,
+        "division": 4,
+        "swing": 0.12,
+        "beats_per_bar": 4
+      }
+    },
+    {
+      "id": "d_low",
+      "type": "Euclid",
+      "parameters": {
+        "steps": 16,
+        "fill": 5,
+        "rotate": 0
+      }
+    },
+    {
+      "id": "d_high",
+      "type": "Euclid",
+      "parameters": {
+        "steps": 16,
+        "fill": 11,
+        "rotate": 2
+      }
+    },
+    {
+      "id": "d_kickosc",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 52
+      }
+    },
+    {
+      "id": "d_kickenv",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.015,
+        "decay": 0.16,
+        "punch": 1
+      }
+    },
+    {
+      "id": "d_kick",
+      "type": "Gain",
+      "parameters": {
+        "gain": 1
+      }
+    },
+    {
+      "id": "d_snnoise",
+      "type": "Noise",
+      "parameters": {}
+    },
+    {
+      "id": "d_snfilt",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "cutoff": 1900,
+        "resonance": 0.5,
+        "mode": 2
+      }
+    },
+    {
+      "id": "d_snenv",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.006,
+        "decay": 0.11,
+        "punch": 0.6
+      }
+    },
+    {
+      "id": "d_snare",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "d_hatnoise",
+      "type": "Noise",
+      "parameters": {}
+    },
+    {
+      "id": "d_hatenv",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.003,
+        "decay": 0.035,
+        "punch": 0.2
+      }
+    },
+    {
+      "id": "d_hat",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.22
+      }
+    },
+    {
+      "id": "d_mix",
+      "type": "Mixer",
+      "parameters": {
+        "level1": 0.9,
+        "level2": 0.7,
+        "level3": 0.6,
+        "level4": 0
+      }
+    },
+    {
+      "id": "sum",
+      "type": "Mixer",
+      "parameters": {
+        "level1": 0.7,
+        "level2": 0.8,
+        "level3": 0,
+        "level4": 0
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "host": "stereo",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "a_clock",
+        "port": "bar"
+      },
+      "to": {
+        "node": "a_prog",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "a_clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "a_arp",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "a_prog",
+        "port": "out"
+      },
+      "to": {
+        "node": "a_sum",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "a_arp",
+        "port": "out"
+      },
+      "to": {
+        "node": "a_sum",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "a_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "a_quant",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "a_quant",
+        "port": "out"
+      },
+      "to": {
+        "node": "a_osc",
+        "port": "fm"
+      }
+    },
+    {
+      "from": {
+        "node": "a_clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "a_env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "a_osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "a_filt",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "a_filt",
+        "port": "out"
+      },
+      "to": {
+        "node": "a_vca",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "a_env",
+        "port": "out"
+      },
+      "to": {
+        "node": "a_vca",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "d_clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "d_low",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "d_clock",
+        "port": "bar"
+      },
+      "to": {
+        "node": "d_low",
+        "port": "reset"
+      }
+    },
+    {
+      "from": {
+        "node": "d_clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "d_high",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "d_clock",
+        "port": "bar"
+      },
+      "to": {
+        "node": "d_high",
+        "port": "reset"
+      }
+    },
+    {
+      "from": {
+        "node": "d_low",
+        "port": "gate"
+      },
+      "to": {
+        "node": "d_kickenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "d_kickenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_kick",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "d_kickosc",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_kick",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "d_low",
+        "port": "rest"
+      },
+      "to": {
+        "node": "d_snenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "d_snnoise",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_snfilt",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "d_snfilt",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_snare",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "d_snenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_snare",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "d_high",
+        "port": "gate"
+      },
+      "to": {
+        "node": "d_hatenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "d_hatnoise",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_hat",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "d_hatenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_hat",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "d_kick",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_mix",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "d_snare",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_mix",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "d_hat",
+        "port": "out"
+      },
+      "to": {
+        "node": "d_mix",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "a_vca",
+        "port": "out"
+      },
+      "to": {
+        "node": "sum",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "d_mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "sum",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "a_tempo",
+      "label": "Tempo",
+      "kind": "knob",
+      "target": {
+        "node": "a_clock",
+        "parameter": "bpm"
+      },
+      "min": 60,
+      "max": 160,
+      "default": 96,
+      "scaling": "linear"
+    },
+    {
+      "id": "a_key",
+      "label": "Key",
+      "kind": "knob",
+      "target": {
+        "node": "a_quant",
+        "parameter": "root"
+      },
+      "min": 0,
+      "max": 11,
+      "default": 0,
+      "scaling": "linear"
+    },
+    {
+      "id": "a_scale",
+      "label": "Scale",
+      "kind": "knob",
+      "target": {
+        "node": "a_quant",
+        "parameter": "scale"
+      },
+      "min": 0,
+      "max": 11,
+      "default": 1,
+      "scaling": "linear"
+    },
+    {
+      "id": "a_swing",
+      "label": "Swing",
+      "kind": "knob",
+      "target": {
+        "node": "a_clock",
+        "parameter": "swing"
+      },
+      "min": 0,
+      "max": 0.6,
+      "default": 0.12,
+      "scaling": "linear"
+    },
+    {
+      "id": "a_chords",
+      "label": "Chords",
+      "kind": "knob",
+      "target": {
+        "node": "a_prog",
+        "parameter": "length"
+      },
+      "min": 1,
+      "max": 4,
+      "default": 4,
+      "scaling": "linear"
+    },
+    {
+      "id": "a_motion",
+      "label": "Motion",
+      "kind": "knob",
+      "target": {
+        "node": "a_arp",
+        "parameter": "length"
+      },
+      "min": 1,
+      "max": 4,
+      "default": 4,
+      "scaling": "linear"
+    },
+    {
+      "id": "a_cutoff",
+      "label": "Cutoff",
+      "kind": "knob",
+      "target": {
+        "node": "a_filt",
+        "parameter": "cutoff"
+      },
+      "min": 300,
+      "max": 8000,
+      "default": 2400,
+      "scaling": "exponential"
+    },
+    {
+      "id": "a_colour",
+      "label": "Colour",
+      "kind": "knob",
+      "target": {
+        "node": "a_filt",
+        "parameter": "resonance"
+      },
+      "min": 0,
+      "max": 0.85,
+      "default": 0.35,
+      "scaling": "linear"
+    },
+    {
+      "id": "a_decay",
+      "label": "Decay",
+      "kind": "knob",
+      "target": {
+        "node": "a_env",
+        "parameter": "decay"
+      },
+      "min": 0.04,
+      "max": 0.6,
+      "default": 0.18,
+      "scaling": "exponential"
+    }
+  ]
+}
