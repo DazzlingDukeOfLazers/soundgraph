@@ -688,5 +688,57 @@
         "level": 0.9
       }
     }
-  ]
+  ],
+  "sequence": {
+    "tempo": 120.0,
+    "division": 4,
+    "steps": 40,
+    "notes": [
+      {
+        "step": 0,
+        "note": 72,
+        "length": 2
+      },
+      {
+        "step": 3,
+        "note": 79,
+        "length": 2
+      },
+      {
+        "step": 7,
+        "note": 67,
+        "length": 5
+      },
+      {
+        "step": 14,
+        "note": 86,
+        "length": 1
+      },
+      {
+        "step": 16,
+        "note": 82,
+        "length": 1
+      },
+      {
+        "step": 18,
+        "note": 88,
+        "length": 1
+      },
+      {
+        "step": 21,
+        "note": 74,
+        "length": 6
+      },
+      {
+        "step": 29,
+        "note": 76,
+        "length": 2
+      },
+      {
+        "step": 32,
+        "note": 84,
+        "length": 3
+      }
+    ]
+  }
 }

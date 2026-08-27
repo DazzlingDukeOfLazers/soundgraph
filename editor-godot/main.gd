@@ -5111,7 +5111,10 @@ func _roll_sequence() -> Dictionary:
 	return patch["sequence"]
 
 
-func _set_roll_open(open: bool) -> void:
+## `remember` writes the fold down as the preference. A person reaching for the Roll
+## menu is stating one; a document that happens to carry a tune is not, so opening the
+## roll to show one must not quietly redecide what every future session starts as.
+func _set_roll_open(open: bool, remember := true) -> void:
 	roll_open = open
 	# The Roll menu alone governs the roll. The keyboard's own size menu used to
 	# take the roll down with it, which read as one control quietly overruling
@@ -5121,7 +5124,8 @@ func _set_roll_open(open: bool) -> void:
 	roll_capture.visible = open
 	roll_tempo.visible = open
 	roll_division.visible = open
-	Settings.store("piano_roll", open)
+	if remember:
+		Settings.store("piano_roll", open)
 	_sync_roll_menu()
 	piano_roll.sequence = patch.get("sequence", {})
 	_refresh_roll_tempo_text()
@@ -9246,6 +9250,14 @@ func _load_text(text: String) -> void:
 	# being asked to frame have been laid out.
 	await get_tree().process_frame
 	graph_edit.fit_graph()
+
+	# A document that arrives carrying notes shows them. The roll's fold is a stored
+	# preference that starts closed, so a patch shipping a tune opened onto silence and
+	# an empty stage: the notes were in the file, the transport was hidden, and the only
+	# way to find out either existed was to go looking in a menu. Same shape of bug as
+	# the framing above — the feature worked and was simply never reached.
+	if not roll_open and not (patch.get("sequence", {}).get("notes", []) as Array).is_empty():
+		_set_roll_open(true, false)
 
 	if needs_layout:
 		_say("arranged %d nodes — the file had no layout" % patch["nodes"].size())

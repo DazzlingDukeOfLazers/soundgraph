@@ -7262,6 +7262,12 @@ func _initialize() -> void:
 	# The dock. The keyboard was the brightest, heaviest thing on screen and the eye
 	# went straight to it, so it has to be able to get out of the way.
 	check(main.keyboard_dock != null, "the keyboard lives in a dock")
+	# Measured with the roll folded away, because this is about the keyboard. The dock
+	# holds both, and the roll deliberately stays up when the keys collapse — hiding
+	# the piano is about the piano — so an open roll is floor under this measurement
+	# and the check would be reading the roll's height, not the keyboard's.
+	main._set_roll_open(false)
+	await process_frame
 	var tall: float = main.keyboard_dock.get_combined_minimum_size().y
 	main._set_keyboard_expanded(false)
 	await process_frame
@@ -7401,6 +7407,55 @@ func _initialize() -> void:
 	await process_frame
 	check(main.patch.get("sequence", {}) == quiet_before,
 		"saying nothing changes nothing")
+
+	# ---- a patch that carries a tune shows it ------------------------------------
+	# R2 ships a line of droid dialogue now, and it used to open onto silence and an
+	# empty stage: the notes were in the file, the transport was hidden behind a menu,
+	# and nothing told you either existed. The fold is a stored preference, though, so
+	# showing the tune must not quietly redecide what every future session starts as.
+	var stage := JSON.stringify(main.patch)
+	main._set_roll_open(false)
+	Settings.store("piano_roll", false)
+	var droid := FileAccess.open("res://examples-mirror/r2d2.json", FileAccess.READ)
+	if droid == null:
+		check(false, "res://examples-mirror/r2d2.json is missing")
+	else:
+		await main._load_text(droid.get_as_text())
+		droid.close()
+		for i in 8:
+			await process_frame
+		var line: Dictionary = main.patch.get("sequence", {})
+		check(main.roll_open and main.roll_row.visible
+			and not (line.get("notes", []) as Array).is_empty(),
+			"a patch carrying a tune opens the roll on it (%d notes)"
+				% (line.get("notes", []) as Array).size())
+		check(not bool(Settings.fetch("piano_roll", false)),
+			"and does it for this document without redeciding the preference")
+
+		# His voice is swoops, and a swoop needs room to arrive somewhere: the line is
+		# written at 1/16 where the text driver speaks at 1/64. Held notes chatter on and
+		# become a sentence; a one-step note is a single bleep. Walked through the clock,
+		# the long ones must still be sounding after the short ones have let go.
+		check(int(line.get("division", 0)) == 4,
+			"written at 1/16, where his swoops have room")
+		main.roll_play.button_pressed = true
+		var spoke: Array = []
+		for step in 24:
+			main._advance_roll(0.001 if step == 0 else main._roll_step_seconds())
+			if not main.held_notes.is_empty():
+				spoke.append(step)
+		main.roll_play.button_pressed = false
+		var voiced := 0
+		for onset in line["notes"]:
+			var from := int(onset["step"])
+			if from < 24:
+				voiced += mini(from + int(onset["length"]), 24) - from
+		check(spoke.size() == voiced and spoke.size() > 8,
+			"the clock holds him as written — sounding on %d of 24 steps, silent between"
+				% spoke.size())
+		await main._load_text(stage)
+		for i in 6:
+			await process_frame
 
 	main.roll_button.get_popup().id_pressed.emit(2)
 	for i in 3:
