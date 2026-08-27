@@ -911,6 +911,184 @@ void lab_redraw_moving(int index) {
 }
 
 // ---------------------------------------------------------------------------------
+// Two sliders and a list.
+//
+// Nine knobs on a two-inch screen was the wrong shape. A knob is a small round target
+// and the gesture that turns it is a vertical drag, so the travel runs straight out of
+// the target and the finger lands on a neighbour. That is not a bug to be defended
+// against with hysteresis; it is a control whose target and whose travel point in
+// different directions. A slider owning a full column of glass cannot be dragged out of,
+// because the two now agree.
+//
+// Two of them, because two is what a thumb and a finger hold at once, and because the
+// interesting moments in a patch are usually a pair moving together. Which two is a tap
+// on the list: the tapped parameter takes the left slider, and the left slider's
+// previous occupant moves to the right. The two most recent choices are always the two
+// under your hands, and there is no mode to be in and nothing to arm.
+
+constexpr int kListX = 8;
+constexpr int kListW = 146;
+constexpr int kListTop = 46;
+constexpr int kRowHeight = 42;
+constexpr int kSlotX[2] = {166, 290};
+constexpr int kSlotW = 112;
+constexpr int kTrackTop = 88;
+constexpr int kTrackBottom = 462;
+constexpr int kBarWidth = 44;
+constexpr int kReadoutTop = 8;
+constexpr int kReadoutHeight = 72;
+
+int g_slider_bound[2] = {0, 1};
+
+bool overlaps(int lo, int hi, int a, int b) { return a < hi && b > lo; }
+
+// Paints everything whose pixels fall in rows [lo, hi). Called with the whole screen for
+// a full redraw and with a narrow band while a finger is moving; the bars are clipped to
+// the band rather than redrawn whole, because a drag step moves the fill by a few pixels
+// and repainting four hundred of them to change six is where the time goes.
+void paint_sliders(int lo, int hi) {
+    const Theme& t = theme();
+    const uint32_t lit = lab_colour();
+    const int count = static_cast<int>(g_ui_controls.size());
+
+    for (int row = 0; row < count; ++row) {
+        const int y = kListTop + row * kRowHeight;
+        if (!overlaps(lo, hi, y - 4, y + kRowHeight - 4)) continue;
+        const bool on_a = g_slider_bound[0] == row;
+        const bool on_b = g_slider_bound[1] == row;
+        const uint32_t ink = on_a ? lit : (on_b ? display_dim(lit, 52) : t.ink_dim);
+        display_text(kListX + 8, y, g_ui_controls[static_cast<std::size_t>(row)].label.c_str(),
+                     2, ink);
+        if (on_a || on_b) {
+            display_text(kListX + kListW - 14, y, on_a ? "1" : "2", 2, display_dim(ink, 70));
+        }
+    }
+
+    for (int slot = 0; slot < 2; ++slot) {
+        const int bound = g_slider_bound[slot];
+        if (bound < 0 || bound >= count) continue;
+        const UiControl& control = g_ui_controls[static_cast<std::size_t>(bound)];
+        const float span = control.max_value - control.min_value;
+        const float fraction = span > 0.0f ? (control.value - control.min_value) / span : 0.0f;
+        const int fill_y = kTrackBottom -
+                           static_cast<int>(fraction * (kTrackBottom - kTrackTop) + 0.5f);
+        const float cx = static_cast<float>(kSlotX[slot] + kSlotW / 2);
+
+        if (overlaps(lo, hi, kReadoutTop, kReadoutTop + kReadoutHeight)) {
+            char value[16];
+            format_value(value, sizeof value, control.value);
+            const int centre = kSlotX[slot] + kSlotW / 2;
+            display_text(centre - display_text_width(control.label.c_str(), 1) / 2,
+                         kReadoutTop + 4, control.label.c_str(), 1, t.ink_dim);
+            display_text(centre - display_text_width(value, 3) / 2,
+                         kReadoutTop + 20, value, 3, t.ink);
+        }
+
+        // The unlit remainder of the travel, then the lit part over it. Clipped to the
+        // band at both ends; a bar's profile is uniform along its length, so a clipped
+        // bar is exactly the same pixels as the un-clipped one where they overlap.
+        const int track_a = kTrackTop > lo ? kTrackTop : lo;
+        const int track_b = kTrackBottom < hi ? kTrackBottom : hi;
+        if (track_b > track_a) {
+            display_glow_line(cx, static_cast<float>(track_a), cx, static_cast<float>(track_b),
+                              kBarWidth, 0.0f, 0, display_dim(lit, 20));
+        }
+        const int lit_a = fill_y > lo ? fill_y : lo;
+        if (track_b > lit_a) {
+            display_glow_line(cx, static_cast<float>(lit_a), cx, static_cast<float>(track_b),
+                              static_cast<float>(kBarWidth), g_lab.glow,
+                              static_cast<int>(g_lab.level + 0.5f), lit);
+        }
+        if (fill_y >= lo && fill_y < hi) {
+            display_line(static_cast<float>(kSlotX[slot] + 6), static_cast<float>(fill_y),
+                         static_cast<float>(kSlotX[slot] + kSlotW - 6),
+                         static_cast<float>(fill_y), 3.0f, t.ink);
+        }
+    }
+}
+
+int slider_fill_y(int slot) {
+    const int bound = g_slider_bound[slot];
+    if (bound < 0 || bound >= static_cast<int>(g_ui_controls.size())) return kTrackBottom;
+    const UiControl& control = g_ui_controls[static_cast<std::size_t>(bound)];
+    const float span = control.max_value - control.min_value;
+    const float fraction = span > 0.0f ? (control.value - control.min_value) / span : 0.0f;
+    return kTrackBottom - static_cast<int>(fraction * (kTrackBottom - kTrackTop) + 0.5f);
+}
+
+void draw_sliders() {
+    if (!display_available()) return;
+    const int count = static_cast<int>(g_ui_controls.size());
+    if (count == 0) {
+        display_clear(theme().ground);
+        const char* none = "NO CONTROLS";
+        display_text((display_width() - display_text_width(none, 2)) / 2,
+                     display_height() / 2, none, 2, theme().ink_dim);
+        display_present();
+        return;
+    }
+    if (g_slider_bound[0] >= count) g_slider_bound[0] = 0;
+    if (g_slider_bound[1] >= count) g_slider_bound[1] = count > 1 ? 1 : 0;
+
+    display_clear(theme().ground);
+    paint_sliders(0, display_height());
+    display_present();
+}
+
+// A press on the right half grabs a slider; the columns meet in the middle so there is
+// no dead strip between them to land in.
+int slider_hit(int x, int /*y*/) {
+    if (x < kSlotX[0] - 8) return -1;
+    const int slot = x < (kSlotX[1] - 6) ? 0 : 1;
+    const int bound = g_slider_bound[slot];
+    return bound >= 0 && bound < static_cast<int>(g_ui_controls.size()) ? bound : -1;
+}
+
+bool slider_tapped(int x, int y) {
+    if (x >= kSlotX[0] - 8) return false;
+    const int row = (y - kListTop + 4) / kRowHeight;
+    if (row < 0 || row >= static_cast<int>(g_ui_controls.size())) return false;
+    if (row == g_slider_bound[0]) return true;      // already under the left hand
+    if (row == g_slider_bound[1]) {                 // swap rather than duplicate
+        g_slider_bound[1] = g_slider_bound[0];
+    } else {
+        g_slider_bound[1] = g_slider_bound[0];
+    }
+    g_slider_bound[0] = row;
+    draw_sliders();
+    return true;
+}
+
+// Only the rows between where the fill was and where it now is have changed, plus the
+// readout. Two narrow bands instead of a 602 KB frame.
+int g_slider_last_fill[2] = {kTrackBottom, kTrackBottom};
+
+void sliders_redraw_moving(int index) {
+    int slot = -1;
+    if (g_slider_bound[0] == index) slot = 0;
+    else if (g_slider_bound[1] == index) slot = 1;
+    if (slot < 0) return;
+
+    const int now = slider_fill_y(slot);
+    const int was = g_slider_last_fill[slot];
+    g_slider_last_fill[slot] = now;
+
+    int lo = (now < was ? now : was) - 6;
+    int hi = (now > was ? now : was) + 6;
+    if (lo < kTrackTop - 6) lo = kTrackTop - 6;
+    if (hi > kTrackBottom + 6) hi = kTrackBottom + 6;
+    if (hi > lo) {
+        display_clear_rows(lo, hi - lo, theme().ground);
+        paint_sliders(lo, hi);
+        display_present_rows(lo, hi - lo);
+    }
+
+    display_clear_rows(kReadoutTop, kReadoutHeight, theme().ground);
+    paint_sliders(kReadoutTop, kReadoutTop + kReadoutHeight);
+    display_present_rows(kReadoutTop, kReadoutHeight);
+}
+
+// ---------------------------------------------------------------------------------
 // Which set of knobs the finger is on.
 //
 // The touch task used to reach straight into the patch's controls and call draw_face,
@@ -921,6 +1099,10 @@ struct Surface {
     std::vector<UiControl>* controls;
     void (*redraw)();
     void (*changed)();
+    // Which control a press grabs, or -1. Null falls back to the knob circles.
+    int (*hit_test)(int x, int y);
+    // A press that is not a drag — a tap on a list row. True if it was consumed.
+    bool (*tapped)(int x, int y);
     // Redraw for the case that actually needs to be quick: one knob is moving and
     // everything else on screen is already correct. Measured, a full face is 268 ms of
     // drawing plus 32 ms of QSPI, and nearly all of it redelivers pixels that did not
@@ -934,8 +1116,12 @@ void lab_changed() { lab_pull(); }
 void face_redraw_moving(int index);
 void lab_redraw_moving(int index);
 
-const Surface kFaceSurface{&g_ui_controls, draw_face, face_changed, face_redraw_moving};
-const Surface kLabSurface{&g_lab_controls, draw_lab, lab_changed, lab_redraw_moving};
+const Surface kFaceSurface{&g_ui_controls, draw_face, face_changed,
+                           nullptr, nullptr, face_redraw_moving};
+const Surface kLabSurface{&g_lab_controls, draw_lab, lab_changed,
+                          nullptr, nullptr, lab_redraw_moving};
+const Surface kSliderSurface{&g_ui_controls, draw_sliders, face_changed,
+                             slider_hit, slider_tapped, sliders_redraw_moving};
 const Surface* g_surface = &kFaceSurface;
 
 // A finger on a knob. Vertical drag rather than rotation: turning a real knob is a
@@ -946,25 +1132,35 @@ void touch_task(void*) {
     int held = -1;
     int last_y = 0;
     float held_start_value = 0.0f;
+    bool consumed = false;      // a tap already handled; ignore until the finger lifts
 
     for (;;) {
         std::vector<UiControl>& controls = *g_surface->controls;
         int x = 0, y = 0;
         if (touch_read(&x, &y)) {
-            if (held < 0) {
-                // Generous hit radius: fingers are wider than knobs.
-                for (std::size_t i = 0; i < g_knob_hits.size() && i < controls.size(); ++i) {
-                    const KnobHit& hit = g_knob_hits[i];
-                    const int dx = x - hit.cx, dy = y - hit.cy;
-                    const int reach = hit.radius + 12;
-                    if (dx * dx + dy * dy <= reach * reach) {
-                        held = static_cast<int>(i);
-                        last_y = y;
-                        held_start_value = controls[i].value;
-                        g_active_knob = held;
-                        g_surface->redraw();
-                        break;
+            if (consumed) {
+                // nothing until release
+            } else if (held < 0) {
+                int found = -1;
+                if (g_surface->tapped != nullptr && g_surface->tapped(x, y)) {
+                    consumed = true;
+                } else if (g_surface->hit_test != nullptr) {
+                    found = g_surface->hit_test(x, y);
+                } else {
+                    // Generous hit radius: fingers are wider than knobs.
+                    for (std::size_t i = 0; i < g_knob_hits.size() && i < controls.size(); ++i) {
+                        const KnobHit& hit = g_knob_hits[i];
+                        const int dx = x - hit.cx, dy = y - hit.cy;
+                        const int reach = hit.radius + 12;
+                        if (dx * dx + dy * dy <= reach * reach) { found = static_cast<int>(i); break; }
                     }
+                }
+                if (found >= 0 && found < static_cast<int>(controls.size())) {
+                    held = found;
+                    last_y = y;
+                    held_start_value = controls[static_cast<std::size_t>(found)].value;
+                    g_active_knob = held;
+                    if (g_surface->hit_test == nullptr) g_surface->redraw();
                 }
             } else if (held < static_cast<int>(controls.size())) {
                 UiControl& control = controls[static_cast<std::size_t>(held)];
@@ -985,10 +1181,15 @@ void touch_task(void*) {
                     }
                 }
             }
-        } else if (held >= 0) {
+        } else if (held >= 0 || consumed) {
+            const bool was_dragging = held >= 0;
             held = -1;
+            consumed = false;
             g_active_knob = -1;
-            g_surface->redraw();   // back to the title once the finger lifts
+            // The sliders keep their readout after the finger lifts — the value is the
+            // point of the screen, not a transient of the gesture — so only the knob
+            // faces fall back to their title.
+            if (was_dragging && g_surface->hit_test == nullptr) g_surface->redraw();
         }
         // Idle, the poll rate only decides how quickly a touch is noticed, and 30 ms is
         // imperceptible for that. Under a finger it decides how far behind the drawing
@@ -1513,6 +1714,46 @@ void console_task(void*) {
 
         if (command == "info") {
             print_info();
+        } else if (command == "cpu") {
+            // Headroom, measured rather than estimated. Named `cpu` and not `load`,
+            // which was taken: an unguarded `load` branch placed above it swallowed
+            // every `load <patch>` the console had, and did it silently, because both
+            // spellings are a verb somebody would reach for. `info` reports cost in units
+            // relative to a Gain node, which ranks nodes against each other and says
+            // nothing about whether a second instrument fits.
+            //
+            // Against its own graph, not the live one. Rendering the live graph from
+            // here would have two tasks inside the same node state at once — a race
+            // that mostly produces a plausible number and occasionally produces a
+            // crash in the audio task, which is the worst of both.
+            std::string patch_text;
+            if (!load_deployed_patch(patch_text)) {
+                std::printf("ERR no deployed patch to measure\n");
+            } else {
+                // build_graph republishes the control surface as a side effect, and the
+                // screen is showing the live one.
+                std::vector<UiControl> keep = g_ui_controls;
+                std::string error;
+                soundgraph::Graph* probe = build_graph(patch_text.c_str(), error);
+                g_ui_controls = keep;
+                if (probe == nullptr) {
+                    std::printf("ERR %s\n", error.c_str());
+                } else {
+                    constexpr int kBlocks = 400;
+                    static float left[kBlock];
+                    static float right[kBlock];
+                    const int64_t start = esp_timer_get_time();
+                    for (int i = 0; i < kBlocks; ++i) probe->render(left, right, kBlock);
+                    const int64_t spent = esp_timer_get_time() - start;
+                    delete probe;
+                    const double audio_us = 1e6 * kBlocks * kBlock / SG_AUDIO_SAMPLE_RATE;
+                    std::printf("OK dsp %.1f%% of one core (%lld us per %d-sample block, "
+                                "budget %.0f us)\n",
+                                100.0 * static_cast<double>(spent) / audio_us,
+                                static_cast<long long>(spent / kBlocks), kBlock,
+                                audio_us / kBlocks);
+                }
+            }
         } else if (command == "screen") {
             // Panel bring-up without a reflash: the difference between iterating on a
             // screen in seconds and in minutes.
@@ -1558,6 +1799,17 @@ void console_task(void*) {
                 g_active_knob = -1;
                 draw_face();
                 std::printf("OK face\n");
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "sliders") == 0) {
+                g_surface = &kSliderSurface;
+                g_active_knob = -1;
+                if (tokens.size() >= 4) {
+                    g_slider_bound[0] = std::atoi(tokens[2]);
+                    g_slider_bound[1] = std::atoi(tokens[3]);
+                }
+                g_slider_last_fill[0] = slider_fill_y(0);
+                g_slider_last_fill[1] = slider_fill_y(1);
+                draw_sliders();
+                std::printf("OK sliders %d %d\n", g_slider_bound[0], g_slider_bound[1]);
             } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "lab") == 0) {
                 if (g_lab_controls.empty()) lab_controls_init();
                 g_surface = &kLabSurface;
@@ -1626,7 +1878,7 @@ void console_task(void*) {
                 display_set_brightness(std::atoi(tokens[2]));
                 std::printf("OK brightness %s\n", tokens[2]);
             } else {
-                std::printf("usage: screen test | face | lab [W G L C H B] | time | "
+                std::printf("usage: screen test | face | sliders [a b] | lab [W G L C H B] | time | "
                             "theme 0-%d | rotate 0-270 | fill RRGGBB | bright 0-100\n",
                             kThemeCount - 1);
             }
