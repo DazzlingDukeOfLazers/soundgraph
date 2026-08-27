@@ -30,10 +30,23 @@ i2c_master_bus_handle_t g_i2c_bus = nullptr;
 esp_codec_dev_handle_t g_codec = nullptr;
 esp_codec_dev_handle_t g_mic = nullptr;
 
-// TCA9555 I/O expander: pins 0-7 are port 0, 8-15 are port 1. A bit set in the config
-// register makes that pin an input, so the enable pin's bit must be cleared there and
-// set in the output register. Only the enable pin's port is touched — the other port
-// may be wired to things this firmware knows nothing about.
+// Raising an amplifier enable that lives on an I2C I/O expander.
+//
+// A bit set in the config register makes that pin an input, so the enable pin's bit must
+// be cleared there and set in the output register. Only the enable pin's port is touched
+// — the others may be wired to keys, panel resets or things this firmware knows nothing
+// about.
+//
+// The register map depends on how wide the part is, and the two boards that use one
+// differ. The '54 parts are 8-bit: input 0, output 1, polarity 2, config 3. The '55 parts
+// are 16-bit and pair every register: input 0-1, output 2-3, polarity 4-5, config 6-7.
+// Both conveniently answer at 0x20, so the address does not distinguish them, and the
+// board profile has to say. Getting it wrong is quiet in the worst way — a '54 driven
+// with '55 offsets writes the polarity-inversion register and the speaker simply stays
+// silent, with every transaction reporting success.
+//
+// The offsets fall out of the port count: output base is the width, config base is three
+// times it. One port gives 1 and 3, two ports give 2 and 6.
 #if SG_AMP_KIND == 2
 bool expander_raise_pin() {
     i2c_device_config_t device_config = {};
@@ -48,9 +61,17 @@ bool expander_raise_pin() {
     }
 
     const int port = SG_AMP_EXPANDER_PIN / 8;
+    if (port >= SG_AMP_EXPANDER_PORTS) {
+        ESP_LOGE(TAG, "%s has %d port(s); pin %d is not on it",
+                 SG_AMP_EXPANDER_CHIP, SG_AMP_EXPANDER_PORTS, SG_AMP_EXPANDER_PIN);
+        i2c_master_bus_rm_device(device);
+        return false;
+    }
     const uint8_t bit = static_cast<uint8_t>(1u << (SG_AMP_EXPANDER_PIN % 8));
-    const uint8_t output_register = static_cast<uint8_t>(0x02 + port);
-    const uint8_t config_register = static_cast<uint8_t>(0x06 + port);
+    const uint8_t output_register =
+        static_cast<uint8_t>(SG_AMP_EXPANDER_PORTS + port);
+    const uint8_t config_register =
+        static_cast<uint8_t>(3 * SG_AMP_EXPANDER_PORTS + port);
 
     bool ok = true;
     uint8_t read_value = 0;
@@ -68,8 +89,13 @@ bool expander_raise_pin() {
     ok = ok && i2c_master_transmit(device, config_bytes, 2, 200) == ESP_OK;
 
     i2c_master_bus_rm_device(device);
-    if (!ok) {
-        ESP_LOGE(TAG, "could not raise the amplifier enable via the expander");
+    if (ok) {
+        ESP_LOGI(TAG, "%s at 0x%02x: amp enable on pin %d raised (out 0x%02x, cfg 0x%02x)",
+                 SG_AMP_EXPANDER_CHIP, SG_AMP_I2C_ADDRESS, SG_AMP_EXPANDER_PIN,
+                 output_register, config_register);
+    } else {
+        ESP_LOGE(TAG, "could not raise the amplifier enable via the %s at 0x%02x",
+                 SG_AMP_EXPANDER_CHIP, SG_AMP_I2C_ADDRESS);
     }
     return ok;
 }

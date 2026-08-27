@@ -80,10 +80,26 @@ def main() -> None:
                 f"#define SG_AMP_GPIO {amp['gpio']}",
             ]
         elif "expander" in amp:
+            # How wide the expander is, which is the only thing about it the firmware
+            # needs. The '54 parts are 8-bit with one port and the '55 parts are 16-bit
+            # with two, and their register maps differ accordingly — a firmware told only
+            # the address and the pin cannot tell them apart, and both boards here happen
+            # to sit at 0x20. Unknown parts fail the build rather than defaulting: a
+            # silently wrong register map writes the polarity-inversion register and the
+            # speaker just stays quiet.
+            widths = {"tca9554": 1, "pca9554": 1, "tca9555": 2, "pca9555": 2}
+            chip = str(amp["expander"]).lower()
+            if chip not in widths:
+                raise SystemExit(
+                    f"board-generator: unknown I/O expander '{chip}'. "
+                    f"Known: {', '.join(sorted(widths))}. Add it with its port count "
+                    f"once you have checked its register map.")
             lines += [
                 "#define SG_AMP_KIND 2  // behind an I2C I/O expander",
+                f'#define SG_AMP_EXPANDER_CHIP "{chip}"',
                 f"#define SG_AMP_I2C_ADDRESS {amp.get('i2c_address', -1)}",
                 f"#define SG_AMP_EXPANDER_PIN {amp.get('pin', -1)}",
+                f"#define SG_AMP_EXPANDER_PORTS {widths[chip]}",
             ]
         else:
             lines += ["#define SG_AMP_KIND 0  // always on"]

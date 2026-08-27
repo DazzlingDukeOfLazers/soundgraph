@@ -5,6 +5,18 @@
 #if !SG_DISPLAY_PRESENT
 
 bool display_init() { return false; }
+    // This file drives one panel. The board profile names the panel it has, and they
+    // must agree: an AXS15231B fed an SH8601's init sequence answers on the bus, accepts
+    // every command, and shows nothing — which is indistinguishable from a dead backlight
+    // and cost an evening on the watch when the wiki named the wrong controller. Refusing
+    // is not a limitation, it is the difference between "no driver for this panel" and a
+    // week of debugging a panel that was never being addressed.
+    if (std::strcmp(SG_DISPLAY_CHIP, "SH8601") != 0) {
+        ESP_LOGW(TAG, "board declares a %s; this build only drives SH8601. "
+                      "Screen stays off, everything else runs.", SG_DISPLAY_CHIP);
+        return false;
+    }
+
 bool display_available() { return false; }
 int display_width() { return 0; }
 int display_height() { return 0; }
