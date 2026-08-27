@@ -18,3 +18,7 @@ dependencies:
   # thing that has to agree.
   espressif/esp_lcd_sh8601: "^1.0"
   espressif/esp_lcd_touch_ft5x06: "^1.0"
+  # The 3.49 bar panel. One component covers the QSPI panel and the touch
+  # controller, because on this part they are the same silicon — it answers at
+  # 0x3b for touch on its own I2C bus, where the watch needs a separate FT3168.
+  espressif/esp_lcd_axs15231b: "^2.0.2"

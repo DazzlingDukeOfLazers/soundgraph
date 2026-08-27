@@ -42,10 +42,19 @@ bool display_test_card() { return false; }
 
 #include "driver/spi_master.h"
 #include "esp_heap_caps.h"
+#include "esp_memory_utils.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
+// One panel per build. Both drivers would link happily, but a board carrying a driver
+// for a panel it does not have is a driver nobody ever tests on hardware.
+#if SG_DISPLAY_CHIP_KIND == 1
 #include "esp_lcd_sh8601.h"
+#elif SG_DISPLAY_CHIP_KIND == 2
+#include "esp_lcd_axs15231b.h"
+#include "driver/ledc.h"
+#include "driver/gpio.h"
+#endif
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -54,6 +63,17 @@ namespace {
 
 const char* const TAG = "sg-display";
 
+// Which SPI peripheral drives the panel. SPI2 is the S3's FSPI and has IOMUX pins; this
+// board wires the panel to those pin numbers in a different order, so the bus routes
+// through the GPIO matrix regardless. Waveshare's port uses SPI3, and matching it removes
+// the last configuration difference between their working panel and this blank one.
+#if SG_DISPLAY_CHIP_KIND == 2
+#define SG_DISPLAY_SPI_HOST SPI3_HOST
+#else
+#define SG_DISPLAY_SPI_HOST SPI2_HOST
+#endif
+
+#if SG_DISPLAY_CHIP_KIND == 1
 // The panel's own wake-up sequence, from Waveshare's BSP for this board. It belongs to
 // the panel rather than the wiring, so it lives here keyed by chip rather than in the
 // manifest. Without it the controller answers on QSPI and stays dark — the failure that
@@ -76,6 +96,7 @@ const sh8601_lcd_init_cmd_t kPanelInit[] = {
     // 24-bit stick. 0x77 is RGB888.
     {0x3A, (uint8_t[]){0x77}, 1, 10},
 };
+#endif  // SH8601
 
 // 5x7, column-major, one byte per column, bit 0 at the top. Uppercase, digits and the
 // handful of marks a control surface needs — a synth panel says CUTOFF and 2400, not
@@ -161,7 +182,50 @@ esp_lcd_panel_io_handle_t g_io = nullptr;
 // Three bytes a pixel, R then G then B: COLMOD 0x77, which is what makes this a
 // 16.7-million-colour panel rather than a 65-thousand-colour one.
 uint8_t* g_fb = nullptr;
-constexpr int kBytesPerPixel = 3;
+// The framebuffer's pixel format, which is a fact about the panel rather than a taste.
+//
+// The AMOLED takes RGB888 and the bar LCD takes RGB565. I first gave the LCD RGB666,
+// because the driver stores that as three bytes a pixel and it would have let every
+// blend, glow and dim above stay literally unchanged. The panel took it — draw_bitmap
+// returned ESP_OK, the transfer-done callback fired on every frame — and displayed
+// nothing at all. Waveshare's own port for this glass uses 16, and after reset timing
+// and byte order had both been ruled out, being right about the format mattered more
+// than the framebuffer being convenient.
+#if SG_DISPLAY_CHIP_KIND == 2
+constexpr int kBytesPerPixel = 2;   // RGB565
+#else
+constexpr int kBytesPerPixel = 3;   // RGB888
+#endif
+
+// Pack and unpack, so nothing above this line has to know which it is.
+inline void store_rgb(uint8_t* p, int r, int g, int b) {
+#if SG_DISPLAY_CHIP_KIND == 2
+    const uint16_t packed = static_cast<uint16_t>(((r & 0xF8) << 8) |
+                                                  ((g & 0xFC) << 3) | (b >> 3));
+    p[0] = static_cast<uint8_t>(packed >> 8);
+    p[1] = static_cast<uint8_t>(packed & 0xFF);
+#else
+    p[0] = static_cast<uint8_t>(r);
+    p[1] = static_cast<uint8_t>(g);
+    p[2] = static_cast<uint8_t>(b);
+#endif
+}
+
+inline void load_rgb(const uint8_t* p, int* r, int* g, int* b) {
+#if SG_DISPLAY_CHIP_KIND == 2
+    const uint16_t packed = static_cast<uint16_t>((p[0] << 8) | p[1]);
+    // Widened back to eight bits by replicating the high bits, not by shifting in zeros:
+    // a full-scale 31 must come back as 255 or every read-modify-write darkens what it
+    // touches, and an interface built out of blends would fade towards black.
+    *r = ((packed >> 11) & 0x1F) * 255 / 31;
+    *g = ((packed >> 5) & 0x3F) * 255 / 63;
+    *b = (packed & 0x1F) * 255 / 31;
+#else
+    *r = p[0];
+    *g = p[1];
+    *b = p[2];
+#endif
+}
 
 // draw_bitmap only *queues* the transfer. The bounce buffer must not be refilled until
 // the DMA that is reading it has finished, or bands arrive carrying their successor's
@@ -186,9 +250,8 @@ int g_clip_hi = 1000000;
 inline void put_physical(int px, int py, uint32_t colour) {
     if (px < 0 || py < 0 || px >= SG_DISPLAY_WIDTH || py >= SG_DISPLAY_HEIGHT) return;
     uint8_t* p = g_fb + (py * SG_DISPLAY_WIDTH + px) * kBytesPerPixel;
-    p[0] = static_cast<uint8_t>(colour >> 16);
-    p[1] = static_cast<uint8_t>(colour >> 8);
-    p[2] = static_cast<uint8_t>(colour);
+    store_rgb(p, static_cast<int>((colour >> 16) & 0xFF),
+              static_cast<int>((colour >> 8) & 0xFF), static_cast<int>(colour & 0xFF));
 }
 
 }  // namespace
@@ -221,12 +284,13 @@ void display_pixel(int x, int y, uint32_t colour) {
 
 void display_clear(uint32_t colour) {
     if (g_fb == nullptr) return;
-    const uint8_t r = static_cast<uint8_t>(colour >> 16);
-    const uint8_t g = static_cast<uint8_t>(colour >> 8);
-    const uint8_t b = static_cast<uint8_t>(colour);
+    const int r = static_cast<int>((colour >> 16) & 0xFF);
+    const int g = static_cast<int>((colour >> 8) & 0xFF);
+    const int b = static_cast<int>(colour & 0xFF);
     uint8_t* p = g_fb;
     for (int i = 0; i < SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT; ++i) {
-        *p++ = r; *p++ = g; *p++ = b;
+        store_rgb(p, r, g, b);
+        p += kBytesPerPixel;
     }
 }
 
@@ -251,9 +315,11 @@ void display_blend(int x, int y, uint32_t colour, int alpha) {
     if (px < 0 || py < 0 || px >= SG_DISPLAY_WIDTH || py >= SG_DISPLAY_HEIGHT) return;
     uint8_t* p = g_fb + (py * SG_DISPLAY_WIDTH + px) * kBytesPerPixel;
     const int cr = (colour >> 16) & 0xFF, cg = (colour >> 8) & 0xFF, cb = colour & 0xFF;
-    p[0] = static_cast<uint8_t>((cr * alpha + p[0] * (255 - alpha)) / 255);
-    p[1] = static_cast<uint8_t>((cg * alpha + p[1] * (255 - alpha)) / 255);
-    p[2] = static_cast<uint8_t>((cb * alpha + p[2] * (255 - alpha)) / 255);
+    int r = 0, g = 0, b = 0;
+    load_rgb(p, &r, &g, &b);
+    store_rgb(p, (cr * alpha + r * (255 - alpha)) / 255,
+              (cg * alpha + g * (255 - alpha)) / 255,
+              (cb * alpha + b * (255 - alpha)) / 255);
 }
 
 namespace {
@@ -561,12 +627,13 @@ void display_clear_rows(int y, int height, uint32_t colour) {
     if (g_fb == nullptr) return;
     int y0 = 0, y1 = 0;
     if (!physical_rows(y, height, &y0, &y1)) return;
-    const uint8_t r = static_cast<uint8_t>(colour >> 16);
-    const uint8_t g = static_cast<uint8_t>(colour >> 8);
-    const uint8_t b = static_cast<uint8_t>(colour);
+    const int r = static_cast<int>((colour >> 16) & 0xFF);
+    const int g = static_cast<int>((colour >> 8) & 0xFF);
+    const int b = static_cast<int>(colour & 0xFF);
     uint8_t* p = g_fb + static_cast<std::size_t>(y0) * SG_DISPLAY_WIDTH * kBytesPerPixel;
     for (int i = 0; i < (y1 - y0) * SG_DISPLAY_WIDTH; ++i) {
-        *p++ = r; *p++ = g; *p++ = b;
+        store_rgb(p, r, g, b);
+        p += kBytesPerPixel;
     }
 }
 
@@ -624,41 +691,96 @@ bool display_present() {
     // out, drew correctly — knobs over a white, seething ground. Nothing writes the
     // framebuffer during a present, so DMA can read it where it lies, and the whole
     // class of hazard goes away with the copy.
-    if (esp_lcd_panel_draw_bitmap(g_panel, 0, 0, SG_DISPLAY_WIDTH, SG_DISPLAY_HEIGHT,
-                                  g_fb) != ESP_OK) {
+    // What is actually in the buffer, once. "The panel shows white" and "we are sending
+    // white" look identical from outside, and only one of them is the panel's fault.
+    static bool reported = false;
+    if (!reported) {
+        reported = true;
+        ESP_LOGI(TAG, "first pixels: %02x %02x  %02x %02x  %02x %02x (%d bytes/pixel)",
+                 g_fb[0], g_fb[1], g_fb[2], g_fb[3], g_fb[4], g_fb[5], kBytesPerPixel);
+    }
+
+    // Loudly, because a present that fails silently is indistinguishable from a panel
+    // ignoring you: `screen fill` answered OK either way, since nothing checked this.
+    const esp_err_t sent = esp_lcd_panel_draw_bitmap(
+        g_panel, 0, 0, SG_DISPLAY_WIDTH, SG_DISPLAY_HEIGHT, g_fb);
+    if (sent != ESP_OK) {
+        ESP_LOGE(TAG, "draw_bitmap refused the frame: %s", esp_err_to_name(sent));
         return false;
     }
-    xSemaphoreTake(g_trans_done, pdMS_TO_TICKS(1000));
+    if (xSemaphoreTake(g_trans_done, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGE(TAG, "the panel took the frame and never reported it sent; the "
+                      "transfer-done callback did not fire");
+        return false;
+    }
     return true;
 }
 
-bool display_init() {
-    // This file drives one panel. The board profile names the panel the board has, and
-    // they must agree: an AXS15231B fed an SH8601's init sequence answers on the bus,
-    // accepts every command and shows nothing — indistinguishable from a dead backlight,
-    // which is what cost an evening on the watch when the wiki named the wrong
-    // controller. Refusing is not a limitation; it is the difference between "no driver
-    // for this panel" and a week spent debugging a panel that was never addressed.
-    //
-    // It belongs in this branch, not the stub above it. The first attempt went into the
-    // stub, where it compiled out and the board went on driving an AXS15231B as an
-    // SH8601 while the log cheerfully announced the AXS15231B was up. This file carries
-    // two definitions of every function and a search finds the stub first; that is now
-    // twice something has landed in the wrong one.
-    if (std::strcmp(SG_DISPLAY_CHIP, "SH8601") != 0) {
-        ESP_LOGW(TAG, "board declares a %s; this build only drives SH8601. "
-                      "Screen stays off, everything else runs.", SG_DISPLAY_CHIP);
-        return false;
-    }
+// The backlight, for panels that have one.
+//
+// An AMOLED emits its own light and sets brightness with a register write; a
+// transmissive LCD is a shutter in front of a lamp and shows precisely nothing until the
+// lamp is lit. Same call, two completely different mechanisms, and on this board a panel
+// that initialised perfectly would still look dead — the exact symptom that has already
+// cost an evening once, arriving by a new route.
+#if SG_DISPLAY_BACKLIGHT >= 0
+bool backlight_start() {
+    ledc_timer_config_t timer = {};
+    timer.speed_mode = LEDC_LOW_SPEED_MODE;
+    timer.duty_resolution = LEDC_TIMER_10_BIT;
+    timer.timer_num = LEDC_TIMER_0;
+    timer.freq_hz = 5000;   // above hearing, and above what a camera will beat against
+    timer.clk_cfg = LEDC_AUTO_CLK;
+    if (ledc_timer_config(&timer) != ESP_OK) return false;
 
+    ledc_channel_config_t channel = {};
+    channel.gpio_num = SG_DISPLAY_BACKLIGHT;
+    channel.speed_mode = LEDC_LOW_SPEED_MODE;
+    channel.channel = LEDC_CHANNEL_0;
+    channel.timer_sel = LEDC_TIMER_0;
+    channel.duty = 0;
+    channel.hpoint = 0;
+    return ledc_channel_config(&channel) == ESP_OK;
+}
+
+bool backlight_set(int percent) {
+    // Active low. Waveshare's own table says so without saying so:
+    //
+    //     #define LCD_PWM_MODE_0   (0xff-0)     // dimmest, duty 255
+    //     #define LCD_PWM_MODE_255 (0xff-255)   // brightest, duty 0
+    //
+    // The number in each name is the brightness and the value is its complement, so full
+    // duty is full dark. Setting 100% the obvious way turned the lamp off, and the panel
+    // sat there correctly initialised behind it — the third time this board has offered
+    // "screen looks dead" as the symptom of something that was working.
+    const uint32_t duty = static_cast<uint32_t>(100 - percent) * 1023 / 100;
+    if (ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty) != ESP_OK) return false;
+    return ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0) == ESP_OK;
+}
+#endif
+
+bool display_init() {
     spi_bus_config_t bus = {};
     bus.sclk_io_num = SG_DISPLAY_QSPI_SCLK;
     bus.data0_io_num = SG_DISPLAY_QSPI_D0;
     bus.data1_io_num = SG_DISPLAY_QSPI_D1;
     bus.data2_io_num = SG_DISPLAY_QSPI_D2;
     bus.data3_io_num = SG_DISPLAY_QSPI_D3;
-    bus.max_transfer_sz = SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT * kBytesPerPixel;
-    if (spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
+    // Deliberately far smaller than a frame.
+    //
+    // The framebuffer lives in PSRAM, and SPI's esp_ptr_dma_capable() is a range check
+    // against internal DRAM only — the master driver never asks whether external RAM is
+    // DMA capable. So every transfer out of PSRAM is copied into an internal bounce
+    // buffer the driver allocates per in-flight transaction. Ask it to send a whole
+    // 220 KB frame and it tries to allocate 220 KB of internal RAM, of which this chip
+    // has about 139 KB free, and returns ESP_ERR_NO_MEM — a message about the heap for
+    // what is really a message about which heap.
+    //
+    // Capping the transfer caps the copy. The driver splits the frame into chunks of
+    // this size and queues trans_queue_depth of them, so the internal cost is the
+    // product of the two, and both are now small.
+    bus.max_transfer_sz = 8 * 1024;
+    if (spi_bus_initialize(SG_DISPLAY_SPI_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
         ESP_LOGE(TAG, "QSPI bus would not start");
         return false;
     }
@@ -666,18 +788,27 @@ bool display_init() {
     esp_lcd_panel_io_spi_config_t io_config = {};
     io_config.cs_gpio_num = SG_DISPLAY_QSPI_CS;
     io_config.dc_gpio_num = -1;
+    // SPI mode is a fact about the panel, not the bus: the SH8601 clocks on mode 0 and
+    // the AXS15231B on mode 3. Wrong here, the controller sees noise and shows nothing.
+#if SG_DISPLAY_CHIP_KIND == 2
+    io_config.spi_mode = 3;
+#else
     io_config.spi_mode = 0;
+#endif
     io_config.pclk_hz = 40 * 1000 * 1000;
-    io_config.trans_queue_depth = 2;
+    // Four. Deep enough to keep the bus busy, shallow enough that four bounce buffers
+    // of 32 KB fit in internal RAM with room to spare.
+    io_config.trans_queue_depth = 4;
     io_config.on_color_trans_done = on_trans_done;
     io_config.lcd_cmd_bits = 32;
     io_config.lcd_param_bits = 8;
     io_config.flags.quad_mode = true;
-    if (esp_lcd_new_panel_io_spi(SPI2_HOST, &io_config, &g_io) != ESP_OK) {
+    if (esp_lcd_new_panel_io_spi(SG_DISPLAY_SPI_HOST, &io_config, &g_io) != ESP_OK) {
         ESP_LOGE(TAG, "panel IO would not start");
         return false;
     }
 
+#if SG_DISPLAY_CHIP_KIND == 1
     sh8601_vendor_config_t vendor = {};
     vendor.init_cmds = kPanelInit;
     vendor.init_cmds_size = sizeof(kPanelInit) / sizeof(kPanelInit[0]);
@@ -685,21 +816,16 @@ bool display_init() {
 
     esp_lcd_panel_dev_config_t panel_config = {};
     panel_config.reset_gpio_num = SG_DISPLAY_RESET;
-    // BGR, not RGB: this glass wires the channels the other way round, and a red fill
-    // arrives blue if you take the vendor BSP's word for it. Measured on the board.
     // RGB, not BGR — and the opposite of what this panel needed at 16 bits.
     //
     // `screen fill FF0000` photographs as pure blue with BGR here and pure red with RGB,
-    // so the driver plainly does act on this field; an earlier note in the history
-    // claiming it ignores the field at 24 bits is wrong, and flipping the flag is what
-    // disproved it. What is established is only that the correct value flipped when the
-    // pixel format did. Why it flipped — a byte order in the 565 path that the 888 path
-    // does not share is the obvious suspect — is not established, and guessing at it in
-    // a comment is how the last wrong explanation got written down.
+    // so the driver plainly does act on this field. What is established is only that the
+    // correct value flipped when the pixel format did; why is not, and guessing at it in
+    // a comment is how a wrong explanation got written down once already.
     //
-    // Worth knowing that this failed silently for hours: the interface is green arcs and
-    // white pointers on black, and green, white and black are all unchanged by swapping
-    // red with blue. It took six greens chosen to differ before anything looked wrong.
+    // It failed silently for hours because the interface is green arcs and white
+    // pointers on black, and green, white and black all survive swapping red with blue.
+    // It took six greens chosen to differ before anything looked wrong.
     panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
     panel_config.bits_per_pixel = 24;
     panel_config.vendor_config = &vendor;
@@ -708,21 +834,127 @@ bool display_init() {
         g_panel = nullptr;
         return false;
     }
+#elif SG_DISPLAY_CHIP_KIND == 2
+    // Two commands, and the driver's own twenty-seven deliberately discarded.
+    //
+    // The component ships a long vendor_specific_init_default for this controller, and
+    // running it on this glass leaves a panel that initialises cleanly, accepts every
+    // frame, reports every transfer complete, and shows a uniform white rectangle.
+    // Waveshare's port for this board passes this instead: sleep out, display on. That
+    // is the whole init.
+    //
+    // Which is the SH8601 lesson arriving from the opposite direction. There the driver
+    // had no init sequence and needed the panel's; here it has one and needs it thrown
+    // away. Both times the rule is the same — the init belongs to the glass, not to the
+    // controller family, and a driver's default is a guess about which panel you have.
+    static const axs15231b_lcd_init_cmd_t kAxsInit[] = {
+        {0x11, (uint8_t[]){0x00}, 0, 100},   // sleep out
+        {0x29, (uint8_t[]){0x00}, 0, 100},   // display on
+    };
+
+    axs15231b_vendor_config_t vendor = {};
+    vendor.init_cmds = kAxsInit;
+    vendor.init_cmds_size = sizeof(kAxsInit) / sizeof(kAxsInit[0]);
+    vendor.flags.use_qspi_interface = 1;
+
+    esp_lcd_panel_dev_config_t panel_config = {};
+    // The driver is told there is no reset pin, because its reset is too short for this
+    // glass. Waveshare drive it by hand and hold it low for 250 ms — an order of
+    // magnitude longer than a generic panel reset — and the difference is not cosmetic:
+    // a panel that never properly resets still answers on the bus, still accepts every
+    // command, and still shows nothing. Which is what this board did, with draw_bitmap
+    // returning ESP_OK and the transfer-done callback firing on every frame.
+    panel_config.reset_gpio_num = -1;
+    panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
+    // 18 bits, which is RGB666 — and which the driver stores as three bytes a pixel, one
+    // per channel with the value in the high six bits. So this asks for a *smaller*
+    // colour space than the watch's 24 and gets the identical framebuffer layout: every
+    // blend, every glow and every dim above works unchanged, and the panel simply ignores
+    // the bottom two bits of each channel. 262,144 colours rather than 16.7 million,
+    // which on a transmissive LCD is not the limiting factor.
+    panel_config.bits_per_pixel = 16;
+    panel_config.vendor_config = &vendor;
+    if (esp_lcd_new_panel_axs15231b(g_io, &panel_config, &g_panel) != ESP_OK) {
+        ESP_LOGE(TAG, "%s would not initialise", SG_DISPLAY_CHIP);
+        g_panel = nullptr;
+        return false;
+    }
+
+    // The panel's own reset, on the vendor's timing, after the driver exists and before
+    // it is initialised. High, settle, 250 ms low, settle, then init.
+    if (SG_DISPLAY_RESET >= 0) {
+        gpio_config_t reset_pin = {};
+        reset_pin.pin_bit_mask = 1ULL << SG_DISPLAY_RESET;
+        reset_pin.mode = GPIO_MODE_OUTPUT;
+        gpio_config(&reset_pin);
+        gpio_set_level(static_cast<gpio_num_t>(SG_DISPLAY_RESET), 1);
+        vTaskDelay(pdMS_TO_TICKS(30));
+        gpio_set_level(static_cast<gpio_num_t>(SG_DISPLAY_RESET), 0);
+        vTaskDelay(pdMS_TO_TICKS(250));
+        gpio_set_level(static_cast<gpio_num_t>(SG_DISPLAY_RESET), 1);
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
+#endif
+#if SG_DISPLAY_CHIP_KIND == 1
     esp_lcd_panel_reset(g_panel);
+#endif
     esp_lcd_panel_init(g_panel);
     // The controller's frame buffer is wider than the glass; without the gap every
     // pixel lands 22 columns left of where it was asked for.
     esp_lcd_panel_set_gap(g_panel, SG_DISPLAY_X_OFFSET, SG_DISPLAY_Y_OFFSET);
+#if SG_DISPLAY_CHIP_KIND == 2
+    // Deliberately not calling esp_lcd_panel_disp_on_off here. The component wires its
+    // slot to a function with the opposite sense:
+    //
+    //     axs15231b->base.disp_on_off = panel_axs15231b_disp_off;
+    //     static esp_err_t panel_axs15231b_disp_off(panel, bool off) {
+    //         if (off) command = LCD_CMD_DISPOFF; else command = LCD_CMD_DISPON;
+    //
+    // so asking it to turn the display *on* sends DISPOFF. The init sequence's 0x29 has
+    // already turned it on; this call was turning it straight back off, which is why the
+    // panel initialised cleanly, accepted every frame, reported every transfer complete,
+    // and showed a lit blank rectangle whatever we sent it. Waveshare's port never calls
+    // it either, which in hindsight was the tell.
+#else
     esp_lcd_panel_disp_on_off(g_panel, true);
+#endif
 
-    g_fb = static_cast<uint8_t*>(heap_caps_malloc(
-        SG_DISPLAY_WIDTH * SG_DISPLAY_HEIGHT * kBytesPerPixel, MALLOC_CAP_SPIRAM));
+    // Cache-line aligned. This does not avoid the bounce copy — nothing can, since the
+    // SPI driver's DMA-capability test excludes external RAM outright — but an aligned
+    // source keeps the copy on its fast path, and it costs nothing. Said plainly because
+    // the first version of this comment claimed alignment was the fix for the NO_MEM
+    // above, and it was not: on this chip tx_unaligned is compiled out entirely.
+    constexpr std::size_t kFrameBytes =
+        static_cast<std::size_t>(SG_DISPLAY_WIDTH) * SG_DISPLAY_HEIGHT * kBytesPerPixel;
+    constexpr std::size_t kAlignment = 64;
+    g_fb = static_cast<uint8_t*>(heap_caps_aligned_alloc(
+        kAlignment, (kFrameBytes + kAlignment - 1) & ~(kAlignment - 1),
+        MALLOC_CAP_SPIRAM));
     g_trans_done = xSemaphoreCreateBinary();
     if (g_fb == nullptr || g_trans_done == nullptr) {
         ESP_LOGE(TAG, "no memory for the framebuffer");
         return false;
     }
+    // Everything the NO_MEM question actually turns on, printed once. Three plausible
+    // explanations have now been wrong; the numbers are cheaper than a fourth.
+    ESP_LOGI(TAG, "fb %p dma_capable=%d | internal-dma free %u largest %u | frame %u B",
+             g_fb, static_cast<int>(esp_ptr_dma_capable(g_fb)),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(
+                 MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+             static_cast<unsigned>(kFrameBytes));
+
     display_clear(0x0000);
+
+#if SG_DISPLAY_BACKLIGHT >= 0
+    if (backlight_start()) {
+        backlight_set(100);
+        ESP_LOGI(TAG, "backlight on GPIO %d, lit", SG_DISPLAY_BACKLIGHT);
+    } else {
+        ESP_LOGE(TAG, "backlight on GPIO %d would not start; the panel will look dead "
+                      "however well it initialised", SG_DISPLAY_BACKLIGHT);
+    }
+#endif
 
     ESP_LOGI(TAG, "%s up, %dx%d, %d KB framebuffer in PSRAM", SG_DISPLAY_CHIP,
              SG_DISPLAY_WIDTH, SG_DISPLAY_HEIGHT,
@@ -736,11 +968,15 @@ bool display_set_brightness(int percent) {
     if (g_io == nullptr) return false;
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
+#if SG_DISPLAY_BACKLIGHT >= 0
+    return backlight_set(percent);
+#else
     // The panel's brightness register, in the 32-bit framing QSPI commands use here:
     // 0x02 marks a command write, the opcode sits in the second byte.
     const uint32_t command = (0x02u << 24) | (0x51u << 8);
     const uint8_t value = static_cast<uint8_t>(percent * 255 / 100);
     return esp_lcd_panel_io_tx_param(g_io, command, &value, 1) == ESP_OK;
+#endif
 }
 
 bool display_test_card() {

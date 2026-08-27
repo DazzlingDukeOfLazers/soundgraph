@@ -12,6 +12,21 @@ import sys
 from pathlib import Path
 
 
+# Panels this firmware has a driver for. The name in the manifest is the board's claim
+# about its hardware; this table is the firmware's claim about what it can drive, and a
+# board naming a panel that is not here should not build.
+DISPLAY_CHIPS = {"SH8601": 1, "AXS15231B": 2}
+
+
+def display_chip_kind(display):
+    chip = str(display.get("chip", "")).upper()
+    if chip not in DISPLAY_CHIPS:
+        raise SystemExit(
+            f"board-generator: no driver for display chip '{display.get('chip')}'. "
+            f"Known: {', '.join(sorted(DISPLAY_CHIPS))}.")
+    return DISPLAY_CHIPS[chip]
+
+
 def fail(message: str) -> None:
     print(f"board-generator: {message}", file=sys.stderr)
     sys.exit(1)
@@ -118,6 +133,12 @@ def main() -> None:
             "",
             "#define SG_DISPLAY_PRESENT 1",
             f'#define SG_DISPLAY_CHIP "{display["chip"]}"',
+            # A number as well as a name, so the firmware selects a driver at compile
+            # time instead of carrying every panel it has ever met. Unknown panels fail
+            # the build: a panel driven by the wrong driver answers on the bus, accepts
+            # every command and shows nothing, which is indistinguishable from a dead
+            # backlight and is exactly how the watch lost an evening.
+            f"#define SG_DISPLAY_CHIP_KIND {display_chip_kind(display)}",
             f"#define SG_DISPLAY_WIDTH {display['width']}",
             f"#define SG_DISPLAY_HEIGHT {display['height']}",
             f"#define SG_DISPLAY_X_OFFSET {display.get('x_offset', 0)}",
