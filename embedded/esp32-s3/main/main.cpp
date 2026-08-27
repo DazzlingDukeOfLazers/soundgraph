@@ -1092,10 +1092,22 @@ void sliders_redraw_moving(int index) {
     const int was = g_slider_last_fill[slot];
     g_slider_last_fill[slot] = now;
 
-    int lo = (now < was ? now : was) - 6;
-    int hi = (now > was ? now : was) + 6;
-    if (lo < kTrackTop - 6) lo = kTrackTop - 6;
-    if (hi > kTrackBottom + 6) hi = kTrackBottom + 6;
+    // The band has to cover the bar's cap, not just the distance travelled.
+    //
+    // A rounded end is not a line: the segment starts a full reach below the fill, and
+    // everything between is the cap's curve. Redrawing only the rows the fill moved
+    // through repaints the top of that curve and leaves the rest holding the previous
+    // position's curve — one crescent per step, stacked into a ladder. A step is about
+    // twenty rows and the cap is thirty-three, so it lost every time.
+    //
+    // This is also what a sweep that ends at maximum cannot show, because the fill
+    // finishes at the top and the solid bar covers its own debris on the way past.
+    const float reach = kBarWidth * 0.5f + (g_lab.glow > 0.0f ? g_lab.glow : 0.0f);
+    const int cap = static_cast<int>(reach) + 8;
+    int lo = (now < was ? now : was) - 8;
+    int hi = (now > was ? now : was) + cap;
+    if (lo < kTrackTop - 8) lo = kTrackTop - 8;
+    if (hi > kTrackBottom + 8) hi = kTrackBottom + 8;
     if (hi > lo) {
         display_clear_rows(lo, hi - lo, theme().ground);
         display_set_clip_rows(lo, hi - lo);
@@ -1980,8 +1992,15 @@ void console_task(void*) {
                         UiControl& c = list[static_cast<std::size_t>(which)];
                         const float lo = c.min_value, hi = c.max_value;
                         g_active_knob = which;
+                        // Up, then back to the middle. A sweep that ends at an extreme
+                        // proves nothing about debris: the fill finishes at the top and
+                        // the solid bar covers its own leavings on the way past, which is
+                        // exactly how a clean photograph was taken of a broken slider.
                         for (int i = 0; i <= steps; ++i) {
-                            c.value = lo + (hi - lo) * static_cast<float>(i) / steps;
+                            const float t = static_cast<float>(i) / steps;
+                            const float shape = t < 0.66f ? t / 0.66f
+                                                          : 1.0f - (t - 0.66f) / 0.34f * 0.55f;
+                            c.value = lo + (hi - lo) * shape;
                             g_surface->changed();
                             g_surface->redraw_moving(which);
                             vTaskDelay(pdMS_TO_TICKS(12));
