@@ -8,6 +8,11 @@ const Seams := preload("res://seams.gd")
 const ModuleFace := preload("res://module_face.gd")
 const PatchFace := preload("res://patch_face.gd")
 const RackView := preload("res://rack.gd")
+## The text driver, reached directly: the mapping is a pure function on a string, so the
+## interesting half can be checked without an editor, a window or a sound card.
+const SpeakText := preload("res://speak_text.gd")
+## For its ceiling — the roll holds a fixed number of steps and typed text does not.
+const PianoRoll := preload("res://piano_roll.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -7295,6 +7300,108 @@ func _initialize() -> void:
 		await process_frame
 	check(main.roll_row.visible and not main.keyboard.visible,
 		"the roll stands open while the keyboard hides")
+	main.roll_button.get_popup().id_pressed.emit(2)
+	for i in 3:
+		await process_frame
+
+	# ---- typed speech ------------------------------------------------------------
+	# The mapping first, with no editor in it. Every nonsense-speech effect in games is
+	# a mapping and a voice, and the mapping is the half that decides whether it reads
+	# as speech: a good one through a rough voice works, a random one through a perfect
+	# voice never does.
+	var said: Dictionary = SpeakText.to_sequence("hello", 60)
+	var said_again: Dictionary = SpeakText.to_sequence("hello", 60)
+	check(said["notes"] == said_again["notes"],
+		"the same words say the same thing twice — the jitter is the letters, not chance")
+	check((said["notes"] as Array).size() == 5,
+		"five letters, five syllables (got %d)" % (said["notes"] as Array).size())
+
+	# Punctuation is the tune. A statement sags towards its full stop and a question
+	# climbs to its mark; without this every line lands on the same note and the result
+	# reads as a list being recited.
+	var falls: Array = SpeakText.to_sequence("aaaaa.", 60)["notes"]
+	var climbs: Array = SpeakText.to_sequence("aaaaa?", 60)["notes"]
+	check(int(falls[-1]["note"]) < int(falls[0]["note"])
+		and int(climbs[-1]["note"]) > int(climbs[0]["note"]),
+		"a full stop falls (%d to %d), a question climbs (%d to %d)"
+			% [int(falls[0]["note"]), int(falls[-1]["note"]),
+				int(climbs[0]["note"]), int(climbs[-1]["note"])])
+
+	# Different letters, different pitch — that is what makes a word sound like itself.
+	var alphabet: Array = SpeakText.to_sequence("abcdefghijklmnopqrstuvwxyz.", 60)["notes"]
+	var pitches := {}
+	for letter in alphabet:
+		pitches[int(letter["note"])] = true
+	check(pitches.size() >= 5,
+		"the alphabet spreads across %d pitches, not one" % pitches.size())
+
+	# Spaces and commas are silence, not sound.
+	var with_space: Dictionary = SpeakText.to_sequence("ab cd.", 60)
+	var run_together: Dictionary = SpeakText.to_sequence("abcd.", 60)
+	check((with_space["notes"] as Array).size() == (run_together["notes"] as Array).size()
+		and int(with_space["steps"]) > int(run_together["steps"]),
+		"a space is a pause, not a syllable: same four notes, %d steps against %d"
+			% [int(with_space["steps"]), int(run_together["steps"])])
+	check((SpeakText.to_sequence("1234 !?.", 60)["notes"] as Array).is_empty(),
+		"digits and marks are not spoken")
+
+	# Text is unbounded and the roll is not. Somebody pasting three paragraphs gets told
+	# what fitted rather than quietly handed the first third of it.
+	var too_much: Dictionary = SpeakText.to_sequence(
+		"the quick brown fox jumps over the lazy dog. ".repeat(80), 60, PianoRoll.MAX_STEPS)
+	var past_end := 0
+	for late in too_much["notes"]:
+		if int(late["step"]) >= int(too_much["steps"]):
+			past_end += 1
+	check(int(too_much["steps"]) <= PianoRoll.MAX_STEPS and past_end == 0
+		and int(too_much["dropped"]) > 0,
+		"a wall of text stops at the roll's end, and says %d syllables stayed behind"
+			% int(too_much["dropped"]))
+
+	# And now through the editor: one undo step, the roll opened on it, the roll's own
+	# notes replaced. `dropped` is a note to the person and must not reach the document.
+	var before_saying: Dictionary = main.patch.get("sequence", {}).duplicate(true)
+	main._say_into_roll("hello there, how are you today?")
+	for i in 3:
+		await process_frame
+	var spoken_roll: Dictionary = main.patch["sequence"]
+	check(not (spoken_roll["notes"] as Array).is_empty() and int(spoken_roll["division"]) == 16
+		and not spoken_roll.has("dropped") and main.roll_open
+		and main.piano_roll.sequence == spoken_roll,
+		"typed speech lands in the roll as %d notes at 1/64, the roll opens on it, "
+			% (spoken_roll["notes"] as Array).size()
+			+ "and the tally stays out of the document")
+
+	# And the pauses are real in time, not merely in the data: walked step by step
+	# through the roll's own clock, the syllables land where the mapping put them and
+	# the gaps between the words stay quiet. That is the whole claim of the feature.
+	main.roll_play.button_pressed = true
+	var heard: Array = []
+	for step in 24:
+		main._advance_roll(0.001 if step == 0 else main._roll_step_seconds())
+		if not main.held_notes.is_empty():
+			heard.append(step)
+	main.roll_play.button_pressed = false
+	var written: Array = []
+	for onset in spoken_roll["notes"]:
+		if int(onset["step"]) < 24:
+			written.append(int(onset["step"]))
+	check(heard == written and heard.size() > 4,
+		"the clock speaks it as written — syllables on %s, silence in between"
+			% str(heard))
+	await main._undo()
+	for i in 3:
+		await process_frame
+	check(main.patch.get("sequence", {}) == before_saying,
+		"and one undo takes the whole line back")
+
+	# Nothing typed is not an edit.
+	var quiet_before: Dictionary = main.patch.get("sequence", {}).duplicate(true)
+	main._say_into_roll("   ")
+	await process_frame
+	check(main.patch.get("sequence", {}) == quiet_before,
+		"saying nothing changes nothing")
+
 	main.roll_button.get_popup().id_pressed.emit(2)
 	for i in 3:
 		await process_frame

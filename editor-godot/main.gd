@@ -104,6 +104,7 @@ const DeviceBlurbs := preload("res://device_blurbs.gd")
 const FeedbackSubmitter := preload("res://feedback_submitter.gd")
 const WavImport := preload("res://wav_import.gd")
 const MidiImport := preload("res://midi_import.gd")
+const SpeakText := preload("res://speak_text.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
 const EXAMPLE_GROUPS := {
@@ -209,6 +210,9 @@ var roll_scroll: VScrollBar
 var roll_pitch: Control
 var _roll_scroll_syncing := false
 var roll_button: MenuButton
+# What was last said, so that asking twice does not mean typing it twice. Deliberately
+# not in the document: it is a thing about this session, not about the patch.
+var say_text := "hello there, how are you today?"
 var roll_play: Button
 var roll_capture: Button
 var roll_tempo: ValueField
@@ -5315,6 +5319,70 @@ func _refresh_roll_tempo_text() -> void:
 				int(round(_roll_step_seconds() * 1000.0))]
 
 
+## Nonsense speech, typed. Every letter becomes a note and the punctuation becomes the
+## pauses and the tune; the mapping itself lives in speak_text.gd, on its own, where it
+## can be tested without an editor. This is only the asking and the committing.
+func _ask_what_to_say() -> void:
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Say something"
+	dialog.ok_button_text = "Write it into the roll"
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", Design.scale(8))
+	var blurb := Label.new()
+	blurb.text = ("Every letter becomes a note; spaces and punctuation become the pauses "
+		+ "between them. A full stop falls, a question mark climbs. Point the roll at a "
+		+ "babbling voice and press Play.")
+	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	blurb.custom_minimum_size = Vector2(Design.scale(400), 0)
+	column.add_child(blurb)
+	var field := LineEdit.new()
+	field.text = say_text
+	field.custom_minimum_size = Vector2(Design.scale(400), 0)
+	# Return is the obvious way to finish a one-line question, and a dialog that ignores
+	# it makes somebody reach for a mouse they had no reason to touch.
+	field.text_submitted.connect(func(_t: String) -> void:
+		dialog.confirmed.emit()
+		dialog.hide())
+	column.add_child(field)
+	dialog.add_child(column)
+	dialog.confirmed.connect(func() -> void:
+		_say_into_roll(field.text)
+		dialog.queue_free())
+	dialog.canceled.connect(func() -> void: dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+	field.grab_focus()
+	field.select_all()
+
+
+## One undo step, roll opened on it — the same bargain the MIDI reader strikes.
+func _say_into_roll(text: String) -> void:
+	if text.strip_edges() == "":
+		_say("nothing to say")
+		return
+	say_text = text
+	# Middle C. A voice meant to be a mouse or a giant says so through its own Voice
+	# knob, which is a transpose — the driver picks a sensible middle, the instrument
+	# moves it.
+	var spoken: Dictionary = SpeakText.to_sequence(text, 60, PianoRoll.MAX_STEPS)
+	_begin_edit()
+	# Only the sequence's own keys: `dropped` is a note to the person, not document.
+	patch["sequence"] = {"tempo": spoken["tempo"], "division": spoken["division"],
+		"steps": spoken["steps"], "notes": spoken["notes"]}
+	_commit_edit("say something")
+	if not roll_open:
+		_set_roll_open(true)
+	piano_roll.sequence = patch["sequence"]
+	piano_roll.scroll_step = 0
+	_refresh_roll_tempo_text()
+	piano_roll.queue_redraw()
+	var syllables := (spoken["notes"] as Array).size()
+	_say("%d syllable%s of \"%s\"%s — press Play" % [syllables,
+		"" if syllables == 1 else "s", text.strip_edges().left(28),
+		" — %d past the end stayed behind" % int(spoken["dropped"])
+			if int(spoken["dropped"]) > 0 else ""])
+
+
 ## The piece grows a bar at a time under notes placed past its end: the window can
 ## look sixteen bars out, and a click out there is a request for more piece, not a
 ## mistake to clamp away.
@@ -5644,9 +5712,15 @@ func _build_keyboard_bar() -> Control:
 	roll_bars_menu.set_item_checked(1, true)
 	roll_bars_menu.id_pressed.connect(_set_roll_bars)
 	roll_menu.add_submenu_node_item("Bars", roll_bars_menu)
+	roll_menu.add_separator()
+	# Speech lands in the roll rather than down a private path that only plays: notes
+	# somebody can see, nudge, delete and capture, like anything else drawn there.
+	roll_menu.add_item("Say Something…", 3)
 	roll_menu.id_pressed.connect(func(id: int) -> void:
 		if id == 2:
 			_set_roll_open(false)
+		elif id == 3:
+			_ask_what_to_say()
 		else:
 			_set_roll_orientation("vertical" if id == 0 else "horizontal")
 			_set_roll_open(true))
