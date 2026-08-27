@@ -71,6 +71,15 @@ void display_clear_rows(int y, int height, uint32_t rgb);
 // into rows nobody had cleared and nobody would clear, one more cap per drag step, until
 // the slider trailed a ladder of them. Clipping at the pixel is the only version that
 // cannot be got wrong by a caller who forgets what their primitive draws.
+// How far in from either edge the glass actually starts on this row.
+//
+// The panel is a rounded rectangle and the corners are not there. Four separate pieces of
+// text have now been drawn into them and lost their ends — CUTOFF read as TOFF, X TONE as
+// ONE, TEMPO as rEMPO, CHORDS as CHOR — each fixed by nudging that one call site, which
+// is three fixes too many for one shape. The shape is a fact about the board, so it
+// belongs here where anyone placing text can ask.
+int display_safe_inset(int y);
+
 void display_set_clip_rows(int y, int height);
 void display_clear_clip();
 

@@ -941,12 +941,24 @@ constexpr int kSlotW = 112;
 constexpr int kTrackTop = 88;
 constexpr int kTrackBottom = 462;
 constexpr int kBarWidth = 44;
-constexpr int kReadoutTop = 8;
-constexpr int kReadoutHeight = 72;
+constexpr int kReadoutTop = 16;
+constexpr int kReadoutHeight = 70;
 
 int g_slider_bound[2] = {0, 1};
 
 bool overlaps(int lo, int hi, int a, int b) { return a < hi && b > lo; }
+
+// Centred on `centre`, but never off the glass. A label that has to shift a few pixels to
+// stay whole is better than a label that stays centred and loses a letter.
+void text_centred_safe(int centre, int y, const char* text, int scale, uint32_t rgb) {
+    const int w = display_width();
+    const int width = display_text_width(text, scale);
+    const int inset = display_safe_inset(y) + 4;
+    int x = centre - width / 2;
+    if (x + width > w - inset) x = w - inset - width;
+    if (x < inset) x = inset;
+    display_text(x, y, text, scale, rgb);
+}
 
 // Paints everything whose pixels fall in rows [lo, hi). Called with the whole screen for
 // a full redraw and with a narrow band while a finger is moving; the bars are clipped to
@@ -984,10 +996,8 @@ void paint_sliders(int lo, int hi) {
             char value[16];
             format_value(value, sizeof value, control.value);
             const int centre = kSlotX[slot] + kSlotW / 2;
-            display_text(centre - display_text_width(control.label.c_str(), 2) / 2,
-                         kReadoutTop + 2, control.label.c_str(), 2, t.ink_dim);
-            display_text(centre - display_text_width(value, 3) / 2,
-                         kReadoutTop + 24, value, 3, t.ink);
+            text_centred_safe(centre, kReadoutTop + 2, control.label.c_str(), 2, t.ink_dim);
+            text_centred_safe(centre, kReadoutTop + 22, value, 3, t.ink);
         }
 
         // The unlit remainder of the travel, then the lit part over it.

@@ -28,6 +28,7 @@ int display_text_width(const char*, int) { return 0; }
 bool display_present() { return false; }
 bool display_present_rows(int, int) { return false; }
 void display_clear_rows(int, int, uint32_t) {}
+int display_safe_inset(int) { return 0; }
 void display_set_clip_rows(int, int) {}
 void display_clear_clip() {}
 bool display_set_brightness(int) { return false; }
@@ -566,6 +567,23 @@ void display_clear_rows(int y, int height, uint32_t colour) {
     for (int i = 0; i < (y1 - y0) * SG_DISPLAY_WIDTH; ++i) {
         *p++ = r; *p++ = g; *p++ = b;
     }
+}
+
+int display_safe_inset(int y) {
+    // Solved from a photograph rather than guessed twice. A label centred on the right
+    // slider was cut about 49 px in at row 10; the only radius that puts the glass edge
+    // there is close to 90, and the first estimate of 62 predicted 28 — which is why the
+    // helper shifted the value into view and left the label above it still clipped.
+    // These corners are far bigger than they look on a face this small.
+    constexpr float kCorner = 92.0f;
+    const int h = display_height();
+    float depth = 0.0f;
+    if (y < kCorner) depth = kCorner - static_cast<float>(y);
+    else if (y > h - kCorner) depth = kCorner - static_cast<float>(h - y);
+    if (depth <= 0.0f) return 0;
+    const float inside = kCorner * kCorner - depth * depth;
+    if (inside <= 0.0f) return static_cast<int>(kCorner);
+    return static_cast<int>(kCorner - std::sqrt(inside) + 0.5f);
 }
 
 void display_set_clip_rows(int y, int height) {
