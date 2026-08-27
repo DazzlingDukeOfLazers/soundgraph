@@ -29,7 +29,6 @@ final class Shooter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
     private let queue = DispatchQueue(label: "bench-cam")
-    private let done = DispatchSemaphore(value: 0)
     private var seen = 0
     private var warmup: Int
     private let settle: TimeInterval
@@ -84,7 +83,6 @@ final class Shooter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         guard seen >= warmup, captured == nil else { return }
         let ci = CIImage(cvImageBuffer: buffer)
         captured = context.createCGImage(ci, from: ci.extent)
-        done.signal()
     }
 
     func shoot(timeout: TimeInterval = 12.0) throws -> CGImage {
@@ -103,13 +101,22 @@ final class Shooter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             queue.sync { seen = 0; captured = nil }
         }
 
-        if done.wait(timeout: .now() + timeout) == .timedOut {
-            throw Failure("no usable frame in \(Int(timeout))s (saw \(seen) frames)")
+        // Polled, not signalled.
+        //
+        // A semaphore carries its count across the settle. Frames arriving during the
+        // wake satisfied it, so after the reset the wait returned instantly on a picture
+        // that had just been discarded, and the shooter reported "no frame captured"
+        // while the camera was working perfectly. Draining it first only moves the race:
+        // a frame landing between the drain and the reset leaves a signal for an image
+        // that no longer exists. Asking whether the picture is there is cheaper than
+        // keeping a signal honest across a reset, and cannot be got subtly wrong.
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let image = queue.sync(execute: { captured }) { return image }
+            Thread.sleep(forTimeInterval: 0.05)
         }
-        guard let image = queue.sync(execute: { captured }) else {
-            throw Failure("no frame captured")
-        }
-        return image
+        throw Failure("no usable frame in \(Int(timeout))s "
+                      + "(saw \(queue.sync { seen }) frames)")
     }
 }
 
