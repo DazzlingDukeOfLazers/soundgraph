@@ -201,3 +201,20 @@ if(SOUNDGRAPH_NODE)
                 --ref $<TARGET_FILE:sfxr-ref>
                 --min-pass 32)
 endif()
+
+# The transcriber, against ground truth: sg-render is told which notes to play, so "it
+# produced some notes" cannot be mistaken for "it worked".
+#
+# Registered here rather than beside the target because tools/ is added before
+# enable_testing(), and a test declared up there is silently not a test. Guarded on the
+# target because sg-transcribe only exists when ONNX Runtime has been pointed at, and
+# the gate has to stay green on a checkout that never has been.
+if(TARGET sg-transcribe AND TARGET sg-render)
+    add_test(NAME transcriber_hears_what_was_played
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDER=$<TARGET_FILE:sg-render>
+            -DTRANSCRIBE=$<TARGET_FILE:sg-transcribe>
+            -DPATCH=${CMAKE_SOURCE_DIR}/examples/patches/first-synth.json
+            -DSCRATCH=${CMAKE_BINARY_DIR}/transcribe-check
+            -P ${CMAKE_SOURCE_DIR}/tools/sg-transcribe/ground-truth.cmake)
+endif()

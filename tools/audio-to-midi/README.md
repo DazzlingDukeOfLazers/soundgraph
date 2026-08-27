@@ -1,4 +1,14 @@
-# Audio to MIDI
+# Audio to MIDI (the reference implementation)
+
+**For everyday use, reach for `sg-transcribe` instead** — same model, same answers,
+16 MB instead of 1831 MB, and no Python at all. See `tools/sg-transcribe/README.md`.
+
+This one stays because it is the thing the native tool is checked against. Running both
+over the same audio and comparing raw activations is what found the head-assignment bug
+in the C++ port: it said the disagreement was upstream of note-picking, which turned
+"the notes are wrong" into a one-line fix. A reference implementation you can still run
+is worth more than the disk it costs, and the venv is gitignored, so deleting it costs
+nothing but `pip install -r requirements.txt` to get back.
 
 Turns a recording into notes: always a Standard MIDI File, and on request the piano
 roll of a patch.

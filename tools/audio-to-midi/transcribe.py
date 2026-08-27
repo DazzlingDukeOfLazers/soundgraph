@@ -45,9 +45,15 @@ import sys
 # Basic Pitch's own defaults, named here so they can be argued with from the command
 # line rather than guessed at. Onset threshold is the one worth reaching for: raise it
 # when a breathy recording invents notes, lower it when quiet playing goes missing.
+#
+# The minimum note length was wrong here and said it was theirs: 58 ms against the 127.7
+# that predict() actually defaults to. That made this tool keep notes basic-pitch would
+# have dropped, which is a defensible choice but not the one the comment claimed, and it
+# meant the native tool and this one disagreed for a reason that had nothing to do with
+# either of them.
 DEFAULT_ONSET = 0.5
 DEFAULT_FRAME = 0.3
-DEFAULT_MIN_MS = 58.0
+DEFAULT_MIN_MS = 127.7
 
 # The roll's own ceiling, from editor-godot/piano_roll.gd. A transcription longer than
 # this is truncated rather than silently folded, and says so.

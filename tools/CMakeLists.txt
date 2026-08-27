@@ -68,3 +68,9 @@ target_include_directories(dx7-ref PRIVATE ${CMAKE_SOURCE_DIR}/tests/dx7/referen
 # msfa uses M_PI, which MSVC's <cmath> hides behind a feature macro.
 target_compile_definitions(dx7-ref PRIVATE _USE_MATH_DEFINES)
 target_link_libraries(dx7-ref PRIVATE soundgraph::wav)
+
+# The transcriber. Optional: it needs a prebuilt ONNX Runtime, which is pointed at with
+# `git config soundgraph.onnxruntime` rather than vendored, so a checkout that has never
+# heard of it configures and builds exactly as before.
+include(${CMAKE_CURRENT_LIST_DIR}/sg-transcribe/sg-transcribe.cmake)
+soundgraph_add_transcriber()
