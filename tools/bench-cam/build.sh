@@ -46,11 +46,13 @@ swiftc -O -o "$APP/Contents/MacOS/bench-cam" "$HERE/main.swift" "$HERE/preview.s
 #
 # A real signing identity fixes it, because the requirement then anchors to the
 # certificate instead of the bytes and survives recompilation. Any code-signing identity
-# will do, including a self-signed one made in Keychain Access:
+# will do, including a self-signed one:
 #
-#     Keychain Access -> Certificate Assistant -> Create a Certificate...
-#     name: soundgraph-bench   identity type: Self Signed Root
-#     certificate type: Code Signing
+#     ./make-signing-cert.sh
+#
+# The advice you will find everywhere is Keychain Access -> Certificate Assistant. That
+# advice is dead on macOS 26, which removed Keychain Access and Certificate Assistant
+# both; the script does the same job with openssl.
 #
 # Set SG_SIGN_IDENTITY, or name it soundgraph-bench and this finds it.
 IDENTITY=${SG_SIGN_IDENTITY:-}
