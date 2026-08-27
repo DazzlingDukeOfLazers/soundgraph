@@ -1089,6 +1089,128 @@ void sliders_redraw_moving(int index) {
 }
 
 // ---------------------------------------------------------------------------------
+// The pad.
+//
+// A Kaoss pad's trick is that it is not two controls drawn next to each other: it is one
+// gesture that happens to have two numbers in it. A finger does not visit an X value and
+// then a Y value, it draws a shape, and the shape is the performance. So this surface
+// does not reuse the drag machinery at all — that machinery exists to move one parameter
+// by a vertical delta, which is the wrong model here twice over.
+//
+// Which parameter each axis carries is a menu, because a pad with fixed axes is a pad
+// you have to build a patch around. Tapping either header replaces the pad with the list
+// and the next tap binds and returns; the pad is never live while the menu is up, so a
+// finger choosing a parameter cannot also sweep it.
+
+constexpr int kPadLeft = 16, kPadRight = 394;
+constexpr int kPadTop = 104, kPadBottom = 482;
+constexpr int kAxisRowH = 42;
+
+int g_xy_axis[2] = {0, 1};   // 0 is X, 1 is Y
+int g_xy_menu = -1;          // -1 pad, 0 choosing X, 1 choosing Y
+
+float axis_fraction(int axis) {
+    const int bound = g_xy_axis[axis];
+    if (bound < 0 || bound >= static_cast<int>(g_ui_controls.size())) return 0.0f;
+    const UiControl& c = g_ui_controls[static_cast<std::size_t>(bound)];
+    const float span = c.max_value - c.min_value;
+    return span > 0.0f ? (c.value - c.min_value) / span : 0.0f;
+}
+
+void draw_xy_menu() {
+    const Theme& t = theme();
+    display_clear(t.ground);
+    char head[24];
+    std::snprintf(head, sizeof head, "%s AXIS", g_xy_menu == 0 ? "X" : "Y");
+    display_text(16, 10, head, 2, lab_colour());
+    for (std::size_t i = 0; i < g_ui_controls.size(); ++i) {
+        const int y = 48 + static_cast<int>(i) * kAxisRowH;
+        const bool bound = g_xy_axis[g_xy_menu] == static_cast<int>(i);
+        display_text(24, y, g_ui_controls[i].label.c_str(), 2,
+                     bound ? lab_colour() : t.ink_dim);
+    }
+    display_present();
+}
+
+void draw_xy() {
+    if (!display_available()) return;
+    if (g_ui_controls.empty()) return;
+    if (g_xy_menu >= 0) { draw_xy_menu(); return; }
+
+    const Theme& t = theme();
+    const uint32_t lit = lab_colour();
+    display_clear(t.ground);
+
+    for (int axis = 0; axis < 2; ++axis) {
+        const int bound = g_xy_axis[axis];
+        if (bound < 0 || bound >= static_cast<int>(g_ui_controls.size())) continue;
+        const UiControl& c = g_ui_controls[static_cast<std::size_t>(bound)];
+        char value[16];
+        format_value(value, sizeof value, c.value);
+        // Inset hard. The glass is a rounded rectangle and the top corners eat about
+        // thirty pixels each — drawn at the pad's own margin, "X TONE" read as "ONE" and
+        // its value was gone entirely.
+        const int y = 16 + axis * kAxisRowH;
+        display_text(50, y, axis == 0 ? "X" : "Y", 2, display_dim(lit, 60));
+        display_text(76, y, c.label.c_str(), 2, t.ink_dim);
+        display_text(358 - display_text_width(value, 2), y, value, 2, t.ink);
+    }
+
+    // The graticule, at whatever the lab settled on. Dim, because it is the ruler and
+    // not the reading.
+    const int cells = 4;
+    for (int i = 0; i <= cells; ++i) {
+        const float fx = kPadLeft + (kPadRight - kPadLeft) * static_cast<float>(i) / cells;
+        const float fy = kPadTop + (kPadBottom - kPadTop) * static_cast<float>(i) / cells;
+        display_glow_line(fx, kPadTop, fx, kPadBottom, 1.0f, 0.0f, 0, display_dim(lit, 34));
+        display_glow_line(kPadLeft, fy, kPadRight, fy, 1.0f, 0.0f, 0, display_dim(lit, 34));
+    }
+
+    const float fx = kPadLeft + (kPadRight - kPadLeft) * axis_fraction(0);
+    const float fy = kPadBottom - (kPadBottom - kPadTop) * axis_fraction(1);
+    display_glow_line(fx, kPadTop, fx, kPadBottom, g_lab.width, g_lab.glow,
+                      static_cast<int>(g_lab.level + 0.5f), lit);
+    display_glow_line(kPadLeft, fy, kPadRight, fy, g_lab.width, g_lab.glow,
+                      static_cast<int>(g_lab.level + 0.5f), lit);
+    display_disc(static_cast<int>(fx), static_cast<int>(fy), 7.0f, t.ink);
+
+    // Only the pad and its headers ever change, and they are one contiguous band.
+    display_present_rows(0, kPadBottom + 8);
+}
+
+void set_axis_from(int axis, float fraction) {
+    const int bound = g_xy_axis[axis];
+    if (bound < 0 || bound >= static_cast<int>(g_ui_controls.size())) return;
+    UiControl& c = g_ui_controls[static_cast<std::size_t>(bound)];
+    if (fraction < 0.0f) fraction = 0.0f;
+    if (fraction > 1.0f) fraction = 1.0f;
+    c.value = c.min_value + (c.max_value - c.min_value) * fraction;
+    soundgraph::Graph* graph = g_live_graph.load(std::memory_order_acquire);
+    if (graph != nullptr) graph->set_parameter(c.node, c.parameter, c.value);
+}
+
+bool xy_touch(int x, int y, bool first) {
+    if (g_xy_menu >= 0) {
+        if (!first) return true;
+        const int row = (y - 40) / kAxisRowH;
+        if (row >= 0 && row < static_cast<int>(g_ui_controls.size())) g_xy_axis[g_xy_menu] = row;
+        g_xy_menu = -1;
+        draw_xy();
+        return true;
+    }
+    if (first && y < kPadTop - 8) {
+        g_xy_menu = y < (16 + kAxisRowH) ? 0 : 1;
+        draw_xy();
+        return true;
+    }
+    if (y < kPadTop || y > kPadBottom) return true;
+    set_axis_from(0, static_cast<float>(x - kPadLeft) / (kPadRight - kPadLeft));
+    set_axis_from(1, static_cast<float>(kPadBottom - y) / (kPadBottom - kPadTop));
+    draw_xy();
+    return true;
+}
+
+// ---------------------------------------------------------------------------------
 // Which set of knobs the finger is on.
 //
 // The touch task used to reach straight into the patch's controls and call draw_face,
@@ -1103,6 +1225,8 @@ struct Surface {
     int (*hit_test)(int x, int y);
     // A press that is not a drag — a tap on a list row. True if it was consumed.
     bool (*tapped)(int x, int y);
+    // A surface that owns the whole gesture rather than one control's worth of it.
+    bool (*touch)(int x, int y, bool first);
     // Redraw for the case that actually needs to be quick: one knob is moving and
     // everything else on screen is already correct. Measured, a full face is 268 ms of
     // drawing plus 32 ms of QSPI, and nearly all of it redelivers pixels that did not
@@ -1117,11 +1241,13 @@ void face_redraw_moving(int index);
 void lab_redraw_moving(int index);
 
 const Surface kFaceSurface{&g_ui_controls, draw_face, face_changed,
-                           nullptr, nullptr, face_redraw_moving};
+                           nullptr, nullptr, nullptr, face_redraw_moving};
 const Surface kLabSurface{&g_lab_controls, draw_lab, lab_changed,
-                          nullptr, nullptr, lab_redraw_moving};
+                          nullptr, nullptr, nullptr, lab_redraw_moving};
 const Surface kSliderSurface{&g_ui_controls, draw_sliders, face_changed,
-                             slider_hit, slider_tapped, sliders_redraw_moving};
+                             slider_hit, slider_tapped, nullptr, sliders_redraw_moving};
+const Surface kXySurface{&g_ui_controls, draw_xy, face_changed,
+                         nullptr, nullptr, xy_touch, nullptr};
 const Surface* g_surface = &kFaceSurface;
 
 // A finger on a knob. Vertical drag rather than rotation: turning a real knob is a
@@ -1138,7 +1264,10 @@ void touch_task(void*) {
         std::vector<UiControl>& controls = *g_surface->controls;
         int x = 0, y = 0;
         if (touch_read(&x, &y)) {
-            if (consumed) {
+            if (g_surface->touch != nullptr) {
+                g_surface->touch(x, y, !consumed);
+                consumed = true;
+            } else if (consumed) {
                 // nothing until release
             } else if (held < 0) {
                 int found = -1;
@@ -1739,16 +1868,29 @@ void console_task(void*) {
                 if (probe == nullptr) {
                     std::printf("ERR %s\n", error.c_str());
                 } else {
+                    // `cpu notes` plays it while measuring. A kit sitting with every
+                    // envelope idle is not the load a kit actually is, and a patch that
+                    // waits for MIDI produces silence and a flattering number otherwise.
+                    const bool play = tokens.size() >= 2 && std::strcmp(tokens[1], "notes") == 0;
+                    const int kit[] = {36, 38, 42, 46, 41, 49};
                     constexpr int kBlocks = 400;
                     static float left[kBlock];
                     static float right[kBlock];
                     const int64_t start = esp_timer_get_time();
-                    for (int i = 0; i < kBlocks; ++i) probe->render(left, right, kBlock);
+                    for (int i = 0; i < kBlocks; ++i) {
+                        if (play && (i % 12) == 0) {
+                            probe->note_on(kit[(i / 12) % 6], 0.9f);
+                        }
+                        if (play && (i % 12) == 6) {
+                            probe->note_off(kit[(i / 12) % 6]);
+                        }
+                        probe->render(left, right, kBlock);
+                    }
                     const int64_t spent = esp_timer_get_time() - start;
                     delete probe;
                     const double audio_us = 1e6 * kBlocks * kBlock / SG_AUDIO_SAMPLE_RATE;
-                    std::printf("OK dsp %.1f%% of one core (%lld us per %d-sample block, "
-                                "budget %.0f us)\n",
+                    std::printf("OK %s dsp %.1f%% of one core (%lld us per %d-sample "
+                                "block, budget %.0f us)\n", play ? "playing" : "idle",
                                 100.0 * static_cast<double>(spent) / audio_us,
                                 static_cast<long long>(spent / kBlocks), kBlock,
                                 audio_us / kBlocks);
@@ -1799,6 +1941,16 @@ void console_task(void*) {
                 g_active_knob = -1;
                 draw_face();
                 std::printf("OK face\n");
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "xy") == 0) {
+                g_surface = &kXySurface;
+                g_active_knob = -1;
+                g_xy_menu = -1;
+                if (tokens.size() >= 4) {
+                    g_xy_axis[0] = std::atoi(tokens[2]);
+                    g_xy_axis[1] = std::atoi(tokens[3]);
+                }
+                draw_xy();
+                std::printf("OK xy %d %d\n", g_xy_axis[0], g_xy_axis[1]);
             } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "sliders") == 0) {
                 g_surface = &kSliderSurface;
                 g_active_knob = -1;
@@ -1878,7 +2030,7 @@ void console_task(void*) {
                 display_set_brightness(std::atoi(tokens[2]));
                 std::printf("OK brightness %s\n", tokens[2]);
             } else {
-                std::printf("usage: screen test | face | sliders [a b] | lab [W G L C H B] | time | "
+                std::printf("usage: screen test | face | sliders [a b] | xy [x y] | lab [W G L C H B] | time | "
                             "theme 0-%d | rotate 0-270 | fill RRGGBB | bright 0-100\n",
                             kThemeCount - 1);
             }

@@ -1,0 +1,444 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Wrist kit",
+    "description": "A four-piece kit sized for the watch rather than for a desktop. Two Euclid nodes carry the whole pattern: each one's rest output is a second voice, so four parts cost two generators. Written to be measured against the example kits, which are 160% of one core on this board and do not run at all."
+  },
+  "nodes": [
+    {
+      "id": "clock",
+      "type": "Clock",
+      "parameters": {
+        "bpm": 96,
+        "division": 4,
+        "swing": 0.12,
+        "beats_per_bar": 4
+      }
+    },
+    {
+      "id": "low",
+      "type": "Euclid",
+      "parameters": {
+        "steps": 16,
+        "fill": 5,
+        "rotate": 0
+      }
+    },
+    {
+      "id": "high",
+      "type": "Euclid",
+      "parameters": {
+        "steps": 16,
+        "fill": 11,
+        "rotate": 2
+      }
+    },
+    {
+      "id": "kickosc",
+      "type": "SineOscillator",
+      "parameters": {
+        "frequency": 52
+      }
+    },
+    {
+      "id": "kickenv",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.015,
+        "decay": 0.16,
+        "punch": 1
+      }
+    },
+    {
+      "id": "kick",
+      "type": "Gain",
+      "parameters": {
+        "gain": 1
+      }
+    },
+    {
+      "id": "snnoise",
+      "type": "Noise",
+      "parameters": {}
+    },
+    {
+      "id": "snfilt",
+      "type": "StateVariableFilter",
+      "parameters": {
+        "cutoff": 1900,
+        "resonance": 0.5,
+        "mode": 2
+      }
+    },
+    {
+      "id": "snenv",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.006,
+        "decay": 0.11,
+        "punch": 0.6
+      }
+    },
+    {
+      "id": "snare",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "hatnoise",
+      "type": "Noise",
+      "parameters": {}
+    },
+    {
+      "id": "hatenv",
+      "type": "AhdEnvelope",
+      "parameters": {
+        "attack": 0,
+        "hold": 0.003,
+        "decay": 0.035,
+        "punch": 0.2
+      }
+    },
+    {
+      "id": "hat",
+      "type": "Gain",
+      "parameters": {
+        "gain": 0.22
+      }
+    },
+    {
+      "id": "mix",
+      "type": "Mixer",
+      "parameters": {
+        "level1": 0.9,
+        "level2": 0.7,
+        "level3": 0.6,
+        "level4": 0
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "host": "stereo",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "low",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "clock",
+        "port": "bar"
+      },
+      "to": {
+        "node": "low",
+        "port": "reset"
+      }
+    },
+    {
+      "from": {
+        "node": "clock",
+        "port": "gate"
+      },
+      "to": {
+        "node": "high",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "clock",
+        "port": "bar"
+      },
+      "to": {
+        "node": "high",
+        "port": "reset"
+      }
+    },
+    {
+      "from": {
+        "node": "low",
+        "port": "gate"
+      },
+      "to": {
+        "node": "kickenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "kickenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "kick",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "kickosc",
+        "port": "out"
+      },
+      "to": {
+        "node": "kick",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "low",
+        "port": "rest"
+      },
+      "to": {
+        "node": "snenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "snnoise",
+        "port": "out"
+      },
+      "to": {
+        "node": "snfilt",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "snfilt",
+        "port": "out"
+      },
+      "to": {
+        "node": "snare",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "snenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "snare",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "high",
+        "port": "gate"
+      },
+      "to": {
+        "node": "hatenv",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "hatnoise",
+        "port": "out"
+      },
+      "to": {
+        "node": "hat",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "hatenv",
+        "port": "out"
+      },
+      "to": {
+        "node": "hat",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "kick",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "snare",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "hat",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "tempo",
+      "label": "TEMPO",
+      "kind": "knob",
+      "target": {
+        "node": "clock",
+        "parameter": "bpm"
+      },
+      "min": 60,
+      "max": 180,
+      "default": 96,
+      "scaling": "linear"
+    },
+    {
+      "id": "swing",
+      "label": "SWING",
+      "kind": "knob",
+      "target": {
+        "node": "clock",
+        "parameter": "swing"
+      },
+      "min": 0,
+      "max": 0.4,
+      "default": 0.12,
+      "scaling": "linear"
+    },
+    {
+      "id": "kicks",
+      "label": "KICKS",
+      "kind": "knob",
+      "target": {
+        "node": "low",
+        "parameter": "fill"
+      },
+      "min": 1,
+      "max": 12,
+      "default": 5,
+      "scaling": "linear"
+    },
+    {
+      "id": "hats",
+      "label": "HATS",
+      "kind": "knob",
+      "target": {
+        "node": "high",
+        "parameter": "fill"
+      },
+      "min": 1,
+      "max": 16,
+      "default": 11,
+      "scaling": "linear"
+    },
+    {
+      "id": "turn",
+      "label": "TURN",
+      "kind": "knob",
+      "target": {
+        "node": "high",
+        "parameter": "rotate"
+      },
+      "min": 0,
+      "max": 15,
+      "default": 2,
+      "scaling": "linear"
+    },
+    {
+      "id": "tone",
+      "label": "TONE",
+      "kind": "knob",
+      "target": {
+        "node": "snfilt",
+        "parameter": "cutoff"
+      },
+      "min": 400,
+      "max": 6000,
+      "default": 1900,
+      "scaling": "linear"
+    },
+    {
+      "id": "snap",
+      "label": "SNAP",
+      "kind": "knob",
+      "target": {
+        "node": "snenv",
+        "parameter": "decay"
+      },
+      "min": 0.02,
+      "max": 0.4,
+      "default": 0.11,
+      "scaling": "linear"
+    },
+    {
+      "id": "boom",
+      "label": "BOOM",
+      "kind": "knob",
+      "target": {
+        "node": "kickenv",
+        "parameter": "decay"
+      },
+      "min": 0.05,
+      "max": 0.5,
+      "default": 0.16,
+      "scaling": "linear"
+    },
+    {
+      "id": "level",
+      "label": "LEVEL",
+      "kind": "knob",
+      "target": {
+        "node": "out",
+        "parameter": "level"
+      },
+      "min": 0,
+      "max": 1,
+      "default": 0.8,
+      "scaling": "linear"
+    }
+  ]
+}
