@@ -5,17 +5,6 @@
 #if !SG_DISPLAY_PRESENT
 
 bool display_init() { return false; }
-    // This file drives one panel. The board profile names the panel it has, and they
-    // must agree: an AXS15231B fed an SH8601's init sequence answers on the bus, accepts
-    // every command, and shows nothing — which is indistinguishable from a dead backlight
-    // and cost an evening on the watch when the wiki named the wrong controller. Refusing
-    // is not a limitation, it is the difference between "no driver for this panel" and a
-    // week of debugging a panel that was never being addressed.
-    if (std::strcmp(SG_DISPLAY_CHIP, "SH8601") != 0) {
-        ESP_LOGW(TAG, "board declares a %s; this build only drives SH8601. "
-                      "Screen stays off, everything else runs.", SG_DISPLAY_CHIP);
-        return false;
-    }
 
 bool display_available() { return false; }
 int display_width() { return 0; }
@@ -644,6 +633,24 @@ bool display_present() {
 }
 
 bool display_init() {
+    // This file drives one panel. The board profile names the panel the board has, and
+    // they must agree: an AXS15231B fed an SH8601's init sequence answers on the bus,
+    // accepts every command and shows nothing — indistinguishable from a dead backlight,
+    // which is what cost an evening on the watch when the wiki named the wrong
+    // controller. Refusing is not a limitation; it is the difference between "no driver
+    // for this panel" and a week spent debugging a panel that was never addressed.
+    //
+    // It belongs in this branch, not the stub above it. The first attempt went into the
+    // stub, where it compiled out and the board went on driving an AXS15231B as an
+    // SH8601 while the log cheerfully announced the AXS15231B was up. This file carries
+    // two definitions of every function and a search finds the stub first; that is now
+    // twice something has landed in the wrong one.
+    if (std::strcmp(SG_DISPLAY_CHIP, "SH8601") != 0) {
+        ESP_LOGW(TAG, "board declares a %s; this build only drives SH8601. "
+                      "Screen stays off, everything else runs.", SG_DISPLAY_CHIP);
+        return false;
+    }
+
     spi_bus_config_t bus = {};
     bus.sclk_io_num = SG_DISPLAY_QSPI_SCLK;
     bus.data0_io_num = SG_DISPLAY_QSPI_D0;
