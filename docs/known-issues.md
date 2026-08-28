@@ -79,3 +79,26 @@ Open problems, ordered by how much they threaten the Knobcon demo.
   floated every number; saving now goes through the core's serialiser.
 - Auto-place appeared non-deterministic; the algorithm was fine, the button silently
   switched to selection-only mode.
+
+## 2026-08-27 — 3.49 panel and touch both silent; suspect the display flex
+
+The ESP32-S3-Touch-LCD-3.49 shows a uniform lit white rectangle whatever is sent to it.
+Waveshare's own `10_LVGL_V9_Test`, built from their repository and flashed to the same
+board, does exactly the same — so this is not our driver.
+
+The evidence that it is physical rather than electrical-configuration: that same vendor
+firmware logs 211 I2C NACKs in eight seconds. The AXS15231B is one part doing both jobs —
+it drives the panel over QSPI and answers touch over I2C at 0x3b. QSPI is write-only, so
+"send init commands success" means only that the ESP32 clocked bytes out of a pin, and it
+would report that into a disconnected cable just as cheerfully. The NACK is a read, and a
+read that is not answered means the part is not there.
+
+Display and touch are the same silicon behind the same flex connector, and the case was
+opened the same evening to look for a camera. First thing to try is reseating the display
+FPC. Note also that this panel was never observed working: the factory firmware was
+running when the board arrived, but nobody photographed its screen before the case came
+apart, so "it worked before" is an assumption rather than an observation.
+
+What is already known-good on this board and should not be re-derived: audio (ES8311 out,
+ES7210 in, amp on the TCA9554 at 0x20 pin 7), and the whole display path down to the last
+accepted byte — see the driver work on dd/ESP32-s3-touch-lcd-3.49.
