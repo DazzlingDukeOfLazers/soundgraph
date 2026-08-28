@@ -21,6 +21,8 @@ const Transcribe := preload("res://transcribe.gd")
 const ModuleThemes := preload("res://module_themes.gd")
 ## The generated faceplate finishes.
 const Faceplate := preload("res://faceplate.gd")
+## The third way of looking at a patch.
+const Schematic := preload("res://schematic.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -7613,6 +7615,87 @@ func _initialize() -> void:
 		"the category default has no finish to lay over anything")
 	check(str(Rack.skin("oxide-teal").get("finish", "")) == "worn",
 		"and a painted one carries the surface its board described")
+
+	# ---- the schematic -------------------------------------------------------------
+	# The platonic view: not where somebody dragged things and not the instrument, but
+	# what feeds what, on a grid. The layout is the whole claim, so that is what is
+	# checked - a node has to be right of everything that feeds it, whatever the
+	# document says about positions.
+	var drawing := Schematic.new()
+	drawing.patch = {
+		"nodes": [
+			{"id": "out", "type": "StereoOutput", "name": "Output"},
+			{"id": "osc", "type": "SawOscillator", "name": "Oscillator"},
+			{"id": "env", "type": "AhdEnvelope", "name": "Pluck"},
+			{"id": "filter", "type": "StateVariableFilter", "name": "Filter"},
+			{"id": "clock", "type": "Clock", "name": "Sequence"},
+		],
+		"connections": [
+			{"from": {"node": "clock", "port": "out"}, "to": {"node": "env", "port": "gate"}},
+			{"from": {"node": "osc", "port": "out"}, "to": {"node": "filter", "port": "in"}},
+			{"from": {"node": "env", "port": "out"}, "to": {"node": "filter", "port": "cutoff"}},
+			{"from": {"node": "filter", "port": "out"}, "to": {"node": "out", "port": "left"}},
+		],
+	}
+	drawing.registry = main.registry
+	drawing.rebuild()
+
+	# Written in deliberately backwards document order above: out first, clock last. If
+	# the layout followed the file rather than the signal this would be wrong.
+	var feeds_first := true
+	for edge in drawing.patch["connections"]:
+		var feeder_card: Rect2 = drawing.card_of(str(edge["from"]["node"]))
+		var fed_card: Rect2 = drawing.card_of(str(edge["to"]["node"]))
+		if feeder_card.position.x >= fed_card.position.x:
+			feeds_first = false
+	check(feeds_first, "every node sits right of everything that feeds it")
+	check(drawing.card_of("clock").position.x < drawing.card_of("env").position.x
+		and drawing.card_of("env").position.x < drawing.card_of("filter").position.x
+		and drawing.card_of("filter").position.x < drawing.card_of("out").position.x,
+		"and the spine runs left to right however the file was written")
+
+	# osc feeds filter and nothing feeds osc, so it shares the first column with clock.
+	check(is_equal_approx(drawing.card_of("osc").position.x,
+			drawing.card_of("clock").position.x),
+		"two sources with nothing feeding them share a column")
+
+	# Same file, same picture. A view whose whole value is being independent of how the
+	# patch was drawn has to be independent of when it was drawn, too.
+	var first_pass: Dictionary = {}
+	for node in drawing.patch["nodes"]:
+		first_pass[str(node["id"])] = drawing.card_of(str(node["id"]))
+	drawing.rebuild()
+	var same_twice := true
+	for node in drawing.patch["nodes"]:
+		if drawing.card_of(str(node["id"])) != first_pass[str(node["id"])]:
+			same_twice = false
+	check(same_twice, "and laying it out twice puts everything in the same place")
+	drawing.free()
+
+	# Through the editor: it hides the wiring, and it does not touch the document.
+	var before_looking := JSON.stringify(main.patch)
+	var was_unsaved: bool = main.unsaved
+	await main._show_schematic(true)
+	for i in 8:
+		await process_frame
+	var put_away := 0
+	var still_up := 0
+	for child in main.graph_edit.get_children():
+		if child is GraphNode:
+			if (child as GraphNode).visible:
+				still_up += 1
+			else:
+				put_away += 1
+	check(main.schematic.visible and still_up == 0 and put_away > 0,
+		"turning to the schematic puts the wiring away (%d hidden)" % put_away)
+	check(JSON.stringify(main.patch) == before_looking and main.unsaved == was_unsaved,
+		"and looking at a patch is not an edit to it")
+
+	await main._show_schematic(false)
+	for i in 8:
+		await process_frame
+	check(not main.schematic.visible,
+		"and turning back brings the wiring out again")
 
 	# And through the editor, as document edits.
 	var before_painting := JSON.stringify(main.patch)
