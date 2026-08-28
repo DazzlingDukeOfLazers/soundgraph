@@ -70,6 +70,7 @@ add_subdirectory(${SOUNDGRAPH_ROOT}/dsp-core  ${CMAKE_BINARY_DIR}/dsp-core)
 add_subdirectory(${SOUNDGRAPH_ROOT}/patch-io  ${CMAKE_BINARY_DIR}/patch-io)
 
 add_library(soundgraph_godot SHARED
+    src/crash_dump.cpp
     src/register_types.cpp
     src/soundgraph_engine.cpp
 )
