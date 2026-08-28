@@ -2187,10 +2187,26 @@ func _show_schematic(on: bool) -> void:
 		schematic.type_colours = TYPE_COLOURS
 		schematic.rebuild()
 		schematic.visible = true
+		# So the canvas keeps placing it. Without this the schematic is positioned once
+		# and then sits there while the camera moves underneath it - fixed on screen
+		# while everything else zooms, which is exactly as wrong as it sounds.
+		graph_edit.mount_up = true
+		# A frame is waited for before framing. fit_to measures usable_rect(), and that
+		# rectangle is not the truth until the canvas has been laid out at its current
+		# size - ask too early and it answers with a viewport taller than the one on
+		# screen, which fits the schematic to a window that is not there. The same
+		# reasoning, and the same fix, as the wait before fit_graph() in _load_text.
+		await get_tree().process_frame
+		# Framed on arrival. The schematic is anchored where the case stood, and its grid
+		# is a different shape and usually a different size from the drawing it replaces
+		# - so without this it opens wherever the old layout happened to leave the camera,
+		# which at any zoom but the one you were on is off the side of the window.
+		graph_edit.fit_to(Rect2(face_anchor, schematic.content_size()))
 		_place_face()
 		_say("schematic: %d nodes on the grid" % (patch.get("nodes", []) as Array).size())
 	else:
 		schematic.visible = false
+		graph_edit.mount_up = false
 		await _rebuild_view()
 
 

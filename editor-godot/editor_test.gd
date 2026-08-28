@@ -7691,6 +7691,35 @@ func _initialize() -> void:
 	check(JSON.stringify(main.patch) == before_looking and main.unsaved == was_unsaved,
 		"and looking at a patch is not an edit to it")
 
+	# It is a tenant on the graph's canvas, so it has to move with the camera. It did
+	# not: the canvas only asks for its mounts to be placed while a *face* is up, so the
+	# schematic was positioned once and then sat there at a fixed size while everything
+	# around it zoomed.
+	check(main.graph_edit.mount_up,
+		"the canvas knows something is mounted on it")
+	var followed := true
+	for wanted_zoom in [0.4, 0.9, 1.25]:
+		main.graph_edit.zoom = wanted_zoom
+		for i in 4:
+			await process_frame
+		if not is_equal_approx(main.schematic.scale.x, wanted_zoom):
+			followed = false
+	check(followed, "and the schematic zooms with it rather than staying one size")
+
+	# And it arrives framed. Its grid is a different shape and usually a different size
+	# from the drawing it replaces, so opening it at whatever zoom the old layout left
+	# behind puts it off the side of the window.
+	await main._show_schematic(false)
+	for i in 6:
+		await process_frame
+	main.graph_edit.zoom = 1.6
+	await main._show_schematic(true)
+	for i in 8:
+		await process_frame
+	check(main.graph_edit.zoom < 1.6,
+		"opening it frames it rather than keeping the old zoom (%.2f)"
+			% main.graph_edit.zoom)
+
 	await main._show_schematic(false)
 	for i in 8:
 		await process_frame
