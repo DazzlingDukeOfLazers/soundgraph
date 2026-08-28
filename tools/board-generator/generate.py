@@ -15,6 +15,20 @@ from pathlib import Path
 # Panels this firmware has a driver for. The name in the manifest is the board's claim
 # about its hardware; this table is the firmware's claim about what it can drive, and a
 # board naming a panel that is not here should not build.
+# Touch controllers this firmware has a driver for. FT3168 answers to the FT5x06 driver;
+# the AXS15231B is the panel controller doing double duty and has its own.
+TOUCH_CHIPS = {"FT3168": 1, "FT5X06": 1, "FT6336": 1, "AXS15231B": 2}
+
+
+def touch_chip_kind(touch):
+    chip = str(touch.get("chip", "")).upper()
+    if chip not in TOUCH_CHIPS:
+        raise SystemExit(
+            f"board-generator: no driver for touch chip '{touch.get('chip')}'. "
+            f"Known: {', '.join(sorted(TOUCH_CHIPS))}.")
+    return TOUCH_CHIPS[chip]
+
+
 DISPLAY_CHIPS = {"SH8601": 1, "AXS15231B": 2}
 
 
@@ -163,12 +177,18 @@ def main() -> None:
             lines += [
                 f"#define SG_TOUCH_PRESENT 1",
                 f'#define SG_TOUCH_CHIP "{touch.get("chip", "unknown")}"',
+                # As with the panel: a number so the firmware links one driver, and an
+                # unknown part fails the build rather than being driven by whichever
+                # driver happens to be compiled in.
+                f"#define SG_TOUCH_CHIP_KIND {touch_chip_kind(touch)}",
                 f"#define SG_TOUCH_I2C_ADDRESS {touch.get('i2c_address', -1)}",
                 f"#define SG_TOUCH_I2C_SDA {touch.get('sda', -1)}",
                 f"#define SG_TOUCH_I2C_SCL {touch.get('scl', -1)}",
                 f"#define SG_TOUCH_INTERRUPT {touch.get('interrupt', -1)}",
                 f"#define SG_TOUCH_RESET {touch.get('reset', -1)}",
             ]
+        else:
+            lines += ["#define SG_TOUCH_PRESENT 0"]
         if "expander" in display:
             # Panel control lines that live on an I2C expander rather than a chip GPIO.
             # Worth a separate define rather than folding into SG_DISPLAY_RESET: an
@@ -186,8 +206,6 @@ def main() -> None:
                 f"#define SG_DISPLAY_EXPANDER_BL_PIN "
                 f"{expander.get('backlight_enable_pin', -1)}",
             ]
-        else:
-            lines += ["#define SG_TOUCH_PRESENT 0"]
     else:
         lines += ["", "#define SG_DISPLAY_PRESENT 0", "#define SG_TOUCH_PRESENT 0"]
 

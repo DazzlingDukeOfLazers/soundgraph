@@ -13,12 +13,48 @@ bool touch_read(int*, int*) { return false; }
 #include "codec_init.h"
 #include "display.h"
 #include "driver/gpio.h"
+#if SG_TOUCH_CHIP_KIND == 1
 #include "esp_lcd_touch_ft5x06.h"
+#elif SG_TOUCH_CHIP_KIND == 2
+#include "esp_lcd_axs15231b.h"
+#endif
 #include "esp_log.h"
 
 namespace {
 const char* const TAG = "sg-touch";
 esp_lcd_touch_handle_t g_touch = nullptr;
+i2c_master_bus_handle_t g_own_bus = nullptr;
+
+// The bus the touch controller is on, which is not always the codec's.
+//
+// Every board before the 3.49 hung everything off one I2C bus, so touch could borrow the
+// one the codec had already brought up. This board keeps audio on 47/48 and touch on
+// 17/18, and the two never meet. Asking whether the pins match is better than a flag: a
+// board that shares gets the existing bus for free, and one that does not gets its own
+// without anybody having to remember to say so.
+i2c_master_bus_handle_t touch_bus() {
+    if (SG_TOUCH_I2C_SDA == SG_CODEC_I2C_SDA && SG_TOUCH_I2C_SCL == SG_CODEC_I2C_SCL) {
+        return codec_i2c_bus();
+    }
+    if (g_own_bus != nullptr) return g_own_bus;
+
+    i2c_master_bus_config_t bus = {};
+    bus.i2c_port = I2C_NUM_1;
+    bus.sda_io_num = static_cast<gpio_num_t>(SG_TOUCH_I2C_SDA);
+    bus.scl_io_num = static_cast<gpio_num_t>(SG_TOUCH_I2C_SCL);
+    bus.clk_source = I2C_CLK_SRC_DEFAULT;
+    bus.glitch_ignore_cnt = 7;
+    bus.flags.enable_internal_pullup = true;
+    if (i2c_new_master_bus(&bus, &g_own_bus) != ESP_OK) {
+        ESP_LOGE(TAG, "could not open the touch I2C bus on sda=%d scl=%d",
+                 SG_TOUCH_I2C_SDA, SG_TOUCH_I2C_SCL);
+        g_own_bus = nullptr;
+        return nullptr;
+    }
+    ESP_LOGI(TAG, "touch has its own I2C bus on sda=%d scl=%d",
+             SG_TOUCH_I2C_SDA, SG_TOUCH_I2C_SCL);
+    return g_own_bus;
+}
 
 // Read the controller only when it says it has something.
 //
@@ -42,9 +78,9 @@ constexpr int kProbeEvery = 16;   // at a 30 ms poll, about twice a second
 }  // namespace
 
 bool touch_init() {
-    i2c_master_bus_handle_t bus = codec_i2c_bus();
+    i2c_master_bus_handle_t bus = touch_bus();
     if (bus == nullptr) {
-        ESP_LOGE(TAG, "no I2C bus; the codec creates it and must come up first");
+        ESP_LOGE(TAG, "no I2C bus for the touch controller");
         return false;
     }
 
@@ -70,17 +106,23 @@ bool touch_init() {
     // the rotated logical ones. Rotation is applied in touch_read.
     config.x_max = SG_DISPLAY_WIDTH;
     config.y_max = SG_DISPLAY_HEIGHT;
+    config.flags.mirror_x = 0;
+    config.flags.mirror_y = 0;
     config.rst_gpio_num = static_cast<gpio_num_t>(SG_TOUCH_RESET);
     config.int_gpio_num = static_cast<gpio_num_t>(SG_TOUCH_INTERRUPT);
     config.levels.reset = 0;
     config.levels.interrupt = 0;
 
+#if SG_TOUCH_CHIP_KIND == 2
+    if (esp_lcd_touch_new_i2c_axs15231b(io, &config, &g_touch) != ESP_OK) {
+#else
     if (esp_lcd_touch_new_i2c_ft5x06(io, &config, &g_touch) != ESP_OK) {
+#endif
         ESP_LOGE(TAG, "%s would not initialise", SG_TOUCH_CHIP);
         g_touch = nullptr;
         return false;
     }
-    ESP_LOGI(TAG, "%s up on the shared I2C bus", SG_TOUCH_CHIP);
+    ESP_LOGI(TAG, "%s up at 0x%02x", SG_TOUCH_CHIP, SG_TOUCH_I2C_ADDRESS);
     return true;
 }
 
