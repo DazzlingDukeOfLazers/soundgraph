@@ -624,7 +624,22 @@ bool physical_rows(int y, int height, int* out_y0, int* out_y1) {
 }  // namespace
 
 void display_clear_rows(int y, int height, uint32_t colour) {
-    if (g_fb == nullptr) return;
+    if (g_fb == nullptr || height <= 0) return;
+
+    // At a quarter turn a row of the screen is a column of memory, so the contiguous
+    // memcpy below would blank a band at ninety degrees to the one asked for — which is
+    // exactly what it did: every banded redraw on the 3.49 wiped a stripe across the
+    // wrong sliders and left the right ones full of debris. present_rows already falls
+    // back to the whole frame at these rotations; the clear has to as well, and it does
+    // it by going through the rotating writer rather than by pretending.
+    if (g_rotation == 90 || g_rotation == 270) {
+        const int w = display_width();
+        for (int row = y; row < y + height; ++row) {
+            for (int x = 0; x < w; ++x) display_pixel(x, row, colour);
+        }
+        return;
+    }
+
     int y0 = 0, y1 = 0;
     if (!physical_rows(y, height, &y0, &y1)) return;
     const int r = static_cast<int>((colour >> 16) & 0xFF);
