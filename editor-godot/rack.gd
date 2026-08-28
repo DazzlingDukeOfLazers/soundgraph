@@ -159,6 +159,14 @@ const PANEL_EDGE := Color(1, 1, 1, 0.07)
 const RAIL_COLOUR := Color(0.086, 0.094, 0.110)
 const RAIL_EDGE := Color(1, 1, 1, 0.05)
 const SCREW := Color(0.42, 0.45, 0.50)
+## Steel, lit from above. Two tones: the face and the shaded rim under it.
+##
+## Darker than the first attempt, which put a 0.64 steel under a 40% highlight and made
+## every screw the brightest thing on the panel - four white dots per module, pulling the
+## eye to the corners and away from the knobs. A screw should be findable and never
+## looked at.
+const SCREW_STEEL := Color(0.52, 0.55, 0.60)
+const SCREW_STEEL_LOW := Color(0.26, 0.29, 0.34)
 const JACK_RING := Color(0.62, 0.65, 0.70)
 const JACK_HOLE := Color(0.055, 0.06, 0.07)
 const KNOB_BODY := Color(0.235, 0.251, 0.290)
@@ -1349,13 +1357,10 @@ class Jack extends Control:
 			room, _label_size(),
 			rack.ink_dim if _legend().a <= 0.0 else _legend())
 
-	## The panel's lettering colour, dimmed the way the rack dims its own. A jack label is
-	## secondary text and should read as such on a painted panel too.
+	## The panel's lettering colour, at full strength - see the note on Knob._legend for
+	## why a painted panel does not get to fade its secondary text.
 	func _legend() -> Color:
-		var legend: Color = skin.get("legend", Color(0, 0, 0, 0))
-		if legend.a <= 0.0:
-			return legend
-		return Color(legend.r, legend.g, legend.b, 0.72)
+		return skin.get("legend", Color(0, 0, 0, 0))
 
 
 # ---------------------------------------------------------------------------------
@@ -1372,6 +1377,27 @@ class Knob extends Control:
 	var rack: Control
 	## Set by the module that owns it, like the jacks'.
 	var skin: Dictionary = {}
+
+	## The panel's lettering, or the rack's ink where the panel has no opinion.
+	##
+	## A knob prints its name and its value straight onto the faceplate, so both are
+	## panel text and neither may keep using the rack's light ink once the panel is
+	## cream. On Ivory Lab and Frosted Ice that is near-white on near-white: the title
+	## and the jack labels were themed and these two were missed, which is exactly the
+	## sort of thing that survives a contrast test aimed at the wrong pair.
+	## Not dimmed, on a painted panel.
+	##
+	## The rack fades a knob's name against its value, which works on graphite because
+	## there is contrast to spend. A faceplate often has none: Safety Orange gives black
+	## lettering 4.9:1 at full strength, so anything faded is below the bar whatever the
+	## fade, and no amount of tuning fixes a ceiling. The hierarchy is carried by size and
+	## weight instead - the name is Medium at the secondary size, the value is larger and
+	## tabular - which is what was separating them anyway.
+	func _legend(dim: bool) -> Color:
+		var legend: Color = skin.get("legend", Color(0, 0, 0, 0))
+		if legend.a <= 0.0:
+			return rack.ink_dim if dim else rack.ink
+		return legend
 	var node_id := ""
 	var descriptor: Dictionary = {}
 
@@ -1683,10 +1709,10 @@ class Knob extends Control:
 		var name_baseline := value_baseline - float(value_size) - 4.0
 		draw_string(label_font, Vector2(Rack.KNOB_PAD, name_baseline),
 			Rack.elided(label_font, _name_text(), label_size, room),
-			HORIZONTAL_ALIGNMENT_CENTER, room, label_size, rack.ink_dim)
+			HORIZONTAL_ALIGNMENT_CENTER, room, label_size, _legend(true))
 		draw_string(value_font, Vector2(Rack.KNOB_PAD, value_baseline),
 			Rack.elided(value_font, _value_text(), value_size, room),
-			HORIZONTAL_ALIGNMENT_CENTER, room, value_size, rack.ink)
+			HORIZONTAL_ALIGNMENT_CENTER, room, value_size, _legend(false))
 
 
 ## A vertical fader: the same control as Knob wearing a different picture.
@@ -1771,7 +1797,7 @@ class Fader extends Knob:
 
 		if label_font != null and label != "":
 			draw_string(label_font, Vector2(0.0, label_baseline), label,
-				HORIZONTAL_ALIGNMENT_CENTER, size.x, label_size, rack.ink_dim)
+				HORIZONTAL_ALIGNMENT_CENTER, size.x, label_size, _legend(true))
 
 
 ## A module's aluminium: the plate, its edges, and the category stripe under the title.
@@ -1888,8 +1914,57 @@ static func draw_screws(canvas: CanvasItem, rect: Rect2, radius: float = 3.4,
 		points.append(Vector2(rect.position.x + inset, rect.end.y - inset * 0.8))
 		points.append(Vector2(rect.end.x - inset, rect.end.y - inset * 0.8))
 	for point: Vector2 in points:
-		canvas.draw_circle(point, radius, skin_colours.get("screw", SCREW))
-		canvas.draw_circle(point, radius, Color(0, 0, 0, 0.5), false, 1.0)
+		draw_screw(canvas, point, radius, skin_colours)
+
+
+## One screw: a cross-head in steel, lit from above, sitting on its own shadow.
+##
+## It was a flat disc with a ring around it, which at four per module is a lot of
+## repetitions of something that reads as a hole rather than as hardware. A screw is the
+## smallest thing on the panel and the one there are most of, so it is worth the dozen
+## draw calls: the head catches light along its top, the cross is cut into it, and the
+## shadow underneath is what puts it in front of the panel rather than in it.
+##
+## Steel, whatever the panel is painted. Screws are the one part of a module nobody
+## finishes to match - the theme's own colour tints this by a third, so a brass-ish rack
+## keeps a hint of its warmth without the hardware ceasing to be metal.
+static func draw_screw(canvas: CanvasItem, centre: Vector2, radius: float,
+		skin_colours: Dictionary = {}) -> void:
+	var tint: Color = skin_colours.get("screw", SCREW_STEEL)
+	var steel := SCREW_STEEL.lerp(tint, 0.30)
+	var shade := SCREW_STEEL_LOW.lerp(tint, 0.30)
+
+	# The shadow it casts, below it, because the light is above it. Slightly wider than
+	# the head and soft-edged by being drawn twice.
+	canvas.draw_circle(centre + Vector2(0.0, radius * 0.5), radius * 1.05,
+		Color(0, 0, 0, 0.14))
+	canvas.draw_circle(centre + Vector2(0.0, radius * 0.35), radius * 0.98,
+		Color(0, 0, 0, 0.20))
+
+	# The rim, then the face sitting a little high in it: a bevel, seen from straight on.
+	canvas.draw_circle(centre, radius, shade)
+	canvas.draw_circle(centre - Vector2(0.0, radius * 0.10), radius * 0.86, steel)
+
+	# The lit crescent along the top of the head, and the darker one under it.
+	var thickness := maxf(radius * 0.24, 0.9)
+	canvas.draw_arc(centre, radius * 0.70, PI * 1.12, PI * 1.88, 14,
+		steel.lightened(0.22), thickness * 0.85, true)
+	canvas.draw_arc(centre, radius * 0.74, PI * 0.15, PI * 0.85, 14,
+		Color(0, 0, 0, 0.22), thickness * 0.8, true)
+
+	# The cross, cut in. Each arm is a dark groove with a lit lower edge - the wall the
+	# light from above actually falls on.
+	var arm := radius * 0.60
+	var groove := maxf(radius * 0.20, 1.0)
+	var offset := maxf(groove * 0.55, 0.7)
+	canvas.draw_line(centre - Vector2(arm, 0.0), centre + Vector2(arm, 0.0),
+		Color(0, 0, 0, 0.60), groove, true)
+	canvas.draw_line(centre - Vector2(arm, -offset), centre + Vector2(arm, -offset),
+		Color(1, 1, 1, 0.20), groove * 0.5, true)
+	canvas.draw_line(centre - Vector2(0.0, arm), centre + Vector2(0.0, arm),
+		Color(0, 0, 0, 0.60), groove, true)
+	canvas.draw_line(centre - Vector2(-offset, arm), centre + Vector2(-offset, arm),
+		Color(1, 1, 1, 0.14), groove * 0.5, true)
 
 
 ## Trims text to the room there is, with an ellipsis to say it was trimmed.

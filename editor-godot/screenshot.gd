@@ -1,4 +1,6 @@
 extends SceneTree
+
+const ModuleThemes := preload("res://module_themes.gd")
 ## Renders the editor to a PNG so somebody — or something — can look at it.
 ##
 ##   godot --path editor-godot --script res://screenshot.gd -- <out.png> [width] [height]
@@ -44,6 +46,14 @@ func _stage(main, shot: Dictionary) -> void:
 
 	await main._load_example(str(shot.get("example", "First Synth")))
 	for i in 8:
+		await process_frame
+
+	# The faceplate theme, applied after the load because loading brings the document's
+	# own with it. Set every time rather than only when asked for, like everything else
+	# here: a shot that inherited the previous one's paint would be a picture of the
+	# wrong thing, which is the mistake this file has already made twice.
+	main._set_patch_theme(str(shot.get("theme", ModuleThemes.CATEGORY)))
+	for i in 4:
 		await process_frame
 
 	# Graph when the spec does not say, never "whatever the last shot left".

@@ -397,7 +397,13 @@ func _initialize() -> void:
 
 	# ---- every faceplate can be read -------------------------------------------------
 	# A theme is a look, and a look that costs legibility is not a trade this editor
-	# makes anywhere else. The bar is 4.5:1 rather than the 7:1 asked of operating text:
+	# makes anywhere else. This covers every piece of text on a painted panel — the
+	# title, a knob's name, its value, a jack's label — because on a painted panel they
+	# are all one colour. They were not always: the title was themed and the knobs were
+	# left on the rack's light ink, which is near-white lettering on the cream of Ivory
+	# Lab, and this check went on passing because it was only ever asking about the title.
+	#
+	# The bar is 4.5:1 rather than the 7:1 asked of operating text:
 	# a module title is large, bold and upper case, which is exactly the case the
 	# standard relaxes for. Panels are also lit by a screen rather than a room, so the
 	# number is a floor and not a target.
