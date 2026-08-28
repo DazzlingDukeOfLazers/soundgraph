@@ -7697,6 +7697,14 @@ func _initialize() -> void:
 	# around it zoomed.
 	check(main.graph_edit.mount_up,
 		"the canvas knows something is mounted on it")
+
+	# And it cannot draw outside the work area. GraphEdit clips its own nodes, but the
+	# face and the schematic are tenants of the tab rather than children of the graph,
+	# and a plain Control does not clip - so a mount wider than the viewport drew over
+	# the inspector beside it.
+	var work_area := main.graph_edit.get_parent() as Control
+	check(work_area != null and work_area.clip_contents,
+		"the work area clips whatever is mounted in it")
 	var followed := true
 	for wanted_zoom in [0.4, 0.9, 1.25]:
 		main.graph_edit.zoom = wanted_zoom

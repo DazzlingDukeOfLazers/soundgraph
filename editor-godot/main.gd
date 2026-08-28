@@ -950,6 +950,15 @@ func _build_ui() -> void:
 	# every camera gesture keeps working because it is the same camera.
 	var container_tab := Control.new()
 	container_tab.name = "Graph"
+	# Clipped to the work area.
+	#
+	# GraphEdit clips its own nodes, but the face and the schematic are tenants of this
+	# container rather than children of the graph, and a plain Control does not clip. So
+	# a mount wider than the viewport drew straight over the inspector beside it — the
+	# schematic's last card sat on top of "point the probe at a wire". Whatever is
+	# mounted here is looking at the patch, and the patch's window ends where the panel
+	# begins.
+	container_tab.clip_contents = true
 	graph_edit.name = "Wires"
 	graph_edit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	container_tab.add_child(graph_edit)
