@@ -80,7 +80,27 @@ Open problems, ordered by how much they threaten the Knobcon demo.
 - Auto-place appeared non-deterministic; the algorithm was fine, the button silently
   switched to selection-only mode.
 
-## 2026-08-27 — 3.49 panel and touch both silent; suspect the display flex
+## 2026-08-27 — RESOLVED: the 3.49 panel needs a true cold boot, not a reset
+
+The panel showed a lit white rectangle whatever was sent to it, with Waveshare's own
+firmware as well as ours, and the vendor firmware logged 211 I2C NACKs in eight seconds
+from the touch controller. Display and touch are the same silicon behind one flex
+connector, so I concluded the ribbon had been disturbed when the case was opened and
+recommended reseating it.
+
+That was wrong, and wrong in an instructive way. Pulling the 18650 and reconnecting
+brought the panel straight back — the vendor demo, then ours. The board has a battery, so
+a USB reset, an RTS pulse, and the RST button are all *warm* resets that never drop the
+panel's rails. Whatever state the AXS15231B had latched into survived every reset
+available over the cable, which is why hours of driver work looked like it changed
+nothing: the evidence was real, the inference from it was not. Two functions of one chip
+failing together does imply one shared cause; it does not imply the cause is mechanical.
+
+So: on this board, "have you power cycled it" and "have you reset it" are different
+questions, and only the first requires the battery to come out. Anything that presents as
+the panel being electrically absent should try that before anything is taken apart.
+
+### The original entry, kept because the reasoning is worth seeing fail
 
 The ESP32-S3-Touch-LCD-3.49 shows a uniform lit white rectangle whatever is sent to it.
 Waveshare's own `10_LVGL_V9_Test`, built from their repository and flashed to the same
