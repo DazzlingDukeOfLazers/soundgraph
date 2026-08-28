@@ -1086,6 +1086,18 @@ var face_up := false:
 	set(value):
 		face_up = value
 		queue_redraw()
+
+## Something other than a face is mounted on the canvas - the schematic, today.
+##
+## Separate from face_up rather than folded into it, because face_up means "this case is
+## turned over" and carries a handful of other consequences: the case stops drawing its
+## own band, the FACE chip becomes WIRES, drags are read differently. A tenant that only
+## needs to be kept under the camera should not have to claim all of that.
+var mount_up := false:
+	set(value):
+		mount_up = value
+		queue_redraw()
+
 ## Called every frame while any face is up, so the mounts follow the camera.
 signal face_needs_placing
 ## An open module's FACE/WIRES control was clicked: turn that one container. The name
@@ -1163,7 +1175,7 @@ func _case_band_rect() -> Rect2:
 
 
 func _draw_case() -> void:
-	if face_up or not flip_frames.is_empty():
+	if face_up or mount_up or not flip_frames.is_empty():
 		face_needs_placing.emit()
 	# The mounted face draws its own case; two cases in one spot is one too many.
 	if face_up:
@@ -2264,7 +2276,17 @@ func fit_graph() -> void:
 		found = true
 	if not found:
 		return
+	fit_to(bounds)
 
+
+## Frames an arbitrary rectangle in graph space.
+##
+## Split out of fit_graph so that something which is not a node can be framed too - the
+## schematic is a single mounted control, so "fit the visible nodes" has nothing to
+## measure while it is up.
+func fit_to(bounds: Rect2) -> void:
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return
 	var view := usable_rect()
 	var margin: float = maxf(float(Design.SPACE_XL),
 		minf(view.size.x, view.size.y) * FIT_BREATHING)
