@@ -502,6 +502,12 @@ bool read_node(const json::Value& entry,
     if (const json::Value* collapsed = entry.find("collapsed")) {
         node.collapsed = collapsed->as_bool(false);
     }
+    // Unvalidated on purpose. A theme name this build has never heard of is a module in
+    // the wrong colour, which is a better outcome than refusing the document - and the
+    // editor falls back to the patch's theme when it cannot place the name.
+    if (const json::Value* theme = entry.find("theme")) {
+        node.theme = theme->as_string();
+    }
     return true;
 }
 
@@ -1317,6 +1323,9 @@ bool parse_patch(const std::string& text,
     // over a picture would be the wrong trade.
     if (const json::Value* arrangement = root.find("arrangement")) {
         if (arrangement->is_object()) {
+            if (const json::Value* theme = arrangement->find("theme")) {
+                out.arrangement.theme = theme->as_string();
+            }
             if (const json::Value* order = arrangement->find("rack_order")) {
                 if (order->is_array()) {
                     for (const json::Value& id : order->array()) {
@@ -1745,6 +1754,9 @@ json::Value write_node_entry(const NodeDescription& node) {
     if (node.collapsed) {
         entry.set("collapsed", json::Value(true));
     }
+    if (!node.theme.empty()) {
+        entry.set("theme", json::Value(node.theme));
+    }
     return entry;
 }
 
@@ -1814,11 +1826,19 @@ std::string write_patch(const GraphDescription& description, bool pretty) {
 
     if (!description.arrangement.empty()) {
         json::Value arrangement = json::Value::make_object();
-        json::Value order = json::Value::make_array();
-        for (const std::string& id : description.arrangement.rack_order) {
-            order.push_back(json::Value(id));
+        if (!description.arrangement.theme.empty()) {
+            arrangement.set("theme", json::Value(description.arrangement.theme));
         }
-        arrangement.set("rack_order", std::move(order));
+        // Written even when empty, because a rack order that has been cleared is a
+        // different thing from one that was never set, and the theme above may be the
+        // only reason this section exists at all.
+        if (!description.arrangement.rack_order.empty()) {
+            json::Value order = json::Value::make_array();
+            for (const std::string& id : description.arrangement.rack_order) {
+                order.push_back(json::Value(id));
+            }
+            arrangement.set("rack_order", std::move(order));
+        }
         root.set("arrangement", std::move(arrangement));
     }
 

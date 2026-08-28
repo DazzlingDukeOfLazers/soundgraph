@@ -80,6 +80,11 @@ struct NodeDescription {
     float x = 0.0f;
     float y = 0.0f;
     bool collapsed = false;
+    // Which faceplate theme this module wears, or empty for the patch's own. Cosmetic,
+    // and in the same category as position: dsp-core never reads it, and it is here so
+    // that a patch looks the same wherever it is opened rather than only where it was
+    // drawn.
+    std::string theme;
 
     const ParameterValue* find_parameter(const std::string& parameter_name) const;
 };
@@ -144,8 +149,9 @@ struct MetadataEntry {
 // describe. This is for hints about a whole view, which have nothing to hang off.
 struct Arrangement {
     std::vector<std::string> rack_order;   // node ids, left to right in the rack view
+    std::string theme;                     // the faceplate theme modules wear by default
 
-    bool empty() const { return rack_order.empty(); }
+    bool empty() const { return rack_order.empty() && theme.empty(); }
 };
 
 // A module: a named subgraph with a declared surface. Pure data, like everything in

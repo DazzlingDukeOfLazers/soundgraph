@@ -1,5 +1,6 @@
 class_name EditorToolbar
 extends MarginContainer
+const ModuleThemes := preload("res://module_themes.gd")
 ## The editor's top row, extracted whole from main.gd once its rework settled.
 ##
 ## It owns what a top row is: the identity block and its QR, the one verb, undo and
@@ -338,6 +339,25 @@ func _build() -> void:
 	# me the real thing" and fit is "show me all of it". An action rather than a
 	# state — same framing the toolbar's Fit does, in the menu where the eye already
 	# is when choosing how to look at the graph.
+	# What the panels are painted in. A whole-rack default, because a rack that is one
+	# family reads as a rack; individual panels are repainted by right-clicking them,
+	# which is where somebody is already pointing when they want to change one.
+	view_popup.add_separator()
+	var panels_popup := PopupMenu.new()
+	panels_popup.name = "PanelsMenu"
+	panels_popup.add_radio_check_item("Category colours", 200)
+	panels_popup.set_item_tooltip(0,
+		"One graphite panel each, with a stripe saying what the module is.")
+	panels_popup.add_separator()
+	for index in ModuleThemes.ORDER.size():
+		var key: String = ModuleThemes.ORDER[index]
+		panels_popup.add_radio_check_item(ModuleThemes.display_name(key), 201 + index)
+		panels_popup.set_item_tooltip(panels_popup.get_item_index(201 + index),
+			str(ModuleThemes.THEMES[key].get("blurb", "")))
+	panels_popup.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+	view_popup.add_child(panels_popup)
+	view_popup.add_submenu_item("Panels", panels_popup.name)
+	view_popup.add_separator()
 	view_popup.add_item("Zoom: fit to screen", 72)
 	view_popup.set_item_tooltip(view_popup.get_item_index(72),
 		"Zoom and scroll so the whole patch is visible, clear of the minimap "

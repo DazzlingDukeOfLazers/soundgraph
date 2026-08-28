@@ -38,6 +38,10 @@
           "items": {
             "$ref": "#/$defs/node_id"
           }
+        },
+        "theme": {
+          "description": "Faceplate theme every module wears unless it names its own. Cosmetic, like the rest of this object. Omitted or unknown means the category colouring, where a module's panel says what kind of thing it is.",
+          "type": "string"
         }
       }
     },
@@ -309,6 +313,10 @@
         "collapsed": {
           "description": "Progressive disclosure state for editors.",
           "type": "boolean"
+        },
+        "theme": {
+          "description": "Faceplate theme for this module alone, overriding arrangement.theme. Cosmetic: it changes panel, knob, jack-ring and cable colours and nothing about the sound. A name this editor does not know falls back to the patch's theme rather than being an error, so a patch from a newer build still opens.",
+          "type": "string"
         },
         "module": {
           "description": "When type is \"module\": the name of the definition this node instantiates. The instance exposes only the module's declared inputs, outputs and parameters.",

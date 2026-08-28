@@ -1668,6 +1668,76 @@ TEST(a_plugin_is_named_by_identity_and_survives_a_round_trip) {
     CHECK(again.find_node("fx")->plugin == "verb");
 }
 
+TEST(faceplate_themes_survive_being_saved) {
+    // Cosmetic, and therefore exactly the sort of thing that gets deleted by a save.
+    // The roll went that way once and the preset bank right after it: the schema
+    // described them, the editor wrote them, and patch-io quietly dropped anything it
+    // had not been taught. A theme is worth less than a preset bank and would be missed
+    // just as much by whoever painted the rack.
+    //
+    // Two levels: the arrangement carries what every panel wears, and a node may name
+    // its own. An unknown name is kept rather than rejected - this is presentation, and
+    // a patch from a newer editor should open with one module in the wrong colour rather
+    // than not open.
+    const std::string text = R"({
+        "schema_version": 1,
+        "arrangement": { "theme": "oxide-teal", "rack_order": ["osc", "out"] },
+        "nodes": [
+            { "id": "osc", "type": "SineOscillator", "theme": "ultraviolet" },
+            { "id": "out", "type": "StereoOutput", "theme": "a-theme-from-the-future" }
+        ],
+        "connections": []
+    })";
+
+    GraphDescription graph;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(text, graph, diagnostics));
+    CHECK(graph.arrangement.theme == "oxide-teal");
+    CHECK(graph.find_node("osc")->theme == "ultraviolet");
+    CHECK(graph.find_node("out")->theme == "a-theme-from-the-future");
+
+    GraphDescription again;
+    std::vector<Diagnostic> more;
+    CHECK(parse_patch(write_patch(graph, true), again, more));
+    CHECK(again.arrangement.theme == "oxide-teal");
+    CHECK(again.find_node("osc")->theme == "ultraviolet");
+    CHECK(again.find_node("out")->theme == "a-theme-from-the-future");
+
+    // A patch nobody has repainted carries no theme at all, rather than the word for
+    // the default. The absence is the default.
+    const std::string plain = R"({
+        "schema_version": 1,
+        "nodes": [ { "id": "out", "type": "StereoOutput" } ],
+        "connections": []
+    })";
+    GraphDescription bare;
+    std::vector<Diagnostic> quiet;
+    CHECK(parse_patch(plain, bare, quiet));
+    CHECK(bare.arrangement.theme.empty());
+    CHECK(bare.find_node("out")->theme.empty());
+    const std::string rewritten = write_patch(bare, true);
+    CHECK(rewritten.find("theme") == std::string::npos);
+}
+
+TEST(an_arrangement_of_only_a_theme_is_still_written) {
+    // Arrangement::empty() decides whether the section is written at all, and it used to
+    // mean "no rack order". A patch that has been repainted but never reordered has a
+    // theme and nothing else, and would have lost it on the way out.
+    GraphDescription graph;
+    soundgraph::NodeDescription out;
+    out.id = "out";
+    out.type = "StereoOutput";
+    graph.nodes.push_back(out);
+    graph.arrangement.theme = "moss-machine";
+    CHECK(!graph.arrangement.empty());
+
+    GraphDescription again;
+    std::vector<Diagnostic> diagnostics;
+    CHECK(parse_patch(write_patch(graph, true), again, diagnostics));
+    CHECK(again.arrangement.theme == "moss-machine");
+    CHECK(again.arrangement.rack_order.empty());
+}
+
 TEST(the_preset_bank_survives_being_saved) {
     // The roll's twin, found the same way and one commit later. `presets` was the last
     // top-level section in the schema that patch-io did not implement, so a bank of

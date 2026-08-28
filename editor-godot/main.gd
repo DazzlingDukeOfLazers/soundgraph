@@ -105,6 +105,7 @@ const FeedbackSubmitter := preload("res://feedback_submitter.gd")
 const WavImport := preload("res://wav_import.gd")
 const MidiImport := preload("res://midi_import.gd")
 const Transcribe := preload("res://transcribe.gd")
+const ModuleThemes := preload("res://module_themes.gd")
 const SpeakText := preload("res://speak_text.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
@@ -998,6 +999,7 @@ func _build_ui() -> void:
 	rack.edit_started.connect(func() -> void: _begin_edit())
 	rack.edit_finished.connect(func(label: String) -> void: _commit_edit(label))
 	rack.node_selected.connect(_on_rack_node_selected)
+	rack.theme_requested.connect(_on_module_theme_requested)
 	# A plain Control between the scroll container and the rack, because a Container
 	# resets its children's scale on every layout pass — fit_child_in_rect wipes it —
 	# so a zoomed rack that is a direct child snaps back to 1.0 the moment anything
@@ -1191,6 +1193,92 @@ func _refresh_view_zoom_slider() -> void:
 	_zoom_slider_syncing = false
 
 
+## What every panel wears unless it says otherwise.
+##
+## Stored in the document rather than in the settings, because it is a fact about this
+## patch: a rack somebody painted mustard should open mustard on the next machine, the
+## same way its module positions travel. The category default is stored as *nothing* —
+## a patch that has never been repainted carries no theme key at all.
+func _set_patch_theme(key: String) -> void:
+	_begin_edit()
+	var arrangement: Dictionary = patch.get("arrangement", {})
+	if key == ModuleThemes.CATEGORY:
+		arrangement.erase("theme")
+	else:
+		arrangement["theme"] = key
+	if arrangement.is_empty():
+		patch.erase("arrangement")
+	else:
+		patch["arrangement"] = arrangement
+	_commit_edit("panels")
+	_repaint_rack()
+	_say("panels: %s" % ModuleThemes.display_name(key))
+
+
+## One panel, repainted on its own. Empty puts it back on the rack's.
+func _set_module_theme(node_id: String, key: String) -> void:
+	# Looked up before the edit is opened: there is no cancel on a begun edit, and
+	# starting one for a node that is not there would leave an empty step in the history.
+	var target: Dictionary = {}
+	for node in patch.get("nodes", []):
+		if str((node as Dictionary).get("id", "")) == node_id:
+			target = node
+			break
+	if target.is_empty():
+		return
+	_begin_edit()
+	if key == "":
+		target.erase("theme")
+	else:
+		target["theme"] = key
+	_commit_edit("panel")
+	_repaint_rack()
+	_say("%s: %s" % [node_id, "the rack's panels" if key == ""
+		else ModuleThemes.display_name(key)])
+
+
+## The rack draws from the document by reference, so a repaint is a rebuild.
+func _repaint_rack() -> void:
+	if rack == null:
+		return
+	rack.patch = patch
+	rack.rebuild()
+	_sync_panels_menu()
+
+
+func _sync_panels_menu() -> void:
+	if view_popup == null:
+		return
+	var panels := view_popup.get_node_or_null("PanelsMenu") as PopupMenu
+	if panels == null:
+		return
+	var current := str(patch.get("arrangement", {}).get("theme", ""))
+	for index in panels.item_count:
+		var id := panels.get_item_id(index)
+		if id < 200:
+			continue
+		var key: String = ModuleThemes.CATEGORY if id == 200 \
+			else str(ModuleThemes.ORDER[id - 201])
+		var wanted: String = ModuleThemes.resolve("", current)
+		panels.set_item_checked(index, key == wanted)
+
+
+## Right-click on a panel: the same list, plus the way back to the rack's own.
+func _on_module_theme_requested(node_id: String, at: Vector2) -> void:
+	var menu := PopupMenu.new()
+	menu.add_item("Use the rack's panels", 0)
+	menu.add_separator()
+	for index in ModuleThemes.ORDER.size():
+		var key: String = ModuleThemes.ORDER[index]
+		menu.add_item(ModuleThemes.display_name(key), 1 + index)
+	menu.id_pressed.connect(func(id: int) -> void:
+		_set_module_theme(node_id, "" if id == 0 else str(ModuleThemes.ORDER[id - 1]))
+		menu.queue_free())
+	menu.close_requested.connect(func() -> void: menu.queue_free())
+	add_child(menu)
+	menu.popup(Rect2i(Vector2i(at), Vector2i(1, 1)))
+
+
 func _on_view_zoom_slider(value: float) -> void:
 	if view_zoom_readout == null or _zoom_slider_syncing:
 		return
@@ -1241,6 +1329,12 @@ func _on_file_menu(id: int) -> void:
 
 
 func _on_view_menu(id: int) -> void:
+	# Panels first, because the detail modes below catch everything from 70 up and these
+	# ids are above that.
+	if id >= 200 and id <= 200 + ModuleThemes.ORDER.size():
+		_set_patch_theme(ModuleThemes.CATEGORY if id == 200
+			else str(ModuleThemes.ORDER[id - 201]))
+		return
 	if id == 72:
 		graph_edit.fit_graph()
 		return

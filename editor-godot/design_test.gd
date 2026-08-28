@@ -1,4 +1,8 @@
 extends SceneTree
+
+## The faceplate themes. Their lettering has to be readable for the same reason the
+## palettes' does — a panel is not decoration, it is a label you operate.
+const ModuleThemes := preload("res://module_themes.gd")
 ## Checks the design system against the rules it claims to follow.
 ##
 ## A palette is a set of assertions about legibility, and assertions that nobody measures
@@ -390,6 +394,38 @@ func _initialize() -> void:
 	check(spacing == [4, 8, 12, 16, 24, 32], "the spacing scale is 4/8/12/16/24/32")
 	check(Design.NODE_PADDING_H >= 12 and Design.NODE_PADDING_H <= 16,
 		"node horizontal padding is in the 12–16 band (%d)" % Design.NODE_PADDING_H)
+
+	# ---- every faceplate can be read -------------------------------------------------
+	# A theme is a look, and a look that costs legibility is not a trade this editor
+	# makes anywhere else. The bar is 4.5:1 rather than the 7:1 asked of operating text:
+	# a module title is large, bold and upper case, which is exactly the case the
+	# standard relaxes for. Panels are also lit by a screen rather than a room, so the
+	# number is a floor and not a target.
+	for key in ModuleThemes.ORDER:
+		var face := ModuleThemes.token(str(key), "faceplate")
+		var legend := ModuleThemes.token(str(key), "legend")
+		var ratio := Design.contrast(legend, face)
+		check(ratio >= 4.5, "%s: its lettering reads on its panel (%.1f:1)"
+			% [ModuleThemes.display_name(str(key)), ratio])
+
+	# The pointer is the one part of a knob that has to be visible across a desk, and it
+	# is drawn on the knob rather than on the panel.
+	for key in ModuleThemes.ORDER:
+		var body := ModuleThemes.token(str(key), "knob")
+		var pointer := ModuleThemes.token(str(key), "pointer")
+		var ratio := Design.contrast(pointer, body)
+		check(ratio >= 3.0, "%s: its pointer reads on its knob (%.1f:1)"
+			% [ModuleThemes.display_name(str(key)), ratio])
+
+	# And the ring around a socket has to be findable against the socket field, which is
+	# black in every one of them — that is the family resemblance, and it only works if
+	# the ring is doing the separating.
+	for key in ModuleThemes.ORDER:
+		var jack := ModuleThemes.token(str(key), "jack")
+		var ring := ModuleThemes.token(str(key), "ring")
+		var ratio := Design.contrast(ring, jack)
+		check(ratio >= 3.0, "%s: its jack rings read on the socket field (%.1f:1)"
+			% [ModuleThemes.display_name(str(key)), ratio])
 
 	if failures == 0:
 		print("all design checks passed")

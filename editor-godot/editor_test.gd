@@ -17,6 +17,8 @@ const PianoRoll := preload("res://piano_roll.gd")
 ## audio anywhere near it, which is the only way a feature that shells out can be
 ## checked on a machine that has not built the thing it shells out to.
 const Transcribe := preload("res://transcribe.gd")
+## The faceplate themes, and the rack colours they resolve to.
+const ModuleThemes := preload("res://module_themes.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -7507,6 +7509,79 @@ func _initialize() -> void:
 	check(main.keyboard.visible and main.keyboard.custom_minimum_size.y
 			== Design.scale(112),
 		"and full is the whole piano again")
+
+	# ---- faceplates ---------------------------------------------------------------
+	# A theme changes what a module is painted in and nothing else, so the checks are
+	# about resolution and about the document: which theme wins, and whether it is still
+	# there after a save.
+	check(ModuleThemes.resolve("", "") == ModuleThemes.CATEGORY
+		and ModuleThemes.resolve("", "oxide-teal") == "oxide-teal"
+		and ModuleThemes.resolve("ultraviolet", "oxide-teal") == "ultraviolet",
+		"a panel wears its own theme, then the rack's, then the category colours")
+	check(ModuleThemes.resolve("a-theme-from-the-future", "oxide-teal") == "oxide-teal",
+		"and a name this build has never heard of falls back rather than failing")
+
+	# The default has to be the rack that was already there. Every one of the eleven
+	# repaints the panel and drops the category stripe; none of them may do that by
+	# accident to somebody who never asked for a theme.
+	var unpainted: Dictionary = Rack.skin(ModuleThemes.CATEGORY)
+	check(unpainted["panel"] == Rack.PANEL and bool(unpainted["stripe"]),
+		"the category theme is the panel and the stripe this editor always drew")
+	var repainted := 0
+	for key in ModuleThemes.ORDER:
+		var paint: Dictionary = Rack.skin(str(key))
+		if paint["panel"] != Rack.PANEL and not bool(paint["stripe"]):
+			repainted += 1
+	check(repainted == ModuleThemes.ORDER.size(),
+		"and all %d themes repaint the panel and drop the stripe (%d)"
+			% [ModuleThemes.ORDER.size(), repainted])
+
+	# Four cable colours, handed to the four signal types in order - a theme may change
+	# what the signal language looks like and not that there is one.
+	var cabled := 0
+	for key in ModuleThemes.ORDER:
+		if ModuleThemes.cables(str(key)).size() == Rack.SIGNAL_ORDER.size():
+			cabled += 1
+	check(cabled == ModuleThemes.ORDER.size(),
+		"every theme carries one cable colour per signal type")
+
+	# And through the editor, as document edits.
+	var before_painting := JSON.stringify(main.patch)
+	await main._load_example("First Synth")
+	for i in 6:
+		await process_frame
+	main._set_patch_theme("acid-mustard")
+	await process_frame
+	check(str(main.patch.get("arrangement", {}).get("theme", "")) == "acid-mustard",
+		"the rack's panels are a fact about the patch, not about this machine")
+
+	var first_node := str((main.patch["nodes"][0] as Dictionary)["id"])
+	main._set_module_theme(first_node, "ultraviolet")
+	await process_frame
+	check(str((main.patch["nodes"][0] as Dictionary).get("theme", "")) == "ultraviolet",
+		"and one panel can be repainted on its own")
+
+	# Through text and back, which is where the last two cosmetic sections were lost.
+	var painted_text := JSON.stringify(main.patch)
+	await main._load_text(painted_text)
+	for i in 6:
+		await process_frame
+	check(str(main.patch.get("arrangement", {}).get("theme", "")) == "acid-mustard"
+		and str((main.patch["nodes"][0] as Dictionary).get("theme", "")) == "ultraviolet",
+		"and both survive a save and reload")
+
+	main._set_module_theme(first_node, "")
+	await process_frame
+	check(not (main.patch["nodes"][0] as Dictionary).has("theme"),
+		"putting a panel back on the rack's leaves no trace of the override")
+	main._set_patch_theme(ModuleThemes.CATEGORY)
+	await process_frame
+	check(str(main.patch.get("arrangement", {}).get("theme", "")) == "",
+		"and the default is stored as nothing at all, not as the word for it")
+
+	await main._load_text(before_painting)
+	for i in 6:
+		await process_frame
 
 	# ---- a recording becomes the roll -------------------------------------------
 	# The parsing first, which needs neither the binary nor a sound file. sg-transcribe

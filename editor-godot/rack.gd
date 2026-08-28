@@ -1,5 +1,7 @@
 class_name Rack
 extends Control
+
+const ModuleThemes := preload("res://module_themes.gd")
 const Seams := preload("res://seams.gd")
 ## Graphrack — the same patch, drawn as a Eurorack case.
 ##
@@ -27,6 +29,10 @@ signal edit_started()
 signal learn_requested(node_id: String, parameter: String)
 signal edit_finished(label: String)
 signal node_selected(node_id: String)
+## Somebody right-clicked a panel and wants to repaint that one. The rack does not own
+## the menu: what themes exist and how an edit is recorded are the editor's business, and
+## a view that opened its own popup would be deciding both.
+signal theme_requested(node_id: String, at: Vector2)
 
 ## Cable rendering. The A/B is the point: a hanging cable reads as a real instrument, an
 ## orthogonal one reads as a circuit, and it is not obvious which wins in front of people.
@@ -180,6 +186,43 @@ const CATEGORY_TINT := {
 }
 
 
+## The colours a module is painted in, resolved from its theme.
+##
+## Every drawing routine below takes one of these rather than reaching for the constants
+## directly, so that "what colour is a knob" has exactly one answer per module and the
+## default is still the constants it always was.
+##
+## The category theme returns today's panel unchanged - this is the same rack it has
+## always been until somebody asks for something else.
+static func skin(key: String) -> Dictionary:
+	if key == "" or key == ModuleThemes.CATEGORY or not ModuleThemes.THEMES.has(key):
+		return {
+			"panel": PANEL, "panel_low": PANEL_LOW, "panel_edge": PANEL_EDGE,
+			"legend": Color(0, 0, 0, 0),   # empty: the rack's own ink is used
+			"knob": KNOB_BODY, "pointer": Color(0, 0, 0, 0),
+			"jack": JACK_HOLE, "ring": JACK_RING, "screw": SCREW,
+			"stripe": true,
+		}
+	var face := ModuleThemes.token(key, "faceplate")
+	var grain: float = float(ModuleThemes.THEMES[key].get("grain", 0.05))
+	return {
+		"panel": face,
+		"panel_low": ModuleThemes.token(key, "edge"),
+		# The highlight along the left edge, scaled by how rough the finish is meant to
+		# be. A matte panel catches less light than a machined one.
+		"panel_edge": Color(1, 1, 1, clampf(grain, 0.02, 0.14)),
+		"legend": ModuleThemes.token(key, "legend"),
+		"knob": ModuleThemes.token(key, "knob"),
+		"pointer": ModuleThemes.token(key, "pointer"),
+		"jack": ModuleThemes.token(key, "jack"),
+		"ring": ModuleThemes.token(key, "ring"),
+		"screw": ModuleThemes.token(key, "screw"),
+		# The category stripe is the default theme's way of saying what a module is. A
+		# painted panel says it a different way, and two of them at once is noise.
+		"stripe": false,
+	}
+
+
 ## A category colour, quietened so the signal colours keep the loudest voice.
 static func category_tint(category: String) -> Color:
 	var base: Color = CATEGORY_TINT.get(category, Color(0.72, 0.76, 0.84))
@@ -189,6 +232,27 @@ static func category_tint(category: String) -> Color:
 var registry: Dictionary = {}
 var patch: Dictionary = {}
 var type_colours: Dictionary = {}
+
+
+## What colour a signal is drawn in, after the patch's theme has had its say.
+##
+## A theme carries four cable colours and there are four kinds of signal, so they are
+## handed out in order rather than scattered: the theme changes what the language looks
+## like without changing that there is one. Following audio by its colour still works on
+## a mustard rack; it is simply a different colour.
+##
+## Cables take the *patch's* theme, never a module's. A cable between a teal panel and an
+## orange one has no business being two colours, and a rack's wiring is one system
+## however the panels are painted.
+const SIGNAL_ORDER := ["audio", "control", "event", "note"]
+
+func signal_colour(type_name: String, fallback: Color = Color.WHITE) -> Color:
+	var palette: Array = ModuleThemes.cables(
+		str(patch.get("arrangement", {}).get("theme", "")))
+	var index := SIGNAL_ORDER.find(type_name)
+	if not palette.is_empty() and index >= 0 and index < palette.size():
+		return palette[index]
+	return type_colours.get(type_name, fallback)
 
 ## Returns the samples on a node's output, or an empty array. Set by the editor.
 ##
@@ -747,7 +811,7 @@ func cable_endpoints() -> Array:
 		var signal_type := from_module.port_type(str(connection["from"]["port"]), false)
 		# The node ids travel with the geometry, so the layer can tell which cables
 		# belong to what without going back to the patch for every one of them.
-		cables.append([a, b, type_colours.get(signal_type, Color.WHITE),
+		cables.append([a, b, signal_colour(signal_type),
 			str(connection["from"]["node"]), str(connection["to"]["node"])])
 	return cables
 
@@ -931,6 +995,26 @@ class RackModule extends Control:
 	var title := ""
 	var descriptor: Dictionary = {}
 
+	## The theme this module wears, resolved once per draw rather than stored, so that
+	## changing the patch's theme repaints every module without anybody having to
+	## remember to tell them.
+	##
+	## Its own theme wins, then the patch's, then the category colouring. A name from a
+	## newer editor falls through to the patch's rather than drawing nothing.
+	func theme_key() -> String:
+		var mine := ""
+		var patch_theme := ""
+		if rack != null:
+			for node in rack.patch.get("nodes", []):
+				if str((node as Dictionary).get("id", "")) == node_id:
+					mine = str((node as Dictionary).get("theme", ""))
+					break
+			patch_theme = str(rack.patch.get("arrangement", {}).get("theme", ""))
+		return ModuleThemes.resolve(mine, patch_theme)
+
+	func skin() -> Dictionary:
+		return Rack.skin(theme_key())
+
 	var _jacks: Array = []   # Jack controls, both columns
 	var _grid: GridContainer = null
 	var _dragging := false
@@ -993,6 +1077,7 @@ class RackModule extends Control:
 		for parameter: Dictionary in parameters:
 			var knob := Knob.new()
 			knob.rack = rack
+			knob.skin = skin()
 			knob.node_id = node_id
 			knob.descriptor = parameter
 			knob.set_value_silently(float(node.get("parameters", {})
@@ -1022,6 +1107,7 @@ class RackModule extends Control:
 		for port: Dictionary in ports:
 			var jack := Jack.new()
 			jack.rack = rack
+			jack.skin = skin()
 			jack.port_name = str(port["name"])
 			jack.type_name = str(port.get("type", ""))
 			jack.is_input = is_input
@@ -1047,6 +1133,12 @@ class RackModule extends Control:
 	# that the graph view has no equivalent for. Knobs sit on top and take their own input
 	# first, so a drag can only begin on bare panel, which is also true of the hardware.
 	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT 				and event.pressed:
+			rack.select(node_id)
+			rack.node_selected.emit(node_id)
+			rack.theme_requested.emit(node_id, get_global_mouse_position())
+			accept_event()
+			return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
 				rack.select(node_id)
@@ -1126,7 +1218,7 @@ class RackModule extends Control:
 		draw_rect(area, Rack.PANEL_EDGE, false, 1.0)
 
 		var samples := _history
-		var colour: Color = rack.type_colours.get(str(outputs[0]["type"]),
+		var colour: Color = rack.signal_colour(str(outputs[0]["type"]),
 			Design.INK_NORMAL)
 		if samples.size() < 2:
 			return
@@ -1168,18 +1260,21 @@ class RackModule extends Control:
 		if font == null:
 			font = get_theme_default_font()
 		var tint: Color = Rack.category_tint(str(descriptor.get("category", "")))
-		Rack.draw_plate(self, Rect2(Vector2.ZERO, size), Rack.TITLE_BAND, tint)
+		var paint := skin()
+		Rack.draw_plate(self, Rect2(Vector2.ZERO, size), Rack.TITLE_BAND, tint, paint)
 
 		if font != null:
 			var label := title.to_upper()
 			var width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 			# A long user-given name is clipped rather than shrunk, so every module's title
 			# sits on the same baseline at the same size, as a row of panels does.
+			var legend: Color = paint.get("legend", Color(0, 0, 0, 0))
 			draw_string(font, Vector2((size.x - width) * 0.5, 26.0), label,
-				HORIZONTAL_ALIGNMENT_LEFT, size.x - 12.0, 14, rack.ink)
+				HORIZONTAL_ALIGNMENT_LEFT, size.x - 12.0, 14,
+				rack.ink if legend.a <= 0.0 else legend)
 
 		_draw_analysis()
-		Rack.draw_screws(self, Rect2(Vector2.ZERO, size))
+		Rack.draw_screws(self, Rect2(Vector2.ZERO, size), 3.4, true, paint)
 
 		if rack != null and rack.selected_id == node_id:
 			draw_rect(Rect2(Vector2.ZERO, size), Rack.SELECTED, false, 2.0)
@@ -1197,6 +1292,9 @@ class RackModule extends Control:
 ## column it sits in can be as wide as its widest member. That is the whole fix.
 class Jack extends Control:
 	var rack: Control
+	## Set by the module that owns it: a jack belongs to a panel, and the panel decides
+	## what colour its hardware is.
+	var skin: Dictionary = {}
 	var port_name := ""
 	var type_name := ""
 	var is_input := true
@@ -1232,7 +1330,7 @@ class Jack extends Control:
 	func _draw() -> void:
 		var centre := socket_centre()
 		Rack.draw_socket(self, centre, Rack.jack_radius(), is_input,
-			rack.type_colours.get(type_name, Color.WHITE))
+			rack.signal_colour(type_name), skin)
 
 		var font := _label_font()
 		if font == null:
@@ -1245,7 +1343,16 @@ class Jack extends Control:
 		draw_string(font,
 			Vector2(Rack.jack_radius() * 2.0 + 6.0 if is_input else 0.0, baseline), text,
 			HORIZONTAL_ALIGNMENT_LEFT if is_input else HORIZONTAL_ALIGNMENT_RIGHT,
-			room, _label_size(), rack.ink_dim)
+			room, _label_size(),
+			rack.ink_dim if _legend().a <= 0.0 else _legend())
+
+	## The panel's lettering colour, dimmed the way the rack dims its own. A jack label is
+	## secondary text and should read as such on a painted panel too.
+	func _legend() -> Color:
+		var legend: Color = skin.get("legend", Color(0, 0, 0, 0))
+		if legend.a <= 0.0:
+			return legend
+		return Color(legend.r, legend.g, legend.b, 0.72)
 
 
 # ---------------------------------------------------------------------------------
@@ -1260,6 +1367,8 @@ class Knob extends Control:
 	const START := PI * 0.75           # pointing down-left at minimum
 
 	var rack: Control
+	## Set by the module that owns it, like the jacks'.
+	var skin: Dictionary = {}
 	var node_id := ""
 	var descriptor: Dictionary = {}
 
@@ -1532,14 +1641,19 @@ class Knob extends Control:
 			draw_rect(Rect2(Vector2.ONE, size - Vector2.ONE * 2.0), Design.FOCUS,
 				false, 2.0)
 
-		draw_circle(centre, radius, Rack.KNOB_BODY)
+		var body: Color = skin.get("knob", Rack.KNOB_BODY)
+		draw_circle(centre, radius, body)
 		draw_circle(centre, radius, Color(0, 0, 0, 0.5), false, 1.0)
+		# The cap catches the light. A pale knob is lit by darkening rather than
+		# lightening it, or a cream bakelite cap turns into a white disc with no edge.
 		draw_circle(centre - Vector2(0, 1), radius - 5.0,
-			Rack.KNOB_BODY.lightened(0.10))
-		# The pointer, which is what actually tells you where the knob is set.
+			body.darkened(0.08) if body.get_luminance() > 0.5 else body.lightened(0.10))
+		# The pointer, which is what actually tells you where the knob is set, and the
+		# one part of a knob that has to be visible from across a desk.
+		var pointer: Color = skin.get("pointer", Color(0, 0, 0, 0))
 		draw_line(centre + Vector2(cos(angle), sin(angle)) * 6.0,
 			centre + Vector2(cos(angle), sin(angle)) * (radius - 3.0),
-			rack.ink, 2.5, true)
+			rack.ink if pointer.a <= 0.0 else pointer, 2.5, true)
 
 		# Compact draws the dial and stops: its name and its number belong to whatever
 		# placed it, and drawing them here too would print one over the other.
@@ -1667,22 +1781,26 @@ class Fader extends Knob:
 ## The title is left to the caller: the rack draws its own into the band, the panel gives
 ## the band to a Label so it can clip and ellipsise like every other name in the inspector.
 static func draw_plate(canvas: CanvasItem, rect: Rect2, band: float,
-		tint: Color) -> void:
+		tint: Color, skin_colours: Dictionary = {}) -> void:
+	var face: Color = skin_colours.get("panel", PANEL)
+	var low: Color = skin_colours.get("panel_low", PANEL_LOW)
+	var edge: Color = skin_colours.get("panel_edge", PANEL_EDGE)
+
 	# Panel, with a faint vertical gradient. Aluminium is not flat.
-	canvas.draw_rect(rect, PANEL)
+	canvas.draw_rect(rect, face)
 	var step := rect.size.y / 8.0
 	for i in 8:
 		canvas.draw_rect(Rect2(rect.position.x, rect.position.y + i * step,
-			rect.size.x, step + 1.0), PANEL.lerp(PANEL_LOW, i / 7.0))
+			rect.size.x, step + 1.0), face.lerp(low, i / 7.0))
 
 	canvas.draw_line(Vector2(rect.position.x + 0.5, rect.position.y),
-		Vector2(rect.position.x + 0.5, rect.end.y), PANEL_EDGE, 1.0)
+		Vector2(rect.position.x + 0.5, rect.end.y), edge, 1.0)
 	canvas.draw_line(Vector2(rect.end.x - 0.5, rect.position.y),
 		Vector2(rect.end.x - 0.5, rect.end.y), Color(0, 0, 0, 0.35), 1.0)
 
 	# Category stripe under the title, a module's only use of colour for identity — the
 	# title says the same thing in words.
-	if band > 0.0:
+	if band > 0.0 and bool(skin_colours.get("stripe", true)):
 		canvas.draw_rect(Rect2(rect.position.x + 10.0,
 			rect.position.y + band - 7.0, rect.size.x - 20.0, 2.0),
 			Color(tint.r, tint.g, tint.b, 0.85))
@@ -1696,10 +1814,15 @@ static func draw_plate(canvas: CanvasItem, rect: Rect2, band: float,
 ## output differ by the marking rather than only by which edge they sit on, which is what
 ## makes the symbol readable away from the module that gave it a side.
 static func draw_socket(canvas: CanvasItem, centre: Vector2, radius: float,
-		is_input: bool, colour: Color) -> void:
-	canvas.draw_circle(centre, radius, Color(0.20, 0.21, 0.24))
+		is_input: bool, colour: Color, skin_colours: Dictionary = {}) -> void:
+	# The nut around the hole. Every theme in the family has a black jack field, so this
+	# is the ring colour brought most of the way down to the panel rather than a token of
+	# its own - a metal collar catching a little of whatever it is screwed into.
+	var ring: Color = skin_colours.get("ring", Color(0, 0, 0, 0))
+	var nut := Color(0.20, 0.21, 0.24) if ring.a <= 0.0 else ring.darkened(0.72)
+	canvas.draw_circle(centre, radius, nut)
 	canvas.draw_circle(centre, radius, Color(0, 0, 0, 0.55), false, 1.0)
-	canvas.draw_circle(centre, radius - radius * 0.27, JACK_HOLE)
+	canvas.draw_circle(centre, radius - radius * 0.27, skin_colours.get("jack", JACK_HOLE))
 	if is_input:
 		canvas.draw_circle(centre, radius - radius * 0.14, colour, false,
 			maxf(radius * 0.18, 1.0))
@@ -1713,7 +1836,7 @@ static func draw_socket(canvas: CanvasItem, centre: Vector2, radius: float,
 ## something else — the panel's blocks run their envelope down to the edge, and a screw
 ## through a fader's label is not a detail, it is a collision.
 static func draw_screws(canvas: CanvasItem, rect: Rect2, radius: float = 3.4,
-		both_rails: bool = true) -> void:
+		both_rails: bool = true, skin_colours: Dictionary = {}) -> void:
 	var inset := radius * 3.2
 	var points := [Vector2(rect.position.x + inset, rect.position.y + inset * 0.8),
 		Vector2(rect.end.x - inset, rect.position.y + inset * 0.8)]
@@ -1721,7 +1844,7 @@ static func draw_screws(canvas: CanvasItem, rect: Rect2, radius: float = 3.4,
 		points.append(Vector2(rect.position.x + inset, rect.end.y - inset * 0.8))
 		points.append(Vector2(rect.end.x - inset, rect.end.y - inset * 0.8))
 	for point: Vector2 in points:
-		canvas.draw_circle(point, radius, SCREW)
+		canvas.draw_circle(point, radius, skin_colours.get("screw", SCREW))
 		canvas.draw_circle(point, radius, Color(0, 0, 0, 0.5), false, 1.0)
 
 
