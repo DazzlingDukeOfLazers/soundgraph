@@ -7757,6 +7757,18 @@ func _initialize() -> void:
 	check(main.schematic.visible and not main.graph_edit.face_edit,
 		"turning on the schematic turns face edit off")
 
+	# The way out has to be on screen. The case band is measured from the nodes, and the
+	# schematic hides them - so the band went with them, and with it every control for
+	# leaving. It was a room with no door.
+	var exits: Dictionary = main.graph_edit._case_chip_rects()
+	check(exits.size() == 3 and main.graph_edit.case_box().size.x > 0.0,
+		"the schematic keeps the band, so there is a way back out of it (%d chips)"
+			% exits.size())
+	# And the band stops being a drag handle while it is up: there are no visible nodes
+	# under it, so a drag would move things nobody can see and leave an undo step behind.
+	check(main.graph_edit.mount_up,
+		"and the band knows it is not a handle just now")
+
 	await main._set_face_edit(true)
 	for i in 8:
 		await process_frame
