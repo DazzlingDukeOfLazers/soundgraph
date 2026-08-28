@@ -106,6 +106,7 @@ const WavImport := preload("res://wav_import.gd")
 const MidiImport := preload("res://midi_import.gd")
 const Transcribe := preload("res://transcribe.gd")
 const ModuleThemes := preload("res://module_themes.gd")
+const Schematic := preload("res://schematic.gd")
 const SpeakText := preload("res://speak_text.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
@@ -189,6 +190,11 @@ var graph_edit: GraphEdit
 ## Same class as the side panel's face — one face, two mountings.
 var big_face: PatchFace
 var wires_button: Button
+## The third way of looking at a patch: not where somebody dragged things, and not the
+## instrument, but the graph itself on a grid nobody has moved. See schematic.gd.
+var schematic: Schematic
+var schematic_button: Button
+var schematic_up := false
 ## Which open modules are turned over, and the ModuleFace mounted for each. Session
 ## state, like which side the file's case shows: nothing here is written to the patch.
 var flipped_modules := {}
@@ -758,6 +764,17 @@ func _build_ui() -> void:
 		+ "it on the panel, click it again to take it off. Lit frames are on the face."
 	face_edit_button.toggled.connect(_set_face_edit)
 	graph_edit.get_menu_hbox().add_child(_defocus(face_edit_button))
+
+	# Schematic, beside Face edit: both are ways of looking at the same canvas, and the
+	# bar the camera controls live on is where somebody already is when they change how
+	# they are looking at something.
+	schematic_button = Button.new()
+	schematic_button.toggle_mode = true
+	schematic_button.text = "Schematic"
+	schematic_button.tooltip_text = "The graph on a grid, laid out by what feeds what " \
+		+ "rather than by where anything was dragged. Read-only."
+	schematic_button.toggled.connect(_show_schematic)
+	graph_edit.get_menu_hbox().add_child(_defocus(schematic_button))
 	# Fit, beside the zoom controls: framing is a camera move, so it lives with the
 	# camera. It spent time in the toolbar and before that in the Arrange menu; this
 	# strip is the first home where its neighbours are also about looking.
@@ -936,6 +953,12 @@ func _build_ui() -> void:
 	graph_edit.name = "Wires"
 	graph_edit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	container_tab.add_child(graph_edit)
+
+	schematic = Schematic.new()
+	schematic.visible = false
+	schematic.z_index = 50
+	schematic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container_tab.add_child(schematic)
 
 	big_face = PatchFace.new()
 	big_face.visible = false
@@ -2135,6 +2158,42 @@ func _mount_for(key: String) -> ModuleFace:
 	return shown
 
 
+## Turns the canvas to the schematic and back.
+##
+## Session state, like the face flip: which way you are looking at a patch is not a fact
+## about the patch, so nothing is written and nothing lands in undo.
+##
+## The nodes are hidden rather than moved. A schematic that dragged the real nodes onto
+## its grid would be an edit — it would dirty the document, land in the history, and
+## leave somebody who only wanted a look at it with a patch they have to undo.
+func _show_schematic(on: bool) -> void:
+	if graph_edit == null or schematic == null:
+		return
+	schematic_up = on
+	if on:
+		if big_face != null and big_face.visible:
+			await _flip_container(false)
+			if schematic_button != null:
+				schematic_button.set_pressed_no_signal(true)
+		face_anchor = graph_edit.case_box().position
+		for child in graph_edit.get_children():
+			if child is GraphNode:
+				(child as GraphNode).visible = false
+		graph_edit.clear_connections()
+		for module_name in module_mounts:
+			(module_mounts[module_name] as Control).visible = false
+		schematic.patch = patch
+		schematic.registry = registry
+		schematic.type_colours = TYPE_COLOURS
+		schematic.rebuild()
+		schematic.visible = true
+		_place_face()
+		_say("schematic: %d nodes on the grid" % (patch.get("nodes", []) as Array).size())
+	else:
+		schematic.visible = false
+		await _rebuild_view()
+
+
 func _place_face() -> void:
 	if graph_edit == null:
 		return
@@ -2142,6 +2201,9 @@ func _place_face() -> void:
 	if big_face != null and big_face.visible:
 		big_face.position = face_anchor * zoom - graph_edit.scroll_offset
 		big_face.scale = Vector2(zoom, zoom)
+	if schematic != null and schematic.visible:
+		schematic.position = face_anchor * zoom - graph_edit.scroll_offset
+		schematic.scale = Vector2(zoom, zoom)
 	for module_name in module_mounts:
 		var mount := module_mounts[module_name] as Control
 		if mount.visible and mount.has_meta("anchor"):
