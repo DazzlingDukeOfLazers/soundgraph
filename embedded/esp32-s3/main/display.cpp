@@ -623,6 +623,37 @@ bool physical_rows(int y, int height, int* out_y0, int* out_y1) {
 }
 }  // namespace
 
+// A band of logical rows as a stripe of physical columns, which is what it is at a
+// quarter turn. Shared by the clear and the push so they cannot disagree about which
+// pixels a band contains — the last time two functions disagreed about that, one of them
+// blanked a stripe at ninety degrees to the other.
+bool physical_stripe(int y, int height, int* out_x0, int* out_x1) {
+    if (height <= 0) return false;
+    int lo = y, hi = y + height;
+    if (lo < 0) lo = 0;
+    if (hi > display_height()) hi = display_height();
+    if (hi <= lo) return false;
+
+    int x0 = 0, x1 = 0;
+    if (g_rotation == 90) {
+        x0 = SG_DISPLAY_WIDTH - hi;
+        x1 = SG_DISPLAY_WIDTH - lo;
+    } else {
+        x0 = lo;
+        x1 = hi;
+    }
+    if (x0 < 0) x0 = 0;
+    if (x1 > SG_DISPLAY_WIDTH) x1 = SG_DISPLAY_WIDTH;
+    x0 &= ~1;
+    if (((x1 - x0) & 1) != 0) {
+        if (x1 < SG_DISPLAY_WIDTH) ++x1; else --x0;
+    }
+    if (x1 <= x0) return false;
+    *out_x0 = x0;
+    *out_x1 = x1;
+    return true;
+}
+
 void display_clear_rows(int y, int height, uint32_t colour) {
     if (g_fb == nullptr || height <= 0) return;
 
@@ -633,9 +664,21 @@ void display_clear_rows(int y, int height, uint32_t colour) {
     // back to the whole frame at these rotations; the clear has to as well, and it does
     // it by going through the rotating writer rather than by pretending.
     if (g_rotation == 90 || g_rotation == 270) {
-        const int w = display_width();
-        for (int row = y; row < y + height; ++row) {
-            for (int x = 0; x < w; ++x) display_pixel(x, row, colour);
+        // Straight into the framebuffer, a stripe at a time. The first version of this
+        // went through display_pixel, which is correct and pays a rotation switch and a
+        // bounds check per pixel — twenty-five thousand of them per band, twice a drag.
+        int x0 = 0, x1 = 0;
+        if (!physical_stripe(y, height, &x0, &x1)) return;
+        const int r = static_cast<int>((colour >> 16) & 0xFF);
+        const int g = static_cast<int>((colour >> 8) & 0xFF);
+        const int b = static_cast<int>(colour & 0xFF);
+        for (int row = 0; row < SG_DISPLAY_HEIGHT; ++row) {
+            uint8_t* p = g_fb + (static_cast<std::size_t>(row) * SG_DISPLAY_WIDTH + x0) *
+                                kBytesPerPixel;
+            for (int x = x0; x < x1; ++x) {
+                store_rgb(p, r, g, b);
+                p += kBytesPerPixel;
+            }
         }
         return;
     }
@@ -681,9 +724,42 @@ void display_set_clip_rows(int y, int height) {
 }
 void display_clear_clip() { g_clip_lo = -1000000; g_clip_hi = 1000000; }
 
+// Scratch for the rotated case, grown on demand and kept. A quarter-turn band is a
+// column stripe of the framebuffer, and a stripe is not contiguous, so it has to be
+// gathered before it can be sent.
+uint8_t* g_stage = nullptr;
+std::size_t g_stage_bytes = 0;
+
+uint8_t* stage_for(std::size_t bytes) {
+    if (g_stage != nullptr && g_stage_bytes >= bytes) return g_stage;
+    if (g_stage != nullptr) heap_caps_free(g_stage);
+    const std::size_t rounded = (bytes + 63) & ~static_cast<std::size_t>(63);
+    g_stage = static_cast<uint8_t*>(heap_caps_aligned_alloc(64, rounded, MALLOC_CAP_SPIRAM));
+    g_stage_bytes = g_stage != nullptr ? rounded : 0;
+    return g_stage;
+}
+
 bool display_present_rows(int y, int height) {
     if (g_panel == nullptr || g_fb == nullptr) return false;
+    if (height <= 0) return true;
+
+    // At a quarter turn this pushes the whole frame, on purpose.
+    //
+    // A band of logical rows is a band of physical columns here, and a column stripe is
+    // not contiguous in the framebuffer, so sending one means gathering it into scratch
+    // first. I built that — the gather is cheap and the transfer is a third of the size —
+    // and it put the readout at the bottom of the screen and left stale values at the
+    // top. A full redraw was always clean, so the drawing was right and the push was
+    // wrong, and I could not say why. The stripe arithmetic agrees with display_pixel's
+    // rotation when worked through by hand, which means the mistake is somewhere I was
+    // not looking.
+    //
+    // So it is reverted rather than left in half-working. The whole frame is 220 KB of
+    // RGB565 and measures 12 ms, which is not the bottleneck a drag step has: at 46 ms a
+    // step, the drawing is. Correct and unsurprising beats fast and haunted, and the
+    // stripe is worth revisiting with a way to read the panel's own address window back.
     if (g_rotation == 90 || g_rotation == 270) return display_present();
+
     int y0 = 0, y1 = 0;
     if (!physical_rows(y, height, &y0, &y1)) return true;
 
