@@ -194,6 +194,8 @@ var wires_button: Button
 ## instrument, but the graph itself on a grid nobody has moved. See schematic.gd.
 var schematic: Schematic
 var schematic_button: Button
+## The clipped region the schematic is mounted in. See where it is built.
+var mount_area: Control
 var schematic_up := false
 ## Which open modules are turned over, and the ModuleFace mounted for each. Session
 ## state, like which side the file's case shows: nothing here is written to the patch.
@@ -963,11 +965,25 @@ func _build_ui() -> void:
 	graph_edit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	container_tab.add_child(graph_edit)
 
+	# The region a mount is allowed to occupy: the graph's usable rectangle, which is its
+	# own size less the scrollbars and the zoom cluster.
+	#
+	# Clipping the whole tab was not enough. The tab includes the gutters, so a schematic
+	# wider than the view stopped being drawn over the inspector and started disappearing
+	# *underneath the scrollbars* instead — still the wrong picture, just a smaller wrong.
+	# Sized from usable_rect() every frame, the same rectangle fit_to() frames against, so
+	# what arrives fitted stays fitted.
+	mount_area = Control.new()
+	mount_area.name = "MountArea"
+	mount_area.clip_contents = true
+	mount_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container_tab.add_child(mount_area)
+
 	schematic = Schematic.new()
 	schematic.visible = false
 	schematic.z_index = 50
 	schematic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	container_tab.add_child(schematic)
+	mount_area.add_child(schematic)
 
 	big_face = PatchFace.new()
 	big_face.visible = false
@@ -2226,8 +2242,13 @@ func _place_face() -> void:
 	if big_face != null and big_face.visible:
 		big_face.position = face_anchor * zoom - graph_edit.scroll_offset
 		big_face.scale = Vector2(zoom, zoom)
-	if schematic != null and schematic.visible:
-		schematic.position = face_anchor * zoom - graph_edit.scroll_offset
+	if schematic != null and schematic.visible and mount_area != null:
+		# The mount area tracks the usable rectangle, and the schematic is placed inside
+		# it — so its offset is the canvas transform less where that area begins.
+		var area: Rect2 = graph_edit.usable_rect()
+		mount_area.position = area.position
+		mount_area.size = area.size
+		schematic.position = face_anchor * zoom - graph_edit.scroll_offset - area.position
 		schematic.scale = Vector2(zoom, zoom)
 	for module_name in module_mounts:
 		var mount := module_mounts[module_name] as Control
