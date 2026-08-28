@@ -193,7 +193,6 @@ var wires_button: Button
 ## The third way of looking at a patch: not where somebody dragged things, and not the
 ## instrument, but the graph itself on a grid nobody has moved. See schematic.gd.
 var schematic: Schematic
-var schematic_button: Button
 ## The clipped region the schematic is mounted in. See where it is built.
 var mount_area: Control
 var schematic_up := false
@@ -210,7 +209,6 @@ var flipped_nodes := {}
 ## seams — and climbing writes the edits back into the host as one undo step.
 var dive_stack: Array = []
 var climb_button: Button
-var face_edit_button: Button
 
 # The piano roll and its transport. The clock lives here with the engine; the roll
 # itself only draws and points.
@@ -759,24 +757,10 @@ func _build_ui() -> void:
 	graph_edit.show_zoom_label = true
 	# Face edit, beside the zoom controls it shares a bar with: a mode, so a toggle,
 	# and it lives on the graph because the graph is where the pointing happens.
-	face_edit_button = Button.new()
-	face_edit_button.toggle_mode = true
-	face_edit_button.text = "Face edit"
-	face_edit_button.tooltip_text = "Dress the face from the graph: click a knob to put " \
-		+ "it on the panel, click it again to take it off. Lit frames are on the face."
-	face_edit_button.toggled.connect(_set_face_edit)
-	graph_edit.get_menu_hbox().add_child(_defocus(face_edit_button))
-
-	# Schematic, beside Face edit: both are ways of looking at the same canvas, and the
-	# bar the camera controls live on is where somebody already is when they change how
-	# they are looking at something.
-	schematic_button = Button.new()
-	schematic_button.toggle_mode = true
-	schematic_button.text = "Schematic"
-	schematic_button.tooltip_text = "The graph on a grid, laid out by what feeds what " \
-		+ "rather than by where anything was dragged. Read-only."
-	schematic_button.toggled.connect(_show_schematic)
-	graph_edit.get_menu_hbox().add_child(_defocus(schematic_button))
+	# Face edit and Schematic used to live here, beside the zoom cluster. They are on the
+	# case band now, next to Face view: all three answer "how am I looking at this
+	# patch", and two of them above the canvas with the third on the case meant the set
+	# never read as a set. See _case_chip_rects in patch_graph.gd.
 	# Fit, beside the zoom controls: framing is a camera move, so it lives with the
 	# camera. It spent time in the toolbar and before that in the Arrange menu; this
 	# strip is the first home where its neighbours are also about looking.
@@ -829,6 +813,10 @@ func _build_ui() -> void:
 	# and dragging that band moves everything mounted in it.
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
 	graph_edit.case_flipped.connect(func() -> void: _flip_container(true))
+	graph_edit.case_face_edit_toggled.connect(
+		func() -> void: _set_face_edit(not graph_edit.face_edit))
+	graph_edit.case_schematic_toggled.connect(
+		func() -> void: await _show_schematic(not schematic_up))
 	graph_edit.group_flip_toggled.connect(func(module_name: String) -> void:
 		if flipped_modules.has(module_name):
 			flipped_modules.erase(module_name)
@@ -2195,11 +2183,15 @@ func _show_schematic(on: bool) -> void:
 	if graph_edit == null or schematic == null:
 		return
 	schematic_up = on
+	graph_edit.schematic_on = on
 	if on:
+		# Face edit is a thing you do to the wiring, and there is no wiring here.
+		if graph_edit.face_edit:
+			graph_edit.face_edit = false
+			graph_edit.face_edit_on = false
+			_say("face edit: off — the schematic has no knobs to dress")
 		if big_face != null and big_face.visible:
 			await _flip_container(false)
-			if schematic_button != null:
-				schematic_button.set_pressed_no_signal(true)
 		face_anchor = graph_edit.case_box().position
 		for child in graph_edit.get_children():
 			if child is GraphNode:
@@ -3940,8 +3932,16 @@ func _fit_row_height(line: Control) -> void:
 ## frames of what the face is wearing. Ports are shown but not toggled — a port is
 ## on the plates because its seam exists, so the wand is the tool that moves them.
 
+## Dressing the face is done from the wiring, so turning it on turns the schematic off.
+##
+## The two are not compatible and never were: face edit works by clicking the knobs on
+## the nodes, and the schematic hides the nodes. Left to themselves they would produce a
+## mode that is lit and does nothing, which is worse than a mode that is unavailable.
 func _set_face_edit(on: bool) -> void:
+	if on and schematic_up:
+		await _show_schematic(false)
 	graph_edit.face_edit = on
+	graph_edit.face_edit_on = on
 	if on:
 		_refresh_face_edit_badges()
 	_say("face edit: %s" % ("on — click a knob to dress the face" if on else "off"))

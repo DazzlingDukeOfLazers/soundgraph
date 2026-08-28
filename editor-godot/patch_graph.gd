@@ -611,13 +611,24 @@ func _connection_at(point: Vector2) -> Dictionary:
 func _gui_input(event: InputEvent) -> void:
 	var button := event as InputEventMouseButton
 	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
-		if button.pressed and _case_flip_rect().has_point(button.position):
+		if button.pressed:
+			var chips := _case_chip_rects()
 			# Turn the device over. The graph is its insides and the face is what a
 			# player holds, and they are the same container — so the flip lives on the
-			# container, in the same place on both sides.
-			case_flipped.emit()
-			accept_event()
-			return
+			# container, in the same place on both sides. The other two are modes, and
+			# they sit beside it because they answer the same question.
+			if (chips.get("face_view", Rect2()) as Rect2).has_point(button.position):
+				case_flipped.emit()
+				accept_event()
+				return
+			if (chips.get("face_edit", Rect2()) as Rect2).has_point(button.position):
+				case_face_edit_toggled.emit()
+				accept_event()
+				return
+			if (chips.get("schematic", Rect2()) as Rect2).has_point(button.position):
+				case_schematic_toggled.emit()
+				accept_event()
+				return
 		if button.pressed and _case_band_rect().has_point(button.position):
 			# The band is the handle, as the caption is on a panel knob: the case's
 			# inside is where the work happens — selecting, rubber-banding, dragging
@@ -1079,12 +1090,26 @@ var case_title := "":
 signal case_selected
 ## Somebody asked to turn the container over — wiring to face, or back.
 signal case_flipped
+## The two modes on the band. The editor owns what they mean; the graph only draws them
+## lit and says when one was pressed.
+signal case_face_edit_toggled
+signal case_schematic_toggled
 ## The face is up: the wiring is hidden and the mounted face stands in its place. The
 ## overlays stand down while it is — cables, glows and frames describe the wiring, and
 ## the wiring is what the flip put away.
 var face_up := false:
 	set(value):
 		face_up = value
+		queue_redraw()
+
+## Whether each band mode is on, so the chip can show it. Set by the editor.
+var face_edit_on := false:
+	set(value):
+		face_edit_on = value
+		queue_redraw()
+var schematic_on := false:
+	set(value):
+		schematic_on = value
 		queue_redraw()
 
 ## Something other than a face is mounted on the canvas - the schematic, today.
@@ -1143,15 +1168,56 @@ signal case_move_started
 signal case_moved
 
 ## The control that turns the container over, at the right-hand end of the band.
-func _case_flip_rect() -> Rect2:
+## The controls on the case band, right-aligned, in the order they are read: what you
+## are doing to the face, then the other view, then the face itself.
+##
+## Three chips rather than two buttons in the toolbar and one chip here. They are all
+## answers to "how am I looking at this patch", and having two of them live above the
+## canvas while the third lived on the case meant the set never read as a set.
+const CASE_CHIPS := ["face_edit", "schematic", "face_view"]
+const CASE_CHIP_LABELS := {
+	"face_edit": "FACE EDIT", "schematic": "SCHEMATIC", "face_view": "FACE VIEW",
+}
+
+
+func _case_chip_rects() -> Dictionary:
+	var out: Dictionary = {}
 	var band := _case_band_rect()
 	if band.size.x <= 0.0:
-		return Rect2()
-	var width: float = minf(float(Design.scale(80)) * (zoom if zoom > 0.0 else 1.0),
-		band.size.x * 0.4)
+		return out
+	var font := Design.font(Design.WEIGHT_MEDIUM)
+	if font == null:
+		font = get_theme_default_font()
+	if font == null:
+		return out
+	var scale := zoom if zoom > 0.0 else 1.0
+	var text_size := int(maxf(float(Design.type(Design.SIZE_CONTROL)) * scale, 8.0))
 	var inset := band.size.y * 0.18
-	return Rect2(Vector2(band.end.x - width - inset, band.position.y + inset),
-		Vector2(width, band.size.y - inset * 2.0))
+	var pad := float(Design.scale(8)) * scale
+	var gap := float(Design.scale(6)) * scale
+
+	# Laid out right to left so the rightmost chip keeps its place on the band however
+	# many there are, and the band's own title keeps the left.
+	var edge := band.end.x - inset
+	for index in range(CASE_CHIPS.size() - 1, -1, -1):
+		var key: String = CASE_CHIPS[index]
+		var measured := font.get_string_size(str(CASE_CHIP_LABELS[key]),
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
+		var width := measured.x + pad * 2.0
+		# The whole strip is given at most three quarters of the band; past that the
+		# case is too narrow to carry its own controls and they are simply not drawn.
+		if edge - width < band.position.x + band.size.x * 0.25:
+			break
+		out[key] = Rect2(Vector2(edge - width, band.position.y + inset),
+			Vector2(width, band.size.y - inset * 2.0))
+		edge -= width + gap
+	return out
+
+
+## Kept under its old name because the flip is still the rightmost chip, and the press
+## handling and the tests both reach for it that way.
+func _case_flip_rect() -> Rect2:
+	return _case_chip_rects().get("face_view", Rect2())
 
 
 var _case_dragging := false
@@ -1203,17 +1269,24 @@ func _draw_case() -> void:
 		band * 0.72), case_title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 		text_size, Design.INK_SECOND)
 
-	# The flip, labelled with the side you will get: from in here that is the face.
-	var flip := _case_flip_rect()
-	if flip.size.x > 4.0:
-		draw_rect(flip, Color(Design.ACCENT, 0.16))
-		draw_rect(flip, Color(Design.ACCENT, 0.55), false, 1.0)
-		var flip_label := "FACE"
-		var measured := font.get_string_size(flip_label,
+	# The chips. Face view is a door — press it and you are somewhere else — while the
+	# other two are modes you are either in or not, so those two light up when they are
+	# on and the door never does.
+	var chips := _case_chip_rects()
+	for key in chips:
+		var chip: Rect2 = chips[key]
+		if chip.size.x <= 4.0:
+			continue
+		var lit: bool = (key == "face_edit" and face_edit_on) 			or (key == "schematic" and schematic_on)
+		draw_rect(chip, Color(Design.ACCENT, 0.55 if lit else 0.16))
+		draw_rect(chip, Color(Design.ACCENT, 0.9 if lit else 0.55), false, 1.0)
+		var label := str(CASE_CHIP_LABELS[key])
+		var measured := font.get_string_size(label,
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
-		draw_string(font, flip.position + Vector2((flip.size.x - measured.x) * 0.5,
-			flip.size.y * 0.5 + measured.y * 0.34), flip_label,
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size, Design.ACCENT)
+		draw_string(font, chip.position + Vector2((chip.size.x - measured.x) * 0.5,
+			chip.size.y * 0.5 + measured.y * 0.34), label,
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size,
+			Design.ON_ACCENT if lit else Design.ACCENT)
 
 
 func _draw() -> void:

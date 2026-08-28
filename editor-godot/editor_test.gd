@@ -2856,7 +2856,7 @@ func _initialize() -> void:
 		Rect2(main.widgets["lfo"].position_offset, main.widgets["lfo"].size)))
 	for i in 4:
 		await process_frame
-	main.face_edit_button.button_pressed = true
+	await main._set_face_edit(true)
 	for i in 3:
 		await process_frame
 	check(main.graph_edit.face_edit, "the toolbar button arms face edit")
@@ -3006,7 +3006,7 @@ func _initialize() -> void:
 	check(main.patch["nodes"].size() == seam_nodes_before,
 		"a click on the seam's own jack takes the whole seam out")
 
-	main.face_edit_button.button_pressed = false
+	await main._set_face_edit(false)
 	for i in 3:
 		await process_frame
 	check(not main.graph_edit.face_edit, "the button disarms the mode")
@@ -7744,6 +7744,37 @@ func _initialize() -> void:
 		await process_frame
 	check(not main.schematic.visible,
 		"and turning back brings the wiring out again")
+
+	# The two modes are on the case band beside Face view, and they exclude each other.
+	# Face edit works by clicking the knobs on the nodes and the schematic hides the
+	# nodes, so both at once is a mode that is lit and does nothing.
+	await main._set_face_edit(true)
+	for i in 4:
+		await process_frame
+	await main._show_schematic(true)
+	for i in 8:
+		await process_frame
+	check(main.schematic.visible and not main.graph_edit.face_edit,
+		"turning on the schematic turns face edit off")
+
+	await main._set_face_edit(true)
+	for i in 8:
+		await process_frame
+	check(main.graph_edit.face_edit and not main.schematic_up
+		and not main.schematic.visible,
+		"and turning on face edit turns the schematic off and goes back to the wiring")
+	await main._set_face_edit(false)
+	for i in 4:
+		await process_frame
+
+	# All three live on the band, in reading order.
+	var chips: Dictionary = main.graph_edit._case_chip_rects()
+	check(chips.has("face_edit") and chips.has("schematic") and chips.has("face_view"),
+		"the case band carries all three ways of looking at the patch")
+	if chips.size() == 3:
+		check((chips["face_edit"] as Rect2).position.x < (chips["schematic"] as Rect2).position.x
+			and (chips["schematic"] as Rect2).position.x < (chips["face_view"] as Rect2).position.x,
+			"with face edit and schematic to the left of face view")
 
 	# And through the editor, as document edits.
 	var before_painting := JSON.stringify(main.patch)
