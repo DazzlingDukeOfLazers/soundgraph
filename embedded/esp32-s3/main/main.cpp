@@ -2222,6 +2222,14 @@ void console_task(void*) {
                             (a1 - a0) / ms, (a2 - a1) / ms, (a3 - a2) / ms,
                             (a4 - a3) / ms, (a5 - a4) / ms, (a6 - a5) / ms,
                             (a7 - a6) / ms, (a8 - a7) / ms, (a9 - a8) / ms);
+
+                // Put the screen back. This benchmark draws a knob at 120,120 and a line
+                // of text at 4,4 straight into the framebuffer to time them, and those
+                // land wherever the interface happens to be. Full-width band redraws used
+                // to scrub them away by accident; a column-only redraw has no reason to
+                // touch them, so taking a measurement left a knob-shaped hole in a slider
+                // and looked exactly like the optimisation being wrong.
+                g_surface->redraw();
             } else if (tokens.size() >= 3 && std::strcmp(tokens[1], "bright") == 0) {
                 display_set_brightness(std::atoi(tokens[2]));
                 std::printf("OK brightness %s\n", tokens[2]);
