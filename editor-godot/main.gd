@@ -1781,7 +1781,6 @@ func _flip_container(show_face: bool) -> void:
 		return
 	if show_face:
 		face_anchor = graph_edit.case_box().position
-		var footprint: Rect2 = graph_edit.case_box()
 		graph_edit.face_up = true
 		for child in graph_edit.get_children():
 			if child is GraphNode:
@@ -1791,12 +1790,19 @@ func _flip_container(show_face: bool) -> void:
 			(module_mounts[module_name] as Control).visible = false
 		big_face.visible = true
 		_refresh_face()
-		# As wide as the case it replaces, or its own need if that is more: the face
-		# stands where the wiring stood, and its need is the whole rail, ports to
-		# ports — a scroller's minimum would crop the instrument mid-panel.
+		# As wide as its panels need and no wider.
+		#
+		# It used to stretch to the case it replaced, on the reasoning that the face
+		# stands where the wiring stood. But a graph is usually far wider than the
+		# instrument dressed out of it — 2812 units against 513 on first-synth — and
+		# everything positioned against that width went out into empty canvas with it.
+		# The band's chips sat two thousand units right of the panel, and the face's own
+		# name is a centred label, so it drew halfway across a rectangle nobody can see.
+		#
+		# full_width() is the whole rail, ports to ports, which is the thing that must
+		# not be cropped. The empty stretch beyond it was never doing anything.
 		var natural: Vector2 = big_face.get_combined_minimum_size()
-		big_face.size = Vector2(maxf(big_face.full_width(), footprint.size.x),
-			natural.y)
+		big_face.size = Vector2(maxf(big_face.full_width(), 1.0), natural.y)
 		_place_face()
 	else:
 		graph_edit.face_up = false

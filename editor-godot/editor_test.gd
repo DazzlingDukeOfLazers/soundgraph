@@ -7791,6 +7791,13 @@ func _initialize() -> void:
 	check(is_equal_approx(main.graph_edit.case_box().size.x, main.big_face.full_width()),
 		"with the band over the panel, not over the empty canvas beside it")
 
+	# The face hugs its panels rather than stretching to the case it replaced. It used to
+	# take the width of the wiring — 2812 units against a 513-unit panel on first-synth —
+	# and everything positioned against that width went out into the empty part with it:
+	# the chips, and the face's own name, which is a centred label.
+	check(is_equal_approx(main.big_face.size.x, main.big_face.full_width()),
+		"the face is as wide as its panels and no wider (%d)" % int(main.big_face.size.x))
+
 	# And the door swings both ways now.
 	main.graph_edit.case_flipped.emit()
 	for i in 12:
