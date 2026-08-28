@@ -138,26 +138,26 @@ bool touch_available() { return g_touch != nullptr; }
 
 
 namespace {
-// Panel coordinates into logical ones.
+// The controller's report into the display's logical frame.
 //
-// The FT3168 reports in the panel's own frame, so the display's rotation has to be
-// undone here. The AXS15231B does not: it is the panel's own controller and reports in
-// the orientation the panel is actually being used in — this board reads 0..640 across
-// and 0..172 down, which is the logical frame already. Undoing a rotation it never
-// applied is what sent a touch at x=390 to x=-219 and had fingers triggering sliders
-// nowhere near them.
+// One rotation, from the board profile, and not the display's. The two were the same
+// function for a while because on the watch they happen to agree — its FT3168 reports in
+// panel coordinates and its panel is mounted a half turn over, so undoing the display's
+// rotation was right by coincidence. On the 3.49 they do not agree at all: the AXS15231B
+// is the panel's own controller and already reports in the orientation the panel is used
+// in, so undoing the display's 90 sent a touch at x=390 to x=-219. Its own report is
+// simply mounted a half turn over, which is a fact about the glass and now lives with
+// the other facts about the glass.
+//
+// 90 and 270 are written out for completeness and have never run on hardware.
 void to_logical(int px, int py, int* out_x, int* out_y) {
-#if SG_TOUCH_CHIP_KIND == 2
-    *out_x = px;
-    *out_y = py;
-#else
-    switch (display_rotation()) {
-        case 90:  *out_x = py;                         *out_y = SG_DISPLAY_WIDTH - 1 - px; break;
-        case 180: *out_x = SG_DISPLAY_WIDTH - 1 - px;  *out_y = SG_DISPLAY_HEIGHT - 1 - py; break;
-        case 270: *out_x = SG_DISPLAY_HEIGHT - 1 - py; *out_y = px;                        break;
-        default:  *out_x = px;                         *out_y = py;                        break;
+    const int w = display_width(), h = display_height();
+    switch (SG_TOUCH_ROTATION) {
+        case 90:  *out_x = h - 1 - py; *out_y = px;            break;
+        case 180: *out_x = w - 1 - px; *out_y = h - 1 - py;    break;
+        case 270: *out_x = py;         *out_y = w - 1 - px;    break;
+        default:  *out_x = px;         *out_y = py;            break;
     }
-#endif
 }
 
 bool read_once(int* px, int* py) {

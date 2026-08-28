@@ -186,6 +186,11 @@ def main() -> None:
                 f"#define SG_TOUCH_I2C_SCL {touch.get('scl', -1)}",
                 f"#define SG_TOUCH_INTERRUPT {touch.get('interrupt', -1)}",
                 f"#define SG_TOUCH_RESET {touch.get('reset', -1)}",
+                # How the touch layer sits relative to the panel. Deliberately its own
+                # number rather than the display's rotation: they happened to agree on
+                # the watch, which is why the display's was used for both and why the
+                # 3.49's fingers landed off the far end of the screen.
+                f"#define SG_TOUCH_ROTATION {touch.get('rotation', 0)}",
             ]
         else:
             lines += ["#define SG_TOUCH_PRESENT 0"]

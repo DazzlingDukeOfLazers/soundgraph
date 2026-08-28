@@ -68,7 +68,8 @@
       "sda": 15,
       "scl": 14,
       "interrupt": 38,
-      "reset": 9
+      "reset": 9,
+      "rotation": 180
     },
     "x_offset": 22,
     "rotation": 180,

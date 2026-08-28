@@ -78,7 +78,8 @@
       "sda": 17,
       "scl": 18,
       "interrupt": -1,
-      "reset": -1
+      "reset": -1,
+      "rotation": 180
     },
     "rotation": 0,
     "corner_radius": 0

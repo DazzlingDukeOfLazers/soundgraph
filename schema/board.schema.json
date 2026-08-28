@@ -286,6 +286,17 @@
             },
             "reset": {
               "type": "integer"
+            },
+            "rotation": {
+              "type": "integer",
+              "enum": [
+                0,
+                90,
+                180,
+                270
+              ],
+              "default": 0,
+              "description": "Degrees to rotate the controller's report to reach the display's logical frame. This is a fact about how the touch layer is mounted relative to the panel, and it is not the same number as the display's own rotation \u2014 the two were conflated, which was right for the watch by luck and sent fingers off the far end of the 3.49."
             }
           }
         },

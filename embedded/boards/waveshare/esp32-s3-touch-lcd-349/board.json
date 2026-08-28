@@ -71,7 +71,8 @@
       "sda": 17,
       "scl": 18,
       "interrupt": -1,
-      "reset": -1
+      "reset": -1,
+      "rotation": 180
     },
     "rotation": 90,
     "notes": "The glass is 172x640 and the case holds it long-side horizontal, so the firmware turns it a quarter turn and works in 640x172 \u2014 a bar four times wider than it is tall, which is a genuinely different interface problem from the watch's near-square face. Found by reading the test card sideways, as with every rotation so far.",
