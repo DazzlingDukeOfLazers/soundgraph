@@ -37,6 +37,7 @@ const THEMES := {
 	"oxide-teal": {
 		"name": "Oxide Teal",
 		"blurb": "Deep teal matte, worn edges, soft grain.",
+		"finish": "worn",
 		"faceplate": "1d4f4a", "edge": "16403c", "grain": 0.06,
 		"legend": "eef6f4", "knob": "17191a", "pointer": "5fd3c2",
 		"jack": "121415", "ring": "c9b380", "screw": "8fa3a0",
@@ -45,6 +46,7 @@ const THEMES := {
 	"acid-mustard": {
 		"name": "Acid Mustard",
 		"blurb": "Mustard yellow, slightly dirty lab finish.",
+		"finish": "dirty",
 		"faceplate": "b8912a", "edge": "9c7a1f", "grain": 0.09,
 		"legend": "1a1608", "knob": "24242a", "pointer": "f2d14b",
 		"jack": "121212", "ring": "f2d14b", "screw": "6b5a20",
@@ -53,6 +55,7 @@ const THEMES := {
 	"ultraviolet": {
 		"name": "Ultraviolet",
 		"blurb": "Saturated purple, subtle halftone grain.",
+		"finish": "halftone",
 		"faceplate": "6b34b8", "edge": "56289a", "grain": 0.07,
 		"legend": "f6eeff", "knob": "16121c", "pointer": "cbb0f5",
 		"jack": "110e16", "ring": "ffd23e", "screw": "9d86c4",
@@ -61,6 +64,7 @@ const THEMES := {
 	"carbon-utility": {
 		"name": "Carbon Utility",
 		"blurb": "Charcoal graphite, industrial finish.",
+		"finish": "industrial",
 		"faceplate": "2a2c2f", "edge": "1e2023", "grain": 0.05,
 		"legend": "f2f4f6", "knob": "141516", "pointer": "e8ecef",
 		"jack": "0e0f10", "ring": "8b9298", "screw": "7e868d",
@@ -69,6 +73,7 @@ const THEMES := {
 	"moss-machine": {
 		"name": "Moss Machine",
 		"blurb": "Dark olive green, utilitarian synth-lab feel.",
+		"finish": "matte",
 		"faceplate": "4a5228", "edge": "3a411f", "grain": 0.07,
 		"legend": "f3f5e6", "knob": "17190f", "pointer": "b9c76a",
 		"jack": "111208", "ring": "e3c73f", "screw": "97a06a",
@@ -79,6 +84,7 @@ const THEMES := {
 	"ivory-lab": {
 		"name": "Ivory Lab",
 		"blurb": "Warm ivory, black legends, scientific lab look.",
+		"finish": "matte",
 		"faceplate": "e9e2d0", "edge": "d3ccb9", "grain": 0.04,
 		"legend": "17150f", "knob": "1a1a1c", "pointer": "e9e2d0",
 		"jack": "141414", "ring": "b84a4a", "screw": "9a9384",
@@ -87,6 +93,7 @@ const THEMES := {
 	"safety-orange": {
 		"name": "Safety Orange",
 		"blurb": "Matte safety orange, warning-label energy.",
+		"finish": "matte",
 		"faceplate": "d95a10", "edge": "b8480a", "grain": 0.06,
 		"legend": "1a0d04", "knob": "1c1c1e", "pointer": "ffffff",
 		"jack": "121212", "ring": "f2f2f2", "screw": "8a4410",
@@ -95,6 +102,7 @@ const THEMES := {
 	"bakelite-brown": {
 		"name": "Bakelite Brown",
 		"blurb": "Deep brown-burgundy, cream legends.",
+		"finish": "dirty",
 		"faceplate": "42211c", "edge": "331a15", "grain": 0.08,
 		"legend": "f0e2cb", "knob": "e2d3b4", "pointer": "42211c",
 		"jack": "120c0a", "ring": "b58a4a", "screw": "8a6a52",
@@ -103,6 +111,7 @@ const THEMES := {
 	"anodized-blue": {
 		"name": "Anodized Blue",
 		"blurb": "Electric anodized blue, machined look.",
+		"finish": "machined",
 		"faceplate": "1546c8", "edge": "0f37a4", "grain": 0.05,
 		"legend": "f0f5ff", "knob": "141519", "pointer": "cfd6e0",
 		"jack": "0e1016", "ring": "c2cbd6", "screw": "93a3c4",
@@ -111,6 +120,7 @@ const THEMES := {
 	"frosted-ice": {
 		"name": "Frosted Ice",
 		"blurb": "Pale grey-blue, calm and minimal.",
+		"finish": "matte",
 		"faceplate": "ccd6dd", "edge": "b4c0c9", "grain": 0.03,
 		"legend": "13181c", "knob": "8e9aa3", "pointer": "13181c",
 		"jack": "16191c", "ring": "5fb8e8", "screw": "8a949c",
@@ -119,6 +129,7 @@ const THEMES := {
 	"monochrome-zine": {
 		"name": "Monochrome Zine",
 		"blurb": "Black and off-white, photocopied poster.",
+		"finish": "photocopy",
 		"faceplate": "141414", "edge": "0a0a0a", "grain": 0.12,
 		"legend": "f2f0ea", "knob": "0e0e0e", "pointer": "f2f0ea",
 		"jack": "060606", "ring": "f2f0ea", "screw": "9a9a9a",

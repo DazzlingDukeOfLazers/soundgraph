@@ -2,6 +2,7 @@ class_name Rack
 extends Control
 
 const ModuleThemes := preload("res://module_themes.gd")
+const Faceplate := preload("res://faceplate.gd")
 const Seams := preload("res://seams.gd")
 ## Graphrack — the same patch, drawn as a Eurorack case.
 ##
@@ -201,7 +202,7 @@ static func skin(key: String) -> Dictionary:
 			"legend": Color(0, 0, 0, 0),   # empty: the rack's own ink is used
 			"knob": KNOB_BODY, "pointer": Color(0, 0, 0, 0),
 			"jack": JACK_HOLE, "ring": JACK_RING, "screw": SCREW,
-			"stripe": true,
+			"stripe": true, "finish": "", "grain": 0.0,
 		}
 	var face := ModuleThemes.token(key, "faceplate")
 	var grain: float = float(ModuleThemes.THEMES[key].get("grain", 0.05))
@@ -220,6 +221,8 @@ static func skin(key: String) -> Dictionary:
 		# The category stripe is the default theme's way of saying what a module is. A
 		# painted panel says it a different way, and two of them at once is noise.
 		"stripe": false,
+		"finish": str(ModuleThemes.THEMES[key].get("finish", "matte")),
+		"grain": grain,
 	}
 
 
@@ -1793,6 +1796,21 @@ static func draw_plate(canvas: CanvasItem, rect: Rect2, band: float,
 		canvas.draw_rect(Rect2(rect.position.x, rect.position.y + i * step,
 			rect.size.x, step + 1.0), face.lerp(low, i / 7.0))
 
+	# The finish, over the colour and under everything else. Tiled rather than stretched,
+	# so a tall module and a short one have the same size of grain - a stretched texture
+	# would make the finish a property of the module's height, which it is not.
+	var finish := str(skin_colours.get("finish", ""))
+	if finish != "":
+		# Grain runs 0.03 to 0.12, so the multiplier decides everything. Six put a 0.43
+		# alpha over the mustard panel and the finish stopped being a finish - it read as
+		# upholstery. Three, ceilinged at a third, leaves a surface you notice only when
+		# you look for it, which is what a finish is.
+		var grain := float(skin_colours.get("grain", 0.06))
+		canvas.draw_texture_rect(Faceplate.texture(finish), rect, true,
+			Color(1, 1, 1, clampf(grain * 3.0 * Faceplate.strength(finish), 0.0, 0.33)))
+		if finish == "worn":
+			_draw_wear(canvas, rect)
+
 	canvas.draw_line(Vector2(rect.position.x + 0.5, rect.position.y),
 		Vector2(rect.position.x + 0.5, rect.end.y), edge, 1.0)
 	canvas.draw_line(Vector2(rect.end.x - 0.5, rect.position.y),
@@ -1828,6 +1846,32 @@ static func draw_socket(canvas: CanvasItem, centre: Vector2, radius: float,
 			maxf(radius * 0.18, 1.0))
 	else:
 		canvas.draw_circle(centre, radius - radius * 0.5, colour)
+
+
+## Worn edges: a panel that has been in and out of a case rubs bright at its corners and
+## dark along its sides.
+##
+## Drawn rather than baked into the tile because it is a fact about the *edge* of a panel,
+## and a tiled texture has no idea where the edge is. Nested rectangles rather than a
+## gradient: a handful of one-pixel outlines at decreasing alpha is the same picture and
+## costs nothing, where a real gradient here would mean a second texture per module size.
+static func _draw_wear(canvas: CanvasItem, rect: Rect2) -> void:
+	for i in 5:
+		var inset := float(i)
+		var fade := (1.0 - inset / 5.0) * 0.10
+		canvas.draw_rect(Rect2(rect.position + Vector2.ONE * inset,
+			rect.size - Vector2.ONE * inset * 2.0), Color(1, 1, 1, fade * 0.45), false, 1.0)
+	# And the rub along the two long sides, where a rack module is actually handled.
+	for i in 3:
+		var inset := float(i)
+		canvas.draw_line(
+			Vector2(rect.position.x + inset + 0.5, rect.position.y + 6.0),
+			Vector2(rect.position.x + inset + 0.5, rect.end.y - 6.0),
+			Color(1, 1, 1, 0.05 * (1.0 - inset / 3.0)), 1.0)
+		canvas.draw_line(
+			Vector2(rect.end.x - inset - 0.5, rect.position.y + 6.0),
+			Vector2(rect.end.x - inset - 0.5, rect.end.y - 6.0),
+			Color(0, 0, 0, 0.10 * (1.0 - inset / 3.0)), 1.0)
 
 
 ## The mounting screws, in the rail above and below.

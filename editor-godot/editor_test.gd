@@ -19,6 +19,8 @@ const PianoRoll := preload("res://piano_roll.gd")
 const Transcribe := preload("res://transcribe.gd")
 ## The faceplate themes, and the rack colours they resolve to.
 const ModuleThemes := preload("res://module_themes.gd")
+## The generated faceplate finishes.
+const Faceplate := preload("res://faceplate.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -7544,6 +7546,73 @@ func _initialize() -> void:
 			cabled += 1
 	check(cabled == ModuleThemes.ORDER.size(),
 		"every theme carries one cable colour per signal type")
+
+	# ---- and the finish on them ----------------------------------------------------
+	# A theme names a surface as well as a colour, and for a while only the colour was
+	# drawn: worn edges, a halftone and a photocopy all came out as the same flat
+	# rectangle in three hues.
+	var named := 0
+	for key in ModuleThemes.ORDER:
+		var finish := str(ModuleThemes.THEMES[key].get("finish", ""))
+		if Faceplate.FINISHES.has(finish):
+			named += 1
+	check(named == ModuleThemes.ORDER.size(),
+		"every theme names a finish the generator knows (%d of %d)"
+			% [named, ModuleThemes.ORDER.size()])
+
+	# Built once. A rack redraws constantly and generating a tile per frame would be a
+	# quiet way to make scrolling cost a fortune.
+	check(Faceplate.texture("worn") == Faceplate.texture("worn"),
+		"a finish is generated once and kept")
+	check(Faceplate.texture("not-a-finish") == Faceplate.texture("matte"),
+		"and an unknown finish falls back to matte rather than to nothing")
+
+	# Each one has to actually be a different surface. The failure this guards against is
+	# not a crash - it is seven finishes that all quietly render the same speckle.
+	var signatures: Dictionary = {}
+	for finish in Faceplate.FINISHES:
+		var tile: Image = Faceplate.texture(str(finish)).get_image()
+		var marked := 0.0
+		for y in range(0, tile.get_height(), 4):
+			for x in range(0, tile.get_width(), 4):
+				marked += tile.get_pixel(x, y).a
+		signatures[str(finish)] = snappedf(marked, 0.01)
+	var distinct: Array = []
+	for value in signatures.values():
+		if not distinct.has(value):
+			distinct.append(value)
+	check(distinct.size() == Faceplate.FINISHES.size(),
+		"the %d finishes are %d different surfaces"
+			% [Faceplate.FINISHES.size(), distinct.size()])
+
+	# The halftone is the one with a shape rather than a scatter, and the way to say that
+	# is periodicity rather than loudness. It was written as "fewer marked pixels than the
+	# grains", which was true of the first draft and stopped being true the moment the
+	# others were quietened - a check that encodes a passing coincidence rather than the
+	# property. A dot screen repeats at its pitch; noise does not.
+	var pitch := 8
+	var repeats: Dictionary = {}
+	for finish in Faceplate.FINISHES:
+		var tile: Image = Faceplate.texture(str(finish)).get_image()
+		var same := 0
+		for x in tile.get_width():
+			if absf(tile.get_pixel(x, pitch).a
+					- tile.get_pixel((x + pitch) % tile.get_width(), pitch).a) < 0.01:
+				same += 1
+		repeats[str(finish)] = same
+	var noisiest := 0
+	for finish in Faceplate.FINISHES:
+		if str(finish) != "halftone":
+			noisiest = maxi(noisiest, int(repeats[str(finish)]))
+	check(int(repeats["halftone"]) == 96 and noisiest < 48,
+		"the halftone is a screen and the rest are not (%d of 96 against %d)"
+			% [int(repeats["halftone"]), noisiest])
+
+	# An unpainted rack draws no texture at all - the default is the panel it always was.
+	check(str(Rack.skin(ModuleThemes.CATEGORY).get("finish", "")) == "",
+		"the category default has no finish to lay over anything")
+	check(str(Rack.skin("oxide-teal").get("finish", "")) == "worn",
+		"and a painted one carries the surface its board described")
 
 	# And through the editor, as document edits.
 	var before_painting := JSON.stringify(main.patch)
