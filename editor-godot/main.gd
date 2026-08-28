@@ -104,6 +104,7 @@ const DeviceBlurbs := preload("res://device_blurbs.gd")
 const FeedbackSubmitter := preload("res://feedback_submitter.gd")
 const WavImport := preload("res://wav_import.gd")
 const MidiImport := preload("res://midi_import.gd")
+const Transcribe := preload("res://transcribe.gd")
 const SpeakText := preload("res://speak_text.gd")
 const ProbeScope := preload("res://probe_scope.gd")
 
@@ -219,6 +220,7 @@ var roll_tempo: ValueField
 var roll_division: ValueField
 var roll_bars_menu: PopupMenu
 var midi_dialog: FileDialog
+var audio_dialog: FileDialog
 var roll_open := false
 var roll_playing := false
 var _roll_clock := 0.0
@@ -1104,6 +1106,16 @@ func _build_ui() -> void:
 	midi_dialog.file_selected.connect(_import_midi_file)
 	add_child(midi_dialog)
 
+	audio_dialog = FileDialog.new()
+	audio_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	audio_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	for filter in Transcribe.FILTERS:
+		var halves: PackedStringArray = str(filter).split(" ; ")
+		audio_dialog.add_filter(halves[0], halves[1])
+	audio_dialog.title = "Transcribe a recording into the piano roll"
+	audio_dialog.file_selected.connect(_transcribe_audio_file)
+	add_child(audio_dialog)
+
 	if _on_web():
 		_install_web_file_bridge()
 
@@ -1199,6 +1211,15 @@ func _on_file_menu(id: int) -> void:
 			_say("MIDI import is desktop-only for now")
 			return
 		midi_dialog.popup_centered_ratio(0.6)
+		return
+	if id == 6:
+		if _on_web():
+			_say("transcribing is desktop-only — it runs a separate program")
+			return
+		if Transcribe.binary_path() == "":
+			_say("no transcriber built — see tools/sg-transcribe/README.md")
+			return
+		audio_dialog.popup_centered_ratio(0.6)
 		return
 	_importing_module = id == 1
 	_importing_definition = id == 3
@@ -5385,6 +5406,49 @@ func _say_into_roll(text: String) -> void:
 		"" if syllables == 1 else "s", text.strip_edges().left(28),
 		" — %d past the end stayed behind" % int(spoken["dropped"])
 			if int(spoken["dropped"]) > 0 else ""])
+
+
+## A recording becomes the roll. One undo step, roll opened on it, the same bargain the
+## MIDI reader and the text driver both strike.
+##
+## The tempo and division already on the roll are what the transcription is laid against,
+## because they are what the person has been working in. The model hears absolute time;
+## something has to decide the grid, and the roll's own settings are a better guess than
+## anything this could invent.
+func _transcribe_audio_file(path: String) -> void:
+	_say("listening to %s…" % path.get_file())
+	# Godot has no way to paint before a blocking call returns, and this one takes a
+	# second or two on a long recording. The line above is posted, the frame is let
+	# through, and only then does the process start - otherwise the first thing anybody
+	# sees is the result, and the editor looks frozen in between.
+	await get_tree().process_frame
+
+	var tempo: float = float(patch.get("sequence", {}).get("tempo", 120.0))
+	var heard: Dictionary = Transcribe.run(path, tempo, _roll_division())
+	if not bool(heard["ok"]):
+		_say(str(heard["error"]))
+		return
+
+	var sequence: Dictionary = heard["sequence"]
+	_begin_edit()
+	patch["sequence"] = sequence
+	_commit_edit("transcribe %s" % path.get_file())
+	if not roll_open:
+		_set_roll_open(true)
+	piano_roll.sequence = patch["sequence"]
+	piano_roll.scroll_step = 0
+	_refresh_roll_tempo_text()
+	piano_roll.queue_redraw()
+
+	var notes: Array = sequence.get("notes", [])
+	var lowest := 127
+	var highest := 0
+	for note in notes:
+		lowest = mini(lowest, int(note["note"]))
+		highest = maxi(highest, int(note["note"]))
+	_say("%d note%s from %s, %s to %s — press Play" % [notes.size(),
+		"" if notes.size() == 1 else "s", path.get_file(),
+		_note_name(lowest), _note_name(highest)])
 
 
 ## The piece grows a bar at a time under notes placed past its end: the window can

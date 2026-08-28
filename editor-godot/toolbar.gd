@@ -295,6 +295,7 @@ func _build() -> void:
 	file_popup.add_item("Add module…", 1)
 	file_popup.add_item("Add module as definition…", 3)
 	file_popup.add_item("Import MIDI…", 5)
+	file_popup.add_item("Transcribe audio…", 6)
 	file_popup.add_item("Save as…", 2)
 	# By index, via the id. set_item_tooltip takes a position and these were being handed
 	# an id: item 3 does not exist in a four-item menu, so Godot logged an out-of-bounds

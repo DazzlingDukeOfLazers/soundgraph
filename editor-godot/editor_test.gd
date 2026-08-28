@@ -13,6 +13,10 @@ const RackView := preload("res://rack.gd")
 const SpeakText := preload("res://speak_text.gd")
 ## For its ceiling — the roll holds a fixed number of steps and typed text does not.
 const PianoRoll := preload("res://piano_roll.gd")
+## The transcriber's editor half. The parsing is reachable with no binary and no
+## audio anywhere near it, which is the only way a feature that shells out can be
+## checked on a machine that has not built the thing it shells out to.
+const Transcribe := preload("res://transcribe.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -7503,6 +7507,69 @@ func _initialize() -> void:
 	check(main.keyboard.visible and main.keyboard.custom_minimum_size.y
 			== Design.scale(112),
 		"and full is the whole piano again")
+
+	# ---- a recording becomes the roll -------------------------------------------
+	# The parsing first, which needs neither the binary nor a sound file. sg-transcribe
+	# writes a whole patch and only its roll is wanted, so what comes back has to be
+	# picked out of it - and a recording with nothing in it must read as nothing rather
+	# than as an empty tune quietly replacing the one already there.
+	check(Transcribe.sequence_from(JSON.stringify({
+		"sequence": {"tempo": 120.0, "division": 4, "steps": 16,
+			"notes": [{"step": 0, "note": 60, "length": 4}]}})).has("notes"),
+		"a transcribed patch gives up its roll")
+	check(Transcribe.sequence_from(JSON.stringify({"nodes": []})).is_empty()
+		and Transcribe.sequence_from(JSON.stringify({
+			"sequence": {"notes": []}})).is_empty()
+		and Transcribe.sequence_from("not json at all").is_empty(),
+		"and a recording with no notes in it reads as nothing, not as an empty tune")
+
+	# The patch handed over to be written into is deliberately empty: the roll is the
+	# only part wanted back, and sending the open document through somebody else's
+	# writer to retrieve one section would be risk without gain.
+	var carrier: Variant = JSON.parse_string(Transcribe.carrier_text())
+	check(carrier is Dictionary and (carrier as Dictionary).has("nodes")
+		and ((carrier as Dictionary)["nodes"] as Array).is_empty(),
+		"the patch it writes into carries nothing of its own")
+
+	# And the menu says so when there is nothing to run. The binary is optional - it
+	# needs a machine-learning runtime - so this must be a sentence rather than a
+	# silence or a crash.
+	var transcriber := Transcribe.binary_path()
+	check(transcriber == "" or FileAccess.file_exists(transcriber),
+		"the transcriber is either found or honestly absent")
+	if transcriber == "":
+		var refused: Dictionary = Transcribe.run("nothing.wav", 120.0, 4)
+		check(not bool(refused["ok"]) and str(refused["error"]).contains("sg-transcribe"),
+			"and with none built, it points at the README rather than failing silently")
+	else:
+		# End to end, over the MP3 committed for exactly this. Six notes were played into
+		# that file; six notes should come back out of it and into the document.
+		var stage_before := JSON.stringify(main.patch)
+		var fixture := ProjectSettings.globalize_path(
+			"res://../tools/sg-transcribe/fixtures/melody.mp3")
+		if not FileAccess.file_exists(fixture):
+			check(false, "the MP3 fixture is missing")
+		else:
+			main._set_roll_open(false)
+			await main._transcribe_audio_file(fixture)
+			for i in 8:
+				await process_frame
+			var transcribed: Dictionary = main.patch.get("sequence", {})
+			var came_back: Array = []
+			for heard_note in transcribed.get("notes", []):
+				came_back.append(int(heard_note["note"]))
+			check(came_back == [60, 64, 67, 72, 67, 64],
+				"a recording transcribes into the roll as the notes that were played (%s)"
+					% str(came_back))
+			check(main.roll_open, "and the roll opens on what it heard")
+			await main._undo()
+			for i in 6:
+				await process_frame
+			check(main.patch.get("sequence", {}) != transcribed,
+				"and one undo takes the whole recording back out")
+			await main._load_text(stage_before)
+			for i in 6:
+				await process_frame
 
 	# The letters on the keys are training wheels somebody can take off. The size
 	# radios and the hints checkbox share one popup, so flipping the size must not
