@@ -638,12 +638,12 @@ void display_clear_rows(int y, int height, uint32_t colour) {
 }
 
 int display_safe_inset(int y) {
-    // Solved from a photograph rather than guessed twice. A label centred on the right
-    // slider was cut about 49 px in at row 10; the only radius that puts the glass edge
-    // there is close to 90, and the first estimate of 62 predicted 28 — which is why the
-    // helper shifted the value into view and left the label above it still clipped.
-    // These corners are far bigger than they look on a face this small.
-    constexpr float kCorner = 92.0f;
+    // The corner radius belongs to the board, not to this file. It was 92 here, measured
+    // off the watch's glass by finding where a label got cut — correct for that panel and
+    // nonsense for a rectangular one, which was pushing its readouts sixty pixels inward
+    // for corners it does not have until two of them collided mid-screen.
+    constexpr float kCorner = SG_DISPLAY_CORNER_RADIUS;
+    if (kCorner <= 0.0f) return 0;
     const int h = display_height();
     float depth = 0.0f;
     if (y < kCorner) depth = kCorner - static_cast<float>(y);

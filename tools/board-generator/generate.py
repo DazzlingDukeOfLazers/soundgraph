@@ -139,6 +139,9 @@ def main() -> None:
             # every command and shows nothing, which is indistinguishable from a dead
             # backlight and is exactly how the watch lost an evening.
             f"#define SG_DISPLAY_CHIP_KIND {display_chip_kind(display)}",
+            # How much of each corner is not there. Text near an edge asks the display
+            # layer for the inset at its row; a rectangular panel answers zero.
+            f"#define SG_DISPLAY_CORNER_RADIUS {display.get('corner_radius', 0)}",
             f"#define SG_DISPLAY_WIDTH {display['width']}",
             f"#define SG_DISPLAY_HEIGHT {display['height']}",
             f"#define SG_DISPLAY_X_OFFSET {display.get('x_offset', 0)}",

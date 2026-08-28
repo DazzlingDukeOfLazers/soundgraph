@@ -932,17 +932,63 @@ void lab_redraw_moving(int index) {
 // previous occupant moves to the right. The two most recent choices are always the two
 // under your hands, and there is no mode to be in and nothing to arm.
 
-constexpr int kListX = 22;
-constexpr int kListW = 134;
-constexpr int kListTop = 46;
-constexpr int kRowHeight = 42;
-constexpr int kSlotX[2] = {166, 290};
-constexpr int kSlotW = 112;
-constexpr int kTrackTop = 88;
-constexpr int kTrackBottom = 462;
-constexpr int kBarWidth = 44;
-constexpr int kReadoutTop = 16;
-constexpr int kReadoutHeight = 70;
+// The layout is a function of the glass, not a constant.
+//
+// On the watch — 410x502, near square — nine sliders would each be forty pixels wide and
+// the labels unreadable, so two sliders share the screen with a list that says which two.
+// On the 3.49 — 640x172, a bar four times wider than tall — there is room for every
+// control at once and no room at all for a nine-row list beside them. Same surface, and
+// the shape of the board decides which arrangement it wears.
+struct SliderLayout {
+    bool strip = false;      // one column per control, no list, nothing to choose
+    int columns = 2;
+    int slot_x = 0, slot_w = 0, slot_gap = 0;
+    int track_top = 0, track_bottom = 0, bar_width = 0;
+    int readout_top = 0, readout_height = 0;
+    int label_y = -1;        // strip only: the name under its own slider
+    int list_x = 0, list_w = 0, list_top = 0, row_height = 0;
+
+    int column_x(int i) const { return slot_x + i * (slot_w + slot_gap); }
+};
+
+SliderLayout slider_layout() {
+    const int w = display_width(), h = display_height();
+    const int count = static_cast<int>(g_ui_controls.size());
+    SliderLayout out;
+
+    // Wider than twice its height, and every control fits across it: a mixer strip.
+    if (w >= h * 2 && count > 0 && w / count >= 46) {
+        out.strip = true;
+        out.columns = count;
+        const int margin = 14;
+        out.slot_gap = 4;
+        out.slot_w = (w - margin * 2 - out.slot_gap * (count - 1)) / count;
+        out.slot_x = margin;
+        out.readout_top = 4;
+        out.readout_height = 20;
+        out.track_top = 30;
+        out.track_bottom = h - 26;
+        out.label_y = h - 20;
+        out.bar_width = out.slot_w - 10;
+        if (out.bar_width > 30) out.bar_width = 30;
+        return out;
+    }
+
+    out.columns = 2;
+    out.slot_x = 166;
+    out.slot_w = 112;
+    out.slot_gap = 12;
+    out.track_top = 88;
+    out.track_bottom = h - 40;
+    out.bar_width = 44;
+    out.readout_top = 16;
+    out.readout_height = 70;
+    out.list_x = 22;
+    out.list_w = 134;
+    out.list_top = 46;
+    out.row_height = 42;
+    return out;
+}
 
 int g_slider_bound[2] = {0, 1};
 
@@ -967,82 +1013,96 @@ void text_centred_safe(int centre, int y, const char* text, int scale, uint32_t 
 void paint_sliders(int lo, int hi) {
     const Theme& t = theme();
     const uint32_t lit = lab_colour();
+    const SliderLayout L = slider_layout();
     const int count = static_cast<int>(g_ui_controls.size());
 
-    for (int row = 0; row < count; ++row) {
-        const int y = kListTop + row * kRowHeight;
-        if (!overlaps(lo, hi, y - 4, y + kRowHeight - 4)) continue;
-        const bool on_a = g_slider_bound[0] == row;
-        const bool on_b = g_slider_bound[1] == row;
-        const uint32_t ink = on_a ? lit : (on_b ? display_dim(lit, 52) : t.ink_dim);
-        display_text(kListX + 8, y, g_ui_controls[static_cast<std::size_t>(row)].label.c_str(),
-                     2, ink);
-        if (on_a || on_b) {
-            display_text(kListX + kListW - 14, y, on_a ? "1" : "2", 2, display_dim(ink, 70));
+    // The list, when there is one. On a strip every control is already on screen with its
+    // name under it, so there is nothing to choose and nothing to draw here.
+    if (!L.strip) {
+        for (int row = 0; row < count; ++row) {
+            const int y = L.list_top + row * L.row_height;
+            if (!overlaps(lo, hi, y - 4, y + L.row_height - 4)) continue;
+            const bool on_a = g_slider_bound[0] == row;
+            const bool on_b = g_slider_bound[1] == row;
+            const uint32_t ink = on_a ? lit : (on_b ? display_dim(lit, 52) : t.ink_dim);
+            display_text(L.list_x + 8, y,
+                         g_ui_controls[static_cast<std::size_t>(row)].label.c_str(), 2, ink);
+            if (on_a || on_b) {
+                display_text(L.list_x + L.list_w - 14, y, on_a ? "1" : "2", 2,
+                             display_dim(ink, 70));
+            }
         }
     }
 
-    for (int slot = 0; slot < 2; ++slot) {
-        const int bound = g_slider_bound[slot];
+    for (int slot = 0; slot < L.columns; ++slot) {
+        const int bound = L.strip ? slot : g_slider_bound[slot];
         if (bound < 0 || bound >= count) continue;
         const UiControl& control = g_ui_controls[static_cast<std::size_t>(bound)];
         const float span = control.max_value - control.min_value;
         const float fraction = span > 0.0f ? (control.value - control.min_value) / span : 0.0f;
-        const int fill_y = kTrackBottom -
-                           static_cast<int>(fraction * (kTrackBottom - kTrackTop) + 0.5f);
-        const float cx = static_cast<float>(kSlotX[slot] + kSlotW / 2);
+        const int fill_y = L.track_bottom -
+                           static_cast<int>(fraction * (L.track_bottom - L.track_top) + 0.5f);
+        const int centre = L.column_x(slot) + L.slot_w / 2;
+        const float cx = static_cast<float>(centre);
 
-        if (overlaps(lo, hi, kReadoutTop, kReadoutTop + kReadoutHeight)) {
+        if (overlaps(lo, hi, L.readout_top, L.readout_top + L.readout_height)) {
             char value[16];
             format_value(value, sizeof value, control.value);
-            const int centre = kSlotX[slot] + kSlotW / 2;
-            text_centred_safe(centre, kReadoutTop + 2, control.label.c_str(), 2, t.ink_dim);
-            text_centred_safe(centre, kReadoutTop + 22, value, 3, t.ink);
+            if (L.strip) {
+                // One line, because twenty rows of height is one line. The number goes
+                // above and the name below, so the column reads top to bottom as
+                // "what it is now" then the slider then "what it is".
+                text_centred_safe(centre, L.readout_top, value, 2, t.ink);
+            } else {
+                text_centred_safe(centre, L.readout_top + 2, control.label.c_str(), 2, t.ink_dim);
+                text_centred_safe(centre, L.readout_top + 22, value, 3, t.ink);
+            }
+        }
+        if (L.strip && L.label_y >= 0 && overlaps(lo, hi, L.label_y, L.label_y + 10)) {
+            const bool held = g_active_knob == bound;
+            text_centred_safe(centre, L.label_y, control.label.c_str(), 1,
+                              held ? lit : t.ink_dim);
         }
 
-        // The unlit remainder of the travel, then the lit part over it.
-        //
-        // Endpoints inset by the whole reach — half the bar plus the glow's spill — so
-        // that a bar asked to run from A to B occupies exactly A to B, caps and halo
-        // included. Drawn the naive way the cap hangs past the end, and past the bottom
-        // of the track that put it in rows no band ever owns: a sweep would clear part of
-        // it, decline to repaint it under the clip, and leave the slider with a squared
-        // off foot that only a full redraw could restore. A footprint that stays inside
-        // its own declared extent is repairable by any band that covers it.
+        // Drawn whole every time. The pixel clip decides what lands; a second, cruder
+        // clip on the geometry could empty a bar in a band its cap alone should fill.
         const float spill = g_lab.glow;
-        const float lit_reach = kBarWidth * 0.5f + (spill > 0.0f ? spill : 0.0f);
-        const float dim_reach = kBarWidth * 0.5f;
+        const float lit_reach = L.bar_width * 0.5f + (spill > 0.0f ? spill : 0.0f);
+        const float dim_reach = L.bar_width * 0.5f;
 
-        // Drawn whole every time. Shortening them to the band as well was the bug: the
-        // pixel clip already decides what lands, and a second, cruder clip on the
-        // geometry could empty a bar in a band that its cap alone should have filled, so
-        // the bar ate itself from the top as it rose. One thing decides.
-        const float track_a = static_cast<float>(kTrackTop) + dim_reach;
-        const float track_b = static_cast<float>(kTrackBottom) - dim_reach;
+        const float track_a = static_cast<float>(L.track_top) + dim_reach;
+        const float track_b = static_cast<float>(L.track_bottom) - dim_reach;
         if (track_b > track_a) {
-            display_glow_line(cx, track_a, cx, track_b, kBarWidth, 0.0f, 0, display_dim(lit, 20));
+            display_glow_line(cx, track_a, cx, track_b, static_cast<float>(L.bar_width),
+                              0.0f, 0, display_dim(lit, 20));
         }
         const float lit_a = static_cast<float>(fill_y) + lit_reach;
-        const float lit_b = static_cast<float>(kTrackBottom) - lit_reach;
+        const float lit_b = static_cast<float>(L.track_bottom) - lit_reach;
         if (lit_b > lit_a) {
-            display_glow_line(cx, lit_a, cx, lit_b, static_cast<float>(kBarWidth), spill,
+            display_glow_line(cx, lit_a, cx, lit_b, static_cast<float>(L.bar_width), spill,
                               static_cast<int>(g_lab.level + 0.5f), lit);
         }
         if (fill_y >= lo && fill_y < hi) {
-            display_line(static_cast<float>(kSlotX[slot] + 6), static_cast<float>(fill_y),
-                         static_cast<float>(kSlotX[slot] + kSlotW - 6),
+            display_line(static_cast<float>(L.column_x(slot) + 3), static_cast<float>(fill_y),
+                         static_cast<float>(L.column_x(slot) + L.slot_w - 3),
                          static_cast<float>(fill_y), 3.0f, t.ink);
         }
     }
 }
 
+// Only the rows between where the fill was and where it now is have changed, plus the
+// readout. Two narrow bands instead of a whole frame. Sized for as many columns as the
+// board carries, since a strip has one per control rather than two.
+int g_slider_last_fill[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+
 int slider_fill_y(int slot) {
-    const int bound = g_slider_bound[slot];
-    if (bound < 0 || bound >= static_cast<int>(g_ui_controls.size())) return kTrackBottom;
-    const UiControl& control = g_ui_controls[static_cast<std::size_t>(bound)];
-    const float span = control.max_value - control.min_value;
-    const float fraction = span > 0.0f ? (control.value - control.min_value) / span : 0.0f;
-    return kTrackBottom - static_cast<int>(fraction * (kTrackBottom - kTrackTop) + 0.5f);
+    const SliderLayout L = slider_layout();
+    const int bound = L.strip ? slot : g_slider_bound[slot];
+    if (bound < 0 || bound >= static_cast<int>(g_ui_controls.size())) return L.track_bottom;
+    const UiControl& c = g_ui_controls[static_cast<std::size_t>(bound)];
+    const float span = c.max_value - c.min_value;
+    const float fraction = span > 0.0f ? (c.value - c.min_value) / span : 0.0f;
+    return L.track_bottom - static_cast<int>(fraction * (L.track_bottom - L.track_top) + 0.5f);
 }
 
 void draw_sliders() {
@@ -1058,66 +1118,75 @@ void draw_sliders() {
     }
     if (g_slider_bound[0] >= count) g_slider_bound[0] = 0;
     if (g_slider_bound[1] >= count) g_slider_bound[1] = count > 1 ? 1 : 0;
+    const SliderLayout start = slider_layout();
+    for (int i = 0; i < start.columns && i < 9; ++i) g_slider_last_fill[i] = slider_fill_y(i);
 
     display_clear(theme().ground);
     paint_sliders(0, display_height());
     display_present();
 }
 
-// A press on the right half grabs a slider; the columns meet in the middle so there is
-// no dead strip between them to land in.
+// Which control a press lands on. On a strip the columns tile the whole width, so the
+// answer is simply which column; on the watch the right half is the two sliders and the
+// left is the list.
 int slider_hit(int x, int /*y*/) {
-    if (x < kSlotX[0] - 8) return -1;
-    const int slot = x < (kSlotX[1] - 6) ? 0 : 1;
+    const SliderLayout L = slider_layout();
+    const int count = static_cast<int>(g_ui_controls.size());
+    if (L.strip) {
+        const int pitch = L.slot_w + L.slot_gap;
+        int column = pitch > 0 ? (x - L.slot_x + L.slot_gap / 2) / pitch : -1;
+        if (column < 0) column = 0;
+        if (column >= L.columns) column = L.columns - 1;
+        return column < count ? column : -1;
+    }
+    if (x < L.slot_x - 8) return -1;
+    const int slot = x < (L.column_x(1) - 6) ? 0 : 1;
     const int bound = g_slider_bound[slot];
-    return bound >= 0 && bound < static_cast<int>(g_ui_controls.size()) ? bound : -1;
+    return bound >= 0 && bound < count ? bound : -1;
 }
 
 bool slider_tapped(int x, int y) {
-    if (x >= kSlotX[0] - 8) return false;
-    const int row = (y - kListTop + 4) / kRowHeight;
+    const SliderLayout L = slider_layout();
+    if (L.strip) return false;          // nothing to choose; every control is already out
+    if (x >= L.slot_x - 8) return false;
+    const int row = (y - L.list_top + 4) / L.row_height;
     if (row < 0 || row >= static_cast<int>(g_ui_controls.size())) return false;
-    if (row == g_slider_bound[0]) return true;      // already under the left hand
-    if (row == g_slider_bound[1]) {                 // swap rather than duplicate
-        g_slider_bound[1] = g_slider_bound[0];
-    } else {
-        g_slider_bound[1] = g_slider_bound[0];
-    }
+    if (row == g_slider_bound[0]) return true;
+    g_slider_bound[1] = g_slider_bound[0];
     g_slider_bound[0] = row;
     draw_sliders();
     return true;
 }
 
-// Only the rows between where the fill was and where it now is have changed, plus the
-// readout. Two narrow bands instead of a 602 KB frame.
-int g_slider_last_fill[2] = {kTrackBottom, kTrackBottom};
-
 void sliders_redraw_moving(int index) {
+    const SliderLayout L = slider_layout();
     int slot = -1;
-    if (g_slider_bound[0] == index) slot = 0;
-    else if (g_slider_bound[1] == index) slot = 1;
-    if (slot < 0) return;
+    if (L.strip) {
+        slot = index;
+    } else if (g_slider_bound[0] == index) {
+        slot = 0;
+    } else if (g_slider_bound[1] == index) {
+        slot = 1;
+    }
+    if (slot < 0 || slot >= L.columns ||
+        slot >= static_cast<int>(sizeof(g_slider_last_fill) / sizeof(int))) {
+        return;
+    }
 
     const int now = slider_fill_y(slot);
     const int was = g_slider_last_fill[slot];
     g_slider_last_fill[slot] = now;
 
-    // The band has to cover the bar's cap, not just the distance travelled.
-    //
-    // A rounded end is not a line: the segment starts a full reach below the fill, and
-    // everything between is the cap's curve. Redrawing only the rows the fill moved
-    // through repaints the top of that curve and leaves the rest holding the previous
-    // position's curve — one crescent per step, stacked into a ladder. A step is about
-    // twenty rows and the cap is thirty-three, so it lost every time.
-    //
-    // This is also what a sweep that ends at maximum cannot show, because the fill
-    // finishes at the top and the solid bar covers its own debris on the way past.
-    const float reach = kBarWidth * 0.5f + (g_lab.glow > 0.0f ? g_lab.glow : 0.0f);
+    // The band has to cover the bar's cap, not just the distance travelled. A rounded end
+    // is not a line: the segment starts a full reach below the fill and everything between
+    // is the cap's curve, so redrawing only the rows the fill moved through leaves the
+    // rest holding the previous position's curve — one crescent per step, stacked.
+    const float reach = L.bar_width * 0.5f + (g_lab.glow > 0.0f ? g_lab.glow : 0.0f);
     const int cap = static_cast<int>(reach) + 8;
     int lo = (now < was ? now : was) - 8;
     int hi = (now > was ? now : was) + cap;
-    if (lo < kTrackTop - 8) lo = kTrackTop - 8;
-    if (hi > kTrackBottom + 8) hi = kTrackBottom + 8;
+    if (lo < L.track_top - 8) lo = L.track_top - 8;
+    if (hi > L.track_bottom + 8) hi = L.track_bottom + 8;
     if (hi > lo) {
         display_clear_rows(lo, hi - lo, theme().ground);
         display_set_clip_rows(lo, hi - lo);
@@ -1126,11 +1195,11 @@ void sliders_redraw_moving(int index) {
         display_present_rows(lo, hi - lo);
     }
 
-    display_clear_rows(kReadoutTop, kReadoutHeight, theme().ground);
-    display_set_clip_rows(kReadoutTop, kReadoutHeight);
-    paint_sliders(kReadoutTop, kReadoutTop + kReadoutHeight);
+    display_clear_rows(L.readout_top, L.readout_height, theme().ground);
+    display_set_clip_rows(L.readout_top, L.readout_height);
+    paint_sliders(L.readout_top, L.readout_top + L.readout_height);
     display_clear_clip();
-    display_present_rows(kReadoutTop, kReadoutHeight);
+    display_present_rows(L.readout_top, L.readout_height);
 }
 
 // ---------------------------------------------------------------------------------
@@ -2038,8 +2107,6 @@ void console_task(void*) {
                     g_slider_bound[0] = std::atoi(tokens[2]);
                     g_slider_bound[1] = std::atoi(tokens[3]);
                 }
-                g_slider_last_fill[0] = slider_fill_y(0);
-                g_slider_last_fill[1] = slider_fill_y(1);
                 draw_sliders();
                 std::printf("OK sliders %d %d\n", g_slider_bound[0], g_slider_bound[1]);
             } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "lab") == 0) {

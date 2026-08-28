@@ -71,6 +71,7 @@
       "reset": 9
     },
     "x_offset": 22,
-    "rotation": 180
+    "rotation": 180,
+    "corner_radius": 92
   }
 }

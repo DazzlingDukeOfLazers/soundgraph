@@ -326,6 +326,11 @@
               "type": "integer"
             }
           }
+        },
+        "corner_radius": {
+          "type": "integer",
+          "default": 0,
+          "description": "Radius of the rounded corners, in pixels, or 0 for a plain rectangle. The firmware insets text by however much the curve eats at a given row. Hardcoding the watch's 92 meant a rectangular panel pushed its labels 60 px inward for corners it does not have, and two readouts collided in the middle of a screen with room to spare."
         }
       }
     }

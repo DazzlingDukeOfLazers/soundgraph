@@ -80,6 +80,7 @@
       "interrupt": -1,
       "reset": -1
     },
-    "rotation": 0
+    "rotation": 0,
+    "corner_radius": 0
   }
 }
