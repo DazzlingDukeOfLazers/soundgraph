@@ -434,6 +434,8 @@ const Theme& theme() { return kThemes[g_theme]; }
 
 uint32_t dimmed(uint32_t colour, int percent) { return display_dim(colour, percent); }
 
+bool g_touch_logging = false;
+
 struct KnobHit { int cx = 0; int cy = 0; int radius = 0; };
 std::vector<KnobHit> g_knob_hits;
 int g_active_knob = -1;   // what a finger is holding, for the big readout
@@ -1376,8 +1378,19 @@ void touch_task(void*) {
 
     for (;;) {
         std::vector<UiControl>& controls = *g_surface->controls;
-        int x = 0, y = 0;
-        if (touch_read(&x, &y)) {
+        // One read per poll, whatever it is for.
+        //
+        // Logging used to read the controller itself and then let the drag read it again,
+        // which is the same double-read that made the probe useless — except here the
+        // second read is the one that moves the slider, so switching logging on stopped
+        // touch working altogether. Diagnosing a fault must not be able to cause one.
+        int x = 0, y = 0, raw_x = 0, raw_y = 0;
+        const bool touching = touch_read_probe(&raw_x, &raw_y, &x, &y);
+        if (touching && g_touch_logging) {
+            std::printf("TOUCH raw %4d,%4d -> mapped %4d,%4d\n", raw_x, raw_y, x, y);
+            std::fflush(stdout);
+        }
+        if (touching) {
             if (g_surface->touch != nullptr) {
                 g_surface->touch(x, y, !consumed);
                 consumed = true;
@@ -1957,6 +1970,20 @@ void console_task(void*) {
 
         if (command == "info") {
             print_info();
+        } else if (command == "touch") {
+            if (!touch_available()) {
+                std::printf("ERR no touch controller\n");
+            } else if (tokens.size() >= 2 && std::strcmp(tokens[1], "off") == 0) {
+                g_touch_logging = false;
+                std::printf("OK touch logging off\n");
+            } else {
+                // A latch, not a timed window. The timed one required a human and a
+                // serial console to agree on when "now" was, and it missed.
+                g_touch_logging = true;
+                std::printf("OK touch logging on: %s, logical %dx%d. Touch away; "
+                            "`touch off` when done.\n",
+                            SG_TOUCH_CHIP, display_width(), display_height());
+            }
         } else if (command == "cpu") {
             // Headroom, measured rather than estimated. Named `cpu` and not `load`,
             // which was taken: an unguarded `load` branch placed above it swallowed

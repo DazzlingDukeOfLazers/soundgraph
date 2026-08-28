@@ -7,6 +7,7 @@
 bool touch_init() { return false; }
 bool touch_available() { return false; }
 bool touch_read(int*, int*) { return false; }
+bool touch_read_probe(int*, int*, int*, int*) { return false; }
 
 #else
 
@@ -104,8 +105,15 @@ bool touch_init() {
     esp_lcd_touch_config_t config = {};
     // The controller reports in panel coordinates, so its limits are the panel's, not
     // the rotated logical ones. Rotation is applied in touch_read.
+#if SG_TOUCH_CHIP_KIND == 2
+    // The frame this part reports in, which is the panel as used rather than as
+    // addressed: 640 across and 172 down on this board.
+    config.x_max = SG_DISPLAY_HEIGHT;
+    config.y_max = SG_DISPLAY_WIDTH;
+#else
     config.x_max = SG_DISPLAY_WIDTH;
     config.y_max = SG_DISPLAY_HEIGHT;
+#endif
     config.flags.mirror_x = 0;
     config.flags.mirror_y = 0;
     config.rst_gpio_num = static_cast<gpio_num_t>(SG_TOUCH_RESET);
@@ -128,7 +136,31 @@ bool touch_init() {
 
 bool touch_available() { return g_touch != nullptr; }
 
-bool touch_read(int* out_x, int* out_y) {
+
+namespace {
+// Panel coordinates into logical ones.
+//
+// The FT3168 reports in the panel's own frame, so the display's rotation has to be
+// undone here. The AXS15231B does not: it is the panel's own controller and reports in
+// the orientation the panel is actually being used in — this board reads 0..640 across
+// and 0..172 down, which is the logical frame already. Undoing a rotation it never
+// applied is what sent a touch at x=390 to x=-219 and had fingers triggering sliders
+// nowhere near them.
+void to_logical(int px, int py, int* out_x, int* out_y) {
+#if SG_TOUCH_CHIP_KIND == 2
+    *out_x = px;
+    *out_y = py;
+#else
+    switch (display_rotation()) {
+        case 90:  *out_x = py;                         *out_y = SG_DISPLAY_WIDTH - 1 - px; break;
+        case 180: *out_x = SG_DISPLAY_WIDTH - 1 - px;  *out_y = SG_DISPLAY_HEIGHT - 1 - py; break;
+        case 270: *out_x = SG_DISPLAY_HEIGHT - 1 - py; *out_y = px;                        break;
+        default:  *out_x = px;                         *out_y = py;                        break;
+    }
+#endif
+}
+
+bool read_once(int* px, int* py) {
     if (g_touch == nullptr) return false;
 
     bool probing = false;
@@ -149,35 +181,36 @@ bool touch_read(int* out_x, int* out_y) {
     }
 
     esp_lcd_touch_read_data(g_touch);
-
     uint16_t xs[1] = {0}, ys[1] = {0};
     uint8_t count = 0;
     if (!esp_lcd_touch_get_coordinates(g_touch, xs, ys, nullptr, &count, 1) || count == 0) {
         return false;
     }
-
-    // A finger the interrupt line never mentioned. It pulses rather than holds, so the
-    // gate is wrong for this part and stays off from here on.
     if (probing) {
         g_int_gated = false;
         ESP_LOGW(TAG, "%s pulses its interrupt; polling the bus instead", SG_TOUCH_CHIP);
     } else {
-        // The gate delivered a touch, so the line holds while a finger is down and the
-        // probe has nothing left to discover. One drag pays for the rest of the session.
         g_int_proven = true;
     }
+    *px = xs[0];
+    *py = ys[0];
+    return true;
+}
+}  // namespace
 
-    // Panel coordinates into logical ones: the same rotation the framebuffer applies,
-    // inverted. Getting this wrong is the classic touchscreen bug where the pointer
-    // moves the wrong way, so it is derived from the display's own rotation rather
-    // than written out as a second set of constants.
-    const int px = xs[0], py = ys[0];
-    switch (display_rotation()) {
-        case 90:  *out_x = py;                         *out_y = SG_DISPLAY_WIDTH - 1 - px; break;
-        case 180: *out_x = SG_DISPLAY_WIDTH - 1 - px;  *out_y = SG_DISPLAY_HEIGHT - 1 - py; break;
-        case 270: *out_x = SG_DISPLAY_HEIGHT - 1 - py; *out_y = px;                        break;
-        default:  *out_x = px;                         *out_y = py;                        break;
-    }
+bool touch_read(int* out_x, int* out_y) {
+    int px = 0, py = 0;
+    if (!read_once(&px, &py)) return false;
+    to_logical(px, py, out_x, out_y);
+    return true;
+}
+
+bool touch_read_probe(int* raw_x, int* raw_y, int* out_x, int* out_y) {
+    int px = 0, py = 0;
+    if (!read_once(&px, &py)) return false;
+    *raw_x = px;
+    *raw_y = py;
+    to_logical(px, py, out_x, out_y);
     return true;
 }
 
