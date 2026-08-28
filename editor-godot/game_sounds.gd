@@ -151,11 +151,18 @@ func sound_names() -> Array:
 ## was the last place the shutdown crash could still stand.
 func shutdown() -> void:
 	set_process(false)
+	# Stopped *and* unhooked from its stream while the mixer is held, which is the
+	# part that makes the free below safe. main.gd's shutdown_audio() spells out
+	# why: the audio thread holds the generator playback, and a player that is
+	# merely stopped still has one attached for it to be inside. This released
+	# the lock with eight streams still hooked up and then freed the players
+	# outside it, which is the same race the editor's own player was fixed for.
 	AudioServer.lock()
 	for name in _voices:
 		var voice: Dictionary = _voices[name]
 		if voice["player"] != null:
 			voice["player"].stop()
+			voice["player"].stream = null
 	AudioServer.unlock()
 	for name in _voices:
 		var voice: Dictionary = _voices[name]

@@ -2478,6 +2478,32 @@ func _exit_tree() -> void:
 	shutdown_audio()
 
 
+## The histories are Objects, not RefCounteds, so they are freed by hand or not at all.
+##
+## One was always outliving the editor: the dive out of a module frees the history it
+## made on the way in, and nothing freed the one still in use when the program ended.
+## That is the "1 ObjectDB instance was leaked at exit" the suite has printed for as long
+## as anyone has looked, and the suspected reason it segfaulted at teardown perhaps a
+## third of the time - a leaked object is destroyed during cleanup in no particular
+## order, and this one holds callables bound to nodes and to the extension's own objects,
+## which by then may be gone.
+##
+## PREDELETE rather than _exit_tree: leaving the tree is not the same as ceasing to
+## exist, and a node that is re-parented would otherwise come back holding a freed
+## history.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE:
+		return
+	if is_instance_valid(undo_redo):
+		undo_redo.free()
+	# Any level still stacked underneath, if the editor ends mid-dive.
+	for frame in dive_stack:
+		var history: Variant = (frame as Dictionary).get("history", null)
+		if history is UndoRedo and is_instance_valid(history):
+			(history as UndoRedo).free()
+	dive_stack.clear()
+
+
 func _process(_delta: float) -> void:
 	_watch_for_quit_request(_delta)
 	# The roll's scrollbar follows the roll however the roll moved — wheel, page
