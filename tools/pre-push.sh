@@ -102,18 +102,36 @@ fi
 # ---- the editor suites ----------------------------------------------------------------
 # A script error inside _initialize skips quit() and presents as a hang rather than a
 # failure, so these are given a timeout they should never reach.
+#
+# Output goes to a file rather than into a subshell.
+#
+# The suite segfaults at teardown perhaps a third of the time, after every check has run
+# and the verdict has been printed. That has been true for a while and is not what any of
+# these suites are testing. The problem was that the verdict was being read out of a
+# command substitution, and a process that dies with a pipe still buffered can take its
+# last words with it: twice, a push was refused for a suite that had in fact passed.
+#
+# I could not reproduce the loss on demand - six attempts through the old capture, six
+# verdicts - so this is not a fix for a mechanism anybody has watched happen. It removes
+# the dependence on one, which is cheaper than continuing to guess, and it leaves the
+# whole log on disk so the next unexplained refusal can be read rather than re-run.
+suite_logs="$build/editor-suites"
+mkdir -p "$suite_logs" 2>/dev/null || suite_logs=$(mktemp -d)
+
 if [ -n "$godot" ] && [ -x "$godot" ]; then
     for suite in editor_test design_test layout_test; do
         say "godot: $suite"
-        output=$( cd editor-godot && "$godot" --headless --path . --script "$suite.gd" 2>&1 ) || true
-        echo "$output" | grep -E "FAIL|checks passed|checks failed" || true
+        log="$suite_logs/$suite.log"
+        ( cd editor-godot && "$godot" --headless --path . --script "$suite.gd" )             > "$log" 2>&1 || true
+        grep -E "FAIL|checks passed|checks failed" "$log" || true
         # Tested for the word "passed" rather than for "failed", and its exit status is
         # not consulted at all: Godot exits non-zero on a clean run here (leaked
         # ObjectDB instances at teardown), and a script error inside _initialize skips
         # quit() entirely, so a broken suite can print no verdict at all. Requiring the
         # conclusion is the only reading that treats silence as bad news.
-        if ! echo "$output" | grep -q "checks passed"; then
+        if ! grep -q "checks passed" "$log"; then
             echo "$suite did not report success — fix it before pushing" >&2
+            echo "  the whole run is in $log" >&2
             exit 1
         fi
     done
