@@ -189,7 +189,6 @@ var graph_edit: GraphEdit
 ## The container turned over: the file's face, full size, in the Graph tab's slot.
 ## Same class as the side panel's face — one face, two mountings.
 var big_face: PatchFace
-var wires_button: Button
 ## The third way of looking at a patch: not where somebody dragged things, and not the
 ## instrument, but the graph itself on a grid nobody has moved. See schematic.gd.
 var schematic: Schematic
@@ -812,7 +811,11 @@ func _build_ui() -> void:
 	# The container's own controls: its band switches which way you are looking at it,
 	# and dragging that band moves everything mounted in it.
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
-	graph_edit.case_flipped.connect(func() -> void: _flip_container(true))
+	# One door, both ways. It used to only ever turn the case face-up, with a floating
+	# WIRES button in the corner as the way back; the button is gone and the chip does
+	# both, labelled with the side you will get.
+	graph_edit.case_flipped.connect(
+		func() -> void: await _flip_container(not graph_edit.face_up))
 	graph_edit.case_face_edit_toggled.connect(
 		func() -> void: _set_face_edit(not graph_edit.face_edit))
 	graph_edit.case_schematic_toggled.connect(
@@ -1003,16 +1006,6 @@ func _build_ui() -> void:
 	graph_edit.add_child(big_face)
 
 	# The way back, floating over the canvas while the face is up.
-	wires_button = Button.new()
-	wires_button.text = "WIRES"
-	wires_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	wires_button.offset_left = -Design.scale(100)
-	wires_button.offset_top = Design.scale(10)
-	wires_button.offset_right = -Design.scale(14)
-	wires_button.offset_bottom = Design.scale(38)
-	wires_button.visible = false
-	wires_button.pressed.connect(func() -> void: _flip_container(false))
-	container_tab.add_child(_defocus(wires_button))
 	views.add_child(container_tab)
 
 	var rack_scroll := ScrollContainer.new()
@@ -1807,10 +1800,9 @@ func _flip_container(show_face: bool) -> void:
 		_place_face()
 	else:
 		graph_edit.face_up = false
+		graph_edit.mount_box = Rect2()
 		big_face.visible = false
 		await _rebuild_view()
-	if wires_button != null:
-		wires_button.visible = show_face
 
 
 ## Keeps the mounted face under the graph's camera: its position and scale are the
@@ -2238,6 +2230,16 @@ func _place_face() -> void:
 	if big_face != null and big_face.visible:
 		big_face.position = face_anchor * zoom - graph_edit.scroll_offset
 		big_face.scale = Vector2(zoom, zoom)
+		# The band is measured from the nodes, and the face hides them, so it is told
+		# where the face is instead. Every frame rather than once at the flip: the face
+		# settles to its own size a frame or two later, and a rectangle taken before that
+		# left the chips floating in empty canvas beside the panel they belong to.
+		# Its own width, not its stretched one. The face is sized to at least the case it
+		# replaces, so on a wide patch most of that is empty canvas to the right of the
+		# panel — and a band measured from it put the chips out there on their own,
+		# nowhere near the thing they belong to.
+		graph_edit.mount_box = Rect2(face_anchor,
+			Vector2(maxf(big_face.full_width(), 1.0), big_face.size.y))
 	if schematic != null and schematic.visible and mount_area != null:
 		# The mount area tracks the usable rectangle, and the schematic is placed inside
 		# it — so its offset is the canvas transform less where that area begins.
@@ -3944,6 +3946,10 @@ func _fit_row_height(line: Control) -> void:
 func _set_face_edit(on: bool) -> void:
 	if on and schematic_up:
 		await _show_schematic(false)
+	# Same reasoning as the schematic: the knobs you click to dress a face are the ones
+	# on the nodes, and the face is covering them.
+	if on and graph_edit.face_up:
+		await _flip_container(false)
 	graph_edit.face_edit = on
 	graph_edit.face_edit_on = on
 	if on:
