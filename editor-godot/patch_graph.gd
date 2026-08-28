@@ -629,7 +629,11 @@ func _gui_input(event: InputEvent) -> void:
 				case_schematic_toggled.emit()
 				accept_event()
 				return
-		if button.pressed and _case_band_rect().has_point(button.position):
+		# The band is a handle only when there is something under it to move. While a
+		# mount is up the nodes are hidden, and dragging the band would shift nodes
+		# nobody can see - an edit, with an undo step, from a gesture that looks like
+		# moving the picture.
+		if button.pressed and not mount_up 				and _case_band_rect().has_point(button.position):
 			# The band is the handle, as the caption is on a panel knob: the case's
 			# inside is where the work happens — selecting, rubber-banding, dragging
 			# nodes — so the one strip that is not workspace is what moves the whole of
@@ -1058,6 +1062,17 @@ func _process(delta: float) -> void:
 ##
 ## From the nodes' own rectangles at this instant, like group_box: a stored rectangle is a
 ## second copy of where the nodes are, and the copies disagree the first time one moves.
+## Where the mounted tenant sits, in graph space, or an empty rect for none.
+##
+## The case is normally measured from its nodes. A mount hides them, and then there is
+## nothing to measure — which took the band away, and the band is where the controls for
+## getting back out of that view live. The schematic became a room with no door.
+var mount_box := Rect2():
+	set(value):
+		mount_box = value
+		queue_redraw()
+
+
 func case_box() -> Rect2:
 	var box := Rect2()
 	var first := true
@@ -1069,6 +1084,9 @@ func case_box() -> Rect2:
 		box = rect if first else box.merge(rect)
 		first = false
 	if first:
+		if mount_box.size.x > 0.0 and mount_box.size.y > 0.0:
+			return mount_box.grow_individual(0.0,
+				float(Design.scale(CASE_BAND)), 0.0, 0.0)
 		return Rect2()
 	return box.grow(float(Design.scale(Design.SPACE_L))) \
 		.grow_individual(0.0, float(Design.scale(CASE_BAND)), 0.0, 0.0)

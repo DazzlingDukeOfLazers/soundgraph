@@ -2208,6 +2208,9 @@ func _show_schematic(on: bool) -> void:
 		# and then sits there while the camera moves underneath it - fixed on screen
 		# while everything else zooms, which is exactly as wrong as it sounds.
 		graph_edit.mount_up = true
+		# So the case band still has something to measure, and the way out is still on
+		# screen: with the nodes hidden there is nothing else for it to sit above.
+		graph_edit.mount_box = Rect2(face_anchor, schematic.content_size())
 		# A frame is waited for before framing. fit_to measures usable_rect(), and that
 		# rectangle is not the truth until the canvas has been laid out at its current
 		# size - ask too early and it answers with a viewport taller than the one on
@@ -2224,6 +2227,7 @@ func _show_schematic(on: bool) -> void:
 	else:
 		schematic.visible = false
 		graph_edit.mount_up = false
+		graph_edit.mount_box = Rect2()
 		await _rebuild_view()
 
 
