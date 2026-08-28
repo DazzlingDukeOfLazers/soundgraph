@@ -7705,6 +7705,17 @@ func _initialize() -> void:
 	var work_area := main.graph_edit.get_parent() as Control
 	check(work_area != null and work_area.clip_contents,
 		"the work area clips whatever is mounted in it")
+
+	# Clipping the tab was not enough on its own. The tab includes the scrollbar gutter
+	# and the zoom cluster, so a schematic wider than the view stopped being drawn over
+	# the inspector and started disappearing under the scrollbars instead. The mount sits
+	# in the graph's usable rectangle - the same one fit_to frames against, so what
+	# arrives fitted stays fitted.
+	var usable: Rect2 = main.graph_edit.usable_rect()
+	check(main.mount_area != null and main.mount_area.clip_contents
+		and main.mount_area.position.is_equal_approx(usable.position)
+		and main.mount_area.size.is_equal_approx(usable.size),
+		"and the schematic is mounted clear of the scrollbars, not under them")
 	var followed := true
 	for wanted_zoom in [0.4, 0.9, 1.25]:
 		main.graph_edit.zoom = wanted_zoom
