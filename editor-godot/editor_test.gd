@@ -7769,6 +7769,35 @@ func _initialize() -> void:
 	check(main.graph_edit.mount_up,
 		"and the band knows it is not a handle just now")
 
+	# The face has the same three, and the door is labelled with where it goes. It used to
+	# be a floating WIRES button in the corner of the canvas - the only control of the four
+	# that was not on the band, and the only one that said what you were leaving rather
+	# than where you were going.
+	await main._show_schematic(false)
+	for i in 6:
+		await process_frame
+	await main._flip_container(true)
+	for i in 12:
+		await process_frame
+	var face_chips: Dictionary = main.graph_edit._case_chip_rects()
+	check(main.graph_edit.face_up and face_chips.size() == 3,
+		"the face carries the same three controls (%d)" % face_chips.size())
+	check(main.graph_edit._chip_label("face_view") == "GRAPH",
+		"and the door there says where it goes, not what you are leaving")
+
+	# The band follows the panel rather than the case it replaced. The face is stretched to
+	# at least the width of the nodes it covers, so on a wide patch most of that is empty
+	# canvas - and chips measured from it ended up out there on their own.
+	check(is_equal_approx(main.graph_edit.case_box().size.x, main.big_face.full_width()),
+		"with the band over the panel, not over the empty canvas beside it")
+
+	# And the door swings both ways now.
+	main.graph_edit.case_flipped.emit()
+	for i in 12:
+		await process_frame
+	check(not main.graph_edit.face_up and not main.big_face.visible,
+		"pressing it on the face comes back to the graph")
+
 	await main._set_face_edit(true)
 	for i in 8:
 		await process_frame
@@ -9574,7 +9603,8 @@ func _initialize() -> void:
 		(wheel_knob as RackView.Knob).set_value_silently(
 			(wheel_knob as RackView.Knob)._to_value(held))
 
-	main.wires_button.pressed.emit()
+	# The floating WIRES button is gone; the door is a chip on the band now.
+	main.graph_edit.case_flipped.emit()
 	for i in 10:
 		await process_frame
 	var wires_back := 0

@@ -1198,6 +1198,15 @@ const CASE_CHIP_LABELS := {
 }
 
 
+## The door is labelled with the side you will get, so it reads as an instruction rather
+## than as a statement of where you are. From the wiring that is the face; from the face
+## it is the graph.
+func _chip_label(key: String) -> String:
+	if key == "face_view" and face_up:
+		return "GRAPH"
+	return str(CASE_CHIP_LABELS[key])
+
+
 func _case_chip_rects() -> Dictionary:
 	var out: Dictionary = {}
 	var band := _case_band_rect()
@@ -1219,7 +1228,7 @@ func _case_chip_rects() -> Dictionary:
 	var edge := band.end.x - inset
 	for index in range(CASE_CHIPS.size() - 1, -1, -1):
 		var key: String = CASE_CHIPS[index]
-		var measured := font.get_string_size(str(CASE_CHIP_LABELS[key]),
+		var measured := font.get_string_size(_chip_label(key),
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
 		var width := measured.x + pad * 2.0
 		# The whole strip is given at most three quarters of the band; past that the
@@ -1261,9 +1270,6 @@ func _case_band_rect() -> Rect2:
 func _draw_case() -> void:
 	if face_up or mount_up or not flip_frames.is_empty():
 		face_needs_placing.emit()
-	# The mounted face draws its own case; two cases in one spot is one too many.
-	if face_up:
-		return
 	if case_title == "":
 		return
 	var frame := case_box()
@@ -1273,19 +1279,23 @@ func _draw_case() -> void:
 	var box := Rect2(frame.position * scale - scroll_offset, frame.size * scale)
 	var band := float(Design.scale(CASE_BAND)) * scale
 
-	# The rack's own case colours, so the graph's boundary and the panel's are the same
-	# aluminium rather than two greys that happen to be close.
-	draw_rect(box, Color(Rack.PANEL_LOW.darkened(0.35), 0.55))
-	draw_rect(box, Rack.PANEL_EDGE, false, 1.0)
-	Rack.draw_rail(self, Rect2(box.position, Vector2(box.size.x, band)))
-
 	var font := Design.font(Design.WEIGHT_SEMIBOLD)
 	if font == null:
 		return
 	var text_size := int(maxf(float(Design.type(Design.SIZE_CONTROL)) * scale, 8.0))
-	draw_string(font, box.position + Vector2(float(Design.scale(Design.SPACE_M)),
-		band * 0.72), case_title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
-		text_size, Design.INK_SECOND)
+
+	# The mounted face draws its own case, and two cases in one spot is one too many —
+	# so the aluminium and the title are skipped while it is up. The chips are not: they
+	# are how you leave, and the way out of a view cannot live only in the view you left.
+	if not face_up:
+		# The rack's own case colours, so the graph's boundary and the panel's are the
+		# same aluminium rather than two greys that happen to be close.
+		draw_rect(box, Color(Rack.PANEL_LOW.darkened(0.35), 0.55))
+		draw_rect(box, Rack.PANEL_EDGE, false, 1.0)
+		Rack.draw_rail(self, Rect2(box.position, Vector2(box.size.x, band)))
+		draw_string(font, box.position + Vector2(float(Design.scale(Design.SPACE_M)),
+			band * 0.72), case_title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+			text_size, Design.INK_SECOND)
 
 	# The chips. Face view is a door — press it and you are somewhere else — while the
 	# other two are modes you are either in or not, so those two light up when they are
@@ -1298,7 +1308,7 @@ func _draw_case() -> void:
 		var lit: bool = (key == "face_edit" and face_edit_on) 			or (key == "schematic" and schematic_on)
 		draw_rect(chip, Color(Design.ACCENT, 0.55 if lit else 0.16))
 		draw_rect(chip, Color(Design.ACCENT, 0.9 if lit else 0.55), false, 1.0)
-		var label := str(CASE_CHIP_LABELS[key])
+		var label := _chip_label(key)
 		var measured := font.get_string_size(label,
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
 		draw_string(font, chip.position + Vector2((chip.size.x - measured.x) * 0.5,
