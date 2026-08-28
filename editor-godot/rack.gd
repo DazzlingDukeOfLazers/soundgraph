@@ -1905,9 +1905,14 @@ static func _draw_wear(canvas: CanvasItem, rect: Rect2) -> void:
 ## `both_rails` off leaves the lower pair out, for a plate whose bottom rail is doing
 ## something else — the panel's blocks run their envelope down to the edge, and a screw
 ## through a fader's label is not a detail, it is a collision.
-static func draw_screws(canvas: CanvasItem, rect: Rect2, radius: float = 3.4,
+static func draw_screws(canvas: CanvasItem, rect: Rect2, radius: float = 6.8,
 		both_rails: bool = true, skin_colours: Dictionary = {}) -> void:
-	var inset := radius * 3.2
+	# The inset multiplier came down as the radius went up. It was 3.2 for a 3.4 radius,
+	# which is a centre 10.9 from the edge and a 7.5 gap; keeping it would have put a
+	# doubled screw 21.8 in, most of the way to the knobs. Two-times leaves the same gap
+	# and — because 6.8 x 2 x 0.8 is 10.9 — the same distance down from the rail as
+	# before, so the title sits exactly where it did.
+	var inset := radius * 2.0
 	var points := [Vector2(rect.position.x + inset, rect.position.y + inset * 0.8),
 		Vector2(rect.end.x - inset, rect.position.y + inset * 0.8)]
 	if both_rails:

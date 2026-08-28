@@ -1103,7 +1103,7 @@ func rebuild() -> void:
 					float(heading.size.y) if heading.visible else 0.0, tint)
 				# Top rail only: the envelope runs to the bottom edge, and a screw
 				# through a fader's letter is a collision, not a detail.
-				Rack.draw_screws(block, plate, float(Design.scale(3)), false))
+				Rack.draw_screws(block, plate, float(Design.scale(6)), false))
 
 			# All four envelope parameters or none — see ENVELOPE.
 			var enveloped := true
@@ -1499,7 +1499,7 @@ func _port_plate(seams: Array, title: String, tint: Color, height: float) -> Con
 	plate.draw.connect(func() -> void:
 		var face := Rect2(Vector2.ZERO, plate.size)
 		Rack.draw_plate(plate, face, float(heading.size.y), tint)
-		Rack.draw_screws(plate, face, float(Design.scale(3)), false))
+		Rack.draw_screws(plate, face, float(Design.scale(6)), false))
 
 	var inside := VBoxContainer.new()
 	inside.add_theme_constant_override("separation", Design.SPACE_S)
