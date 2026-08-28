@@ -59,6 +59,7 @@ function(soundgraph_add_transcriber)
 
     add_executable(sg-transcribe
         ${SG_TRANSCRIBE_DIR}/main.cpp
+        ${SG_TRANSCRIBE_DIR}/audio_load.cpp
         ${SG_TRANSCRIBE_DIR}/basic_pitch.cpp
         ${SG_TRANSCRIBE_DIR}/midi_write.cpp
         ${SG_TRANSCRIBE_DIR}/resample.cpp
@@ -66,12 +67,25 @@ function(soundgraph_add_transcriber)
     target_include_directories(sg-transcribe PRIVATE
         ${onnx_root}/include
         ${SG_TRANSCRIBE_DIR}
+        # The vendored miniaudio header, shared with the native runtime. Only the header:
+        # runtime-native's translation unit is built with MA_NO_DECODING, because over
+        # there miniaudio is a sound card. audio_load.cpp is the mirror image.
+        ${CMAKE_SOURCE_DIR}/runtime-native/third_party/miniaudio
     )
     target_link_libraries(sg-transcribe PRIVATE
         soundgraph::patch_io
-        soundgraph::wav
         ${onnx_lib}
     )
+
+    # 95,000 lines of somebody else's C, which has no interest in this project's warning
+    # settings. The same exemption runtime-native gives its own copy.
+    if(MSVC)
+        set_source_files_properties(${SG_TRANSCRIBE_DIR}/audio_load.cpp
+            PROPERTIES COMPILE_OPTIONS /W0)
+    else()
+        set_source_files_properties(${SG_TRANSCRIBE_DIR}/audio_load.cpp
+            PROPERTIES COMPILE_OPTIONS -w)
+    endif()
 
     # The model sits beside the executable, which is where main.cpp looks by default.
     # Copied rather than found by a path baked in at configure time, so that a built

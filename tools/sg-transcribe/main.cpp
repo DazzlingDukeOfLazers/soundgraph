@@ -18,8 +18,8 @@
 #include <vector>
 
 #include "soundgraph/patch_io.h"
-#include "wav.h"
 
+#include "audio_load.h"
 #include "basic_pitch.h"
 #include "midi_write.h"
 #include "resample.h"
@@ -28,7 +28,9 @@ namespace {
 
 void usage() {
     std::printf(
-        "usage: sg-transcribe <audio.wav> [options]\n"
+        "usage: sg-transcribe <audio> [options]\n"
+        "\n"
+        "WAV, FLAC and MP3. For .m4a, .mp4 or .ogg, convert first.\n"
         "\n"
         "options:\n"
         "  --midi <file>      where to write the MIDI (default: beside the audio)\n"
@@ -113,9 +115,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the audio ---------------------------------------------------------------
-    soundgraph::AudioFile file;
+    transcribe::Audio file;
     std::string error;
-    if (!soundgraph::read_wav(audio_path, file, error)) {
+    if (!transcribe::load_audio(audio_path, file, error)) {
         std::fprintf(stderr, "%s\n", error.c_str());
         return 1;
     }
@@ -133,8 +135,8 @@ int main(int argc, char** argv) {
     }
 
     const double seconds = static_cast<double>(mono.size()) / file.sample_rate;
-    if (!quiet) std::printf("listening to %s (%.1f s at %d Hz)\n", audio_path.c_str(), seconds,
-        file.sample_rate);
+    if (!quiet) std::printf("listening to %s (%.1f s, %d ch at %d Hz)\n",
+        audio_path.c_str(), seconds, file.channels, file.sample_rate);
 
     std::vector<float> at_model_rate =
         transcribe::resample(mono, file.sample_rate, transcribe::kSampleRate);

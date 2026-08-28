@@ -77,4 +77,43 @@ if(NOT heard STREQUAL melody)
         "  heard  ${heard}")
 endif()
 
+# The same melody as an MP3, when one is supplied. Decoding is miniaudio's job rather
+# than this project's, so what is guarded here is not the decoder but the build: a
+# stray MA_NO_MP3, or a decode-only translation unit going missing, would take MP3
+# support away silently and everything else would still pass.
+#
+# A committed fixture rather than something generated, because there is no MP3 encoder
+# anywhere in this tree - which is the same reason the file is mono and short.
+if(MP3_FIXTURE AND EXISTS "${MP3_FIXTURE}")
+    set(mp3_patch "${SCRATCH}/from-mp3.json")
+    execute_process(
+        COMMAND "${TRANSCRIBE}" "${MP3_FIXTURE}" --midi "${SCRATCH}/from-mp3.mid"
+            --patch "${PATCH}" --out "${mp3_patch}"
+            --tempo 60 --division 4 --quiet
+        RESULT_VARIABLE mp3_read
+    )
+    if(NOT mp3_read EQUAL 0)
+        message(FATAL_ERROR "sg-transcribe could not read the MP3 fixture")
+    endif()
+
+    file(READ "${mp3_patch}" mp3_written)
+    string(FIND "${mp3_written}" "\"sequence\"" mp3_at)
+    string(SUBSTRING "${mp3_written}" ${mp3_at} -1 mp3_roll)
+    string(REGEX MATCHALL "\"note\"[ 	]*:[ 	]*[0-9]+" mp3_fields "${mp3_roll}")
+    set(mp3_heard "")
+    foreach(field IN LISTS mp3_fields)
+        string(REGEX REPLACE "[^0-9]" "" value "${field}")
+        list(APPEND mp3_heard ${value})
+    endforeach()
+    if(NOT mp3_heard STREQUAL melody)
+        message(FATAL_ERROR
+            "the MP3 did not transcribe to the same melody
+"
+            "  played ${melody}
+"
+            "  heard  ${mp3_heard}")
+    endif()
+    message(STATUS "and the same again from MP3")
+endif()
+
 message(STATUS "played and heard ${heard}; MIDI is ${midi_bytes} bytes")

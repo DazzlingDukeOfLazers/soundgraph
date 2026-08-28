@@ -216,5 +216,6 @@ if(TARGET sg-transcribe AND TARGET sg-render)
             -DTRANSCRIBE=$<TARGET_FILE:sg-transcribe>
             -DPATCH=${CMAKE_SOURCE_DIR}/examples/patches/first-synth.json
             -DSCRATCH=${CMAKE_BINARY_DIR}/transcribe-check
+            -DMP3_FIXTURE=${CMAKE_SOURCE_DIR}/tools/sg-transcribe/fixtures/melody.mp3
             -P ${CMAKE_SOURCE_DIR}/tools/sg-transcribe/ground-truth.cmake)
 endif()

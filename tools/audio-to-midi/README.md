@@ -3,6 +3,10 @@
 **For everyday use, reach for `sg-transcribe` instead** — same model, same answers,
 16 MB instead of 1831 MB, and no Python at all. See `tools/sg-transcribe/README.md`.
 
+The one thing this still reads that the native tool does not is Ogg Vorbis, plus
+whatever librosa's own fallbacks manage for .m4a. Everything else - WAV at any bit
+depth, FLAC, MP3 - the native tool now decodes directly through miniaudio.
+
 This one stays because it is the thing the native tool is checked against. Running both
 over the same audio and comparing raw activations is what found the head-assignment bug
 in the C++ port: it said the disagreement was upstream of note-picking, which turned

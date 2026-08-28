@@ -39,6 +39,29 @@ exactly as before**; the target and its test appear and disappear together.
 
 The build copies the model, and on Windows the DLL, next to the executable.
 
+## Formats it reads
+
+**WAV, FLAC and MP3**, decoded through miniaudio — already vendored for the native
+runtime, though not the translation unit built there: that one defines `MA_NO_DECODING`,
+because over there miniaudio is a sound card. `audio_load.cpp` is the mirror image,
+decoders on and device IO off, sharing only the header.
+
+Every WAV bit depth, which matters more than it sounds. The minimal reader in
+`tools/common` takes 16-bit PCM and 32-bit float and refuses everything else — including
+24-bit, which is what most recorders and DAWs actually write. This tool used that reader
+at first and would have turned away a large share of real recordings.
+
+**Not Ogg Vorbis**, despite miniaudio advertising it: `MA_HAS_VORBIS` is defined only
+`#ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H`, and stb_vorbis is not bundled with the header.
+One more vendored file would do it, if it were ever wanted.
+
+**Not AAC**, so not `.m4a` or `.mp4`. miniaudio has no AAC decoder at all, and adding one
+means a platform codec or another dependency. Convert to WAV first.
+
+Verified by transcribing the same six-note melody from each: 16-bit WAV, 24-bit WAV,
+32-bit float WAV, FLAC and MP3 all return `[60, 64, 67, 72, 67, 64]`, and Ogg is refused
+with a message naming what is understood.
+
 ## Output
 
 **MIDI, always.** Written before anything else can fail, because it is the format every
@@ -84,6 +107,13 @@ notes        six of six identical, worst onset difference 1 ms
 
 Which is closer than it had any right to be, given the two resample 48 kHz to 22.05 kHz
 with different kernels.
+
+The test has a second leg: the same melody as `fixtures/melody.mp3`, which guards the
+build rather than the decoder. Decoding is miniaudio's job; what could plausibly go
+wrong here is a stray `MA_NO_MP3` or the decode-only translation unit going missing, and
+either would take MP3 support away without anything else noticing. The fixture is
+committed because there is no MP3 encoder anywhere in this tree — which is also why it
+is mono and short.
 
 ## The bug worth knowing about
 
