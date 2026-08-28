@@ -166,7 +166,7 @@ const SCREW := Color(0.42, 0.45, 0.50)
 ## eye to the corners and away from the knobs. A screw should be findable and never
 ## looked at.
 ## One place the size is written down, so a call site cannot fall behind it.
-const SCREW_RADIUS := 13.6
+const SCREW_RADIUS := 6.8
 const SCREW_STEEL := Color(0.52, 0.55, 0.60)
 const SCREW_STEEL_LOW := Color(0.26, 0.29, 0.34)
 const JACK_RING := Color(0.62, 0.65, 0.70)
