@@ -1231,9 +1231,16 @@ func _case_chip_rects() -> Dictionary:
 		var measured := font.get_string_size(_chip_label(key),
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
 		var width := measured.x + pad * 2.0
-		# The whole strip is given at most three quarters of the band; past that the
-		# case is too narrow to carry its own controls and they are simply not drawn.
-		if edge - width < band.position.x + band.size.x * 0.25:
+		# The strip may take the band up to whatever the title needs, and the title is
+		# only drawn on this side — the face draws its own name, centred, on itself.
+		#
+		# This was a flat quarter of the band, which cost the leftmost chip on any narrow
+		# case: the face hugs its panels now, and at 50% on first-synth that is a 256px
+		# band where three chips want 214 and the guard demanded 364. FACE EDIT was
+		# dropped by about a pixel, and the control that goes first is the one furthest
+		# from the door, which is the worst of the three to lose.
+		var reserved := inset if face_up else band.size.x * 0.25
+		if edge - width < band.position.x + reserved:
 			break
 		out[key] = Rect2(Vector2(edge - width, band.position.y + inset),
 			Vector2(width, band.size.y - inset * 2.0))
