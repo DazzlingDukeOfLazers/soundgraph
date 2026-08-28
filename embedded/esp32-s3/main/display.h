@@ -81,6 +81,13 @@ void display_clear_rows(int y, int height, uint32_t rgb);
 int display_safe_inset(int y);
 
 void display_set_clip_rows(int y, int height);
+
+// The same, with an x extent. On a strip one slider moving changes one column, and a
+// band across the whole width repaints eight others to no purpose.
+void display_set_clip_rect(int x, int y, int width, int height);
+
+// Clear a rectangle rather than a band, for the same reason.
+void display_clear_rect(int x, int y, int width, int height, uint32_t rgb);
 void display_clear_clip();
 
 bool display_set_brightness(int percent);

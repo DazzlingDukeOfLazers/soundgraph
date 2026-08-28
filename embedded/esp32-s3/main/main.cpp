@@ -1012,7 +1012,10 @@ void text_centred_safe(int centre, int y, const char* text, int scale, uint32_t 
 // a full redraw and with a narrow band while a finger is moving; the bars are clipped to
 // the band rather than redrawn whole, because a drag step moves the fill by a few pixels
 // and repainting four hundred of them to change six is where the time goes.
-void paint_sliders(int lo, int hi) {
+// `only` names a single column to paint, or -1 for all of them. On a strip a moving
+// slider changes its own column and nothing else, and painting the other eight is where
+// a drag step was spending most of its time — nine glow bars redrawn to move one.
+void paint_sliders(int lo, int hi, int only = -1) {
     const Theme& t = theme();
     const uint32_t lit = lab_colour();
     const SliderLayout L = slider_layout();
@@ -1020,7 +1023,7 @@ void paint_sliders(int lo, int hi) {
 
     // The list, when there is one. On a strip every control is already on screen with its
     // name under it, so there is nothing to choose and nothing to draw here.
-    if (!L.strip) {
+    if (!L.strip && only < 0) {
         for (int row = 0; row < count; ++row) {
             const int y = L.list_top + row * L.row_height;
             if (!overlaps(lo, hi, y - 4, y + L.row_height - 4)) continue;
@@ -1037,6 +1040,7 @@ void paint_sliders(int lo, int hi) {
     }
 
     for (int slot = 0; slot < L.columns; ++slot) {
+        if (only >= 0 && slot != only) continue;
         const int bound = L.strip ? slot : g_slider_bound[slot];
         if (bound < 0 || bound >= count) continue;
         const UiControl& control = g_ui_controls[static_cast<std::size_t>(bound)];
@@ -1180,26 +1184,44 @@ void sliders_redraw_moving(int index) {
     g_slider_last_fill[slot] = now;
 
     // The band has to cover the bar's cap, not just the distance travelled. A rounded end
-    // is not a line: the segment starts a full reach below the fill and everything between
-    // is the cap's curve, so redrawing only the rows the fill moved through leaves the
-    // rest holding the previous position's curve — one crescent per step, stacked.
+    // is not a line: the segment starts a full reach below the fill and everything
+    // between is the cap's curve, so redrawing only the rows the fill moved through
+    // leaves the rest holding the previous position's curve — one crescent per step.
     const float reach = L.bar_width * 0.5f + (g_lab.glow > 0.0f ? g_lab.glow : 0.0f);
     const int cap = static_cast<int>(reach) + 8;
     int lo = (now < was ? now : was) - 8;
     int hi = (now > was ? now : was) + cap;
     if (lo < L.track_top - 8) lo = L.track_top - 8;
     if (hi > L.track_bottom + 8) hi = L.track_bottom + 8;
+
+    // On a strip, one column. The other eight are unchanged and repainting them was
+    // most of the cost of a drag.
+    const bool column_only = L.strip;
+    const int cx = L.column_x(slot) - 4;
+    const int cw = L.slot_w + 8;
+
     if (hi > lo) {
-        display_clear_rows(lo, hi - lo, theme().ground);
-        display_set_clip_rows(lo, hi - lo);
-        paint_sliders(lo, hi);
+        if (column_only) {
+            display_clear_rect(cx, lo, cw, hi - lo, theme().ground);
+            display_set_clip_rect(cx, lo, cw, hi - lo);
+        } else {
+            display_clear_rows(lo, hi - lo, theme().ground);
+            display_set_clip_rows(lo, hi - lo);
+        }
+        paint_sliders(lo, hi, column_only ? slot : -1);
         display_clear_clip();
         display_present_rows(lo, hi - lo);
     }
 
-    display_clear_rows(L.readout_top, L.readout_height, theme().ground);
-    display_set_clip_rows(L.readout_top, L.readout_height);
-    paint_sliders(L.readout_top, L.readout_top + L.readout_height);
+    if (column_only) {
+        display_clear_rect(cx, L.readout_top, cw, L.readout_height, theme().ground);
+        display_set_clip_rect(cx, L.readout_top, cw, L.readout_height);
+    } else {
+        display_clear_rows(L.readout_top, L.readout_height, theme().ground);
+        display_set_clip_rows(L.readout_top, L.readout_height);
+    }
+    paint_sliders(L.readout_top, L.readout_top + L.readout_height,
+                  column_only ? slot : -1);
     display_clear_clip();
     display_present_rows(L.readout_top, L.readout_height);
 }

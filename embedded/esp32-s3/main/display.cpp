@@ -31,6 +31,8 @@ bool display_present_rows(int, int) { return false; }
 void display_clear_rows(int, int, uint32_t) {}
 int display_safe_inset(int) { return 0; }
 void display_set_clip_rows(int, int) {}
+void display_set_clip_rect(int, int, int, int) {}
+void display_clear_rect(int, int, int, int, uint32_t) {}
 void display_clear_clip() {}
 bool display_set_brightness(int) { return false; }
 bool display_test_card() { return false; }
@@ -246,6 +248,8 @@ int g_rotation = 0;
 // default so nothing has to know about it.
 int g_clip_lo = -1000000;
 int g_clip_hi = 1000000;
+int g_clip_x_lo = -1000000;
+int g_clip_x_hi = 1000000;
 
 inline void put_physical(int px, int py, uint32_t colour) {
     if (px < 0 || py < 0 || px >= SG_DISPLAY_WIDTH || py >= SG_DISPLAY_HEIGHT) return;
@@ -274,6 +278,7 @@ int display_rotation() { return g_rotation; }
 
 void display_pixel(int x, int y, uint32_t colour) {
     if (g_fb == nullptr || y < g_clip_lo || y >= g_clip_hi) return;
+    if (x < g_clip_x_lo || x >= g_clip_x_hi) return;
     switch (g_rotation) {
         case 90:  put_physical(SG_DISPLAY_WIDTH - 1 - y, x, colour); break;
         case 180: put_physical(SG_DISPLAY_WIDTH - 1 - x, SG_DISPLAY_HEIGHT - 1 - y, colour); break;
@@ -302,6 +307,7 @@ void display_rect(int x, int y, int width, int height, uint32_t colour) {
 
 void display_blend(int x, int y, uint32_t colour, int alpha) {
     if (g_fb == nullptr || alpha <= 0 || y < g_clip_lo || y >= g_clip_hi) return;
+    if (x < g_clip_x_lo || x >= g_clip_x_hi) return;
     if (alpha >= 255) { display_pixel(x, y, colour); return; }
     // Read-modify-write through the same rotation the writer uses, so blending happens
     // in logical space and no caller has to think about the panel's mounting.
@@ -721,8 +727,34 @@ void display_set_clip_rows(int y, int height) {
     // that paints a row nobody will see rather than blanking one everybody will.
     g_clip_lo = y - 1;
     g_clip_hi = y + height + 1;
+    g_clip_x_lo = -1000000;
+    g_clip_x_hi = 1000000;
 }
-void display_clear_clip() { g_clip_lo = -1000000; g_clip_hi = 1000000; }
+
+void display_set_clip_rect(int x, int y, int width, int height) {
+    display_set_clip_rows(y, height);
+    // One column of slack on each side, for the same reason the rows get it: the clear
+    // grows outward to the panel's 2x2 grid and the two have to agree about the edge.
+    g_clip_x_lo = x - 1;
+    g_clip_x_hi = x + width + 1;
+}
+
+void display_clear_rect(int x, int y, int width, int height, uint32_t colour) {
+    if (g_fb == nullptr || width <= 0 || height <= 0) return;
+    // Through the rotating writer. A rectangle is not contiguous under any rotation, and
+    // the areas involved are one slider wide — the cost that mattered was a full-width
+    // band's worth of pixels, not the per-pixel path itself.
+    const int right = x + width, bottom = y + height;
+    for (int row = y; row < bottom; ++row) {
+        for (int column = x; column < right; ++column) display_pixel(column, row, colour);
+    }
+}
+void display_clear_clip() {
+    g_clip_lo = -1000000;
+    g_clip_hi = 1000000;
+    g_clip_x_lo = -1000000;
+    g_clip_x_hi = 1000000;
+}
 
 // Scratch for the rotated case, grown on demand and kept. A quarter-turn band is a
 // column stripe of the framebuffer, and a stripe is not contiguous, so it has to be
