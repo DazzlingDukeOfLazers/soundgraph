@@ -826,7 +826,10 @@ func _view_fingerprint() -> String:
 		detail_mode])
 	parts.append(str(connections.size()))
 	parts.append(str(paint_stamp))
-	parts.append(str(waypoints.size()))
+	# The hash, not the size: dragging a waypoint changes a value without changing the
+	# count, and a cord that lags its own route during the drag looks broken in the
+	# hand.
+	parts.append(str(waypoints.hash()))
 	for child in get_children():
 		if child is GraphNode:
 			parts.append("%s:%.0f,%.0f,%.0f,%.0f" % [child.name,
@@ -993,6 +996,7 @@ func _nodes_within(band: Rect2) -> Array:
 	return found
 
 var _overlay: CrossingOverlay
+var _cords: CordLayer
 var _glow: GlowOverlay
 var _titles: ScreenText
 var _plugs: PlugOverlay
@@ -1000,6 +1004,12 @@ var _wand_overlay: WandOverlay
 
 
 func _ready() -> void:
+	_cords = CordLayer.new()
+	_cords.graph = self
+	add_child(_cords)
+	# First among the children, so the cords go under the nodes the way the native
+	# lines do. The rest of the overlays keep their places above.
+	move_child(_cords, 0)
 	_overlay = CrossingOverlay.new()
 	_overlay.graph = self
 	add_child(_overlay)
@@ -1286,6 +1296,12 @@ func _routes() -> Array:
 
 
 func _draw_crossings(canvas: CanvasItem) -> void:
+	# Stood down: the CordLayer draws the cables as cords and carries their crossing
+	# occlusion itself, rack-style. This pass cut the lower cable and re-laid the upper
+	# at the native line width, which against an 8px cord is a thin flat stripe laid
+	# across a fat one — the bridge itself became the artefact it existed to prevent.
+	if _cords != null:
+		return
 	var scale := zoom if zoom > 0.0 else 1.0
 	var to_local := func(point: Vector2) -> Vector2:
 		return point * scale - scroll_offset
@@ -2344,6 +2360,88 @@ func _update_cable_hover(local_point: Vector2) -> void:
 ##
 ## Any Label carrying a `screen_min` meta joins in, so marking a new piece of node text
 ## as operational is one line at the place it is built rather than a case in here.
+## The graph's cables, drawn as cords.
+##
+## GraphEdit draws its own connections as thin flat lines, which was the right grammar
+## when the rack's cables were thin flat lines too. They are cords now — a material
+## stack of shadow, dark same-hue edge, saturated body and same-hue highlight — and a
+## patch that changes weight when you change lenses reads as two patches. This layer
+## draws the same stack along the exact geometry GraphEdit routes: the same
+## _get_connection_line, so catenary, PCB lanes and dragged waypoints all keep working,
+## and the native thin line is simply painted over by the cord that follows it.
+##
+## Under the nodes, like the native lines: a cable on this canvas passes behind the
+## panels, and the sockets and landing marks sit on top of it.
+class CordLayer extends Control:
+	var graph: GraphEdit
+	var _fingerprint := ""
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		# Above GraphEdit's internal connection layer, below the nodes. Child order
+		# cannot say this — internal layers draw after every regular child, so the
+		# native line rode on top of the cord as a dark core stripe however the
+		# children were arranged. z-order can: native 0, cords 1, and every GraphNode
+		# lifted to 2 where it is built.
+		z_index = 1
+
+	func _process(_delta: float) -> void:
+		if graph == null:
+			return
+		var current: String = graph._view_fingerprint()
+		if current != _fingerprint:
+			_fingerprint = current
+			queue_redraw()
+
+	func _draw() -> void:
+		if graph == null or graph.face_up:
+			return
+		# One style per frame, scaled to the view. The stack's offsets and widths scale
+		# with the zoom the same way the body does, or the cord flattens back into a
+		# line the moment you step back — which is the exact failure this layer ends.
+		var z: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		var cords: Array = []
+		var style := CableArt.Style.new()
+		style.thickness = maxf(8.0 * z, 2.4)
+		style.edge_offset = Vector2(1.3, 1.5) * z
+		style.highlight_width = maxf(2.2 * z, 1.0)
+		style.highlight_offset = Vector2(-1.3, -1.5) * z
+		style.highlight_alpha = 0.6
+		style.shadow_width = 11.0 * z
+		style.shadow_alpha = 0.2
+		for connection in graph.get_connection_list():
+			var from_widget := graph.get_node_or_null(
+				NodePath(str(connection["from_node"]))) as GraphNode
+			var to_widget := graph.get_node_or_null(
+				NodePath(str(connection["to_node"]))) as GraphNode
+			if from_widget == null or to_widget == null \
+					or not from_widget.visible or not to_widget.visible:
+				continue
+			var from_line: Vector2 = from_widget.position_offset * z \
+				+ from_widget.get_output_port_position(int(connection["from_port"])) * z
+			var to_line: Vector2 = to_widget.position_offset * z \
+				+ to_widget.get_input_port_position(int(connection["to_port"])) * z
+			var route: PackedVector2Array = graph._get_connection_line(
+				from_line, to_line)
+			var local := PackedVector2Array()
+			for point in route:
+				local.append(point - graph.scroll_offset)
+			cords.append([local,
+				from_widget.get_output_port_color(int(connection["from_port"]))])
+
+		# Drawn in connection order with the rack's own occlusion: where a cord crosses
+		# one already down, the earlier cord breaks in shadow under it. Deterministic —
+		# the file's order and nothing else — so crossings never reshuffle underfoot.
+		var laid: Array = []
+		for entry in cords:
+			for earlier in laid:
+				for at: Vector2 in CableArt.crossings(entry[0], earlier):
+					CableArt.draw_crossing_shadow(self, entry[0], at, style)
+			CableArt.draw_cable(self, entry[0], entry[1], style)
+			laid.append(entry[0])
+
+
 ## Plugs, seated in the sockets of painted modules.
 ##
 ## The graph's cables are GraphEdit's own and are drawn underneath the nodes, which is
@@ -2415,12 +2513,14 @@ class PlugOverlay extends Control:
 		for site in plug_sites():
 			var at: Vector2 = site[0]
 			var ink: Color = site[2]
-			var neck := maxf(6.0 * graph.zoom, 3.0)
+			# Sized against the cord, not the old thin line: a neck narrower than the
+			# cable it necks into reads as the cable pinching at the panel.
+			var neck := maxf(8.0 * graph.zoom, 3.5)
 			draw_line(at, at + (site[1] as Vector2) * neck, ink,
-				maxf(3.6 * graph.zoom, 1.8), true)
-			draw_circle(at, maxf(3.0 * graph.zoom, 1.6), CableArt.darken(ink, 0.25))
-			draw_arc(at, maxf(5.2 * graph.zoom, 2.6), 0.0, TAU, 20, ink,
-				maxf(1.8 * graph.zoom, 1.2), true)
+				maxf(7.0 * graph.zoom, 2.4), true)
+			draw_circle(at, maxf(3.6 * graph.zoom, 1.8), CableArt.darken(ink, 0.25))
+			draw_arc(at, maxf(5.8 * graph.zoom, 2.8), 0.0, TAU, 20, ink,
+				maxf(2.0 * graph.zoom, 1.3), true)
 
 
 class ScreenText extends Control:

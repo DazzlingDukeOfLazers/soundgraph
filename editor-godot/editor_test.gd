@@ -992,11 +992,20 @@ func _initialize() -> void:
 	check(not main.graph_edit.show_grid,
 		"and GraphEdit's own grid is off, so only one grid is drawn")
 
-	var connection_layer: Node = main.graph_edit.get_child(0)
-	var overlay: Node = main.graph_edit.get_child(1)
-	check(connection_layer.name == "_connection_layer", "the connection layer is still first")
-	check(overlay is Control and overlay.get_script() != null,
-		"and the crossing overlay is drawn immediately after it")
+	# Layering is z-order now, not child order — child order cannot put anything under
+	# GraphEdit's internal connection layer, because internal layers draw after every
+	# regular child. That is how the native line ended up riding on top of the cords as
+	# a dark core stripe: the stack is native at 0, the cord layer at 1, and every node
+	# lifted to 2, so a cable passes behind the panels and over its own native ghost.
+	check(main.graph_edit._cords != null and main.graph_edit._cords.z_index == 1,
+		"the cord layer draws at z 1, above the native connection layer")
+	var lifted := true
+	for child in main.graph_edit.get_children():
+		if child is GraphNode and (child as GraphNode).z_index != 2:
+			lifted = false
+	check(lifted, "and every node rides at z 2, over the cords")
+	check(is_zero_approx(main.graph_edit.connection_lines_thickness),
+		"with GraphEdit's own line stood down to nothing")
 
 	# ---- undo -------------------------------------------------------------------------
 	var file2 := FileAccess.open("res://examples-mirror/first-synth.json", FileAccess.READ)

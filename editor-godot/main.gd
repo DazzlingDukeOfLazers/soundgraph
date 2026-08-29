@@ -772,7 +772,12 @@ func _build_ui() -> void:
 	# Thinner than the default. A cable is a relationship between two nodes, and at 4px
 	# it was drawing more attention than either of them; the path highlight is what
 	# makes a cable loud, and that only works if the resting state is quiet.
-	graph_edit.connection_lines_thickness = 2.5
+	# Zero: the CordLayer draws every cable as a cord along the same routes, and the
+	# native line cannot be layered under it — GraphEdit's internal connection layer
+	# renders after regular children, so any native width rides on top of the cord as
+	# a tramline stripe. The routes, the picking and the waypoints all still work;
+	# only GraphEdit's own drawing stands down.
+	graph_edit.connection_lines_thickness = 0.0
 	graph_edit.connection_lines_antialiased = true
 	# The minimap was a flat grey rectangle sitting over the canvas with no border and
 	# no relationship to anything else on screen — it read as a panel that had failed
@@ -4100,6 +4105,8 @@ func _create_widget(node: Dictionary) -> void:
 		node.get("position", {}).get("x", 0.0),
 		node.get("position", {}).get("y", 0.0)) * _graph_scale()
 	widget.set_meta("patch_id", node["id"])
+	# Above the cord layer (z 1): a cable passes behind the panels. See CordLayer.
+	widget.z_index = 2
 	widget.set_meta("type", type_name)
 
 	_style_node_title(widget, descriptor)
