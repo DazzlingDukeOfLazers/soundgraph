@@ -1521,6 +1521,10 @@ func _letter_widget(widget: GraphNode, key: String) -> void:
 			knob.skin = skin
 			knob.queue_redraw()
 			continue
+		var chooser := next as OptionButton
+		if chooser != null:
+			_mount_chooser(chooser, key, skin)
+			continue
 		var label := next as Label
 		if label == null or label == title_label:
 			continue
@@ -1528,6 +1532,55 @@ func _letter_widget(widget: GraphNode, key: String) -> void:
 			label.set_meta("editor_ink", label.get_theme_color("font_color"))
 		label.add_theme_color_override("font_color",
 			ink if painted else label.get_meta("editor_ink"))
+
+
+## Mounts a dropdown in the panel instead of leaving it dressed as a form field.
+##
+## A shape selector on a faceplate is a switch cut into the metal: a dark inset field the
+## same height as the knobs beside it, with the chosen setting printed in it. What was
+## there instead was the editor's own button chrome — a rounded slab a shade lighter than
+## the surface behind it — which on a cream lab panel is the one control that still says
+## "web form" out loud.
+##
+## Inset rather than raised, which is the whole difference. A raised control sits on the
+## panel and belongs to the application; a recessed one is cut into the panel and belongs
+## to the instrument. It is the same trick as the jack: the darkness is the depth.
+##
+## Its own lettering, and not the plate's: the field is the hardware colour in every
+## style, so its text is light in every style, and the legend that reads on the faceplate
+## would be black on black half the time.
+func _mount_chooser(chooser: OptionButton, key: String, skin: Dictionary) -> void:
+	if key == ModuleThemes.CATEGORY:
+		for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+			chooser.remove_theme_stylebox_override(state)
+		chooser.remove_theme_color_override("font_color")
+		chooser.remove_theme_color_override("font_hover_color")
+		chooser.remove_theme_color_override("font_pressed_color")
+		return
+	var field: Color = skin.get("hardware", Color(0.13, 0.13, 0.14))
+	var wall: Color = skin.get("hardware_hi", Color(0.3, 0.31, 0.33))
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		var box := StyleBoxFlat.new()
+		box.bg_color = field.lightened(0.10) if state == "hover" else field
+		box.set_corner_radius_all(Design.scale(3))
+		box.set_content_margin_all(Design.scale(Design.SPACE_XS))
+		box.content_margin_left = Design.scale(Design.SPACE_S)
+		box.content_margin_right = Design.scale(Design.SPACE_S)
+		# The lip of the recess: light along the bottom, dark along the top, which is
+		# the top-lit panel's shadow read backwards. It is one pixel and it is the only
+		# reason this reads as cut in rather than stuck on.
+		box.border_width_top = maxi(Design.scale(1), 1)
+		box.border_color = field.darkened(0.5)
+		box.shadow_size = 0
+		if state == "focus":
+			box.border_width_bottom = maxi(Design.scale(1), 1)
+			box.border_color = Design.FOCUS
+		chooser.add_theme_stylebox_override(state, box)
+	var printed := Color(1.0, 1.0, 1.0, 1.0).lerp(wall, 0.18)
+	chooser.add_theme_color_override("font_color", printed)
+	chooser.add_theme_color_override("font_hover_color", printed)
+	chooser.add_theme_color_override("font_pressed_color", printed)
+	chooser.add_theme_color_override("font_focus_color", printed)
 
 
 ## A GraphNode's title is a Label the node builds for itself, and it is reached through

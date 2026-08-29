@@ -47,6 +47,19 @@ func _knobs(widget: GraphNode) -> Array:
 	return found
 
 
+## Every dropdown on a node.
+func _choosers(widget: GraphNode) -> Array:
+	var found: Array = []
+	var queue: Array = widget.get_children()
+	while not queue.is_empty():
+		var next: Node = queue.pop_back()
+		for child in next.get_children():
+			queue.append(child)
+		if next is OptionButton:
+			found.append(next)
+	return found
+
+
 ## Every node in the patch, in document order.
 func _ids(main) -> Array:
 	var found: Array = []
@@ -104,6 +117,7 @@ func _verify(main, offset: int, when: String) -> void:
 	var unreadable: Array = []
 	var knobs_missed: Array = []
 	var ungrained: Array = []
+	var unmounted: Array = []
 	for index in ids.size():
 		var id := str(ids[index])
 		var want := _expected(index, offset)
@@ -168,6 +182,20 @@ func _verify(main, offset: int, when: String) -> void:
 				unreadable.append("%s: %s on %s (%.2f)"
 					% [id, written.text, want, Design.contrast(ink, plate)])
 
+		# A dropdown on a faceplate is a switch cut into the metal, not a form field
+		# sitting on it. Checked for the recess it is cut into and for its own
+		# lettering: the field is the hardware colour in every style, so the plate's
+		# legend would be black on black on half of them.
+		for chooser in _choosers(widget):
+			var box := chooser.get_theme_stylebox("normal") as StyleBoxFlat
+			if box == null or box.bg_color != Rack.skin(want).get("hardware", Color()):
+				unmounted.append("%s (%s)" % [id, want])
+			elif Design.contrast(chooser.get_theme_color("font_color"),
+					box.bg_color) < 4.5:
+				unreadable.append("%s: its dropdown (%.2f)"
+					% [id, Design.contrast(chooser.get_theme_color("font_color"),
+						box.bg_color)])
+
 		# The dials are the rack's own control, and they take the rack's own skin.
 		for knob in _knobs(widget):
 			if str((knob.skin as Dictionary).get("panel", Color())) != str(plate):
@@ -204,6 +232,8 @@ func _verify(main, offset: int, when: String) -> void:
 		% [when, "" if knobs_missed.is_empty() else " — " + ", ".join(knobs_missed)])
 	check(ungrained.is_empty(), "%s: with the rack's own hardware over the plate%s"
 		% [when, "" if ungrained.is_empty() else " — " + ", ".join(ungrained)])
+	check(unmounted.is_empty(), "%s: and any dropdown cut into the panel%s"
+		% [when, "" if unmounted.is_empty() else " — " + ", ".join(unmounted)])
 
 
 func _initialize() -> void:
