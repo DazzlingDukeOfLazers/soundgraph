@@ -7798,12 +7798,60 @@ func _initialize() -> void:
 	check(is_equal_approx(main.big_face.size.x, main.big_face.full_width()),
 		"the face is as wide as its panels and no wider (%d)" % int(main.big_face.size.x))
 
+
 	# And the door swings both ways now.
 	main.graph_edit.case_flipped.emit()
 	for i in 12:
 		await process_frame
 	check(not main.graph_edit.face_up and not main.big_face.visible,
 		"pressing it on the face comes back to the graph")
+
+	# ---- every way of getting from one view to another ------------------------------
+	# Three views, six transitions, and they were being added one at a time - each new
+	# one wired against the state it was written from. Face view never turned the
+	# schematic off, so coming to the face from the schematic drew the panel on top of
+	# the grid and left both mounted at once.
+	#
+	# Walked as a table rather than as prose, because the fault is never in the
+	# transition somebody was thinking about.
+	var views_seen: Array = []
+	for step in ["wires", "face", "schematic", "wires", "schematic", "face", "wires"]:
+		match str(step):
+			"wires":
+				if main.graph_edit.face_up:
+					await main._flip_container(false)
+				if main.schematic_up:
+					await main._show_schematic(false)
+			"face":
+				await main._flip_container(true)
+			"schematic":
+				await main._show_schematic(true)
+		for i in 12:
+			await process_frame
+
+		# Exactly one of the three is showing. The nodes count as the third: wires is a
+		# view like the others, it just happens to be the one made of real controls.
+		var nodes_up := false
+		for child in main.graph_edit.get_children():
+			if child is GraphNode and (child as GraphNode).visible:
+				nodes_up = true
+		var showing: Array = []
+		if nodes_up:
+			showing.append("wires")
+		if main.big_face.visible:
+			showing.append("face")
+		if main.schematic.visible:
+			showing.append("schematic")
+		views_seen.append("%s->%s" % [step, ",".join(showing)])
+		check(showing.size() == 1 and showing[0] == step,
+			"%s shows %s and nothing else" % [step, step]
+				if showing.size() == 1 and showing[0] == step
+				else "going to %s left %s showing" % [step, str(showing)])
+
+	# And the mount the canvas is told about has to agree with what is actually up, or
+	# the band ends up measured against a view that is not there.
+	check(not main.graph_edit.mount_up and main.graph_edit.mount_box.size.x <= 0.0,
+		"back at the wiring, the canvas is holding no mount")
 
 	await main._set_face_edit(true)
 	for i in 8:

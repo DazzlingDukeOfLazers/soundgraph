@@ -1780,6 +1780,13 @@ func _flip_container(show_face: bool) -> void:
 	if graph_edit == null or big_face == null:
 		return
 	if show_face:
+		# The schematic is a mount on this canvas too, and turning to the face does not
+		# displace it by itself: both would be visible, the panel drawn on top of the
+		# grid. Every other pair of these views already cleared each other and this one
+		# was missed, because it is the transition nobody makes while building the view
+		# they are working on.
+		if schematic_up:
+			await _show_schematic(false)
 		face_anchor = graph_edit.case_box().position
 		graph_edit.face_up = true
 		for child in graph_edit.get_children():
