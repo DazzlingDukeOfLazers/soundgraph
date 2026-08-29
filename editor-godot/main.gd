@@ -1445,6 +1445,26 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 			ModuleThemes.token(key, "legend"))
 
 	_finish_widget(widget, key)
+	_socket_widget(widget, key)
+
+
+## Re-cuts a node's sockets in its panel style.
+##
+## The port icon is the whole of the jack: GraphEdit centres it on the slot anchor and
+## draws the cables underneath the nodes, so a socket drawn here sits over the end of its
+## own cable and the anchor, the hitbox and the routing are all untouched. That is the
+## reason the jacks are icons rather than something drawn over the panel — the brief asks
+## for the graph anchor to stay exactly where it is, and this way nothing had to move.
+func _socket_widget(widget: GraphNode, key: String) -> void:
+	if not widget.has_meta("left_types"):
+		return
+	var left: PackedStringArray = widget.get_meta("left_types")
+	var right: PackedStringArray = widget.get_meta("right_types")
+	for slot in left.size():
+		if str(left[slot]) != "":
+			widget.set_slot_custom_icon_left(slot, _port_icon(str(left[slot]), key))
+		if str(right[slot]) != "":
+			widget.set_slot_custom_icon_right(slot, _port_icon(str(right[slot]), key))
 
 
 ## Gives a node the parts of a faceplate a stylebox cannot draw: the finish, the lit top
@@ -3873,9 +3893,11 @@ func _create_widget(node: Dictionary) -> void:
 		# greyscale printout and a projector that has given up on saturation. Colour was
 		# doing this on its own, which meant for some people it was not being done.
 		if has_input:
-			widget.set_slot_custom_icon_left(row, _port_icon(inputs[row]["type"]))
+			widget.set_slot_custom_icon_left(row,
+				_port_icon(inputs[row]["type"], _panel_style_of(str(node["id"]))))
 		if has_output:
-			widget.set_slot_custom_icon_right(row, _port_icon(outputs[row]["type"]))
+			widget.set_slot_custom_icon_right(row,
+				_port_icon(outputs[row]["type"], _panel_style_of(str(node["id"]))))
 
 	if str(node.get("type", "")) in ["PluginEffect", "PluginInstrument"]:
 		var plugin_line := HBoxContainer.new()
@@ -3964,6 +3986,17 @@ func _create_widget(node: Dictionary) -> void:
 		widget.add_child(lane_line)
 		# Not through _fit_row_height: that helper hides any slotless row without
 		# parameter cells, and this row's whole job is to be the thing it carries.
+
+	# What each slot carries, so its socket can be re-cut in a new style without taking
+	# the node apart. Read back from the widget rather than from the document because
+	# this is a fact about the built rows, and the rows are what have slots.
+	var left_types := PackedStringArray()
+	var right_types := PackedStringArray()
+	for slot in maxi(inputs.size(), outputs.size()):
+		left_types.append(str(inputs[slot]["type"]) if slot < inputs.size() else "")
+		right_types.append(str(outputs[slot]["type"]) if slot < outputs.size() else "")
+	widget.set_meta("left_types", left_types)
+	widget.set_meta("right_types", right_types)
 
 	_add_ghost_ports(widget, str(node["id"]), descriptor)
 
@@ -4094,40 +4127,93 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 ## GraphEdit hotzone constants, so this is about telling the types apart, not about aim.
 static var _port_icons: Dictionary = {}
 
-func _port_icon(type_name: String) -> Texture2D:
-	if _port_icons.has(type_name):
-		return _port_icons[type_name]
+func _port_icon(type_name: String, key: String = ModuleThemes.CATEGORY) -> Texture2D:
+	var cached := "%s/%s" % [type_name, key]
+	if _port_icons.has(cached):
+		return _port_icons[cached]
 
 	const SIZE := 20
 	var image := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	var colour: Color = TYPE_COLOURS.get(type_name, Design.INK_NORMAL)
 	var centre := Vector2(SIZE * 0.5 - 0.5, SIZE * 0.5 - 0.5)
-	var radius := 5.0
+	var painted := key != ModuleThemes.CATEGORY
 
-	for y in SIZE:
-		for x in SIZE:
-			var point := Vector2(x, y) - centre
-			var distance := 0.0
-			match type_name:
-				"control":
-					distance = absf(point.x) + absf(point.y)          # diamond
-				"event":
-					distance = maxf(absf(point.x), absf(point.y)) * 1.35   # square
-				_:
-					distance = point.length()                          # circle
-			var edge := radius + 1.0
-			if distance > edge:
-				continue
-			# A dark rim, so a port stays visible against a node body of any lightness.
-			var alpha: float = clampf(edge - distance, 0.0, 1.0)
-			var fill := colour
-			if type_name == "note" and distance < radius - 2.0:
-				fill = Design.SURFACES[Design.Surface.NODE]        # ring, not disc
-			image.set_pixel(x, y, Color(fill.r, fill.g, fill.b, alpha))
+	if painted:
+		# A socket mounted in the panel, rather than a coloured shape sitting on it.
+		#
+		# The whole grammar of the reference boards is here: a black jack field with a
+		# coloured ring round it, and a cable that goes into the hole. It works because
+		# of where this is drawn rather than because of what is in it — a GraphEdit
+		# draws its cables underneath the nodes, so a socket drawn on the node is
+		# already over the cable end. Give it a dark centre and a bright collar and the
+		# cable stops being a line that ends at a dot and becomes a plug going in.
+		#
+		# The signal type is still carried by a shape, and that is not decoration: it
+		# is how the type survives a colour-blind reader, a greyscale printout and a
+		# projector that has given up on saturation. It moves from being the whole port
+		# to being the pip in the middle of one.
+		var skin := Rack.skin(key)
+		var ring: Color = skin.get("ring", Color(0.7, 0.7, 0.7))
+		var hole: Color = skin.get("jack", Color(0.07, 0.07, 0.07))
+		var collar := ring.darkened(0.68)
+		for y in SIZE:
+			for x in SIZE:
+				var point := Vector2(x, y) - centre
+				var distance := point.length()
+				if distance > 9.6:
+					continue
+				var fill := collar
+				# Lit from the top left, like everything else on the panel.
+				if distance > 7.4:
+					var lift: float = clampf(
+						-(point.x + point.y) / 20.0 + 0.12, -0.18, 0.3)
+					fill = collar.lightened(maxf(lift, 0.0)) if lift > 0.0 \
+						else collar.darkened(-lift)
+				elif distance > 6.0:
+					fill = ring
+				else:
+					fill = hole
+				# The pip: the signal's own shape, in the signal's own colour, small
+				# enough to sit inside the socket rather than fill it.
+				var pip := 0.0
+				match type_name:
+					"control":
+						pip = absf(point.x) + absf(point.y)
+					"event":
+						pip = maxf(absf(point.x), absf(point.y)) * 1.35
+					_:
+						pip = distance
+				if pip <= 3.4 and not (type_name == "note" and pip < 1.8):
+					fill = colour
+				image.set_pixel(x, y, Color(fill.r, fill.g, fill.b,
+					clampf(9.6 - distance, 0.0, 1.0)))
+	else:
+		var radius := 5.0
+		for y in SIZE:
+			for x in SIZE:
+				var point := Vector2(x, y) - centre
+				var distance := 0.0
+				match type_name:
+					"control":
+						distance = absf(point.x) + absf(point.y)          # diamond
+					"event":
+						distance = maxf(absf(point.x), absf(point.y)) * 1.35   # square
+					_:
+						distance = point.length()                          # circle
+				var edge := radius + 1.0
+				if distance > edge:
+					continue
+				# A dark rim, so a port stays visible against a node body of any
+				# lightness.
+				var alpha: float = clampf(edge - distance, 0.0, 1.0)
+				var fill := colour
+				if type_name == "note" and distance < radius - 2.0:
+					fill = Design.SURFACES[Design.Surface.NODE]        # ring, not disc
+				image.set_pixel(x, y, Color(fill.r, fill.g, fill.b, alpha))
 
 	var texture := ImageTexture.create_from_image(image)
-	_port_icons[type_name] = texture
+	_port_icons[cached] = texture
 	return texture
 
 

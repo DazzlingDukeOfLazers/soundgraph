@@ -1675,6 +1675,28 @@ class Knob extends Control:
 			size.y * 0.5 if compact else radius + 6.0)
 		var angle := START + SWEEP * _position
 
+		# Printed ticks around the travel, the way a panel marks a pot's range.
+		#
+		# Eleven, because a scale wants a middle and an odd count gives it one — a knob
+		# at noon should be pointing at a mark. Drawn in the panel's own thinner ink
+		# where it has one, at a length that reads as printing rather than as a second
+		# dial: this is the cheapest thing on the panel that says the control is mounted
+		# in something rather than floating on it.
+		#
+		# Inside the value arc rather than outside it. Outside is where a real panel
+		# prints them and also where this control's minimum size stops — a ring of ticks
+		# out there would either be clipped by the cell or widen every cell in the
+		# editor to make room for decoration.
+		var marks: Color = skin.get("muted", Color(0, 0, 0, 0))
+		if marks.a <= 0.0:
+			marks = Color(rack.ink_dim, 0.55)
+		const TICKS := 11
+		for tick in TICKS:
+			var at := START + SWEEP * (float(tick) / float(TICKS - 1))
+			var out := Vector2(cos(at), sin(at))
+			draw_line(centre + out * (radius + 1.5), centre + out * (radius + 3.2),
+				marks, 1.0, true)
+
 		draw_arc(centre, radius + 5.0, START, START + SWEEP, 40,
 			Rack.KNOB_TRACK, 3.0, true)
 		draw_arc(centre, radius + 5.0, START, angle, 40,
@@ -1688,12 +1710,23 @@ class Knob extends Control:
 				false, 2.0)
 
 		var body: Color = skin.get("knob", Rack.KNOB_BODY)
+		# Sitting on the panel rather than printed on it: a short dense shadow under the
+		# body, offset down because the light on these panels comes from the top. It is
+		# the same argument as the module's own shadow, one size down.
+		draw_circle(centre + Vector2(0.0, 1.6), radius + 0.6, Color(0.0, 0.0, 0.0, 0.3))
 		draw_circle(centre, radius, body)
 		draw_circle(centre, radius, Color(0, 0, 0, 0.5), false, 1.0)
 		# The cap catches the light. A pale knob is lit by darkening rather than
 		# lightening it, or a cream bakelite cap turns into a white disc with no edge.
 		draw_circle(centre - Vector2(0, 1), radius - 5.0,
 			body.darkened(0.08) if body.get_luminance() > 0.5 else body.lightened(0.10))
+		# One short highlight across the top left of the cap, and no more than one. This
+		# is where a knob turns into a 2010 gel button if it is overdone: the reference
+		# is small moulded hardware under diffuse light, which has a soft sheen on one
+		# side and nothing anywhere else.
+		draw_arc(centre - Vector2(0.0, 1.0), radius - 6.5, PI * 1.08, PI * 1.62, 12,
+			Color(1.0, 1.0, 1.0, 0.10 if body.get_luminance() > 0.5 else 0.16),
+			1.6, true)
 		# The pointer, which is what actually tells you where the knob is set, and the
 		# one part of a knob that has to be visible from across a desk.
 		var pointer: Color = skin.get("pointer", Color(0, 0, 0, 0))
