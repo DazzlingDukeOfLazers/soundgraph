@@ -2165,6 +2165,11 @@ json::Value write_ports(Slice<PortDescriptor> ports, bool is_input) {
             entry.set("summing", json::Value(port.summing));
         }
         entry.set("doc", json::Value(port.doc));
+        // Absent unless the descriptor set one: an empty label is not a fact, and every
+        // reader already falls back to the name.
+        if (port.label != nullptr && port.label[0] != '\0') {
+            entry.set("label", json::Value(port.label));
+        }
         array.push_back(std::move(entry));
     }
     return array;
@@ -2209,6 +2214,9 @@ std::string write_registry(const NodeRegistry& registry, bool pretty) {
             item.set("name", json::Value(parameter.name));
             if (std::strlen(parameter.unit) > 0) {
                 item.set("unit", json::Value(parameter.unit));
+                if (parameter.label != nullptr && parameter.label[0] != '\0') {
+                    item.set("label", json::Value(parameter.label));
+                }
             }
             item.set("min", json::Value(static_cast<double>(parameter.min_value)));
             item.set("max", json::Value(static_cast<double>(parameter.max_value)));

@@ -41,10 +41,12 @@ constexpr PortDescriptor kOscInputs[] = {
     {"frequency", SignalType::Control, "Hz", false, false,
      "Pitch in hertz. Replaces the frequency parameter while connected."},
     {"fm", SignalType::Control, "octaves", false, false,
-     "Frequency modulation in octaves. 1.0 is an octave up, -1.0 an octave down."},
+     "Frequency modulation in octaves. 1.0 is an octave up, -1.0 an octave down.",
+     "fm"},
     {"pm", SignalType::Audio, "cycles", false, false,
      "Phase modulation in cycles, added linearly. This is the FM of FM synthesis: "
-     "feed another oscillator in here to make sidebands, not vibrato."},
+     "feed another oscillator in here to make sidebands, not vibrato.",
+     "pm"},
 };
 
 constexpr PortDescriptor kAudioOut[] = {
@@ -80,10 +82,12 @@ constexpr PortDescriptor kSineInputs[] = {
     {"frequency", SignalType::Control, "Hz", false, false,
      "Pitch in hertz. Replaces the frequency parameter while connected."},
     {"fm", SignalType::Control, "octaves", false, false,
-     "Frequency modulation in octaves. 1.0 is an octave up, -1.0 an octave down."},
+     "Frequency modulation in octaves. 1.0 is an octave up, -1.0 an octave down.",
+     "fm"},
     {"pm", SignalType::Audio, "cycles", false, false,
      "Phase modulation in cycles, added linearly. This is the FM of FM synthesis: "
-     "feed another oscillator in here to make sidebands, not vibrato."},
+     "feed another oscillator in here to make sidebands, not vibrato.",
+     "pm"},
     {"feedback", SignalType::Control, "", false, false,
      "Multiplied with the feedback parameter. Connect an envelope here so the bite "
      "follows the level, the way FM chips do."},

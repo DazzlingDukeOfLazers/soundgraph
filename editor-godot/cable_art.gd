@@ -604,18 +604,29 @@ static func draw_plug(canvas: CanvasItem, jack: Vector2, direction: Vector2,
 		_quad(canvas, base, tip, across * (half + 1.5), Vector2(1.0, 1.5),
 			Color(0.0, 0.0, 0.0, style.plug_contact_alpha))
 
+	# A capsule rather than a quad. The rectangle was the whole of why the barrel read
+	# as a PCB header tab: hard corners along its length say "stamped flat part", and a
+	# rounded end at each junction says "turned cylinder" — which is all a silhouette
+	# this size can say about roundness, and enough.
 	_quad(canvas, base, tip, across * half, Vector2.ZERO, body(style))
+	canvas.draw_circle(base, half, body(style))
+	canvas.draw_circle(tip, half, body(style))
 
 	# The collar, loud on purpose. It ties the dark plug to its cable, keeps identity when
 	# several plugs overlap, and at low zoom it is the last thing to survive — one bright
 	# bar is enough to say which cable this is.
 	var band_a := tip - along * style.band_width
 	_quad(canvas, band_a, tip, across * half, Vector2.ZERO, colour)
+	canvas.draw_circle(tip, half, colour)
 
 	if level != Detail.ICON:
+		# In the cable's own colour, barely darkened. It was 0.45, which made the relief
+		# read as part of the hardware — a grey stalk between barrel and cable — when its
+		# whole job is to be the moulded rubber of the cable gripping the plug: the
+		# flexible half of the handshake, in the flexible part's colour.
 		var relief_end := tip + along * style.relief_length
 		_taper(canvas, tip, relief_end, style.relief_start * 0.5, t * 0.5,
-			darken(colour, 0.45))
+			darken(colour, 0.18))
 
 	if level == Detail.FULL:
 		var lit := across * half * 0.60

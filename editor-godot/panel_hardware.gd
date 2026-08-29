@@ -106,6 +106,36 @@ func _draw() -> void:
 		draw_line(Vector2(size.x - 0.5, inset), Vector2(size.x - 0.5, size.y - inset),
 			Color(sidewall, 0.7), 1.0)
 
+	# The I/O rail: a shallow recess behind a column of three or more sockets, so the
+	# ports read as one piece of machined hardware rather than as a scatter of holes.
+	# Geometry is read live from the widget at draw time — the ports are wherever the
+	# layout put them, and asking any earlier is the ValueField lesson again.
+	var widget := get_parent() as GraphNode
+	if widget != null:
+		for side in 2:
+			var count := widget.get_output_port_count() if side == 0 \
+				else widget.get_input_port_count()
+			if count < 3:
+				continue
+			var top := INF
+			var bottom := -INF
+			for port in count:
+				var at: Vector2 = widget.get_output_port_position(port) if side == 0 \
+					else widget.get_input_port_position(port)
+				top = minf(top, at.y)
+				bottom = maxf(bottom, at.y)
+			var pad := 15.0
+			var rail_width := 27.0
+			var rail := Rect2(size.x - rail_width if side == 0 else 0.0,
+				top - pad, rail_width, bottom - top + pad * 2.0)
+			var low: Color = skin.get("panel_low", Color(0, 0, 0, 0.2))
+			draw_rect(rail, Color(low, 0.30))
+			# The recess's inner wall: one rule on the panel side, muted, which is what
+			# says "cut into the plate" instead of "stripe printed on it".
+			var wall_x := rail.position.x if side == 0 else rail.end.x
+			draw_line(Vector2(wall_x, rail.position.y), Vector2(wall_x, rail.end.y),
+				Color(skin.get("muted", low), 0.5), 1.0)
+
 	# The outline, drawn here rather than left to the styleboxes.
 	#
 	# A GraphNode is painted as two boxes — a titlebar and a body — and each of them can

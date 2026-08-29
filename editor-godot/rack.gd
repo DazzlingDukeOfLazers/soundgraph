@@ -1554,6 +1554,7 @@ class RackModule extends Control:
 			jack.skin = skin()
 			jack.node_id = node_id
 			jack.port_name = str(port["name"])
+			jack.face_label = Rack.face_text(port)
 			jack.type_name = str(port.get("type", ""))
 			jack.is_input = is_input
 			column.add_child(jack)
@@ -1783,6 +1784,9 @@ class Jack extends Control:
 	## that ends at this module's copy of it.
 	var node_id := ""
 	var port_name := ""
+	## What is printed beside the socket. port_name stays the lookup key — jack_position
+	## and the hover dictionary match on it — so the two must never be conflated.
+	var face_label := ""
 	var type_name := ""
 	var is_input := true
 
@@ -1815,7 +1819,8 @@ class Jack extends Control:
 		var font := _label_font()
 		if font == null:
 			return 0.0
-		return minf(font.get_string_size(port_name, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		return minf(font.get_string_size(face_label if face_label != "" else port_name,
+			HORIZONTAL_ALIGNMENT_LEFT, -1,
 			_label_size()).x, Design.scale(Rack.JACK_LABEL_MAX))
 
 	func _get_minimum_size() -> Vector2:
@@ -1839,7 +1844,8 @@ class Jack extends Control:
 		var room := size.x - Rack.jack_radius() * 2.0 - 6.0
 		if room <= 4.0:
 			return
-		var text := Rack.elided(font, port_name, _label_size(), room)
+		var text := Rack.elided(font, face_label if face_label != "" else port_name,
+			_label_size(), room)
 		var baseline := size.y * 0.5 + float(_label_size()) * 0.36
 		draw_string(font,
 			Vector2(Rack.jack_radius() * 2.0 + 6.0 if is_input else 0.0, baseline), text,
@@ -1929,7 +1935,11 @@ class Knob extends Control:
 		tooltip_text = str(descriptor["name"]) + ("\n" + doc if doc != "" else "")
 
 	func _name_text() -> String:
-		return str(descriptor["name"])
+		# A caption somebody typed on the face wins; then the registry's label; then the
+		# name, read aloud rather than as an identifier.
+		if str(descriptor.get("display_name", "")) != "":
+			return str(descriptor["display_name"])
+		return Rack.face_text(descriptor)
 
 	func _value_text() -> String:
 		if descriptor.has("enum"):
@@ -2360,6 +2370,20 @@ class Fader extends Knob:
 ##
 ## The title is left to the caller: the rack draws its own into the band, the panel gives
 ## the band to a Label so it can clip and ellipsise like every other name in the inspector.
+## What the panel prints for a port or a parameter: the registry's label where it has
+## one, the stable name with its underscores read as spaces where it does not.
+##
+## The name is wiring identity and never changes for presentation; the label is
+## presentation and never participates in wiring. Every view asks this one question in
+## this one place, so the graph, the rack and anything drawn later cannot drift into
+## calling the same jack two things.
+static func face_text(descriptor: Dictionary) -> String:
+	var label := str(descriptor.get("label", ""))
+	if label != "":
+		return label
+	return str(descriptor.get("name", "")).replace("_", " ")
+
+
 static func draw_plate(canvas: CanvasItem, rect: Rect2, band: float,
 		tint: Color, skin_colours: Dictionary = {}) -> void:
 	var face: Color = skin_colours.get("panel", PANEL)

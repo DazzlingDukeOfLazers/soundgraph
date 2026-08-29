@@ -3929,6 +3929,20 @@ func _create_widget(node: Dictionary) -> void:
 		for parameter: Dictionary in parameters:
 			if str(parameter["name"]) == "length":
 				grid = [[parameter]]
+	# A module with one knob and an input of the same name puts the knob on that input's
+	# row. The Amplifier is the case in point: its gain knob sat on the top row while the
+	# gain input sat below it, so the panel's one relationship — this socket feeds this
+	# control — was the one thing the layout did not say. Empty lines pad the grid down
+	# to the port's row; a padded line is a short row holding only its ports, which is
+	# exactly what the rows above the knob should be.
+	if grid.is_empty() and parameters.size() == 1:
+		for port_index in inputs.size():
+			if str(inputs[port_index]["name"]) == str(parameters[0]["name"]):
+				for _pad in port_index:
+					grid.append([])
+				grid.append([parameters[0]])
+				break
+
 	if grid.is_empty():
 		var per_line := PARAMETERS_PER_LINE
 		var line: Array = []
@@ -3941,6 +3955,18 @@ func _create_widget(node: Dictionary) -> void:
 			grid.append(line)
 	var port_rows: int = maxi(inputs.size(), outputs.size())
 	var cell_lines: int = grid.size()
+
+	# Whether this module is a rail module: one side is mostly ports and the other is
+	# mostly empty. The Keyboard is the type specimen — three knobs, four outputs — and
+	# on such a module the centred knob column reads as three knobs stranded on a field,
+	# because the centre of the panel is the one place nothing else is. Clustering the
+	# knobs against the quiet edge turns the same rows into a control block facing an
+	# I/O rail, which is the composition a real panel would have.
+	#
+	# Judged from the shape, not named per module, so the next node with this shape
+	# composes itself the same way. Modules with balanced sides keep the centred column.
+	var rail_right: bool = outputs.size() - cell_lines >= 2 and inputs.size() <= 1
+	var rail_left: bool = inputs.size() - cell_lines >= 2 and outputs.size() <= 1
 
 	for row in maxi(port_rows, cell_lines):
 		var line := HBoxContainer.new()
@@ -3965,7 +3991,9 @@ func _create_widget(node: Dictionary) -> void:
 
 		var cells := HBoxContainer.new()
 		cells.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
-		cells.alignment = BoxContainer.ALIGNMENT_CENTER
+		cells.alignment = BoxContainer.ALIGNMENT_BEGIN if rail_right \
+			else BoxContainer.ALIGNMENT_END if rail_left \
+			else BoxContainer.ALIGNMENT_CENTER
 		cells.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cells.set_meta("cells", true)
 		if row < grid.size():
@@ -4362,7 +4390,7 @@ func _port_label(port: Dictionary, align_right: bool) -> Control:
 	row.tooltip_text = doc
 
 	var name_label := Label.new()
-	name_label.text = str(port["name"])
+	name_label.text = Rack.face_text(port)
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
 	name_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
@@ -4379,8 +4407,12 @@ func _port_label(port: Dictionary, align_right: bool) -> Control:
 	# version put the unit first so that the name would sit nearest its port. It was
 	# a reasonable argument about proximity and it produced "Hz frequency", which
 	# reads as a typo. Reading order beats proximity when the result is words.
+	# A labelled port prints its label and nothing else. The unit was the half of
+	# "fm octaves" that made the row read as an identifier with its type exposed; the
+	# doc already says what the wire is measured in, and the readouts keep their units
+	# where a number needs one.
 	var unit := str(port.get("unit", ""))
-	if unit != "":
+	if unit != "" and not port.has("label"):
 		row.add_child(_unit_label(unit))
 	return row
 
@@ -4821,7 +4853,7 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# what the knob writes back through and is never touched by a caption — the two are
 	# separate fields precisely so that naming a knob cannot rewire it.
 	label.text = str(parameter.get("display_name", "")) \
-		if str(parameter.get("display_name", "")) != "" else name
+		if str(parameter.get("display_name", "")) != "" else Rack.face_text(parameter)
 	label.clip_text = true
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.tooltip_text = str(parameter.get("doc", ""))

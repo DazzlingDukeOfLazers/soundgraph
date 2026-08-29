@@ -28,7 +28,8 @@ constexpr PortDescriptor kFilterInputs[] = {
     {"cutoff", SignalType::Control, "Hz", false, false,
      "Cutoff in hertz. Replaces the cutoff parameter while connected."},
     {"cutoff_mod", SignalType::Control, "octaves", false, false,
-     "Shifts the cutoff in octaves. Connect an LFO here for a sweep that stays musical."},
+     "Shifts the cutoff in octaves. Connect an LFO here for a sweep that stays musical.",
+     "mod"},
     {"resonance", SignalType::Control, "", false, false,
      "Resonance, 0 to 1. Replaces the resonance parameter while connected."},
 };
@@ -46,7 +47,7 @@ constexpr ParameterDescriptor kFilterParameters[] = {
      "Which part of the spectrum to keep.", kFilterModeLabels, 4},
     {"cutoff_sweep", "octaves/s", -20.0f, 20.0f, 0.0f, Scaling::Linear,
      "How fast the cutoff moves on its own, without an LFO or an envelope. Negative "
-     "closes the filter as the sound plays, positive opens it.", nullptr, 0},
+     "closes the filter as the sound plays, positive opens it.", nullptr, 0, "sweep"},
 };
 
 class StateVariableFilterNode final : public DspNode {

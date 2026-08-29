@@ -20,6 +20,14 @@ struct PortDescriptor {
     bool required;         // an unconnected required input is a validation error
     bool summing;          // input only: accepts several connections, summed
     const char* doc;       // how this input combines with the node's parameters
+    // What the panel prints beside the socket, when the stable name is not it.
+    //
+    // `name` is wiring identity — patches, lookups and saved graphs all hold it — so it
+    // can never chase interface language. This can. Null means the name is already the
+    // label, which is true of almost every port; it is the "cutoff_mod"s of the world
+    // that need a word a musician would print on a panel. Appended last so every
+    // existing aggregate initializer stands unchanged.
+    const char* label = nullptr;
 };
 
 struct ParameterDescriptor {
@@ -34,6 +42,9 @@ struct ParameterDescriptor {
     // that the realtime parameter API stays a single scalar type.
     const char* const* enum_labels;
     int enum_count;
+    // As on PortDescriptor: presentation only, never identity. Appended last for the
+    // same reason.
+    const char* label = nullptr;
 };
 
 // Rough per-node resource use, used to answer "does this patch fit on that board?".
