@@ -7757,15 +7757,12 @@ func _initialize() -> void:
 	check(main.schematic.visible and not main.graph_edit.face_edit,
 		"turning on the schematic turns face edit off")
 
-	# The way out has to be on screen. The case band is measured from the nodes, and the
-	# schematic hides them - so the band went with them, and with it every control for
-	# leaving. It was a room with no door.
-	var exits: Dictionary = main.graph_edit._case_chip_rects()
-	check(exits.size() == 4 and main.graph_edit.case_box().size.x > 0.0,
-		"the schematic keeps the band, so there is a way back out of it (%d chips)"
-			% exits.size())
-	check(main.graph_edit._chip_lit("schematic") and not main.graph_edit._chip_lit("graph"),
-		"and the lit chip is the view you are actually in")
+	# The way out is the stationary switch, which never went anywhere. The chips this
+	# used to check lived on the case band and vanished with the nodes the band was
+	# measured from — a room with no door — and the fix that pinned chips to the mount
+	# has been retired for the better one: the door is outside the room.
+	check(main.view_switch != null and main.view_switch.get_child_count() == 4,
+		"the lens switch stands above the canvas with all four views on it")
 	# And the band stops being a drag handle while it is up: there are no visible nodes
 	# under it, so a drag would move things nobody can see and leave an undo step behind.
 	check(main.graph_edit.mount_up,
@@ -7781,16 +7778,8 @@ func _initialize() -> void:
 	await main._flip_container(true)
 	for i in 12:
 		await process_frame
-	var face_chips: Dictionary = main.graph_edit._case_chip_rects()
-	check(main.graph_edit.face_up and face_chips.size() == 4,
-		"the face carries the same four controls (%d)" % face_chips.size())
-	# GRAPH is a chip of its own now, so the door keeps one name everywhere. It used to
-	# be FACE VIEW from the graph and GRAPH from the face - one control with two names,
-	# which reads well enough with two views and stops meaning anything with three.
-	check(main.graph_edit._chip_label("face_view") == "FACE VIEW"
-		and main.graph_edit._chip_lit("face_view")
-		and not main.graph_edit._chip_lit("graph"),
-		"the face lights its own chip, and GRAPH is a separate way back")
+	check(main.graph_edit.face_up,
+		"the face mounts from the same switch as every other lens")
 
 	# The band follows the panel rather than the case it replaced. The face is stretched to
 	# at least the width of the nodes it covers, so on a wide patch most of that is empty
@@ -7806,12 +7795,12 @@ func _initialize() -> void:
 		"the face is as wide as its panels and no wider (%d)" % int(main.big_face.size.x))
 
 
-	# And the door swings both ways now.
-	main.graph_edit.case_flipped.emit()
+	# And the way back is the same switch: choose the Graph lens.
+	await main._set_patch_view(main.PatchView.GRAPH)
 	for i in 12:
 		await process_frame
 	check(not main.graph_edit.face_up and not main.big_face.visible,
-		"pressing it on the face comes back to the graph")
+		"choosing Graph on the switch comes back from the face")
 
 	# ---- every way of getting from one view to another ------------------------------
 	# Three views, six transitions, and they were being added one at a time - each new
@@ -7860,7 +7849,7 @@ func _initialize() -> void:
 	check(not main.graph_edit.mount_up and main.graph_edit.mount_box.size.x <= 0.0,
 		"back at the wiring, the canvas is holding no mount")
 
-	# GRAPH gets you home from either of the other two, and is a no-op when you are
+	# Graph gets you home from either of the other two, and is a no-op when you are
 	# already there. Not a toggle: the wiring is the view the others are departures from.
 	for from_view in ["schematic", "face"]:
 		if from_view == "schematic":
@@ -7869,17 +7858,17 @@ func _initialize() -> void:
 			await main._flip_container(true)
 		for i in 10:
 			await process_frame
-		main.graph_edit.case_graph_requested.emit()
+		await main._set_patch_view(main.PatchView.GRAPH)
 		for i in 12:
 			await process_frame
 		check(not main.big_face.visible and not main.schematic.visible
-			and main.graph_edit._chip_lit("graph"),
-			"GRAPH comes home from the %s" % from_view)
-	main.graph_edit.case_graph_requested.emit()
+			and main.patch_view == main.PatchView.GRAPH,
+			"Graph comes home from the %s" % from_view)
+	await main._set_patch_view(main.PatchView.GRAPH)
 	for i in 8:
 		await process_frame
-	check(main.graph_edit._chip_lit("graph") and not main.big_face.visible,
-		"and pressing it again from the graph changes nothing")
+	check(main.patch_view == main.PatchView.GRAPH and not main.big_face.visible,
+		"and choosing it again from the graph changes nothing")
 
 	await main._set_face_edit(true)
 	for i in 8:
@@ -7891,14 +7880,76 @@ func _initialize() -> void:
 	for i in 4:
 		await process_frame
 
-	# All three live on the band, in reading order.
-	var chips: Dictionary = main.graph_edit._case_chip_rects()
-	check(chips.has("face_edit") and chips.has("schematic") and chips.has("face_view"),
-		"the case band carries all three ways of looking at the patch")
-	if chips.size() == 3:
-		check((chips["face_edit"] as Rect2).position.x < (chips["schematic"] as Rect2).position.x
-			and (chips["schematic"] as Rect2).position.x < (chips["face_view"] as Rect2).position.x,
-			"with face edit and schematic to the left of face view")
+	# ---- one patch, four lenses, one switch --------------------------------------------
+	# The hierarchy has three levels and each control lives on its own: workspaces are
+	# tabs, lenses are the segmented switch, and Face's edit mode is a subordinate pair
+	# that only exists while Face is the lens. Face Edit as a peer of Rack and Graph is
+	# the exact confusion this design replaced.
+	var tab_titles: Array = []
+	for tab_index in main.views.get_tab_count():
+		tab_titles.append(main.views.get_tab_title(tab_index))
+	check(tab_titles == ["Patch", "Sandbox", "Outline"],
+		"the workspace tabs are Patch, Sandbox and Outline — no lens among them (%s)"
+			% str(tab_titles))
+	var segment_names: Array = []
+	for segment in main.view_switch.get_children():
+		segment_names.append((segment as Button).text)
+	check(segment_names == ["Rack", "Graph", "Schematic", "Face"],
+		"and the lens switch reads Rack, Graph, Schematic, Face (%s)"
+			% str(segment_names))
+	check(not main.face_mode_switch.visible,
+		"Face's View/Edit pair is nowhere to be seen while another lens is up")
+	var mode_size: int = (main.face_mode_switch.get_child(0) as Button)\
+		.get_theme_font_size("font_size")
+	var lens_size: int = (main.view_switch.get_child(0) as Button)\
+		.get_theme_font_size("font_size")
+	check(mode_size < lens_size,
+		"and it is set smaller than the lenses — a mode, not a peer (%d vs %d)"
+			% [mode_size, lens_size])
+	await main._set_patch_view(main.PatchView.FACE)
+	for i in 10:
+		await process_frame
+	check(main.face_mode_switch.visible,
+		"choosing Face brings its mode pair out")
+	check(main.big_face.visible and not main.graph_edit.face_edit,
+		"and Face opens in View mode, showing the mounted face")
+	await main._set_face_mode(true)
+	for i in 10:
+		await process_frame
+	check(main.patch_view == main.PatchView.FACE and main.graph_edit.face_edit
+			and not main.big_face.visible,
+		"Edit stays inside the Face lens and opens the fitting room")
+	await main._set_face_mode(false)
+	for i in 8:
+		await process_frame
+	check(main.big_face.visible,
+		"and View mounts the face again")
+	await main._set_patch_view(main.PatchView.GRAPH)
+	for i in 10:
+		await process_frame
+
+	# ---- the selection is the patch's, not the view's ----------------------------------
+	# Select a module in one lens and every other lens keeps pointing at it: the graph
+	# by centring it, the rack by marking and scrolling to it, the schematic by
+	# outlining its card. The selected thing is semantic - a module id - not a widget.
+	main._focus_node("filter")
+	for i in 4:
+		await process_frame
+	check(main.selected_module == "filter",
+		"selecting in the graph records the module, not the widget")
+	await main._set_patch_view(main.PatchView.RACK)
+	for i in 10:
+		await process_frame
+	check(main.rack.selected_id == "filter",
+		"the rack lens arrives with the same module marked")
+	await main._set_patch_view(main.PatchView.SCHEMATIC)
+	for i in 10:
+		await process_frame
+	check(main.schematic.selected_id == "filter",
+		"and the schematic outlines the same module's card")
+	await main._set_patch_view(main.PatchView.GRAPH)
+	for i in 10:
+		await process_frame
 
 	# And through the editor, as document edits.
 	var before_painting := JSON.stringify(main.patch)
@@ -9667,12 +9718,10 @@ func _initialize() -> void:
 	await main._rebuild_view()
 	for i in 8:
 		await process_frame
-	var flip: Rect2 = main.graph_edit._case_flip_rect()
-	check(flip.size.x > 0.0, "the case band carries a FACE control (%s)" % str(flip))
 	var wired_before: int = main.graph_edit.get_connection_list().size()
 	check(wired_before > 0, "the wiring is on view to start with (%d)" % wired_before)
 	var history_at_flip: int = main.undo_redo.get_history_count()
-	_press_graph(main, flip.get_center())
+	await main._set_patch_view(main.PatchView.FACE)
 	for i in 8:
 		await process_frame
 	check(main.big_face.visible and main.graph_edit.visible,
@@ -9684,7 +9733,7 @@ func _initialize() -> void:
 	check(wires_shown == 0 and main.graph_edit.get_connection_list().is_empty(),
 		"with the wiring put away (%d nodes, %d cables)"
 			% [wires_shown, main.graph_edit.get_connection_list().size()])
-	check(main.views.get_tab_title(main.views.current_tab) == "Graph",
+	check(main.views.get_tab_title(main.views.current_tab) == "Patch",
 		"without leaving the tab (%s)"
 			% main.views.get_tab_title(main.views.current_tab))
 	var big_blocks: int = 0
@@ -9768,8 +9817,8 @@ func _initialize() -> void:
 		(wheel_knob as RackView.Knob).set_value_silently(
 			(wheel_knob as RackView.Knob)._to_value(held))
 
-	# The floating WIRES button is gone; the door is a chip on the band now.
-	main.graph_edit.case_flipped.emit()
+	# The floating WIRES button is gone, and so are the chips; the switch is the door.
+	await main._set_patch_view(main.PatchView.GRAPH)
 	for i in 10:
 		await process_frame
 	var wires_back := 0
@@ -9864,23 +9913,26 @@ func _initialize() -> void:
 	# The strip's zoom slider: one control, two views, two memories. It stands beside
 	# the tabs because Ctrl+wheel is a gesture nobody is told about, and it must point
 	# at whichever view is in front without the two values bleeding into each other.
-	main.views.current_tab = 0
-	await process_frame
+	await main._set_patch_view(main.PatchView.GRAPH)
+	for i in 4:
+		await process_frame
 	main._refresh_view_zoom_slider()
 	check(main.view_zoom_slider.visible,
 		"the zoom slider shows for the graph view")
 	main._on_view_zoom_slider(0.5)
 	check(is_equal_approx(main.graph_edit.zoom, 0.5),
 		"and dragging it zooms the graph (%.2f)" % main.graph_edit.zoom)
-	main.views.current_tab = 1
-	await process_frame
+	await main._set_patch_view(main.PatchView.RACK)
+	for i in 6:
+		await process_frame
 	main._refresh_view_zoom_slider()
 	main._on_view_zoom_slider(0.4)
 	check(is_equal_approx(main.rack.view_zoom, 0.4)
 			and is_equal_approx(main.graph_edit.zoom, 0.5),
-		"on the rack tab it zooms the rack and leaves the graph's distance alone")
-	main.views.current_tab = 0
-	await process_frame
+		"on the rack lens it zooms the rack and leaves the graph's distance alone")
+	await main._set_patch_view(main.PatchView.GRAPH)
+	for i in 6:
+		await process_frame
 	main._refresh_view_zoom_slider()
 	check(absf(main.view_zoom_slider.value - 0.5) < 0.01,
 		"and coming back, the slider remembers the graph's own value (%.2f)"

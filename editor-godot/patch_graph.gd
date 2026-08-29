@@ -614,28 +614,6 @@ func _connection_at(point: Vector2) -> Dictionary:
 func _gui_input(event: InputEvent) -> void:
 	var button := event as InputEventMouseButton
 	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
-		if button.pressed:
-			var chips := _case_chip_rects()
-			# Turn the device over. The graph is its insides and the face is what a
-			# player holds, and they are the same container — so the flip lives on the
-			# container, in the same place on both sides. The other two are modes, and
-			# they sit beside it because they answer the same question.
-			if (chips.get("face_view", Rect2()) as Rect2).has_point(button.position):
-				case_flipped.emit()
-				accept_event()
-				return
-			if (chips.get("face_edit", Rect2()) as Rect2).has_point(button.position):
-				case_face_edit_toggled.emit()
-				accept_event()
-				return
-			if (chips.get("schematic", Rect2()) as Rect2).has_point(button.position):
-				case_schematic_toggled.emit()
-				accept_event()
-				return
-			if (chips.get("graph", Rect2()) as Rect2).has_point(button.position):
-				case_graph_requested.emit()
-				accept_event()
-				return
 		# The band is a handle only when there is something under it to move. While a
 		# mount is up the nodes are hidden, and dragging the band would shift nodes
 		# nobody can see - an edit, with an undo step, from a gesture that looks like
@@ -1124,15 +1102,6 @@ var case_title := "":
 ## The band was clicked rather than dragged: the container itself was chosen, the way
 ## clicking a node chooses the node.
 signal case_selected
-## Somebody asked to turn the container over — wiring to face, or back.
-signal case_flipped
-## The two modes on the band. The editor owns what they mean; the graph only draws them
-## lit and says when one was pressed.
-signal case_face_edit_toggled
-signal case_schematic_toggled
-## Back to the wiring, from wherever. Not a toggle: the graph is the view everything
-## else is a departure from, so asking for it twice should mean the same as asking once.
-signal case_graph_requested
 ## The face is up: the wiring is hidden and the mounted face stands in its place. The
 ## overlays stand down while it is — cables, glows and frames describe the wiring, and
 ## the wiring is what the flip put away.
@@ -1207,91 +1176,6 @@ signal case_move_started
 signal case_moved
 
 ## The control that turns the container over, at the right-hand end of the band.
-## The controls on the case band, right-aligned, in the order they are read: what you
-## are doing to the face, then the other view, then the face itself.
-##
-## Three views and one mode, all on the band. They are the answers to "how am I looking
-## at this patch", and they were spread across a toolbar and a case until they were not.
-##
-## GRAPH is named rather than implied. It used to be reachable only by turning off
-## whichever view you were in — press SCHEMATIC again, or press a door labelled GRAPH
-## that was really FACE VIEW wearing another name — so the wiring was the one view with
-## no button of its own. Now each view has a chip, the chip says where it goes, and the
-## lit one is where you are.
-const CASE_CHIPS := ["face_edit", "graph", "schematic", "face_view"]
-const CASE_CHIP_LABELS := {
-	"face_edit": "FACE EDIT", "graph": "GRAPH",
-	"schematic": "SCHEMATIC", "face_view": "FACE VIEW",
-}
-
-
-## Fixed labels now. The door used to say GRAPH from the face and FACE VIEW from the
-## graph, which is one control with two names — readable enough until a third view
-## arrived and "the other side" stopped meaning anything.
-func _chip_label(key: String) -> String:
-	return str(CASE_CHIP_LABELS[key])
-
-
-func _chip_lit(key: String) -> bool:
-	match key:
-		"face_edit":
-			return face_edit_on
-		"schematic":
-			return schematic_on
-		"face_view":
-			return face_up
-		"graph":
-			return not face_up and not schematic_on
-	return false
-
-
-func _case_chip_rects() -> Dictionary:
-	var out: Dictionary = {}
-	var band := _case_band_rect()
-	if band.size.x <= 0.0:
-		return out
-	var font := Design.font(Design.WEIGHT_MEDIUM)
-	if font == null:
-		font = get_theme_default_font()
-	if font == null:
-		return out
-	var scale := zoom if zoom > 0.0 else 1.0
-	var text_size := int(maxf(float(Design.type(Design.SIZE_CONTROL)) * scale, 8.0))
-	var inset := band.size.y * 0.18
-	var pad := float(Design.scale(8)) * scale
-	var gap := float(Design.scale(6)) * scale
-
-	# Laid out right to left so the rightmost chip keeps its place on the band however
-	# many there are, and the band's own title keeps the left.
-	var edge := band.end.x - inset
-	for index in range(CASE_CHIPS.size() - 1, -1, -1):
-		var key: String = CASE_CHIPS[index]
-		var measured := font.get_string_size(_chip_label(key),
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
-		var width := measured.x + pad * 2.0
-		# The strip may take the band up to whatever the title needs, and the title is
-		# only drawn on this side — the face draws its own name, centred, on itself.
-		#
-		# This was a flat quarter of the band, which cost the leftmost chip on any narrow
-		# case: the face hugs its panels now, and at 50% on first-synth that is a 256px
-		# band where three chips want 214 and the guard demanded 364. FACE EDIT was
-		# dropped by about a pixel, and the control that goes first is the one furthest
-		# from the door, which is the worst of the three to lose.
-		var reserved := inset if face_up else band.size.x * 0.25
-		if edge - width < band.position.x + reserved:
-			break
-		out[key] = Rect2(Vector2(edge - width, band.position.y + inset),
-			Vector2(width, band.size.y - inset * 2.0))
-		edge -= width + gap
-	return out
-
-
-## Kept under its old name because the flip is still the rightmost chip, and the press
-## handling and the tests both reach for it that way.
-func _case_flip_rect() -> Rect2:
-	return _case_chip_rects().get("face_view", Rect2())
-
-
 var _case_dragging := false
 var _case_drag_from := Vector2.ZERO
 var _case_drag_travel := 0.0
@@ -1342,26 +1226,9 @@ func _draw_case() -> void:
 			band * 0.72), case_title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 			text_size, Design.INK_SECOND)
 
-	# The chips. Face view is a door — press it and you are somewhere else — while the
-	# other two are modes you are either in or not, so those two light up when they are
-	# on and the door never does.
-	var chips := _case_chip_rects()
-	for key in chips:
-		var chip: Rect2 = chips[key]
-		if chip.size.x <= 4.0:
-			continue
-		# Lit is where you are, or which mode is on. Three of these are views and exactly
-		# one of them is always true, so there is always something lit to read.
-		var lit: bool = _chip_lit(str(key))
-		draw_rect(chip, Color(Design.ACCENT, 0.55 if lit else 0.16))
-		draw_rect(chip, Color(Design.ACCENT, 0.9 if lit else 0.55), false, 1.0)
-		var label := _chip_label(key)
-		var measured := font.get_string_size(label,
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size)
-		draw_string(font, chip.position + Vector2((chip.size.x - measured.x) * 0.5,
-			chip.size.y * 0.5 + measured.y * 0.34), label,
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, text_size,
-			Design.ON_ACCENT if lit else Design.ACCENT)
+	# No chips. The band is the case's own edge and its title; how you look at the
+	# patch is chosen in one stationary switch above the canvas, the same place from
+	# every lens, which is the difference between changing rooms and changing glasses.
 
 
 func _draw() -> void:

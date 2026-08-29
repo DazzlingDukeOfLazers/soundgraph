@@ -213,6 +213,26 @@ var graph_edit: GraphEdit
 ## The container turned over: the file's face, full size, in the Graph tab's slot.
 ## Same class as the side panel's face — one face, two mountings.
 var big_face: PatchFace
+
+## One patch, multiple representations. The view switch changes the lens, not the
+## object being worked on — that sentence is the whole architecture, and this enum is
+## its state. Rack, Graph, Schematic and Face are four drawings of the same patch;
+## everything else (Sandbox, Outline) is a different workspace, not a different lens.
+enum PatchView { RACK, GRAPH, SCHEMATIC, FACE }
+var patch_view: int = PatchView.GRAPH
+## Face's interaction state. Edit is a mode of Face, not a fifth view: it decides how
+## you touch the faceplates, not which representation you are looking at.
+var face_edit_mode := false
+## The semantic selection, shared by every lens. A view highlights this module in its
+## own vocabulary; none of them owns it.
+var selected_module := ""
+var rack_scroll: ScrollContainer
+var container_of_views: Control
+var view_switch: HBoxContainer
+var lens_bar: HBoxContainer
+var face_mode_switch: HBoxContainer
+var _view_buttons: Dictionary = {}
+var _face_mode_buttons: Dictionary = {}
 ## The third way of looking at a patch: not where somebody dragged things, and not the
 ## instrument, but the graph itself on a grid nobody has moved. See schematic.gd.
 var schematic: Schematic
@@ -835,16 +855,9 @@ func _build_ui() -> void:
 	# The container's own controls: its band switches which way you are looking at it,
 	# and dragging that band moves everything mounted in it.
 	graph_edit.case_move_started.connect(func() -> void: _begin_edit())
-	# One door, both ways. It used to only ever turn the case face-up, with a floating
-	# WIRES button in the corner as the way back; the button is gone and the chip does
-	# both, labelled with the side you will get.
-	graph_edit.case_flipped.connect(
-		func() -> void: await _flip_container(not graph_edit.face_up))
-	graph_edit.case_face_edit_toggled.connect(
-		func() -> void: _set_face_edit(not graph_edit.face_edit))
-	graph_edit.case_schematic_toggled.connect(
-		func() -> void: await _show_schematic(not schematic_up))
-	graph_edit.case_graph_requested.connect(func() -> void: await _show_graph())
+	# The case chips are gone: view switching lives in one stationary segmented control
+	# above the canvas, so changing lenses never means finding a different door in each
+	# room. See _set_patch_view.
 	graph_edit.group_flip_toggled.connect(func(module_name: String) -> void:
 		if flipped_modules.has(module_name):
 			flipped_modules.erase(module_name)
@@ -929,6 +942,71 @@ func _build_ui() -> void:
 	crumb_row.offset_right = -float(Design.scale(Design.SPACE_M))
 	crumb_row.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	crumb_row.add_theme_constant_override("separation", Design.SPACE_S)
+	# The lens switch: one segmented control, one place, every view. Navigation between
+	# representations rather than a row of actions, so it is quiet — the selected
+	# segment carries weight and an accent underline, the rest are muted text. Two cues
+	# beyond colour (weight and the underline), so the selection survives a monochrome
+	# screen and a colour-blind reader.
+	view_switch = HBoxContainer.new()
+	view_switch.add_theme_constant_override("separation", 0)
+	var lens_group := ButtonGroup.new()
+	var lens_names := {PatchView.RACK: "Rack", PatchView.GRAPH: "Graph",
+		PatchView.SCHEMATIC: "Schematic", PatchView.FACE: "Face"}
+	for lens in [PatchView.RACK, PatchView.GRAPH, PatchView.SCHEMATIC, PatchView.FACE]:
+		var segment := Button.new()
+		segment.text = lens_names[lens]
+		segment.toggle_mode = true
+		segment.button_group = lens_group
+		segment.flat = true
+		segment.tooltip_text = "%s — %d" % [lens_names[lens], int(lens) + 1] \
+			if lens != PatchView.RACK else "Rack — 1"
+		segment.add_theme_font_size_override("font_size",
+			Design.type(Design.SIZE_CONTROL))
+		segment.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var chosen := int(lens)
+		segment.pressed.connect(func() -> void: _set_patch_view(chosen))
+		view_switch.add_child(segment)
+		_view_buttons[lens] = segment
+	# Face's own mode, visibly subordinate: smaller, quieter, and only present while
+	# Face is the lens. View and Edit are how you touch the faceplates, not where you
+	# are.
+	face_mode_switch = HBoxContainer.new()
+	face_mode_switch.add_theme_constant_override("separation", 0)
+	face_mode_switch.visible = false
+	var mode_group := ButtonGroup.new()
+	for mode in ["View", "Edit"]:
+		var mode_button := Button.new()
+		mode_button.text = mode
+		mode_button.toggle_mode = true
+		mode_button.button_group = mode_group
+		mode_button.flat = true
+		mode_button.add_theme_font_size_override("font_size",
+			Design.type(Design.SIZE_SECONDARY))
+		mode_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var wants_edit: bool = mode == "Edit"
+		mode_button.pressed.connect(func() -> void: _set_face_mode(wants_edit))
+		face_mode_switch.add_child(mode_button)
+		_face_mode_buttons[mode] = mode_button
+	# Its own bar, centred over the canvas inside the Patch tab — not in the breadcrumb
+	# strip, which it overflowed straight across the workspace tabs the first time. The
+	# tab owns it, so it exists exactly when the Patch workspace does and sits in the
+	# same pixel through every lens change, which is the whole point of it.
+	lens_bar = HBoxContainer.new()
+	# Right-aligned: the canvas's own zoom cluster owns the top-left corner in every
+	# graph-camera lens, and a centred bar ran its first segment straight into it. The
+	# top-right corner belongs to nobody, in all four lenses.
+	lens_bar.alignment = BoxContainer.ALIGNMENT_END
+	lens_bar.anchor_left = 0.0
+	lens_bar.anchor_right = 1.0
+	lens_bar.anchor_top = 0.0
+	lens_bar.anchor_bottom = 0.0
+	lens_bar.offset_top = float(Design.scale(Design.SPACE_S))
+	lens_bar.offset_right = -float(Design.scale(Design.SPACE_M))
+	lens_bar.offset_bottom = float(Design.scale(44))
+	lens_bar.mouse_filter = Control.MOUSE_FILTER_PASS
+	lens_bar.add_theme_constant_override("separation", Design.scale(Design.SPACE_S))
+	lens_bar.add_child(view_switch)
+	lens_bar.add_child(face_mode_switch)
 	# The zoom, as furniture: Ctrl+wheel exists, but a gesture nobody is told about
 	# is a feature that does not exist, and the strip beside the tabs is where the
 	# eye already is when choosing how to look. One slider serves whichever view is
@@ -967,7 +1045,10 @@ func _build_ui() -> void:
 	# view: flipping hides the wiring and mounts the face at the case's own spot, and
 	# every camera gesture keeps working because it is the same camera.
 	var container_tab := Control.new()
-	container_tab.name = "Graph"
+	# Patch, not Graph: this tab holds every representation of the patch — graph, rack,
+	# schematic, face — and the segmented switch chooses among them. Sandbox and Outline
+	# stay tabs, because they are different workspaces, not different lenses.
+	container_tab.name = "Patch"
 	# Clipped to the work area.
 	#
 	# GraphEdit clips its own nodes, but the face and the schematic are tenants of this
@@ -1031,9 +1112,10 @@ func _build_ui() -> void:
 	graph_edit.add_child(big_face)
 
 	# The way back, floating over the canvas while the face is up.
+	container_of_views = container_tab
 	views.add_child(container_tab)
 
-	var rack_scroll := ScrollContainer.new()
+	rack_scroll = ScrollContainer.new()
 	rack_scroll.name = "Rack"
 	rack_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	rack = Rack.new()
@@ -1063,7 +1145,13 @@ func _build_ui() -> void:
 	rack_scroll.add_child(rack_holder)
 	rack_holder.add_child(rack)
 	rack_holder.resized.connect(rack._relayout)
-	views.add_child(rack_scroll)
+	# Inside the Patch tab, not a tab of its own. The rack is a representation of the
+	# patch, and putting it beside Sandbox made two different kinds of thing look like
+	# peers. It sits over the canvas and shows when the switch says RACK.
+	rack_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rack_scroll.visible = false
+	container_tab.add_child(rack_scroll)
+	container_tab.add_child(lens_bar)
 
 	# A third view, and a different kind of answer: not how a patch looks, but what it is
 	# for. Editing the jump patch in the Graph tab and hearing it change here, without a
@@ -1103,7 +1191,9 @@ func _build_ui() -> void:
 	# The rack lays out against the width it is given, so it has to be told when the tab
 	# is first shown — before that it has no size to flow modules into.
 	views.tab_changed.connect(func(_index: int) -> void:
-		rack.rebuild()
+		if patch_view == PatchView.RACK:
+			rack.rebuild()
+		_sync_view_switch()
 		_refresh_view_zoom_slider()
 		if sandbox != null and sandbox.is_visible_in_tree():
 			sandbox.ensure_sounds_loaded())
@@ -1216,11 +1306,135 @@ func _fit_toolbar(width: float = -1.0) -> void:
 
 
 ## Which of the zoomable views is in front, or "" when the front view has no zoom.
+## Changes the lens. The patch stays where it is; every path in here is "put away what
+## the old lens mounted, bring out what the new one draws", and the switch, the camera
+## and the selection all follow.
+##
+## Cameras are per-view and semantic context is shared: the graph, schematic and face
+## share one canvas camera by construction, the rack keeps its own zoom and scroll, and
+## none of them is forced into another's coordinates. What travels is the selection —
+## _reveal_selected asks the destination view to show the same module its own way.
+func _set_patch_view(view: int) -> void:
+	show_view("Patch")
+	patch_view = view
+	_sync_view_switch()
+	# A short dissolve — same patch, different representation. Content-only and brief,
+	# so rapid switching never waits on a spectacle.
+	if container_of_views != null:
+		container_of_views.modulate.a = 0.55
+		create_tween().tween_property(container_of_views, "modulate:a", 1.0, 0.12)
+	match view:
+		PatchView.RACK:
+			if graph_edit.face_edit:
+				await _set_face_edit(false)
+			await _show_graph()
+			graph_edit.visible = false
+			rack_scroll.visible = true
+			rack.rebuild()
+		PatchView.GRAPH:
+			rack_scroll.visible = false
+			graph_edit.visible = true
+			if graph_edit.face_edit:
+				await _set_face_edit(false)
+			await _show_graph()
+		PatchView.SCHEMATIC:
+			rack_scroll.visible = false
+			graph_edit.visible = true
+			await _show_schematic(true)
+		PatchView.FACE:
+			rack_scroll.visible = false
+			graph_edit.visible = true
+			if face_edit_mode:
+				await _show_graph()
+				await _set_face_edit(true)
+			else:
+				if graph_edit.face_edit:
+					await _set_face_edit(false)
+				await _flip_container(true)
+	_reveal_selected()
+	_refresh_view_zoom_slider()
+
+
+## Face's interaction state. Edit dresses the faceplates by clicking the controls on
+## the wiring — the fitting room — and View mounts the finished face. Choosing either
+## takes you to Face; they are its modes, not places of their own.
+func _set_face_mode(edit: bool) -> void:
+	face_edit_mode = edit
+	await _set_patch_view(PatchView.FACE)
+
+
+## The switch always tells the truth about the lens, whoever changed it.
+func _sync_view_switch() -> void:
+	var on_patch: bool = views != null \
+		and views.get_tab_title(views.current_tab) == "Patch"
+	if view_switch != null:
+		view_switch.visible = on_patch
+		for lens in _view_buttons:
+			var segment: Button = _view_buttons[lens]
+			var selected: bool = int(lens) == patch_view
+			segment.set_pressed_no_signal(selected)
+			_dress_segment(segment, selected)
+	if face_mode_switch != null:
+		face_mode_switch.visible = on_patch and patch_view == PatchView.FACE
+		for mode in _face_mode_buttons:
+			var mode_button: Button = _face_mode_buttons[mode]
+			var chosen: bool = (mode == "Edit") == face_edit_mode
+			mode_button.set_pressed_no_signal(chosen)
+			_dress_segment(mode_button, chosen)
+
+
+## One strong selected cue and one quiet one: an accent underline and semibold text on
+## the chosen segment, muted regular text on the rest. No boxes — four outlined boxes
+## is a row of buttons, and this is navigation.
+func _dress_segment(segment: Button, selected: bool) -> void:
+	segment.add_theme_font_override("font",
+		Design.font(Design.WEIGHT_SEMIBOLD if selected else Design.WEIGHT_REGULAR))
+	for state in ["font_color", "font_hover_color", "font_pressed_color",
+			"font_focus_color"]:
+		segment.add_theme_color_override(state,
+			Design.INK_BRIGHT if selected else Design.INK_SECOND)
+	if selected:
+		var underline := StyleBoxFlat.new()
+		underline.bg_color = Color(Design.ACCENT, 0.08)
+		underline.border_width_bottom = maxi(Design.scale(2), 2)
+		underline.border_color = Design.ACCENT
+		underline.content_margin_left = Design.scale(Design.SPACE_S)
+		underline.content_margin_right = Design.scale(Design.SPACE_S)
+		underline.content_margin_top = Design.scale(Design.SPACE_XS)
+		underline.content_margin_bottom = Design.scale(Design.SPACE_XS)
+		for state in ["normal", "hover", "pressed"]:
+			segment.add_theme_stylebox_override(state, underline)
+	else:
+		for state in ["normal", "hover", "pressed"]:
+			segment.remove_theme_stylebox_override(state)
+
+
+## Shows the shared selection the way the current lens shows anything: the graph
+## centres the node, the rack scrolls to the module and marks it, the schematic
+## outlines its card. Context travels; camera coordinates do not.
+func _reveal_selected() -> void:
+	if schematic != null:
+		schematic.selected_id = selected_module
+		schematic.queue_redraw()
+	if selected_module == "":
+		return
+	match patch_view:
+		PatchView.GRAPH:
+			if widgets.has(selected_module):
+				_focus_node(selected_module)
+		PatchView.RACK:
+			rack.select(selected_module)
+			var module = rack.module_for(selected_module)
+			if module != null and rack_scroll != null:
+				rack_scroll.scroll_vertical = maxi(0,
+					int(module.position.y * rack.view_zoom) - Design.scale(40))
+
+
 func _zoomable_view() -> String:
-	if views == null:
+	if views == null or views.get_tab_title(views.current_tab) != "Patch":
 		return ""
-	var title := views.get_tab_title(views.current_tab)
-	return title if title == "Graph" or title == "Rack" else ""
+	# The rack has its own camera; the graph, schematic and face share the canvas's.
+	return "Rack" if patch_view == PatchView.RACK else "Graph"
 
 
 ## Points the slider at the front view's range and value. Hidden on views with no
@@ -1955,8 +2169,18 @@ func _all_notes_off() -> void:
 func show_view(title: String) -> bool:
 	if views == null:
 		return false
+	# Two levels, one verb. Lenses route through the patch-view state; workspaces are
+	# still tabs. "Rack" stopped being a tab when it became a lens, and every caller
+	# that asks for it by name should not have to know that happened.
+	var lenses := {"rack": PatchView.RACK, "graph": PatchView.GRAPH,
+		"schematic": PatchView.SCHEMATIC, "face": PatchView.FACE}
+	var wanted := title.to_lower()
+	if lenses.has(wanted):
+		if patch_view != lenses[wanted] or views.get_tab_title(views.current_tab) != "Patch":
+			_set_patch_view(lenses[wanted])
+		return true
 	for index in views.get_tab_count():
-		if views.get_tab_title(index).to_lower() == title.to_lower():
+		if views.get_tab_title(index).to_lower() == wanted:
 			views.current_tab = index
 			return true
 	return false
@@ -5370,6 +5594,8 @@ func _without_target(entries: Array, node_id: String) -> Array:
 
 func _on_node_selected(node: Node) -> void:
 	var node_id: String = ids.get(node.name, "")
+	if node_id != "":
+		selected_module = node_id
 	if node_id == "":
 		# Still a selection change, even though there is nothing behind it. Returning
 		# without saying so left the panel describing whatever was selected before — which
@@ -5421,6 +5647,7 @@ func _on_rack_parameter_changed(node_id: String, parameter: String, value: float
 
 
 func _on_rack_node_selected(node_id: String) -> void:
+	selected_module = node_id
 	var outputs := _port_list(node_id, "outputs")
 	inspecting = {"node": node_id, "port": outputs[0]["name"]} if not outputs.is_empty() \
 		else {}
@@ -10115,6 +10342,19 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_set_side_panel_open(not side_panel_open)
 		accept_event()
 		return
+
+	# The four lenses on the plain number row, tooltips say so. Only while the Patch
+	# tab is up and nothing has keyboard focus — a 3 typed into a value field is a
+	# number, not a request for the schematic.
+	if key.pressed and not key.ctrl_pressed and not key.alt_pressed \
+			and get_viewport().gui_get_focus_owner() == null \
+			and views != null and views.get_tab_title(views.current_tab) == "Patch":
+		var lens_keys := {KEY_1: PatchView.RACK, KEY_2: PatchView.GRAPH,
+			KEY_3: PatchView.SCHEMATIC, KEY_4: PatchView.FACE}
+		if lens_keys.has(key.keycode):
+			_set_patch_view(lens_keys[key.keycode])
+			accept_event()
+			return
 
 	# The end of the view row Ctrl+0 and Ctrl+1 begin: fit, real size, and which
 	# drawing. A toggle on one key rather than an accelerator per radio item,

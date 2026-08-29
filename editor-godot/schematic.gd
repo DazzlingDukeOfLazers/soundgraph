@@ -145,6 +145,11 @@ func _draw() -> void:
 	for id in _placed:
 		_draw_card(str(id), _placed[id], font, small, mono)
 
+	# The shared selection, in this lens's vocabulary: the same accent every view uses,
+	# outlining the chosen module's card.
+	if selected_id != "" and _placed.has(selected_id):
+		draw_rect((_placed[selected_id] as Rect2).grow(3.0), Design.ACCENT, false, 2.0)
+
 
 ## Cables first, so a card always sits on top of the line that reaches it.
 func _draw_cables() -> void:
@@ -267,6 +272,12 @@ func _rounded_outline(box: Rect2, radius: float, colour: Color) -> void:
 
 
 ## Where a node landed, for tests and for whatever wants to point at one.
+## The shared selection: the module the editor considers chosen, whichever lens chose
+## it. Drawn as an accent outline on this view's card, so selecting a filter in the
+## graph and switching here keeps pointing at the same filter.
+var selected_id := ""
+
+
 func card_of(node_id: String) -> Rect2:
 	return _placed.get(node_id, Rect2())
 
