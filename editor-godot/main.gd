@@ -42,6 +42,15 @@ const PANEL_RADIUS := 6
 const PANEL_PADDING := 15
 
 ## How many parameter cells share a line in a graph node.
+## How many knobs sit on a line before the next one starts.
+##
+## Two. Three was tried, for the Keyboard: three parameters and four outputs put the
+## controls in the top half and left the bottom half of a very large orange rectangle
+## holding four right-aligned words. Laying them three across did compact the rows — one
+## tall row instead of two — and made the module 678px wide doing it, wider than the
+## whole column pitch, so it ran straight through the panel beside it. Height was never
+## the problem. This module is wide because "0.000 semitones" is wide, and no repacking
+## of the same cells fixes that.
 const PARAMETERS_PER_LINE := 2
 const Layout := preload("res://layout.gd")
 
@@ -3912,10 +3921,11 @@ func _create_widget(node: Dictionary) -> void:
 			if str(parameter["name"]) == "length":
 				grid = [[parameter]]
 	if grid.is_empty():
+		var per_line := PARAMETERS_PER_LINE
 		var line: Array = []
 		for parameter: Dictionary in parameters:
 			line.append(parameter)
-			if line.size() == PARAMETERS_PER_LINE:
+			if line.size() == per_line:
 				grid.append(line)
 				line = []
 		if not line.is_empty():
@@ -4923,6 +4933,15 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# so the only way to ask for exactly 440 was to drag until it happened to say 440.
 	# Drag the figure, double click to type it, Alt-click for the default.
 	var readout := ValueField.new()
+	# Seventy-two pixels, which is not wide enough for every reading this can show and
+	# is left alone deliberately.
+	#
+	# "0.000 semitones" is half as wide again and prints past its cell into whatever
+	# slack its neighbours are carrying — which, at two knobs to a line, there always is.
+	# Reserving the true width fixes the overflow and widens every cell holding a long
+	# unit, and four of the shipped Game examples then open with their nodes overlapping.
+	# The overflow is latent at this packing and the fix is not, so it belongs with the
+	# composition work that would move those columns, not ahead of it.
 	readout.custom_minimum_size.x = Design.scale(72)
 	readout.centred = true
 	readout.text = _format_with_unit(parameter, current)
