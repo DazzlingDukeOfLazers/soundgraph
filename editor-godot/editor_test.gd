@@ -7934,6 +7934,77 @@ func _initialize() -> void:
 	check(str(main.patch.get("arrangement", {}).get("theme", "")) == "",
 		"and the default is stored as nothing at all, not as the word for it")
 
+	# ---- and the graph wears them too ----------------------------------------------
+	# Choosing a panel style from the graph used to be an act of faith: the nodes were
+	# drawn from the editor theme, so the only way to see what you had picked was to
+	# switch to the Rack. The style is a fact about the module, so the module shows it
+	# wherever it is drawn.
+	var ps_widget: GraphNode = main.widgets.get(first_node) as GraphNode
+	check(ps_widget != null, "the painted module has a node in the graph")
+	
+	if ps_widget != null:
+		# On the widget rather than on the tokens. The tokens have contrasted correctly
+		# all along; it was the rack's knob lettering that came out near-white on cream,
+		# and then FILTER SWEEP in white on the same cream, because the title is a Label
+		# the node owns and add_theme_color_override("title_color", ...) on a GraphNode
+		# quietly does nothing at all.
+		var ps_worst := 99.0
+		var ps_worst_name := ""
+		for ps_key in ModuleThemes.ORDER:
+			main._set_module_theme(first_node, str(ps_key))
+			await process_frame
+			var ps_label: Label = main._title_label(ps_widget)
+			if ps_label == null:
+				continue
+			var ps_fill := (ps_widget.get_theme_stylebox("titlebar") as StyleBoxFlat).bg_color
+			var ps_ink: Color = ps_label.get_theme_color("font_color")
+			var ps_ratio := Design.contrast(ps_ink, ps_fill)
+			if ps_ratio < ps_worst:
+				ps_worst = ps_ratio
+				ps_worst_name = str(ps_key)
+		check(ps_worst >= 4.5,
+			"a node's title reads against its own header in every style (worst: %s at %.2f)"
+				% [ps_worst_name, ps_worst])
+		
+		# The header only, and deliberately. A graph node is mostly text - port names,
+		# values, units - drawn in the editor's ink, and a mustard or ivory faceplate
+		# behind all of that is the knob-lettering bug again in the view with the most
+		# words in it. One band of colour identifies a panel; a rack module labels itself
+		# across the top for the same reason.
+		check(not ps_widget.has_theme_stylebox_override("panel"),
+			"and the body is left to the editor, so the port lettering stays readable")
+		
+		# Right-click is the whole feature. Dispatched as an event rather than by calling
+		# the handler, because a menu nothing can open is not a menu.
+		var ps_click := InputEventMouseButton.new()
+		ps_click.button_index = MOUSE_BUTTON_RIGHT
+		ps_click.pressed = true
+		ps_widget.gui_input.emit(ps_click)
+		await process_frame
+		var ps_menu: PopupMenu = null
+		for ps_child in main.get_children():
+			if ps_child is PopupMenu:
+				ps_menu = ps_child as PopupMenu
+		check(ps_menu != null, "right-clicking a node in the graph offers the panel styles")
+		if ps_menu != null:
+			check(ps_menu.item_count == ModuleThemes.ORDER.size() + 2,
+				"all %d of them, plus the patch's own and a separator (%d items)"
+					% [ModuleThemes.ORDER.size(), ps_menu.item_count])
+			ps_menu.id_pressed.emit(3)
+			await process_frame
+			check(str((main.patch["nodes"][0] as Dictionary).get("theme", ""))
+					== str(ModuleThemes.ORDER[2]),
+				"and picking one from that menu repaints that module alone")
+		
+		# Back to the patch's, which removes the overrides rather than writing the
+		# defaults back - so an unpainted node follows the palette when it changes.
+		main._set_module_theme(first_node, "")
+		await process_frame
+		var ps_bare: Label = main._title_label(ps_widget)
+		check(not ps_widget.has_theme_stylebox_override("titlebar")
+				and (ps_bare == null or not ps_bare.has_theme_color_override("font_color")),
+			"and putting it back on the patch's panels leaves the node undressed again")
+
 	await main._load_text(before_painting)
 	for i in 6:
 		await process_frame

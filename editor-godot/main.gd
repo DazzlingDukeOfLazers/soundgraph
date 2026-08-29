@@ -1263,12 +1263,17 @@ func _set_module_theme(node_id: String, key: String) -> void:
 		target["theme"] = key
 	_commit_edit("panel")
 	_repaint_rack()
-	_say("%s: %s" % [node_id, "the rack's panels" if key == ""
+	_say("%s: %s" % [node_id, "the patch's panels" if key == ""
 		else ModuleThemes.display_name(key)])
 
 
 ## The rack draws from the document by reference, so a repaint is a rebuild.
 func _repaint_rack() -> void:
+	# The graph wears the styles too, so a change has to reach both views. Restyled in
+	# place rather than by rebuilding the graph: a rebuild would drop the selection and
+	# the camera, and repainting a node is not a change to the graph's structure.
+	for node_id in widgets:
+		_style_widget(widgets[node_id] as GraphNode, str(node_id))
 	if rack == null:
 		return
 	rack.patch = patch
@@ -1294,9 +1299,77 @@ func _sync_panels_menu() -> void:
 
 
 ## Right-click on a panel: the same list, plus the way back to the rack's own.
+## Which panel style a node is wearing: its own, then the patch's, then the category
+## colouring. The same question the rack asks, asked from here.
+func _panel_style_of(node_id: String) -> String:
+	var mine := ""
+	for node in patch.get("nodes", []):
+		if str((node as Dictionary).get("id", "")) == node_id:
+			mine = str((node as Dictionary).get("theme", ""))
+			break
+	return ModuleThemes.resolve(mine,
+		str(patch.get("arrangement", {}).get("theme", "")))
+
+
+## Dresses one graph node in its panel style.
+##
+## The style is a fact about the module, so it shows wherever the module is drawn — the
+## rack was the only view wearing it, which made choosing one from the graph an act of
+## faith. The node keeps its shape: this is paint, not geometry, exactly as it is on a
+## rack panel.
+##
+## The category default removes the overrides rather than writing the default colours
+## back, so an unpainted node is drawn by the editor theme and follows the palette when
+## somebody changes it.
+func _style_widget(widget: GraphNode, node_id: String) -> void:
+	var key := _panel_style_of(node_id)
+	var title_label := _title_label(widget)
+	if key == ModuleThemes.CATEGORY:
+		widget.remove_theme_stylebox_override("titlebar")
+		if title_label != null:
+			title_label.remove_theme_color_override("font_color")
+		return
+
+	# The header only, and not the body.
+	#
+	# Painting the whole node was the obvious reading of "wears its style" and it was
+	# wrong: a graph node is mostly text — port names, values, units — drawn in the
+	# editor's own light ink, and a mustard or ivory faceplate under that is the rack's
+	# knob-lettering bug again, in a view with ten times as many words in it. The header
+	# is where a rack module says what it is too, and one band of colour identifies a
+	# panel perfectly well.
+	var head := Design.padded_panel(Design.Surface.RAISED, Design.NODE_PADDING_H,
+		Design.SPACE_S, Design.RADIUS_NODE)
+	head.corner_radius_bottom_left = 0
+	head.corner_radius_bottom_right = 0
+	head.border_width_bottom = 0
+	head.bg_color = ModuleThemes.token(key, "faceplate")
+	head.border_color = ModuleThemes.token(key, "edge")
+	widget.add_theme_stylebox_override("titlebar", head)
+	# The title is a Label in the titlebar rather than a themed colour on the node, so
+	# add_theme_color_override("title_color", ...) on the GraphNode silently does
+	# nothing — which is how FILTER SWEEP came to be drawn in white on cream.
+	if title_label != null:
+		title_label.add_theme_color_override("font_color",
+			ModuleThemes.token(key, "legend"))
+
+
+## A GraphNode's title is a Label the node builds for itself, and it is reached through
+## the titlebar rather than through the theme.
+func _title_label(widget: GraphNode) -> Label:
+	var bar := widget.get_titlebar_hbox()
+	if bar == null:
+		return null
+	for child in bar.get_children():
+		var label := child as Label
+		if label != null:
+			return label
+	return null
+
+
 func _on_module_theme_requested(node_id: String, at: Vector2) -> void:
 	var menu := PopupMenu.new()
-	menu.add_item("Use the rack's panels", 0)
+	menu.add_item("Use the patch's panels", 0)
 	menu.add_separator()
 	for index in ModuleThemes.ORDER.size():
 		var key: String = ModuleThemes.ORDER[index]
@@ -3530,6 +3603,17 @@ func _create_widget(node: Dictionary) -> void:
 	# to need the mouse, "which node am I about to click" is a real question. One step
 	# of border brightening: enough to answer it, not enough to be mistaken for the
 	# accent outline that means selected.
+	# Right-click for the panel style, the same menu the rack offers on its modules. A
+	# style is a fact about the module rather than about a view, so it is changed by
+	# pointing at the module — in whichever view you happen to be looking at it.
+	widget.gui_input.connect(func(event: InputEvent) -> void:
+		var press := event as InputEventMouseButton
+		if press != null and press.pressed \
+				and press.button_index == MOUSE_BUTTON_RIGHT:
+			_on_module_theme_requested(str(widget.get_meta("patch_id")),
+				widget.get_global_mouse_position())
+			widget.accept_event())
+	_style_widget(widget, str(node["id"]))
 	widget.mouse_entered.connect(func() -> void: _set_node_hovered(widget, true))
 	widget.mouse_exited.connect(func() -> void: _set_node_hovered(widget, false))
 
