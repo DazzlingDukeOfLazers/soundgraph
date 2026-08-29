@@ -723,6 +723,16 @@ const STAND_DOWN := {
 	"GHOST": 1.7,
 }
 
+## The mix each level takes whatever its contrast already is. See recede(): a floor alone
+## leaves a colour that starts below it at full saturation, which on a pale faceplate is
+## how the quietest cable on the rack ended up the loudest thing on it.
+const STAND_DOWN_MIX := {
+	"ASIDE": 0.25,
+	"TRACE": 0.40,
+	"BEHIND": 0.45,
+	"GHOST": 0.60,
+}
+
 
 ## For de-emphasis — a rack cable that has nothing to do with the selected module, and
 ## anything else that should fall behind without leaving. Mixes toward the surface rather
@@ -736,11 +746,19 @@ const STAND_DOWN := {
 ## that happens to need.
 ##
 ## A colour already at or below the target is returned untouched. There is nothing to take.
-static func recede(ink: Color, surface: Color, target := 3.6) -> Color:
-	var key := "%s|%s|%.2f" % [ink.to_html(), surface.to_html(), target]
+## `least` is a mix that happens whatever the contrast says.
+##
+## Because a contrast floor on its own assumes that receding always has somewhere to go,
+## and a colour already below the floor is returned untouched — which is right when the
+## question is legibility and wrong when the question is emphasis. Chartreuse on an ivory
+## faceplate starts below the floor, so a cable asked to get out of the way came back at
+## full saturation: quiet by the numbers and the loudest thing on the panel. Standing down
+## is two instructions, not one. No quieter than this, and no more saturated than this.
+static func recede(ink: Color, surface: Color, target := 3.6, least := 0.0) -> Color:
+	var key := "%s|%s|%.2f|%.2f" % [ink.to_html(), surface.to_html(), target, least]
 	if _receded.has(key):
 		return _receded[key]
-	var result := ink
+	var result := ink.lerp(surface, least)
 	if contrast(ink, surface) > target:
 		# Contrast falls monotonically as the mix goes up, so a bisection is exact enough
 		# in a dozen steps and there is no closed form worth deriving for it.
@@ -752,7 +770,7 @@ static func recede(ink: Color, surface: Color, target := 3.6) -> Color:
 				low = middle
 			else:
 				high = middle
-		result = ink.lerp(surface, low)
+		result = ink.lerp(surface, maxf(low, least))
 	_receded[key] = result
 	return result
 

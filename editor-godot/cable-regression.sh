@@ -85,6 +85,20 @@ shoot cable-settled --style physical --colour cable --size 1560 1180 \
 "$godot" --path "$here" --script res://image_diff.gd -- \
 	out/cable-style-physical.png out/cable-settled.png 2>&1 | grep -E "same|FAIL" || true
 
+# The faceplate the whole renderer was tuned against, and one that is nothing like it.
+# Two themes is not a theme family, but it is the difference between a system that could
+# survive one and a set of constants that could not.
+shoot face-carbon        --style physical --colour cable --size 1560 1180 \
+	--faceplate carbon
+shoot face-ivory         --style physical --colour cable --size 1560 1180 \
+	--faceplate ivory
+shoot face-ivory-ghost   --style physical --colour cable --size 1560 1180 \
+	--faceplate ivory --ghost
+shoot face-ivory-hover   --style physical --colour cable --size 1560 1180 \
+	--faceplate ivory --hover-cable 11
+shoot face-ivory-inspect --style physical --colour cable --size 1560 1180 \
+	--faceplate ivory --inspect filter
+
 # The three regions worth looking at close up, cut from the working-scale frame so they
 # cannot disagree with it.
 cd "$out"

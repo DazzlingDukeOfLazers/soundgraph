@@ -36,6 +36,7 @@ var _nudge := ""
 ## a cable above the others while it lasts, and the thing worth asserting is that when it
 ## ends the crossings go back to where they were rather than to a new arbitrary order.
 var _settle := false
+var _palette := "lab"
 var _size := Vector2i(1600, 900)
 ## The case, in rack pixels. Independent of how many of them reach the screen.
 var _case := Vector2(1560.0, 1180.0)
@@ -63,8 +64,13 @@ func _run() -> void:
 			"--ghost": _ghost = true
 			"--nudge": _nudge = args[i + 1]
 			"--settle": _settle = true
+			"--palette": _palette = args[i + 1]
+			"--faceplate": Rack.faceplate = args[i + 1]
 
-	Design.use_palette(Design.Palette.LAB)
+	var palettes := {"lab": Design.Palette.LAB, "night": Design.Palette.NIGHT_FLIGHT,
+		"tape": Design.Palette.TAPE, "paper": Design.Palette.PAPER,
+		"maximum": Design.Palette.MAXIMUM}
+	Design.use_palette(palettes.get(_palette, Design.Palette.LAB))
 	root.title = "rack — %s" % _style
 
 	# A SubViewport rather than the window. The window is whatever the desktop allowed —

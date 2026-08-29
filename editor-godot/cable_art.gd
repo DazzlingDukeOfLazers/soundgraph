@@ -218,7 +218,10 @@ class Style extends RefCounted:
 	## 6 px apart, which looked like a thin grey wire threaded through a grommet: the
 	## chunkiest part of the assembly rendering as the thinnest. A plug is a black
 	## anodised or nickel object and can safely be darker than every surface behind it.
-	var plug_body := Color("141619")
+	var _plug_body := Color("141619")
+	## The barrel on a light faceplate. Still dark — a plug is a dark object — but not so
+	## dark that the socket mouth behind it cannot be told from it.
+	var _plug_body_light := Color("2a2c30")
 	## The mouth of the socket, behind the barrel. A hole for the plug to be in.
 	var socket_mouth := Color("07080A")
 	## The rim, as a fraction of the jack radius. A rim frames the insertion; a filled
@@ -238,6 +241,15 @@ class Style extends RefCounted:
 	## dead code that looked like coverage. A floor and a threshold that contradict each
 	## other are worse than either alone.
 	var min_plug := 4.0
+
+	## Whether the surface under the cable is a light material.
+	##
+	## A cable's roundness is one lighter edge and one darker, and which is which depends
+	## on nothing but the light — but the *shadow* and the *plug* depend on the panel. A
+	## black barrel disappears on anodised black and a 22% black shadow disappears with
+	## it, so both are stated against the surface rather than fixed for the one faceplate
+	## everything here was first drawn on.
+	var panel_is_light := false
 
 	## The room the plug has to project into, in pixels, before it runs into whatever is
 	## next to the socket. INF means open panel: the lab sheets, where nothing is near.
@@ -592,7 +604,7 @@ static func draw_plug(canvas: CanvasItem, jack: Vector2, direction: Vector2,
 		_quad(canvas, base, tip, across * (half + 1.5), Vector2(1.0, 1.5),
 			Color(0.0, 0.0, 0.0, style.plug_contact_alpha))
 
-	_quad(canvas, base, tip, across * half, Vector2.ZERO, style.plug_body)
+	_quad(canvas, base, tip, across * half, Vector2.ZERO, body(style))
 
 	# The collar, loud on purpose. It ties the dark plug to its cable, keeps identity when
 	# several plugs overlap, and at low zoom it is the last thing to survive — one bright
@@ -655,6 +667,11 @@ static func draw_plug_adaptive(canvas: CanvasItem, jack: Vector2, direction: Vec
 		_: draw_plug_topdown(canvas, jack, direction, colour, style)
 
 
+## The barrel's colour on this faceplate.
+static func body(style: Style) -> Color:
+	return style._plug_body_light if style.panel_is_light else style._plug_body
+
+
 ## The plug rising out of the panel.
 ##
 ## Four zones, each a little further from top-down than the last: the rim stays flat, the
@@ -708,7 +725,7 @@ static func draw_plug_emergent(canvas: CanvasItem, jack: Vector2, direction: Vec
 	# five or six tonal bands stacked between the socket and the cable — legible at 4x and
 	# noise at 1x. Fewer, larger shapes read better and downscale better, and the
 	# hierarchy the eye wants is only ever socket, collar, barrel, relief, cable.
-	_taper(canvas, jack, tip, base_half, far_half, style.plug_body)
+	_taper(canvas, jack, tip, base_half, far_half, body(style))
 
 	_ellipse_band(canvas, collar_at, along, collar_rx, collar_ry, 0.52, colour, 0.0, PI)
 
@@ -738,7 +755,7 @@ static func draw_plug_topdown(canvas: CanvasItem, jack: Vector2, direction: Vect
 	var t := style.thickness
 	var radius := style.plug_width * t * 0.5
 
-	_ellipse(canvas, jack, direction.normalized(), radius * 0.86, radius * 0.86, style.plug_body)
+	_ellipse(canvas, jack, direction.normalized(), radius * 0.86, radius * 0.86, body(style))
 	# A ring of cable colour inside the socket: the endpoint cue, with nothing pretending
 	# to stand out of the panel.
 	canvas.draw_arc(jack, radius * 0.62, 0.0, TAU, 28, colour, maxf(2.0, t * 0.5), true)

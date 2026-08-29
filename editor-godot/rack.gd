@@ -171,16 +171,83 @@ const SAG_FRACTION := 0.30
 const SAG_MIN := 46.0
 const SAG_MAX := 260.0
 
-const PANEL := Color(0.157, 0.169, 0.200)
-const PANEL_LOW := Color(0.125, 0.137, 0.165)
-const PANEL_EDGE := Color(1, 1, 1, 0.07)
-const RAIL_COLOUR := Color(0.086, 0.094, 0.110)
-const RAIL_EDGE := Color(1, 1, 1, 0.05)
-const SCREW := Color(0.42, 0.45, 0.50)
-const JACK_RING := Color(0.62, 0.65, 0.70)
-const JACK_HOLE := Color(0.055, 0.06, 0.07)
-const KNOB_BODY := Color(0.235, 0.251, 0.290)
-const KNOB_TRACK := Color(1, 1, 1, 0.13)
+## The hardware, as a set rather than as eight constants.
+##
+## These were constants, which meant the rack was one case and no palette ever reached it:
+## switching the app to Paper changed the text tokens and left a black anodised rack
+## drawn on cream. It also meant the cable renderer had never met a theme, so everything
+## it does with light and dark was tuned against exactly one panel.
+##
+## A faceplate is its own thing and not an app surface. The editor's palette is about
+## reading — canvas, panel, ink, contrast — and this is about what the hardware is made
+## of, which is why it is a separate set rather than more tokens in Design.
+const FACEPLATES := {
+	"carbon": {
+		"name": "Carbon Utility",
+		"panel": "282B33", "panel_low": "202329", "panel_edge": "ffffff12",
+		"rail": "16181c", "rail_edge": "ffffff0d",
+		"screw": "6b7280", "jack_ring": "9ea6b3", "jack_hole": "0e0f12",
+	},
+	"ivory": {
+		"name": "Ivory Lab",
+		"panel": "e8e4da", "panel_low": "d8d3c6", "panel_edge": "00000014",
+		"rail": "b4ada0", "rail_edge": "ffffff40",
+		"screw": "8a8377", "jack_ring": "5d574d", "jack_hole": "1a1814",
+	},
+}
+
+## Which faceplate the case is made of. See FACEPLATES.
+static var faceplate := "carbon"
+
+static func face(key: String) -> Color:
+	var set: Dictionary = FACEPLATES.get(faceplate, FACEPLATES["carbon"])
+	return Color(set[key])
+
+static var PANEL: Color:
+	get: return face("panel")
+static var PANEL_LOW: Color:
+	get: return face("panel_low")
+static var PANEL_EDGE: Color:
+	get: return face("panel_edge")
+static var RAIL_COLOUR: Color:
+	get: return face("rail")
+static var RAIL_EDGE: Color:
+	get: return face("rail_edge")
+static var SCREW: Color:
+	get: return face("screw")
+static var JACK_RING: Color:
+	get: return face("jack_ring")
+static var JACK_HOLE: Color:
+	get: return face("jack_hole")
+
+
+## Whether the faceplate is a light material.
+##
+## Everything the case draws on top of itself has to know: a white 13% track reads as a
+## groove on anodised black and as nothing at all on ivory, and the answer is not two sets
+## of constants but one question asked of the panel.
+static func panel_is_light() -> bool:
+	return PANEL.get_luminance() > 0.42
+
+
+## A wash over the faceplate — the light or dark that lies on top of it, whichever the
+## material calls for, at the given strength.
+static func on_panel(alpha: float) -> Color:
+	return Color(0, 0, 0, alpha) if panel_is_light() else Color(1, 1, 1, alpha)
+
+
+## Ink that can be read on this faceplate. 1.0 is the panel legend, lower is secondary.
+static func panel_ink(strength := 1.0) -> Color:
+	var full: Color = Color(0.09, 0.09, 0.10) if panel_is_light() \
+		else Color(0.96, 0.96, 0.97)
+	return PANEL.lerp(full, clampf(strength, 0.0, 1.0))
+## The knob, from the panel it is bolted to. A knob is a moulded part in the same light as
+## everything else, so it takes its value from the faceplate rather than from a constant
+## that only happened to look right on one of them.
+static var KNOB_BODY: Color:
+	get: return PANEL.lerp(Color(1, 1, 1) if not panel_is_light() else Color(0, 0, 0), 0.12)
+static var KNOB_TRACK: Color:
+	get: return on_panel(0.13)
 const SELECTED := Color(0.43, 0.91, 0.72)
 
 # Category tints, deliberately muted.
@@ -231,8 +298,8 @@ var read_port: Callable = Callable()
 ## answered by the editor from the values the node entered the document with. Left
 ## unset, the descriptor's factory default stands.
 var home_lookup: Callable = Callable()
-var ink := Color(0.96, 0.96, 0.97)
-var ink_dim := Color(0.72, 0.74, 0.78)
+var ink: Color = Rack.panel_ink(1.0)
+var ink_dim: Color = Rack.panel_ink(0.62)
 
 var cable_style: int = CableStyle.CATENARY:
 	set(value):
@@ -698,7 +765,7 @@ static func draw_rail(canvas: CanvasItem, rect: Rect2) -> void:
 	# The threaded strip along a rail, suggested rather than drawn to scale.
 	var slot := rect.position + Vector2(14.0, rect.size.y * 0.5)
 	while slot.x < rect.end.x - 8.0:
-		canvas.draw_circle(slot, 1.6, Color(1, 1, 1, 0.06))
+		canvas.draw_circle(slot, 1.6, on_panel(0.06))
 		slot.x += 24.0
 
 
@@ -1040,6 +1107,16 @@ class CableLayer extends Control:
 	const INSPECT_TARGET: float = Design.STAND_DOWN["BEHIND"]
 	const GHOST_TARGET: float = Design.STAND_DOWN["GHOST"]
 
+	## The mix that goes with each floor, by the floor's own value. Looked up rather than
+	## passed around, so a caller that knows how far to stand something down does not also
+	## have to know the second half of what that means.
+	static func stand_down(ink: Color, surface: Color, target: float) -> Color:
+		for level: String in Design.STAND_DOWN:
+			if is_equal_approx(Design.STAND_DOWN[level], target):
+				return Design.recede(ink, surface, target,
+					Design.STAND_DOWN_MIX[level])
+		return Design.recede(ink, surface, target)
+
 	## A dimmed cable is drawn thinner as well as quieter.
 	##
 	## Because contrast alone cannot carry this on every palette. Paper Lab's signal
@@ -1099,7 +1176,7 @@ class CableLayer extends Control:
 			if not related:
 				width *= DIM_WIDTH
 			var ink: Color = colour if related \
-				else Design.recede(colour, Design.SURFACES[Design.Surface.CANVAS], DIM_TARGET)
+				else stand_down(colour, Rack.PANEL, DIM_TARGET)
 			var shadow: float = 0.45 if related else 0.45 * DIM_SHADOW
 
 			# Drawn twice: a dark, slightly wider pass underneath reads as the shadow side
@@ -1127,7 +1204,12 @@ class CableLayer extends Control:
 		var paths: Array[PackedVector2Array] = []
 		var styles: Array = []
 		var inks: PackedColorArray = PackedColorArray()
-		var canvas: Color = Design.SURFACES[Design.Surface.CANVAS]
+		# The rack's own panel, not the editor's canvas. Those are different surfaces and
+		# on a light palette they disagree by everything: a cable asked to stand down was
+		# mixed towards cream while lying on a dark faceplate, which made it paler and
+		# more assertive rather than quieter. Receding means going towards what is behind
+		# the thing, and what is behind a cable is the module it crosses.
+		var canvas: Color = Rack.PANEL
 		var inspect: Rect2 = rack.inspected_rect()
 
 		for index in cables.size():
@@ -1154,7 +1236,7 @@ class CableLayer extends Control:
 				style = _physical_style(false, dim, float(entry[5]))
 				path = CableArt.cable_path(entry[0], out, entry[1], out, 0.82, style, seed)
 			if dim > 0.0:
-				ink = Design.recede(ink, canvas, dim)
+				ink = stand_down(ink, canvas, dim)
 			paths.append(path)
 			styles.append(style)
 			inks.append(ink)
@@ -1225,6 +1307,7 @@ class CableLayer extends Control:
 		# a 2.75 px minimum cable is 2.75 px of glass, which at half zoom is 5.5 of ours.
 		var zoom: float = maxf(get_global_transform().get_scale().x, 0.01)
 		style.screen_scale = zoom
+		style.panel_is_light = Rack.panel_is_light()
 		style.thickness = maxf(style.thickness, style.min_thickness / zoom)
 		if dim > 0.0:
 			style.thickness *= DIM_WIDTH
@@ -2063,7 +2146,7 @@ static func draw_plate(canvas: CanvasItem, rect: Rect2, band: float,
 ## makes the symbol readable away from the module that gave it a side.
 static func draw_socket(canvas: CanvasItem, centre: Vector2, radius: float,
 		is_input: bool, colour: Color) -> void:
-	canvas.draw_circle(centre, radius, Color(0.20, 0.21, 0.24))
+	canvas.draw_circle(centre, radius, PANEL.lerp(JACK_RING, 0.18))
 	canvas.draw_circle(centre, radius, Color(0, 0, 0, 0.55), false, 1.0)
 	canvas.draw_circle(centre, radius - radius * 0.27, JACK_HOLE)
 	if is_input:
