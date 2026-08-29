@@ -27,7 +27,8 @@ shoot cable-style-physical --style physical --colour cable --size 1560 1180
 shoot cable-style-catenary --style catenary --colour cable --size 1560 1180
 
 # Colour by signal type, which is what the product does today: two types, so two colours.
-shoot cable-colour-by-type --style physical --colour type --size 1560 1180
+shoot cable-colouring-cable --style physical --colour cable --size 1560 1180
+shoot cable-colouring-type  --style physical --colour type  --size 1560 1180
 
 # Down the zoom range. The floors and the plug tiers both live here.
 # The case stays 1560x1180 rack pixels throughout; only how many of them reach the frame
@@ -42,6 +43,22 @@ shoot cable-low-zoom-catenary --style catenary --colour cable --zoom 0.35 --size
 
 # Twice the pixels for the same rack: what a retina panel actually draws.
 shoot cable-high-dpi --style physical --colour cable --zoom 2.0 --size 3120 2360
+
+# The interaction states. Every one of these is a pointer state with no pointer, forced
+# through rack_shot — which is the only way they can be reproduced exactly, and the reason
+# they are worth having in a regression set at all.
+shoot cable-hover           --style physical --colour cable --size 1560 1180 --hover-cable 11
+shoot cable-selected        --style physical --colour cable --size 1560 1180 --select-cable 5
+shoot cable-jack-hover      --style physical --colour cable --size 1560 1180 \
+	--hover-jack mixer:in2:in
+shoot cable-module-inspect  --style physical --colour cable --size 1560 1180 --inspect filter
+shoot cable-ghosted         --style physical --colour cable --size 1560 1180 --ghost
+
+# A module moved, repainted only the way the drag handler repaints it. What this frame
+# watches is what does *not* happen: queue_redraw() on a Control does not descend to its
+# children, so the cables used to stay attached to where the module had been.
+shoot cable-module-drag     --style physical --colour cable --size 1560 1180 \
+	--nudge filter:0:70
 
 # The three regions worth looking at close up, cut from the working-scale frame so they
 # cannot disagree with it.

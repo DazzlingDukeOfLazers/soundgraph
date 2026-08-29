@@ -219,8 +219,7 @@ var type_colours: Dictionary = {}
 var cable_colouring: int = CableColouring.TYPE:
 	set(value):
 		cable_colouring = value
-		if _cables != null:
-			_cables.queue_redraw()
+		redraw_cables()
 
 ## Returns the samples on a node's output, or an empty array. Set by the editor.
 ##
@@ -238,8 +237,7 @@ var ink_dim := Color(0.72, 0.74, 0.78)
 var cable_style: int = CableStyle.CATENARY:
 	set(value):
 		cable_style = value
-		if _cables != null:
-			_cables.queue_redraw()
+		redraw_cables()
 
 ## Case width in HP, or 0 to fill whatever space there is.
 ##
@@ -281,6 +279,48 @@ var selected_id := ""
 ## Which cable the pointer is over, as an index into cable_endpoints(), or -1.
 var hovered_cable := -1
 
+## A cable held in view until something else is asked for. Selection is persistent hover:
+## the same hierarchy, kept, because tracing a cable across a rack usually means looking
+## away from it — at the module it lands on — and a highlight that dies on mouse-out is no
+## use for the one job it exists to do.
+var selected_cable := -1:
+	set(value):
+		selected_cable = value
+		redraw_cables()
+
+## The jack under the pointer, as {"node": id, "port": name, "input": bool}, or empty.
+##
+## Hovering a plugged jack asks the same question as hovering the cable — where does this
+## go — from the other end, and it is the end you are usually looking at when you ask.
+var hovered_jack: Dictionary = {}:
+	set(value):
+		hovered_jack = value
+		redraw_cables()
+
+## A module whose panel is being read, so the cables lying across it stand down.
+##
+## Set on hover, after a pause. Without the pause every sweep of the pointer across the
+## case flickers half the patch, and a cue that fires when you were not asking is worse
+## than no cue.
+var inspected_id := "":
+	set(value):
+		inspected_id = value
+		redraw_cables()
+
+## Every cable out of the way at once, while a key is held.
+##
+## The panel-first view without leaving the instrument for the diagram. Temporary on
+## purpose: a mode you can be in without noticing is how the physical renderer would end
+## up quietly abandoned.
+var cables_ghosted := false:
+	set(value):
+		if cables_ghosted == value:
+			return
+		cables_ghosted = value
+		redraw_cables()
+
+var _inspect_candidate := ""
+
 ## Where a hand-set rack order lives in the document.
 ##
 ## Under "arrangement" rather than "metadata". Metadata is what a person wrote about the
@@ -306,6 +346,9 @@ var _content_size := Vector2.ZERO
 
 
 func _ready() -> void:
+	# The ghost modifier is a key held anywhere over the case, not a click on a control,
+	# so it comes through _input rather than _gui_input.
+	set_process_input(true)
 	_cables = CableLayer.new()
 	_cables.rack = self
 	_cables.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -517,8 +560,7 @@ func _relayout() -> void:
 			_content_size.x * view_zoom if case_hp > 0 else 0.0,
 			_content_size.y * view_zoom)
 	queue_redraw()
-	if _cables != null:
-		_cables.queue_redraw()
+	redraw_cables()
 
 
 ## Moves a module to the slot nearest a point, in rack coordinates.
@@ -581,8 +623,7 @@ func select(node_id: String) -> void:
 		_modules[id].queue_redraw()
 	# The cables care too, now that selecting a module turns down everything it is not
 	# connected to. They live in their own layer, so redrawing the modules misses them.
-	if _cables != null:
-		_cables.queue_redraw()
+	redraw_cables()
 
 
 ## Called when a value changed somewhere else — the graph view's slider, an undo, a reload —
@@ -675,6 +716,13 @@ func _gui_input(event: InputEvent) -> void:
 	var motion := event as InputEventMouseMotion
 	if motion != null:
 		_update_cable_hover(motion.position)
+	# A click on the case selects the cable under it, or clears the selection when there
+	# is none. Selection is persistent hover, so it is picked up the same way.
+	var click := event as InputEventMouseButton
+	if click != null and click.pressed and click.button_index == MOUSE_BUTTON_LEFT \
+			and not click.ctrl_pressed:
+		selected_cable = cable_at(click.position)
+		accept_event()
 	# Ctrl+wheel is the view's zoom gesture here as on the graph. Claimed loudly, or
 	# the ScrollContainer would spend the same notches scrolling.
 	var wheel := event as InputEventMouseButton
@@ -692,8 +740,23 @@ func _gui_input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_MOUSE_EXIT and hovered_cable != -1:
 		hovered_cable = -1
-		if _cables != null:
-			_cables.queue_redraw()
+		redraw_cables()
+	# A modifier held while the window goes away is never released, because the key-up
+	# lands somewhere else. Focus leaving is the only notice we get that it happened.
+	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		cables_ghosted = false
+
+
+## Alt, held, to see the rack under the cables.
+##
+## Alt rather than Ctrl or Shift: Ctrl is already the zoom gesture here and the MIDI-learn
+## click, and Shift is the usual multi-select modifier to leave alone. Watched as key
+## events rather than polled so it releases the moment the key does, and dropped on focus
+## loss — a modifier held while the window goes away otherwise stays held for ever.
+func _input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key != null and key.keycode == KEY_ALT:
+		cables_ghosted = key.pressed
 
 
 ## The cable nearest a point, or -1 if none is close enough.
@@ -744,15 +807,97 @@ func cable_at(point: Vector2) -> int:
 ## Pass the endpoints in if you already have them — the drawing does, and re-reading the
 ## patch once per cable would make painting the case quadratic in the number of cables.
 func cable_related(index: int, cables: Array = []) -> bool:
-	if hovered_cable >= 0:
-		return index == hovered_cable
-	if selected_id == "":
-		return true
+	return cable_dim_target(index, cables) == 0.0
+
+
+## The contrast floor a cable should be held at, or 0.0 for full strength.
+##
+## Stated as a floor rather than an opacity because that is the only form of the
+## instruction that survives five palettes — a fixed mix lands at 4.2:1 on Lab and 2.5:1
+## on Paper Lab, one inside the readable range and one under it.
+##
+## The order is the order of how direct the question was. A pointer resting on a cable, or
+## on one of its jacks, is a question about that cable; a selected module is a question
+## about a handful; and the ghost key is not a question about cables at all, so it beats
+## everything and turns the lot down.
+func cable_dim_target(index: int, cables: Array = []) -> float:
+	if cables_ghosted:
+		return CableLayer.GHOST_TARGET
+
 	var entries: Array = cables if not cables.is_empty() else cable_endpoints()
 	if index < 0 or index >= entries.size():
-		return false
+		return CableLayer.DIM_TARGET
 	var entry: Array = entries[index]
-	return str(entry[3]) == selected_id or str(entry[4]) == selected_id
+
+	if hovered_cable >= 0:
+		return 0.0 if index == hovered_cable else CableLayer.TRACE_TARGET
+	if not hovered_jack.is_empty():
+		return 0.0 if _touches_jack(entry, hovered_jack) else CableLayer.TRACE_TARGET
+	if selected_cable >= 0:
+		return 0.0 if index == selected_cable else CableLayer.TRACE_TARGET
+	if selected_id != "":
+		var mine: bool = str(entry[3]) == selected_id or str(entry[4]) == selected_id
+		return 0.0 if mine else CableLayer.DIM_TARGET
+	return 0.0
+
+
+## Whether one cable in particular is being asked about, by any of the three routes.
+##
+## Which is what decides both the z-raise and the endpoint marks: a cable held at full
+## strength while its neighbours recede is being traced, however the question was put —
+## pointer on the cable, pointer on one of its jacks, or a selection made earlier.
+func tracing() -> bool:
+	return hovered_cable >= 0 or selected_cable >= 0 or not hovered_jack.is_empty()
+
+
+## Whether a cable ends at a particular jack. Ports as well as nodes: a module with four
+## inputs would otherwise light all four cables for whichever one is under the pointer.
+func _touches_jack(entry: Array, jack: Dictionary) -> bool:
+	var node: String = str(jack.get("node", ""))
+	var port: String = str(jack.get("port", ""))
+	if bool(jack.get("input", true)):
+		return str(entry[4]) == node and str(entry[7]) == port
+	return str(entry[3]) == node and str(entry[6]) == port
+
+
+## Repaint the cables.
+##
+## Because queue_redraw() on the rack does not: the cables are a child layer, and a
+## Control's redraw does not descend. Dragging a module repainted the case and left every
+## cable attached to where the module used to be until some unrelated event repainted the
+## layer, which looked like the cables had come unplugged.
+func redraw_cables() -> void:
+	if _cables != null:
+		_cables.queue_redraw()
+
+
+## The panel being read, in rack space, or an empty rect.
+func inspected_rect() -> Rect2:
+	if inspected_id == "":
+		return Rect2()
+	var module: RackModule = _modules.get(inspected_id)
+	if module == null:
+		return Rect2()
+	return Rect2(module.position, module.size)
+
+
+## A module has been under the pointer long enough to count as being read.
+##
+## The pause is the whole design. Firing on entry means every sweep of the pointer across
+## the case flickers half the patch, and a cue that answers a question nobody asked is
+## worse than no cue — so the pointer has to stay put, and leaving cancels it.
+func inspect_after_pause(node_id: String) -> void:
+	_inspect_candidate = node_id
+	await get_tree().create_timer(0.45).timeout
+	if _inspect_candidate == node_id:
+		inspected_id = node_id
+
+
+func cancel_inspection(node_id: String) -> void:
+	if _inspect_candidate == node_id:
+		_inspect_candidate = ""
+	if inspected_id == node_id:
+		inspected_id = ""
 
 
 ## Tracks the cable under the pointer.
@@ -761,8 +906,7 @@ func _update_cable_hover(point: Vector2) -> void:
 	if found == hovered_cable:
 		return
 	hovered_cable = found
-	if _cables != null:
-		_cables.queue_redraw()
+	redraw_cables()
 
 
 func cable_endpoints() -> Array:
@@ -786,7 +930,8 @@ func cable_endpoints() -> Array:
 			ink = CableArt.PALETTE[CABLE_BAG[cables.size() % CABLE_BAG.size()]]
 		cables.append([a, b, ink,
 			str(connection["from"]["node"]), str(connection["to"]["node"]),
-			minf(from_module.jack_pitch(), to_module.jack_pitch())])
+			minf(from_module.jack_pitch(), to_module.jack_pitch()),
+			str(connection["from"]["port"]), str(connection["to"]["port"])])
 	return cables
 
 
@@ -890,6 +1035,26 @@ class CableLayer extends Control:
 	## instruction giving one result inside the floor and one under it.
 	const DIM_TARGET := 3.6
 
+	## The floor while one cable is being traced, by hover or by selection.
+	##
+	## Lower than the selected-module dim, and deliberately: that one says "these belong
+	## to what you picked" about a whole handful of cables, and this one says "not this
+	## one" about all but a single cable. A question that narrow is worth answering
+	## loudly, and the cable being traced is at full strength beside them.
+	const TRACE_TARGET := 2.4
+
+	## The floor for cables lying across the module being read. Enough to follow, not
+	## enough to compete with a panel legend.
+	const INSPECT_TARGET := 2.2
+
+	## The floor while the ghost key is held.
+	##
+	## Under the 3.25:1 this project holds a UI boundary to, and under the 1.86:1 that was
+	## once rejected for an unrelated cable — which is the point rather than an oversight.
+	## The other floors keep a cable part of the patch; this one is a request to see the
+	## rack instead, for exactly as long as the key is down.
+	const GHOST_TARGET := 1.7
+
 	## A dimmed cable is drawn thinner as well as quieter.
 	##
 	## Because contrast alone cannot carry this on every palette. Paper Lab's signal
@@ -977,27 +1142,57 @@ class CableLayer extends Control:
 		var paths: Array[PackedVector2Array] = []
 		var styles: Array = []
 		var inks: PackedColorArray = PackedColorArray()
+		var canvas: Color = Design.SURFACES[Design.Surface.CANVAS]
+		var inspect: Rect2 = rack.inspected_rect()
+
 		for index in cables.size():
 			var entry: Array = cables[index]
+			var dim: float = rack.cable_dim_target(index, cables)
 			var style: CableArt.Style = _physical_style(
-				index == rack.hovered_cable, rack.cable_related(index, cables),
-				float(entry[5]))
+				index == rack.hovered_cable or index == rack.selected_cable,
+				dim, float(entry[5]))
 			var ink: Color = entry[2]
-			if not rack.cable_related(index, cables):
-				ink = Design.recede(ink, Design.SURFACES[Design.Surface.CANVAS], DIM_TARGET)
 			var out := Vector2.DOWN
 			# Seeded from the endpoints, so a cable keeps its own hang between redraws and
 			# two cables between the same pair of modules do not lie on top of each other.
 			var seed := "%d:%d" % [int(entry[0].x) * 31 + int(entry[0].y),
 				int(entry[1].x) * 31 + int(entry[1].y)]
-			paths.append(CableArt.cable_path(entry[0], out, entry[1], out, 0.82, style, seed))
+			var path := CableArt.cable_path(entry[0], out, entry[1], out, 0.82, style, seed)
+			# Anything lying across the panel stands down, including the module's own
+			# cables. They cross it too — a cable plugged into this module leaves towards
+			# the viewer and falls straight over the legend it is nearest. The question
+			# being asked is about what is on top, not about what belongs to what, and a
+			# rule that exempted the module's own connections would leave the cables
+			# closest to its labels exactly where they were.
+			if inspect.has_area() and _crosses(path, inspect):
+				dim = maxf(dim, INSPECT_TARGET) if dim > 0.0 else INSPECT_TARGET
+				style = _physical_style(false, dim, float(entry[5]))
+				path = CableArt.cable_path(entry[0], out, entry[1], out, 0.82, style, seed)
+			if dim > 0.0:
+				ink = Design.recede(ink, canvas, dim)
+			paths.append(path)
 			styles.append(style)
 			inks.append(ink)
 
+		# Document order, except that whatever is being traced goes last. Order is
+		# otherwise the connection order in the file and nothing else — a z-order that
+		# reshuffled when unrelated state changed would make crossings swap under the
+		# pointer, which is worse than an arbitrary order held steady.
+		var order: Array[int] = []
+		var raised: Array[int] = []
+		var tracing: bool = rack.tracing()
 		for index in paths.size():
+			if tracing and rack.cable_dim_target(index, cables) == 0.0:
+				raised.append(index)
+			else:
+				order.append(index)
+		order.append_array(raised)
+
+		var drawn: Array[int] = []
+		for index in order:
 			var style: CableArt.Style = styles[index]
 			# Under this cable, where it lies across the ones already down.
-			for earlier in index:
+			for earlier in drawn:
 				for at: Vector2 in CableArt.crossings(paths[index], paths[earlier]):
 					CableArt.draw_crossing_shadow(self, paths[index], at, style)
 			CableArt.draw_cable(self, paths[index], inks[index], style)
@@ -1005,11 +1200,21 @@ class CableLayer extends Control:
 				inks[index], style)
 			CableArt.draw_plug_adaptive(self, cables[index][1], Vector2.DOWN,
 				inks[index], style)
-			# Both ends of the hovered cable, because a brightened curve still has to be
-			# followed by eye to find where it lands.
-			if index == rack.hovered_cable:
-				for spot: Vector2 in [cables[index][0], cables[index][1]]:
-					draw_arc(spot, 14.0, 0.0, TAU, 28, cables[index][2], 2.0, true)
+			drawn.append(index)
+
+		# The traced cable's ends, last of all. A brightened curve still has to be followed
+		# by eye to find where it lands, which in a rack means across a tangle of others
+		# doing the same thing — so both ends are marked and the eye can jump.
+		for index in raised:
+			for spot: Vector2 in [cables[index][0], cables[index][1]]:
+				draw_arc(spot, 14.0, 0.0, TAU, 28, cables[index][2], 2.0, true)
+
+	## Whether a cable passes across a module's panel.
+	static func _crosses(path: PackedVector2Array, rect: Rect2) -> bool:
+		for point: Vector2 in path:
+			if rect.has_point(point):
+				return true
+		return false
 
 	## A cable as an illustrated object: plug, collar, relief, body, and a hang of its own.
 	##
@@ -1021,9 +1226,9 @@ class CableLayer extends Control:
 	## Cables leave a faceplate towards the viewer, which in this projection is down. Not
 	## along the line to the other jack: a cable that exits sideways is a cable entering
 	## the module's edge, which is the thing the whole exercise exists to avoid.
-	func _physical_style(hovered: bool, related: bool, pitch: float) -> CableArt.Style:
+	func _physical_style(traced: bool, dim: float, pitch: float) -> CableArt.Style:
 		var style: CableArt.Style = CableArt.Style.new()
-		style.thickness = 6.0 if hovered else 5.0
+		style.thickness = 6.0 if traced else 5.0
 		# What the plug has to fit inside. Measured, not assumed: it is the difference
 		# between a rack whose modules have four ports in a column and one whose modules
 		# have two, and the renderer should not have to be retuned when that changes.
@@ -1035,7 +1240,7 @@ class CableLayer extends Control:
 		var zoom: float = maxf(get_global_transform().get_scale().x, 0.01)
 		style.screen_scale = zoom
 		style.thickness = maxf(style.thickness, style.min_thickness / zoom)
-		if not related:
+		if dim > 0.0:
 			style.thickness *= DIM_WIDTH
 			style.shadow_alpha *= DIM_SHADOW
 		return style
@@ -1143,6 +1348,7 @@ class RackModule extends Control:
 		for port: Dictionary in ports:
 			var jack := Jack.new()
 			jack.rack = rack
+			jack.node_id = node_id
 			jack.port_name = str(port["name"])
 			jack.type_name = str(port.get("type", ""))
 			jack.is_input = is_input
@@ -1183,6 +1389,21 @@ class RackModule extends Control:
 				return rack.get_global_transform().affine_inverse() * point
 		return null
 
+	## Resting on a module asks to read its panel, so the cables lying across it stand down.
+	##
+	## After a pause, and only while the pointer stays: see Rack.inspect_after_pause. The
+	## cables are not moved and nothing is put in front of them permanently — the physical
+	## layering is the metaphor, and a schematic editor where every label floats on top is
+	## the thing this view exists not to be. It is a way of looking through the patch cords
+	## for as long as you are looking.
+	func _notification(what: int) -> void:
+		if rack == null:
+			return
+		if what == NOTIFICATION_MOUSE_ENTER:
+			rack.inspect_after_pause(node_id)
+		elif what == NOTIFICATION_MOUSE_EXIT:
+			rack.cancel_inspection(node_id)
+
 	# Dragging slides a module along the rail — the one thing you can do to a real rack
 	# that the graph view has no equivalent for. Knobs sit on top and take their own input
 	# first, so a drag can only begin on bare panel, which is also true of the hardware.
@@ -1202,6 +1423,7 @@ class RackModule extends Control:
 		elif event is InputEventMouseMotion and _dragging:
 			position += event.position - _grab_offset
 			rack.queue_redraw()
+			rack.redraw_cables()
 			accept_event()
 
 	## What this module is doing, in the band Analysis density reserves.
@@ -1337,6 +1559,10 @@ class RackModule extends Control:
 ## column it sits in can be as wide as its widest member. That is the whole fix.
 class Jack extends Control:
 	var rack: Control
+	## Which module this jack belongs to. A port name alone does not identify a jack —
+	## half the rack has a port called `in` — and the cable being asked about is the one
+	## that ends at this module's copy of it.
+	var node_id := ""
 	var port_name := ""
 	var type_name := ""
 	var is_input := true
@@ -1345,6 +1571,20 @@ class Jack extends Control:
 		# The full name, always, whatever the panel had room to print.
 		tooltip_text = port_name
 		mouse_filter = Control.MOUSE_FILTER_PASS
+
+	## Hovering a plugged jack asks where its cable goes, from the end you are looking at.
+	##
+	## An empty jack invents nothing: there is no connection to emphasise, and lighting up
+	## the rack's other cables because the pointer crossed a hole would be an answer to a
+	## question that was not asked. The rack works out whether anything lands here.
+	func _notification(what: int) -> void:
+		if rack == null:
+			return
+		if what == NOTIFICATION_MOUSE_ENTER:
+			rack.hovered_jack = {"node": node_id, "port": port_name, "input": is_input}
+		elif what == NOTIFICATION_MOUSE_EXIT and rack.hovered_jack.get("node", "") == node_id \
+				and rack.hovered_jack.get("port", "") == port_name:
+			rack.hovered_jack = {}
 
 	func _label_font() -> Font:
 		return Design.font(Design.WEIGHT_MEDIUM)

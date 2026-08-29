@@ -18,6 +18,18 @@ var _style := "physical"
 var _out := ""
 var _zoom := 1.0
 var _colouring := "type"
+## Interaction states, forced. There is no pointer in a script, and the states that decide
+## what a cable looks like are all pointer states — so they are set directly, which also
+## makes them the only part of this the regression set can reproduce exactly.
+var _hover_cable := -1
+var _select_cable := -1
+var _hover_jack := ""       # node:port:in | node:port:out
+var _inspect := ""
+var _ghost := false
+## Move a module the way a drag does — `node:dx:dy` — and repaint only the way the drag
+## handler repaints. The point is what does *not* get redrawn: this is the frame that
+## catches cables left attached to where a module used to be.
+var _nudge := ""
 var _size := Vector2i(1600, 900)
 ## The case, in rack pixels. Independent of how many of them reach the screen.
 var _case := Vector2(1560.0, 1180.0)
@@ -38,6 +50,12 @@ func _run() -> void:
 			"--colour": _colouring = args[i + 1]
 			"--size": _size = Vector2i(int(args[i + 1]), int(args[i + 2]))
 			"--case": _case = Vector2(float(args[i + 1]), float(args[i + 2]))
+			"--hover-cable": _hover_cable = int(args[i + 1])
+			"--select-cable": _select_cable = int(args[i + 1])
+			"--hover-jack": _hover_jack = args[i + 1]
+			"--inspect": _inspect = args[i + 1]
+			"--ghost": _ghost = true
+			"--nudge": _nudge = args[i + 1]
 
 	Design.use_palette(Design.Palette.LAB)
 	root.title = "rack — %s" % _style
@@ -89,6 +107,15 @@ func _run() -> void:
 	# you an empty rack that looks like a rendering failure.
 	rack.rebuild()
 
+	rack.hovered_cable = _hover_cable
+	rack.selected_cable = _select_cable
+	rack.cables_ghosted = _ghost
+	rack.inspected_id = _inspect
+	if _hover_jack != "":
+		var parts := _hover_jack.split(":")
+		rack.hovered_jack = {"node": parts[0], "port": parts[1],
+			"input": parts.size() < 3 or parts[2] == "in"}
+
 	if _out != "":
 		await _shoot(rack, view)
 
@@ -107,6 +134,20 @@ func _registry() -> Dictionary:
 	return out
 
 
+## A module dragged, through exactly the path the drag handler takes.
+##
+## No forced repaint afterwards: whatever the handler asks for is what the picture gets,
+## which is the whole point of taking it.
+func _drag(rack: Rack) -> void:
+	var parts := _nudge.split(":")
+	for child in rack.get_children():
+		if child.get("node_id") == parts[0]:
+			child.position += Vector2(float(parts[1]), float(parts[2]))
+			rack.queue_redraw()
+			rack.redraw_cables()
+			return
+
+
 func _shoot(rack: Rack, view: SubViewport) -> void:
 	# Three frames rather than two: the rack builds its modules on the first, lays them
 	# out on the second, and only draws cables once the jacks know where they are.
@@ -118,8 +159,11 @@ func _shoot(rack: Rack, view: SubViewport) -> void:
 	# read every jack as sitting at its module's origin, and every cable in the shot left
 	# from the same corner. On screen the next input event hides this; a script that
 	# renders three frames and quits has no next event.
-	rack._cables.queue_redraw()
+	rack.redraw_cables()
 	await process_frame
+	if _nudge != "":
+		_drag(rack)
+		await process_frame
 	var image := view.get_texture().get_image()
 	if image.save_png(_out) == OK:
 		print("wrote %s" % _out)

@@ -68,7 +68,7 @@ enum PlugLod { FULL, SIMPLE, GLYPH, ICON }
 ## a smudge. Screen space survives DPI scaling, window size, module width and whatever the
 ## rack does next; 35% does not.
 static func plug_lod(style: Style) -> int:
-	var diameter: float = style.plug_width * style.thickness
+	var diameter: float = style.plug_width * style.thickness * style.screen_scale
 	# 11, not 12. The canonical 5 px cable puts a 2.35t plug at 11.75 px, which fell on
 	# the wrong side of a threshold written before the plug had its final width — so the
 	# primary working scale rendered the simplified model and the full one was reachable
@@ -80,26 +80,70 @@ static func plug_lod(style: Style) -> int:
 	# still travelling straight for 16 after that. Every plug landed on the socket below
 	# it: a module's `frequency` covered its `gate`, and an empty jack under a plugged one
 	# looked plugged. Width was never the problem. Length was.
-	diameter *= style.screen_scale
-	var reach: float = style.max_reach
-	if diameter >= 11.0 and plug_reach(style, PlugLod.FULL) <= reach:
+	if diameter >= 11.0 and _fits(style, PlugLod.FULL):
 		return PlugLod.FULL
-	if diameter >= 8.0 and plug_reach(style, PlugLod.SIMPLE) <= reach:
+	if diameter >= 8.0 and _fits(style, PlugLod.SIMPLE):
 		return PlugLod.SIMPLE
-	if diameter >= 5.0:
+	if diameter >= 5.0 and _fits(style, PlugLod.GLYPH):
 		return PlugLod.GLYPH
 	return PlugLod.ICON
+	# ICON is unreachable from the rack, and deliberately. The screen-space floor holds a
+	# cable at 2.75 px however far you zoom out, which puts a 2.35t plug at 6.46 px on the
+	# glass — always over the 5 px the glyph needs. The two rules are in tension and the
+	# floor wins on purpose: a cable that fades to nothing at low zoom was the thing the
+	# floor was added to prevent.
+	#
+	# So the tier is for callers that do not floor — the lab sheets, which draw a plug at
+	# whatever size they were asked for. This is the same shape of contradiction as the
+	# old min_plug of 6.5, which made the branch dead while looking like coverage; the
+	# difference is that this one is a choice and that one was an accident.
 
 
-## How far out of the panel a tier's assembly actually extends, in pixels.
+static func _fits(style: Style, tier: int) -> bool:
+	var footprint := plug_footprint(style, tier)
+	return footprint.forward_reach <= style.max_reach \
+		and footprint.lateral_radius <= style.max_lateral
+
+
+## What a tier of plug actually occupies around its socket.
 ##
-## Barrel plus relief. The flat tiers project nothing, so they always fit.
-static func plug_reach(style: Style, tier: int) -> float:
-	if tier != PlugLod.FULL and tier != PlugLod.SIMPLE:
-		return 0.0
-	var length: float = style.plug_length * style.thickness \
-		* sin(deg_to_rad(style.tilt_degrees)) * 1.9
-	return length + style.relief_length * (1.0 if tier == PlugLod.FULL else 0.7)
+## Every tier reports, including the flat ones that project nothing. The scalar this
+## replaces returned zero for those two by way of an early return — true today, and true
+## only because the glyph happens to draw nothing outward. The glyph has already had one
+## feature removed for reaching too far, and the next one added would have made the
+## collision test quietly wrong rather than loudly wrong, which is the worse of the two.
+##
+## Lateral is reported and checked, but nothing sets a bound on it yet. The room a plug
+## competes for in this rack is the vertical pitch of the jack column, and the plug's
+## forward direction is that same axis. A module that ever puts a control beside a jack
+## would set max_lateral, and the tier selection would already honour it.
+class PlugFootprint extends RefCounted:
+	## Out of the panel, towards the viewer: barrel plus relief.
+	var forward_reach := 0.0
+	## Back into the panel — the seated part, behind the socket face.
+	var backward_reach := 0.0
+	## The widest the assembly gets, measured from the socket centre.
+	var lateral_radius := 0.0
+
+	func _init(forward := 0.0, backward := 0.0, lateral := 0.0) -> void:
+		forward_reach = forward
+		backward_reach = backward
+		lateral_radius = lateral
+
+
+static func plug_footprint(style: Style, tier: int) -> PlugFootprint:
+	var half: float = style.plug_width * style.thickness * 0.5
+	match tier:
+		PlugLod.FULL, PlugLod.SIMPLE:
+			var length: float = style.plug_length * style.thickness \
+				* sin(deg_to_rad(style.tilt_degrees)) * 1.9
+			var relief: float = style.relief_length * (1.0 if tier == PlugLod.FULL else 0.7)
+			return PlugFootprint.new(length + relief,
+				style.plug_length * style.thickness * style.plug_seat, half * 1.12)
+		PlugLod.GLYPH:
+			return PlugFootprint.new(0.0, 0.0, half * 0.86)
+		_:
+			return PlugFootprint.new(0.0, 0.0, maxf(half * 0.42, 1.6) + 0.8)
 
 
 class Style extends RefCounted:
@@ -203,6 +247,10 @@ class Style extends RefCounted:
 	## The rack sets it from its jack pitch. This is the one thing a synthetic sheet could
 	## never supply, and it is what decides the tier as much as the size does.
 	var max_reach := INF
+
+	## The room beside the socket, in pixels. Reported against by every plug tier; see
+	## PlugFootprint for why nothing sets it yet.
+	var max_lateral := INF
 
 	## Pixels on the glass per pixel of this style, when the canvas is scaled under us.
 	##
