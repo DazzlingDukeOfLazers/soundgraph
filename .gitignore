@@ -79,3 +79,4 @@ runtime-clap/sdks/
 # Reaper drops this beside whatever it considers its working directory, and a
 # blanket "git add -A" swept the empty husk into a commit once already.
 MIDI Programs/
+editor-godot/out/

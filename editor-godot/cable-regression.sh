@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# The cable renderer's regression set: one difficult patch, photographed the ways that
+# have actually caught something.
+#
+# Not a pass/fail suite. There is no assertion here that a picture is right — these are
+# the frames to look at when the renderer changes, because each of them is where a real
+# problem showed up: the dense crossing found the muddy shadow, the stacked jacks found
+# the plug that covered its neighbour, and the low zoom found the LOD measured in the
+# wrong coordinate space.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+godot="${SOUNDGRAPH_GODOT:-/Applications/Godot.app/Contents/MacOS/Godot}"
+patch="res://examples/cable-stress.json"
+out="$here/out"
+mkdir -p "$out"
+
+shoot() { # name, then rack_shot arguments
+	local name="$1"; shift
+	"$godot" --path "$here" --script res://rack_shot.gd -- \
+		--patch "$patch" --out "out/$name.png" "$@" 2>&1 | grep -E "^wrote|rror" || true
+}
+
+# Working scale, and the same rack in the other renderer. The A/B is the point: the
+# catenary is quieter and cheaper, and which one wins is a question about density.
+shoot cable-style-physical --style physical --colour cable --size 1560 1180
+shoot cable-style-catenary --style catenary --colour cable --size 1560 1180
+
+# Colour by signal type, which is what the product does today: two types, so two colours.
+shoot cable-colouring-cable --style physical --colour cable --size 1560 1180
+shoot cable-colouring-type  --style physical --colour type  --size 1560 1180
+
+# Down the zoom range. The floors and the plug tiers both live here.
+# The case stays 1560x1180 rack pixels throughout; only how many of them reach the frame
+# changes, which is what zooming actually is.
+shoot cable-zoom-70 --style physical --colour cable --zoom 0.7 --size 1092 826
+shoot cable-zoom-50 --style physical --colour cable --zoom 0.5 --size 780 590
+shoot cable-low-zoom --style physical --colour cable --zoom 0.35 --size 546 413
+# The same frame in the other renderer, because the density question is really a question
+# about zoom: the screen-space floor keeps a physical cable 2.75 px wide however far out
+# you go, and a catenary is free to disappear.
+shoot cable-low-zoom-catenary --style catenary --colour cable --zoom 0.35 --size 546 413
+
+# Twice the pixels for the same rack: what a retina panel actually draws.
+shoot cable-high-dpi --style physical --colour cable --zoom 2.0 --size 3120 2360
+
+# The interaction states. Every one of these is a pointer state with no pointer, forced
+# through rack_shot — which is the only way they can be reproduced exactly, and the reason
+# they are worth having in a regression set at all.
+shoot cable-hover           --style physical --colour cable --size 1560 1180 --hover-cable 11
+shoot cable-selected        --style physical --colour cable --size 1560 1180 --select-cable 5
+shoot cable-jack-hover      --style physical --colour cable --size 1560 1180 \
+	--hover-jack mixer:in2:in
+shoot cable-module-inspect  --style physical --colour cable --size 1560 1180 --inspect filter
+shoot cable-ghosted         --style physical --colour cable --size 1560 1180 --ghost
+
+# A module moved, repainted only the way the drag handler repaints it. What this frame
+# watches is what does *not* happen: queue_redraw() on a Control does not descend to its
+# children, so the cables used to stay attached to where the module had been.
+shoot cable-module-drag     --style physical --colour cable --size 1560 1180 \
+	--nudge filter:0:70
+
+# Where two interaction systems meet, which is where what is left is most likely to be
+# wrong: coordinates, redraw invalidation, z-order, emphasis and plug LOD all move at once
+# and none of them was written with the others in mind.
+shoot cable-jack-hover-drag --style physical --colour cable --size 1560 1180 \
+	--hover-jack filter:cutoff_mod:in --nudge filter:0:70
+shoot cable-hover-zoom      --style physical --colour cable --size 1092 826 --zoom 0.7 \
+	--hover-cable 11
+shoot cable-select-zoom     --style physical --colour cable --size 3120 2360 --zoom 2.0 \
+	--select-cable 5
+shoot cable-ghost-drag      --style physical --colour cable --size 1560 1180 \
+	--ghost --nudge filter:0:70
+shoot cable-inspect-drag    --style physical --colour cable --size 1560 1180 \
+	--inspect filter --nudge filter:0:70
+shoot cable-select-drag     --style physical --colour cable --size 1560 1180 \
+	--select-cable 8 --nudge mixer:0:60
+shoot cable-hover-drag      --style physical --colour cable --size 1560 1180 \
+	--hover-cable 8 --nudge mixer:0:60
+
+# The one thing here that is checked rather than looked at. Emphasis lifts a cable over
+# its neighbours; when it ends the crossings have to come back to where they were.
+shoot cable-settled --style physical --colour cable --size 1560 1180 \
+	--hover-cable 11 --select-cable 5 --inspect filter --ghost --settle
+"$godot" --path "$here" --script res://image_diff.gd -- \
+	out/cable-style-physical.png out/cable-settled.png 2>&1 | grep -E "same|FAIL" || true
+
+# The faceplate the whole renderer was tuned against, and one that is nothing like it.
+# Two themes is not a theme family, but it is the difference between a system that could
+# survive one and a set of constants that could not.
+shoot face-carbon        --style physical --colour cable --size 1560 1180 \
+	--faceplate carbon
+shoot face-ivory         --style physical --colour cable --size 1560 1180 \
+	--faceplate ivory
+shoot face-ivory-ghost   --style physical --colour cable --size 1560 1180 \
+	--faceplate ivory --ghost
+shoot face-ivory-hover   --style physical --colour cable --size 1560 1180 \
+	--faceplate ivory --hover-cable 11
+shoot face-ivory-inspect --style physical --colour cable --size 1560 1180 \
+	--faceplate ivory --inspect filter
+
+# The three regions worth looking at close up, cut from the working-scale frame so they
+# cannot disagree with it.
+cd "$out"
+cp cable-style-physical.png cable-dense-crossing.png
+sips -c 250 420 --cropOffset 830 20  cable-style-physical.png --out cable-short-local.png >/dev/null
+sips -c 700 900 --cropOffset 380 560 cable-style-physical.png --out cable-long-diagonal.png >/dev/null
+sips -c 200 330 --cropOffset 480 260 cable-style-physical.png --out cable-jack-stack.png >/dev/null
+for f in cable-short-local cable-long-diagonal cable-jack-stack; do
+	w=$(sips -g pixelWidth "$f.png" | tail -1 | tr -dc 0-9)
+	h=$(sips -g pixelHeight "$f.png" | tail -1 | tr -dc 0-9)
+	sips -z $((h * 2)) $((w * 2)) "$f.png" >/dev/null
+done
+echo "regression set in $out"
