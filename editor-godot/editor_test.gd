@@ -7761,9 +7761,11 @@ func _initialize() -> void:
 	# schematic hides them - so the band went with them, and with it every control for
 	# leaving. It was a room with no door.
 	var exits: Dictionary = main.graph_edit._case_chip_rects()
-	check(exits.size() == 3 and main.graph_edit.case_box().size.x > 0.0,
+	check(exits.size() == 4 and main.graph_edit.case_box().size.x > 0.0,
 		"the schematic keeps the band, so there is a way back out of it (%d chips)"
 			% exits.size())
+	check(main.graph_edit._chip_lit("schematic") and not main.graph_edit._chip_lit("graph"),
+		"and the lit chip is the view you are actually in")
 	# And the band stops being a drag handle while it is up: there are no visible nodes
 	# under it, so a drag would move things nobody can see and leave an undo step behind.
 	check(main.graph_edit.mount_up,
@@ -7780,10 +7782,15 @@ func _initialize() -> void:
 	for i in 12:
 		await process_frame
 	var face_chips: Dictionary = main.graph_edit._case_chip_rects()
-	check(main.graph_edit.face_up and face_chips.size() == 3,
-		"the face carries the same three controls (%d)" % face_chips.size())
-	check(main.graph_edit._chip_label("face_view") == "GRAPH",
-		"and the door there says where it goes, not what you are leaving")
+	check(main.graph_edit.face_up and face_chips.size() == 4,
+		"the face carries the same four controls (%d)" % face_chips.size())
+	# GRAPH is a chip of its own now, so the door keeps one name everywhere. It used to
+	# be FACE VIEW from the graph and GRAPH from the face - one control with two names,
+	# which reads well enough with two views and stops meaning anything with three.
+	check(main.graph_edit._chip_label("face_view") == "FACE VIEW"
+		and main.graph_edit._chip_lit("face_view")
+		and not main.graph_edit._chip_lit("graph"),
+		"the face lights its own chip, and GRAPH is a separate way back")
 
 	# The band follows the panel rather than the case it replaced. The face is stretched to
 	# at least the width of the nodes it covers, so on a wide patch most of that is empty
@@ -7852,6 +7859,27 @@ func _initialize() -> void:
 	# the band ends up measured against a view that is not there.
 	check(not main.graph_edit.mount_up and main.graph_edit.mount_box.size.x <= 0.0,
 		"back at the wiring, the canvas is holding no mount")
+
+	# GRAPH gets you home from either of the other two, and is a no-op when you are
+	# already there. Not a toggle: the wiring is the view the others are departures from.
+	for from_view in ["schematic", "face"]:
+		if from_view == "schematic":
+			await main._show_schematic(true)
+		else:
+			await main._flip_container(true)
+		for i in 10:
+			await process_frame
+		main.graph_edit.case_graph_requested.emit()
+		for i in 12:
+			await process_frame
+		check(not main.big_face.visible and not main.schematic.visible
+			and main.graph_edit._chip_lit("graph"),
+			"GRAPH comes home from the %s" % from_view)
+	main.graph_edit.case_graph_requested.emit()
+	for i in 8:
+		await process_frame
+	check(main.graph_edit._chip_lit("graph") and not main.big_face.visible,
+		"and pressing it again from the graph changes nothing")
 
 	await main._set_face_edit(true)
 	for i in 8:

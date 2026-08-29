@@ -629,6 +629,10 @@ func _gui_input(event: InputEvent) -> void:
 				case_schematic_toggled.emit()
 				accept_event()
 				return
+			if (chips.get("graph", Rect2()) as Rect2).has_point(button.position):
+				case_graph_requested.emit()
+				accept_event()
+				return
 		# The band is a handle only when there is something under it to move. While a
 		# mount is up the nodes are hidden, and dragging the band would shift nodes
 		# nobody can see - an edit, with an undo step, from a gesture that looks like
@@ -1112,6 +1116,9 @@ signal case_flipped
 ## lit and says when one was pressed.
 signal case_face_edit_toggled
 signal case_schematic_toggled
+## Back to the wiring, from wherever. Not a toggle: the graph is the view everything
+## else is a departure from, so asking for it twice should mean the same as asking once.
+signal case_graph_requested
 ## The face is up: the wiring is hidden and the mounted face stands in its place. The
 ## overlays stand down while it is — cables, glows and frames describe the wiring, and
 ## the wiring is what the flip put away.
@@ -1189,22 +1196,39 @@ signal case_moved
 ## The controls on the case band, right-aligned, in the order they are read: what you
 ## are doing to the face, then the other view, then the face itself.
 ##
-## Three chips rather than two buttons in the toolbar and one chip here. They are all
-## answers to "how am I looking at this patch", and having two of them live above the
-## canvas while the third lived on the case meant the set never read as a set.
-const CASE_CHIPS := ["face_edit", "schematic", "face_view"]
+## Three views and one mode, all on the band. They are the answers to "how am I looking
+## at this patch", and they were spread across a toolbar and a case until they were not.
+##
+## GRAPH is named rather than implied. It used to be reachable only by turning off
+## whichever view you were in — press SCHEMATIC again, or press a door labelled GRAPH
+## that was really FACE VIEW wearing another name — so the wiring was the one view with
+## no button of its own. Now each view has a chip, the chip says where it goes, and the
+## lit one is where you are.
+const CASE_CHIPS := ["face_edit", "graph", "schematic", "face_view"]
 const CASE_CHIP_LABELS := {
-	"face_edit": "FACE EDIT", "schematic": "SCHEMATIC", "face_view": "FACE VIEW",
+	"face_edit": "FACE EDIT", "graph": "GRAPH",
+	"schematic": "SCHEMATIC", "face_view": "FACE VIEW",
 }
 
 
-## The door is labelled with the side you will get, so it reads as an instruction rather
-## than as a statement of where you are. From the wiring that is the face; from the face
-## it is the graph.
+## Fixed labels now. The door used to say GRAPH from the face and FACE VIEW from the
+## graph, which is one control with two names — readable enough until a third view
+## arrived and "the other side" stopped meaning anything.
 func _chip_label(key: String) -> String:
-	if key == "face_view" and face_up:
-		return "GRAPH"
 	return str(CASE_CHIP_LABELS[key])
+
+
+func _chip_lit(key: String) -> bool:
+	match key:
+		"face_edit":
+			return face_edit_on
+		"schematic":
+			return schematic_on
+		"face_view":
+			return face_up
+		"graph":
+			return not face_up and not schematic_on
+	return false
 
 
 func _case_chip_rects() -> Dictionary:
@@ -1312,7 +1336,9 @@ func _draw_case() -> void:
 		var chip: Rect2 = chips[key]
 		if chip.size.x <= 4.0:
 			continue
-		var lit: bool = (key == "face_edit" and face_edit_on) 			or (key == "schematic" and schematic_on)
+		# Lit is where you are, or which mode is on. Three of these are views and exactly
+		# one of them is always true, so there is always something lit to read.
+		var lit: bool = _chip_lit(str(key))
 		draw_rect(chip, Color(Design.ACCENT, 0.55 if lit else 0.16))
 		draw_rect(chip, Color(Design.ACCENT, 0.9 if lit else 0.55), false, 1.0)
 		var label := _chip_label(key)
