@@ -1394,13 +1394,20 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	var face := Design.padded_panel(Design.Surface.NODE, PANEL_PADDING,
 		PANEL_PADDING, PANEL_RADIUS)
 	face.bg_color = ModuleThemes.token(key, "faceplate")
-	face.border_color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
-		else ModuleThemes.token(key, "edge")
+	# Borderless, both halves. See panel_hardware.gd: the outline is drawn round the
+	# whole module in one run, because two boxes meeting in the middle of a panel cannot
+	# be given borders without ruling a line across the join.
+	face.set_border_width_all(0)
 	# Short and dense rather than large and fuzzy. A module sits on the canvas; it does
 	# not hover a centimetre above it, and a soft wide shadow is what makes a rectangle
 	# read as a floating card rather than as an object lying on a surface.
-	face.shadow_size = Design.scale(4)
-	face.shadow_offset = Vector2(0.0, Design.scale(2))
+	# Offset by its own size, so the shadow starts at the box's top edge and none of it
+	# is drawn above. The body box begins halfway down the module — the titlebar box is
+	# the half above it — so a shadow that reached upward laid a dark line straight
+	# across the panel under the title. That is the rule this pass removed, put back by
+	# accident and found at 75%.
+	face.shadow_size = Design.scale(5)
+	face.shadow_offset = Vector2(0.0, Design.scale(5))
 	face.shadow_color = Color(0.0, 0.0, 0.0, 0.42)
 	# The body is the lower half of one plate, so it is not rounded or ruled along the
 	# top: the titlebar's box sits directly above it and the two have to read as one
@@ -1410,9 +1417,7 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	face.corner_radius_top_right = 0
 	face.border_width_top = 0
 	widget.add_theme_stylebox_override("panel", face)
-	var face_selected := face.duplicate()
-	face_selected.border_color = Design.BORDERS[Design.Surface.ACTIVE]
-	widget.add_theme_stylebox_override("panel_selected", face_selected)
+	widget.add_theme_stylebox_override("panel_selected", face.duplicate())
 
 	# The title is printed onto the plate. There is no header — but there is still a box
 	# up there, and it is the top half of the same plate.
@@ -1428,9 +1433,7 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	head.bg_color = ModuleThemes.token(key, "faceplate")
 	head.corner_radius_bottom_left = 0
 	head.corner_radius_bottom_right = 0
-	head.border_width_bottom = 0
-	head.border_color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
-		else ModuleThemes.token(key, "edge")
+	head.set_border_width_all(0)
 	widget.add_theme_stylebox_override("titlebar", head)
 	# And a selected module is drawn the same way, which needs saying separately because
 	# the selected header is a different stylebox. Without this a selected node gets the
@@ -1487,7 +1490,10 @@ func _finish_widget(widget: GraphNode, key: String) -> void:
 		layer = PanelHardware.new()
 		widget.add_child(layer, false, Node.INTERNAL_MODE_FRONT)
 		widget.set_meta("finish", layer)
-	layer.dress(Rack.skin(key), float(Design.scale(PANEL_RADIUS)))
+	layer.dress(Rack.skin(key), float(Design.scale(PANEL_RADIUS)),
+		Design.BORDERS[Design.Surface.ACTIVE] if widget.selected \
+			or (widget.has_meta("hovered") and bool(widget.get_meta("hovered"))) \
+			else ModuleThemes.token(key, "edge"))
 	layer.visible = true
 
 
@@ -1553,34 +1559,63 @@ func _mount_chooser(chooser: OptionButton, key: String, skin: Dictionary) -> voi
 	if key == ModuleThemes.CATEGORY:
 		for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 			chooser.remove_theme_stylebox_override(state)
-		chooser.remove_theme_color_override("font_color")
-		chooser.remove_theme_color_override("font_hover_color")
-		chooser.remove_theme_color_override("font_pressed_color")
+		for state in ["font_color", "font_hover_color", "font_pressed_color",
+				"font_focus_color"]:
+			chooser.remove_theme_color_override(state)
+		chooser.remove_theme_font_override("font")
+		if chooser.has_meta("lip"):
+			(chooser.get_meta("lip") as Panel).visible = false
 		return
 	var field: Color = skin.get("hardware", Color(0.13, 0.13, 0.14))
 	var wall: Color = skin.get("hardware_hi", Color(0.3, 0.31, 0.33))
 	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 		var box := StyleBoxFlat.new()
 		box.bg_color = field.lightened(0.10) if state == "hover" else field
-		box.set_corner_radius_all(Design.scale(3))
-		box.set_content_margin_all(Design.scale(Design.SPACE_XS))
+		# Barely rounded. A recess is cut with a tool and has corners; the four-pixel
+		# radius it had is the radius of a button, and it was doing as much to keep this
+		# looking like a form control as the colour was.
+		box.set_corner_radius_all(maxi(Design.scale(2), 1))
+		box.content_margin_top = Design.scale(Design.SPACE_XS)
+		box.content_margin_bottom = Design.scale(Design.SPACE_XS)
 		box.content_margin_left = Design.scale(Design.SPACE_S)
-		box.content_margin_right = Design.scale(Design.SPACE_S)
-		# The lip of the recess: light along the bottom, dark along the top, which is
-		# the top-lit panel's shadow read backwards. It is one pixel and it is the only
-		# reason this reads as cut in rather than stuck on.
-		box.border_width_top = maxi(Design.scale(1), 1)
-		box.border_color = field.darkened(0.5)
+		box.content_margin_right = Design.scale(Design.SPACE_XS)
+		# The lip of the recess, all the way round rather than a line along the top.
+		# Dark where the cut catches no light, pale along the bottom where the far wall
+		# of the recess faces up into it — the panel's own top-lighting, read inside
+		# out. One border colour is all a stylebox has, so the pale wall is a second box
+		# and this is the dark one.
+		box.set_border_width_all(maxi(Design.scale(1), 1))
+		box.border_color = field.darkened(0.55)
 		box.shadow_size = 0
 		if state == "focus":
-			box.border_width_bottom = maxi(Design.scale(1), 1)
 			box.border_color = Design.FOCUS
 		chooser.add_theme_stylebox_override(state, box)
+	# The perimeter's lit half, drawn as a second control behind the first: a Panel one
+	# pixel down carrying the pale wall, which shows only along the bottom edge where the
+	# field above does not cover it.
+	var lip: Panel = chooser.get_meta("lip") as Panel \
+		if chooser.has_meta("lip") else null
+	if lip == null:
+		lip = Panel.new()
+		lip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lip.show_behind_parent = true
+		lip.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		lip.offset_top = 1.0
+		lip.offset_bottom = 2.0
+		chooser.add_child(lip, false, Node.INTERNAL_MODE_FRONT)
+		chooser.set_meta("lip", lip)
+	var wall_box := StyleBoxFlat.new()
+	wall_box.bg_color = Color(wall, 0.5)
+	wall_box.set_corner_radius_all(maxi(Design.scale(2), 1))
+	lip.add_theme_stylebox_override("panel", wall_box)
+
+	# Set like a legend rather than like a menu: the same weight the panel prints its
+	# control names in, so the chosen setting reads as something stamped in the recess.
 	var printed := Color(1.0, 1.0, 1.0, 1.0).lerp(wall, 0.18)
-	chooser.add_theme_color_override("font_color", printed)
-	chooser.add_theme_color_override("font_hover_color", printed)
-	chooser.add_theme_color_override("font_pressed_color", printed)
-	chooser.add_theme_color_override("font_focus_color", printed)
+	chooser.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+	for state in ["font_color", "font_hover_color", "font_pressed_color",
+			"font_focus_color"]:
+		chooser.add_theme_color_override(state, printed)
 
 
 ## A GraphNode's title is a Label the node builds for itself, and it is reached through
@@ -4185,12 +4220,20 @@ func _port_icon(type_name: String, key: String = ModuleThemes.CATEGORY) -> Textu
 	if _port_icons.has(cached):
 		return _port_icons[cached]
 
-	const SIZE := 20
+	# Twenty-six for a painted socket, twenty for the plain shape.
+	#
+	# The first socket was cut into the same twenty-pixel square the diamond had used,
+	# and at 75% it went back to being a decorated connection point: the collar was two
+	# pixels of metal and the hole was four. A jack has to be the largest single piece of
+	# hardware on the panel edge or it is not a jack. This is the icon's size only —
+	# GraphEdit centres it on the slot anchor and does not lay it out, so nothing about
+	# the row, the port position or the cable moves.
+	var painted := key != ModuleThemes.CATEGORY
+	var SIZE := 26 if painted else 20
 	var image := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	var colour: Color = TYPE_COLOURS.get(type_name, Design.INK_NORMAL)
 	var centre := Vector2(SIZE * 0.5 - 0.5, SIZE * 0.5 - 0.5)
-	var painted := key != ModuleThemes.CATEGORY
 
 	if painted:
 		# A socket mounted in the panel, rather than a coloured shape sitting on it.
@@ -4209,26 +4252,40 @@ func _port_icon(type_name: String, key: String = ModuleThemes.CATEGORY) -> Textu
 		var skin := Rack.skin(key)
 		var ring: Color = skin.get("ring", Color(0.7, 0.7, 0.7))
 		var hole: Color = skin.get("jack", Color(0.07, 0.07, 0.07))
-		var collar := ring.darkened(0.68)
+		var nut := ring.darkened(0.62)
+		var shade := hole.darkened(0.4)
+		# Four rings, and the money is in the middle two. Outward from the centre: the
+		# hole, which is nearly black and is where a cable goes; the theme's bright
+		# collar, which is the only saturated thing here; the moulded nut it is screwed
+		# into; and a dark seat where the whole assembly meets the plate. The material
+		# contrast between hole and collar is what makes it read as an opening rather
+		# than as a coloured dot with a border.
+		const RIM := 12.6
+		const NUT := 10.6
+		const RING := 8.4
+		const HOLE := 6.2
 		for y in SIZE:
 			for x in SIZE:
 				var point := Vector2(x, y) - centre
 				var distance := point.length()
-				if distance > 9.6:
+				if distance > RIM:
 					continue
-				var fill := collar
-				# Lit from the top left, like everything else on the panel.
-				if distance > 7.4:
-					var lift: float = clampf(
-						-(point.x + point.y) / 20.0 + 0.12, -0.18, 0.3)
-					fill = collar.lightened(maxf(lift, 0.0)) if lift > 0.0 \
-						else collar.darkened(-lift)
-				elif distance > 6.0:
-					fill = ring
-				else:
+				# Lit from the top left, like everything else on these panels: the metal
+				# lifts where it faces the light and drops where it turns away.
+				var lift: float = clampf(-(point.x + point.y) / 26.0, -0.22, 0.26)
+				var fill := shade
+				if distance <= HOLE:
 					fill = hole
-				# The pip: the signal's own shape, in the signal's own colour, small
-				# enough to sit inside the socket rather than fill it.
+				elif distance <= RING:
+					fill = ring.lightened(maxf(lift, 0.0)) if lift > 0.0 \
+						else ring.darkened(-lift)
+				elif distance <= NUT:
+					fill = nut.lightened(maxf(lift, 0.0)) if lift > 0.0 \
+						else nut.darkened(-lift)
+				# The pip: the signal's own shape in the signal's own colour, sitting in
+				# the mouth of the socket. It was the whole port once and it is a detail
+				# of one now — small enough that the jack is the shape you see and the
+				# type is what you read off it.
 				var pip := 0.0
 				match type_name:
 					"control":
@@ -4237,10 +4294,10 @@ func _port_icon(type_name: String, key: String = ModuleThemes.CATEGORY) -> Textu
 						pip = maxf(absf(point.x), absf(point.y)) * 1.35
 					_:
 						pip = distance
-				if pip <= 3.4 and not (type_name == "note" and pip < 1.8):
+				if pip <= 3.0 and not (type_name == "note" and pip < 1.6):
 					fill = colour
 				image.set_pixel(x, y, Color(fill.r, fill.g, fill.b,
-					clampf(9.6 - distance, 0.0, 1.0)))
+					clampf(RIM - distance, 0.0, 1.0)))
 	else:
 		var radius := 5.0
 		for y in SIZE:

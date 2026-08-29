@@ -20,12 +20,20 @@ extends Control
 const RackView := preload("res://rack.gd")
 const Faceplate := preload("res://faceplate.gd")
 
-## Screws at a graph node's scale. The rack's own 6.8 is sized for a rack module; four of
-## those on a node this size read as bolts rather than as fasteners.
-const SCREW := 4.2
+## Screws at a graph node's scale.
+##
+## Four-two was chosen to be discreet and was simply too small to be anything: at 75% it
+## is three pixels of grey and by 50% it is gone, which makes it decoration that only
+## exists in the screenshot you designed it in. A detail either contributes at working
+## zoom or it should not be drawn. Six is a fastener; it is also still under the rack's
+## own 6.8, which is sized for a panel twice this size.
+const SCREW := 6.0
 
 var skin: Dictionary = {}
 var radius := 6.0
+## The colour round the outside: the plate's own edge, or the accent when the pointer is
+## on the module or it is selected.
+var outline := Color(0, 0, 0, 0)
 
 
 func _ready() -> void:
@@ -34,10 +42,30 @@ func _ready() -> void:
 	resized.connect(queue_redraw)
 
 
-func dress(new_skin: Dictionary, new_radius: float) -> void:
+func dress(new_skin: Dictionary, new_radius: float, new_outline: Color) -> void:
 	skin = new_skin
 	radius = new_radius
+	outline = new_outline
 	queue_redraw()
+
+
+## A rounded rectangle as a run of points, corners first.
+static func _rounded(rect: Rect2, corner: float) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var r := minf(corner, minf(rect.size.x, rect.size.y) * 0.5)
+	var centres := [
+		Vector2(rect.end.x - r, rect.position.y + r),
+		Vector2(rect.end.x - r, rect.end.y - r),
+		Vector2(rect.position.x + r, rect.end.y - r),
+		Vector2(rect.position.x + r, rect.position.y + r),
+	]
+	for corner_index in 4:
+		var from := -PI * 0.5 + corner_index * PI * 0.5
+		for step in 5:
+			var at: float = from + (PI * 0.5) * (float(step) / 4.0)
+			points.append(centres[corner_index] + Vector2(cos(at), sin(at)) * r)
+	points.append(points[0])
+	return points
 
 
 func _draw() -> void:
@@ -77,6 +105,18 @@ func _draw() -> void:
 			Color(sidewall, 0.9), 1.5)
 		draw_line(Vector2(size.x - 0.5, inset), Vector2(size.x - 0.5, size.y - inset),
 			Color(sidewall, 0.7), 1.0)
+
+	# The outline, drawn here rather than left to the styleboxes.
+	#
+	# A GraphNode is painted as two boxes — a titlebar and a body — and each of them can
+	# carry one border colour on four sides. Whichever way those are set, the pair meet
+	# in the middle of the panel, and any border either of them draws along that join is
+	# a hairline ruled across the module under its title. That is the header rule this
+	# pass set out to remove, and it came back through the one door left open: the join
+	# is invisible only if neither box draws anything at all there. So neither does, and
+	# the module's edge is one unbroken run of points around the outside.
+	if outline.a > 0.0:
+		draw_polyline(_rounded(plate.grow(-0.5), radius), outline, 1.0, true)
 
 	# And the screws, which are the single cheapest thing that says "panel". Only where
 	# there is room for them: a node narrow enough that its fasteners would land in the

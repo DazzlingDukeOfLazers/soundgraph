@@ -1487,7 +1487,9 @@ class Knob extends Control:
 			# The dial plus the arc that rides five px outside it — the first version
 			# measured the dial alone and the arc shaved its top on the cell edge.
 			# The hit area still has to clear the rule every other control obeys.
-			var across := _radius() * 2.0 + 17.0
+			# Room for the printed scale, which sits nine px past the body — the old 17
+			# was measured against a value arc five px out and nothing beyond it.
+			var across := _radius() * 2.0 + 22.0
 			return Vector2(across, maxf(across, Design.scale(Design.HIT_TARGET)))
 		var label_font: Font = Design.font(Design.WEIGHT_MEDIUM)
 		var label_size := Design.type(Design.SIZE_SECONDARY)
@@ -1679,28 +1681,33 @@ class Knob extends Control:
 		#
 		# Eleven, because a scale wants a middle and an odd count gives it one — a knob
 		# at noon should be pointing at a mark. Drawn in the panel's own thinner ink
-		# where it has one, at a length that reads as printing rather than as a second
-		# dial: this is the cheapest thing on the panel that says the control is mounted
-		# in something rather than floating on it.
+		# where it has one.
 		#
-		# Inside the value arc rather than outside it. Outside is where a real panel
-		# prints them and also where this control's minimum size stops — a ring of ticks
-		# out there would either be clipped by the cell or widen every cell in the
-		# editor to make room for decoration.
+		# The first version put them in the gap between the body and the value arc,
+		# where they were a pixel and a half long and gone by 75% zoom. A detail that
+		# only exists at 100% is not a detail, it is a rumour: the scale is outside the
+		# arc now, where a panel actually prints it, longer, and with the extremes and
+		# the centre marked heavier than the rest — the three positions anybody reads a
+		# pot against.
 		var marks: Color = skin.get("muted", Color(0, 0, 0, 0))
 		if marks.a <= 0.0:
-			marks = Color(rack.ink_dim, 0.55)
+			marks = Color(rack.ink_dim, 0.7)
 		const TICKS := 11
 		for tick in TICKS:
 			var at := START + SWEEP * (float(tick) / float(TICKS - 1))
 			var out := Vector2(cos(at), sin(at))
-			draw_line(centre + out * (radius + 1.5), centre + out * (radius + 3.2),
-				marks, 1.0, true)
+			var cardinal: bool = tick == 0 or tick == TICKS - 1 or tick == (TICKS - 1) / 2
+			draw_line(centre + out * (radius + 6.0),
+				centre + out * (radius + (9.0 if cardinal else 7.6)),
+				marks, 1.8 if cardinal else 1.2, true)
 
-		draw_arc(centre, radius + 5.0, START, START + SWEEP, 40,
-			Rack.KNOB_TRACK, 3.0, true)
-		draw_arc(centre, radius + 5.0, START, angle, 40,
-			Rack.SELECTED, 3.0, true)
+		# The value ring, brought in to hug the body. It used to sit five px out, in the
+		# middle of the space the scale wants, so the two rings competed and neither read
+		# as belonging to the knob.
+		draw_arc(centre, radius + 3.0, START, START + SWEEP, 40,
+			Rack.KNOB_TRACK, 2.5, true)
+		draw_arc(centre, radius + 3.0, START, angle, 40,
+			Rack.SELECTED, 2.5, true)
 
 		# Focus is drawn around the whole cell, not around the dial: the name and the
 		# value are part of what is focused, and a ring that hugged the circle looked
@@ -1713,13 +1720,28 @@ class Knob extends Control:
 		# Sitting on the panel rather than printed on it: a short dense shadow under the
 		# body, offset down because the light on these panels comes from the top. It is
 		# the same argument as the module's own shadow, one size down.
-		draw_circle(centre + Vector2(0.0, 1.6), radius + 0.6, Color(0.0, 0.0, 0.0, 0.3))
+		draw_circle(centre + Vector2(0.0, 2.0), radius + 1.0, Color(0.0, 0.0, 0.0, 0.34))
+		# The collar the shaft comes through, in the same moulded black as every other
+		# piece of hardware on these panels. It is what makes a knob look bolted through
+		# the plate rather than laid on top of it, and it is the widest thing here, so
+		# it is what carries the silhouette when everything else has shrunk away.
+		var collar: Color = skin.get("hardware", Color(0, 0, 0, 0))
+		if collar.a > 0.0:
+			draw_circle(centre, radius + 1.6, collar)
+			draw_arc(centre, radius + 1.6, 0.0, TAU, 48,
+				skin.get("hardware_hi", collar.lightened(0.25)), 1.0, true)
 		draw_circle(centre, radius, body)
 		draw_circle(centre, radius, Color(0, 0, 0, 0.5), false, 1.0)
 		# The cap catches the light. A pale knob is lit by darkening rather than
 		# lightening it, or a cream bakelite cap turns into a white disc with no edge.
-		draw_circle(centre - Vector2(0, 1), radius - 5.0,
-			body.darkened(0.08) if body.get_luminance() > 0.5 else body.lightened(0.10))
+		# The moulding line, then the cap. A knob is two pieces — a skirt you grip and a
+		# top face — and the step between them is what says so. It was a lightened disc
+		# with no edge, which reads as a lit sphere rather than as a moulded part.
+		var cap := body.darkened(0.10) if body.get_luminance() > 0.5 \
+			else body.lightened(0.14)
+		draw_arc(centre - Vector2(0.0, 1.0), radius - 4.0, 0.0, TAU, 40,
+			Color(0.0, 0.0, 0.0, 0.45), 1.4, true)
+		draw_circle(centre - Vector2(0, 1), radius - 5.0, cap)
 		# One short highlight across the top left of the cap, and no more than one. This
 		# is where a knob turns into a 2010 gel button if it is overdone: the reference
 		# is small moulded hardware under diffuse light, which has a soft sheen on one
@@ -1729,10 +1751,16 @@ class Knob extends Control:
 			1.6, true)
 		# The pointer, which is what actually tells you where the knob is set, and the
 		# one part of a knob that has to be visible from across a desk.
+		# The pointer, which is what actually tells you where the knob is set, and the
+		# one part of a knob that has to survive being shrunk. It runs from the middle of
+		# the cap to its edge — not from a third of the way out — and it is drawn on its
+		# own dark line so that a pale pointer on a pale cap still has an edge.
 		var pointer: Color = skin.get("pointer", Color(0, 0, 0, 0))
-		draw_line(centre + Vector2(cos(angle), sin(angle)) * 6.0,
-			centre + Vector2(cos(angle), sin(angle)) * (radius - 3.0),
-			rack.ink if pointer.a <= 0.0 else pointer, 2.5, true)
+		var index := Vector2(cos(angle), sin(angle))
+		var from := centre - Vector2(0.0, 1.0) + index * 2.5
+		var to := centre - Vector2(0.0, 1.0) + index * (radius - 3.5)
+		draw_line(from, to, Color(0.0, 0.0, 0.0, 0.45), 4.4, true)
+		draw_line(from, to, rack.ink if pointer.a <= 0.0 else pointer, 2.8, true)
 
 		# Compact draws the dial and stops: its name and its number belong to whatever
 		# placed it, and drawing them here too would print one over the other.
