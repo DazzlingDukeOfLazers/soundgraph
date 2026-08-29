@@ -3,7 +3,7 @@
   "metadata": {
     "author": "Mutant Factory",
     "created": "2026-08-29",
-    "description": "Two Cable Test nodes wired straight across: eight cables, one in each of the editor's first eight cable colours, in order. For looking at the cable rendering itself - crossings, sockets, and whether every colour keeps its identity on every surface.",
+    "description": "Two Cable Test nodes side by side, all eight lanes wired across so the cables hang as one bundle wearing the first eight cable colours in order \u2014 and the whole thing is playable: the oscillator enters lane 1, comes out the far side, and reaches the speakers. For looking at the cable rendering with the sound still on.",
     "name": "Cable Test",
     "tags": [
       "diagnostic",
@@ -13,103 +13,239 @@
   },
   "nodes": [
     {
-      "id": "left",
-      "type": "CableTest",
-      "name": "Cable Test A",
+      "id": "kb",
+      "type": "Input",
+      "name": "Keyboard",
       "position": {
         "x": 0,
+        "y": 440
+      },
+      "host": "note",
+      "parameters": {
+        "glide": 0,
+        "transpose": 0
+      }
+    },
+    {
+      "id": "osc",
+      "type": "SawOscillator",
+      "name": "Oscillator",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "parameters": {
+        "frequency": 220
+      }
+    },
+    {
+      "id": "test_a",
+      "type": "CableTest",
+      "name": "Cable Test",
+      "position": {
+        "x": 480,
         "y": 0
       }
     },
     {
-      "id": "right",
+      "id": "test_b",
       "type": "CableTest",
-      "name": "Cable Test B",
+      "name": "Cable Test",
       "position": {
-        "x": 480,
+        "x": 840,
         "y": 0
+      }
+    },
+    {
+      "id": "env",
+      "type": "AhdEnvelope",
+      "name": "AHD Envelope",
+      "position": {
+        "x": 840,
+        "y": 440
+      },
+      "parameters": {
+        "attack": 0.005,
+        "hold": 0.15,
+        "decay": 0.35
+      }
+    },
+    {
+      "id": "amp",
+      "type": "Gain",
+      "name": "Gain",
+      "position": {
+        "x": 1320,
+        "y": 0
+      },
+      "parameters": {
+        "gain": 0.7
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "name": "Output",
+      "position": {
+        "x": 1800,
+        "y": 0
+      },
+      "host": "stereo",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
       }
     }
   ],
   "connections": [
     {
       "from": {
-        "node": "left",
+        "node": "test_a",
         "port": "out1"
       },
       "to": {
-        "node": "right",
+        "node": "test_b",
         "port": "in1"
       }
     },
     {
       "from": {
-        "node": "left",
+        "node": "test_a",
         "port": "out2"
       },
       "to": {
-        "node": "right",
+        "node": "test_b",
         "port": "in2"
       }
     },
     {
       "from": {
-        "node": "left",
+        "node": "test_a",
         "port": "out3"
       },
       "to": {
-        "node": "right",
+        "node": "test_b",
         "port": "in3"
       }
     },
     {
       "from": {
-        "node": "left",
+        "node": "test_a",
         "port": "out4"
       },
       "to": {
-        "node": "right",
+        "node": "test_b",
         "port": "in4"
       }
     },
     {
       "from": {
-        "node": "left",
+        "node": "test_a",
         "port": "out5"
       },
       "to": {
-        "node": "right",
+        "node": "test_b",
         "port": "in5"
       }
     },
     {
       "from": {
-        "node": "left",
+        "node": "test_a",
         "port": "out6"
       },
       "to": {
-        "node": "right",
+        "node": "test_b",
         "port": "in6"
       }
     },
     {
       "from": {
-        "node": "left",
+        "node": "test_a",
         "port": "out7"
       },
       "to": {
-        "node": "right",
+        "node": "test_b",
         "port": "in7"
       }
     },
     {
       "from": {
-        "node": "left",
+        "node": "test_a",
         "port": "out8"
       },
       "to": {
-        "node": "right",
+        "node": "test_b",
         "port": "in8"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "osc",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "trigger"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "osc",
+        "port": "out"
+      },
+      "to": {
+        "node": "test_a",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "test_b",
+        "port": "out1"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
       }
     }
   ],

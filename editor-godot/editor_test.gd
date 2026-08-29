@@ -8116,13 +8116,19 @@ func _initialize() -> void:
 	await main._load_example("Cable Test")
 	for i in 8:
 		await process_frame
-	var test_cables: Array = main.rack.cable_endpoints()
-	check(test_cables.size() == 8,
-		"the cable-test example wires all eight lanes (%d)" % test_cables.size())
+	# The example is playable now — oscillator in lane 1, out the far side, to the
+	# speakers — so the lane cables are found by their source rather than counted
+	# alone, and matched to their lane by port name rather than by file order.
+	var lane_inks: Dictionary = {}
+	for entry in main.rack.cable_endpoints():
+		if str(entry[3]) == "test_a" and str(entry[6]).begins_with("out"):
+			lane_inks[int(str(entry[6]).substr(3)) - 1] = entry[2]
+	check(lane_inks.size() == 8,
+		"the cable-test example wires all eight lanes across (%d)" % lane_inks.size())
 	var walked := true
-	for test_lane in test_cables.size():
-		var want_ink: Color = RackView.cable_override("CableTest", test_lane)
-		if (test_cables[test_lane][2] as Color) != want_ink:
+	for test_lane in 8:
+		if not lane_inks.has(test_lane) 				or (lane_inks[test_lane] as Color) != RackView.cable_override(
+					"CableTest", test_lane):
 			walked = false
 	check(walked, "and each cable wears its own lane's colour, in palette order")
 	check(RackView.cable_override("CableTest", 0).a > 0.0
