@@ -4,6 +4,9 @@ extends SceneTree
 const ModuleThemes := preload("res://module_themes.gd")
 ## The canvas, for the overlay that redraws titles too small to read.
 const PatchGraph := preload("res://patch_graph.gd")
+## The generated finishes, so the tile on a graph panel can be compared with the tile the
+## rack would have laid on the same style rather than with "a texture".
+const Faceplate := preload("res://faceplate.gd")
 ## Every node wearing a different panel style, through every way of changing one.
 ##
 ##   godot --headless --path editor-godot --script res://panel_style_test.gd
@@ -100,6 +103,7 @@ func _verify(main, offset: int, when: String) -> void:
 	var unlettered: Array = []
 	var unreadable: Array = []
 	var knobs_missed: Array = []
+	var ungrained: Array = []
 	for index in ids.size():
 		var id := str(ids[index])
 		var want := _expected(index, offset)
@@ -159,6 +163,24 @@ func _verify(main, offset: int, when: String) -> void:
 			if str((knob.skin as Dictionary).get("panel", Color())) != str(plate):
 				knobs_missed.append("%s (%s)" % [id, want])
 				break
+
+		# And the finish over the plate: the generated tile the rack lays on the same
+		# style, at the alpha the rack lays it at. Asked for by name rather than "some
+		# texture is present", because a photocopy where a machined face belongs is the
+		# failure that looks fine in a screenshot.
+		var skin := Rack.skin(want)
+		var finish := str(skin.get("finish", ""))
+		var grained: TextureRect = widget.get_meta("finish") as TextureRect \
+			if widget.has_meta("finish") else null
+		if finish == "":
+			if grained != null and grained.visible:
+				ungrained.append("%s (%s) has a finish it did not ask for" % [id, want])
+		elif grained == null or not grained.visible \
+				or grained.texture != Faceplate.texture(finish) \
+				or not is_equal_approx(grained.modulate.a, clampf(
+					float(skin.get("grain", 0.06)) * 3.0 * Faceplate.strength(finish),
+					0.0, 0.33)):
+			ungrained.append("%s wants %s" % [id, finish])
 	check(unresolved.is_empty(), "%s: every module resolves to its own style%s"
 		% [when, "" if unresolved.is_empty() else " — " + ", ".join(unresolved)])
 	check(unpainted.is_empty(), "%s: every panel is painted its own faceplate%s"
@@ -175,6 +197,8 @@ func _verify(main, offset: int, when: String) -> void:
 		% [when, "" if unreadable.is_empty() else " — " + ", ".join(unreadable)])
 	check(knobs_missed.is_empty(), "%s: and the dials are wearing the skin too%s"
 		% [when, "" if knobs_missed.is_empty() else " — " + ", ".join(knobs_missed)])
+	check(ungrained.is_empty(), "%s: with the rack's own finish over the plate%s"
+		% [when, "" if ungrained.is_empty() else " — " + ", ".join(ungrained)])
 
 
 func _initialize() -> void:
@@ -202,8 +226,34 @@ func _initialize() -> void:
 			% [ids.size(), ModuleThemes.ORDER.size()])
 
 	# ---- every node a different style ------------------------------------------------
+	var wired_before: Array = main.graph_edit.get_connection_list()
 	_paint(main, 0)
 	_verify(main, 0, "painted")
+
+	# The finish rides on an internal child, and a GraphNode binds each slot to the index
+	# of a visible child. An ordinary child would renumber every port below it and the
+	# cables would come back attached to the wrong ones — silently, and in a way that
+	# looks like a patch that was always wired that way. So the wiring is counted across
+	# the paint.
+	var wired_after: Array = main.graph_edit.get_connection_list()
+	check(wired_after.size() == wired_before.size(),
+		"painting every module leaves the wiring alone (%d connections, was %d)"
+			% [wired_after.size(), wired_before.size()])
+	var moved: Array = []
+	for link: Dictionary in wired_after:
+		var same := false
+		for was: Dictionary in wired_before:
+			if str(was["from_node"]) == str(link["from_node"]) \
+					and int(was["from_port"]) == int(link["from_port"]) \
+					and str(was["to_node"]) == str(link["to_node"]) \
+					and int(was["to_port"]) == int(link["to_port"]):
+				same = true
+				break
+		if not same:
+			moved.append("%s:%d -> %s:%d" % [link["from_node"], link["from_port"],
+				link["to_node"], link["to_port"]])
+	check(moved.is_empty(), "and every cable on the same ports it was on%s"
+		% ("" if moved.is_empty() else " — " + ", ".join(moved)))
 
 	# ---- and now they all move -------------------------------------------------------
 	# Style to style, which is the direction that was failing: the widget already carries

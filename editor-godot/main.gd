@@ -25,6 +25,9 @@ const MAX_PLUGIN_STATE_CHARS := 4 * 1024 * 1024
 
 const Scope := preload("res://scope.gd")
 const PatchGraph := preload("res://patch_graph.gd")
+## The generated faceplate finishes, so a panel in the graph is grained like the same
+## panel on the rack.
+const Faceplate := preload("res://faceplate.gd")
 
 ## How many parameter cells share a line in a graph node.
 const PARAMETERS_PER_LINE := 2
@@ -1417,6 +1420,50 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	if title_label != null:
 		title_label.add_theme_color_override("font_color",
 			ModuleThemes.token(key, "legend"))
+
+	_finish_widget(widget, key)
+
+
+## Lays a style's finish over a node: the grain, the halftone screen, the brushed metal.
+##
+## Tiled rather than stretched, for the reason the rack tiles it — a stretched texture
+## would make the finish a property of the module's height, which it is not. Same
+## textures, same alpha, from the same generator: a finish that looked one way on the
+## rack and another in the graph would be two finishes.
+##
+## It rides above the node's own drawing rather than under it, which is the one thing
+## here that is not what the rack does. A GraphNode paints its panel and its port icons
+## itself, in its own _draw, and a child can only be added after that. The alpha this is
+## laid on at — a third at the very most, a fifth for most styles — is what makes that
+## acceptable: the grain passes over a port without hiding it.
+func _finish_widget(widget: GraphNode, key: String) -> void:
+	var skin := Rack.skin(key)
+	var finish := str(skin.get("finish", ""))
+	var layer: TextureRect = widget.get_meta("finish") as TextureRect \
+		if widget.has_meta("finish") else null
+	if key == ModuleThemes.CATEGORY or finish == "":
+		if layer != null:
+			layer.visible = false
+		return
+	if layer == null:
+		layer = TextureRect.new()
+		layer.stretch_mode = TextureRect.STRETCH_TILE
+		layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		# Internal, and at the front. A GraphNode is a container that binds each slot to
+		# the index of a visible child, so an ordinary child added here would renumber
+		# every port below it and the cables would reattach to the wrong ones. An
+		# internal child is not laid out, not counted, and not returned by
+		# get_children() — which is also why the lettering walk never sees this.
+		widget.add_child(layer, false, Node.INTERNAL_MODE_FRONT)
+		widget.set_meta("finish", layer)
+	layer.texture = Faceplate.texture(finish)
+	# The rack's own figure, not a new one: grain runs 0.03 to 0.12 and the multiplier
+	# decides everything. Six put a 0.43 alpha over the mustard panel and the finish
+	# stopped being a finish — it read as upholstery.
+	layer.modulate = Color(1.0, 1.0, 1.0, clampf(
+		float(skin.get("grain", 0.06)) * 3.0 * Faceplate.strength(finish), 0.0, 0.33))
+	layer.visible = true
 
 
 ## Letters a node in its panel style: every label on it, and every knob.
