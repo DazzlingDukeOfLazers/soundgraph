@@ -820,6 +820,7 @@ func _build_ui() -> void:
 		func() -> void: _set_face_edit(not graph_edit.face_edit))
 	graph_edit.case_schematic_toggled.connect(
 		func() -> void: await _show_schematic(not schematic_up))
+	graph_edit.case_graph_requested.connect(func() -> void: await _show_graph())
 	graph_edit.group_flip_toggled.connect(func(module_name: String) -> void:
 		if flipped_modules.has(module_name):
 			flipped_modules.erase(module_name)
@@ -2234,6 +2235,17 @@ func _show_schematic(on: bool) -> void:
 		graph_edit.mount_up = false
 		graph_edit.mount_box = Rect2()
 		await _rebuild_view()
+
+
+## Back to the wiring from wherever, and a no-op when already there.
+##
+## Not a toggle, unlike the two modes: the graph is the view the others are departures
+## from, so pressing it twice means the same as pressing it once.
+func _show_graph() -> void:
+	if schematic_up:
+		await _show_schematic(false)
+	if graph_edit.face_up:
+		await _flip_container(false)
 
 
 func _place_face() -> void:
