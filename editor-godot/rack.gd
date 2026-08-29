@@ -165,6 +165,8 @@ const SCREW := Color(0.42, 0.45, 0.50)
 ## every screw the brightest thing on the panel - four white dots per module, pulling the
 ## eye to the corners and away from the knobs. A screw should be findable and never
 ## looked at.
+## One place the size is written down, so a call site cannot fall behind it.
+const SCREW_RADIUS := 6.8
 const SCREW_STEEL := Color(0.52, 0.55, 0.60)
 const SCREW_STEEL_LOW := Color(0.26, 0.29, 0.34)
 const JACK_RING := Color(0.62, 0.65, 0.70)
@@ -1285,7 +1287,10 @@ class RackModule extends Control:
 				rack.ink if legend.a <= 0.0 else legend)
 
 		_draw_analysis()
-		Rack.draw_screws(self, Rect2(Vector2.ZERO, size), 3.4, true, paint)
+		# Radius left to the default. It was pinned at 3.4 here when the skin argument
+		# went in, which quietly made the default meaningless for the rack - the size was
+		# changed twice and this call went on drawing the original.
+		Rack.draw_screws(self, Rect2(Vector2.ZERO, size), Rack.SCREW_RADIUS, true, paint)
 
 		if rack != null and rack.selected_id == node_id:
 			draw_rect(Rect2(Vector2.ZERO, size), Rack.SELECTED, false, 2.0)
@@ -1905,9 +1910,14 @@ static func _draw_wear(canvas: CanvasItem, rect: Rect2) -> void:
 ## `both_rails` off leaves the lower pair out, for a plate whose bottom rail is doing
 ## something else — the panel's blocks run their envelope down to the edge, and a screw
 ## through a fader's label is not a detail, it is a collision.
-static func draw_screws(canvas: CanvasItem, rect: Rect2, radius: float = 3.4,
+static func draw_screws(canvas: CanvasItem, rect: Rect2, radius: float = SCREW_RADIUS,
 		both_rails: bool = true, skin_colours: Dictionary = {}) -> void:
-	var inset := radius * 3.2
+	# The inset multiplier came down as the radius went up. It was 3.2 for a 3.4 radius,
+	# which is a centre 10.9 from the edge and a 7.5 gap; keeping it would have put a
+	# doubled screw 21.8 in, most of the way to the knobs. Two-times leaves the same gap
+	# and — because 6.8 x 2 x 0.8 is 10.9 — the same distance down from the rail as
+	# before, so the title sits exactly where it did.
+	var inset := radius * 2.0
 	var points := [Vector2(rect.position.x + inset, rect.position.y + inset * 0.8),
 		Vector2(rect.end.x - inset, rect.position.y + inset * 0.8)]
 	if both_rails:
