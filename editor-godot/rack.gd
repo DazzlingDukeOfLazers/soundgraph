@@ -1398,7 +1398,20 @@ class CableLayer extends Control:
 	## the module's edge, which is the thing the whole exercise exists to avoid.
 	func _physical_style(traced: bool, dim: float, pitch: float) -> CableArt.Style:
 		var style: CableArt.Style = CableArt.Style.new()
-		style.thickness = 6.0 if traced else 5.0
+		# A cord, not a line. The material stack was always four passes — shadow, dark
+		# same-hue edge, saturated body, same-hue highlight — and at five pixels of body
+		# every pass but the body was subliminal: the edge crescent was under a pixel,
+		# the highlight a thread, and the whole thing read as a flat spline wearing a
+		# description of juiciness. Eight and a half gives the passes room to exist,
+		# and the offsets and widths below scale with the body instead of being fixed
+		# figures tuned for the thin one.
+		style.thickness = 10.0 if traced else 8.5
+		style.edge_offset = Vector2(1.3, 1.5)
+		style.highlight_width = 2.2
+		style.highlight_offset = Vector2(-1.3, -1.5)
+		style.highlight_alpha = 0.6
+		style.shadow_width = 11.0
+		style.shadow_alpha = 0.2
 		# What the plug has to fit inside. Measured, not assumed: it is the difference
 		# between a rack whose modules have four ports in a column and one whose modules
 		# have two, and the renderer should not have to be retuned when that changes.
