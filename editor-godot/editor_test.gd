@@ -8108,6 +8108,30 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 
+	# ---- the cable-test node walks the candy palette --------------------------------
+	# Two CableTest nodes wired straight across are the editor's own test card: eight
+	# cables, each wearing one of the first eight cable colours, in order. The override
+	# lives in one place — Rack.cable_override — and both cable renderers ask it, so
+	# this asserts the rack's actual per-cable inks rather than the function alone.
+	await main._load_example("Cable Test")
+	for i in 8:
+		await process_frame
+	var test_cables: Array = main.rack.cable_endpoints()
+	check(test_cables.size() == 8,
+		"the cable-test example wires all eight lanes (%d)" % test_cables.size())
+	var walked := true
+	for test_lane in test_cables.size():
+		var want_ink: Color = RackView.cable_override("CableTest", test_lane)
+		if (test_cables[test_lane][2] as Color) != want_ink:
+			walked = false
+	check(walked, "and each cable wears its own lane's colour, in palette order")
+	check(RackView.cable_override("CableTest", 0).a > 0.0
+			and RackView.cable_override("Gain", 0).a <= 0.0,
+		"the override answers only for the diagnostic node")
+	await main._load_example("First Synth")
+	for i in 8:
+		await process_frame
+
 	# ---- a recording becomes the roll -------------------------------------------
 	# The parsing first, which needs neither the binary nor a sound file. sg-transcribe
 	# writes a whole patch and only its roll is wanted, so what comes back has to be

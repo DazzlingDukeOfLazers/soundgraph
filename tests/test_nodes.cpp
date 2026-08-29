@@ -2273,6 +2273,20 @@ TEST(plugin_instrument_without_a_plugin_is_silent_not_broken) {
     CHECK_NEAR(harness.output("right")[63], 0.0, 1e-9);
 }
 
+TEST(cable_test_passes_each_lane_straight_through) {
+    // The node exists for the editor to colour cables by lane, so the DSP contract is
+    // deliberately the dullest one possible: lane in, same lane out, other lanes
+    // silent. If this ever fails, somebody made the test card musical, and a test
+    // card that changes the signal is measuring itself.
+    NodeHarness harness("CableTest", 16, kSampleRate);
+    CHECK(harness.valid());
+    harness.connect("in3", 0.75f);
+    harness.process();
+    CHECK_NEAR(harness.output("out3")[0], 0.75, 1e-6);
+    CHECK_NEAR(harness.output("out1")[0], 0.0, 1e-9);
+    CHECK_NEAR(harness.output("out8")[15], 0.0, 1e-9);
+}
+
 TEST(plugin_instrument_gain_scales_what_the_plugin_returned) {
     RecordingPlugin plugin;   // writes half of whatever it is given, and it is given none
     NodeHarness harness("PluginInstrument", 64, kSampleRate);

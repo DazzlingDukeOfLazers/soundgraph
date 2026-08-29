@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "author": "Mutant Factory",
+    "created": "2026-08-29",
+    "description": "Two Cable Test nodes wired straight across: eight cables, one in each of the editor's first eight cable colours, in order. For looking at the cable rendering itself - crossings, sockets, and whether every colour keeps its identity on every surface.",
+    "name": "Cable Test",
+    "tags": [
+      "diagnostic",
+      "cables",
+      "rendering"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "left",
+      "type": "CableTest",
+      "name": "Cable Test A",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "right",
+      "type": "CableTest",
+      "name": "Cable Test B",
+      "position": {
+        "x": 480,
+        "y": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "left",
+        "port": "out1"
+      },
+      "to": {
+        "node": "right",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "left",
+        "port": "out2"
+      },
+      "to": {
+        "node": "right",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "left",
+        "port": "out3"
+      },
+      "to": {
+        "node": "right",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "left",
+        "port": "out4"
+      },
+      "to": {
+        "node": "right",
+        "port": "in4"
+      }
+    },
+    {
+      "from": {
+        "node": "left",
+        "port": "out5"
+      },
+      "to": {
+        "node": "right",
+        "port": "in5"
+      }
+    },
+    {
+      "from": {
+        "node": "left",
+        "port": "out6"
+      },
+      "to": {
+        "node": "right",
+        "port": "in6"
+      }
+    },
+    {
+      "from": {
+        "node": "left",
+        "port": "out7"
+      },
+      "to": {
+        "node": "right",
+        "port": "in7"
+      }
+    },
+    {
+      "from": {
+        "node": "left",
+        "port": "out8"
+      },
+      "to": {
+        "node": "right",
+        "port": "in8"
+      }
+    }
+  ],
+  "controls": []
+}

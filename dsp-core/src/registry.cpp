@@ -168,6 +168,7 @@ NodeRegistry::NodeRegistry() {
         &nodes::kCrush,
         &nodes::kCompressor,
         &nodes::kStereoOutput,
+        &nodes::kCableTest,
     };
 }
 

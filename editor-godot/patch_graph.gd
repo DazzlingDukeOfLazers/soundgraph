@@ -2427,8 +2427,13 @@ class CordLayer extends Control:
 			var local := PackedVector2Array()
 			for point in route:
 				local.append(point - graph.scroll_offset)
-			cords.append([local,
-				from_widget.get_output_port_color(int(connection["from_port"]))])
+			var cord_ink: Color = from_widget.get_output_port_color(
+				int(connection["from_port"]))
+			var cord_override := Rack.cable_override(
+				str(from_widget.get_meta("type", "")), int(connection["from_port"]))
+			if cord_override.a > 0.0:
+				cord_ink = cord_override
+			cords.append([local, cord_ink])
 
 		# Drawn in connection order with the rack's own occlusion: where a cord crosses
 		# one already down, the earlier cord breaks in shadow under it. Deterministic —
@@ -2480,6 +2485,19 @@ class PlugOverlay extends Control:
 		if graph == null or graph.face_up:
 			return sites
 		for connection in graph.get_connection_list():
+			# One ink per cable, taken at the source and worn at both ends: the collar
+			# says which cable is seated in the socket, and a diagnostic override at
+			# the output would otherwise land in a differently-coloured collar at the
+			# input, which is two claims about one cable.
+			var cable_ink := Color(0, 0, 0, 0)
+			var source := graph.get_node_or_null(
+				NodePath(str(connection["from_node"]))) as GraphNode
+			if source != null:
+				cable_ink = source.get_output_port_color(int(connection["from_port"]))
+				var override := Rack.cable_override(
+					str(source.get_meta("type", "")), int(connection["from_port"]))
+				if override.a > 0.0:
+					cable_ink = override
 			for side in 2:
 				var widget := graph.get_node_or_null(NodePath(str(
 					connection["from_node" if side == 0 else "to_node"]))) as GraphNode
@@ -2491,8 +2509,7 @@ class PlugOverlay extends Control:
 					else widget.get_input_port_position(port)
 				var at: Vector2 = widget.position_offset * graph.zoom \
 					- graph.scroll_offset + local * graph.zoom
-				var colour: Color = widget.get_output_port_color(port) if side == 0 \
-					else widget.get_input_port_color(port)
+				var colour := cable_ink
 				var skin: Dictionary = widget.get_meta("skin")
 				# Away from the panel: an output projects right, an input left.
 				sites.append([at, Vector2.RIGHT if side == 0 else Vector2.LEFT, colour,

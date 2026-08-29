@@ -348,6 +348,31 @@ const DEMOS = {
   },
 
   // ---- amplitude ----------------------------------------------------------------
+  // ---- diagnostics --------------------------------------------------------------
+  CableTest: {
+    summary: 'Eight lanes straight through, each cable in its own colour.',
+    try: 'Look, do not listen: the eight cables wear the first eight cable colours in '
+      + 'order. Cross a pair by rewiring lanes and check the crossing stays readable.',
+    build: () => ({
+      nodes: [
+        keyboard(),
+        node('osc', 'SawOscillator', { frequency: 220 }, 1, 0),
+        node('demo', 'CableTest', {}, 2, 0),
+        envelope(2, 1),
+        amp(3),
+        out(4),
+      ],
+      connections: [
+        wire('kb', 'frequency', 'osc', 'frequency'),
+        wire('osc', 'out', 'demo', 'in1'),
+        wire('kb', 'trigger', 'env', 'gate'),
+        wire('env', 'out', 'amp', 'gain'),
+        wire('demo', 'out1', 'amp', 'in'),
+        wire('amp', 'out', 'out', 'left'),
+        wire('amp', 'out', 'out', 'right'),
+      ],
+    }),
+  },
   Gain: {
     summary: 'Louder or quieter — and the thing an envelope is usually connected to.',
     try: 'Disconnect the envelope from gain. The note stops having a shape and becomes a '
@@ -1153,6 +1178,7 @@ const PROBES = {
   TriggerBus: { parameter: 'shift', value: 8 },  // the wrong bank hears nothing
   Drive: { parameter: 'drive', value: 30 },
   AudioInput: { probeless: 'silent offline; there is no host input to change the sound of' },
+  CableTest: { probeless: 'a wire with eight lanes and no parameters; the demo is for the eyes' },
   StereoOutput: { parameter: 'level', value: 0.25 },
 
   SineOscillator: { probeless: 'its only parameter is pitch, and the keyboard drives that' },

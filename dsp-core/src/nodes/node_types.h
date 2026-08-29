@@ -63,5 +63,8 @@ extern const NodeTypeDescriptor kTriggerBus;
 extern const NodeTypeDescriptor kAudioInput;
 extern const NodeTypeDescriptor kStereoOutput;
 
+// Diagnostics: nodes for looking at the editor rather than making sound
+extern const NodeTypeDescriptor kCableTest;
+
 }  // namespace nodes
 }  // namespace soundgraph

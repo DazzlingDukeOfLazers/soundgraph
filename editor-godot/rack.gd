@@ -318,6 +318,37 @@ var type_colours: Dictionary = {}
 ## however the panels are painted.
 const SIGNAL_ORDER := ["audio", "control", "event", "note"]
 
+## The cable-colour override for diagnostic nodes, in one place so the rack, the graph
+## and the landing marks cannot disagree about what a lane wears.
+##
+## A cable leaving a CableTest output takes the candy palette by lane — out1 wears the
+## first cable colour, out8 the eighth — overriding the signal-type colour entirely.
+## That is the node's whole job: two of them wired straight across show every cable
+## colour once, in order, and a rendering change that costs a colour its identity shows
+## up as two cables that suddenly match. Transparent means no override.
+static func cable_override(from_type: String, output_index: int) -> Color:
+	if from_type != "CableTest" or output_index < 0:
+		return Color(0, 0, 0, 0)
+	return CableArt.PALETTE[CableArt.PALETTE_ORDER[
+		output_index % CableArt.PALETTE_ORDER.size()]]
+
+
+## A named output's position among its type's outputs, from the registry. -1 for a port
+## the registry does not know, which no override should touch.
+func output_index(type_name: String, port: String) -> int:
+	var outputs: Array = registry.get(type_name, {}).get("outputs", [])
+	for index in outputs.size():
+		if str((outputs[index] as Dictionary).get("name", "")) == port:
+			return index
+	return -1
+
+
+func node_type(node_id: String) -> String:
+	for node in patch.get("nodes", []):
+		if str((node as Dictionary).get("id", "")) == node_id:
+			return str((node as Dictionary).get("type", ""))
+	return ""
+
 func signal_colour(type_name: String, fallback: Color = Color.WHITE) -> Color:
 	var palette: Array = ModuleThemes.cables(
 		str(patch.get("arrangement", {}).get("theme", "")))
@@ -1069,6 +1100,11 @@ func cable_endpoints() -> Array:
 		# The tighter of the two ends: one style is built per cable, and a plug that fits
 		# at one end and overlaps the jack below at the other is still wrong.
 		var ink: Color = signal_colour(signal_type)
+		var from_port_name := str(connection["from"]["port"])
+		var override := Rack.cable_override(node_type(str(connection["from"]["node"])),
+			output_index(node_type(str(connection["from"]["node"])), from_port_name))
+		if override.a > 0.0:
+			ink = override
 		if cable_colouring == CableColouring.CABLE:
 			# One colour per cable rather than per signal type, taken from the patch's
 			# own palette. It reached into CableArt.PALETTE for a bag of candy names,
