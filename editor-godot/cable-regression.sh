@@ -60,6 +60,31 @@ shoot cable-ghosted         --style physical --colour cable --size 1560 1180 --g
 shoot cable-module-drag     --style physical --colour cable --size 1560 1180 \
 	--nudge filter:0:70
 
+# Where two interaction systems meet, which is where what is left is most likely to be
+# wrong: coordinates, redraw invalidation, z-order, emphasis and plug LOD all move at once
+# and none of them was written with the others in mind.
+shoot cable-jack-hover-drag --style physical --colour cable --size 1560 1180 \
+	--hover-jack filter:cutoff_mod:in --nudge filter:0:70
+shoot cable-hover-zoom      --style physical --colour cable --size 1092 826 --zoom 0.7 \
+	--hover-cable 11
+shoot cable-select-zoom     --style physical --colour cable --size 3120 2360 --zoom 2.0 \
+	--select-cable 5
+shoot cable-ghost-drag      --style physical --colour cable --size 1560 1180 \
+	--ghost --nudge filter:0:70
+shoot cable-inspect-drag    --style physical --colour cable --size 1560 1180 \
+	--inspect filter --nudge filter:0:70
+shoot cable-select-drag     --style physical --colour cable --size 1560 1180 \
+	--select-cable 8 --nudge mixer:0:60
+shoot cable-hover-drag      --style physical --colour cable --size 1560 1180 \
+	--hover-cable 8 --nudge mixer:0:60
+
+# The one thing here that is checked rather than looked at. Emphasis lifts a cable over
+# its neighbours; when it ends the crossings have to come back to where they were.
+shoot cable-settled --style physical --colour cable --size 1560 1180 \
+	--hover-cable 11 --select-cable 5 --inspect filter --ghost --settle
+"$godot" --path "$here" --script res://image_diff.gd -- \
+	out/cable-style-physical.png out/cable-settled.png 2>&1 | grep -E "same|FAIL" || true
+
 # The three regions worth looking at close up, cut from the working-scale frame so they
 # cannot disagree with it.
 cd "$out"

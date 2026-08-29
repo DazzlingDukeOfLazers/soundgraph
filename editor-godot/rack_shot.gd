@@ -30,6 +30,12 @@ var _ghost := false
 ## handler repaints. The point is what does *not* get redrawn: this is the frame that
 ## catches cables left attached to where a module used to be.
 var _nudge := ""
+## Apply the interaction states, paint once, then clear them and paint again.
+##
+## The frame that comes out should be the resting frame, pixel for pixel. Emphasis raises
+## a cable above the others while it lasts, and the thing worth asserting is that when it
+## ends the crossings go back to where they were rather than to a new arbitrary order.
+var _settle := false
 var _size := Vector2i(1600, 900)
 ## The case, in rack pixels. Independent of how many of them reach the screen.
 var _case := Vector2(1560.0, 1180.0)
@@ -56,6 +62,7 @@ func _run() -> void:
 			"--inspect": _inspect = args[i + 1]
 			"--ghost": _ghost = true
 			"--nudge": _nudge = args[i + 1]
+			"--settle": _settle = true
 
 	Design.use_palette(Design.Palette.LAB)
 	root.title = "rack — %s" % _style
@@ -163,6 +170,13 @@ func _shoot(rack: Rack, view: SubViewport) -> void:
 	await process_frame
 	if _nudge != "":
 		_drag(rack)
+		await process_frame
+	if _settle:
+		rack.hovered_cable = -1
+		rack.selected_cable = -1
+		rack.hovered_jack = {}
+		rack.cables_ghosted = false
+		rack.inspected_id = ""
 		await process_frame
 	var image := view.get_texture().get_image()
 	if image.save_png(_out) == OK:

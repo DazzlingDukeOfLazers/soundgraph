@@ -59,7 +59,7 @@ enum PlugView { SIDE, EMERGE, TOP_DOWN }
 ## level of detail rather than a style setting — C is the canonical physical object and D
 ## is its low-resolution glyph, and the renderer reveals more physical information as the
 ## pixels arrive.
-enum PlugLod { FULL, SIMPLE, GLYPH, ICON }
+enum PlugLod { FULL, SIMPLE, GLYPH }
 
 ## Chosen from rendered screen-space size, never from a zoom percentage.
 ##
@@ -84,19 +84,19 @@ static func plug_lod(style: Style) -> int:
 		return PlugLod.FULL
 	if diameter >= 8.0 and _fits(style, PlugLod.SIMPLE):
 		return PlugLod.SIMPLE
-	if diameter >= 5.0 and _fits(style, PlugLod.GLYPH):
-		return PlugLod.GLYPH
-	return PlugLod.ICON
-	# ICON is unreachable from the rack, and deliberately. The screen-space floor holds a
-	# cable at 2.75 px however far you zoom out, which puts a 2.35t plug at 6.46 px on the
-	# glass — always over the 5 px the glyph needs. The two rules are in tension and the
-	# floor wins on purpose: a cable that fades to nothing at low zoom was the thing the
-	# floor was added to prevent.
+	# The glyph is the last tier, and there is no fourth one under it.
 	#
-	# So the tier is for callers that do not floor — the lab sheets, which draw a plug at
-	# whatever size they were asked for. This is the same shape of contradiction as the
-	# old min_plug of 6.5, which made the branch dead while looking like coverage; the
-	# difference is that this one is a choice and that one was an accident.
+	# There was: an iconographic endpoint for plugs below 5 px, which nothing could ever
+	# reach. The screen-space floor holds a cable at 2.75 px however far you zoom out, and
+	# that puts a 2.35t plug at 6.46 px on the glass — over the threshold, always, from
+	# every style built anywhere in this repo. The floor and the threshold contradicted
+	# each other and the floor is the one worth keeping, because a connection vanishing at
+	# low zoom is the thing it was added to prevent.
+	#
+	# Kept as a comment rather than as a branch, since there is no surface that wants it.
+	# A minimap or a navigator might, and would be free to floor lower and add a tier back
+	# — which is a smaller job than working out why a branch that never runs is there.
+	return PlugLod.GLYPH
 
 
 static func _fits(style: Style, tier: int) -> bool:
@@ -140,10 +140,8 @@ static func plug_footprint(style: Style, tier: int) -> PlugFootprint:
 			var relief: float = style.relief_length * (1.0 if tier == PlugLod.FULL else 0.7)
 			return PlugFootprint.new(length + relief,
 				style.plug_length * style.thickness * style.plug_seat, half * 1.12)
-		PlugLod.GLYPH:
-			return PlugFootprint.new(0.0, 0.0, half * 0.86)
 		_:
-			return PlugFootprint.new(0.0, 0.0, maxf(half * 0.42, 1.6) + 0.8)
+			return PlugFootprint.new(0.0, 0.0, half * 0.86)
 
 
 class Style extends RefCounted:
@@ -324,8 +322,36 @@ static func control_points(a: Vector2, b: Vector2, slack: float, id := "",
 	if span < short_threshold:
 		droop *= 0.45
 
+	# A destination above the source means the cable has to leave downwards, fall, and
+	# climb back — both plugs point out of the panel, so there is no other way out of the
+	# socket. The fall then has to be deep enough to turn in: at a short span the droop
+	# came out about the same as the straight run out of the plug, so the outbound and
+	# return legs met at the bottom in a point rather than a bend, and a short cable to a
+	# module above read as a spike. Found by dragging a module under a hovered cable,
+	# which is a state no resting frame contains.
+	var climbs := b.y < a.y
+
 	var left := droop * (1.0 + 0.08 * _wobble(id, 1))
 	var right := droop * (1.0 + 0.08 * _wobble(id, 2))
+	# A cable to a module above does not hang in the middle. It cannot: both plugs point
+	# out of the panel, so it leaves downwards and arrives from below, and pushing both
+	# controls down as well folds it in half. The fold can never be wider than the
+	# horizontal distance the cable has to cover, so on a short climb it is a crease a few
+	# pixels across ending in a point — which is what a dragged module produced, and what
+	# three rounds of widening the fold could not fix, because the room was not there to
+	# widen it into.
+	#
+	# So the far control stays near its own end and the cable makes one sweep instead of a
+	# loop: down out of the plug, across, and up into the other. Which is also what the
+	# real thing does over that distance — a lead between two modules a hand apart is not
+	# slack enough to hang.
+	if climbs:
+		right = droop * 0.15
+	# The bow is what holds the two legs apart, and it is the difference between them
+	# rather than their average: p1 goes one way and p2 the other. A proportional bow is
+	# fine for a cable that runs across the case, and far too small for one that turns
+	# round — a sixteenth of a short span leaves the legs closer together than the cable
+	# is wide, and they meet at the bottom in a point.
 	var bow := span * 0.06
 
 	# How nearly the two jacks are stacked, 0 for side by side and 1 for one above the
@@ -402,7 +428,7 @@ static func cable_path(a: Vector2, a_dir: Vector2, b: Vector2, b_dir: Vector2,
 ## the cable has to believe the same number.
 static func exit_point(jack: Vector2, direction: Vector2, style: Style) -> Vector2:
 	var tier := plug_lod(style)
-	if tier == PlugLod.GLYPH or tier == PlugLod.ICON:
+	if tier == PlugLod.GLYPH:
 		return jack + direction * (style.plug_width * style.thickness * 0.5)
 	var forward := style.plug_length * style.thickness * (1.0 - style.plug_seat)
 	return jack + direction * (forward + style.relief_length)
@@ -428,10 +454,13 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 			Color(0.0, 0.0, 0.0, style.shadow_alpha), style.shadow_width, true)
 
 	if level == Detail.FULL:
-		canvas.draw_polyline(shifted(points, style.edge_offset),
-			darken(colour, style.edge_darken), style.thickness, true)
+		var edge := darken(colour, style.edge_darken)
+		canvas.draw_polyline(shifted(points, style.edge_offset), edge,
+			style.thickness, true)
+		_round_joins(canvas, points, style.edge_offset, edge, style.thickness)
 
 	canvas.draw_polyline(points, colour, style.thickness, true)
+	_round_joins(canvas, points, Vector2.ZERO, colour, style.thickness)
 	canvas.draw_polyline(shifted(points, style.highlight_offset),
 		Color(lighten(colour, style.highlight_lighten), style.highlight_alpha),
 		style.highlight_width, true)
@@ -498,6 +527,27 @@ static func _bounds(points: PackedVector2Array) -> Rect2:
 	for point: Vector2 in points:
 		box = box.expand(point)
 	return box
+
+
+## Round off the corners a polyline leaves at its sharpest bends.
+##
+## draw_polyline miters its joins, which is invisible on a curve that turns gently and a
+## spike on one that does not — and a cable to a module above has to turn right round,
+## because both plugs point out of the panel and there is no other way out of a socket. It
+## came out as a dart at the bottom of the hairpin.
+##
+## Only the sharp ones: a dot at every vertex would be forty draws a cable and four
+## thousand a rack, to fix two of them.
+static func _round_joins(canvas: CanvasItem, points: PackedVector2Array, offset: Vector2,
+		colour: Color, width: float) -> void:
+	if points.size() < 3:
+		return
+	for i in range(1, points.size() - 1):
+		var into: Vector2 = (points[i] - points[i - 1]).normalized()
+		var outof: Vector2 = (points[i + 1] - points[i]).normalized()
+		# cos 25 degrees. Anything gentler than this the miter already covers.
+		if into.dot(outof) < 0.906:
+			canvas.draw_circle(points[i] + offset, width * 0.5, colour)
 
 
 static func draw_jack(canvas: CanvasItem, centre: Vector2, radius: float,
@@ -602,18 +652,7 @@ static func draw_plug_adaptive(canvas: CanvasItem, jack: Vector2, direction: Vec
 	match plug_lod(style):
 		PlugLod.FULL: draw_plug_emergent(canvas, jack, direction, colour, style, true)
 		PlugLod.SIMPLE: draw_plug_emergent(canvas, jack, direction, colour, style, false)
-		PlugLod.GLYPH: draw_plug_topdown(canvas, jack, direction, colour, style)
-		_: draw_plug_icon(canvas, jack, colour, style)
-
-
-## The endpoint when there is nothing left but the fact of it: a bright ring at the jack,
-## in the cable's colour. At this size the only question the picture has to answer is
-## which cable connects here.
-static func draw_plug_icon(canvas: CanvasItem, jack: Vector2, colour: Color,
-		style: Style) -> void:
-	var radius := maxf(style.plug_width * style.thickness * 0.42, 1.6)
-	canvas.draw_circle(jack, radius + 0.8, style.socket_mouth)
-	canvas.draw_circle(jack, radius, colour)
+		_: draw_plug_topdown(canvas, jack, direction, colour, style)
 
 
 ## The plug rising out of the panel.

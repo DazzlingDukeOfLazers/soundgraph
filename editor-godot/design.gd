@@ -697,6 +697,33 @@ static func dashed_circle(canvas: CanvasItem, centre: Vector2, radius: float,
 		canvas.draw_arc(centre, radius, start, start + lit, 6, colour, width, true)
 
 
+## How far something is asked to stand down, named rather than numbered.
+##
+## The cable work arrived at this and it is not about cables. Stated as opacity, "turn
+## that down" gives a different answer on every palette — a fixed 45% mix put mint at
+## 4.2:1 on Lab and 2.5:1 on Paper Lab, one inside the readable range and one under it.
+## Stated as a contrast floor it gives the same legibility everywhere and takes whatever
+## mixing that needs, which is what makes it survive a theme change.
+##
+## The order is how directly the thing was asked about, not how important it is:
+##
+##   ASIDE     one of a handful that belong to what is selected, and the rest stand down
+##   TRACE     one thing in particular was asked about, and this is not it
+##   BEHIND    something is being read through this, and this is in the way
+##   GHOST     the question is not about this kind of thing at all, for as long as a key
+##             is held — under the floor a UI boundary is held to, deliberately
+##
+## Anything with a resting state and a de-emphasised one should use these rather than
+## inventing an alpha: secondary labels, inactive modulation overlays, unfocused modules,
+## disabled controls. Pass one to recede().
+const STAND_DOWN := {
+	"ASIDE": 3.6,
+	"TRACE": 2.4,
+	"BEHIND": 2.2,
+	"GHOST": 1.7,
+}
+
+
 ## For de-emphasis — a rack cable that has nothing to do with the selected module, and
 ## anything else that should fall behind without leaving. Mixes toward the surface rather
 ## than fading to transparent, which is not the same thing: transparency assumes what is

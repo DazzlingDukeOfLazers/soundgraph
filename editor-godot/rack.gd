@@ -747,16 +747,21 @@ func _notification(what: int) -> void:
 		cables_ghosted = false
 
 
-## Alt, held, to see the rack under the cables.
+## Held, to see the rack under the cables.
 ##
-## Alt rather than Ctrl or Shift: Ctrl is already the zoom gesture here and the MIDI-learn
-## click, and Shift is the usual multi-select modifier to leave alone. Watched as key
-## events rather than polled so it releases the moment the key does, and dropped on focus
-## loss — a modifier held while the window goes away otherwise stays held for ever.
+## The action rather than the key. Which key it is belongs in the input map, where it can
+## differ by platform and be remapped without editing a renderer — and the current binding
+## is provisional: it is Alt, which is Option on macOS, where it composes characters and
+## is spoken for by parts of the window manager. Ctrl was already the zoom gesture here
+## and the MIDI-learn click, and Shift is the usual multi-select modifier to leave alone,
+## but that reasoning belongs to the binding and not to this file.
+##
+## Watched as events rather than polled so it releases the moment the key does.
 func _input(event: InputEvent) -> void:
-	var key := event as InputEventKey
-	if key != null and key.keycode == KEY_ALT:
-		cables_ghosted = key.pressed
+	if event.is_action_pressed("ghost_cables"):
+		cables_ghosted = true
+	elif event.is_action_released("ghost_cables"):
+		cables_ghosted = false
 
 
 ## The cable nearest a point, or -1 if none is close enough.
@@ -1025,35 +1030,15 @@ class CableLayer extends Control:
 
 	## How far a cable is turned down when it has nothing to do with what is selected.
 	##
-	## Stated as the contrast a dimmed cable should still hold against the case, and handed
-	## to Design.recede() to work out the mixing, which is not the same as fading out.
+	## The contrast floors, from the palette's own scale.
 	##
-	## At alpha 0.3 an unrelated cable fell to 1.86:1 — under even the 3.25:1 this project
-	## holds a plain UI boundary to, so "still part of the patch" was not what was on
-	## screen. Naming a floor rather than an amount is what makes it hold on all five
-	## palettes: a fixed 45% mix landed at 4.2:1 on Lab and 2.5:1 on Paper Lab, the same
-	## instruction giving one result inside the floor and one under it.
-	const DIM_TARGET := 3.6
-
-	## The floor while one cable is being traced, by hover or by selection.
-	##
-	## Lower than the selected-module dim, and deliberately: that one says "these belong
-	## to what you picked" about a whole handful of cables, and this one says "not this
-	## one" about all but a single cable. A question that narrow is worth answering
-	## loudly, and the cable being traced is at full strength beside them.
-	const TRACE_TARGET := 2.4
-
-	## The floor for cables lying across the module being read. Enough to follow, not
-	## enough to compete with a panel legend.
-	const INSPECT_TARGET := 2.2
-
-	## The floor while the ghost key is held.
-	##
-	## Under the 3.25:1 this project holds a UI boundary to, and under the 1.86:1 that was
-	## once rejected for an unrelated cable — which is the point rather than an oversight.
-	## The other floors keep a cable part of the patch; this one is a request to see the
-	## rack instead, for exactly as long as the key is down.
-	const GHOST_TARGET := 1.7
+	## Named there rather than here because none of this is about cables: a floor is how
+	## far anything is asked to stand down, and the cables were only the first thing that
+	## needed four different amounts of it. See Design.STAND_DOWN.
+	const DIM_TARGET: float = Design.STAND_DOWN["ASIDE"]
+	const TRACE_TARGET: float = Design.STAND_DOWN["TRACE"]
+	const INSPECT_TARGET: float = Design.STAND_DOWN["BEHIND"]
+	const GHOST_TARGET: float = Design.STAND_DOWN["GHOST"]
 
 	## A dimmed cable is drawn thinner as well as quieter.
 	##
@@ -1207,7 +1192,8 @@ class CableLayer extends Control:
 		# doing the same thing — so both ends are marked and the eye can jump.
 		for index in raised:
 			for spot: Vector2 in [cables[index][0], cables[index][1]]:
-				draw_arc(spot, 14.0, 0.0, TAU, 28, cables[index][2], 2.0, true)
+				draw_arc(spot, 12.0, 0.0, TAU, 28,
+					Color(cables[index][2], 0.75), 1.5, true)
 
 	## Whether a cable passes across a module's panel.
 	static func _crosses(path: PackedVector2Array, rect: Rect2) -> bool:
