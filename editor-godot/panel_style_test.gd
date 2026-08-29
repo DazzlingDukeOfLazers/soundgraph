@@ -290,6 +290,23 @@ func _initialize() -> void:
 	check(moved.is_empty(), "and every cable on the same ports it was on%s"
 		% ("" if moved.is_empty() else " — " + ", ".join(moved)))
 
+	# ---- every connected socket has a plug in it ---------------------------------------
+	# The graph's cables are drawn under the nodes, so the plug is the overlay's to add:
+	# counted rather than rendered, one per connected end of a painted module. Two ends
+	# per cable, every module painted, so the count is exactly twice the wiring.
+	var plug_sites: Array = main.graph_edit._plugs.plug_sites()
+	var wired_count: int = main.graph_edit.get_connection_list().size()
+	check(plug_sites.size() == wired_count * 2,
+		"every connected end of a painted module gets a plug (%d sites for %d cables)"
+			% [plug_sites.size(), wired_count])
+	var unringed := 0
+	for site in plug_sites:
+		if (site[3] as Color).a <= 0.0:
+			unringed += 1
+	check(unringed == 0,
+		"and each carries its own module's ring colour for the collar (%d without)"
+			% unringed)
+
 	# ---- and now they all move -------------------------------------------------------
 	# Style to style, which is the direction that was failing: the widget already carries
 	# an override, and replacing one is not the same path as adding the first.
@@ -364,6 +381,17 @@ func _initialize() -> void:
 		if dropped != null:
 			dropped.selected = false
 	await process_frame
+
+	# The face covers the wiring, so it covers the plugs: a layer that kept drawing
+	# hardware over the big panel would put sockets on a view that has none.
+	await main._flip_container(true)
+	for i in 8:
+		await process_frame
+	check((main.graph_edit._plugs.plug_sites() as Array).is_empty(),
+		"the face view has no plugs to draw")
+	await main._show_graph()
+	for i in 8:
+		await process_frame
 
 	# ---- and being undone ------------------------------------------------------------
 	# Every paint is a document edit, so the history walks back through them one at a

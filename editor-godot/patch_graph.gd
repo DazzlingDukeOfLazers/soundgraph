@@ -1,4 +1,7 @@
 extends GraphEdit
+## The rack's plug renderer, so a plug in the graph and a plug in the rack are one
+## object drawn twice.
+const CableArt := preload("res://cable_art.gd")
 ## The graph canvas: PCB-style cable routing and draggable wires.
 ##
 ## A curved cable that passes straight through a node is unreadable — you cannot tell
@@ -832,12 +835,19 @@ class CrossingOverlay extends Control:
 			graph._draw_crossings(self)
 
 
+## Bumped whenever a node is repainted, so overlays that draw from the panel styles
+## know to look again. The view fingerprint cannot see paint: a repaint moves no node
+## and changes no count.
+var paint_stamp := 0
+
+
 ## Cheap summary of everything the crossing marks depend on.
 func _view_fingerprint() -> String:
 	var parts := PackedStringArray()
 	parts.append("%.2f,%.1f,%.1f,%d" % [zoom, scroll_offset.x, scroll_offset.y,
 		detail_mode])
 	parts.append(str(connections.size()))
+	parts.append(str(paint_stamp))
 	parts.append(str(waypoints.size()))
 	for child in get_children():
 		if child is GraphNode:
@@ -1007,6 +1017,7 @@ func _nodes_within(band: Rect2) -> Array:
 var _overlay: CrossingOverlay
 var _glow: GlowOverlay
 var _titles: ScreenText
+var _plugs: PlugOverlay
 var _wand_overlay: WandOverlay
 
 
@@ -1024,6 +1035,9 @@ func _ready() -> void:
 	_titles = ScreenText.new()
 	_titles.graph = self
 	add_child(_titles)
+	_plugs = PlugOverlay.new()
+	_plugs.graph = self
+	add_child(_plugs)
 	_wand_overlay = WandOverlay.new()
 	_wand_overlay.graph = self
 	add_child(_wand_overlay)
@@ -2463,6 +2477,98 @@ func _update_cable_hover(local_point: Vector2) -> void:
 ##
 ## Any Label carrying a `screen_min` meta joins in, so marking a new piece of node text
 ## as operational is one line at the place it is built rather than a case in here.
+## Plugs, seated in the sockets of painted modules.
+##
+## The graph's cables are GraphEdit's own and are drawn underneath the nodes, which is
+## why a cable here could never visibly enter a jack: whatever the endpoint looked like,
+## the line stopped at the node edge and the socket icon sat on top of it. This layer
+## rides above the nodes and puts the missing hardware at every connected port — barrel,
+## collar band, strain relief — using the same CableArt the rack draws its plugs with,
+## so a plug is one object however you are looking at the patch.
+##
+## Painted modules only. An unpainted node draws its ports as flat type-shapes — the
+## graph editor's own grammar — and a moulded barrel pushed into a flat diamond mixes
+## two languages in one picture. The physical grammar arrives with the faceplate.
+class PlugOverlay extends Control:
+	var graph: GraphEdit
+	var _fingerprint := ""
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		# Above the nodes, with the titles.
+		z_index = 98
+
+	func _process(_delta: float) -> void:
+		if graph == null:
+			return
+		var current: String = graph._view_fingerprint()
+		if current != _fingerprint:
+			_fingerprint = current
+			queue_redraw()
+
+	## Everywhere a plug belongs: one entry per connected end whose module is painted.
+	## [screen position, direction away from the panel, port colour, ring colour,
+	## plate is light]. Public and pure so the suite can count them without rendering.
+	func plug_sites() -> Array:
+		var sites: Array = []
+		if graph == null or graph.face_up:
+			return sites
+		for connection in graph.get_connection_list():
+			for side in 2:
+				var widget := graph.get_node_or_null(NodePath(str(
+					connection["from_node" if side == 0 else "to_node"]))) as GraphNode
+				if widget == null or not widget.visible \
+						or not widget.has_meta("skin"):
+					continue
+				var port := int(connection["from_port" if side == 0 else "to_port"])
+				var local: Vector2 = widget.get_output_port_position(port) if side == 0 \
+					else widget.get_input_port_position(port)
+				var at: Vector2 = widget.position_offset * graph.zoom \
+					- graph.scroll_offset + local * graph.zoom
+				var colour: Color = widget.get_output_port_color(port) if side == 0 \
+					else widget.get_input_port_color(port)
+				var skin: Dictionary = widget.get_meta("skin")
+				# Away from the panel: an output projects right, an input left.
+				sites.append([at, Vector2.RIGHT if side == 0 else Vector2.LEFT, colour,
+					skin.get("ring", Color(0.62, 0.65, 0.70)),
+					Color(skin.get("panel", Color.BLACK)).get_luminance() > 0.5])
+		return sites
+
+	func _draw() -> void:
+		if graph == null:
+			return
+		# The barrel scales with the view and simplifies through CableArt's own detail
+		# tiers, so at 50% it degrades to the simpler grammar rather than to a smaller
+		# copy of the full one — a shrunk FULL plug is a bead, which is the exact read
+		# this layer exists to end.
+		var style := CableArt.Style.new()
+		# Heavier than the cable it terminates. The graph's cables are thin on purpose —
+		# they are diagram lines — but a plug sized from a diagram line is a bead, which
+		# is the exact read this layer exists to end. 6.5 puts the barrel at ~22px at
+		# 100%, FULL detail, and lets CableArt's own tiers do the simplifying below that.
+		style.thickness = maxf(6.5 * graph.zoom, 2.6)
+		# The room to the neighbouring row, which is what actually bounds a plug here.
+		style.max_reach = 30.0 * graph.zoom
+		# The projecting half of a barrel hangs over the canvas, not the plate, and the
+		# canvas is near-black: the stock body colour vanished into it entirely — the
+		# same lesson the rack learned on its own faceplate, met from the other side. A
+		# plug stays a dark object, but against this ground it needs its lifted tone.
+		style._plug_body = Color("26292e")
+		for site in plug_sites():
+			style.panel_is_light = bool(site[4])
+			CableArt.draw_plug_adaptive(self, site[0], site[1], site[2], style)
+			# The near half of the collar, back on top of the barrel — the same occlusion
+			# the rack draws, oriented for a sideways insertion: the ring's visible half
+			# is the one the barrel disappears through, on the panel side of the jack.
+			# At the socket ring's own radius: the first pass drew it at 6.4 against a
+			# ring at 8.4, which put the lip inside the hole it was meant to frame.
+			var radius := 8.4 * graph.zoom
+			var facing: float = (site[1] as Vector2).angle()
+			draw_arc(site[0], radius, facing + PI * 0.55, facing + PI * 1.45, 14,
+				(site[3] as Color).darkened(0.35), maxf(radius * 0.28, 1.4), true)
+
+
 class ScreenText extends Control:
 	var graph: GraphEdit
 	var _fingerprint := ""

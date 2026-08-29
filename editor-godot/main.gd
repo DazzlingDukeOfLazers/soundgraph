@@ -1298,6 +1298,9 @@ func _repaint_rack() -> void:
 	# the camera, and repainting a node is not a change to the graph's structure.
 	for node_id in widgets:
 		_style_widget(widgets[node_id] as GraphNode, str(node_id))
+	# The view fingerprint cannot see paint — a repaint moves nothing and changes no
+	# count — so the overlays that draw from the styles are told directly.
+	graph_edit.paint_stamp += 1
 	if rack == null:
 		return
 	rack.patch = patch
@@ -1367,6 +1370,9 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	_letter_widget(widget, key)
 
 	if key == ModuleThemes.CATEGORY:
+		# No skin on the widget means no plugs at its ports: the flat type-shapes are
+		# the graph's own grammar and the physical one arrives with the faceplate.
+		widget.remove_meta("skin")
 		if lit:
 			var plain := (theme.get_stylebox("panel", "GraphNode")
 				as StyleBoxFlat).duplicate()
@@ -1456,6 +1462,9 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 		title_label.add_theme_color_override("font_color",
 			ModuleThemes.token(key, "legend"))
 
+	# For the plug overlay and anything else that draws from the panel rather than
+	# painting it: the resolved skin, carried on the widget it describes.
+	widget.set_meta("skin", Rack.skin(key))
 	_finish_widget(widget, key)
 	_socket_widget(widget, key)
 
