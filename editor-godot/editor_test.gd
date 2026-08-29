@@ -7996,14 +7996,24 @@ func _initialize() -> void:
 					== str(ModuleThemes.ORDER[2]),
 				"and picking one from that menu repaints that module alone")
 		
-		# Back to the patch's, which removes the overrides rather than writing the
-		# defaults back - so an unpainted node follows the palette when it changes.
+		# Back to the patch's, which drops the header override rather than writing the
+		# default colours back - so an unpainted node follows the palette when it
+		# changes.
+		#
+		# The lettering is the exception, and it is put back rather than dropped. This
+		# check used to require that it was dropped too, which looked tidy and was
+		# wrong: _style_node_title puts INK_BRIGHT on that same Label when the node is
+		# built, so dropping the override took the node title's own styling with it and
+		# left a module that had been painted once lettered differently from one that
+		# never had. Both of them are checked against each other in panel_style_test.
 		main._set_module_theme(first_node, "")
 		await process_frame
 		var ps_bare: Label = main._title_label(ps_widget)
-		check(not ps_widget.has_theme_stylebox_override("titlebar")
-				and (ps_bare == null or not ps_bare.has_theme_color_override("font_color")),
-			"and putting it back on the patch's panels leaves the node undressed again")
+		check(not ps_widget.has_theme_stylebox_override("titlebar"),
+			"and putting it back on the patch's panels takes the header paint off")
+		check(ps_bare != null
+				and ps_bare.get_theme_color("font_color") == Design.INK_BRIGHT,
+			"while leaving it lettered like every other unpainted module")
 
 	await main._load_text(before_painting)
 	for i in 6:

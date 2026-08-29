@@ -2507,6 +2507,20 @@ class ScreenText extends Control:
 			_draw_title(node)
 			_draw_labels(node)
 
+	## The colour a node's title is drawn in, wherever it is drawn.
+	##
+	## Asked of the Label rather than of the styles, because the Label is what the reader
+	## sees at every other zoom: this overlay drew INK_BRIGHT regardless, so a painted
+	## module changed the colour of its own name halfway through a zoom, and on the pale
+	## faceplates the compensated title came out near-white on cream. Two drawings of one
+	## title now get their colour from one place.
+	static func title_ink(node: GraphNode) -> Color:
+		var label: Label = node.get_meta("title_label") 			if node.has_meta("title_label") else null
+		if label != null and label.has_theme_color_override("font_color"):
+			return label.get_theme_color("font_color")
+		return Design.INK_BRIGHT
+
+
 	## The title is drawn from the node rather than from its Label because the titlebar
 	## is GraphNode's own furniture: its height is what the port rows are measured from,
 	## so it is the one place where a grown label would cost the most.
@@ -2531,7 +2545,7 @@ class ScreenText extends Control:
 		var baseline := top_left + Vector2(6.0,
 			(bar_height + font.get_ascent(drawn) - font.get_descent(drawn)) * 0.5)
 		draw_string(font, baseline, _elided(font, node.title, drawn, room),
-			HORIZONTAL_ALIGNMENT_LEFT, room, drawn, Design.INK_BRIGHT)
+			HORIZONTAL_ALIGNMENT_LEFT, room, drawn, title_ink(node))
 
 	## Text cut to fit, with an ellipsis saying so.
 	##

@@ -1311,12 +1311,19 @@ func _panel_style_of(node_id: String) -> String:
 		str(patch.get("arrangement", {}).get("theme", "")))
 
 
-## Dresses one graph node in its panel style.
+## Dresses one graph node: its panel style, whether the pointer is on it, and whether it
+## is selected, decided together and written once.
 ##
-## The style is a fact about the module, so it shows wherever the module is drawn — the
-## rack was the only view wearing it, which made choosing one from the graph an act of
-## faith. The node keeps its shape: this is paint, not geometry, exactly as it is on a
-## rack panel.
+## Together because they are three opinions about the same two styleboxes, and they were
+## held by two functions that did not know about each other. Hover replaced the header
+## with a copy of the editor theme's, and un-hover removed the override outright, so a
+## painted module lost its colour the moment the pointer crossed it and got it back when
+## the pointer left. That is what "the panel setting turns off and on" was. It also read
+## as a style that never arrived: the pointer is on the module you have just picked a
+## style for, so the paint was undone before it was ever seen.
+##
+## The style is a fact about the module, so it shows wherever the module is drawn. The
+## node keeps its shape: this is paint, not geometry, exactly as it is on a rack panel.
 ##
 ## The category default removes the overrides rather than writing the default colours
 ## back, so an unpainted node is drawn by the editor theme and follows the palette when
@@ -1324,28 +1331,60 @@ func _panel_style_of(node_id: String) -> String:
 func _style_widget(widget: GraphNode, node_id: String) -> void:
 	var key := _panel_style_of(node_id)
 	var title_label := _title_label(widget)
+	var hovered: bool = widget.has_meta("hovered") and bool(widget.get_meta("hovered"))
+	# GraphNode draws a selected node from panel_selected and titlebar_selected, so an
+	# override on the ordinary two is not consulted at all while it is selected. The
+	# hover outline stands down there for the same reason: selection already draws one,
+	# and the two together said nothing the accent had not already said.
+	var lit := hovered and not widget.selected
+
+	# The body carries the hover outline and nothing else. It is left to the editor
+	# otherwise — a graph node is mostly text, drawn in the editor's own light ink, and
+	# a mustard or ivory faceplate under all of it is the rack's knob-lettering bug
+	# again, in the view with the most words in it.
+	if lit:
+		var body := (theme.get_stylebox("panel", "GraphNode") as StyleBoxFlat).duplicate()
+		body.border_color = Design.BORDERS[Design.Surface.ACTIVE]
+		widget.add_theme_stylebox_override("panel", body)
+	else:
+		widget.remove_theme_stylebox_override("panel")
+
 	if key == ModuleThemes.CATEGORY:
-		widget.remove_theme_stylebox_override("titlebar")
+		widget.remove_theme_stylebox_override("titlebar_selected")
+		if lit:
+			var bar := (theme.get_stylebox("titlebar", "GraphNode")
+				as StyleBoxFlat).duplicate()
+			bar.border_color = Design.BORDERS[Design.Surface.ACTIVE]
+			widget.add_theme_stylebox_override("titlebar", bar)
+		else:
+			widget.remove_theme_stylebox_override("titlebar")
+		# Put back rather than removed. Removing it took the node title's own styling
+		# with it — _style_node_title puts INK_BRIGHT on this same Label — so a module
+		# sent back to the patch's panels came away lettered in the plain Label colour
+		# while every module that had never been painted kept the bright one.
 		if title_label != null:
-			title_label.remove_theme_color_override("font_color")
+			title_label.add_theme_color_override("font_color", Design.INK_BRIGHT)
 		return
 
-	# The header only, and not the body.
-	#
-	# Painting the whole node was the obvious reading of "wears its style" and it was
-	# wrong: a graph node is mostly text — port names, values, units — drawn in the
-	# editor's own light ink, and a mustard or ivory faceplate under that is the rack's
-	# knob-lettering bug again, in a view with ten times as many words in it. The header
-	# is where a rack module says what it is too, and one band of colour identifies a
-	# panel perfectly well.
+	# The header takes the faceplate, and the hover outline goes round it rather than
+	# over it: the style says which module this is, the outline says the pointer is here,
+	# and both are wanted at once.
 	var head := Design.padded_panel(Design.Surface.RAISED, Design.NODE_PADDING_H,
 		Design.SPACE_S, Design.RADIUS_NODE)
 	head.corner_radius_bottom_left = 0
 	head.corner_radius_bottom_right = 0
 	head.border_width_bottom = 0
 	head.bg_color = ModuleThemes.token(key, "faceplate")
-	head.border_color = ModuleThemes.token(key, "edge")
+	head.border_color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
+		else ModuleThemes.token(key, "edge")
 	widget.add_theme_stylebox_override("titlebar", head)
+	# And a selected module is painted too, which needs saying separately because the
+	# selected header is a different stylebox. Without this the paint above is ignored
+	# for as long as a node is selected — which is most of the time somebody is working
+	# on one.
+	var head_selected := head.duplicate()
+	head_selected.border_color = Design.BORDERS[Design.Surface.ACTIVE]
+	widget.add_theme_stylebox_override("titlebar_selected", head_selected)
 	# The title is a Label in the titlebar rather than a themed colour on the node, so
 	# add_theme_color_override("title_color", ...) on the GraphNode silently does
 	# nothing — which is how FILTER SWEEP came to be drawn in white on cream.
@@ -9108,22 +9147,14 @@ func _on_port_hovered(widget_name: String, side: String, index: int) -> void:
 ## Only the border, and only when the node is not selected: a hover that also changed the
 ## fill would compete with the selected state, and the whole value of having three states
 ## is that they are told apart at a glance rather than compared.
+## Records that the pointer is on a node, and has it redressed.
+##
+## The dressing is not done here any more. This function used to write the two
+## styleboxes straight from the editor theme, which meant every module the pointer
+## touched was repainted by something that had never heard of panel styles.
 func _set_node_hovered(widget: GraphNode, hovered: bool) -> void:
-	if widget.selected:
-		widget.remove_theme_stylebox_override("panel")
-		widget.remove_theme_stylebox_override("titlebar")
-		return
-	if not hovered:
-		widget.remove_theme_stylebox_override("panel")
-		widget.remove_theme_stylebox_override("titlebar")
-		return
-
-	var body := (theme.get_stylebox("panel", "GraphNode") as StyleBoxFlat).duplicate()
-	body.border_color = Design.BORDERS[Design.Surface.ACTIVE]
-	widget.add_theme_stylebox_override("panel", body)
-	var head := (theme.get_stylebox("titlebar", "GraphNode") as StyleBoxFlat).duplicate()
-	head.border_color = Design.BORDERS[Design.Surface.ACTIVE]
-	widget.add_theme_stylebox_override("titlebar", head)
+	widget.set_meta("hovered", hovered)
+	_style_widget(widget, str(widget.get_meta("patch_id")))
 
 
 ## Puts a drawn icon on a control, at the size the ink around it is using.
