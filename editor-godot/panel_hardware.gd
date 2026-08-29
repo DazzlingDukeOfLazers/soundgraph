@@ -77,13 +77,10 @@ func _draw() -> void:
 	# and the bevel is the shape of the metal under it.
 	var finish := str(skin.get("finish", ""))
 	if finish != "":
-		# The rack's own figure. Grain runs 0.03 to 0.12 and the multiplier decides
-		# everything: six put a 0.43 alpha over the mustard panel and the finish stopped
-		# being a finish, it read as upholstery.
-		var alpha := clampf(float(skin.get("grain", 0.06)) * 3.0
-			* Faceplate.strength(finish), 0.0, 0.33)
+		# The shared veil formula, so a module is exactly as grainy here as on the rack.
 		draw_texture_rect(Faceplate.texture(finish), plate, true,
-			Color(1.0, 1.0, 1.0, alpha))
+			Color(1.0, 1.0, 1.0,
+				Faceplate.veil_alpha(finish, float(skin.get("grain", 0.06)))))
 
 	# Lit along the top, dark along the bottom. One pixel each, inset past the corner
 	# radius so neither line runs out into the rounding. This is the whole of the

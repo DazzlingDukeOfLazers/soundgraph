@@ -50,12 +50,26 @@ static func texture(finish: String) -> Texture2D:
 static func strength(finish: String) -> float:
 	match finish:
 		"photocopy": return 1.0
-		"halftone": return 0.75
-		"dirty": return 0.8
-		"worn": return 0.7
-		"machined": return 0.5
-		"industrial": return 0.45
-		_: return 0.6
+		"halftone": return 0.55
+		"dirty": return 0.45
+		"worn": return 0.45
+		"machined": return 0.4
+		"industrial": return 0.35
+		_: return 0.4
+
+
+## The alpha a finish is laid over its plate at — the one formula both views use, so a
+## module cannot be grainier in the rack than in the graph.
+##
+## Retuned in the material pass, downward. The old figures were chosen when the finish
+## had to carry the whole impression of material; now the perimeter lighting does that
+## work and the veil's only job is to keep a plate from reading as perfect digital
+## flatness. The brief's target is one to three percent of visible contrast: texture you
+## notice when you compare the panel against a flat control, not before. "Dirty" halved
+## twice on its own — at the old weight, mottling over the brown plate read as leather
+## and over the mustard as stained paper, both of which are materials, and wrong ones.
+static func veil_alpha(finish: String, grain: float) -> float:
+	return clampf(grain * 2.0 * strength(finish), 0.0, 0.20)
 
 
 static func _render(finish: String) -> Image:

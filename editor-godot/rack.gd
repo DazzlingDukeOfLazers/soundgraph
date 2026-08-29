@@ -2390,30 +2390,45 @@ static func draw_plate(canvas: CanvasItem, rect: Rect2, band: float,
 	var low: Color = skin_colours.get("panel_low", PANEL_LOW)
 	var edge: Color = skin_colours.get("panel_edge", PANEL_EDGE)
 
-	# Panel, with a faint vertical gradient. Aluminium is not flat.
+	# Macro-flat. The plate used to be eight stacked rects lerping from the faceplate
+	# all the way down to the edge colour, which is not a gradient — it is eight
+	# horizontal strips with visible boundaries, and on orange or mustard it read as
+	# exactly that. A painted panel is one colour first and a material second, so the
+	# field is flat, and the drift below is the only interior shading left.
 	canvas.draw_rect(rect, face)
-	var step := rect.size.y / 8.0
-	for i in 8:
-		canvas.draw_rect(Rect2(rect.position.x, rect.position.y + i * step,
-			rect.size.x, step + 1.0), face.lerp(low, i / 7.0))
+
+	# One broad luminance drift, about two percent corner to corner, lit from the top
+	# left like everything else in the rack. Drawn as a single polygon with per-vertex
+	# colours so the interpolation happens in the renderer: there are no stops, so
+	# there is nothing to point at where one tone becomes the next.
+	canvas.draw_polygon(PackedVector2Array([rect.position,
+		Vector2(rect.end.x, rect.position.y), rect.end,
+		Vector2(rect.position.x, rect.end.y)]),
+		PackedColorArray([face.lightened(0.02), face.lightened(0.008),
+			face.darkened(0.025), face.darkened(0.008)]))
 
 	# The finish, over the colour and under everything else. Tiled rather than stretched,
 	# so a tall module and a short one have the same size of grain - a stretched texture
-	# would make the finish a property of the module's height, which it is not.
+	# would make the finish a property of the module's height, which it is not. The alpha
+	# is the shared formula, so the rack and the graph cannot disagree about how grainy a
+	# style is.
 	var finish := str(skin_colours.get("finish", ""))
 	if finish != "":
-		# Grain runs 0.03 to 0.12, so the multiplier decides everything. Six put a 0.43
-		# alpha over the mustard panel and the finish stopped being a finish - it read as
-		# upholstery. Three, ceilinged at a third, leaves a surface you notice only when
-		# you look for it, which is what a finish is.
 		var grain := float(skin_colours.get("grain", 0.06))
 		canvas.draw_texture_rect(Faceplate.texture(finish), rect, true,
-			Color(1, 1, 1, clampf(grain * 3.0 * Faceplate.strength(finish), 0.0, 0.33)))
+			Color(1, 1, 1, Faceplate.veil_alpha(finish, grain)))
 		if finish == "worn":
 			_draw_wear(canvas, rect)
 
+	# Depth lives at the perimeter now: a hairline of light along the top and left where
+	# the plate faces the light, a hairline of dark along the bottom and right where it
+	# turns away. The edge does the work the interior stripes used to fail at.
+	canvas.draw_line(Vector2(rect.position.x, rect.position.y + 0.5),
+		Vector2(rect.end.x, rect.position.y + 0.5), Color(1, 1, 1, 0.10), 1.0)
 	canvas.draw_line(Vector2(rect.position.x + 0.5, rect.position.y),
 		Vector2(rect.position.x + 0.5, rect.end.y), edge, 1.0)
+	canvas.draw_line(Vector2(rect.position.x, rect.end.y - 0.5),
+		Vector2(rect.end.x, rect.end.y - 0.5), Color(low, 0.8), 1.5)
 	canvas.draw_line(Vector2(rect.end.x - 0.5, rect.position.y),
 		Vector2(rect.end.x - 0.5, rect.end.y), Color(0, 0, 0, 0.35), 1.0)
 
