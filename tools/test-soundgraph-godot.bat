@@ -47,17 +47,28 @@ if not exist "%GODOT%" (
 
 if defined SKIP_BUILD goto launch
 
-rem Git Bash is guaranteed by the git call above; rebuild-extensions.sh handles the
-rem two-build stale-extension trap and the DLL-held-open dance in one place, so this
-rem does not grow a second copy of that knowledge.
-where bash >nul 2>&1
-if errorlevel 1 (
-    echo bash not found; launching without a rebuild. C++ changes since the last
-    echo rebuild are NOT in this run -- tools/rebuild-extensions.sh is the fix.
-    goto launch
+rem Git Bash is guaranteed by the git call above -- but not on cmd PATH, which is
+rem exactly where this bat gets run from. The first version did `where bash`, fell
+rem back to launching stale with a warning, and the warning was read only after a
+rem confused session: a fallback that quietly under-delivers is how the launcher
+rem trap gets rebuilt one layer up. So bash is derived from git own install
+rem (cmd\git.exe sits beside bin\bash.exe), and PATH is merely the second guess.
+set "BASH="
+for /f "usebackq delims=" %%G in (`where git 2^>nul`) do (
+    if not defined BASH if exist "%%~dpG..\bin\bash.exe" set "BASH=%%~dpG..\bin\bash.exe"
+)
+if not defined BASH (
+    where bash >nul 2>&1
+    if not errorlevel 1 set "BASH=bash"
+)
+if not defined BASH (
+    echo Git Bash not found, so the extensions cannot be rebuilt from here.
+    echo Refusing to launch a possibly stale build -- run tools/rebuild-extensions.sh
+    echo from Git Bash, or relaunch with --no-build to run the old binary on purpose.
+    exit /b 1
 )
 
-bash "%REPO%\tools\rebuild-extensions.sh"
+"%BASH%" "%REPO%\tools\rebuild-extensions.sh" --desktop
 if errorlevel 1 (
     echo.
     echo The extension build failed, so the editor was not launched -- running the

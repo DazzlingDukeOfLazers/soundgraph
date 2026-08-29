@@ -16,6 +16,16 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# --desktop builds only the DLL leg. The launchers use it: they exist to look at the
+# desktop app, and holding the launch hostage to the emsdk environment — which a plain
+# cmd does not carry — turned "run the editor" into "debug the wasm toolchain". The
+# gate and a bare invocation still build both, which is this script's whole reason to
+# exist.
+desktop_only=""
+if [ "${1:-}" = "--desktop" ]; then
+    desktop_only=1
+fi
+
 dll="editor-godot/bin/soundgraph_godot.dll"
 # vcvars path is spelled inline in build_desktop: quoting survives cmd only that way.
 
@@ -42,6 +52,11 @@ if [ ! -f "$dll" ] && [ -f "runtime-godot/build/soundgraph_godot.dll" ]; then
     cp "runtime-godot/build/soundgraph_godot.dll" "$dll"
 fi
 rm -f "$dll.old" 2>/dev/null || true
+
+if [ -n "$desktop_only" ]; then
+    echo "desktop extension rebuilt (wasm skipped)"
+    exit 0
+fi
 
 echo "wasm extension"
 cmd //c 'C:\Users\danie\emsdk\emsdk_env.bat >nul 2>&1 && cmake --build runtime-godot/build-web' || {
