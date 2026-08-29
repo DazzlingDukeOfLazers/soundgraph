@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "author": "Mutant Factory",
+    "created": "2026-08-07",
+    "description": "The second vertical slice: live audio in, filtered, through a delay with feedback closed at the graph level. The loop is only legal because it passes through the Delay node, which is what gives feedback a defined meaning.",
+    "name": "Delay Echo",
+    "tags": [
+      "effect",
+      "delay",
+      "feedback",
+      "live-input"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "input",
+      "type": "AudioInput",
+      "name": "Live Input",
+      "parameters": {
+        "gain": 1
+      },
+      "position": {
+        "x": 0,
+        "y": 400
+      }
+    },
+    {
+      "id": "tone",
+      "type": "StateVariableFilter",
+      "name": "Tone",
+      "parameters": {
+        "cutoff": 3500,
+        "mode": 0,
+        "resonance": 0.1
+      },
+      "position": {
+        "x": 400,
+        "y": 200
+      }
+    },
+    {
+      "id": "mix",
+      "type": "Mixer",
+      "name": "Delay Input",
+      "parameters": {
+        "level1": 1,
+        "level2": 1
+      },
+      "position": {
+        "x": 800,
+        "y": 200
+      }
+    },
+    {
+      "id": "delay",
+      "type": "Delay",
+      "name": "Echo",
+      "parameters": {
+        "feedback": 0,
+        "mix": 1,
+        "time": 0.375
+      },
+      "position": {
+        "x": 1200,
+        "y": 200
+      }
+    },
+    {
+      "id": "regen",
+      "type": "Gain",
+      "name": "Feedback",
+      "parameters": {
+        "gain": 0.45
+      },
+      "position": {
+        "x": 1600,
+        "y": 0
+      }
+    },
+    {
+      "id": "out",
+      "type": "StereoOutput",
+      "name": "Output",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1
+      },
+      "position": {
+        "x": 1600,
+        "y": 200
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "input",
+        "port": "left"
+      },
+      "to": {
+        "node": "tone",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "tone",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "regen",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "delay",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "delay",
+        "port": "out"
+      },
+      "to": {
+        "node": "regen",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "tone",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "delay",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "time",
+      "label": "Echo Time",
+      "kind": "knob",
+      "target": {
+        "node": "delay",
+        "parameter": "time"
+      },
+      "min": 0.02,
+      "max": 2,
+      "default": 0.375,
+      "scaling": "exponential"
+    },
+    {
+      "id": "regeneration",
+      "label": "Repeats",
+      "kind": "knob",
+      "target": {
+        "node": "regen",
+        "parameter": "gain"
+      },
+      "min": 0,
+      "max": 0.95,
+      "default": 0.45,
+      "scaling": "linear"
+    },
+    {
+      "id": "tone",
+      "label": "Tone",
+      "kind": "knob",
+      "target": {
+        "node": "tone",
+        "parameter": "cutoff"
+      },
+      "min": 200,
+      "max": 16000,
+      "default": 3500,
+      "scaling": "exponential"
+    },
+    {
+      "id": "master",
+      "label": "Master",
+      "kind": "knob",
+      "target": {
+        "node": "out",
+        "parameter": "level"
+      },
+      "min": 0,
+      "max": 1.2,
+      "default": 0.8,
+      "scaling": "logarithmic"
+    }
+  ]
+}

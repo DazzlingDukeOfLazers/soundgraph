@@ -19,6 +19,7 @@ extends SceneTree
 ## Preloaded rather than referenced by class_name: a --script run does not scan the
 ## project, so a global class registered only in the editor's cache does not exist yet.
 const CableArt := preload("res://cable_art.gd")
+const Faceplate := preload("res://cable_faceplate.gd")
 
 const SHEETS := {
 	"slack": "slack, tight to loose",
@@ -26,6 +27,8 @@ const SHEETS := {
 	"plug": "plug proportions",
 	"palette": "the curated colours on every surface",
 	"small": "the same cable at four zoom levels",
+	"faceplate": "cables on a real panel, at four zooms — the one that matters",
+	"detail": "one plug at 4x, so the construction can be argued with",
 }
 
 var _sheet := "slack"
@@ -79,6 +82,8 @@ class LabView extends Control:
 			"plug": _sheet_plug()
 			"palette": _sheet_palette()
 			"small": _sheet_small()
+			"faceplate": _sheet_faceplate()
+			"detail": _sheet_detail()
 			_: _sheet_slack()
 
 	func _label(at: Vector2, text: String, bright := false) -> void:
@@ -86,30 +91,26 @@ class LabView extends Control:
 		draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
 			Design.INK_NORMAL if bright else Design.INK_SECOND)
 
-	## One cable, plugs and all, between two jacks on a strip of faceplate.
+	## One cable, plugs and all, between two jacks.
+	##
+	## Both plugs point down, because that is what a faceplate does: a cable leaves towards
+	## the viewer and only then falls. Drawing the plug along the curve's own tangent, as
+	## the first pass did, makes it lie flat along the cable and lose the one thing it is
+	## there to say.
 	func _patch(a: Vector2, b: Vector2, colour: Color, style: CableArt.Style,
-			slack: float, bias: float) -> void:
+			slack: float, id := "x") -> void:
 		var ring: Color = Design.SURFACES[Design.Surface.RAISED]
 		var canvas_colour: Color = Design.SURFACES[Design.Surface.CANVAS]
-		var socket := canvas_colour.darkened(0.35)
-		var radius := style.thickness * 1.5
-
-		# The path is computed from the jack centres, then the visible body is trimmed
-		# back to where the plug ends — so the plug angle and the cable's first inch
-		# agree, which is the whole reason the plug is drawn along the tangent.
-		var rough: Array = CableArt.control_points(a, b, slack, bias)
-		var out_a := CableArt.bezier_tangent(rough[0], rough[1], rough[2], rough[3], 0.0)
-		var out_b := -CableArt.bezier_tangent(rough[0], rough[1], rough[2], rough[3], 1.0)
-		var ends: Array = CableArt.control_points(
-			CableArt.exit_point(a, out_a, style),
-			CableArt.exit_point(b, out_b, style), slack, bias)
-		var points := CableArt.bezier(ends[0], ends[1], ends[2], ends[3])
+		var socket := canvas_colour.darkened(0.4)
+		var radius := maxf(style.plug_width * style.thickness * 0.5 + 3.0, 5.0)
+		var out := Vector2.DOWN
 
 		CableArt.draw_jack(self, a, radius, ring, socket)
 		CableArt.draw_jack(self, b, radius, ring, socket)
+		var points := CableArt.cable_path(a, out, b, out, slack, style, id)
 		CableArt.draw_cable(self, points, colour, style)
-		CableArt.draw_plug(self, a, out_a, colour, style)
-		CableArt.draw_plug(self, b, out_b, colour, style)
+		CableArt.draw_plug(self, a, out, colour, style)
+		CableArt.draw_plug(self, b, out, colour, style)
 
 	func _sheet_slack() -> void:
 		_label(Vector2(24, 28), "SLACK — tight 0.55, medium 1.0, loose 1.4", true)
@@ -122,8 +123,8 @@ class LabView extends Control:
 			_label(Vector2(24, y - 24), names[row])
 			var x := 150.0
 			for span: float in spans:
-				_patch(Vector2(x, y), Vector2(x + span, y), Design.AUDIO, style,
-					amounts[row], 1.0)
+				_patch(Vector2(x, y), Vector2(x + span, y), CableArt.PALETTE["cyan"], style,
+					amounts[row], "slack%d-%d" % [row, int(span)])
 				x += span + 90.0
 
 	func _sheet_weight() -> void:
@@ -138,7 +139,8 @@ class LabView extends Control:
 				style.thickness = thicknesses[column]
 				style.highlight_alpha = highlights[row]
 				var x := 140.0 + column * 270.0
-				_patch(Vector2(x, y), Vector2(x + 190.0, y), Design.CONTROL, style, 1.0, 1.0)
+				_patch(Vector2(x, y), Vector2(x + 190.0, y), CableArt.PALETTE["amber"], style,
+					0.82, "w%d-%d" % [row, column])
 				if row == 0:
 					_label(Vector2(x + 70.0, 70.0), "%.0f px" % thicknesses[column])
 
@@ -155,18 +157,66 @@ class LabView extends Control:
 				style.plug_length = lengths[column]
 				style.plug_width = widths[row]
 				var x := 150.0 + column * 360.0
-				_patch(Vector2(x, y), Vector2(x + 250.0, y), Design.TRIGGER, style, 0.9, 1.0)
+				_patch(Vector2(x, y), Vector2(x + 250.0, y), CableArt.PALETTE["magenta"], style,
+					0.82, "p%d-%d" % [row, column])
 				if row == 0:
 					_label(Vector2(x + 100.0, 80.0), "%.1ft long" % lengths[column])
 
 	func _sheet_palette() -> void:
 		_label(Vector2(24, 28), "PALETTE — the curated colours on this surface", true)
-		var colours := [Design.AUDIO, Design.CONTROL, Design.TRIGGER, Design.ACCENT,
-			Design.WARNING, Design.ERROR]
+		var colours: Array = []
+		for name: String in CableArt.PALETTE_ORDER:
+			colours.append(CableArt.PALETTE[name])
 		var style := CableArt.Style.new()
 		for i in colours.size():
-			var y := 110.0 + i * 105.0
-			_patch(Vector2(200, y), Vector2(1050, y), colours[i], style, 0.8, 1.0)
+			var y := 96.0 + i * 92.0
+			_patch(Vector2(200, y), Vector2(1050, y), colours[i], style, 0.82, "pal%d" % i)
+
+	func _sheet_faceplate() -> void:
+		_label(Vector2(20, 22), "FACEPLATE — does it read as plugged into a synth?", true)
+		var font := ThemeDB.fallback_font
+		# Two rows. In one row the 35% panel fell off the right edge, which is a funny way
+		# to fail the test that exists to ask whether small still works.
+		var zooms := [1.0, 0.7, 0.5, 0.35]
+		var x := 24.0
+		var y := 62.0
+		for index in zooms.size():
+			var zoom: float = zooms[index]
+			if index == 2:
+				x = 24.0
+				y = 470.0
+			_label(Vector2(x, y - 10), "%.0f%%" % (zoom * 100.0))
+			Faceplate.draw_panel(self, Vector2(x, y), zoom, font)
+			x += (250.0 + 90.0 + 250.0) * zoom + 40.0
+
+	## One plug, four times life size.
+	##
+	## Every other sheet judges the plug at the size it ships at, which is the right
+	## question but the wrong way to find out what is wrong with it. Blown up, it is
+	## obvious whether there are three shapes in a row or one dark blob with a stripe.
+	func _sheet_detail() -> void:
+		_label(Vector2(24, 24), "DETAIL — one plug at 4x. barrel, collar, relief, cable.", true)
+		var seats := [0.30, 0.20, 0.10]
+		var rings := [5.0, 3.0, 1.5]
+		for row in seats.size():
+			var y := 150.0 + row * 230.0
+			_label(Vector2(24, y - 60), "seat %.2f, ring +%.0f" % [seats[row], rings[row]])
+			for column in 2:
+				var style: CableArt.Style = CableArt.Style.new().scaled(4.0)
+				style.plug_seat = seats[row]
+				var jack := Vector2(240.0 + column * 520.0, y)
+				var out := Vector2.DOWN
+				var far := jack + Vector2(360.0, 40.0)
+				var ring: Color = Design.SURFACES[Design.Surface.RAISED]
+				var ground: Color = Design.SURFACES[Design.Surface.CANVAS]
+				var radius: float = style.plug_width * style.thickness * 0.5 + rings[row] * 4.0
+				var colour: Color = CableArt.PALETTE["amber" if column == 0 else "cyan"]
+
+				CableArt.draw_jack(self, jack, radius, ring, ground.darkened(0.4))
+				var points := CableArt.cable_path(jack, out, far, Vector2.UP, 0.82,
+					style, "d%d%d" % [row, column])
+				CableArt.draw_cable(self, points, colour, style)
+				CableArt.draw_plug(self, jack, out, colour, style)
 
 	func _sheet_small() -> void:
 		_label(Vector2(24, 28), "SMALL — does it survive being zoomed out?", true)
@@ -174,11 +224,9 @@ class LabView extends Control:
 		for i in scales.size():
 			var y := 130.0 + i * 165.0
 			_label(Vector2(24, y - 20), "%.0f%%" % (scales[i] * 100.0))
-			var style := CableArt.Style.new()
-			style.thickness = 5.0 * scales[i]
+			var style: CableArt.Style = CableArt.Style.new().scaled(scales[i])
 			_patch(Vector2(140, y), Vector2(140 + 420.0 * scales[i], y),
-				Design.AUDIO, style, 1.0, 1.0)
-			var second := CableArt.Style.new()
-			second.thickness = 5.0 * scales[i]
+				CableArt.PALETTE["cyan"], style, 0.82, "sm%d" % i)
+			var second: CableArt.Style = CableArt.Style.new().scaled(scales[i])
 			_patch(Vector2(700, y), Vector2(700 + 420.0 * scales[i], y),
-				Design.TRIGGER, second, 1.0, -1.0)
+				CableArt.PALETTE["amber"], second, 0.82, "sm2-%d" % i)
