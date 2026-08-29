@@ -83,10 +83,14 @@ const THEMES := {
 	"moss-machine": {
 		"name": "Moss Machine",
 		"blurb": "Dark olive green, utilitarian synth-lab feel.",
+		# Lifted a step across the board in the freeze review: beside the brighter
+		# families the olive read as mud, with plate, hardware and sidewall too close
+		# in value to separate. Same hues, one notch more distance between the layers
+		# - the legend clears 7:1 now and the pointer and ring gain two points each.
 		"finish": "matte",
-		"faceplate": "4b5724", "highlight": "5a672b", "edge": "293012", "grain": 0.07,
-		"legend": "f2ebd8", "muted": "b3b394", "knob": "17190f", "pointer": "b9c76a",
-		"jack": "111208", "ring": "e3c73f", "screw": "97a06a", "accent": "c9ae4f",
+		"faceplate": "4b5724", "highlight": "60702e", "edge": "232a0d", "grain": 0.07,
+		"legend": "f7f3e2", "muted": "b4b48a", "knob": "17190f", "pointer": "c9d876",
+		"jack": "111208", "ring": "ecd245", "screw": "97a06a", "accent": "c9ae4f",
 		"hardware": "202124", "hardware_hi": "4e5155",
 		"cables": ["ffd23e", "3ed8ff", "ff7ac2", "b6ff3e"],
 	},
