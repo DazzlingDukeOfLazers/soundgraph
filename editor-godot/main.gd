@@ -28,6 +28,18 @@ const PatchGraph := preload("res://patch_graph.gd")
 ## The generated faceplate finishes, so a panel in the graph is grained like the same
 ## panel on the rack.
 const Faceplate := preload("res://faceplate.gd")
+## The edges, the grain and the screws — everything about a faceplate that a stylebox
+## cannot draw.
+const PanelHardware := preload("res://panel_hardware.gd")
+
+## A panel's own geometry, which is not the editor's.
+##
+## The editor's node radius is 3 and its padding is set for a dense information view. A
+## faceplate is an object with a thickness: too little rounding and it is a sticker, too
+## much and it is a bubble. Six, and room around the lettering, is what the reference
+## boards are drawn at.
+const PANEL_RADIUS := 6
+const PANEL_PADDING := 15
 
 ## How many parameter cells share a line in a graph node.
 const PARAMETERS_PER_LINE := 2
@@ -1379,41 +1391,52 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	# knob-lettering bug in the wordiest view in the app. The argument was sound and the
 	# conclusion was not: the text can move too. It is a module either way, and the two
 	# views are supposed to be drawings of one object.
-	var face := Design.padded_panel(Design.Surface.NODE, Design.NODE_PADDING_H,
-		Design.NODE_PADDING_V, Design.RADIUS_NODE)
+	var face := Design.padded_panel(Design.Surface.NODE, PANEL_PADDING,
+		PANEL_PADDING, PANEL_RADIUS)
 	face.bg_color = ModuleThemes.token(key, "faceplate")
 	face.border_color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
 		else ModuleThemes.token(key, "edge")
+	# Short and dense rather than large and fuzzy. A module sits on the canvas; it does
+	# not hover a centimetre above it, and a soft wide shadow is what makes a rectangle
+	# read as a floating card rather than as an object lying on a surface.
+	face.shadow_size = Design.scale(4)
+	face.shadow_offset = Vector2(0.0, Design.scale(2))
+	face.shadow_color = Color(0.0, 0.0, 0.0, 0.42)
+	# The body is the lower half of one plate, so it is not rounded or ruled along the
+	# top: the titlebar's box sits directly above it and the two have to read as one
+	# piece of metal. A border across the top here is a rule under the title by another
+	# name, which is the thing being removed.
+	face.corner_radius_top_left = 0
+	face.corner_radius_top_right = 0
+	face.border_width_top = 0
 	widget.add_theme_stylebox_override("panel", face)
 	var face_selected := face.duplicate()
 	face_selected.border_color = Design.BORDERS[Design.Surface.ACTIVE]
 	widget.add_theme_stylebox_override("panel_selected", face_selected)
 
-	# The header is the faceplate again, with a line under it rather than a darker fill.
+	# The title is printed onto the plate. There is no header — but there is still a box
+	# up there, and it is the top half of the same plate.
 	#
-	# It was the edge colour for about ten minutes, which reads well and is unreadable:
-	# each style's legend is chosen to contrast with its faceplate, and a darker version
-	# of that plate is not the pair anybody measured. Safety Orange put its black
-	# lettering at 3.60 on its own edge. A rack module has one plate and a line ruled
-	# across it, which is both what this looks like and what passes.
-	var head := Design.padded_panel(Design.Surface.RAISED, Design.NODE_PADDING_H,
-		Design.SPACE_S, Design.RADIUS_NODE)
+	# Drawing nothing at all was the first attempt and the screenshot killed it in one
+	# look: a GraphNode's panel covers the content area only, so an empty titlebar left
+	# the module's name floating on the canvas above its own faceplate, in dark ink on a
+	# dark background. The band was never the box. The band was the rule under it and
+	# the change of colour across it — take those away and what is left is a plate with
+	# a name printed at the top of it, which is what the reference boards are.
+	var head := Design.padded_panel(Design.Surface.RAISED, PANEL_PADDING,
+		Design.SPACE_S, PANEL_RADIUS)
+	head.bg_color = ModuleThemes.token(key, "faceplate")
 	head.corner_radius_bottom_left = 0
 	head.corner_radius_bottom_right = 0
-	head.border_width_bottom = maxi(Design.scale(1), 1)
-	head.bg_color = ModuleThemes.token(key, "faceplate")
-	# The rule stays the edge colour whatever the pointer is doing. The hover accent
-	# goes round the body, which is the outline of the node; borrowing the divider
-	# under the title for it made a module look re-ruled rather than pointed at.
-	head.border_color = ModuleThemes.token(key, "edge")
+	head.border_width_bottom = 0
+	head.border_color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
+		else ModuleThemes.token(key, "edge")
 	widget.add_theme_stylebox_override("titlebar", head)
-	# And a selected module is painted too, which needs saying separately because the
-	# selected header is a different stylebox. Without this the paint above is ignored
-	# for as long as a node is selected — which is most of the time somebody is working
-	# on one.
-	var head_selected := head.duplicate()
-	head_selected.border_color = Design.BORDERS[Design.Surface.ACTIVE]
-	widget.add_theme_stylebox_override("titlebar_selected", head_selected)
+	# And a selected module is drawn the same way, which needs saying separately because
+	# the selected header is a different stylebox. Without this a selected node gets the
+	# editor's own title bar back — the band, on top of the plate — for as long as it is
+	# selected, which is most of the time somebody is working on one.
+	widget.add_theme_stylebox_override("titlebar_selected", head.duplicate())
 	# The title is a Label in the titlebar rather than a themed colour on the node, so
 	# add_theme_color_override("title_color", ...) on the GraphNode silently does
 	# nothing — which is how FILTER SWEEP came to be drawn in white on cream.
@@ -1424,45 +1447,27 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	_finish_widget(widget, key)
 
 
-## Lays a style's finish over a node: the grain, the halftone screen, the brushed metal.
+## Gives a node the parts of a faceplate a stylebox cannot draw: the finish, the lit top
+## edge, the dark sidewall, and the screws holding it in.
 ##
-## Tiled rather than stretched, for the reason the rack tiles it — a stretched texture
-## would make the finish a property of the module's height, which it is not. Same
-## textures, same alpha, from the same generator: a finish that looked one way on the
-## rack and another in the graph would be two finishes.
-##
-## It rides above the node's own drawing rather than under it, which is the one thing
-## here that is not what the rack does. A GraphNode paints its panel and its port icons
-## itself, in its own _draw, and a child can only be added after that. The alpha this is
-## laid on at — a third at the very most, a fifth for most styles — is what makes that
-## acceptable: the grain passes over a port without hiding it.
+## See panel_hardware.gd for why all of it rides above the node's own drawing, and why
+## that is safe. The layer is an internal child, which matters more than it sounds: a
+## GraphNode binds each slot to the index of a visible child, so an ordinary child added
+## here would renumber every port below it and the cables would reattach to the wrong
+## ones. An internal child is not laid out, not counted, and not returned by
+## get_children() — which is also why the lettering walk never tries to reletter it.
 func _finish_widget(widget: GraphNode, key: String) -> void:
-	var skin := Rack.skin(key)
-	var finish := str(skin.get("finish", ""))
-	var layer: TextureRect = widget.get_meta("finish") as TextureRect \
+	var layer: PanelHardware = widget.get_meta("finish") as PanelHardware \
 		if widget.has_meta("finish") else null
-	if key == ModuleThemes.CATEGORY or finish == "":
+	if key == ModuleThemes.CATEGORY:
 		if layer != null:
 			layer.visible = false
 		return
 	if layer == null:
-		layer = TextureRect.new()
-		layer.stretch_mode = TextureRect.STRETCH_TILE
-		layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		# Internal, and at the front. A GraphNode is a container that binds each slot to
-		# the index of a visible child, so an ordinary child added here would renumber
-		# every port below it and the cables would reattach to the wrong ones. An
-		# internal child is not laid out, not counted, and not returned by
-		# get_children() — which is also why the lettering walk never sees this.
+		layer = PanelHardware.new()
 		widget.add_child(layer, false, Node.INTERNAL_MODE_FRONT)
 		widget.set_meta("finish", layer)
-	layer.texture = Faceplate.texture(finish)
-	# The rack's own figure, not a new one: grain runs 0.03 to 0.12 and the multiplier
-	# decides everything. Six put a 0.43 alpha over the mustard panel and the finish
-	# stopped being a finish — it read as upholstery.
-	layer.modulate = Color(1.0, 1.0, 1.0, clampf(
-		float(skin.get("grain", 0.06)) * 3.0 * Faceplate.strength(finish), 0.0, 0.33))
+	layer.dress(Rack.skin(key), float(Design.scale(PANEL_RADIUS)))
 	layer.visible = true
 
 

@@ -124,18 +124,28 @@ func _verify(main, offset: int, when: String) -> void:
 		if face == null or face.bg_color != plate \
 				or face_selected == null or face_selected.bg_color != plate:
 			unpainted.append("%s (%s)" % [id, want])
-		# The header is the same plate with a line ruled under it. It was the edge
-		# colour briefly, until the title contrast check said what that costs: a
-		# legend is chosen against its faceplate, and a darker version of that plate
-		# is a pair nobody measured.
+		# No band across the top: the same plate, and nothing ruled off.
+		#
+		# It went plate-with-a-darker-fill, then plate-with-a-rule, and both were the
+		# same mistake in smaller print. Then it went to no box at all, which is a
+		# different mistake and a worse one — a GraphNode's panel covers the content
+		# area only, so an empty titlebar leaves the module's name on the canvas above
+		# its own faceplate. So the box stays and what it may not do is announce
+		# itself: the plate's colour, no rule under it, nothing separating the name
+		# from the panel it is printed on.
 		var head := widget.get_theme_stylebox("titlebar") as StyleBoxFlat
-		if head == null or head.bg_color != plate \
-				or head.border_width_bottom < 1 \
-				or head.border_color != ModuleThemes.token(want, "edge"):
+		var head_selected := widget.get_theme_stylebox("titlebar_selected") \
+			as StyleBoxFlat
+		if head == null or head.bg_color != plate or head.border_width_bottom != 0 \
+				or head_selected == null or head_selected.bg_color != plate \
+				or head_selected.border_width_bottom != 0:
 			unheaded.append("%s (%s)" % [id, want])
 		var label: Label = main._title_label(widget)
 		if label == null or label.get_theme_color("font_color") != legend:
 			mistitled.append("%s (%s)" % [id, want])
+		elif Design.contrast(label.get_theme_color("font_color"), plate) < 4.5:
+			unreadable.append("%s: its own name on %s (%.2f)"
+				% [id, want, Design.contrast(label.get_theme_color("font_color"), plate)])
 		# The title is drawn twice in this editor — by the node's own Label, and by the
 		# overlay that redraws it at a legible size once the zoom shrinks it too far.
 		# Both have to know the style, or the colour changes as you turn the wheel.
@@ -164,28 +174,23 @@ func _verify(main, offset: int, when: String) -> void:
 				knobs_missed.append("%s (%s)" % [id, want])
 				break
 
-		# And the finish over the plate: the generated tile the rack lays on the same
-		# style, at the alpha the rack lays it at. Asked for by name rather than "some
-		# texture is present", because a photocopy where a machined face belongs is the
-		# failure that looks fine in a screenshot.
+		# And the hardware over the plate: the finish, the lit top edge, the dark
+		# sidewall and the screws. Asked for by the skin it was handed rather than by
+		# "a layer is present", because a photocopy where a machined face belongs is
+		# the failure that looks fine in a screenshot.
 		var skin := Rack.skin(want)
-		var finish := str(skin.get("finish", ""))
-		var grained: TextureRect = widget.get_meta("finish") as TextureRect \
+		var dressed: Control = widget.get_meta("finish") as Control \
 			if widget.has_meta("finish") else null
-		if finish == "":
-			if grained != null and grained.visible:
-				ungrained.append("%s (%s) has a finish it did not ask for" % [id, want])
-		elif grained == null or not grained.visible \
-				or grained.texture != Faceplate.texture(finish) \
-				or not is_equal_approx(grained.modulate.a, clampf(
-					float(skin.get("grain", 0.06)) * 3.0 * Faceplate.strength(finish),
-					0.0, 0.33)):
-			ungrained.append("%s wants %s" % [id, finish])
+		if dressed == null or not dressed.visible \
+				or str((dressed.skin as Dictionary).get("panel", Color())) != str(plate) \
+				or str((dressed.skin as Dictionary).get("finish", "")) \
+					!= str(skin.get("finish", "")):
+			ungrained.append("%s wants %s" % [id, str(skin.get("finish", ""))])
 	check(unresolved.is_empty(), "%s: every module resolves to its own style%s"
 		% [when, "" if unresolved.is_empty() else " — " + ", ".join(unresolved)])
 	check(unpainted.is_empty(), "%s: every panel is painted its own faceplate%s"
 		% [when, "" if unpainted.is_empty() else " — " + ", ".join(unpainted)])
-	check(unheaded.is_empty(), "%s: every header is its own plate, ruled off below%s"
+	check(unheaded.is_empty(), "%s: the plate runs behind the name, unruled%s"
 		% [when, "" if unheaded.is_empty() else " — " + ", ".join(unheaded)])
 	check(mistitled.is_empty(), "%s: every title is lettered in its own legend%s"
 		% [when, "" if mistitled.is_empty() else " — " + ", ".join(mistitled)])
@@ -197,7 +202,7 @@ func _verify(main, offset: int, when: String) -> void:
 		% [when, "" if unreadable.is_empty() else " — " + ", ".join(unreadable)])
 	check(knobs_missed.is_empty(), "%s: and the dials are wearing the skin too%s"
 		% [when, "" if knobs_missed.is_empty() else " — " + ", ".join(knobs_missed)])
-	check(ungrained.is_empty(), "%s: with the rack's own finish over the plate%s"
+	check(ungrained.is_empty(), "%s: with the rack's own hardware over the plate%s"
 		% [when, "" if ungrained.is_empty() else " — " + ", ".join(ungrained)])
 
 

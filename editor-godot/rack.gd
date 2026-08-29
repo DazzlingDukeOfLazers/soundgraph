@@ -210,6 +210,9 @@ static func skin(key: String) -> Dictionary:
 		return {
 			"panel": PANEL, "panel_low": PANEL_LOW, "panel_edge": PANEL_EDGE,
 			"legend": Color(0, 0, 0, 0),   # empty: the rack's own ink is used
+			"highlight": Color(0, 0, 0, 0), "muted": Color(0, 0, 0, 0),
+			"accent": Color(0, 0, 0, 0), "hardware": Color(0, 0, 0, 0),
+			"hardware_hi": Color(0, 0, 0, 0),
 			"knob": KNOB_BODY, "pointer": Color(0, 0, 0, 0),
 			"jack": JACK_HOLE, "ring": JACK_RING, "screw": SCREW,
 			"stripe": true, "finish": "", "grain": 0.0,
@@ -223,6 +226,15 @@ static func skin(key: String) -> Dictionary:
 		# be. A matte panel catches less light than a machined one.
 		"panel_edge": Color(1, 1, 1, clampf(grain, 0.02, 0.14)),
 		"legend": ModuleThemes.token(key, "legend"),
+		# The lit top of the plate, the thinner ink, the one functional colour, and the
+		# moulded black every board in the family puts its knobs in. Carried on the skin
+		# rather than looked up at each drawing site, so that a panel drawn in the rack
+		# and the same panel drawn in the graph cannot drift apart.
+		"highlight": ModuleThemes.token(key, "highlight"),
+		"muted": ModuleThemes.token(key, "muted"),
+		"accent": ModuleThemes.token(key, "accent"),
+		"hardware": ModuleThemes.token(key, "hardware"),
+		"hardware_hi": ModuleThemes.token(key, "hardware_hi"),
 		"knob": ModuleThemes.token(key, "knob"),
 		"pointer": ModuleThemes.token(key, "pointer"),
 		"jack": ModuleThemes.token(key, "jack"),
