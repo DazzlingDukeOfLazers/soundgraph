@@ -77,15 +77,34 @@ class Style extends RefCounted:
 	## The plug, deliberately oversized. This is iconographic representation, not
 	## mechanical drafting: at true scale a 3.5 mm plug on a 5 px cable is a nub, and a nub
 	## is what the first pass drew.
-	var plug_length := 3.2      # of thickness -> ~16 px
-	var plug_width := 2.2       # of thickness -> ~11 px
-	var plug_seat := 0.30       # how much of the barrel sits behind the jack line
+	var plug_length := 3.45     # of thickness -> ~17 px
+	var plug_width := 2.35      # of thickness -> ~12 px
+	## How much of the barrel sits behind the jack line.
+	##
+	## Lower than it was. At 0.30 the plug sat flush and the endpoint read as a dark cap on
+	## a line; the eye wants the barrel to project out of the socket, not to fill it. The
+	## ring lost weight at the same time — when the ring and the barrel carry equal
+	## visual weight the picture has no hierarchy, and hierarchy is the whole difference
+	## between a socket with something in it and a donut with a stripe.
+	var plug_seat := 0.20
 	var band_width := 2.5       # px, absolute: the collar is a signal, not a proportion
 	var relief_length := 8.0    # px
 	var relief_start := 8.0     # px wide where it leaves the band
-	var lead_out := 10.0        # px of straight cable before the curve takes over
+	## Straight cable after the relief, before the curve takes over.
+	##
+	## Longer than it was, and the curve now leaves along it rather than turning at its
+	## end — a short lead followed by an immediate bend reads as a hook, which is a
+	## different object from a cable hanging.
+	var lead_out := 16.0
+	## How far the first control point continues along the exit before gravity wins.
+	var ease := 22.0
 
-	var plug_body := Color("202124")
+	var plug_body := Color("26282C")
+	## The mouth of the socket, behind the barrel. A hole for the plug to be in.
+	var socket_mouth := Color("07080A")
+	## The rim, as a fraction of the jack radius. A rim frames the insertion; a filled
+	## disc competes with the thing inserted into it.
+	var ring_width := 0.30
 	var plug_highlight_alpha := 0.30
 	var plug_contact_alpha := 0.22
 
@@ -149,7 +168,8 @@ static func _wobble(id: String, salt: int) -> float:
 
 ## Control points for a cable hanging between two exit points.
 static func control_points(a: Vector2, b: Vector2, slack: float, id := "",
-		short_threshold := 90.0) -> Array:
+		short_threshold := 90.0, a_dir := Vector2.ZERO, b_dir := Vector2.ZERO,
+		ease := 0.0) -> Array:
 	var span := a.distance_to(b)
 	var droop := clampf(span * 0.25, 12.0, 140.0) * slack
 	# A short patch with a full quarter-span droop hangs in a U well below both jacks,
@@ -160,9 +180,13 @@ static func control_points(a: Vector2, b: Vector2, slack: float, id := "",
 	var left := droop * (1.0 + 0.08 * _wobble(id, 1))
 	var right := droop * (1.0 + 0.08 * _wobble(id, 2))
 	var bow := span * 0.06
+	# The control points continue along the exit direction before the droop is applied, so
+	# the curve leaves the plug the way the plug points and only then falls. Without this
+	# the first control sits straight below the lead-out and the cable turns a corner
+	# where it should be easing.
 	return [a,
-		a + Vector2(bow * (0.6 + 0.4 * _wobble(id, 3)), left),
-		b + Vector2(-bow * (0.9 + 0.4 * _wobble(id, 4)), right),
+		a + a_dir * ease + Vector2(bow * (0.6 + 0.4 * _wobble(id, 3)), left),
+		b + b_dir * ease + Vector2(-bow * (0.9 + 0.4 * _wobble(id, 4)), right),
 		b]
 
 
@@ -191,7 +215,8 @@ static func cable_path(a: Vector2, a_dir: Vector2, b: Vector2, b_dir: Vector2,
 	var lead_a := out_a + a_dir * style.lead_out
 	var lead_b := out_b + b_dir * style.lead_out
 
-	var controls: Array = control_points(lead_a, lead_b, slack, id)
+	var controls: Array = control_points(lead_a, lead_b, slack, id, 90.0,
+		a_dir, b_dir, style.ease)
 	var points := PackedVector2Array([out_a])
 	points.append_array(bezier(controls[0], controls[1], controls[2], controls[3]))
 	points.append(out_b)
@@ -213,6 +238,13 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 	var level := style.detail()
 
 	if level != Detail.ICON:
+		# Two passes rather than one, which is the cheapest convincing softness there is:
+		# a wide faint one that lands on the faceplate and a tighter one that sits under
+		# the cable. One hard-edged shadow reads as a second cable drawn in black; this
+		# reads as the panel darkening under something lying across it.
+		canvas.draw_polyline(shifted(points, style.shadow_offset * 1.9),
+			Color(0.0, 0.0, 0.0, style.shadow_alpha * 0.55),
+			style.shadow_width + style.thickness * 0.7, true)
 		canvas.draw_polyline(shifted(points, style.shadow_offset),
 			Color(0.0, 0.0, 0.0, style.shadow_alpha), style.shadow_width, true)
 
@@ -227,11 +259,25 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 
 
 static func draw_jack(canvas: CanvasItem, centre: Vector2, radius: float,
-		ring: Color, socket: Color) -> void:
-	canvas.draw_circle(centre, radius, ring)
-	canvas.draw_circle(centre + LIGHT.normalized() * radius * 0.10, radius * 0.88,
-		lighten(ring, 0.16))
-	canvas.draw_circle(centre, radius * 0.58, socket)
+		ring: Color, socket: Color, style: Style = null) -> void:
+	var rim: float = radius * (style.ring_width if style != null else 0.30)
+	canvas.draw_circle(centre, radius, socket)
+	# The rim, drawn as a ring rather than a disc. Lit from the upper left like everything
+	# else, so an empty jack still has a direction to it.
+	canvas.draw_arc(centre, radius - rim * 0.5, 0.0, TAU, 32, ring, rim, true)
+	canvas.draw_arc(centre, radius - rim * 0.5, PI * 0.85, PI * 1.75, 16,
+		lighten(ring, 0.22), rim * 0.7, true)
+
+
+## The socket with something in it: the mouth stays dark around the barrel so the plug
+## reads as sitting *in* a hole rather than on top of a disc.
+static func draw_socket(canvas: CanvasItem, centre: Vector2, radius: float,
+		ring: Color, style: Style) -> void:
+	var rim := radius * style.ring_width
+	canvas.draw_circle(centre, radius, style.socket_mouth)
+	canvas.draw_arc(centre, radius - rim * 0.5, 0.0, TAU, 32, ring, rim, true)
+	canvas.draw_arc(centre, radius - rim * 0.5, PI * 0.85, PI * 1.75, 16,
+		lighten(ring, 0.22), rim * 0.7, true)
 
 
 ## The plug: barrel, collar, tapered relief. Three obvious shapes in a row, because the

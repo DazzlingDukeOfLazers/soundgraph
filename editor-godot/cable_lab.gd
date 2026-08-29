@@ -102,11 +102,11 @@ class LabView extends Control:
 		var ring: Color = Design.SURFACES[Design.Surface.RAISED]
 		var canvas_colour: Color = Design.SURFACES[Design.Surface.CANVAS]
 		var socket := canvas_colour.darkened(0.4)
-		var radius := maxf(style.plug_width * style.thickness * 0.5 + 3.0, 5.0)
+		var radius := maxf(style.plug_width * style.thickness * 0.5 + 2.5, 5.0)
 		var out := Vector2.DOWN
 
-		CableArt.draw_jack(self, a, radius, ring, socket)
-		CableArt.draw_jack(self, b, radius, ring, socket)
+		CableArt.draw_socket(self, a, radius, ring, style)
+		CableArt.draw_socket(self, b, radius, ring, style)
 		var points := CableArt.cable_path(a, out, b, out, slack, style, id)
 		CableArt.draw_cable(self, points, colour, style)
 		CableArt.draw_plug(self, a, out, colour, style)
@@ -196,11 +196,11 @@ class LabView extends Control:
 	## obvious whether there are three shapes in a row or one dark blob with a stripe.
 	func _sheet_detail() -> void:
 		_label(Vector2(24, 24), "DETAIL — one plug at 4x. barrel, collar, relief, cable.", true)
-		var seats := [0.30, 0.20, 0.10]
-		var rings := [5.0, 3.0, 1.5]
+		var seats := [0.28, 0.20, 0.12]
+		var rings := [3.0, 2.0, 1.2]
 		for row in seats.size():
 			var y := 150.0 + row * 230.0
-			_label(Vector2(24, y - 60), "seat %.2f, ring +%.0f" % [seats[row], rings[row]])
+			_label(Vector2(24, y - 60), "seat %.2f, rim +%.0f" % [seats[row], rings[row]])
 			for column in 2:
 				var style: CableArt.Style = CableArt.Style.new().scaled(4.0)
 				style.plug_seat = seats[row]
@@ -212,7 +212,7 @@ class LabView extends Control:
 				var radius: float = style.plug_width * style.thickness * 0.5 + rings[row] * 4.0
 				var colour: Color = CableArt.PALETTE["amber" if column == 0 else "cyan"]
 
-				CableArt.draw_jack(self, jack, radius, ring, ground.darkened(0.4))
+				CableArt.draw_socket(self, jack, radius, ring, style)
 				var points := CableArt.cable_path(jack, out, far, Vector2.UP, 0.82,
 					style, "d%d%d" % [row, column])
 				CableArt.draw_cable(self, points, colour, style)
