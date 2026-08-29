@@ -7966,13 +7966,14 @@ func _initialize() -> void:
 			"a node's title reads against its own header in every style (worst: %s at %.2f)"
 				% [ps_worst_name, ps_worst])
 		
-		# The header only, and deliberately. A graph node is mostly text - port names,
-		# values, units - drawn in the editor's ink, and a mustard or ivory faceplate
-		# behind all of that is the knob-lettering bug again in the view with the most
-		# words in it. One band of colour identifies a panel; a rack module labels itself
-		# across the top for the same reason.
-		check(not ps_widget.has_theme_stylebox_override("panel"),
-			"and the body is left to the editor, so the port lettering stays readable")
+		# The whole panel, body included. This check asked for the opposite for a day:
+		# a graph node is mostly text - port names, values, units - drawn in the editor's
+		# ink, and a faceplate behind all of that is the knob-lettering bug again in the
+		# view with the most words in it. True, and an argument for moving the text
+		# rather than for leaving the panel unpainted. panel_style_test measures every
+		# label on every style against the plate it sits on.
+		check(ps_widget.has_theme_stylebox_override("panel"),
+			"and the body wears it too, so a node is a module rather than a node with a coloured hat")
 		
 		# Right-click is the whole feature. Dispatched as an event rather than by calling
 		# the handler, because a menu nothing can open is not a menu.

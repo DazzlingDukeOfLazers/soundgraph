@@ -1338,18 +1338,19 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	# and the two together said nothing the accent had not already said.
 	var lit := hovered and not widget.selected
 
-	# The body carries the hover outline and nothing else. It is left to the editor
-	# otherwise — a graph node is mostly text, drawn in the editor's own light ink, and
-	# a mustard or ivory faceplate under all of it is the rack's knob-lettering bug
-	# again, in the view with the most words in it.
-	if lit:
-		var body := (theme.get_stylebox("panel", "GraphNode") as StyleBoxFlat).duplicate()
-		body.border_color = Design.BORDERS[Design.Surface.ACTIVE]
-		widget.add_theme_stylebox_override("panel", body)
-	else:
-		widget.remove_theme_stylebox_override("panel")
+	# Everything written on the node is relettered from the style before the body is
+	# painted, so the paint never lands on ink that has not moved yet.
+	_letter_widget(widget, key)
 
 	if key == ModuleThemes.CATEGORY:
+		if lit:
+			var plain := (theme.get_stylebox("panel", "GraphNode")
+				as StyleBoxFlat).duplicate()
+			plain.border_color = Design.BORDERS[Design.Surface.ACTIVE]
+			widget.add_theme_stylebox_override("panel", plain)
+		else:
+			widget.remove_theme_stylebox_override("panel")
+		widget.remove_theme_stylebox_override("panel_selected")
 		widget.remove_theme_stylebox_override("titlebar_selected")
 		if lit:
 			var bar := (theme.get_stylebox("titlebar", "GraphNode")
@@ -1366,17 +1367,42 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 			title_label.add_theme_color_override("font_color", Design.INK_BRIGHT)
 		return
 
-	# The header takes the faceplate, and the hover outline goes round it rather than
-	# over it: the style says which module this is, the outline says the pointer is here,
-	# and both are wanted at once.
+	# The body takes the faceplate, and the hover outline goes round it rather than over
+	# it: the style says which module this is, the outline says the pointer is here, and
+	# both are wanted at once.
+	#
+	# The header was the whole of this for a day, on the argument that a graph node is
+	# mostly text and a pale plate under the editor's light ink is the rack's
+	# knob-lettering bug in the wordiest view in the app. The argument was sound and the
+	# conclusion was not: the text can move too. It is a module either way, and the two
+	# views are supposed to be drawings of one object.
+	var face := Design.padded_panel(Design.Surface.NODE, Design.NODE_PADDING_H,
+		Design.NODE_PADDING_V, Design.RADIUS_NODE)
+	face.bg_color = ModuleThemes.token(key, "faceplate")
+	face.border_color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
+		else ModuleThemes.token(key, "edge")
+	widget.add_theme_stylebox_override("panel", face)
+	var face_selected := face.duplicate()
+	face_selected.border_color = Design.BORDERS[Design.Surface.ACTIVE]
+	widget.add_theme_stylebox_override("panel_selected", face_selected)
+
+	# The header is the faceplate again, with a line under it rather than a darker fill.
+	#
+	# It was the edge colour for about ten minutes, which reads well and is unreadable:
+	# each style's legend is chosen to contrast with its faceplate, and a darker version
+	# of that plate is not the pair anybody measured. Safety Orange put its black
+	# lettering at 3.60 on its own edge. A rack module has one plate and a line ruled
+	# across it, which is both what this looks like and what passes.
 	var head := Design.padded_panel(Design.Surface.RAISED, Design.NODE_PADDING_H,
 		Design.SPACE_S, Design.RADIUS_NODE)
 	head.corner_radius_bottom_left = 0
 	head.corner_radius_bottom_right = 0
-	head.border_width_bottom = 0
+	head.border_width_bottom = maxi(Design.scale(1), 1)
 	head.bg_color = ModuleThemes.token(key, "faceplate")
-	head.border_color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
-		else ModuleThemes.token(key, "edge")
+	# The rule stays the edge colour whatever the pointer is doing. The hover accent
+	# goes round the body, which is the outline of the node; borrowing the divider
+	# under the title for it made a module look re-ruled rather than pointed at.
+	head.border_color = ModuleThemes.token(key, "edge")
 	widget.add_theme_stylebox_override("titlebar", head)
 	# And a selected module is painted too, which needs saying separately because the
 	# selected header is a different stylebox. Without this the paint above is ignored
@@ -1391,6 +1417,45 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	if title_label != null:
 		title_label.add_theme_color_override("font_color",
 			ModuleThemes.token(key, "legend"))
+
+
+## Letters a node in its panel style: every label on it, and every knob.
+##
+## Not dimmed, on a painted panel. The editor ranks a port's name above its unit partly
+## by ink, and that ranking cannot survive here: Safety Orange gives its black lettering
+## 4.9:1 at full strength, so anything faded is under the bar whatever the fade, and no
+## amount of tuning fixes a ceiling. The rank is carried by size and weight instead — the
+## unit is already a size and a weight down from the name — which is what was separating
+## them anyway. Rack.Knob reached this conclusion first and for the same reason; this is
+## the same decision applied to the labels the graph draws outside the dial.
+##
+## Each label's editor ink is kept the first time it is touched, so a module put back on
+## the patch's panels is relettered in the colour it was built with rather than in a
+## guess at what that colour was.
+func _letter_widget(widget: GraphNode, key: String) -> void:
+	var painted := key != ModuleThemes.CATEGORY
+	var ink: Color = ModuleThemes.token(key, "legend") if painted else Color.WHITE
+	var skin := Rack.skin(key)
+	var title_label := _title_label(widget)
+	var queue: Array = widget.get_children()
+	while not queue.is_empty():
+		var next: Node = queue.pop_back()
+		for child in next.get_children():
+			queue.append(child)
+		var knob := next as Rack.Knob
+		if knob != null:
+			# The same knob class the rack uses, so it already knows how to wear a skin
+			# — it was simply never handed one down here.
+			knob.skin = skin
+			knob.queue_redraw()
+			continue
+		var label := next as Label
+		if label == null or label == title_label:
+			continue
+		if not label.has_meta("editor_ink"):
+			label.set_meta("editor_ink", label.get_theme_color("font_color"))
+		label.add_theme_color_override("font_color",
+			ink if painted else label.get_meta("editor_ink"))
 
 
 ## A GraphNode's title is a Label the node builds for itself, and it is reached through
@@ -3652,7 +3717,6 @@ func _create_widget(node: Dictionary) -> void:
 			_on_module_theme_requested(str(widget.get_meta("patch_id")),
 				widget.get_global_mouse_position())
 			widget.accept_event())
-	_style_widget(widget, str(node["id"]))
 	widget.mouse_entered.connect(func() -> void: _set_node_hovered(widget, true))
 	widget.mouse_exited.connect(func() -> void: _set_node_hovered(widget, false))
 
@@ -3852,6 +3916,15 @@ func _create_widget(node: Dictionary) -> void:
 	_add_ghost_ports(widget, str(node["id"]), descriptor)
 
 	graph_edit.add_child(widget)
+	# Dressed last, and after the node is in the tree rather than merely built.
+	#
+	# Twice now this has been too early. Before the rows were added it painted a node
+	# with nothing written on it; before add_child it still missed every value readout,
+	# because ValueField builds the Label inside it in _ready and _ready does not run
+	# until the node has a parent. Both times a fresh graph came up in the editor's ink
+	# and took its lettering at the next repaint, which looks exactly like a style that
+	# did not apply.
+	_style_widget(widget, str(node["id"]))
 	# Deferred, because the honest minimums need the tree: an OptionButton measured
 	# before the theme reaches it reports the fallback theme's width, and a column
 	# sized to that lie is a column that falls back out of register one frame later.

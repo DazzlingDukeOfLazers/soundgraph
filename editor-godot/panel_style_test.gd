@@ -30,6 +30,20 @@ func check(condition: bool, message: String) -> void:
 		failures += 1
 
 
+## Every knob on a node. The graph draws the rack's own control, so a skin the rack
+## understands is the whole of what a dial needs.
+func _knobs(widget: GraphNode) -> Array:
+	var found: Array = []
+	var queue: Array = widget.get_children()
+	while not queue.is_empty():
+		var next: Node = queue.pop_back()
+		for child in next.get_children():
+			queue.append(child)
+		if next is Rack.Knob:
+			found.append(next)
+	return found
+
+
 ## Every node in the patch, in document order.
 func _ids(main) -> Array:
 	var found: Array = []
@@ -60,12 +74,32 @@ func _paint(main, offset: int) -> void:
 ## something else" is the complaint, so the state is read the moment the edit returns. A
 ## repaint that needs a frame to land is a repaint that will sometimes be seen not to
 ## have landed.
+## Every Label written on a node, the title excepted — it is checked against the header
+## it sits on rather than against the plate.
+func _lettering(main, widget: GraphNode) -> Array:
+	var found: Array = []
+	var title: Label = main._title_label(widget)
+	var queue: Array = widget.get_children()
+	while not queue.is_empty():
+		var next: Node = queue.pop_back()
+		for child in next.get_children():
+			queue.append(child)
+		var label := next as Label
+		if label != null and label != title and label.text.strip_edges() != "":
+			found.append(label)
+	return found
+
+
 func _verify(main, offset: int, when: String) -> void:
 	var ids := _ids(main)
 	var unresolved: Array = []
+	var unpainted: Array = []
 	var unheaded: Array = []
 	var mistitled: Array = []
 	var faint: Array = []
+	var unlettered: Array = []
+	var unreadable: Array = []
+	var knobs_missed: Array = []
 	for index in ids.size():
 		var id := str(ids[index])
 		var want := _expected(index, offset)
@@ -75,26 +109,72 @@ func _verify(main, offset: int, when: String) -> void:
 		var widget: GraphNode = main.widgets.get(id) as GraphNode
 		if widget == null:
 			continue
+		var plate := ModuleThemes.token(want, "faceplate")
+		var legend := ModuleThemes.token(want, "legend")
+
+		# The body, which is the panel itself. GraphNode draws a selected node from a
+		# different stylebox, so both are asked for: a style that comes off the moment
+		# somebody clicks the module is not a style.
+		var face := widget.get_theme_stylebox("panel") as StyleBoxFlat
+		var face_selected := widget.get_theme_stylebox("panel_selected") as StyleBoxFlat
+		if face == null or face.bg_color != plate \
+				or face_selected == null or face_selected.bg_color != plate:
+			unpainted.append("%s (%s)" % [id, want])
+		# The header is the same plate with a line ruled under it. It was the edge
+		# colour briefly, until the title contrast check said what that costs: a
+		# legend is chosen against its faceplate, and a darker version of that plate
+		# is a pair nobody measured.
 		var head := widget.get_theme_stylebox("titlebar") as StyleBoxFlat
-		if head == null or head.bg_color != ModuleThemes.token(want, "faceplate"):
+		if head == null or head.bg_color != plate \
+				or head.border_width_bottom < 1 \
+				or head.border_color != ModuleThemes.token(want, "edge"):
 			unheaded.append("%s (%s)" % [id, want])
 		var label: Label = main._title_label(widget)
-		if label == null or label.get_theme_color("font_color") \
-				!= ModuleThemes.token(want, "legend"):
+		if label == null or label.get_theme_color("font_color") != legend:
 			mistitled.append("%s (%s)" % [id, want])
 		# The title is drawn twice in this editor — by the node's own Label, and by the
 		# overlay that redraws it at a legible size once the zoom shrinks it too far.
 		# Both have to know the style, or the colour changes as you turn the wheel.
-		if PatchGraph.ScreenText.title_ink(widget) != ModuleThemes.token(want, "legend"):
+		if PatchGraph.ScreenText.title_ink(widget) != legend:
 			faint.append("%s (%s)" % [id, want])
+
+		# And everything written on the plate. This is the half that made painting the
+		# body wrong until it was done: port names, units and values are the editor's
+		# own light ink, and a cream or mustard panel under them is unreadable. Measured
+		# rather than assumed — the tokens have been right all along, twice, while what
+		# was on screen was not.
+		var lettering := _lettering(main, widget)
+		if lettering.is_empty():
+			unlettered.append("%s has nothing written on it" % id)
+		for written: Label in lettering:
+			var ink: Color = written.get_theme_color("font_color")
+			if ink != legend:
+				unlettered.append("%s: %s" % [id, written.text])
+			if Design.contrast(ink, plate) < 4.5:
+				unreadable.append("%s: %s on %s (%.2f)"
+					% [id, written.text, want, Design.contrast(ink, plate)])
+
+		# The dials are the rack's own control, and they take the rack's own skin.
+		for knob in _knobs(widget):
+			if str((knob.skin as Dictionary).get("panel", Color())) != str(plate):
+				knobs_missed.append("%s (%s)" % [id, want])
+				break
 	check(unresolved.is_empty(), "%s: every module resolves to its own style%s"
 		% [when, "" if unresolved.is_empty() else " — " + ", ".join(unresolved)])
-	check(unheaded.is_empty(), "%s: every header is painted its own faceplate%s"
+	check(unpainted.is_empty(), "%s: every panel is painted its own faceplate%s"
+		% [when, "" if unpainted.is_empty() else " — " + ", ".join(unpainted)])
+	check(unheaded.is_empty(), "%s: every header is its own plate, ruled off below%s"
 		% [when, "" if unheaded.is_empty() else " — " + ", ".join(unheaded)])
 	check(mistitled.is_empty(), "%s: every title is lettered in its own legend%s"
 		% [when, "" if mistitled.is_empty() else " — " + ", ".join(mistitled)])
 	check(faint.is_empty(), "%s: and the zoomed-out title agrees with it%s"
 		% [when, "" if faint.is_empty() else " — " + ", ".join(faint)])
+	check(unlettered.is_empty(), "%s: and so is everything else written on the panel%s"
+		% [when, "" if unlettered.is_empty() else " — " + ", ".join(unlettered)])
+	check(unreadable.is_empty(), "%s: all of it readable against its own plate%s"
+		% [when, "" if unreadable.is_empty() else " — " + ", ".join(unreadable)])
+	check(knobs_missed.is_empty(), "%s: and the dials are wearing the skin too%s"
+		% [when, "" if knobs_missed.is_empty() else " — " + ", ".join(knobs_missed)])
 
 
 func _initialize() -> void:
