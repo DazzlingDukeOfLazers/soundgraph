@@ -2405,35 +2405,22 @@ class PlugOverlay extends Control:
 	func _draw() -> void:
 		if graph == null:
 			return
-		# The barrel scales with the view and simplifies through CableArt's own detail
-		# tiers, so at 50% it degrades to the simpler grammar rather than to a smaller
-		# copy of the full one — a shrunk FULL plug is a bead, which is the exact read
-		# this layer exists to end.
-		var style := CableArt.Style.new()
-		# Heavier than the cable it terminates. The graph's cables are thin on purpose —
-		# they are diagram lines — but a plug sized from a diagram line is a bead, which
-		# is the exact read this layer exists to end. 6.5 puts the barrel at ~22px at
-		# 100%, FULL detail, and lets CableArt's own tiers do the simplifying below that.
-		style.thickness = maxf(6.5 * graph.zoom, 2.6)
-		# The room to the neighbouring row, which is what actually bounds a plug here.
-		style.max_reach = 30.0 * graph.zoom
-		# The projecting half of a barrel hangs over the canvas, not the plate, and the
-		# canvas is near-black: the stock body colour vanished into it entirely — the
-		# same lesson the rack learned on its own faceplate, met from the other side. A
-		# plug stays a dark object, but against this ground it needs its lifted tone.
-		style._plug_body = Color("26292e")
+		# The simplified endpoint, in place of the plug this overlay used to render.
+		# The plug earned its keep for one release and lost it: a barrel, a relief and
+		# an occlusion lip at every connected port was a miniature hardware exercise
+		# fighting the panels' flat language, and it never survived 50% as anything but
+		# a bead. The message needs two marks — the mouth filled with the cable's
+		# colour, a collar of the same colour seated in the socket ring — plus a short
+		# neck toward the cable so the emergence reads as clean rather than abrupt.
 		for site in plug_sites():
-			style.panel_is_light = bool(site[4])
-			CableArt.draw_plug_adaptive(self, site[0], site[1], site[2], style)
-			# The near half of the collar, back on top of the barrel — the same occlusion
-			# the rack draws, oriented for a sideways insertion: the ring's visible half
-			# is the one the barrel disappears through, on the panel side of the jack.
-			# At the socket ring's own radius: the first pass drew it at 6.4 against a
-			# ring at 8.4, which put the lip inside the hole it was meant to frame.
-			var radius := 8.4 * graph.zoom
-			var facing: float = (site[1] as Vector2).angle()
-			draw_arc(site[0], radius, facing + PI * 0.55, facing + PI * 1.45, 14,
-				(site[3] as Color).darkened(0.35), maxf(radius * 0.28, 1.4), true)
+			var at: Vector2 = site[0]
+			var ink: Color = site[2]
+			var neck := maxf(6.0 * graph.zoom, 3.0)
+			draw_line(at, at + (site[1] as Vector2) * neck, ink,
+				maxf(3.6 * graph.zoom, 1.8), true)
+			draw_circle(at, maxf(3.0 * graph.zoom, 1.6), CableArt.darken(ink, 0.25))
+			draw_arc(at, maxf(5.2 * graph.zoom, 2.6), 0.0, TAU, 20, ink,
+				maxf(1.8 * graph.zoom, 1.2), true)
 
 
 class ScreenText extends Control:

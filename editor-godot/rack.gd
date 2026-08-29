@@ -1300,7 +1300,12 @@ class CableLayer extends Control:
 			# two cables between the same pair of modules do not lie on top of each other.
 			var seed := "%d:%d" % [int(entry[0].x) * 31 + int(entry[0].y),
 				int(entry[1].x) * 31 + int(entry[1].y)]
-			var path := CableArt.cable_path(entry[0], out, entry[1], out, 0.82, style, seed)
+			# Slack follows the span. A neighbour-to-neighbour cable at the full 0.82
+			# drooped into a little hanging loop — a folded dart between two jacks a
+			# module apart — where a real short patch lead pulls almost straight. Long
+			# runs keep the full drape.
+			var slack := clampf(entry[0].distance_to(entry[1]) / 420.0, 0.18, 0.82)
+			var path := CableArt.cable_path(entry[0], out, entry[1], out, slack, style, seed)
 			# Anything lying across the panel stands down, including the module's own
 			# cables. They cross it too — a cable plugged into this module leaves towards
 			# the viewer and falls straight over the legend it is nearest. The question
@@ -1310,7 +1315,7 @@ class CableLayer extends Control:
 			if inspect.has_area() and _crosses(path, inspect):
 				dim = maxf(dim, INSPECT_TARGET) if dim > 0.0 else INSPECT_TARGET
 				style = _physical_style(false, dim, float(entry[5]))
-				path = CableArt.cable_path(entry[0], out, entry[1], out, 0.82, style, seed)
+				path = CableArt.cable_path(entry[0], out, entry[1], out, slack, style, seed)
 			if dim > 0.0:
 				ink = stand_down(ink, canvas, dim)
 			paths.append(path)
@@ -1340,22 +1345,7 @@ class CableLayer extends Control:
 					CableArt.draw_crossing_shadow(self, paths[index], at, style)
 			CableArt.draw_cable(self, paths[index], inks[index], style)
 			for side in 2:
-				CableArt.draw_plug_adaptive(self, cables[index][side], Vector2.DOWN,
-					inks[index], style)
-				# And then the near lip of the socket, over the barrel that is now
-				# sitting in it.
-				#
-				# Without this the plug replaces the jack: the cable layer draws above
-				# the modules, so a barrel lands on top of the hardware it is supposed
-				# to be entering and the panel loses its socket at exactly the moment it
-				# is being used. Drawing the front half of the collar afterwards puts
-				# the assembly back in order — far collar, barrel, near collar — and the
-				# plug reads as passing through the panel rather than resting on it.
-				#
-				# The lip is the module's own ring colour, so it belongs to the faceplate
-				# it is mounted in rather than to the cable.
-				_draw_socket_lip(cables[index][side], str(cables[index][3 + side]),
-					style)
+				_draw_landing(cables[index][side], inks[index], style)
 			drawn.append(index)
 
 		# The traced cable's ends, last of all. A brightened curve still has to be followed
@@ -1366,28 +1356,27 @@ class CableLayer extends Control:
 				draw_arc(spot, 12.0, 0.0, TAU, 28,
 					Color(cables[index][2], 0.75), 1.5, true)
 
-	## The half of a jack's collar that lies in front of the plug in it.
+	## The endpoint: a cable arriving cleanly at a socket, and nothing more.
 	##
-	## Half, and the near half: a whole ring drawn over the barrel is the filled disk the
-	## brief rejects — it reads as a lid rather than as a socket, because a lid is exactly
-	## what a complete circle on top of a cable end is. The far half is already on the
-	## panel underneath, drawn by the module. Only the front needs repeating.
-	func _draw_socket_lip(at: Vector2, node_id: String, style: CableArt.Style) -> void:
-		if rack == null or style.detail() == CableArt.Detail.ICON:
-			return
-		var module = rack.module_for(node_id)
-		if module == null:
-			return
-		var skin: Dictionary = module.skin()
-		var ring: Color = skin.get("ring", Color(0, 0, 0, 0))
-		if ring.a <= 0.0:
-			ring = Rack.JACK_RING
+	## This replaces the plug. The plug was built to say "the cable goes into the
+	## hardware", and it did — at the cost of a barrel, a collar band, a strain relief
+	## and an occlusion lip at every end of every cable, which together were a
+	## miniature hardware rendering exercise fighting the flat language of the merged
+	## faceplates. The whole message fits in two marks: the socket's mouth filled with
+	## the cable's own colour, and a collar ring of that colour around it. An occupied
+	## jack reads as lit by its cable; an empty one keeps its plain ring, so occupancy
+	## is readable across the rack at a glance. Depth budget goes to the cable body,
+	## which is the thing you actually trace.
+	func _draw_landing(at: Vector2, ink: Color, style: CableArt.Style) -> void:
 		var radius := Rack.jack_radius()
-		# Cables leave towards the viewer, so the near half is the lower one.
-		draw_arc(at, radius - 1.0, 0.0, PI, 20, ring.darkened(0.35),
-			maxf(radius * 0.26, 1.6), true)
-		draw_arc(at, radius - 1.0, 0.25 * PI, 0.75 * PI, 12,
-			Color(0.0, 0.0, 0.0, 0.35), maxf(radius * 0.16, 1.0), true)
+		# The mouth: the cable disappearing in. A touch darker than the body, the way
+		# the cable's own edge pass is, so the hole still reads as a hole.
+		draw_circle(at, style.thickness * 0.62, CableArt.darken(ink, 0.25))
+		# The collar: the occupancy cue, and the only ring the endpoint needs. Inside
+		# the module's own metal ring, so the hardware stays the hardware and the
+		# colour reads as something seated in it.
+		draw_arc(at, radius * 0.62, 0.0, TAU, 24, ink,
+			maxf(style.thickness * 0.4, 2.0), true)
 
 
 	## Whether a cable passes across a module's panel.
@@ -1421,6 +1410,15 @@ class CableLayer extends Control:
 		var zoom: float = maxf(get_global_transform().get_scale().x, 0.01)
 		style.screen_scale = zoom
 		style.panel_is_light = Rack.panel_is_light()
+		# The same hue on every surface; the construction adapts instead of the colour.
+		# On cream the candy body loses its silhouette before it loses its identity, so
+		# the same-hue edge deepens and widens a touch and the highlight stands down —
+		# richer perimeter, not a muddier cable.
+		if style.panel_is_light:
+			style.edge_darken = 0.5
+			style.edge_offset = Vector2(0.9, 1.0)
+			style.highlight_alpha = 0.4
+			style.shadow_alpha = 0.22
 		style.thickness = maxf(style.thickness, style.min_thickness / zoom)
 		if dim > 0.0:
 			style.thickness *= DIM_WIDTH
