@@ -30,6 +30,7 @@ const SHEETS := {
 	"faceplate": "cables on a real panel, at four zooms — the one that matters",
 	"detail": "one plug at 4x, so the construction can be argued with",
 	"perspective": "four projection grammars at 4x and 1x — A current, B mild, C medium, D flat",
+	"lod": "the adaptive ladder: one plug at every size it will ever be drawn",
 }
 
 var _sheet := "slack"
@@ -86,6 +87,7 @@ class LabView extends Control:
 			"faceplate": _sheet_faceplate()
 			"detail": _sheet_detail()
 			"perspective": _sheet_perspective()
+			"lod": _sheet_lod()
 			_: _sheet_slack()
 
 	func _label(at: Vector2, text: String, bright := false) -> void:
@@ -226,6 +228,36 @@ class LabView extends Control:
 	## So everything except the projection is held still, and each is shown at 4x to
 	## diagnose the construction and at 1x because that is where it has to work. Choosing a
 	## winner from the enlarged view alone would be choosing the wrong thing.
+	## The adaptive ladder.
+	##
+	## Not four grammars competing, but one endpoint at every size it will ever be drawn,
+	## with the grammar chosen from how many pixels reached it. The thing to look for is
+	## whether the tier changes are visible as changes — a reader scrolling a rack should
+	## see detail arrive, not see the object swap identity.
+	func _sheet_lod() -> void:
+		_label(Vector2(24, 22), "LOD — one plug, every size. FULL / SIMPLE / GLYPH / ICON chosen by screen diameter.", true)
+		var zooms := [3.0, 1.6, 1.0, 0.75, 0.55, 0.4, 0.3]
+		var names := ["FULL", "SIMPLE", "GLYPH", "ICON"]
+		var x := 60.0
+		for zoom: float in zooms:
+			var style: CableArt.Style = CableArt.Style.new().scaled(zoom)
+			var tier: int = CableArt.plug_lod(style)
+			var diameter: float = style.plug_width * style.thickness
+			_label(Vector2(x - 30.0, 70.0), "%.0f%%" % (zoom * 100.0))
+			_label(Vector2(x - 30.0, 88.0), "%.0f px  %s" % [diameter, names[tier]])
+
+			var jack := Vector2(x, 150.0)
+			var far := jack + Vector2(120.0, 150.0) * maxf(zoom, 0.5)
+			var ring: Color = Design.SURFACES[Design.Surface.RAISED]
+			var colour: Color = CableArt.PALETTE["cyan"]
+			var radius: float = maxf(style.plug_width * style.thickness * 0.5 + 2.5 * zoom, 4.0)
+			CableArt.draw_socket(self, jack, radius, ring, style)
+			var points := CableArt.cable_path(jack, Vector2.DOWN, far, Vector2.UP, 0.7,
+				style, "lod")
+			CableArt.draw_cable(self, points, colour, style)
+			CableArt.draw_plug_adaptive(self, jack, Vector2.DOWN, colour, style)
+			x += 190.0
+
 	func _sheet_perspective() -> void:
 		_label(Vector2(24, 22), "PLUG-PERSPECTIVE — same cable, four grammars. 4x above, 1x below.", true)
 		var variants := [

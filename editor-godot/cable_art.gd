@@ -46,10 +46,40 @@ enum Detail { FULL, SIMPLE, ICON }
 
 ## How the plug is projected out of a flat, front-facing panel.
 ##
-## The faceplate is top-down and the plug was drawn from the side, which is readable and
-## slightly impossible — a side-view object pasted onto a circular socket. These are the
-## grammars worth comparing before one is adopted.
+## The faceplate is top-down and the plug was once drawn from the side, which is readable
+## and slightly impossible — a side-view object pasted onto a circular socket.
 enum PlugView { SIDE, EMERGE, TOP_DOWN }
+
+## How much plug there is room to draw, which is the same question as which grammar to
+## use.
+##
+## The comparison sheet settled that there is no single right projection: the 27 degree
+## emergence is the strongest object when there are pixels for it, and the flat top-down
+## symbol is the cleanest thing to be when there are not. So the projection is part of the
+## level of detail rather than a style setting — C is the canonical physical object and D
+## is its low-resolution glyph, and the renderer reveals more physical information as the
+## pixels arrive.
+enum PlugLod { FULL, SIMPLE, GLYPH, ICON }
+
+## Chosen from rendered screen-space size, never from a zoom percentage.
+##
+## A zoom number is a fact about a viewport and says nothing about how many pixels reached
+## this particular plug — which is what actually decides whether a barrel is a cylinder or
+## a smudge. Screen space survives DPI scaling, window size, module width and whatever the
+## rack does next; 35% does not.
+static func plug_lod(style: Style) -> int:
+	var diameter: float = style.plug_width * style.thickness
+	# 11, not 12. The canonical 5 px cable puts a 2.35t plug at 11.75 px, which fell on
+	# the wrong side of a threshold written before the plug had its final width — so the
+	# primary working scale rendered the simplified model and the full one was reachable
+	# only by zooming in. Thresholds should be tuned to the sizes that actually occur.
+	if diameter >= 11.0:
+		return PlugLod.FULL
+	if diameter >= 8.0:
+		return PlugLod.SIMPLE
+	if diameter >= 5.0:
+		return PlugLod.GLYPH
+	return PlugLod.ICON
 
 
 class Style extends RefCounted:
@@ -127,7 +157,14 @@ class Style extends RefCounted:
 	## Screen-space floors. Below these the cable stops shrinking and starts simplifying,
 	## because 5 x 0.35 is 1.75 px and 1.75 px of anything is a rumour.
 	var min_thickness := 2.75
-	var min_plug := 6.5
+	## The smallest a plug silhouette is allowed to be before it stops being drawn as an
+	## object at all.
+	##
+	## Was 6.5, which quietly made the icon tier unreachable: with the body floored at
+	## 2.75 px the plug could never measure less than 6.5, so the "under 5 px" branch was
+	## dead code that looked like coverage. A floor and a threshold that contradict each
+	## other are worse than either alone.
+	var min_plug := 4.0
 
 	func scaled(zoom: float) -> Style:
 		var out := Style.new()
@@ -367,6 +404,29 @@ static func _ellipse_band(canvas: CanvasItem, centre: Vector2, along: Vector2,
 	canvas.draw_colored_polygon(points, fill)
 
 
+## The plug, in whichever grammar the available pixels support.
+##
+## Callers ask for a plug and get the right one; nothing above this has to know that there
+## are four of them or where the thresholds are.
+static func draw_plug_adaptive(canvas: CanvasItem, jack: Vector2, direction: Vector2,
+		colour: Color, style: Style) -> void:
+	match plug_lod(style):
+		PlugLod.FULL: draw_plug_emergent(canvas, jack, direction, colour, style, true)
+		PlugLod.SIMPLE: draw_plug_emergent(canvas, jack, direction, colour, style, false)
+		PlugLod.GLYPH: draw_plug_topdown(canvas, jack, direction, colour, style)
+		_: draw_plug_icon(canvas, jack, colour, style)
+
+
+## The endpoint when there is nothing left but the fact of it: a bright ring at the jack,
+## in the cable's colour. At this size the only question the picture has to answer is
+## which cable connects here.
+static func draw_plug_icon(canvas: CanvasItem, jack: Vector2, colour: Color,
+		style: Style) -> void:
+	var radius := maxf(style.plug_width * style.thickness * 0.42, 1.6)
+	canvas.draw_circle(jack, radius + 0.8, style.socket_mouth)
+	canvas.draw_circle(jack, radius, colour)
+
+
 ## The plug rising out of the panel.
 ##
 ## Four zones, each a little further from top-down than the last: the rim stays flat, the
@@ -380,9 +440,8 @@ static func _ellipse_band(canvas: CanvasItem, centre: Vector2, along: Vector2,
 ## reads increasing separation as increasing height far more readily than it reads a
 ## correctly foreshortened cylinder.
 static func draw_plug_emergent(canvas: CanvasItem, jack: Vector2, direction: Vector2,
-		colour: Color, style: Style) -> void:
+		colour: Color, style: Style, full := true) -> void:
 	var t := style.thickness
-	var level := style.detail()
 	var along := direction.normalized()
 	var across := Vector2(-along.y, along.x)
 
@@ -397,8 +456,9 @@ static func draw_plug_emergent(canvas: CanvasItem, jack: Vector2, direction: Vec
 	var tip := jack + along * length
 
 	# Shadow, ramped. At the socket the plug is in the panel and casts nothing; by the
-	# relief it casts what the cable casts.
-	if level != Detail.ICON:
+	# relief it casts what the cable casts. Separation reads as height more readily than
+	# any amount of correct foreshortening.
+	if full:
 		var lift := style.shadow_offset * 0.9
 		_taper(canvas, jack + lift * 0.15, tip + lift, base_half * 1.05, far_half * 1.1,
 			Color(0.0, 0.0, 0.0, style.plug_contact_alpha * 0.9))
@@ -416,18 +476,18 @@ static func draw_plug_emergent(canvas: CanvasItem, jack: Vector2, direction: Vec
 
 	# The barrel: a short tapered extrusion, narrowing along the projection so the eye
 	# reads a cylinder leaving a hole rather than a rectangle laid over a circle.
+	# One shape, not two. There was a lit ellipse capping the barrel as well, which made
+	# five or six tonal bands stacked between the socket and the cable — legible at 4x and
+	# noise at 1x. Fewer, larger shapes read better and downscale better, and the
+	# hierarchy the eye wants is only ever socket, collar, barrel, relief, cable.
 	_taper(canvas, jack, tip, base_half, far_half, style.plug_body)
-	_ellipse(canvas, tip, along, far_half * 0.55, far_half,
-		lighten(style.plug_body, 0.10))
 
 	_ellipse_band(canvas, collar_at, along, collar_rx, collar_ry, 0.52, colour, 0.0, PI)
 
-	if level != Detail.ICON:
-		var relief_end := tip + along * style.relief_length
-		_taper(canvas, tip, relief_end, far_half * 0.92, t * 0.5,
-			darken(colour, 0.45))
+	var relief_end := tip + along * style.relief_length * (1.0 if full else 0.7)
+	_taper(canvas, tip, relief_end, far_half * 0.92, t * 0.5, darken(colour, 0.45))
 
-	if level == Detail.FULL:
+	if full:
 		# Longitudinal on the barrel, where the socket's lighting was radial. The
 		# progression from one to the other is what ties the pieces into one object.
 		var lit := across * base_half * 0.55

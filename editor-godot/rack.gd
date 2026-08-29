@@ -30,7 +30,13 @@ signal node_selected(node_id: String)
 
 ## Cable rendering. The A/B is the point: a hanging cable reads as a real instrument, an
 ## orthogonal one reads as a circuit, and it is not obvious which wins in front of people.
-enum CableStyle { CATENARY, PCB }
+## CATENARY hangs a cable under its own weight; PCB routes it in lanes; PHYSICAL is the
+## illustrated patch cord — the same hang, drawn as an object with a plug in a socket.
+##
+## Three styles rather than a replacement, because the point of the A/B is that the
+## catenary is not obviously worse. It is cheaper, it is already tuned, and on a dense
+## rack the extra material may cost more legibility than it buys.
+enum CableStyle { CATENARY, PCB, PHYSICAL }
 
 # Eurorack geometry, in pixels rather than millimetres. HP is the real horizontal pitch
 # unit; module widths are whole numbers of it, which is what makes a wall of modules line
@@ -836,6 +842,8 @@ static func _chamfer(points: PackedVector2Array, radius: float) -> PackedVector2
 
 
 class CableLayer extends Control:
+	const CableArt := preload("res://cable_art.gd")
+
 	var rack: Control
 
 	## How far a cable is turned down when it has nothing to do with what is selected.
@@ -898,6 +906,10 @@ class CableLayer extends Control:
 				var lane := maxf(a.y, b.y) + 34.0 + index * lane_step
 				points = Rack.pcb_route(a, b, lane)
 
+			if rack.cable_style == Rack.CableStyle.PHYSICAL:
+				_draw_physical(a, b, colour, related, hovered)
+				continue
+
 			var width: float = 5.0 if hovered else 4.0
 			if not related:
 				width *= DIM_WIDTH
@@ -919,6 +931,38 @@ class CableLayer extends Control:
 				for spot: Vector2 in [a, b]:
 					draw_arc(spot, 12.0, 0.0, TAU, 28, colour, 2.0, true)
 
+	## A cable as an illustrated object: plug, collar, relief, body, and a hang of its own.
+	##
+	## The path comes from cable_art rather than from Rack.catenary, because the plug has
+	## to agree with where the cable actually leaves — the whole point of the lead-out is
+	## that the plug's angle and the cable's fall are separate, and a curve computed
+	## elsewhere cannot know about either.
+	##
+	## Cables leave a faceplate towards the viewer, which in this projection is down. Not
+	## along the line to the other jack: a cable that exits sideways is a cable entering
+	## the module's edge, which is the thing the whole exercise exists to avoid.
+	func _draw_physical(a: Vector2, b: Vector2, colour: Color, related: bool,
+			hovered: bool) -> void:
+		var style: CableArt.Style = CableArt.Style.new()
+		style.thickness = 6.0 if hovered else 5.0
+		if not related:
+			style.thickness *= DIM_WIDTH
+			style.shadow_alpha *= DIM_SHADOW
+		var ink: Color = colour if related \
+			else Design.recede(colour, Design.SURFACES[Design.Surface.CANVAS], DIM_TARGET)
+
+		var out := Vector2.DOWN
+		# Seeded from the endpoints, so a cable keeps its own hang between redraws and two
+		# cables between the same pair of modules do not lie on top of each other.
+		var seed := "%d:%d" % [int(a.x) * 31 + int(a.y), int(b.x) * 31 + int(b.y)]
+		var points := CableArt.cable_path(a, out, b, out, 0.82, style, seed)
+		CableArt.draw_cable(self, points, ink, style)
+		CableArt.draw_plug_adaptive(self, a, out, ink, style)
+		CableArt.draw_plug_adaptive(self, b, out, ink, style)
+
+		if hovered:
+			for spot: Vector2 in [a, b]:
+				draw_arc(spot, 14.0, 0.0, TAU, 28, colour, 2.0, true)
 
 # ---------------------------------------------------------------------------------
 # A module
