@@ -502,6 +502,9 @@ func refresh_displays() -> void:
 
 
 func rebuild() -> void:
+	# The cables are redrawn again once this has settled: they are drawn between jacks,
+	# and the jacks do not know where they are until the layout that follows this call.
+	redraw_cables_when_settled()
 	# Before anything is placed, because every module is built against it.
 	module_height = measure(patch.get("nodes", []), registry)
 	for child in get_children():
@@ -986,6 +989,25 @@ func redraw_cables() -> void:
 		_cables.queue_redraw()
 
 
+## Draw the cables again once the modules have finished being placed.
+##
+## A cable is drawn between two jacks, and a jack does not know where it is until the
+## containers above it have laid it out — which happens after the frame a rebuild is
+## asked for. Draw in that frame and every jack answers with the position it has before
+## layout, which is its module's top-left corner. The cables then sit along the top edge
+## of each panel, plugged into nothing, and stay there, because nothing asks the layer to
+## think again once the real positions exist.
+##
+## That is what "cables appear to originate from anonymous points along the top edge" was.
+## Not a rendering grammar to be retired — a redraw that was one frame early, in a view
+## that only redraws when something asks it to. Two frames, because the first settles the
+## modules and the second settles the jacks inside them.
+func redraw_cables_when_settled() -> void:
+	for _frame in 2:
+		await get_tree().process_frame
+	redraw_cables()
+
+
 ## The panel being read, in rack space, or an empty rect.
 func inspected_rect() -> Rect2:
 	if inspected_id == "":
@@ -1042,7 +1064,18 @@ func cable_endpoints() -> Array:
 		# at one end and overlaps the jack below at the other is still wrong.
 		var ink: Color = signal_colour(signal_type)
 		if cable_colouring == CableColouring.CABLE:
-			ink = CableArt.PALETTE[CABLE_BAG[cables.size() % CABLE_BAG.size()]]
+			# One colour per cable rather than per signal type, taken from the patch's
+			# own palette. It reached into CableArt.PALETTE for a bag of candy names,
+			# which is a second styling system living beside the first: a rack painted
+			# Bakelite Brown would have drawn neon chartreuse leads because the bag said
+			# so. The theme already carries four cable colours; this mode cycles them.
+			var palette: Array = ModuleThemes.cables(
+				str(patch.get("arrangement", {}).get("theme", "")))
+			if palette.is_empty():
+				palette = []
+				for kind: String in SIGNAL_ORDER:
+					palette.append(signal_colour(kind))
+			ink = palette[cables.size() % palette.size()]
 		cables.append([a, b, ink,
 			str(connection["from"]["node"]), str(connection["to"]["node"]),
 			minf(from_module.jack_pitch(), to_module.jack_pitch()),
@@ -1306,10 +1339,23 @@ class CableLayer extends Control:
 				for at: Vector2 in CableArt.crossings(paths[index], paths[earlier]):
 					CableArt.draw_crossing_shadow(self, paths[index], at, style)
 			CableArt.draw_cable(self, paths[index], inks[index], style)
-			CableArt.draw_plug_adaptive(self, cables[index][0], Vector2.DOWN,
-				inks[index], style)
-			CableArt.draw_plug_adaptive(self, cables[index][1], Vector2.DOWN,
-				inks[index], style)
+			for side in 2:
+				CableArt.draw_plug_adaptive(self, cables[index][side], Vector2.DOWN,
+					inks[index], style)
+				# And then the near lip of the socket, over the barrel that is now
+				# sitting in it.
+				#
+				# Without this the plug replaces the jack: the cable layer draws above
+				# the modules, so a barrel lands on top of the hardware it is supposed
+				# to be entering and the panel loses its socket at exactly the moment it
+				# is being used. Drawing the front half of the collar afterwards puts
+				# the assembly back in order — far collar, barrel, near collar — and the
+				# plug reads as passing through the panel rather than resting on it.
+				#
+				# The lip is the module's own ring colour, so it belongs to the faceplate
+				# it is mounted in rather than to the cable.
+				_draw_socket_lip(cables[index][side], str(cables[index][3 + side]),
+					style)
 			drawn.append(index)
 
 		# The traced cable's ends, last of all. A brightened curve still has to be followed
@@ -1319,6 +1365,30 @@ class CableLayer extends Control:
 			for spot: Vector2 in [cables[index][0], cables[index][1]]:
 				draw_arc(spot, 12.0, 0.0, TAU, 28,
 					Color(cables[index][2], 0.75), 1.5, true)
+
+	## The half of a jack's collar that lies in front of the plug in it.
+	##
+	## Half, and the near half: a whole ring drawn over the barrel is the filled disk the
+	## brief rejects — it reads as a lid rather than as a socket, because a lid is exactly
+	## what a complete circle on top of a cable end is. The far half is already on the
+	## panel underneath, drawn by the module. Only the front needs repeating.
+	func _draw_socket_lip(at: Vector2, node_id: String, style: CableArt.Style) -> void:
+		if rack == null or style.detail() == CableArt.Detail.ICON:
+			return
+		var module = rack.module_for(node_id)
+		if module == null:
+			return
+		var skin: Dictionary = module.skin()
+		var ring: Color = skin.get("ring", Color(0, 0, 0, 0))
+		if ring.a <= 0.0:
+			ring = Rack.JACK_RING
+		var radius := Rack.jack_radius()
+		# Cables leave towards the viewer, so the near half is the lower one.
+		draw_arc(at, radius - 1.0, 0.0, PI, 20, ring.darkened(0.35),
+			maxf(radius * 0.26, 1.6), true)
+		draw_arc(at, radius - 1.0, 0.25 * PI, 0.75 * PI, 12,
+			Color(0.0, 0.0, 0.0, 0.35), maxf(radius * 0.16, 1.0), true)
+
 
 	## Whether a cable passes across a module's panel.
 	static func _crosses(path: PackedVector2Array, rect: Rect2) -> bool:

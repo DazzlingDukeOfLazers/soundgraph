@@ -37,6 +37,9 @@ var _nudge := ""
 ## ends the crossings go back to where they were rather than to a new arbitrary order.
 var _settle := false
 var _palette := "lab"
+## Which panel style the whole patch wears. Empty leaves each module on whatever the file
+## says, which for most examples is nothing at all — the unpainted case.
+var _faceplate := ""
 var _size := Vector2i(1600, 900)
 ## The case, in rack pixels. Independent of how many of them reach the screen.
 var _case := Vector2(1560.0, 1180.0)
@@ -65,7 +68,10 @@ func _run() -> void:
 			"--nudge": _nudge = args[i + 1]
 			"--settle": _settle = true
 			"--palette": _palette = args[i + 1]
-			"--faceplate": Rack.faceplate = args[i + 1]
+			# The case had two faceplates on a static var and has none now: a panel
+			# style is a fact about a module, carried in the patch. So this sets the
+			# patch's style and every module without one of its own follows it.
+			"--faceplate": _faceplate = args[i + 1]
 
 	var palettes := {"lab": Design.Palette.LAB, "night": Design.Palette.NIGHT_FLIGHT,
 		"tape": Design.Palette.TAPE, "paper": Design.Palette.PAPER,
@@ -115,6 +121,10 @@ func _run() -> void:
 	}
 	rack.cable_style = STYLES.get(_style, 2)
 	rack.cable_colouring = 1 if _colouring == "cable" else 0
+	if _faceplate != "":
+		var arrangement: Dictionary = patch.get("arrangement", {})
+		arrangement["theme"] = _faceplate
+		patch["arrangement"] = arrangement
 	rack.patch = patch
 	# patch is a plain field; the build is a separate call, and assigning without it gets
 	# you an empty rack that looks like a rendering failure.
