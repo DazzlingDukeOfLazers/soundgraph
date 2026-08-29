@@ -44,6 +44,13 @@ const SLACK := {"tight": 0.50, "medium": 0.82, "loose": 1.15}
 ## How much detail there is room for, which is a question about pixels and not about zoom.
 enum Detail { FULL, SIMPLE, ICON }
 
+## How the plug is projected out of a flat, front-facing panel.
+##
+## The faceplate is top-down and the plug was drawn from the side, which is readable and
+## slightly impossible — a side-view object pasted onto a circular socket. These are the
+## grammars worth comparing before one is adopted.
+enum PlugView { SIDE, EMERGE, TOP_DOWN }
+
 
 class Style extends RefCounted:
 	## The body, and the baseline everything else is stated against.
@@ -99,6 +106,15 @@ class Style extends RefCounted:
 	## How far the first control point continues along the exit before gravity wins.
 	var ease := 22.0
 
+	## The projection grammar, and how far the plug leans toward the cable.
+	##
+	## A plug coming straight out of a perfectly front-facing panel would show almost no
+	## length at all, so the tilt is an honest abstraction rather than an attempt at
+	## optical correctness: it exists to say "this projects out of the panel", which strict
+	## perspective would say by showing nothing.
+	var plug_view := PlugView.SIDE
+	var tilt_degrees := 27.0
+	var barrel_taper := 0.13
 	var plug_body := Color("26282C")
 	## The mouth of the socket, behind the barrel. A hole for the plug to be in.
 	var socket_mouth := Color("07080A")
@@ -321,6 +337,127 @@ static func draw_plug(canvas: CanvasItem, jack: Vector2, direction: Vector2,
 			Color(1.0, 1.0, 1.0, style.plug_highlight_alpha), maxf(1.0, t * 0.18), true)
 		canvas.draw_line(base - lit + along * t * 0.25, tip - lit - along * t * 0.25,
 			Color(0.0, 0.0, 0.0, style.plug_highlight_alpha), maxf(1.0, t * 0.18), true)
+
+
+## An ellipse, for the parts of the plug that are circles seen obliquely.
+static func _ellipse(canvas: CanvasItem, centre: Vector2, along: Vector2, rx: float,
+		ry: float, fill: Color, arc_from := 0.0, arc_to := TAU) -> void:
+	var across := Vector2(-along.y, along.x)
+	var points := PackedVector2Array()
+	var steps := 24
+	for i in steps + 1:
+		var a: float = arc_from + (arc_to - arc_from) * float(i) / steps
+		points.append(centre + along * (sin(a) * rx) + across * (cos(a) * ry))
+	canvas.draw_colored_polygon(points, fill)
+
+
+## A band between two concentric ellipses, over an arc. The near half of a ring.
+static func _ellipse_band(canvas: CanvasItem, centre: Vector2, along: Vector2,
+		rx: float, ry: float, inner: float, fill: Color,
+		arc_from := 0.0, arc_to := PI) -> void:
+	var across := Vector2(-along.y, along.x)
+	var points := PackedVector2Array()
+	var steps := 18
+	for i in steps + 1:
+		var a: float = arc_from + (arc_to - arc_from) * float(i) / steps
+		points.append(centre + along * (sin(a) * rx) + across * (cos(a) * ry))
+	for i in steps + 1:
+		var a: float = arc_to + (arc_from - arc_to) * float(i) / steps
+		points.append(centre + along * (sin(a) * rx * inner) + across * (cos(a) * ry * inner))
+	canvas.draw_colored_polygon(points, fill)
+
+
+## The plug rising out of the panel.
+##
+## Four zones, each a little further from top-down than the last: the rim stays flat, the
+## collar is a compressed ring at the panel line, the barrel is a short tapered extrusion,
+## and the relief hands over to the cable. Nothing here is a camera — it is a controlled
+## 2D deformation, because a miniature 3D renderer would buy accuracy nobody asked for and
+## cost the flat, graphic character that makes the rest of the interface legible.
+##
+## The shadow does most of the persuading. Its separation from the plug grows from nothing
+## at the socket to the cable's normal offset by the time the cable begins, and the eye
+## reads increasing separation as increasing height far more readily than it reads a
+## correctly foreshortened cylinder.
+static func draw_plug_emergent(canvas: CanvasItem, jack: Vector2, direction: Vector2,
+		colour: Color, style: Style) -> void:
+	var t := style.thickness
+	var level := style.detail()
+	var along := direction.normalized()
+	var across := Vector2(-along.y, along.x)
+
+	var tilt: float = deg_to_rad(style.tilt_degrees)
+	var squash: float = cos(tilt)                       # how flat the collar ring reads
+	var base_half := style.plug_width * t * 0.5
+	var far_half := base_half * (1.0 - style.barrel_taper)
+	# Projected length: what a tilted cylinder shows of itself. Scaled so the useful range
+	# of tilts lands in the 8-12 px the geometry wants at a 5 px cable.
+	var length: float = style.plug_length * t * sin(tilt) * 1.9
+
+	var tip := jack + along * length
+
+	# Shadow, ramped. At the socket the plug is in the panel and casts nothing; by the
+	# relief it casts what the cable casts.
+	if level != Detail.ICON:
+		var lift := style.shadow_offset * 0.9
+		_taper(canvas, jack + lift * 0.15, tip + lift, base_half * 1.05, far_half * 1.1,
+			Color(0.0, 0.0, 0.0, style.plug_contact_alpha * 0.9))
+
+	# The collar is a ring the barrel passes through, not a lid laid over the socket.
+	#
+	# Filled, it read as a coloured cap covering the hole — which is the same mistake as
+	# the original plug: one grammar pasted over another. Occlusion is what makes them
+	# agree. The far half of the ring goes down first, the barrel over it, then the near
+	# half over the barrel, and the eye is told the cylinder passes through the opening.
+	var collar_rx := base_half * (0.40 + 0.55 * squash)
+	var collar_ry := base_half * 1.12
+	var collar_at := jack + along * style.band_width * 0.15
+	_ellipse_band(canvas, collar_at, along, collar_rx, collar_ry, 0.52, colour, PI, TAU)
+
+	# The barrel: a short tapered extrusion, narrowing along the projection so the eye
+	# reads a cylinder leaving a hole rather than a rectangle laid over a circle.
+	_taper(canvas, jack, tip, base_half, far_half, style.plug_body)
+	_ellipse(canvas, tip, along, far_half * 0.55, far_half,
+		lighten(style.plug_body, 0.10))
+
+	_ellipse_band(canvas, collar_at, along, collar_rx, collar_ry, 0.52, colour, 0.0, PI)
+
+	if level != Detail.ICON:
+		var relief_end := tip + along * style.relief_length
+		_taper(canvas, tip, relief_end, far_half * 0.92, t * 0.5,
+			darken(colour, 0.45))
+
+	if level == Detail.FULL:
+		# Longitudinal on the barrel, where the socket's lighting was radial. The
+		# progression from one to the other is what ties the pieces into one object.
+		var lit := across * base_half * 0.55
+		if lit.dot(LIGHT.normalized()) < 0.0:
+			lit = -lit
+		canvas.draw_line(jack + lit * 0.9 + along * length * 0.15, tip + lit * 0.8,
+			Color(1.0, 1.0, 1.0, style.plug_highlight_alpha), maxf(1.0, t * 0.16), true)
+		canvas.draw_line(jack - lit * 0.9 + along * length * 0.15, tip - lit * 0.8,
+			Color(0.0, 0.0, 0.0, style.plug_highlight_alpha * 1.1), maxf(1.0, t * 0.16),
+			true)
+
+
+## The plug with no perspective at all: everything in the panel plane.
+##
+## The control, and not a straw man. It is internally consistent in a way the side view
+## never was, and if the emergence treatments read as confusing then this is the honest
+## answer — a cable leaving a socket, drawn flat, with the collar as a ring in the jack.
+static func draw_plug_topdown(canvas: CanvasItem, jack: Vector2, direction: Vector2,
+		colour: Color, style: Style) -> void:
+	var t := style.thickness
+	var along := direction.normalized()
+	var radius := style.plug_width * t * 0.5
+
+	_ellipse(canvas, jack, along, radius * 0.86, radius * 0.86, style.plug_body)
+	# A ring of cable colour inside the socket: the endpoint cue, with nothing pretending
+	# to stand out of the panel.
+	canvas.draw_arc(jack, radius * 0.62, 0.0, TAU, 28, colour, maxf(2.0, t * 0.5), true)
+	if style.detail() != Detail.ICON:
+		_taper(canvas, jack + along * radius * 0.5, jack + along * (radius + style.relief_length),
+			t * 0.75, t * 0.5, darken(colour, 0.45))
 
 
 static func _quad(canvas: CanvasItem, from: Vector2, to: Vector2, across: Vector2,

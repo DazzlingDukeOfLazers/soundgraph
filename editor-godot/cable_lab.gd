@@ -29,6 +29,7 @@ const SHEETS := {
 	"small": "the same cable at four zoom levels",
 	"faceplate": "cables on a real panel, at four zooms — the one that matters",
 	"detail": "one plug at 4x, so the construction can be argued with",
+	"perspective": "four projection grammars at 4x and 1x — A current, B mild, C medium, D flat",
 }
 
 var _sheet := "slack"
@@ -84,6 +85,7 @@ class LabView extends Control:
 			"small": _sheet_small()
 			"faceplate": _sheet_faceplate()
 			"detail": _sheet_detail()
+			"perspective": _sheet_perspective()
 			_: _sheet_slack()
 
 	func _label(at: Vector2, text: String, bright := false) -> void:
@@ -217,6 +219,51 @@ class LabView extends Control:
 					style, "d%d%d" % [row, column])
 				CableArt.draw_cable(self, points, colour, style)
 				CableArt.draw_plug(self, jack, out, colour, style)
+
+	## Four projection grammars, same jack, same colour, same path.
+	##
+	## The question is not which dimensions are best; it is which grammar the eye accepts.
+	## So everything except the projection is held still, and each is shown at 4x to
+	## diagnose the construction and at 1x because that is where it has to work. Choosing a
+	## winner from the enlarged view alone would be choosing the wrong thing.
+	func _sheet_perspective() -> void:
+		_label(Vector2(24, 22), "PLUG-PERSPECTIVE — same cable, four grammars. 4x above, 1x below.", true)
+		var variants := [
+			{"name": "A  current side view", "kind": "side", "tilt": 0.0},
+			{"name": "B  mild emergence 15", "kind": "emerge", "tilt": 15.0},
+			{"name": "C  medium emergence 27", "kind": "emerge", "tilt": 27.0},
+			{"name": "D  full top-down", "kind": "flat", "tilt": 0.0},
+		]
+		for column in variants.size():
+			var variant: Dictionary = variants[column]
+			var x := 40.0 + column * 350.0
+			_label(Vector2(x, 56), variant["name"])
+			_perspective_one(Vector2(x + 70.0, 150.0), 4.0, variant)
+			_label(Vector2(x, 520), "1x")
+			_perspective_one(Vector2(x + 70.0, 560.0), 1.0, variant)
+			# And once more at 1x on a strip of panel, since a plug is never judged in
+			# the void — the socket has to sit in something.
+			var panel: Color = Design.SURFACES[Design.Surface.NODE]
+			draw_rect(Rect2(Vector2(x + 10.0, 640.0), Vector2(300.0, 110.0)), panel)
+			_label(Vector2(x, 630), "1x on panel")
+			_perspective_one(Vector2(x + 70.0, 672.0), 1.0, variant)
+
+	func _perspective_one(jack: Vector2, zoom: float, variant: Dictionary) -> void:
+		var style: CableArt.Style = CableArt.Style.new().scaled(zoom)
+		style.tilt_degrees = variant["tilt"]
+		var ring: Color = Design.SURFACES[Design.Surface.RAISED]
+		var colour: Color = CableArt.PALETTE["amber"]
+		var out := Vector2.DOWN
+		var far := jack + Vector2(150.0, 90.0) * zoom
+		var radius: float = maxf(style.plug_width * style.thickness * 0.5 + 2.5 * zoom, 5.0)
+
+		CableArt.draw_socket(self, jack, radius, ring, style)
+		var points := CableArt.cable_path(jack, out, far, Vector2.UP, 0.7, style, "persp")
+		CableArt.draw_cable(self, points, colour, style)
+		match variant["kind"]:
+			"emerge": CableArt.draw_plug_emergent(self, jack, out, colour, style)
+			"flat": CableArt.draw_plug_topdown(self, jack, out, colour, style)
+			_: CableArt.draw_plug(self, jack, out, colour, style)
 
 	func _sheet_small() -> void:
 		_label(Vector2(24, 28), "SMALL — does it survive being zoomed out?", true)
