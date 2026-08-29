@@ -7153,14 +7153,19 @@ func _initialize() -> void:
 			% ("" if Design.unknown_items.is_empty() else ": " + ", ".join(Design.unknown_items)))
 
 	# Signal type is carried by shape as well as colour, so it survives a colour-blind
-	# viewer and a greyscale printout. Compared as pixels, because two icons that differ
-	# only in tint would pass any check that just asked whether they were both present.
+	# viewer and a greyscale printout. Compared as luminance rather than alpha: every
+	# port is a socket now, so the outlines are identical round grommets and the shape
+	# lives in the pip inside the mouth — a diamond of brightness against the near-black
+	# hole where the other icon has a circle. Alpha would call them the same icon, which
+	# is exactly the pass this check exists to prevent.
 	var audio_icon: Image = main._port_icon("audio").get_image()
 	var control_icon: Image = main._port_icon("control").get_image()
 	var differing := 0
 	for y in audio_icon.get_height():
 		for x in audio_icon.get_width():
-			if absf(audio_icon.get_pixel(x, y).a - control_icon.get_pixel(x, y).a) > 0.5:
+			var pixel_a := audio_icon.get_pixel(x, y)
+			var pixel_b := control_icon.get_pixel(x, y)
+			if pixel_a.a > 0.5 and pixel_b.a > 0.5 					and absf(pixel_a.get_luminance() - pixel_b.get_luminance()) > 0.15:
 				differing += 1
 	check(differing > 12,
 		"audio and control ports are different shapes, not just different colours (%d px)"

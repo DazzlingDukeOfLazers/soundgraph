@@ -2501,8 +2501,9 @@ class PlugOverlay extends Control:
 			for side in 2:
 				var widget := graph.get_node_or_null(NodePath(str(
 					connection["from_node" if side == 0 else "to_node"]))) as GraphNode
-				if widget == null or not widget.visible \
-						or not widget.has_meta("skin"):
+				# Every node, painted or not: the socket grammar is universal now, so
+				# its occupancy cue is too.
+				if widget == null or not widget.visible:
 					continue
 				var port := int(connection["from_port" if side == 0 else "to_port"])
 				var local: Vector2 = widget.get_output_port_position(port) if side == 0 \
@@ -2510,10 +2511,11 @@ class PlugOverlay extends Control:
 				var at: Vector2 = widget.position_offset * graph.zoom \
 					- graph.scroll_offset + local * graph.zoom
 				var colour := cable_ink
-				var skin: Dictionary = widget.get_meta("skin")
+				var skin: Dictionary = widget.get_meta("skin") \
+					if widget.has_meta("skin") else {}
 				# Away from the panel: an output projects right, an input left.
 				sites.append([at, Vector2.RIGHT if side == 0 else Vector2.LEFT, colour,
-					skin.get("ring", Color(0.62, 0.65, 0.70)),
+					skin.get("ring", Rack.JACK_RING),
 					Color(skin.get("panel", Color.BLACK)).get_luminance() > 0.5])
 		return sites
 
@@ -2530,12 +2532,20 @@ class PlugOverlay extends Control:
 		for site in plug_sites():
 			var at: Vector2 = site[0]
 			var ink: Color = site[2]
+			var away: Vector2 = site[1]
 			# Sized against the cord, not the old thin line: a neck narrower than the
 			# cable it necks into reads as the cable pinching at the panel.
 			var neck := maxf(8.0 * graph.zoom, 3.5)
-			draw_line(at, at + (site[1] as Vector2) * neck, ink,
-				maxf(7.0 * graph.zoom, 2.4), true)
-			draw_circle(at, maxf(3.6 * graph.zoom, 1.8), CableArt.darken(ink, 0.25))
+			# The neck's contact shadow, from the reference inset: a cable leaving a
+			# socket sits just off the panel and darkens it underneath. One soft dot is
+			# the whole effect.
+			draw_circle(at + away * neck * 0.6 + Vector2(0.0, 1.6 * graph.zoom),
+				maxf(4.4 * graph.zoom, 2.0), Color(0.0, 0.0, 0.0, 0.22))
+			draw_line(at, at + away * neck, ink, maxf(7.0 * graph.zoom, 2.4), true)
+			# The mouth reads as the cable's own cut end — dark rim, lighter tube face —
+			# rather than a flat plug of colour, which is the detail the inset labels.
+			draw_circle(at, maxf(3.6 * graph.zoom, 1.8), CableArt.darken(ink, 0.35))
+			draw_circle(at, maxf(2.2 * graph.zoom, 1.1), ink.lightened(0.12))
 			draw_arc(at, maxf(5.8 * graph.zoom, 2.8), 0.0, TAU, 20, ink,
 				maxf(2.0 * graph.zoom, 1.3), true)
 

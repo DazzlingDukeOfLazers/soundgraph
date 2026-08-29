@@ -4500,107 +4500,81 @@ func _port_icon(type_name: String, key: String = ModuleThemes.CATEGORY) -> Textu
 	if _port_icons.has(cached):
 		return _port_icons[cached]
 
-	# Twenty-six for a painted socket, twenty for the plain shape.
+	# A socket mounted in the panel, on every node — painted or not.
 	#
-	# The first socket was cut into the same twenty-pixel square the diamond had used,
-	# and at 75% it went back to being a decorated connection point: the collar was two
-	# pixels of metal and the hole was four. A jack has to be the largest single piece of
-	# hardware on the panel edge or it is not a jack. This is the icon's size only —
-	# GraphEdit centres it on the slot anchor and does not lay it out, so nothing about
-	# the row, the port position or the cable moves.
-	var painted := key != ModuleThemes.CATEGORY
-	var SIZE := 26 if painted else 20
+	# The grammar used to arrive with the faceplate: painted modules got sockets and
+	# the unpainted graph kept flat type-shapes, which was defensible while the cables
+	# were flat too. The cords ended that. A cord entering a flat diamond is exactly
+	# the decorated-connection-point read the socket exists to kill, and the cable
+	# reference sheet draws its grommets on an unpainted panel for the same reason. An
+	# unpainted node now wears a steel grommet — the rack's own hardware colours — and
+	# a painted one wears its theme's ring, so the difference paint makes is the trim,
+	# never the grammar.
+	#
+	# The signal type is still carried by a shape: it moves from being the whole port
+	# to being the pip in the mouth of one, which is how the type survives a
+	# colour-blind reader, a greyscale printout and a projector that has given up on
+	# saturation. This is the icon only — GraphEdit centres it on the slot anchor, so
+	# nothing about the row, the port position or the cable moves.
+	const SIZE := 26
 	var image := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	var colour: Color = TYPE_COLOURS.get(type_name, Design.INK_NORMAL)
 	var centre := Vector2(SIZE * 0.5 - 0.5, SIZE * 0.5 - 0.5)
 
-	if painted:
-		# A socket mounted in the panel, rather than a coloured shape sitting on it.
-		#
-		# The whole grammar of the reference boards is here: a black jack field with a
-		# coloured ring round it, and a cable that goes into the hole. It works because
-		# of where this is drawn rather than because of what is in it — a GraphEdit
-		# draws its cables underneath the nodes, so a socket drawn on the node is
-		# already over the cable end. Give it a dark centre and a bright collar and the
-		# cable stops being a line that ends at a dot and becomes a plug going in.
-		#
-		# The signal type is still carried by a shape, and that is not decoration: it
-		# is how the type survives a colour-blind reader, a greyscale printout and a
-		# projector that has given up on saturation. It moves from being the whole port
-		# to being the pip in the middle of one.
-		var skin := Rack.skin(key)
-		var ring: Color = skin.get("ring", Color(0.7, 0.7, 0.7))
-		var hole: Color = skin.get("jack", Color(0.07, 0.07, 0.07))
-		var nut := ring.darkened(0.62)
-		var shade := hole.darkened(0.4)
-		# Four rings, and the money is in the middle two. Outward from the centre: the
-		# hole, which is nearly black and is where a cable goes; the theme's bright
-		# collar, which is the only saturated thing here; the moulded nut it is screwed
-		# into; and a dark seat where the whole assembly meets the plate. The material
-		# contrast between hole and collar is what makes it read as an opening rather
-		# than as a coloured dot with a border.
-		const RIM := 12.6
-		const NUT := 10.6
-		const RING := 8.4
-		const HOLE := 6.2
-		for y in SIZE:
-			for x in SIZE:
-				var point := Vector2(x, y) - centre
-				var distance := point.length()
-				if distance > RIM:
-					continue
-				# Lit from the top left, like everything else on these panels: the metal
-				# lifts where it faces the light and drops where it turns away.
-				var lift: float = clampf(-(point.x + point.y) / 26.0, -0.22, 0.26)
-				var fill := shade
-				if distance <= HOLE:
-					fill = hole
-				elif distance <= RING:
-					fill = ring.lightened(maxf(lift, 0.0)) if lift > 0.0 \
-						else ring.darkened(-lift)
-				elif distance <= NUT:
-					fill = nut.lightened(maxf(lift, 0.0)) if lift > 0.0 \
-						else nut.darkened(-lift)
-				# The pip: the signal's own shape in the signal's own colour, sitting in
-				# the mouth of the socket. It was the whole port once and it is a detail
-				# of one now — small enough that the jack is the shape you see and the
-				# type is what you read off it.
-				var pip := 0.0
-				match type_name:
-					"control":
-						pip = absf(point.x) + absf(point.y)
-					"event":
-						pip = maxf(absf(point.x), absf(point.y)) * 1.35
-					_:
-						pip = distance
-				if pip <= 3.0 and not (type_name == "note" and pip < 1.6):
-					fill = colour
-				image.set_pixel(x, y, Color(fill.r, fill.g, fill.b,
-					clampf(RIM - distance, 0.0, 1.0)))
-	else:
-		var radius := 5.0
-		for y in SIZE:
-			for x in SIZE:
-				var point := Vector2(x, y) - centre
-				var distance := 0.0
-				match type_name:
-					"control":
-						distance = absf(point.x) + absf(point.y)          # diamond
-					"event":
-						distance = maxf(absf(point.x), absf(point.y)) * 1.35   # square
-					_:
-						distance = point.length()                          # circle
-				var edge := radius + 1.0
-				if distance > edge:
-					continue
-				# A dark rim, so a port stays visible against a node body of any
-				# lightness.
-				var alpha: float = clampf(edge - distance, 0.0, 1.0)
-				var fill := colour
-				if type_name == "note" and distance < radius - 2.0:
-					fill = Design.SURFACES[Design.Surface.NODE]        # ring, not disc
-				image.set_pixel(x, y, Color(fill.r, fill.g, fill.b, alpha))
+	var painted := key != ModuleThemes.CATEGORY
+	var skin := Rack.skin(key)
+	var ring: Color = skin.get("ring", Color(0.7, 0.7, 0.7)) if painted \
+		else Rack.JACK_RING
+	var hole: Color = skin.get("jack", Color(0.07, 0.07, 0.07)) if painted \
+		else Rack.JACK_HOLE
+	var nut := ring.darkened(0.55)
+	# The seat takes the editor surface rather than a constant, so switching palettes
+	# re-cuts the icon — which is also what the suite checks.
+	var shade: Color = Design.SURFACES[Design.Surface.NODE].darkened(0.35)
+
+	# Four rings, and the money is in the middle two: the hole, the collar, the wide
+	# top-lit nut, and the seat. The nut band widened in the grommet pass — the metal
+	# is what says "hardware", and at the old two pixels of band it said "border".
+	const RIM := 12.6
+	const NUT := 11.2
+	const RING := 8.0
+	const HOLE := 5.8
+	for y in SIZE:
+		for x in SIZE:
+			var point := Vector2(x, y) - centre
+			var distance := point.length()
+			if distance > RIM:
+				continue
+			# Lit from the top left, like everything else on these panels: the metal
+			# lifts where it faces the light and drops where it turns away.
+			var lift: float = clampf(-(point.x + point.y) / 22.0, -0.28, 0.32)
+			var fill := shade
+			if distance <= HOLE:
+				fill = hole
+			elif distance <= RING:
+				fill = ring.lightened(maxf(lift, 0.0)) if lift > 0.0 \
+					else ring.darkened(-lift)
+			elif distance <= NUT:
+				fill = nut.lightened(maxf(lift, 0.0)) if lift > 0.0 \
+					else nut.darkened(-lift)
+			# The pip: the signal's own shape in the signal's own colour, sitting in
+			# the mouth of the socket.
+			var pip := 0.0
+			match type_name:
+				"control":
+					pip = absf(point.x) + absf(point.y)
+				"event":
+					pip = maxf(absf(point.x), absf(point.y)) * 1.35
+				_:
+					pip = distance
+			# 3.6, up from 3.0: at three pixels a diamond and a circle differ by eight
+			# pixels of corner, which is a shape distinction in name only — and the pip
+			# is the whole of how a signal type reaches a colour-blind reader.
+			if pip <= 3.6 and not (type_name == "note" and pip < 1.9):
+				fill = colour
+			image.set_pixel(x, y, Color(fill.r, fill.g, fill.b,
+				clampf(RIM - distance, 0.0, 1.0)))
 
 	var texture := ImageTexture.create_from_image(image)
 	_port_icons[cached] = texture
