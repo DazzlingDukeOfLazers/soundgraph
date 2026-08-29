@@ -7745,6 +7745,34 @@ func _initialize() -> void:
 	check(not main.schematic.visible,
 		"and turning back brings the wiring out again")
 
+	# ---- the schematic is a schematic, not a diagram of cards -----------------------
+	# Wires terminate at named terminals, and port_point is the contract they draw
+	# against: a wire that does not end on its answer is a wire drawn to the wrong
+	# place. Inputs sit on the left edge, outputs on the right, in descriptor order.
+	var filter_card: Rect2 = main.schematic.card_of("filter")
+	var in_port: Vector2 = main.schematic.port_point("filter", "in", true)
+	var out_port: Vector2 = main.schematic.port_point("filter", "out", false)
+	check(is_equal_approx(in_port.x, filter_card.position.x)
+			and is_equal_approx(out_port.x, filter_card.end.x)
+			and in_port.y > filter_card.position.y and in_port.y < filter_card.end.y,
+		"a card's terminals sit on its own edges (in %s, out %s)"
+			% [str(in_port), str(out_port)])
+	var mod_port: Vector2 = main.schematic.port_point("filter", "cutoff_mod", true)
+	check(mod_port.y > in_port.y,
+		"and stack in descriptor order down the edge")
+	# A card grows to hold its terminals: the four-input filter is taller than the
+	# one-input output block, which is what stops terminals from overlapping.
+	check(main.schematic.card_of("filter").size.y
+			> main.schematic.card_of("out").size.y,
+		"a card with more ports is taller than one with fewer")
+	# The reading classes come from this patch's wiring, not from the type: the
+	# Keyboard's type has a host input and is still where this patch's signal begins.
+	check(main.schematic._node_class("note") == "source"
+			and main.schematic._node_class("out") == "sink"
+			and main.schematic._node_class("lfo") == "modulator"
+			and main.schematic._node_class("filter") == "processor",
+		"sources, sinks, modulators and processors are told apart by their shape")
+
 	# The two modes are on the case band beside Face view, and they exclude each other.
 	# Face edit works by clicking the knobs on the nodes and the schematic hides the
 	# nodes, so both at once is a mode that is lit and does nothing.
