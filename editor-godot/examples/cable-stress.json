@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "author": "Mutant Factory",
+    "created": "2026-08-28",
+    "description": "Fourteen cables built to be difficult: a knot where four converge on one mixer, a diagonal crossing the whole case, short local leads between neighbours, one jack feeding two cables, and an unplugged jack sitting between two plugged ones. Not a musical patch. It exists so the cable renderer can be judged under load rather than one cable at a time.",
+    "name": "Cable Stress",
+    "tags": ["test", "rendering"]
+  },
+  "nodes": [
+    {"id": "note",   "type": "NoteInput",           "name": "Keyboard",   "position": {"x": 0,    "y": 0}},
+    {"id": "lfo",    "type": "LFO",                 "name": "Slow LFO",   "position": {"x": 200,  "y": 0}},
+    {"id": "adsr",   "type": "ADSR",                "name": "Envelope",   "position": {"x": 400,  "y": 0}},
+    {"id": "sine",   "type": "SineOscillator",      "name": "Sine",       "position": {"x": 600,  "y": 0}},
+    {"id": "saw",    "type": "SawOscillator",       "name": "Saw",        "position": {"x": 800,  "y": 0}},
+    {"id": "noise",  "type": "Noise",               "name": "Noise",      "position": {"x": 0,    "y": 200}},
+    {"id": "mixer",  "type": "Mixer",               "name": "Mixer",      "position": {"x": 200,  "y": 200}},
+    {"id": "filter", "type": "StateVariableFilter", "name": "Filter",     "position": {"x": 400,  "y": 200}},
+    {"id": "delay",  "type": "Delay",               "name": "Delay",      "position": {"x": 600,  "y": 200}},
+    {"id": "vca",    "type": "Gain",                "name": "VCA",        "position": {"x": 800,  "y": 200}},
+    {"id": "out",    "type": "StereoOutput",        "name": "Output",     "position": {"x": 400,  "y": 400}}
+  ],
+  "connections": [
+    {"from": {"node": "note",   "port": "frequency"}, "to": {"node": "sine",   "port": "frequency"}},
+    {"from": {"node": "note",   "port": "frequency"}, "to": {"node": "saw",    "port": "frequency"}},
+    {"from": {"node": "note",   "port": "gate"},      "to": {"node": "adsr",   "port": "gate"}},
+    {"from": {"node": "lfo",    "port": "out"},       "to": {"node": "sine",   "port": "fm"}},
+    {"from": {"node": "lfo",    "port": "out"},       "to": {"node": "filter", "port": "cutoff_mod"}},
+    {"from": {"node": "sine",   "port": "out"},       "to": {"node": "mixer",  "port": "in1"}},
+    {"from": {"node": "saw",    "port": "out"},       "to": {"node": "mixer",  "port": "in2"}},
+    {"from": {"node": "noise",  "port": "out"},       "to": {"node": "mixer",  "port": "in3"}},
+    {"from": {"node": "mixer",  "port": "out"},       "to": {"node": "filter", "port": "in"}},
+    {"from": {"node": "filter", "port": "out"},       "to": {"node": "delay",  "port": "in"}},
+    {"from": {"node": "delay",  "port": "out"},       "to": {"node": "vca",    "port": "in"}},
+    {"from": {"node": "adsr",   "port": "out"},       "to": {"node": "vca",    "port": "gain"}},
+    {"from": {"node": "vca",    "port": "out"},       "to": {"node": "out",    "port": "left"}},
+    {"from": {"node": "vca",    "port": "out"},       "to": {"node": "out",    "port": "right"}}
+  ]
+}

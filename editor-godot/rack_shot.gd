@@ -17,6 +17,10 @@ var _patch := "res://examples/first-synth.json"
 var _style := "physical"
 var _out := ""
 var _zoom := 1.0
+var _colouring := "type"
+var _size := Vector2i(1600, 900)
+## The case, in rack pixels. Independent of how many of them reach the screen.
+var _case := Vector2(1560.0, 1180.0)
 
 
 func _initialize() -> void:
@@ -31,10 +35,22 @@ func _run() -> void:
 			"--style": _style = args[i + 1]
 			"--out": _out = args[i + 1]
 			"--zoom": _zoom = float(args[i + 1])
+			"--colour": _colouring = args[i + 1]
+			"--size": _size = Vector2i(int(args[i + 1]), int(args[i + 2]))
+			"--case": _case = Vector2(float(args[i + 1]), float(args[i + 2]))
 
 	Design.use_palette(Design.Palette.LAB)
-	root.size = Vector2i(1600, 900)
 	root.title = "rack — %s" % _style
+
+	# A SubViewport rather than the window. The window is whatever the desktop allowed —
+	# 1440x900 here whatever root.size was set to — so a rack taller than that lost its
+	# bottom row to a crop that looked like a layout bug. An offscreen target is the size
+	# it is told, which also makes the high-DPI pass just a bigger one of these.
+	var view := SubViewport.new()
+	view.size = _size
+	view.transparent_bg = false
+	view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	root.add_child(view)
 
 	var file := FileAccess.open(_patch, FileAccess.READ)
 	if file == null:
@@ -44,9 +60,14 @@ func _run() -> void:
 	var patch: Dictionary = JSON.parse_string(file.get_as_text())
 
 	var rack := Rack.new()
-	rack.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# The case is a fixed size and the zoom is a camera on it. Anchoring the rack to the
+	# viewport instead made every zoom a different rack: at 50% the layout had twice the
+	# room and packed nine modules into the first row, so the set that was meant to show
+	# one rack at four sizes showed four racks. A real case does not get wider when you
+	# step back from it.
+	rack.size = _case
 	rack.scale = Vector2(_zoom, _zoom)
-	root.add_child(rack)
+	view.add_child(rack)
 	# _ready builds the cable layer, and rebuild() moves it to the front. Called in the
 	# same breath as add_child it finds nothing to move and dies on a null child.
 	await process_frame
@@ -62,13 +83,14 @@ func _run() -> void:
 		"note": CableArt.PALETTE["magenta"],
 	}
 	rack.cable_style = STYLES.get(_style, 2)
+	rack.cable_colouring = 1 if _colouring == "cable" else 0
 	rack.patch = patch
 	# patch is a plain field; the build is a separate call, and assigning without it gets
 	# you an empty rack that looks like a rendering failure.
 	rack.rebuild()
 
 	if _out != "":
-		await _shoot(rack)
+		await _shoot(rack, view)
 
 
 func _registry() -> Dictionary:
@@ -85,7 +107,7 @@ func _registry() -> Dictionary:
 	return out
 
 
-func _shoot(rack: Rack) -> void:
+func _shoot(rack: Rack, view: SubViewport) -> void:
 	# Three frames rather than two: the rack builds its modules on the first, lays them
 	# out on the second, and only draws cables once the jacks know where they are.
 	await process_frame
@@ -98,7 +120,7 @@ func _shoot(rack: Rack) -> void:
 	# renders three frames and quits has no next event.
 	rack._cables.queue_redraw()
 	await process_frame
-	var image := root.get_texture().get_image()
+	var image := view.get_texture().get_image()
 	if image.save_png(_out) == OK:
 		print("wrote %s" % _out)
 	else:

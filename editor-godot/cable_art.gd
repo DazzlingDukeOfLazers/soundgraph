@@ -112,7 +112,10 @@ class Style extends RefCounted:
 	# The cast shadow that lifts the cable off the faceplate.
 	var shadow_width := 8.0
 	var shadow_offset := Vector2(1.0, 2.0)
-	var shadow_alpha := 0.22
+	## Reduced from 0.22. The weight a cable carries comes from the whole stack, not from
+	## the body, and the broad shadow is the pass that costs the least to lose — a rack of
+	## amber cables read as dominant while every individual measurement was correct.
+	var shadow_alpha := 0.18
 
 	## The dark edge, at full body width rather than a fraction of it.
 	##
@@ -276,13 +279,28 @@ static func control_points(a: Vector2, b: Vector2, slack: float, id := "",
 	var left := droop * (1.0 + 0.08 * _wobble(id, 1))
 	var right := droop * (1.0 + 0.08 * _wobble(id, 2))
 	var bow := span * 0.06
+
+	# How nearly the two jacks are stacked, 0 for side by side and 1 for one above the
+	# other. Two exits both pointing out of the panel means a cable between stacked jacks
+	# has to leave downwards, fall, and come back up — which is what a real one does, and
+	# what the mirrored bow turned into an S written straight down the module's own jack
+	# column: a hard vertical line covering every jack between the two it connects, and
+	# reading as a PCB trace rather than as anything hanging.
+	#
+	# So the swing goes the same way at both ends instead of opposite ways. The cable
+	# leans out to one side, falls, and returns — the loop is still there, it just happens
+	# beside the column rather than on top of it. Which side is seeded, so a cable keeps
+	# it, and two cables down the same column do not choose the same one.
+	var vertical := clampf(1.0 - absf(b.x - a.x) / maxf(absf(b.y - a.y), 1.0), 0.0, 1.0)
+	var swing := span * 0.30 * vertical * (1.0 if _wobble(id, 5) >= 0.0 else -1.0)
+
 	# The control points continue along the exit direction before the droop is applied, so
 	# the curve leaves the plug the way the plug points and only then falls. Without this
 	# the first control sits straight below the lead-out and the cable turns a corner
 	# where it should be easing.
 	return [a,
-		a + a_dir * ease + Vector2(bow * (0.6 + 0.4 * _wobble(id, 3)), left),
-		b + b_dir * ease + Vector2(-bow * (0.9 + 0.4 * _wobble(id, 4)), right),
+		a + a_dir * ease + Vector2(bow * (0.6 + 0.4 * _wobble(id, 3)) + swing, left),
+		b + b_dir * ease + Vector2(-bow * (0.9 + 0.4 * _wobble(id, 4)) + swing, right),
 		b]
 
 
@@ -308,8 +326,15 @@ static func cable_path(a: Vector2, a_dir: Vector2, b: Vector2, b_dir: Vector2,
 		slack: float, style: Style, id := "") -> PackedVector2Array:
 	var out_a := exit_point(a, a_dir, style)
 	var out_b := exit_point(b, b_dir, style)
-	var lead_a := out_a + a_dir * style.lead_out
-	var lead_b := out_b + b_dir * style.lead_out
+	# The straight run out of the panel — plug, relief, lead-out — held inside the room the
+	# plug was given. Otherwise the tier that was demoted because it would have collided
+	# with the next jack goes and collides with it anyway, in cable rather than in plug.
+	var lead := style.lead_out
+	if style.max_reach < INF:
+		lead = maxf(style.lead_out * 0.35,
+			minf(style.lead_out, style.max_reach - a.distance_to(out_a)))
+	var lead_a := out_a + a_dir * lead
+	var lead_b := out_b + b_dir * lead
 
 	var controls: Array = control_points(lead_a, lead_b, slack, id, 90.0,
 		a_dir, b_dir, style.ease)
@@ -320,7 +345,17 @@ static func cable_path(a: Vector2, a_dir: Vector2, b: Vector2, b_dir: Vector2,
 
 
 ## Where the cable proper begins: past the barrel and the strain relief.
+##
+## Past whichever of those the plug is actually drawing. The flat tiers have no barrel and
+## no relief — that is what makes them flat — but the cable went on leaving 38 px below
+## the socket as though they were there, which in a column of jacks 28 px apart is a
+## straight drop across the next one and a half. In a four-input mixer every cable then
+## appeared to be plugged into the jack below its own. The plug reports the room it needs;
+## the cable has to believe the same number.
 static func exit_point(jack: Vector2, direction: Vector2, style: Style) -> Vector2:
+	var tier := plug_lod(style)
+	if tier == PlugLod.GLYPH or tier == PlugLod.ICON:
+		return jack + direction * (style.plug_width * style.thickness * 0.5)
 	var forward := style.plug_length * style.thickness * (1.0 - style.plug_seat)
 	return jack + direction * (forward + style.relief_length)
 
@@ -352,6 +387,69 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 	canvas.draw_polyline(shifted(points, style.highlight_offset),
 		Color(lighten(colour, style.highlight_lighten), style.highlight_alpha),
 		style.highlight_width, true)
+
+
+## Where one cable crosses another, as points on the upper cable's path.
+##
+## Cheap on purpose. Two whole paths are rejected on their bounding boxes before a single
+## segment is looked at, which kills most of the pairs in a rack, and near-misses are not
+## chased: a crossing the eye cannot see does not need to be explained to it.
+static func crossings(upper: PackedVector2Array,
+		lower: PackedVector2Array) -> PackedVector2Array:
+	var hits := PackedVector2Array()
+	if upper.size() < 2 or lower.size() < 2:
+		return hits
+	var box_a := _bounds(upper)
+	var box_b := _bounds(lower)
+	if not box_a.grow(2.0).intersects(box_b):
+		return hits
+	for i in upper.size() - 1:
+		var p1 := upper[i]
+		var p2 := upper[i + 1]
+		var seg := Rect2(p1, Vector2.ZERO).expand(p2).grow(1.0)
+		if not seg.intersects(box_b):
+			continue
+		for j in lower.size() - 1:
+			var hit: Variant = Geometry2D.segment_intersects_segment(
+				p1, p2, lower[j], lower[j + 1])
+			if hit != null:
+				hits.append(hit)
+				break        # one mark per segment; a crossing is not a series of them
+	return hits
+
+
+## A short darker shadow under the upper cable, local to where it passes over another.
+##
+## The same trick that made the plug read: topology by occlusion rather than by depth. The
+## eye is told which cable is on top by seeing one of them darkened where the other lies
+## across it, and that is the whole of the claim — no depth buffer, no cable-length
+## shadows cast onto neighbours, nothing that would need a z-order the document does not
+## have. Only the crossing is reinforced.
+static func draw_crossing_shadow(canvas: CanvasItem, upper: PackedVector2Array,
+		at: Vector2, style: Style, radius := 10.0) -> void:
+	var local := PackedVector2Array()
+	for point: Vector2 in upper:
+		if point.distance_to(at) <= radius:
+			local.append(point)
+	# A curve this smooth can put fewer than two vertices inside a 10 px window, and a
+	# one-point polyline draws nothing at all.
+	if local.size() < 2:
+		local = PackedVector2Array([at - Vector2(radius, 0.0) * 0.4,
+			at + Vector2(radius, 0.0) * 0.4])
+	# Wider than the cable's own shadow and darker, or it is not there at all: the upper
+	# cable lays its normal two shadow passes and then its 5 px body over this one, and a
+	# stroke narrower than the body only ever darkens what the body then covers. What has
+	# to show is the halo either side.
+	canvas.draw_polyline(shifted(local, style.shadow_offset * 1.2),
+		Color(0.0, 0.0, 0.0, style.shadow_alpha * 2.4),
+		style.shadow_width + style.thickness, true)
+
+
+static func _bounds(points: PackedVector2Array) -> Rect2:
+	var box := Rect2(points[0], Vector2.ZERO)
+	for point: Vector2 in points:
+		box = box.expand(point)
+	return box
 
 
 static func draw_jack(canvas: CanvasItem, centre: Vector2, radius: float,

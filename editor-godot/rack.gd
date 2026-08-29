@@ -19,6 +19,7 @@ const Seams := preload("res://seams.gd")
 ## case has no coordinates either; you slide modules along a rail.
 
 const Layout := preload("res://layout.gd")
+const CableArt := preload("res://cable_art.gd")
 
 signal parameter_changed(node_id: String, parameter: String, value: float)
 signal edit_started()
@@ -37,6 +38,24 @@ signal node_selected(node_id: String)
 ## catenary is not obviously worse. It is cheaper, it is already tuned, and on a dense
 ## rack the extra material may cost more legibility than it buys.
 enum CableStyle { CATENARY, PCB, PHYSICAL }
+
+## Where a cable's colour comes from.
+##
+## TYPE is what the rack has always done: audio one colour, control another, so the
+## picture says something true about the patch. With two signal types in the whole
+## vocabulary that means a rack is two colours, and the physical renderer turns that into
+## a wall of yellow — which is a fact about the palette test, not about the palette.
+##
+## CABLE is what a real case looks like. You reach into the bag and take whatever is
+## there, so colour carries no meaning at all and the eight candy colours are all in play.
+## Nothing has been decided here; it exists so the question can be looked at rather than
+## argued about, and the stress patch is rendered both ways.
+enum CableColouring { TYPE, CABLE }
+
+## The bag, in a fixed order. A cable takes its colour from where it sits in the document,
+## so a patch keeps the same colours every time it is opened.
+const CABLE_BAG: Array[String] = ["cyan", "amber", "magenta", "chartreuse", "violet",
+	"orange", "teal", "coral"]
 
 # Eurorack geometry, in pixels rather than millimetres. HP is the real horizontal pitch
 # unit; module widths are whole numbers of it, which is what makes a wall of modules line
@@ -195,6 +214,13 @@ static func category_tint(category: String) -> Color:
 var registry: Dictionary = {}
 var patch: Dictionary = {}
 var type_colours: Dictionary = {}
+
+## TYPE or CABLE. See CableColouring.
+var cable_colouring: int = CableColouring.TYPE:
+	set(value):
+		cable_colouring = value
+		if _cables != null:
+			_cables.queue_redraw()
 
 ## Returns the samples on a node's output, or an empty array. Set by the editor.
 ##
@@ -755,7 +781,10 @@ func cable_endpoints() -> Array:
 		# belong to what without going back to the patch for every one of them.
 		# The tighter of the two ends: one style is built per cable, and a plug that fits
 		# at one end and overlaps the jack below at the other is still wrong.
-		cables.append([a, b, type_colours.get(signal_type, Color.WHITE),
+		var ink: Color = type_colours.get(signal_type, Color.WHITE)
+		if cable_colouring == CableColouring.CABLE:
+			ink = CableArt.PALETTE[CABLE_BAG[cables.size() % CABLE_BAG.size()]]
+		cables.append([a, b, ink,
 			str(connection["from"]["node"]), str(connection["to"]["node"]),
 			minf(from_module.jack_pitch(), to_module.jack_pitch())])
 	return cables
@@ -887,6 +916,10 @@ class CableLayer extends Control:
 		var cables: Array = rack.cable_endpoints()
 		var lane_step := 13.0
 
+		if rack.cable_style == Rack.CableStyle.PHYSICAL:
+			_draw_physical_all(cables)
+			return
+
 		# The rack draws its own cables, which is why the dimming half of this is here
 		# and not in the graph view: GraphEdit paints connections itself and offers no
 		# per-cable alpha, so there the best available answer was to brighten a path and
@@ -910,7 +943,6 @@ class CableLayer extends Control:
 				points = Rack.pcb_route(a, b, lane)
 
 			if rack.cable_style == Rack.CableStyle.PHYSICAL:
-				_draw_physical(a, b, colour, related, hovered, float(entry[5]))
 				continue
 
 			var width: float = 5.0 if hovered else 4.0
@@ -934,6 +966,51 @@ class CableLayer extends Control:
 				for spot: Vector2 in [a, b]:
 					draw_arc(spot, 12.0, 0.0, TAU, 28, colour, 2.0, true)
 
+	## Every physical cable, in document order, with the crossings marked as they arrive.
+	##
+	## The whole set is planned before anything is drawn, because a cable cannot know it is
+	## passing over another one until the other one's path exists. Document order is the
+	## z-order: later cables lie on top, which is arbitrary but stable, and stability is
+	## what the eye needs from it — a crossing that swapped which cable was on top between
+	## redraws would be worse than no cue at all.
+	func _draw_physical_all(cables: Array) -> void:
+		var paths: Array[PackedVector2Array] = []
+		var styles: Array = []
+		var inks: PackedColorArray = PackedColorArray()
+		for index in cables.size():
+			var entry: Array = cables[index]
+			var style: CableArt.Style = _physical_style(
+				index == rack.hovered_cable, rack.cable_related(index, cables),
+				float(entry[5]))
+			var ink: Color = entry[2]
+			if not rack.cable_related(index, cables):
+				ink = Design.recede(ink, Design.SURFACES[Design.Surface.CANVAS], DIM_TARGET)
+			var out := Vector2.DOWN
+			# Seeded from the endpoints, so a cable keeps its own hang between redraws and
+			# two cables between the same pair of modules do not lie on top of each other.
+			var seed := "%d:%d" % [int(entry[0].x) * 31 + int(entry[0].y),
+				int(entry[1].x) * 31 + int(entry[1].y)]
+			paths.append(CableArt.cable_path(entry[0], out, entry[1], out, 0.82, style, seed))
+			styles.append(style)
+			inks.append(ink)
+
+		for index in paths.size():
+			var style: CableArt.Style = styles[index]
+			# Under this cable, where it lies across the ones already down.
+			for earlier in index:
+				for at: Vector2 in CableArt.crossings(paths[index], paths[earlier]):
+					CableArt.draw_crossing_shadow(self, paths[index], at, style)
+			CableArt.draw_cable(self, paths[index], inks[index], style)
+			CableArt.draw_plug_adaptive(self, cables[index][0], Vector2.DOWN,
+				inks[index], style)
+			CableArt.draw_plug_adaptive(self, cables[index][1], Vector2.DOWN,
+				inks[index], style)
+			# Both ends of the hovered cable, because a brightened curve still has to be
+			# followed by eye to find where it lands.
+			if index == rack.hovered_cable:
+				for spot: Vector2 in [cables[index][0], cables[index][1]]:
+					draw_arc(spot, 14.0, 0.0, TAU, 28, cables[index][2], 2.0, true)
+
 	## A cable as an illustrated object: plug, collar, relief, body, and a hang of its own.
 	##
 	## The path comes from cable_art rather than from Rack.catenary, because the plug has
@@ -944,8 +1021,7 @@ class CableLayer extends Control:
 	## Cables leave a faceplate towards the viewer, which in this projection is down. Not
 	## along the line to the other jack: a cable that exits sideways is a cable entering
 	## the module's edge, which is the thing the whole exercise exists to avoid.
-	func _draw_physical(a: Vector2, b: Vector2, colour: Color, related: bool,
-			hovered: bool, pitch: float) -> void:
+	func _physical_style(hovered: bool, related: bool, pitch: float) -> CableArt.Style:
 		var style: CableArt.Style = CableArt.Style.new()
 		style.thickness = 6.0 if hovered else 5.0
 		# What the plug has to fit inside. Measured, not assumed: it is the difference
@@ -962,21 +1038,8 @@ class CableLayer extends Control:
 		if not related:
 			style.thickness *= DIM_WIDTH
 			style.shadow_alpha *= DIM_SHADOW
-		var ink: Color = colour if related \
-			else Design.recede(colour, Design.SURFACES[Design.Surface.CANVAS], DIM_TARGET)
+		return style
 
-		var out := Vector2.DOWN
-		# Seeded from the endpoints, so a cable keeps its own hang between redraws and two
-		# cables between the same pair of modules do not lie on top of each other.
-		var seed := "%d:%d" % [int(a.x) * 31 + int(a.y), int(b.x) * 31 + int(b.y)]
-		var points := CableArt.cable_path(a, out, b, out, 0.82, style, seed)
-		CableArt.draw_cable(self, points, ink, style)
-		CableArt.draw_plug_adaptive(self, a, out, ink, style)
-		CableArt.draw_plug_adaptive(self, b, out, ink, style)
-
-		if hovered:
-			for spot: Vector2 in [a, b]:
-				draw_arc(spot, 14.0, 0.0, TAU, 28, colour, 2.0, true)
 
 # ---------------------------------------------------------------------------------
 # A module
@@ -1105,11 +1168,19 @@ class RackModule extends Control:
 			pitch = minf(pitch, jack.size.y)
 		return pitch if pitch < INF else 0.0
 
+	## Where a jack's socket is, in the rack's own coordinates.
+	##
+	## Through the transforms rather than by adding positions up. The arithmetic version —
+	## module position plus the jack's global offset from the module — is only correct
+	## while nothing between the jack and the rack is scaled, and the rack zooms by
+	## scaling itself: a global-space delta is then twice a local one, so at 2x every
+	## cable landed short of the jack it was plugged into by half the distance from the
+	## rack's own corner. Which looks like a rendering bug and is an arithmetic one.
 	func jack_position(port_name: String, is_input: bool):
 		for jack: Jack in _jacks:
 			if jack.port_name == port_name and jack.is_input == is_input:
-				return position + jack.global_position - global_position \
-					+ jack.socket_centre()
+				var point: Vector2 = jack.get_global_transform() * jack.socket_centre()
+				return rack.get_global_transform().affine_inverse() * point
 		return null
 
 	# Dragging slides a module along the rail — the one thing you can do to a real rack
