@@ -1971,7 +1971,9 @@ func _on_view_menu(id: int) -> void:
 	if id < 10:
 		for index in 2:
 			view_popup.set_item_checked(index, index == id)
-		rack.cable_style = id
+		# The graph's routing only. The rack keeps its physical cords: yoking both
+		# views to one menu id is how choosing PCB for the diagram silently stripped
+		# the rack back to thin lines.
 		graph_edit.cable_style = id
 		graph_edit.refresh_cables()
 		return

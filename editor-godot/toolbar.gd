@@ -315,8 +315,8 @@ func _build() -> void:
 
 	view_popup = PopupMenu.new()
 	view_popup.name = "ViewMenu"
-	view_popup.add_radio_check_item("Cables: catenary", 0)
-	view_popup.add_radio_check_item("Cables: PCB", 1)
+	view_popup.add_radio_check_item("Graph cables: catenary", 0)
+	view_popup.add_radio_check_item("Graph cables: PCB", 1)
 	view_popup.set_item_checked(0, true)
 	view_popup.add_separator()
 	for index in CASE_LABELS.size():

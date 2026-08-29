@@ -344,7 +344,13 @@ var home_lookup: Callable = Callable()
 var ink: Color = Rack.panel_ink(1.0)
 var ink_dim: Color = Rack.panel_ink(0.62)
 
-var cable_style: int = CableStyle.CATENARY:
+## PHYSICAL by default: this is the physical lens, and the cords — the landing marks,
+## the material stack, the crossing occlusion — are its cable language. The thin
+## catenary and PCB modes remain reachable in code for the lab and for tests, but the
+## app itself no longer starts the rack in a diagram style. Which is exactly how weeks
+## of cord work stayed invisible: every render script flipped this to PHYSICAL by hand,
+## the menu only offered the other two, and the default made the screenshots a fiction.
+var cable_style: int = CableStyle.PHYSICAL:
 	set(value):
 		cable_style = value
 		redraw_cables()
