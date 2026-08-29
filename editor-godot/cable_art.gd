@@ -73,13 +73,33 @@ static func plug_lod(style: Style) -> int:
 	# the wrong side of a threshold written before the plug had its final width — so the
 	# primary working scale rendered the simplified model and the full one was reachable
 	# only by zooming in. Thresholds should be tuned to the sizes that actually occur.
-	if diameter >= 11.0:
+	#
+	# Diameter alone is not enough, though, and the real rack is what proved it. A plug
+	# has to fit in the room between one jack and the next, and in the rack that room is
+	# the jack pitch — 28 px, against a full assembly that reaches about 23 and a cable
+	# still travelling straight for 16 after that. Every plug landed on the socket below
+	# it: a module's `frequency` covered its `gate`, and an empty jack under a plugged one
+	# looked plugged. Width was never the problem. Length was.
+	diameter *= style.screen_scale
+	var reach: float = style.max_reach
+	if diameter >= 11.0 and plug_reach(style, PlugLod.FULL) <= reach:
 		return PlugLod.FULL
-	if diameter >= 8.0:
+	if diameter >= 8.0 and plug_reach(style, PlugLod.SIMPLE) <= reach:
 		return PlugLod.SIMPLE
 	if diameter >= 5.0:
 		return PlugLod.GLYPH
 	return PlugLod.ICON
+
+
+## How far out of the panel a tier's assembly actually extends, in pixels.
+##
+## Barrel plus relief. The flat tiers project nothing, so they always fit.
+static func plug_reach(style: Style, tier: int) -> float:
+	if tier != PlugLod.FULL and tier != PlugLod.SIMPLE:
+		return 0.0
+	var length: float = style.plug_length * style.thickness \
+		* sin(deg_to_rad(style.tilt_degrees)) * 1.9
+	return length + style.relief_length * (1.0 if tier == PlugLod.FULL else 0.7)
 
 
 class Style extends RefCounted:
@@ -145,7 +165,15 @@ class Style extends RefCounted:
 	var plug_view := PlugView.SIDE
 	var tilt_degrees := 27.0
 	var barrel_taper := 0.13
-	var plug_body := Color("26282C")
+	## The barrel. Darker than any panel it might be drawn on.
+	##
+	## It was 26282C, which is a fine charcoal and almost exactly the colour of a module
+	## panel — so on the lab's mock faceplate the barrel read, and in the real rack it
+	## disappeared entirely. What survived was the pair of lighting lines drawn on it,
+	## 6 px apart, which looked like a thin grey wire threaded through a grommet: the
+	## chunkiest part of the assembly rendering as the thinnest. A plug is a black
+	## anodised or nickel object and can safely be darker than every surface behind it.
+	var plug_body := Color("141619")
 	## The mouth of the socket, behind the barrel. A hole for the plug to be in.
 	var socket_mouth := Color("07080A")
 	## The rim, as a fraction of the jack radius. A rim frames the insertion; a filled
@@ -165,6 +193,21 @@ class Style extends RefCounted:
 	## dead code that looked like coverage. A floor and a threshold that contradict each
 	## other are worse than either alone.
 	var min_plug := 4.0
+
+	## The room the plug has to project into, in pixels, before it runs into whatever is
+	## next to the socket. INF means open panel: the lab sheets, where nothing is near.
+	##
+	## The rack sets it from its jack pitch. This is the one thing a synthetic sheet could
+	## never supply, and it is what decides the tier as much as the size does.
+	var max_reach := INF
+
+	## Pixels on the glass per pixel of this style, when the canvas is scaled under us.
+	##
+	## The rack zooms by scaling a Control, so a 5 px cable is 5 px in the numbers here and
+	## something else entirely on the screen — and the whole point of choosing a tier from
+	## screen-space size is that it survives exactly this. Reach does not need it: the room
+	## between two jacks scales with the plug that has to fit in it.
+	var screen_scale := 1.0
 
 	func scaled(zoom: float) -> Style:
 		var out := Style.new()
@@ -508,16 +551,17 @@ static func draw_plug_emergent(canvas: CanvasItem, jack: Vector2, direction: Vec
 static func draw_plug_topdown(canvas: CanvasItem, jack: Vector2, direction: Vector2,
 		colour: Color, style: Style) -> void:
 	var t := style.thickness
-	var along := direction.normalized()
 	var radius := style.plug_width * t * 0.5
 
-	_ellipse(canvas, jack, along, radius * 0.86, radius * 0.86, style.plug_body)
+	_ellipse(canvas, jack, direction.normalized(), radius * 0.86, radius * 0.86, style.plug_body)
 	# A ring of cable colour inside the socket: the endpoint cue, with nothing pretending
 	# to stand out of the panel.
 	canvas.draw_arc(jack, radius * 0.62, 0.0, TAU, 28, colour, maxf(2.0, t * 0.5), true)
-	if style.detail() != Detail.ICON:
-		_taper(canvas, jack + along * radius * 0.5, jack + along * (radius + style.relief_length),
-			t * 0.75, t * 0.5, darken(colour, 0.45))
+	# And nothing else. There was a strain relief here, a tapered wedge reaching a further
+	# 14 px out of the socket, which is most of the way to the next jack — so the tier
+	# chosen because the full plug would not fit went and did not fit either, by a
+	# different route. A glyph that keeps one piece of the object it replaced is not a
+	# glyph. Socket, bright ring, cable.
 
 
 static func _quad(canvas: CanvasItem, from: Vector2, to: Vector2, across: Vector2,

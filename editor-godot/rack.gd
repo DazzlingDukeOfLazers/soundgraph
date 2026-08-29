@@ -753,8 +753,11 @@ func cable_endpoints() -> Array:
 		var signal_type := from_module.port_type(str(connection["from"]["port"]), false)
 		# The node ids travel with the geometry, so the layer can tell which cables
 		# belong to what without going back to the patch for every one of them.
+		# The tighter of the two ends: one style is built per cable, and a plug that fits
+		# at one end and overlaps the jack below at the other is still wrong.
 		cables.append([a, b, type_colours.get(signal_type, Color.WHITE),
-			str(connection["from"]["node"]), str(connection["to"]["node"])])
+			str(connection["from"]["node"]), str(connection["to"]["node"]),
+			minf(from_module.jack_pitch(), to_module.jack_pitch())])
 	return cables
 
 
@@ -907,7 +910,7 @@ class CableLayer extends Control:
 				points = Rack.pcb_route(a, b, lane)
 
 			if rack.cable_style == Rack.CableStyle.PHYSICAL:
-				_draw_physical(a, b, colour, related, hovered)
+				_draw_physical(a, b, colour, related, hovered, float(entry[5]))
 				continue
 
 			var width: float = 5.0 if hovered else 4.0
@@ -942,9 +945,20 @@ class CableLayer extends Control:
 	## along the line to the other jack: a cable that exits sideways is a cable entering
 	## the module's edge, which is the thing the whole exercise exists to avoid.
 	func _draw_physical(a: Vector2, b: Vector2, colour: Color, related: bool,
-			hovered: bool) -> void:
+			hovered: bool, pitch: float) -> void:
 		var style: CableArt.Style = CableArt.Style.new()
 		style.thickness = 6.0 if hovered else 5.0
+		# What the plug has to fit inside. Measured, not assumed: it is the difference
+		# between a rack whose modules have four ports in a column and one whose modules
+		# have two, and the renderer should not have to be retuned when that changes.
+		if pitch > 0.0:
+			style.max_reach = pitch - Rack.jack_radius()
+		# The rack zooms by scaling itself, so everything above is in rack pixels and the
+		# tier has to be decided in screen ones. The floor has to come back the other way:
+		# a 2.75 px minimum cable is 2.75 px of glass, which at half zoom is 5.5 of ours.
+		var zoom: float = maxf(get_global_transform().get_scale().x, 0.01)
+		style.screen_scale = zoom
+		style.thickness = maxf(style.thickness, style.min_thickness / zoom)
 		if not related:
 			style.thickness *= DIM_WIDTH
 			style.shadow_alpha *= DIM_SHADOW
@@ -1080,6 +1094,17 @@ class RackModule extends Control:
 		return ""
 
 	## Centre of a jack, in rack space, or null when this module has no such port.
+	## The vertical room one jack has before the next one starts.
+	##
+	## The jacks are stacked in a VBoxContainer with no separation, so the pitch is simply
+	## a jack's own height — but it is the number that decides whether an illustrated plug
+	## fits, and nothing outside this class knows it.
+	func jack_pitch() -> float:
+		var pitch := INF
+		for jack: Jack in _jacks:
+			pitch = minf(pitch, jack.size.y)
+		return pitch if pitch < INF else 0.0
+
 	func jack_position(port_name: String, is_input: bool):
 		for jack: Jack in _jacks:
 			if jack.port_name == port_name and jack.is_input == is_input:

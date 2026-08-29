@@ -68,7 +68,7 @@ func _run() -> void:
 	rack.rebuild()
 
 	if _out != "":
-		await _shoot()
+		await _shoot(rack)
 
 
 func _registry() -> Dictionary:
@@ -85,11 +85,18 @@ func _registry() -> Dictionary:
 	return out
 
 
-func _shoot() -> void:
+func _shoot(rack: Rack) -> void:
 	# Three frames rather than two: the rack builds its modules on the first, lays them
 	# out on the second, and only draws cables once the jacks know where they are.
 	await process_frame
 	await process_frame
+	await process_frame
+	# And then draw them again. A jack reports where it is from its global_position, which
+	# is a number the container writes during layout — so the cable layer's first pass
+	# read every jack as sitting at its module's origin, and every cable in the shot left
+	# from the same corner. On screen the next input event hides this; a script that
+	# renders three frames and quits has no next event.
+	rack._cables.queue_redraw()
 	await process_frame
 	var image := root.get_texture().get_image()
 	if image.save_png(_out) == OK:
