@@ -58,6 +58,33 @@ The close glyph is drawn, not typed. `✕` is not in the editor's font, and
 `editor_test.gd` refuses text the font cannot draw — the check that exists because of the
 tofu incident, doing its job on the first panel written after it. `Icons.Kind.CROSS`.
 
+### The polish pass
+
+Reviewed in the editor, four corrections, no change to the width or the column
+proportions:
+
+- **It hung too low.** The drop is measured to the panel's *visible* edge now, not the
+  window's — the shadow gutter is inside the popup's rectangle, so a drop measured from
+  the window lands the panel that much further down again. Fourteen scaled pixels below
+  the button, and asked for a second time after `popup()`, which nudges a window by a few
+  pixels of its own accord. That is invisible on a dialog placed in the middle of a
+  window and is the whole measurement on one hung off a toolbar button.
+- **The header was too airy.** No separation under the title row: the row is already
+  taller than its text, because the close button sets its height, and a gap on top of
+  that pushed the column headings far enough down that the browser read as a large blank
+  dialog waiting for content. Seventeen pixels between title and headings became nine.
+- **The dividers were the loudest thing in the body.** Between three empty columns, at
+  full border strength, they read as rails rather than as structure. Softened 45% toward
+  the surface they sit on; when the columns carry lists they should recede under them.
+- **The old palette stays on Ctrl+Space.** Confirmed rather than changed.
+
+### The type grammar
+
+Small uppercase grey labels for structural regions; normal mixed case for anything
+interactive. `CATEGORIES / NODES / PREVIEW & DETAILS` set it, and every step after this
+one follows it — it is what stops a browser full of categories, results, group headings
+and detail fields from becoming a wall of equally weighted text.
+
 Pinned by the suite: the toolbar's own signal opens it, the three columns exist, all three
 ways out work, and the patch underneath is left where it was. That last check first failed
 against a zoom that was still settling from an earlier check two frames after being asked

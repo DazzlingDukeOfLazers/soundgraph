@@ -27,6 +27,8 @@ const COLUMN_PREVIEW := 360
 const BROWSER_HEIGHT := 620
 ## The gutter the shadow falls into, inside the popup's own rectangle.
 const SHADOW := 14
+## How far the panel's visible top edge sits below the toolbar button that opened it.
+const DROP := 14
 ## Padding either side plus two column gaps: 964, inside the spec's 900-1000.
 const WIDTH := COLUMN_CATEGORIES + COLUMN_RESULTS + COLUMN_PREVIEW + GUTTER * 4
 ## Panel padding, column gap and section spacing are one figure, as the spec asks. The
@@ -68,7 +70,11 @@ func _ready() -> void:
 # No FULL_RECT preset: PopupPanel lays its own single child out inside the panel's
 # margins, and a child that also anchors to the whole popup gets counted twice —
 # the panel came out 48px larger than it was asked for in both directions.
-	body.add_theme_constant_override("separation", Design.SPACE_S)
+	# Nothing under the title row: the row is already taller than its text — the close
+	# button sets its height — and a gap on top of that put the column headings far
+	# enough below the title that the browser read as a large blank dialog waiting for
+	# content. The columns carry their own spacing under their own headings.
+	body.add_theme_constant_override("separation", 0)
 	add_child(body)
 
 	# The title row carries the close button. Esc and a click outside close it too; the
@@ -131,7 +137,12 @@ func _column(row: HBoxContainer, width: int, heading: String,
 		rule.custom_minimum_size.x = 1
 		rule.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		var hairline := StyleBoxFlat.new()
-		hairline.bg_color = Design.BORDERS[Design.Surface.RAISED]
+		# Softer than the panel's own border. At full border strength a divider between
+		# three empty columns is the strongest thing in the body, which makes the browser
+		# read as rails rather than as structure; once the columns carry lists it should
+		# recede under them.
+		hairline.bg_color = Design.BORDERS[Design.Surface.RAISED].lerp(
+			Design.SURFACES[Design.Surface.RAISED], 0.45)
 		rule.add_theme_stylebox_override("panel", hairline)
 		row.add_child(rule)
 	return content
@@ -161,8 +172,18 @@ func open_beside(anchor: Rect2i) -> void:
 	var frame := Vector2i(get_theme_stylebox("panel").get_minimum_size())
 	size = outer - frame
 
-	var at := Vector2i(anchor.position.x, anchor.end.y + Design.scale(Design.SPACE_S))
+	# The visible edge sits DROP below the button, not the window's edge: the shadow
+	# gutter lives inside the popup's rectangle, so a drop measured from the window
+	# would land the panel that much further down again. It should read as the Add node
+	# control unfolding from the toolbar rather than as a dialog arriving in the middle
+	# of the editor.
+	var at := Vector2i(anchor.position.x,
+		anchor.end.y + Design.scale(DROP) - Design.scale(SHADOW))
 	var margin := Design.scale(Design.SPACE_M)
 	at.x = clampi(at.x, margin, maxi(margin, screen.x - outer.x - margin))
 	at.y = clampi(at.y, margin, maxi(margin, screen.y - outer.y - margin))
 	popup(Rect2i(at, outer - frame))
+	# Asked again after the fact. Showing a popup nudges its position by a few pixels of
+	# its own accord, which is invisible on a dialog placed in the middle of a window and
+	# is exactly the measurement that matters on one hung off a toolbar button.
+	position = at
