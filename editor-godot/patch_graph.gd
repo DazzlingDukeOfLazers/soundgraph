@@ -2679,8 +2679,13 @@ class PlugOverlay extends Control:
 				var widget := graph.get_node_or_null(NodePath(str(
 					connection["from_node" if side == 0 else "to_node"]))) as GraphNode
 				# Every node, painted or not: the socket grammar is universal now, so
-				# its occupancy cue is too.
+				# its occupancy cue is too — except on a node whose ports are drawn as
+				# sockets already. There the node's own icon is the termination, drawn
+				# over the cord because a node sits above the cord layer, and a plug
+				# barrel on top of it would be the second mark saying the same thing.
 				if widget == null or not widget.visible:
+					continue
+				if bool(widget.get_meta("diagram_ports", false)):
 					continue
 				var port := int(connection["from_port" if side == 0 else "to_port"])
 				var local: Vector2 = widget.get_output_port_position(port) if side == 0 \

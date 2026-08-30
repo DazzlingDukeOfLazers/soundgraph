@@ -1815,6 +1815,13 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	# painted, so the paint never lands on ink that has not moved yet.
 	_letter_widget(widget, key)
 
+	# Whether the overlay should leave this node's connected ends alone. A node whose
+	# ports are drawn as sockets terminates its own cables; a painted one wants the
+	# plug. Set here rather than at creation because it is a fact about the paint as
+	# much as about the type, and the paint can change while the node stands there.
+	widget.set_meta("diagram_ports", key == ModuleThemes.CATEGORY
+		and NodeIdentity.in_proving_ground(str(widget.get_meta("type", ""))))
+
 	if key == ModuleThemes.CATEGORY:
 		# No skin on the widget means no plugs at its ports: the flat type-shapes are
 		# the graph's own grammar and the physical one arrives with the faceplate.
@@ -4482,7 +4489,12 @@ func _create_widget(node: Dictionary) -> void:
 	var parameters: Array = descriptor.get("parameters", [])
 	# Whether this node lays out on the grid. Asked once, here, rather than in each of
 	# the places below that would otherwise each have their own opinion.
-	var gridded := NodeIdentity.in_proving_ground(str(node.get("type", "")))
+	#
+	# A painted module is not in it, whatever its type. Paint means the faceplate
+	# grammar — plates, grommets, plugs seated in them — and half a module in each
+	# language is worse than either: the panel suite caught exactly that, a painted patch
+	# whose filter had lost its plugs while its neighbours kept theirs.
+	var gridded := NodeIdentity.in_proving_ground(str(node.get("type", ""))) 		and _panel_style_of(str(node["id"])) == ModuleThemes.CATEGORY
 	# The port labels, kept so their columns can be squared up once they all exist. A
 	# gutter cannot know how wide it should be until the widest label in it has been
 	# built.
@@ -4610,10 +4622,14 @@ func _create_widget(node: Dictionary) -> void:
 		# doing this on its own, which meant for some people it was not being done.
 		if has_input:
 			widget.set_slot_custom_icon_left(row,
-				_port_icon(inputs[row]["type"], _panel_style_of(str(node["id"]))))
+				_port_socket(inputs[row]["type"], _port_connected(str(node["id"]),
+					str(inputs[row]["name"]), true)) if gridded
+				else _port_icon(inputs[row]["type"], _panel_style_of(str(node["id"]))))
 		if has_output:
 			widget.set_slot_custom_icon_right(row,
-				_port_icon(outputs[row]["type"], _panel_style_of(str(node["id"]))))
+				_port_socket(outputs[row]["type"], _port_connected(str(node["id"]),
+					str(outputs[row]["name"]), false)) if gridded
+				else _port_icon(outputs[row]["type"], _panel_style_of(str(node["id"]))))
 
 	# The gutters, squared up now that every label in them exists. Each side takes the
 	# width of its own longest label, so the control region has one left edge and one
@@ -4854,6 +4870,86 @@ func _style_node_title(widget: GraphNode, descriptor: Dictionary) -> void:
 ## you see stays around 10px; the region that accepts a drag is set far larger by the
 ## GraphEdit hotzone constants, so this is about telling the types apart, not about aim.
 static var _port_icons: Dictionary = {}
+
+## A port on a node that has been through the pass: a hole with a coloured ring round it.
+##
+## Three marks and a rule about what each one is for. The centre is dark because a socket
+## is a hole; the ring is the signal's own colour because that is the one thing a port
+## must say before it is read; the outer hairline is there so the ring has an edge against
+## a body of nearly its own value. That is the whole of it — no washer, no nut, no bevel,
+## no glow. The knobs have just escaped from miniature hardware and the ports are not
+## going to walk back into it.
+##
+## The signal type is still carried by shape as well as colour — audio round, control a
+## diamond, event square, note a ring — so a reader who cannot separate mint from blue
+## still can separate the ports. It is the ring that takes the shape now rather than a pip
+## inside it, which is one mark doing two jobs instead of two marks doing one each.
+##
+## Connected and unconnected differ in weight, not in light: an occupied socket has a
+## fuller ring and a trace of its own colour in the hole, an empty one is a thin ring and
+## a dark hole. Whether a cable is plugged in is not the same fact as whether signal is
+## flowing, and only one of them is allowed to glow.
+func _port_socket(type_name: String, connected: bool) -> Texture2D:
+	var cached := "socket/%s/%s" % [type_name, connected]
+	if _port_icons.has(cached):
+		return _port_icons[cached]
+
+	const SIZE := 26
+	var image := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0, 0, 0, 0))
+	var colour: Color = TYPE_COLOURS.get(type_name, Design.INK_NORMAL)
+	var centre := Vector2(SIZE * 0.5 - 0.5, SIZE * 0.5 - 0.5)
+	# The hole, in the canvas's own dark rather than in black: a socket is a hole in the
+	# node, and what you see through it is the same nothing the graph is drawn on.
+	var hole: Color = Design.SURFACES[Design.Surface.CANVAS]
+	if connected:
+		hole = hole.lerp(colour, 0.45)
+	var ring := colour if connected else Color(colour, 0.62)
+
+	# The state is a difference in weight: an occupied socket has a fuller ring and a
+	# trace of the cable's colour in the hole, an empty one is a thinner ring around a
+	# dark one. The first pair differed by a shade of alpha alone and could not be told
+	# apart on the Lowpass, which is the node that has both at once.
+	const OUTER := 8.6
+	var ring_edge: float = 7.4 if connected else 6.7
+	var bore: float = 4.2 if connected else 4.8
+	for y in SIZE:
+		for x in SIZE:
+			var point := Vector2(x, y) - centre
+			# One distance metric per signal type, so the ring is round for audio, a
+			# diamond for control, a square for events and — for notes — round with a
+			# wider bore, which reads as the open ring the old icon drew.
+			var reach := point.length()
+			match type_name:
+				"control":
+					reach = (absf(point.x) + absf(point.y)) * 0.76
+				"event":
+					reach = maxf(absf(point.x), absf(point.y)) * 0.94
+			if reach > OUTER:
+				continue
+			var fill: Color = Design.BORDERS[Design.Surface.RAISED]
+			if reach <= bore:
+				fill = hole
+			elif reach <= ring_edge:
+				fill = ring
+			image.set_pixel(x, y, Color(fill.r, fill.g, fill.b,
+				clampf(OUTER - reach, 0.0, 1.0) * (1.0 if connected else 0.92)))
+
+	var texture := ImageTexture.create_from_image(image)
+	_port_icons[cached] = texture
+	return texture
+
+
+## Whether anything is plugged into one port of one node, by the document rather than by
+## the view: the graph's own connection list is empty for a frame after a rebuild, and
+## this is asked while rebuilding.
+func _port_connected(node_id: String, port_name: String, is_input: bool) -> bool:
+	for wire: Dictionary in patch.get("connections", []):
+		var end: Dictionary = wire["to"] if is_input else wire["from"]
+		if str(end["node"]) == node_id and str(end["port"]) == port_name:
+			return true
+	return false
+
 
 func _port_icon(type_name: String, key: String = ModuleThemes.CATEGORY) -> Texture2D:
 	var cached := "%s/%s" % [type_name, key]

@@ -351,3 +351,59 @@ Node sizes are unchanged from step 5 — the diagram occupies the same box as th
 it replaced. Topology, ports, cables, values, typography, grid, chassis, detail bands and
 the other four types are all as they were: the same 66 / 24 / 0 / 0 controls at the same
 four zooms, the same seven nodes and seven wires.
+
+## Step 7 — ports and cable termination
+
+A cable should look plugged into a socket, not connected to a coloured coordinate.
+
+### The socket
+
+Three marks, and a rule about what each is for:
+
+```
+hole    dark, in the canvas's own colour     a socket is a hole in the node
+ring    the signal's colour                  what a port must say before it is read
+edge    one hairline                         so the ring has an edge against the body
+```
+
+No washer, no nut, no bevel, no glow. The knobs have just escaped from miniature hardware
+and the ports are not walking back into it.
+
+**The ring carries the type as well as the colour.** Audio is round, control a diamond,
+event a square — the same shape language the old grommet drew as a pip *inside* the
+socket, moved onto the ring itself. One mark doing two jobs instead of two marks doing one
+each, and a reader who cannot separate mint from blue can still separate the ports.
+
+**Connected and unconnected differ in weight, not in light.** An occupied socket has a
+fuller ring and a trace of the cable's colour in its hole; an empty one is a thinner ring
+around a dark one. The first attempt differed by a shade of alpha and could not be told
+apart on the Lowpass, which is the node that has both at once. Nothing glows: whether a
+cable is plugged in and whether signal is flowing are two facts, and only one of them is
+allowed to be bright.
+
+### Termination
+
+The node draws above the cord layer already, so a cable ends *under* an opaque socket with
+no masking, no reordering and no change to the connection coordinate. What had to go was
+the plug: `PlugOverlay` draws a mouth and a collar at every connected end, above
+everything, and on a node whose port is already a socket that is a second mark saying the
+same thing. Ports on the pass are skipped there; the node's own icon is the termination.
+
+### Paint wins where there is paint
+
+The proving ground is now "these three types **and** no faceplate". A painted module keeps
+the rack grammar whole — plate, grommet, plug seated in it — because half a module in each
+language is worse than either. The panel suite caught exactly that: a painted patch whose
+filter had lost its plugs while its neighbours kept theirs. It is a fact about the paint as
+much as about the type, so it is decided where the paint is, not where the widget is born.
+
+### Measured
+
+Nothing moved. Same node sizes, same port positions, same seven nodes and seven wires,
+same detail bands, same 66 / 24 / 0 / 0 controls. Signal colours untouched; no port
+renamed.
+
+The duplicate `gain` reads as two different things now, and it is placement that did it
+rather than type: one sits on the perimeter beside a blue diamond, the other under a knob
+above its own value. The spatial grammar separates them, which is what step 5 predicted it
+would take.
