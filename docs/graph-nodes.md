@@ -494,6 +494,30 @@ It costs the step nothing. The brief's own preferred metaphor for two of the thr
 conventions rather than anybody's artwork. If the API is wired up later, the place to use
 it is the rollout, where fifty types need concepts rather than three.
 
+**Where the precedent is.** Not in Raves of Qud — its working tree and every ref carry no
+mention. It is `TheMutantFactory/get-in-loser`, which uses **Noun Project API v2**
+(`GET /v2/icon/{id}`) and commits the *result* rather than a client:
+
+```
+assets/noun-4398322-source.png   the downloaded original, kept so the derived files
+                                 can be rebuilt instead of being mystery binaries
+assets/icon-licenses.json        id, term, creator, collection, tags, licence, url,
+                                 what it is used for, source file, derived files
+assets/generate_assets.py        rebuilds every derived image, byte-for-byte
+assets/README.md                 the attribution, in prose, with the modifications named
+```
+
+No key is committed anywhere, which is right, and no client either: that fetch was made
+once by hand and its answer was written down. So a key would have to be handed over
+before any mining could happen here, and it should arrive as an environment variable
+rather than in the repository.
+
+That layout is the template if SoundGraph ever does source a glyph — a source file, a
+licence record, a generator, and prose attribution, all separate from the normalised
+in-product mark. One thing it would add that SoundGraph does not have yet: CC BY 3.0
+wants visible attribution, so a sourced icon means the application needs somewhere to
+show it. Help is where that would go.
+
 ### The marks
 
 ```
