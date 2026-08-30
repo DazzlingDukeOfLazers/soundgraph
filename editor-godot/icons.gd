@@ -56,6 +56,7 @@ enum Kind {
 	STEPS,          ## sequencers
 	EXAMPLE,        ## a patch you can run
 	BANK,           ## a library of them — shared by all three banks on purpose
+	SEARCH,         ## the field at the top of the results
 }
 
 
@@ -204,6 +205,11 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				var width: float = reach * (1.05 - 0.12 * float(plate))
 				_stroke(image, Vector2(middle - width, y), Vector2(middle + width, y),
 					colour)
+		Kind.SEARCH:
+			var lens := Vector2(middle - reach * 0.22, middle - reach * 0.22)
+			_arc(image, lens, reach * 0.72, 0.0, TAU, colour)
+			_stroke(image, lens + Vector2(0.51, 0.51) * reach,
+				Vector2(middle + reach * 0.95, middle + reach * 0.95), colour)
 		Kind.CROSS:
 			# Two strokes. The multiplication sign is in the font and the ballot X is
 			# not, and reaching for either is how a close button becomes a tofu box on

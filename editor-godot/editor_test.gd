@@ -39,6 +39,15 @@ func rack_ready(main) -> void:
 	main.rack.rebuild()
 
 
+## One key event, for the handlers that are handed keys directly.
+func _key(keycode: int) -> InputEventKey:
+	var key := InputEventKey.new()
+	key.keycode = keycode
+	key.physical_keycode = keycode
+	key.pressed = true
+	return key
+
+
 ## One key press, through the input system rather than into a handler.
 func _press(keycode: int) -> void:
 	var key := InputEventKey.new()
@@ -562,6 +571,12 @@ func _initialize() -> void:
 
 	# Up and down walk the whole rail, rules and all, and stop at the ends rather than
 	# wrapping — there is nowhere above All to go.
+	#
+	# With the search field released. The browser opens with it focused, and while it is
+	# focused the arrow keys move the results, which is the flow the middle column exists
+	# for; the rail keeps its own keys for when the focus is not in the field. Tab between
+	# the two is step eight.
+	main.node_browser.search_field.release_focus()
 	main.node_browser.select_category("All")
 	for i in 13:
 		_press(KEY_DOWN)
@@ -577,6 +592,134 @@ func _initialize() -> void:
 		_press(KEY_UP)
 		await process_frame
 	check(main.node_browser.selected_category == "All", "up comes back to All")
+
+	# ---- the middle column ------------------------------------------------------------
+	# Every node has to land somewhere. Three of them do not: Sampler, Speech and Plugin
+	# Instrument are sources that are not oscillators, and no row on the rail says what
+	# they are. They are findable under All and by name, and this check is here so that
+	# the day a fourth joins them somebody is told rather than the node quietly vanishing
+	# from every category.
+	var homeless: Array = []
+	for item: Dictionary in main.node_browser.catalogue:
+		if str(item.get("kind", "")) == "node" and main.node_browser.row_of(item) == "":
+			homeless.append(str(item.get("id", "")))
+	homeless.sort()
+	check(homeless == ["PluginInstrument", "Sampler", "Speech"],
+		"every node but the three recorded sources has a category (%s)"
+			% ", ".join(PackedStringArray(homeless)))
+
+	# All, browsing: the node vocabulary alone, down the rail's own order. Three hundred
+	# devices under an empty search would bury the fifty things you wire together.
+	main.node_browser.select_category("All")
+	main.node_browser.search_field.text = ""
+	main.node_browser.refresh_results()
+	await process_frame
+	var shown: Array = []
+	var landmarks: Array = []
+	for child in main.node_browser.results_list.get_children():
+		if child is Button:
+			shown.append(str((child as Button).get_meta("id")))
+		elif child is MarginContainer:
+			landmarks.append(str(((child as MarginContainer).get_child(0) as Label).text))
+	var devices_under_all := 0
+	for id: String in shown:
+		if id.begins_with("device:"):
+			devices_under_all += 1
+	check(devices_under_all == 0 and shown.size() > 40,
+		"All browses the nodes and only the nodes (%d rows, %d of them devices)"
+			% [shown.size(), devices_under_all])
+	check(landmarks.slice(0, 3) == ["OSCILLATORS", "FILTERS", "ENVELOPES"],
+		"under landmarks that read down the rail (%s)"
+			% ", ".join(PackedStringArray(landmarks.slice(0, 3))))
+
+	# A category is a scope. Oscillators holds the oscillators, and one group needs no
+	# heading of its own.
+	main.node_browser.select_category("Oscillators")
+	await process_frame
+	shown = []
+	var oscillator_landmarks := 0
+	for child in main.node_browser.results_list.get_children():
+		if child is Button:
+			shown.append(str((child as Button).get_meta("id")))
+		elif child is MarginContainer:
+			oscillator_landmarks += 1
+	check(shown == ["SineOscillator", "SawOscillator", "SquareOscillator", "Noise",
+			"NoiseOscillator"],
+		"Oscillators holds the five oscillators (%s)"
+			% ", ".join(PackedStringArray(shown)))
+	check(oscillator_landmarks == 0,
+		"and no heading, because a landmark over the only group is the column's own name")
+
+	main.node_browser.select_category("Examples")
+	await process_frame
+	shown = []
+	var nodes_under_examples := 0
+	for row: Button in main.node_browser._result_rows:
+		var id := str(row.get_meta("id"))
+		shown.append(id)
+		if not id.begins_with("device:"):
+			nodes_under_examples += 1
+	check(shown.has("device:First Synth") and nodes_under_examples == 0,
+		"Examples holds the worked patches and no nodes (%d rows, %d of them nodes)"
+			% [shown.size(), nodes_under_examples])
+
+	# Search. Under All it searches everything; inside a category it searches that
+	# category, which is what makes the rail a scope rather than a decoration.
+	main.node_browser.select_category("All")
+	main.node_browser.search_field.text = "delay"
+	main.node_browser.refresh_results()
+	await process_frame
+	shown = []
+	for row: Button in main.node_browser._result_rows:
+		shown.append(str(row.get_meta("id")))
+	check(main.node_browser.selected_item == "Delay",
+		"searching All puts the Delay node first (%s)" % main.node_browser.selected_item)
+	check(shown.has("device:Delay Echo"),
+		"and reaches the devices a browse would not have shown")
+
+	main.node_browser.select_category("Examples")
+	main.node_browser.search_field.text = "kit"
+	main.node_browser.refresh_results()
+	await process_frame
+	shown = []
+	var strays := 0
+	for row: Button in main.node_browser._result_rows:
+		var id := str(row.get_meta("id"))
+		shown.append(id)
+		if not id.begins_with("device:"):
+			strays += 1
+	check(shown.has("device:Kit Chopper") and strays == 0,
+		"a search inside Examples stays inside Examples (%d rows, %d strays)"
+			% [shown.size(), strays])
+
+	# The keyboard, through the handler the field hands its arrow keys to — a focused
+	# LineEdit spends them on its caret, so unhandled input never sees them. The routing
+	# itself was watched windowed; headless, a popup that is never drawn takes no input.
+	main.node_browser.select_category("Oscillators")
+	main.node_browser.search_field.text = ""
+	main.node_browser.refresh_results()
+	await process_frame
+	main.node_browser._on_search_key(_key(KEY_DOWN))
+	main.node_browser._on_search_key(_key(KEY_DOWN))
+	check(main.node_browser.selected_item == "SquareOscillator",
+		"down moves the lit result (%s)" % main.node_browser.selected_item)
+	for i in 9:
+		main.node_browser._on_search_key(_key(KEY_UP))
+	check(main.node_browser.selected_item == "SineOscillator",
+		"up comes back to the first and stops there")
+
+	# Enter. What it ought to do per content type is step seven; what it does now is what
+	# the palette does, which is add the thing.
+	var nodes_before: int = main.patch.get("nodes", []).size()
+	main.node_browser.select_item("SineOscillator")
+	main.node_browser.activate_selected()
+	for i in 8:
+		await process_frame
+	check(main.patch.get("nodes", []).size() == nodes_before + 1,
+		"Enter adds what is lit (%d -> %d)"
+			% [nodes_before, main.patch.get("nodes", []).size()])
+	check(main.node_browser.visible,
+		"and leaves the browser open, because patches are built several nodes at a time")
 
 	main.node_browser._close_button.pressed.emit()
 	await process_frame

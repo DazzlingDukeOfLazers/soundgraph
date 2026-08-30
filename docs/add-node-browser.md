@@ -122,6 +122,78 @@ button somebody put in a list. The fill (16% accent over the surface) says where
 a 45%-muted accent edge holds it together, and the ink and the mark carry the colour at
 5.9:1 against their own fill.
 
+## Step 3 — search and results
+
+The middle column: a field, what matches, grouped under landmarks. No preview.
+
+**A category is a scope, not a filter.** Searching inside Examples searches examples;
+inside Oscillators, oscillators. `All` is the exception in both directions — with nothing
+typed it browses the node vocabulary alone, because three hundred devices under an empty
+search buries the fifty things you wire together; with something typed it searches
+everything there is.
+
+**The ranking is the core's**, for nodes: `search_nodes` is what the command line uses,
+so "make quieter" finds the same node in both places. Devices match on every word of the
+query appearing in the name. No ranking science beyond that yet.
+
+**Rows carry a name and nothing else.** The old palette put an Add button on every row —
+dozens of identical calls to action down a list you are trying to read. The row is the
+target; what happens when you take it lives in one place, later.
+
+**Landmarks earn their line.** Group headings appear only when there is more than one
+group: a single heading over a single list is a label for a column that already has one.
+Under All the groups are the rail's own rows, in the rail's own order, so the results
+read down the rail rather than down whatever order the registry is in.
+
+### What the taxonomy actually maps onto
+
+This is the step that tests the rail against the data, and it mostly fits.
+
+```
+Oscillators   5     Filters      3     Envelopes    2
+Modulation    8     Utilities    7     Mixing       5
+Effects       7     MIDI & IO    4     Sequencers   4
+                                       ----
+                                       45 of 48 nodes
+Examples     48     Node bank   48     FM bank    128     DX7 bank  68
+```
+
+Two findings:
+
+**Three nodes have no row.** Sampler, Speech and Plugin Instrument are sources that are
+not oscillators, and the rail has no word for them. They are reachable under All and by
+name, and the rail is frozen, so they are recorded in `NODE_ROWS` as deliberately
+homeless and the suite fails if a fourth ever joins them. Renaming `Oscillators` to
+`Sources` would house all three and cost one word.
+
+**Examples absorbed the synth and drum shelves.** The old palette had chips for synth,
+drums, dx7, clones and nodes; the rail has Examples and three banks. So Examples holds
+the worked patches, the game sounds, the six Synth voices and the seventeen drum-machine
+kits, and the group headings — PATCHES, GAME, 808, 909, 606, SDS, GATED, SYNTH — are what
+separate them. That is exactly the landmark grammar the step was for, and it works, but
+48 rows under one row of the rail is the most crowded thing in the browser.
+
+Node families are mapped by the core's own category with a short override list, not by a
+list of node names: a node added to dsp-core lands somewhere sensible on its own, where a
+hand-written list would silently drop it.
+
+### The keyboard
+
+Typing goes straight into the field, which takes focus on opening. Up and down move the
+lit result, Enter takes it, Ctrl+K comes back to the field, and the selection is scrolled
+into view — keyboard navigation that moves the selection somewhere you cannot see is
+worse than none.
+
+The arrow keys are taken from the field's own `gui_input`, before it can spend them on
+its caret: a focused `LineEdit` eats them, so unhandled input never saw them and down did
+nothing at all. The rail keeps its keys for when the focus is not in the field. Tab
+between the two regions is step 8.
+
+Enter adds what is lit, by the same route the search palette takes. Step 7 is where a
+Load example and an Open in sandbox become different things from an Add node; until then
+one route serves all three, and the browser stays open, because patches are built several
+nodes at a time.
+
 ### The type grammar
 
 Small uppercase grey labels for structural regions; normal mixed case for anything
