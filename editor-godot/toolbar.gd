@@ -58,6 +58,8 @@ var redo_button: Button
 var message_label: Label
 var transport_dot: TextureRect
 var view_popup: PopupMenu
+## The Audio menu, which holds the one setting that is not a View setting.
+var _audio_menu: PopupMenu
 var arrange_popup: PopupMenu
 var _primary_buttons: Array[Button] = []
 
@@ -293,58 +295,127 @@ func _build() -> void:
 	file_popup.name = "FileMenu"
 	file_popup.add_item("New", 4)
 	file_popup.add_item("Open…", 0)
-	file_popup.add_item("Add module…", 1)
-	file_popup.add_item("Add module as definition…", 3)
+	# The examples are things you open, which is what File is. At the root of the menu
+	# they sat as a peer of File and View, which said the program has three concerns and
+	# one of them is a folder of demos.
+	file_popup.add_child(examples_popup)
+	file_popup.add_submenu_item("Open example…", examples_popup.name)
+	file_popup.add_separator()
 	file_popup.add_item("Import MIDI…", 5)
 	file_popup.add_item("Transcribe audio…", 6)
+	file_popup.add_separator()
 	file_popup.add_item("Save as…", 2)
 	# By index, via the id. set_item_tooltip takes a position and these were being handed
 	# an id: item 3 does not exist in a four-item menu, so Godot logged an out-of-bounds
 	# error and the tooltip explaining what "as definition" even means was never attached
 	# to anything. The neighbouring call passed 1 and worked, which is how it went
 	# unnoticed — id and index happened to agree there and nowhere else.
-	file_popup.set_item_tooltip(file_popup.get_item_index(3),
-		"Add an existing patch as a reusable module: one definition, one instance, its "
-		+ "terminals becoming the ports. The patch stays one thing instead of dissolving "
-		+ "into copied nodes.")
-	file_popup.set_item_tooltip(file_popup.get_item_index(1),
+	file_popup.id_pressed.connect(func(id: int) -> void: file_action.emit(id))
+
+	# ---- Patch: what you do to the graph, not to the file --------------------------
+	# Adding a module is opening a file, which is why it lived under File, but what it
+	# does is put a thing in the patch — and a person looking for it is thinking about
+	# the patch. The ids stay File's, because the handler behind them is one dialog.
+	var patch_popup := PopupMenu.new()
+	patch_popup.name = "PatchMenu"
+	patch_popup.add_item("Add node…", 200)
+	patch_popup.set_item_tooltip(patch_popup.get_item_index(200),
+		"The browser: search by what you want, not only by name (Ctrl+Space)")
+	patch_popup.add_separator()
+	patch_popup.add_item("Make module", 100)
+	patch_popup.set_item_tooltip(patch_popup.get_item_index(100),
+		"Draw a rectangle round some nodes. What is wholly inside it becomes a "
+		+ "module, left open so you can see and arrange its parts.")
+	patch_popup.add_item("Add module…", 1)
+	patch_popup.set_item_tooltip(patch_popup.get_item_index(1),
 		"Add an existing patch into this one. Its nodes are copied in with their names "
 		+ "prefixed; its own inputs and outputs are left out, because those belong to a "
 		+ "finished patch rather than to a module.")
-	file_popup.id_pressed.connect(func(id: int) -> void: file_action.emit(id))
+	patch_popup.add_item("Add module as definition…", 3)
+	patch_popup.set_item_tooltip(patch_popup.get_item_index(3),
+		"Add an existing patch as a reusable module: one definition, one instance, its "
+		+ "terminals becoming the ports. The patch stays one thing instead of dissolving "
+		+ "into copied nodes.")
+	patch_popup.id_pressed.connect(func(id: int) -> void:
+		if id == 200:
+			add_node_requested.emit()
+		elif id == 100:
+			make_module_requested.emit()
+		else:
+			file_action.emit(id))
 
+	# ---- Edit: the two commands that exist -----------------------------------------
+	# Undo and redo and nothing else, because cut, copy, duplicate and select all are
+	# not commands this editor has. A menu of greyed-out promises is worse than a short
+	# menu — it says the program can do things it cannot.
+	var edit_popup := PopupMenu.new()
+	edit_popup.name = "EditMenu"
+	edit_popup.add_item("Undo", 0)
+	edit_popup.set_item_tooltip(0, "Ctrl+Z")
+	edit_popup.add_item("Redo", 1)
+	edit_popup.set_item_tooltip(1, "Ctrl+Y")
+	# No accelerators on these two: the editor already answers Ctrl+Z and Ctrl+Y itself,
+	# and a popup accelerator matches while the popup is closed — two handlers, one key,
+	# and an undo that undoes twice.
+	edit_popup.id_pressed.connect(func(id: int) -> void:
+		if id == 0:
+			undo_requested.emit()
+		else:
+			redo_requested.emit())
+
+	# ---- View: seven doors rather than thirty switches -----------------------------
+	# It had become a preferences window written as a list: cables, case width, detail,
+	# panels, zoom, interface size, rack density, theme, motion, build. Ten unrelated
+	# ideas in one column, most of a screen tall, and five of them looked like different
+	# flavours of "make things bigger" — UI size, rack density, case width, detail and
+	# zoom are four different questions and one of them is not about size at all.
+	#
+	# So it grows sideways now. Each door names a concept and holds the switches for it,
+	# and the ids underneath are untouched, because the handler is about what a setting
+	# does and not about which menu it was reached from.
 	view_popup = PopupMenu.new()
 	view_popup.name = "ViewMenu"
-	view_popup.add_radio_check_item("Graph cables: catenary", 0)
-	view_popup.add_radio_check_item("Graph cables: PCB", 1)
-	view_popup.set_item_checked(0, true)
-	view_popup.add_separator()
-	for index in CASE_LABELS.size():
-		view_popup.add_radio_check_item(CASE_LABELS[index], 10 + index)
-	view_popup.set_item_checked(3, true)
-	view_popup.add_separator()
+
+	var graph_menu := _submenu(view_popup, "GraphDisplayMenu", "Graph display")
+	# A titled separator, not a disabled item. An item with no id of its own is given
+	# one — its own index — so "Cable style" became id 0 and stole every tick meant for
+	# Catenary, which is id 0 as well. The separator cannot be selected and cannot
+	# collide, and is what a group heading inside a menu is for.
+	graph_menu.add_separator("Cable style")
+	graph_menu.add_radio_check_item("Catenary", 0)
+	graph_menu.add_radio_check_item("PCB", 1)
 	# The two readings of a zoomed-out graph. Adaptive is the map: the drawing
 	# simplifies as you leave so the surviving words stay readable. 1:1 is the
 	# photograph: the full module — controls, text, everything — at every zoom,
 	# smaller only because it is farther away.
-	view_popup.add_radio_check_item("Detail: adaptive", 70)
-	view_popup.add_radio_check_item("Detail: 1:1", 71)
-	view_popup.set_item_tooltip(view_popup.get_item_index(70),
+	graph_menu.add_separator("Detail")
+	graph_menu.add_radio_check_item("Adaptive", 70)
+	graph_menu.add_radio_check_item("1:1", 71)
+	graph_menu.set_item_tooltip(graph_menu.get_item_index(70),
 		"The map: the drawing simplifies as you zoom out. Toggle with Ctrl+2.")
-	view_popup.set_item_tooltip(view_popup.get_item_index(71),
+	graph_menu.set_item_tooltip(graph_menu.get_item_index(71),
 		"The photograph: the full module at every zoom. Toggle with Ctrl+2.")
-	view_popup.set_item_checked(view_popup.get_item_index(
-		70 + int(Settings.fetch("graph_detail", PatchGraph.DetailMode.ONE_TO_ONE))), true)
-	# Beside the detail pair because the two get reached for together: 1:1 is "show
-	# me the real thing" and fit is "show me all of it". An action rather than a
-	# state — same framing the toolbar's Fit does, in the menu where the eye already
-	# is when choosing how to look at the graph.
+	graph_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+
+	var rack_menu := _submenu(view_popup, "RackDisplayMenu", "Rack display")
+	rack_menu.add_separator("Width")
+	for index in CASE_LABELS.size():
+		# Without the "Case:" the labels carry elsewhere. Under a heading that says
+		# Width, inside a door that says Rack display, saying it a third time is the
+		# menu explaining itself to itself.
+		# capitalize() would do it and would also turn "84 HP" into "84 Hp", which is
+		# a unit the eurorack world does not have.
+		var width_label := str(CASE_LABELS[index]).trim_prefix("Case: ")
+		rack_menu.add_radio_check_item(
+			width_label.substr(0, 1).to_upper() + width_label.substr(1), 10 + index)
+	rack_menu.add_separator("Presentation")
+	for index in Rack.DENSITY_NAMES.size():
+		rack_menu.add_radio_check_item(Rack.DENSITY_NAMES[index], 40 + index)
+	rack_menu.add_separator()
 	# What the panels are painted in. A whole-rack default, because a rack that is one
 	# family reads as a rack; individual panels are repainted by right-clicking them,
 	# which is where somebody is already pointing when they want to change one.
-	view_popup.add_separator()
-	var panels_popup := PopupMenu.new()
-	panels_popup.name = "PanelsMenu"
+	var panels_popup := _submenu(rack_menu, "PanelsMenu", "Panels")
 	panels_popup.add_radio_check_item("Category colours", 200)
 	panels_popup.set_item_tooltip(0,
 		"One graphite panel each, with a stripe saying what the module is.")
@@ -355,15 +426,15 @@ func _build() -> void:
 		panels_popup.set_item_tooltip(panels_popup.get_item_index(201 + index),
 			str(ModuleThemes.THEMES[key].get("blurb", "")))
 	panels_popup.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
-	view_popup.add_child(panels_popup)
-	view_popup.add_submenu_item("Panels", panels_popup.name)
-	view_popup.add_separator()
-	view_popup.add_item("Zoom: fit to screen", 72)
-	view_popup.set_item_tooltip(view_popup.get_item_index(72),
+	rack_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+
+	var zoom_menu := _submenu(view_popup, "ZoomMenu", "Zoom")
+	zoom_menu.add_item("Fit to screen", 72)
+	zoom_menu.set_item_tooltip(zoom_menu.get_item_index(72),
 		"Zoom and scroll so the whole patch is visible, clear of the minimap "
 		+ "and the zoom controls.")
-	view_popup.add_item("Zoom: 100%", 73)
-	view_popup.set_item_tooltip(view_popup.get_item_index(73),
+	zoom_menu.add_item("100%", 73)
+	zoom_menu.set_item_tooltip(zoom_menu.get_item_index(73),
 		"Working scale. Centres on the selection when there is one, and on "
 		+ "whatever the view was already looking at otherwise.")
 	# The image editors' pair — fit on 0, real size on 1 — because that is where
@@ -371,38 +442,82 @@ func _build() -> void:
 	# branch: the popup matches them while closed, the menu prints them in the
 	# right-hand column, and there is exactly one path for key and click alike.
 	# Ctrl-modified, so the piano keys cannot collide.
-	view_popup.set_item_accelerator(view_popup.get_item_index(72),
-		KEY_MASK_CTRL | KEY_0)
-	view_popup.set_item_accelerator(view_popup.get_item_index(73),
-		KEY_MASK_CTRL | KEY_1)
+	zoom_menu.set_item_accelerator(zoom_menu.get_item_index(72), KEY_MASK_CTRL | KEY_0)
+	zoom_menu.set_item_accelerator(zoom_menu.get_item_index(73), KEY_MASK_CTRL | KEY_1)
+	zoom_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+
 	view_popup.add_separator()
+
+	var size_menu := _submenu(view_popup, "InterfaceSizeMenu", "Interface size")
+	for index in Design.SCALE_NAMES.size():
+		size_menu.add_radio_check_item(Design.SCALE_NAMES[index], 50 + index)
+	size_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+
+	var theme_menu := _submenu(view_popup, "ThemeMenu", "Theme")
+	for index in Design.PALETTE_NAMES.size():
+		theme_menu.add_radio_check_item(Design.PALETTE_NAMES[index], 30 + index)
+	theme_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+
 	# An accessibility switch that only exists as a hope is not one. Everything that
 	# moves on its own in this editor is off behind this: the signal glow and the grid
 	# fade, both of which say something the interface also says without moving.
+	#
+	# Maximum contrast is not repeated here. It is one of the themes — the same radio
+	# group, the same setting — and a second copy would be a second thing to keep in
+	# step with the first.
+	var access_menu := _submenu(view_popup, "AccessibilityMenu", "Accessibility")
+	access_menu.add_check_item("Reduce motion", 20)
+	access_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+
 	view_popup.add_separator()
-	for index in Design.SCALE_NAMES.size():
-		view_popup.add_radio_check_item("Size: %s" % Design.SCALE_NAMES[index],
-			50 + index)
-	view_popup.set_item_checked(view_popup.get_item_index(50 + Design.ui_scale), true)
-	view_popup.add_separator()
-	for index in Rack.DENSITY_NAMES.size():
-		view_popup.add_radio_check_item("Rack: %s" % Rack.DENSITY_NAMES[index],
-			40 + index)
-	view_popup.set_item_checked(view_popup.get_item_index(40 + Rack.density), true)
-	view_popup.add_separator()
-	for index in Design.PALETTE_NAMES.size():
-		view_popup.add_radio_check_item(Design.PALETTE_NAMES[index], 30 + index)
-	view_popup.add_separator()
-	view_popup.add_check_item("Reduce motion", 20)
-	view_popup.set_item_checked(view_popup.get_item_index(20), Design.reduced_motion)
-	# The build, last and unselectable. It goes in a menu rather than on the toolbar
-	# because the toolbar has eight pixels of room and this is not something anybody
-	# reads while playing — but it is the first thing anybody wants after a reload that
-	# behaved oddly, and hunting for it in a log is not an answer.
-	view_popup.add_separator()
-	view_popup.add_item(description, 60)
-	view_popup.set_item_disabled(view_popup.get_item_index(60), true)
-	view_popup.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+	# The wordmark's QR, which is a thing on the screen and therefore a View question.
+	# It was a root-level checkbox between Mute and Make module, which is where a
+	# setting goes when nobody has decided what kind of thing it is.
+	view_popup.add_check_item("QR code", 104)
+	view_popup.set_item_tooltip(view_popup.get_item_index(104),
+		"The door into the program: mutantfactory.net/soundgraph, beside the "
+		+ "wordmark. Untick to work without it watching.")
+	view_popup.id_pressed.connect(func(id: int) -> void:
+		if id == 104:
+			if toolbar_qr != null:
+				toolbar_qr.visible = not toolbar_qr.visible
+				Settings.store("qr_visible", toolbar_qr.visible)
+			return
+		view_action.emit(id))
+	view_popup.about_to_popup.connect(func() -> void:
+		view_popup.set_item_checked(view_popup.get_item_index(104),
+			toolbar_qr != null and toolbar_qr.visible))
+
+	# ---- Audio ---------------------------------------------------------------------
+	# One command today. It has its own door because mute is not a view setting, not a
+	# file command and not a graph transformation, and the alternative was the root of
+	# the menu — which is how the root became a shelf for whatever had no shelf.
+	var audio_popup := PopupMenu.new()
+	_audio_menu = audio_popup
+	audio_popup.name = "AudioMenu"
+	audio_popup.add_check_item("Mute", 101)
+	audio_popup.set_item_tooltip(0,
+		"Silence the output without changing the patch — the same mute as the "
+		+ "keyboard's. Escape still stops every sounding note.")
+	audio_popup.about_to_popup.connect(func() -> void:
+		audio_popup.set_item_checked(0, bool(is_muted.call())))
+	audio_popup.id_pressed.connect(func(_id: int) -> void: mute_toggled.emit())
+
+	# ---- Help ----------------------------------------------------------------------
+	var help_popup := PopupMenu.new()
+	help_popup.name = "HelpMenu"
+	help_popup.add_item("Send feedback…", 105)
+	help_popup.set_item_tooltip(0,
+		"A note straight to the workbench: what you were doing, what went "
+		+ "sideways. The dialog says exactly what it sends, and works offline.")
+	help_popup.add_separator()
+	# The build, last and unselectable. It is the first thing anybody wants after a
+	# reload that behaved oddly, and hunting for it in a log is not an answer.
+	help_popup.add_item(description, 60)
+	help_popup.set_item_disabled(help_popup.get_item_index(60), true)
+	help_popup.id_pressed.connect(func(id: int) -> void:
+		if id == 105:
+			feedback_requested.emit())
 
 	# ---- performance, pinned to the right ----------------------------------------
 	# The gap that pins the performance group right is also where passing remarks go.
@@ -453,65 +568,29 @@ func _build() -> void:
 	status_group.add_child(transport_dot)
 
 	# ---- the hamburger, upper right --------------------------------------------
-	# Everything visited rather than lived in, behind one drawn glyph. Examples,
-	# File, View and Arrange keep their whole menus as submenus; Make module keeps
-	# its gesture; Mute presses the keyboard's own mute so there is one mute state,
-	# not two. Audition is gone — reset-and-strike lives on the keys it imitated.
+	# Seven doors, each one a concept: what you open, what you undo, what you do to the
+	# patch, how it is laid out, how it is drawn, what it sounds like, and where to get
+	# help. What used to be here instead was every one of those plus Make module, Mute,
+	# QR code, feedback and two lines of status, all as peers — which is a debug menu
+	# rather than a program's menu.
+	#
+	# A menu holds commands. It does not hold the application, and it certainly does not
+	# hold the answer to "is the audio running" — that is a state, it has a lit dot in
+	# the toolbar already, and a disabled menu item is a strange place to read one.
 	var burger := MenuButton.new()
 	toolbar_menu_button = burger
 	burger.icon = _icon(Icons.Kind.HAMBURGER, Design.INK_NORMAL)
 	# Borderless: the glyph is the button. A frame around three bars read as a tiny
 	# window that had lost its contents.
 	burger.flat = true
-	burger.tooltip_text = "Examples, file, view, arrange — the menus"
+	burger.tooltip_text = "File, edit, patch, arrange, view, audio, help"
 	var burger_popup := burger.get_popup()
-	burger_popup.add_child(examples_popup)
-	burger_popup.add_submenu_item("Examples", "ExamplesMenu")
-	burger_popup.add_child(file_popup)
-	burger_popup.add_submenu_item("File", "FileMenu")
-	burger_popup.add_child(view_popup)
-	burger_popup.add_submenu_item("View", "ViewMenu")
-	burger_popup.add_child(arrange_popup)
-	burger_popup.add_submenu_item("Arrange", "ArrangeMenu")
-	burger_popup.add_separator()
-	burger_popup.add_item("Make module", 100)
-	burger_popup.set_item_tooltip(burger_popup.get_item_index(100),
-		"Draw a rectangle round some nodes. What is wholly inside it becomes a "
-		+ "module, left open so you can see and arrange its parts.")
-	burger_popup.add_check_item("Mute", 101)
-	burger_popup.add_check_item("QR code", 104)
-	burger_popup.set_item_tooltip(burger_popup.get_item_index(104),
-		"The door into the program: mutantfactory.net/soundgraph, beside the "
-		+ "wordmark. Untick to work without it watching.")
-	burger_popup.set_item_tooltip(burger_popup.get_item_index(101),
-		"Silence the output without changing the patch — the same mute as the "
-		+ "keyboard's. Escape still stops every sounding note.")
-	burger_popup.add_item("Send feedback…", 105)
-	burger_popup.set_item_tooltip(burger_popup.get_item_index(105),
-		"A note straight to the workbench: what you were doing, what went "
-		+ "sideways. The dialog says exactly what it sends, and works offline.")
-	burger_popup.add_separator()
-	burger_popup.add_item("Audio starting…", 102)
-	burger_popup.set_item_disabled(burger_popup.get_item_index(102), true)
-	burger_popup.add_item("Graph valid", 103)
-	burger_popup.set_item_disabled(burger_popup.get_item_index(103), true)
+	for door: Array in [[file_popup, "File"], [edit_popup, "Edit"],
+			[patch_popup, "Patch"], [arrange_popup, "Arrange"], [view_popup, "View"],
+			[audio_popup, "Audio"], [help_popup, "Help"]]:
+		burger_popup.add_child(door[0])
+		burger_popup.add_submenu_item(str(door[1]), (door[0] as PopupMenu).name)
 	toolbar_menu_popup = burger_popup
-	burger_popup.about_to_popup.connect(func() -> void:
-		burger_popup.set_item_checked(burger_popup.get_item_index(101),
-			bool(is_muted.call()))
-		burger_popup.set_item_checked(burger_popup.get_item_index(104),
-			toolbar_qr != null and toolbar_qr.visible))
-	burger_popup.id_pressed.connect(func(id: int) -> void:
-		if id == 100:
-			make_module_requested.emit()
-		elif id == 101:
-			mute_toggled.emit()
-		elif id == 104:
-			if toolbar_qr != null:
-				toolbar_qr.visible = not toolbar_qr.visible
-				Settings.store("qr_visible", toolbar_qr.visible)
-		elif id == 105:
-			feedback_requested.emit())
 	bar.add_child(_defocus(burger))
 
 	var margin := MarginContainer.new()
@@ -523,6 +602,77 @@ func _build() -> void:
 	add_theme_constant_override("margin_top", Design.SPACE_S)
 	add_theme_constant_override("margin_bottom", Design.SPACE_S)
 	add_child(bar)
+
+
+## One submenu, parented and linked in a single move.
+func _submenu(parent: PopupMenu, node_name: String, label: String) -> PopupMenu:
+	var menu := PopupMenu.new()
+	menu.name = node_name
+	parent.add_child(menu)
+	parent.add_submenu_item(label, node_name)
+	return menu
+
+
+## Ticks a setting by its id, wherever in the menu tree it lives.
+##
+## The editor used to reach into `view_popup` and set checks by index — twice by raw
+## index, which is a number that means "third item" and stops being true the moment a
+## separator moves. What a setting is called and which door it sits behind is this file's
+## business; whether it is on is the editor's. This is the seam between the two.
+func tick(id: int, on: bool) -> void:
+	var found := _setting_item(id)
+	if not found.is_empty():
+		(found[0] as PopupMenu).set_item_checked(int(found[1]), on)
+
+
+## Ticks exactly one of a group, and clears the rest.
+func tick_one_of(ids: Array, chosen: int) -> void:
+	for id: int in ids:
+		tick(id, id == chosen)
+
+
+## Whether a setting is ticked. For the suite, which should ask the menu rather than
+## know where in it a setting sits.
+func ticked(id: int) -> bool:
+	var found := _setting_item(id)
+	if found.is_empty():
+		return false
+	return (found[0] as PopupMenu).is_item_checked(int(found[1]))
+
+
+## The item behind a setting id, searched only where settings live.
+##
+## Deliberately not the whole menu. The example shelves number their items from zero
+## inside their own popups, so a search that walked everything found the fifty-third FM
+## voice when it was looking for the XL interface size — and ticked it. Two id spaces
+## exist here and only one of them is the settings'.
+func _setting_item(id: int) -> Array:
+	for menu: PopupMenu in [view_popup, _audio_menu]:
+		var found := _item_of(menu, id)
+		if not found.is_empty():
+			return found
+	return []
+
+
+## A menu by node name, for the one caller that needs the whole list rather than one item.
+func menu_named(node_name: String) -> PopupMenu:
+	if toolbar_menu_popup == null:
+		return null
+	return toolbar_menu_popup.find_child(node_name, true, false) as PopupMenu
+
+
+## The popup holding an id, and the index it sits at. Empty when nothing holds it.
+func _item_of(menu: PopupMenu, id: int) -> Array:
+	if menu == null:
+		return []
+	for index in menu.item_count:
+		if menu.get_item_id(index) == id and not menu.is_item_separator(index):
+			return [menu, index]
+	for child in menu.get_children():
+		var found := _item_of(child as PopupMenu, id)
+		if not found.is_empty():
+			return found
+	return []
 
 
 ## Shows or hides a toolbar group along with the rule that introduces it.

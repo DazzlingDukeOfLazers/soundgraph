@@ -411,8 +411,13 @@ func _device_peak(main) -> float:
 
 
 ## Whether a View-menu item is checked, found by id rather than by index.
+## Whether a menu item is ticked, wherever in the menu tree it now lives.
+##
+## By id rather than by popup: the View menu became a hierarchy of doors, and a check
+## that knew which popup held a setting was a check that had to be rewritten every time
+## one moved. The toolbar's own seam answers this.
 func view_item_checked(main, id: int) -> bool:
-	return main.view_popup.is_item_checked(main.view_popup.get_item_index(id))
+	return main.toolbar.ticked(id)
 
 
 ## Press, move, release on the graph canvas.

@@ -740,6 +740,7 @@ func _build_ui() -> void:
 	# The names the rest of this file and the tests already speak.
 	toolbar_menu_button = toolbar.toolbar_menu_button
 	toolbar_menu_popup = toolbar.toolbar_menu_popup
+	_sync_view_menu()
 	toolbar_qr = toolbar.toolbar_qr
 	transport_dot = toolbar.transport_dot
 	message_label = toolbar.message_label
@@ -1540,10 +1541,35 @@ func _repaint_rack() -> void:
 	_sync_panels_menu()
 
 
-func _sync_panels_menu() -> void:
-	if view_popup == null:
+## What the menu says the program is set to, from what the program is actually set to.
+##
+## The menu used to tick itself as it was built, from whatever each setting's default
+## happened to be, and then only the settings somebody changed by hand were ever right:
+## the theme restored from the file on startup left every theme unticked, because the
+## palette is chosen before the toolbar that shows it exists. One pass, after the menu
+## exists, reading the live values.
+func _sync_view_menu() -> void:
+	if toolbar == null:
 		return
-	var panels := view_popup.get_node_or_null("PanelsMenu") as PopupMenu
+	toolbar.tick_one_of([0, 1], graph_edit.cable_style if graph_edit != null else 0)
+	toolbar.tick_one_of([70, 71],
+		70 + int(Settings.fetch("graph_detail", PatchGraph.DetailMode.ONE_TO_ONE)))
+	var width := 0
+	for index in EditorToolbar.CASE_WIDTHS.size():
+		if rack != null and EditorToolbar.CASE_WIDTHS[index] == rack.case_hp:
+			width = index
+	toolbar.tick_one_of(range(10, 10 + EditorToolbar.CASE_LABELS.size()), 10 + width)
+	toolbar.tick_one_of(range(40, 40 + Rack.DENSITY_NAMES.size()), 40 + Rack.density)
+	toolbar.tick_one_of(range(50, 50 + Design.SCALE_NAMES.size()), 50 + Design.ui_scale)
+	toolbar.tick_one_of(range(30, 30 + Design.PALETTE_NAMES.size()), 30 + Design.palette)
+	toolbar.tick(20, Design.reduced_motion)
+	_sync_panels_menu()
+
+
+func _sync_panels_menu() -> void:
+	if toolbar == null:
+		return
+	var panels := toolbar.menu_named("PanelsMenu")
 	if panels == null:
 		return
 	var current := str(patch.get("arrangement", {}).get("theme", ""))
@@ -1967,9 +1993,8 @@ func _on_view_menu(id: int) -> void:
 	if id >= 40:
 		Rack.density = id - 40
 		Settings.store("rack_density", Rack.density)
-		for entry in Rack.DENSITY_NAMES.size():
-			view_popup.set_item_checked(view_popup.get_item_index(40 + entry),
-				entry == Rack.density)
+		toolbar.tick_one_of(range(40, 40 + Rack.DENSITY_NAMES.size()),
+			40 + Rack.density)
 		rack.rebuild()
 		_say("rack: %s" % Rack.DENSITY_NAMES[Rack.density])
 		return
@@ -1979,7 +2004,7 @@ func _on_view_menu(id: int) -> void:
 	if id == 20:
 		Design.reduced_motion = not Design.reduced_motion
 		Settings.store("reduced_motion", Design.reduced_motion)
-		view_popup.set_item_checked(view_popup.get_item_index(20), Design.reduced_motion)
+		toolbar.tick(20, Design.reduced_motion)
 		if Design.reduced_motion and graph_edit != null:
 			# Cleared rather than frozen, or the last frame of glow would sit there
 			# forever looking like a port that is stuck on.
@@ -1987,8 +2012,7 @@ func _on_view_menu(id: int) -> void:
 			graph_edit.queue_redraw()
 		return
 	if id < 10:
-		for index in 2:
-			view_popup.set_item_checked(index, index == id)
+		toolbar.tick_one_of([0, 1], id)
 		# The graph's routing only. The rack keeps its physical cords: yoking both
 		# views to one menu id is how choosing PCB for the diagram silently stripped
 		# the rack back to thin lines.
@@ -1996,8 +2020,7 @@ func _on_view_menu(id: int) -> void:
 		graph_edit.refresh_cables()
 		return
 	var choice := id - 10
-	for index in EditorToolbar.CASE_LABELS.size():
-		view_popup.set_item_checked(index + 3, index == choice)
+	toolbar.tick_one_of(range(10, 10 + EditorToolbar.CASE_LABELS.size()), id)
 	rack.case_hp = EditorToolbar.CASE_WIDTHS[choice]
 	# Picking a case answers "does my patch fit it" — so show the whole case at once.
 	rack.fit_case()
@@ -2080,9 +2103,7 @@ func _modernize_stereo_outputs() -> void:
 func _choose_detail_mode(mode: int) -> void:
 	graph_edit.set_detail_mode(mode)
 	Settings.store("graph_detail", mode)
-	for entry in 2:
-		view_popup.set_item_checked(view_popup.get_item_index(70 + entry),
-			entry == mode)
+	toolbar.tick_one_of([70, 71], 70 + mode)
 	_say("detail: %s" % ("1:1" if mode == PatchGraph.DetailMode.ONE_TO_ONE \
 		else "adaptive"))
 
@@ -2100,10 +2121,9 @@ func _choose_detail_mode(mode: int) -> void:
 func _use_ui_scale(index: int) -> void:
 	Design.ui_scale = clampi(index, 0, Design.SCALE_FACTORS.size() - 1)
 	Settings.store("ui_scale", Design.ui_scale)
-	if view_popup != null:
-		for entry in Design.SCALE_NAMES.size():
-			view_popup.set_item_checked(view_popup.get_item_index(50 + entry),
-				entry == Design.ui_scale)
+	if toolbar != null:
+		toolbar.tick_one_of(range(50, 50 + Design.SCALE_NAMES.size()),
+			50 + Design.ui_scale)
 
 	_apply_theme()
 	if graph_edit == null:
@@ -2134,10 +2154,8 @@ func _use_palette(index: int) -> void:
 	# Guarded, because this is reachable before the toolbar exists — from settings at
 	# startup, and from the screenshot tool, both of which set a palette without a menu
 	# to tick.
-	if view_popup != null:
-		for entry in Design.PALETTE_NAMES.size():
-			view_popup.set_item_checked(view_popup.get_item_index(30 + entry),
-				entry == index)
+	if toolbar != null:
+		toolbar.tick_one_of(range(30, 30 + Design.PALETTE_NAMES.size()), 30 + index)
 
 	# The theme carries most of it. What it cannot reach is anything styled per widget —
 	# node titles, the port icons, the scope — so the graph is rebuilt, which is cheap and
@@ -9878,14 +9896,16 @@ func _refresh_status() -> void:
 	var parts := ["Audio running" if running else "Audio stopped"]
 	parts.append("Graph valid" if valid else "%d problem%s"
 		% [_problem_count, "" if _problem_count == 1 else "s"])
-	# The sample rate is not here at all now, having been "48 kHz" and then "48k" on the
-	# way out. Its own comment had already made the argument — a number that has never
-	# once changed while somebody watched belongs in the tooltip — and the sidebar's Cost
-	# line says "48000 Hz" in full a few inches away. Two copies of a constant were paying
-	# for themselves in toolbar width, on a bar with eight pixels of room left.
-	if toolbar_menu_popup != null:
-		toolbar_menu_popup.set_item_text(toolbar_menu_popup.get_item_index(102), parts[0])
-		toolbar_menu_popup.set_item_text(toolbar_menu_popup.get_item_index(103), parts[1])
+	# And they are said in one place. These two used to be written into the menu as
+	# disabled items — "Audio running", "Graph valid" — which is a state filed under
+	# commands, read only by somebody who opened a menu to look for it. The dot above
+	# carries the whole sentence in its tooltip, and it is legible from across a table.
+	_status_line = " · ".join(parts)
+
+
+## What the status dot is currently saying, in words. Read by the suite, and by anything
+## that wants the sentence without recomputing it.
+var _status_line := ""
 
 
 ## The status strip spelled out, for whichever of its two parts is left to hover.
