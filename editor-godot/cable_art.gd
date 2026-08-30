@@ -5,6 +5,11 @@ extends RefCounted
 ## Split out of the rack on purpose. The rack knows where cables go; this knows what one
 ## looks like, and the two have different answers to give.
 ##
+## The finished grammar, the frozen figures, the reasoning and the wrong turns are in
+## docs/cable-design.md. Read it before retuning anything here: most of these numbers
+## were settled one at a time against a rendered comparison, and the document says which
+## are decisions and which are accidents.
+##
 ## The target is a chunky illustrated patch cord, not a coloured spline with a cap. The
 ## first pass drifted to the latter — technically clean, materially flat — and the fix was
 ## not in the curve. It was hierarchy at the ends and a body that dominates its own
