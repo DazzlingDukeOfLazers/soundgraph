@@ -88,3 +88,86 @@ Pinned in `editor_test.gd`: First Synth is those seven nodes with those port cou
 the document holds seven wires. Surfaces, type, icons and what survives a zoom are all in
 scope; what the patch *is* is not, and the way that goes wrong is a port quietly gained or
 lost while somebody is looking at the colours.
+
+## Step 3 — the canonical anatomy, on three nodes
+
+Gain, StateVariableFilter and ADSR — the Amplifier, the Lowpass and the Amp Envelope of
+First Synth. Nothing else takes the anatomy until these are approved, which is what a
+proving ground is for. `NodeIdentity.PROVING_GROUND` is the list, and it is the only
+place the scope is written down.
+
+### The four parts
+
+```
+header    identity: the name, mixed case, left, in a region of its own
+body      one surface step under the header, one over the canvas
+ports     sockets on the perimeter, labels inside, unchanged this step
+control   the body's padding, one gutter figure on each axis
+```
+
+Surfaces are the application's own and one step apart each: canvas `0f1318`, body
+`1b212a`, header `252d38` on Lab — about five points of luminance between neighbours,
+which is the plan's 5–8%. One hairline under the header, because without it the two greys
+meet and read as a gradient rather than as two parts. One crisp perimeter. No paint, no
+gradient, no shadow: the rack draws modules as hardware and is right to, and a diagram
+made of photographs of panels is two languages in one window.
+
+The header stopped being a strip behind a word. It has a height of its own
+(`ANATOMY_HEADER`), so a long name and a short one get the same identity region, and the
+name is **mixed case, left-aligned** — capitals and centring came from the panel pass,
+where a centred legend in capitals is what a faceplate has. `AMPLIFIER` is a label on a
+box; `Amplifier` is what the thing is called. Small capitals keep their job for the
+metadata under the name.
+
+### Canonical and compact names
+
+`node_identity.gd`. Every node has the name its author gave it and, if its type has been
+through the pass, a compact name written down beside it:
+
+```
+Gain                  Amp
+StateVariableFilter   Filter
+ADSR                  Envelope
+```
+
+Keyed by **type**, not by the name on the node: somebody who renames their oscillator
+"Bass" still gets a compact identity, because what the node *is* has not changed, and an
+author cannot be asked to invent a short form for every node they name.
+
+The drawing rule, in `ScreenText._name_for`: the canonical name whenever it fits, at every
+size. When it does not, the written-down compact name. Only when there is neither does
+anything get cut — so a cut name is now the mark of a type that has not been through the
+pass, rather than the normal way of drawing a small node.
+
+Two departures from the table in the brief, both because the key is the type: the brief's
+`Amplifier → Amp` is `Gain → Amp` here, and `Lowpass → Lowpass` never fires because
+`Lowpass` fits at every zoom — its type's compact is `Filter`, for the day a filter is
+named something longer. `Filter Sweep → Sweep` is not in this step at all: the LFO has not
+been through the pass, and its compact word is a question for when it is.
+
+### Measured, before and after
+
+Same harness, same patch, same window, same XL scale. The before run has `main.gd`
+stashed, so both columns are measured by the same code — the first attempt compared the
+new renderer against an approximation of the old one and reported changes in nodes
+nothing had touched.
+
+```
+topology      7 nodes, 7 wires, no moves, no port changes
+sizes         Lowpass 488x257 -> 482x239, Envelope 388x119 -> 382x101,
+              Amplifier 225x165 -> 219x147     (the control region's own padding)
+100%, 66%     no title changes
+40%           'Amp Envelo…' -> 'Envelope'      'Ampli…' -> 'Amp'
+28%           'Amp En…'     -> 'Envelope'      'Am…'    -> 'Amp'
+```
+
+Titles at 28%: three canonical, two compact, two cut. The two still cut are Main
+Oscillator and Filter Sweep, which have not been through the pass — visible, in the same
+patch, beside two that have.
+
+### Not in this step
+
+The adaptive bands are untouched: the same 0.60 and 0.40, the same hysteresis, the same
+counts at every zoom. Cables, serialisation, node ids, control values and the other four
+node types are as they were. Width classes are step 8, so nothing was widened to make a
+name fit — the compact name is the answer at this size, by design.

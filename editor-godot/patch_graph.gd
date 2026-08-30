@@ -2803,8 +2803,26 @@ class ScreenText extends Control:
 		var drawn := Design.screen_minimum(Design.MIN_SCREEN_NODE_TITLE)
 		var baseline := top_left + Vector2(6.0,
 			(bar_height + font.get_ascent(drawn) - font.get_descent(drawn)) * 0.5)
-		draw_string(font, baseline, _elided(font, node.title, drawn, room),
+		draw_string(font, baseline, _name_for(node, font, drawn, room),
 			HORIZONTAL_ALIGNMENT_LEFT, room, drawn, title_ink(node))
+
+
+	## The name to draw in the room there is.
+	##
+	## The canonical name whenever it fits, at every size — a compact name is not an
+	## improvement on a name, it is what you fall back to. When it does not fit, the
+	## node's written-down compact name, if it has one. Only when there is neither does
+	## anything get cut, and a cut name is now the mark of a type that has not been
+	## through the pass rather than the normal way of drawing a small node.
+	static func _name_for(node: GraphNode, font: Font, size: int, room: float) -> String:
+		if font.get_string_size(node.title, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+				size).x <= room:
+			return node.title
+		var compact := str(node.get_meta("compact_name", ""))
+		if compact != "" and font.get_string_size(compact, HORIZONTAL_ALIGNMENT_LEFT,
+				-1.0, size).x <= room:
+			return compact
+		return _elided(font, node.title, size, room)
 
 	## Text cut to fit, with an ellipsis saying so.
 	##

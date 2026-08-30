@@ -1485,6 +1485,92 @@ func _sync_view_switch() -> void:
 			_dress_segment(mode_button, chosen)
 
 
+## The canonical node anatomy: header, body, perimeter, control region.
+##
+## Four parts and one idea — the node is an object lying on the canvas, and the eye
+## should find canvas, then body, then header, in that order, without any of them being
+## a card floating over the others. The three surfaces are the application's own, one
+## step apart each: canvas 0f1318, body 1b212a, header 252d38 on Lab, which is about five
+## points of luminance between neighbours.
+##
+## What it is not: a painted faceplate. The rack draws modules as hardware and that is
+## right there; the graph is a diagram of the same patch, and a diagram made of
+## photographs of panels is two languages in one window. Ports keep their sockets — a
+## cable has to look plugged into something — and everything else here is flat.
+##
+## The header is an identity region rather than a strip behind a word: it has a height of
+## its own, the name at the node-title size, and a hairline under it that says where it
+## stops. The body's padding is the control region, one figure on each axis, so two nodes
+## with different contents still line their contents up in the same place.
+func _dress_anatomy(widget: GraphNode, lit: bool) -> void:
+	var edge: Color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
+		else Design.BORDERS[Design.Surface.RAISED]
+
+	var head := Design.padded_panel(Design.Surface.RAISED, ANATOMY_GUTTER,
+		Design.SPACE_XS, Design.RADIUS_NODE)
+	head.corner_radius_bottom_left = 0
+	head.corner_radius_bottom_right = 0
+	head.border_color = edge
+	# The one rule inside the node, and it is the join: without it the header and the
+	# body are two greys meeting, which reads as a gradient rather than as two parts.
+	head.border_width_bottom = 1
+	head.border_color = edge
+	widget.add_theme_stylebox_override("titlebar", head)
+
+	var body := Design.padded_panel(Design.Surface.NODE, ANATOMY_GUTTER,
+		Design.SPACE_S, Design.RADIUS_NODE)
+	body.corner_radius_top_left = 0
+	body.corner_radius_top_right = 0
+	body.border_width_top = 0
+	body.border_color = edge
+	widget.add_theme_stylebox_override("panel", body)
+
+	# Selection keeps the accent it has everywhere else, on the same anatomy.
+	var head_lit := head.duplicate() as StyleBoxFlat
+	head_lit.bg_color = Design.SURFACES[Design.Surface.ACTIVE]
+	head_lit.set_border_width_all(2)
+	head_lit.border_width_bottom = 1
+	head_lit.border_color = Design.ACCENT
+	widget.add_theme_stylebox_override("titlebar_selected", head_lit)
+	var body_lit := body.duplicate() as StyleBoxFlat
+	body_lit.bg_color = Design.SURFACES[Design.Surface.RAISED]
+	body_lit.set_border_width_all(2)
+	body_lit.border_width_top = 0
+	body_lit.border_color = Design.ACCENT
+	widget.add_theme_stylebox_override("panel_selected", body_lit)
+
+	# The header's own height, so a node with a long name and a node with a short one
+	# still have the same identity region — and so the region is a region rather than
+	# whatever the Label happened to need.
+	var bar := widget.get_titlebar_hbox()
+	if bar != null:
+		bar.custom_minimum_size.y = Design.scale(ANATOMY_HEADER)
+	var title_label := _title_label(widget)
+	if title_label != null:
+		title_label.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+		title_label.add_theme_font_size_override("font_size",
+			Design.type(Design.SIZE_NODE_TITLE))
+		title_label.add_theme_color_override("font_color", Design.INK_BRIGHT)
+		title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		# The name as it was written, at the left, in its own case.
+		#
+		# Capitals and centring came from the panel pass, where a centred legend in
+		# capitals is what a faceplate has. This is the diagram rather than the panel: a
+		# name is identity, identity is read rather than admired, and AMPLIFIER is a
+		# label on a box while Amplifier is what the thing is called. Small capitals
+		# keep their job here — they are for the metadata under the name, not for the
+		# name.
+		title_label.text = widget.title
+		title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+
+
+## The node's internal gutter, and the height of its identity region. Two figures on the
+## editor's own eight-pixel rhythm, so that the three proving-ground types line up with
+## each other and with everything else drawn from these tokens.
+const ANATOMY_GUTTER := Design.SPACE_M
+const ANATOMY_HEADER := 28
+
+
 ## One segment of a switch, chosen or not.
 ##
 ## Two cues and neither of them is colour alone: the chosen segment is a raised tile in
@@ -1726,6 +1812,12 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 		# No skin on the widget means no plugs at its ports: the flat type-shapes are
 		# the graph's own grammar and the physical one arrives with the faceplate.
 		widget.remove_meta("skin")
+		if NodeIdentity.in_proving_ground(str(widget.get_meta("type", ""))):
+			_dress_anatomy(widget, lit)
+			return
+		if NodeIdentity.in_proving_ground(str(widget.get_meta("type", ""))):
+			_dress_anatomy(widget, lit)
+			return
 		if lit:
 			var plain := (theme.get_stylebox("panel", "GraphNode")
 				as StyleBoxFlat).duplicate()
@@ -4307,6 +4399,10 @@ func _create_widget(node: Dictionary) -> void:
 	# Above the cord layer (z 1): a cable passes behind the panels. See CordLayer.
 	widget.z_index = 2
 	widget.set_meta("type", type_name)
+	# Written on the widget rather than looked up while drawing: the overlay that draws
+	# a shrinking title has a GraphNode and no idea what type it came from, and the one
+	# place that knows both is here.
+	widget.set_meta("compact_name", NodeIdentity.compact_of(type_name))
 
 	_style_node_title(widget, descriptor)
 

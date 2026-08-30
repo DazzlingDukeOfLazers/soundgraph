@@ -14,6 +14,7 @@ extends SceneTree
 ##
 ## with GRAPH_BASELINE_OUT set to a directory, or the project's own folder by default.
 const ZOOMS := [1.0, 0.66, 0.40, 0.28]
+const PatchGraph := preload("res://patch_graph.gd")
 
 
 func out_dir() -> String:
@@ -125,12 +126,14 @@ func _initialize() -> void:
 					name_shown = ""
 					fits = false
 				else:
-					var wanted := font.get_string_size(node.title,
-						HORIZONTAL_ALIGNMENT_LEFT, -1.0, drawn_size).x
-					fits = wanted <= room
-					if not fits:
-						name_shown = "%s…" % node.title.substr(0,
-							maxi(1, int(node.title.length() * room / maxf(wanted, 1.0))))
+					# Asked of the drawing code rather than worked out again here. The
+					# first version of this file reimplemented the elision, which meant
+					# it went on reporting cut names after the renderer had stopped
+					# cutting them — a measurement that agrees with itself instead of
+					# with the program.
+					name_shown = PatchGraph.ScreenText._name_for(node, font,
+						drawn_size, room)
+					fits = name_shown == node.title
 			at_zoom["nodes"].append({
 				"name": str(node.name),
 				"screen_size": [snappedf(node.size.x * zoom, 0.1),
@@ -138,6 +141,7 @@ func _initialize() -> void:
 				"title": name_shown,
 				"compensated": compensated,
 				"title_fits": fits,
+				"compact_name": str(node.get_meta("compact_name", "")),
 				"controls_visible": showing,
 			})
 		record["zooms"].append(at_zoom)
@@ -164,13 +168,22 @@ func _initialize() -> void:
 	file.close()
 	print("nodes=", record["nodes"].size(), " connections=", record["connections"].size())
 	for entry: Dictionary in record["zooms"]:
-		var clipped := 0
+		# Three states, not two. A name that was swapped for its compact form is not a
+		# name that was cut, and counting them together is how a fix looks like nothing
+		# happening.
+		var canonical := 0
+		var compacted := 0
+		var cut := 0
 		var controls := 0
 		for node: Dictionary in entry["nodes"]:
-			if not node["title_fits"]:
-				clipped += 1
+			if bool(node["title_fits"]):
+				canonical += 1
+			elif str(node["title"]) == str(node["compact_name"]) 					and str(node["compact_name"]) != "":
+				compacted += 1
+			else:
+				cut += 1
 			controls += int(node["controls_visible"])
-		print("zoom %.0f%%  detail=%d  adaptive_would_be=%d  clipped titles=%d/%d  controls=%d"
-			% [entry["zoom"] * 100.0, entry["detail"], entry["adaptive_would_be"],
-				clipped, entry["nodes"].size(), controls])
+		print("zoom %.0f%%  detail=%d  titles: %d canonical, %d compact, %d cut  controls=%d"
+			% [entry["zoom"] * 100.0, entry["detail"], canonical, compacted, cut,
+				controls])
 	quit()
