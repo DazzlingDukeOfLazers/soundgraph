@@ -7,6 +7,8 @@ const PatchGraph := preload("res://patch_graph.gd")
 ## The generated finishes, so the tile on a graph panel can be compared with the tile the
 ## rack would have laid on the same style rather than with "a texture".
 const Faceplate := preload("res://faceplate.gd")
+## The cable renderer, for the crossing contract below.
+const CableArt := preload("res://cable_art.gd")
 ## Every node wearing a different panel style, through every way of changing one.
 ##
 ##   godot --headless --path editor-godot --script res://panel_style_test.gd
@@ -453,6 +455,27 @@ func _initialize() -> void:
 			check(bare_title.get_theme_color("font_color")
 					== other_title.get_theme_color("font_color"),
 				"and two unpainted modules are lettered alike")
+
+	# ---- a crossing says which cable is on top ---------------------------------------
+	# The topology cue is occlusion plus a dark halo, and both hang off one thing: the
+	# renderer noticing that two cables cross at all. If crossings() ever stops finding
+	# them, the upper cable still draws over the lower and the picture goes quietly
+	# ambiguous — no error, no failing pixel anybody is looking at, just a patch that
+	# stops explaining itself. So the detection is pinned, along with the halo being
+	# wider than the body it has to show either side of.
+	var going_down := PackedVector2Array([Vector2(0, 0), Vector2(50, 50),
+		Vector2(100, 100)])
+	var going_up := PackedVector2Array([Vector2(0, 100), Vector2(50, 50),
+		Vector2(100, 0)])
+	check(CableArt.crossings(going_down, going_up).size() > 0,
+		"two cables that cross are seen to cross")
+	var apart := PackedVector2Array([Vector2(0, 200), Vector2(100, 220)])
+	check(CableArt.crossings(going_down, apart).is_empty(),
+		"and two that never meet are not")
+	var crossing_style := CableArt.Style.new()
+	check(crossing_style.shadow_width + crossing_style.thickness
+			> crossing_style.thickness,
+		"the crossing halo is wider than the cable laid over it, so it shows either side")
 
 	if failures == 0:
 		print("all panel style checks passed")
