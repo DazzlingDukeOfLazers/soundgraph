@@ -125,7 +125,10 @@ var search_field: LineEdit
 var results_list: VBoxContainer
 var selected_item := ""
 
-signal item_activated(id: String)
+## Taken, and what taking it meant. The action travels with the id because the item is
+## the thing that knows: a patch is loaded, a node is added, and the browser should not
+## be the third place that has an opinion about which.
+signal item_activated(id: String, action: int)
 
 const RESULT_HEIGHT := 36
 const SEARCH_HEIGHT := 42
@@ -419,11 +422,15 @@ func item_by_id(id: String) -> BrowserItem:
 	return null
 
 
-## Enter. What ought to happen to a given kind of item is step seven's question; for now
-## it leaves as a signal and the editor answers it the way the palette already does.
+## Enter, and the primary button: the item's own primary action, whatever that is.
+##
+## Enter adds a node and loads a patch, which are different things — and are the same
+## gesture because the item already says which one it is. The browser reads the
+## descriptor rather than asking what kind of thing it is holding.
 func activate_selected() -> void:
-	if selected_item != "":
-		item_activated.emit(selected_item)
+	var item := item_by_id(selected_item)
+	if item != null:
+		item_activated.emit(item.id, item.primary_action)
 
 
 ## Moves the lit result, and stops at the ends rather than wrapping.
@@ -553,21 +560,21 @@ func _preview_rule() -> Control:
 
 ## One action, named by the item rather than by the pane.
 ##
-## Live only where the action already exists and is safe to take: Add node is what Enter
-## has done since step three. Load example replaces the patch somebody is editing and
-## Open in sandbox has no route yet, so they are drawn and disabled rather than drawn and
-## lying. Step seven is where the descriptors become behaviour; a button that looks ready
-## and does nothing would be a worse answer than a button that says it is not.
+## Live where the editor has a route for it. Add node drops the thing into the patch;
+## Load example opens it, the same way the toolbar's own example menu has always opened
+## one. Open in sandbox has nowhere to go yet, so it is drawn and disabled rather than
+## drawn and lying — a button that looks ready and does nothing is worse than one that
+## says it is not.
 func _action_button(item: BrowserItem, action: int, primary: bool) -> Button:
 	var button := Button.new()
 	button.text = BrowserItem.ACTION_LABELS[action]
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size.y = RESULT_HEIGHT
-	if action == BrowserItem.Action.ADD_NODE:
-		button.pressed.connect(func() -> void: item_activated.emit(item.id))
-	else:
+	if action == BrowserItem.Action.OPEN_IN_SANDBOX:
 		button.disabled = true
 		button.tooltip_text = "Not wired up yet."
+	else:
+		button.pressed.connect(func() -> void: item_activated.emit(item.id, action))
 	return Design.make_primary(button) if primary and not button.disabled else button
 
 

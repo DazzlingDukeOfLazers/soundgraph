@@ -1251,7 +1251,7 @@ func _build_ui() -> void:
 	node_browser = NodeBrowser.new()
 	node_browser.ranker = Callable(engine, "search_nodes")
 	node_browser.facts = _browser_facts
-	node_browser.item_activated.connect(_add_from_browser)
+	node_browser.item_activated.connect(_from_browser)
 	add_child(node_browser)
 
 	file_dialog = FileDialog.new()
@@ -7582,9 +7582,18 @@ func _browser_facts(item: BrowserItem) -> PackedStringArray:
 	return lines
 
 
-## Enter in the browser. The same route the search palette takes, because it is the same
-## job: what a Load example or an Open in sandbox ought to do instead is step seven.
-func _add_from_browser(id: String) -> void:
+## Taking something from the browser: the action the item asked for.
+##
+## Two routes, both of which the editor already had. Adding is the palette's, and loading
+## is the toolbar example menu's — which loads straight into the patch with no
+## confirmation, so this does too rather than inventing a convention for one entry point.
+## The browser closes on a load and stays open on an add: a patch replaces what you were
+## looking at, and nodes are added several at a time.
+func _from_browser(id: String, action: int) -> void:
+	if action == BrowserItem.Action.LOAD_PATCH:
+		node_browser.hide()
+		await _load_example(id.trim_prefix("device:"))
+		return
 	_search_spawn = graph_edit.size * 0.5
 	await _add_from_search(id)
 

@@ -886,9 +886,44 @@ func _initialize() -> void:
 		"counted from the patch file rather than guessed (%s)"
 			% ", ".join(PackedStringArray(includes)))
 	check(pane_buttons == ["Load example", "Open in sandbox"]
-			and _pane_disabled(main).size() == 2,
-		"and offers what the item says it offers, drawn but not yet wired (%s)"
+			and _pane_disabled(main) == ["Open in sandbox"],
+		"and offers what the item says it offers, with the sandbox still to come (%s)"
 			% ", ".join(PackedStringArray(pane_buttons)))
+
+	# And Load example loads it — the toolbar example menu's own route, straight into the
+	# patch, because that is how this editor has always opened an example and one entry
+	# point should not invent a confirmation the other does not have.
+	#
+	# Something other than the patch already open, or the check passes without the button
+	# doing anything at all. It was written against First Synth, which the suite loaded
+	# on the way in.
+	main.node_browser.select_item("device:Kit Chopper")
+	await process_frame
+	var document_before: String = main.document_name
+	(main.node_browser._preview_actions.get_child(0) as Button).pressed.emit()
+	for i in 40:
+		await process_frame
+	check(main.document_name == "kit-chopper.json"
+			and document_before == "first-synth.json",
+		"Load example loads it (%s -> %s)" % [document_before, main.document_name])
+	check(not main.node_browser.visible,
+		"and closes the browser, because the patch it replaced is the thing you were "
+			+ "looking at")
+
+	# Back to the patch the rest of the suite is about — and the roll folded away with
+	# it. Kit Chopper carries a sequence, which opens the roll, and loading a patch
+	# without one does not close it again: the roll is a workspace the reader opened,
+	# not a property of the document. True before this check existed, and now visible
+	# because this is the first thing in the suite to load a sequenced patch.
+	await main._load_example("First Synth")
+	for i in 12:
+		await process_frame
+	main._set_roll_open(false)
+	for i in 4:
+		await process_frame
+	main.toolbar.add_node_requested.emit()
+	for i in 3:
+		await process_frame
 
 	main.node_browser.select_category("DX7 bank")
 	main.node_browser.select_item("device:DX7: algo-01")

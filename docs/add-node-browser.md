@@ -271,10 +271,21 @@ Nothing invented: a node's ports are the core's own, and a patch's counts are re
 its file — when it is looked at, not when it is listed, because three hundred patches are
 not opened to draw a list of their names.
 
-**The buttons say what the item said.** `Add node` is live — it is what Enter has done
-since step 3. `Load example` replaces the patch somebody is editing and `Open in sandbox`
-has no route yet, so both are drawn and disabled rather than drawn and lying. Step 7 turns
-the descriptors into behaviour.
+**The buttons say what the item said**, and two of the three do it.
+
+`Add node` drops the thing into the patch — what Enter has done since step 3. `Load
+example` opens it, by the same route the toolbar's own example menu has always used:
+straight in, no confirmation, because that is this editor's existing convention and one
+entry point should not invent a different one. `Open in sandbox` has nowhere to go yet,
+so it is drawn and disabled rather than drawn and lying.
+
+Enter takes the item's *primary* action, whatever that is — it adds a node and loads a
+patch, one gesture, because the item already says which one it is. The browser closes on
+a load and stays open on an add: a patch replaces the thing you were looking at, and nodes
+are added several at a time.
+
+Loading was pulled forward out of step 7 on request. What is left there is `Open in
+sandbox` and whatever a bank item's actions should really be.
 
 ### The window is a ceiling now
 
