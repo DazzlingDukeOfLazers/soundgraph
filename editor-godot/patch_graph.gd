@@ -565,6 +565,25 @@ func _get_connection_line(from_position: Vector2, to_position: Vector2) -> Packe
 		var bias := (weave.randf() * 2.0 - 1.0) * 0.03
 		var lean_a := tan(deg_to_rad((weave.randf() * 2.0 - 1.0) * 3.0))
 		var lean_b := tan(deg_to_rad((weave.randf() * 2.0 - 1.0) * 3.0))
+		# Goal 7: adjacent occupied sockets release in alternating directions, so two
+		# cables leaving neighbouring jacks are pushed apart for their first stretch
+		# instead of fusing into one two-tone rail.
+		#
+		# Structured, not random. Goal 6's jitter is blind to neighbours and can hand
+		# two adjacent cables the same lean, which is exactly how the chartreuse came
+		# to ride under the amber. This alternates down each column of occupied
+		# anchors, so vertical neighbours are guaranteed to diverge rather than likely
+		# to.
+		#
+		# Its own term with its own falloff rather than an addition to Goal 6's lean,
+		# for two reasons found by reading the first attempt back. Added, it could be
+		# cancelled: ±4 structured on top of ±3 random leaves a worst case where two
+		# neighbours differ by two degrees instead of eight, which is a guarantee in
+		# name only. And it would have inherited the quarter-span falloff, reaching a
+		# quarter of the way down a cable — Goal 7 is the departure region and nothing
+		# else, so this fades over an eighth and the approved curve owns the rest.
+		var splay_a := _departure_sign(a) * tan(deg_to_rad(5.0))
+		var splay_b := _departure_sign(b) * tan(deg_to_rad(5.0))
 		var hung := Rack.catenary(a, b, sag)
 		var hung_scaled := PackedVector2Array()
 		var last := maxi(hung.size() - 1, 1)
@@ -578,6 +597,10 @@ func _get_connection_line(from_position: Vector2, to_position: Vector2) -> Packe
 			# angle and rejoins the family curve by mid-drape.
 			point.y += lean_a * (point.x - a.x) * maxf(0.0, 1.0 - t / 0.25)
 			point.y += lean_b * (point.x - b.x) * maxf(0.0, 1.0 - (1.0 - t) / 0.25) * -1.0
+			# The departure splay, over an eighth of the span: separation exactly where
+			# two cables would otherwise leave as one, and gone before the drape.
+			point.y += splay_a * (point.x - a.x) * maxf(0.0, 1.0 - t / 0.125)
+			point.y += splay_b * (point.x - b.x) 				* maxf(0.0, 1.0 - (1.0 - t) / 0.125) * -1.0
 			hung_scaled.append(point * scale)
 		return hung_scaled
 
@@ -848,6 +871,47 @@ class CrossingOverlay extends Control:
 ## know to look again. The view fingerprint cannot see paint: a repaint moves no node
 ## and changes no count.
 var paint_stamp := 0
+
+
+## Which way a cable leans as it leaves its socket: +1, -1, alternating down each
+## column of occupied anchors, or 0 for an anchor the map has not seen. Rebuilt by the
+## cord layer before it draws, keyed by the same 4px quantisation the hang seed uses —
+## deterministic by construction, since the anchors are sorted before signs are dealt.
+var _departure_signs: Dictionary = {}
+
+
+func _departure_sign(at: Vector2) -> float:
+	return float(_departure_signs.get("%d:%d" % [roundi(at.x / 4.0),
+		roundi(at.y / 4.0)], 0))
+
+
+## Deals the alternating signs. Anchors are grouped by their column (the node edge they
+## sit on) and sorted top to bottom, so vertical neighbours always draw opposite leans
+## — which is the entire point: divergence between adjacent departures is guaranteed,
+## not probable.
+func _rebuild_departure_signs() -> void:
+	_departure_signs.clear()
+	var columns: Dictionary = {}
+	for connection in get_connection_list():
+		for side in 2:
+			var widget := get_node_or_null(NodePath(str(
+				connection["from_node" if side == 0 else "to_node"]))) as GraphNode
+			if widget == null:
+				continue
+			var port := int(connection["from_port" if side == 0 else "to_port"])
+			var local: Vector2 = widget.get_output_port_position(port) if side == 0 				else widget.get_input_port_position(port)
+			var anchor: Vector2 = widget.position_offset + local
+			var column := "%d" % roundi(anchor.x / 4.0)
+			if not columns.has(column):
+				columns[column] = []
+			(columns[column] as Array).append(anchor)
+	for column in columns:
+		var anchors: Array = columns[column]
+		anchors.sort_custom(func(p1: Vector2, p2: Vector2) -> bool: return p1.y < p2.y)
+		for index in anchors.size():
+			var anchor: Vector2 = anchors[index]
+			_departure_signs["%d:%d" % [roundi(anchor.x / 4.0),
+				roundi(anchor.y / 4.0)]] = 1 if index % 2 == 0 else -1
 
 
 ## Cheap summary of everything the crossing marks depend on.
@@ -2428,6 +2492,7 @@ class CordLayer extends Control:
 	func _draw() -> void:
 		if graph == null or graph.face_up:
 			return
+		graph._rebuild_departure_signs()
 		# One style per frame, scaled to the view. The stack's offsets and widths scale
 		# with the zoom the same way the body does, or the cord flattens back into a
 		# line the moment you step back — which is the exact failure this layer ends.
