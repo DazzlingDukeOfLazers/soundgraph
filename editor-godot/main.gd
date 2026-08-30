@@ -230,9 +230,13 @@ var face_edit_mode := false
 var selected_module := ""
 var rack_scroll: ScrollContainer
 var container_of_views: Control
-var view_switch: HBoxContainer
+var view_switch: PanelContainer
+## The segments inside the switches. The track is a frame around them; anything that
+## wants the choices themselves wants these.
+var view_segments: HBoxContainer
+var face_mode_segments: HBoxContainer
 var lens_bar: HBoxContainer
-var face_mode_switch: HBoxContainer
+var face_mode_switch: PanelContainer
 var _view_buttons: Dictionary = {}
 var _face_mode_buttons: Dictionary = {}
 ## The third way of looking at a patch: not where somebody dragged things, and not the
@@ -316,8 +320,13 @@ var side_panel_open := true
 
 var split: HSplitContainer
 var side_panel: VBoxContainer
-var view_zoom_slider: HSlider
 var view_zoom_readout: Label
+## Whether the document is saved, said in a dot and a word.
+var save_dot: TextureRect
+var save_word: Label
+var view_zoom_out: Button
+var view_zoom_in: Button
+var view_fit_button: Button
 var _zoom_slider_syncing := false
 var scope_probe: ProbeScope
 var side_panel_body: VBoxContainer
@@ -595,6 +604,21 @@ func _apply_theme() -> void:
 	# And it reads as a label rather than as an unavailable command: a clear step above
 	# the disabled grey, a clear step under the ink of the items it names.
 	Design.set_colour(editor_theme, "font_separator_color", "PopupMenu", Design.INK_SECOND)
+	# The row under the pointer, and the row whose submenu is open, are the same row as
+	# far as a menu is concerned — and Godot paints both in a warm grey that belongs to
+	# no palette here. It is the editor's own raised surface now, which is the same cool
+	# charcoal a hovered row wears everywhere else in the program.
+	var menu_hover := StyleBoxFlat.new()
+	menu_hover.bg_color = Design.SURFACES[Design.Surface.ACTIVE]
+	menu_hover.set_corner_radius_all(Design.RADIUS_BUTTON)
+	Design.set_box(editor_theme, "hover", "PopupMenu", menu_hover)
+	# And the mint goes on the mark that says a setting is on, rather than across the
+	# row that happens to be under the pointer. Traversal is a surface; state is a
+	# colour; a row can be both at once and has to be able to say so.
+	editor_theme.set_icon("radio_checked", "PopupMenu",
+		Icons.get_icon(Icons.Kind.DOT, Design.scale(16), Design.ACCENT))
+	editor_theme.set_icon("checked", "PopupMenu",
+		Icons.get_icon(Icons.Kind.TICK, Design.scale(16), Design.ACCENT))
 
 	# ---- nodes ----------------------------------------------------------------------
 	# A node is one level above the canvas and its header one above that, so the header
@@ -823,22 +847,16 @@ func _build_ui() -> void:
 	# decides how much of a node is drawn, the number is genuinely worth reading: it
 	# is the difference between "the parameters have gone" and "the parameters have
 	# gone because I am at 40%".
-	graph_edit.show_zoom_label = true
+	# The canvas's own zoom controls are off: the strip beside the tabs says the same
+	# number in the same vocabulary, and two of anything is one of them being ignored.
+	graph_edit.show_zoom_label = false
+	graph_edit.show_zoom_buttons = false
 	# Face edit, beside the zoom controls it shares a bar with: a mode, so a toggle,
 	# and it lives on the graph because the graph is where the pointing happens.
 	# Face edit and Schematic used to live here, beside the zoom cluster. They are on the
 	# case band now, next to Face view: all three answer "how am I looking at this
 	# patch", and two of them above the canvas with the third on the case meant the set
 	# never read as a set. See _case_chip_rects in patch_graph.gd.
-	# Fit, beside the zoom controls: framing is a camera move, so it lives with the
-	# camera. It spent time in the toolbar and before that in the Arrange menu; this
-	# strip is the first home where its neighbours are also about looking.
-	var fit_button := Button.new()
-	fit_button.text = "Fit"
-	fit_button.tooltip_text = "Zoom and scroll so the whole patch is visible, clear of " \
-		+ "the minimap and the zoom controls."
-	fit_button.pressed.connect(func() -> void: graph_edit.fit_graph())
-	graph_edit.get_menu_hbox().add_child(_defocus(fit_button))
 	graph_edit.face_cell_toggled.connect(_on_face_cell_toggled)
 	graph_edit.face_port_toggled.connect(_on_face_port_toggled)
 	# And one button fewer. Arrange is in the toolbar menu now, so the icon beside the
@@ -973,8 +991,18 @@ func _build_ui() -> void:
 	# segment carries weight and an accent underline, the rest are muted text. Two cues
 	# beyond colour (weight and the underline), so the selection survives a monochrome
 	# screen and a colour-blind reader.
-	view_switch = HBoxContainer.new()
-	view_switch.add_theme_constant_override("separation", 0)
+	# One control rather than four words: a track holding four segments, the chosen one
+	# filled. Underlined text was restrained to the point of invisible — four labels in
+	# a row over a canvas, one of them slightly brighter, which is a caption and not a
+	# switch. The track is what says these four are one choice.
+	view_switch = PanelContainer.new()
+	var view_track := Design.padded_panel(Design.Surface.NODE, 2, 2,
+		Design.RADIUS_BUTTON)
+	view_track.border_color = Design.BORDERS[Design.Surface.RAISED]
+	view_switch.add_theme_stylebox_override("panel", view_track)
+	view_segments = HBoxContainer.new()
+	view_segments.add_theme_constant_override("separation", 0)
+	view_switch.add_child(view_segments)
 	var lens_group := ButtonGroup.new()
 	var lens_names := {PatchView.RACK: "Rack", PatchView.GRAPH: "Graph",
 		PatchView.SCHEMATIC: "Schematic", PatchView.FACE: "Face"}
@@ -983,7 +1011,10 @@ func _build_ui() -> void:
 		segment.text = lens_names[lens]
 		segment.toggle_mode = true
 		segment.button_group = lens_group
-		segment.flat = true
+		# Not flat. A flat Button draws no stylebox at all, so the chosen segment's tile
+		# was being made, handed over, and thrown away — the switch looked exactly like
+		# the row of words it was replacing.
+		segment.flat = false
 		segment.tooltip_text = "%s — %d" % [lens_names[lens], int(lens) + 1] \
 			if lens != PatchView.RACK else "Rack — 1"
 		segment.add_theme_font_size_override("font_size",
@@ -991,13 +1022,19 @@ func _build_ui() -> void:
 		segment.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var chosen := int(lens)
 		segment.pressed.connect(func() -> void: _set_patch_view(chosen))
-		view_switch.add_child(segment)
+		view_segments.add_child(segment)
 		_view_buttons[lens] = segment
 	# Face's own mode, visibly subordinate: smaller, quieter, and only present while
 	# Face is the lens. View and Edit are how you touch the faceplates, not where you
 	# are.
-	face_mode_switch = HBoxContainer.new()
-	face_mode_switch.add_theme_constant_override("separation", 0)
+	face_mode_switch = PanelContainer.new()
+	var mode_track := Design.padded_panel(Design.Surface.NODE, 2, 2,
+		Design.RADIUS_BUTTON)
+	mode_track.border_color = Design.BORDERS[Design.Surface.RAISED]
+	face_mode_switch.add_theme_stylebox_override("panel", mode_track)
+	face_mode_segments = HBoxContainer.new()
+	face_mode_segments.add_theme_constant_override("separation", 0)
+	face_mode_switch.add_child(face_mode_segments)
 	face_mode_switch.visible = false
 	var mode_group := ButtonGroup.new()
 	for mode in ["View", "Edit"]:
@@ -1005,13 +1042,13 @@ func _build_ui() -> void:
 		mode_button.text = mode
 		mode_button.toggle_mode = true
 		mode_button.button_group = mode_group
-		mode_button.flat = true
+		mode_button.flat = false
 		mode_button.add_theme_font_size_override("font_size",
 			Design.type(Design.SIZE_SECONDARY))
 		mode_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var wants_edit: bool = mode == "Edit"
 		mode_button.pressed.connect(func() -> void: _set_face_mode(wants_edit))
-		face_mode_switch.add_child(mode_button)
+		face_mode_segments.add_child(mode_button)
 		_face_mode_buttons[mode] = mode_button
 	# Its own bar, centred over the canvas inside the Patch tab — not in the breadcrumb
 	# strip, which it overflowed straight across the workspace tabs the first time. The
@@ -1033,22 +1070,24 @@ func _build_ui() -> void:
 	lens_bar.add_theme_constant_override("separation", Design.scale(Design.SPACE_S))
 	lens_bar.add_child(view_switch)
 	lens_bar.add_child(face_mode_switch)
-	# The zoom, as furniture: Ctrl+wheel exists, but a gesture nobody is told about
-	# is a feature that does not exist, and the strip beside the tabs is where the
-	# eye already is when choosing how to look. One slider serves whichever view is
-	# in front — the graph and the rack each keep their own value and range.
-	view_zoom_slider = HSlider.new()
-	view_zoom_slider.custom_minimum_size = Vector2(Design.scale(110), 0)
-	view_zoom_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	view_zoom_slider.step = 0.01
-	view_zoom_slider.visible = false
-	view_zoom_slider.tooltip_text = "How close you stand to this view. The graph and " \
-		+ "the rack each remember their own distance."
-	view_zoom_slider.value_changed.connect(_on_view_zoom_slider)
-	# Not through _defocus: its 44px hit floor would make this the tallest thing in
-	# a strip of tabs and shove the row over the canvas. The strip is the target.
-	view_zoom_slider.focus_mode = Control.FOCUS_NONE
-	crumb_row.add_child(view_zoom_slider)
+	# Dressed once, here. The switch only ever styled itself when a lens changed or a
+	# tab did, so on the way in it wore the theme's plain button box on all four
+	# segments and said nothing about which one you were looking through — which went
+	# unnoticed for as long as the chosen segment was only a slightly brighter word.
+	_sync_view_switch.call_deferred()
+	# The zoom, as furniture: Ctrl+wheel exists, but a gesture nobody is told about is a
+	# feature that does not exist, and the strip beside the tabs is where the eye already
+	# is when choosing how to look. One cluster serves whichever view is in front — the
+	# graph and the rack each keep their own value and range.
+	#
+	# It was two interfaces over one number. A slider and a readout sat here while the
+	# canvas carried GraphEdit's own minus, percentage, plus and a Fit — the same zoom,
+	# said twice, in two vocabularies, one of which only worked in the graph. The
+	# canvas's zoom controls are off now and this is the whole of it: minus, the number,
+	# plus, and the way to see everything. The grid toggle stays where it was, being
+	# about the grid.
+	view_zoom_out = _zoom_button("−", "Zoom out", -1)
+	crumb_row.add_child(view_zoom_out)
 	view_zoom_readout = Label.new()
 	view_zoom_readout.add_theme_font_override("font", Design.numeric_font())
 	view_zoom_readout.add_theme_font_size_override("font_size",
@@ -1056,15 +1095,47 @@ func _build_ui() -> void:
 	view_zoom_readout.add_theme_color_override("font_color", Design.INK_SECOND)
 	view_zoom_readout.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	view_zoom_readout.custom_minimum_size.x = Design.scale(44)
+	view_zoom_readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	view_zoom_readout.visible = false
+	view_zoom_readout.tooltip_text = "How close you stand to this view. The graph and " \
+		+ "the rack each remember their own distance."
 	crumb_row.add_child(view_zoom_readout)
+	view_zoom_in = _zoom_button("+", "Zoom in", 1)
+	crumb_row.add_child(view_zoom_in)
+	view_fit_button = _zoom_button("Fit", "Zoom and scroll so the whole patch is "
+		+ "visible, clear of the minimap and the zoom controls.", 0)
+	crumb_row.add_child(view_fit_button)
 	crumb_row.add_child(document_label)
+	# Document, then a rule, then the zoom: two groups in one row, and the rule is what
+	# says they are two. The name and its state belong together and the camera controls
+	# belong to the view, not to the file.
+	save_dot = TextureRect.new()
+	save_dot.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	save_dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	crumb_row.add_child(save_dot)
+	save_word = Label.new()
+	save_word.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	save_word.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	crumb_row.add_child(save_word)
+	var crumb_rule := VSeparator.new()
+	crumb_rule.add_theme_constant_override("separation", Design.SPACE_M)
+	crumb_row.add_child(crumb_rule)
+
 	climb_button = Button.new()
 	climb_button.visible = false
 	climb_button.add_theme_font_size_override("font_size",
 		Design.type(Design.SIZE_SECONDARY))
 	climb_button.pressed.connect(_climb_up)
 	crumb_row.add_child(_defocus(climb_button))
+	# The row's order, said once and here rather than implied by the order the widgets
+	# happened to be built in. Left to right it answers the questions in the order they
+	# are asked: what am I looking at, is it safe, and how close am I standing.
+	var crumb_order: Array = [climb_button.get_parent(), document_label, save_dot,
+		save_word, crumb_rule, view_zoom_out, view_zoom_readout, view_zoom_in,
+		view_fit_button]
+	for index in crumb_order.size():
+		crumb_row.move_child(crumb_order[index] as Node, index)
 	views.get_tab_bar().add_child(crumb_row)
 	# One tab, one canvas, both sides of the container. The graph already owns zoom,
 	# pan and the grid, so the face is a tenant on that canvas rather than a rival
@@ -1400,7 +1471,7 @@ func _sync_view_switch() -> void:
 		and views.get_tab_title(views.current_tab) == "Patch"
 	if view_switch != null:
 		view_switch.visible = on_patch
-		for lens in _view_buttons:
+		for lens: int in _view_buttons:
 			var segment: Button = _view_buttons[lens]
 			var selected: bool = int(lens) == patch_view
 			segment.set_pressed_no_signal(selected)
@@ -1414,9 +1485,13 @@ func _sync_view_switch() -> void:
 			_dress_segment(mode_button, chosen)
 
 
-## One strong selected cue and one quiet one: an accent underline and semibold text on
-## the chosen segment, muted regular text on the rest. No boxes — four outlined boxes
-## is a row of buttons, and this is navigation.
+## One segment of a switch, chosen or not.
+##
+## Two cues and neither of them is colour alone: the chosen segment is a raised tile in
+## the track, and its label is semibold and bright where the others are regular and
+## muted. The accent is a hairline along the tile's foot rather than a wash across it —
+## mint is what this editor says "running" and "selected" with, and a mint slab under a
+## word is louder than the word.
 func _dress_segment(segment: Button, selected: bool) -> void:
 	segment.add_theme_font_override("font",
 		Design.font(Design.WEIGHT_SEMIBOLD if selected else Design.WEIGHT_REGULAR))
@@ -1424,20 +1499,27 @@ func _dress_segment(segment: Button, selected: bool) -> void:
 			"font_focus_color"]:
 		segment.add_theme_color_override(state,
 			Design.INK_BRIGHT if selected else Design.INK_SECOND)
+	var pad_h := Design.SPACE_M
+	var pad_v := Design.SPACE_XS
 	if selected:
-		var underline := StyleBoxFlat.new()
-		underline.bg_color = Color(Design.ACCENT, 0.08)
-		underline.border_width_bottom = maxi(Design.scale(2), 2)
-		underline.border_color = Design.ACCENT
-		underline.content_margin_left = Design.scale(Design.SPACE_S)
-		underline.content_margin_right = Design.scale(Design.SPACE_S)
-		underline.content_margin_top = Design.scale(Design.SPACE_XS)
-		underline.content_margin_bottom = Design.scale(Design.SPACE_XS)
+		var tile := Design.padded_panel(Design.Surface.ACTIVE, pad_h, pad_v,
+			Design.RADIUS_BUTTON)
+		tile.border_color = Design.ACCENT.lerp(
+			Design.SURFACES[Design.Surface.ACTIVE], 0.55)
+		tile.border_width_bottom = maxi(Design.scale(2), 2)
 		for state in ["normal", "hover", "pressed"]:
-			segment.add_theme_stylebox_override(state, underline)
+			segment.add_theme_stylebox_override(state, tile)
 	else:
-		for state in ["normal", "hover", "pressed"]:
-			segment.remove_theme_stylebox_override(state)
+		var quiet := Design.padded_panel(Design.Surface.NODE, pad_h, pad_v,
+			Design.RADIUS_BUTTON)
+		quiet.bg_color = Color(Design.SURFACES[Design.Surface.NODE], 0.0)
+		quiet.border_width_bottom = 0
+		quiet.set_border_width_all(0)
+		var over := quiet.duplicate() as StyleBoxFlat
+		over.bg_color = Design.SURFACES[Design.Surface.RAISED]
+		segment.add_theme_stylebox_override("normal", quiet)
+		segment.add_theme_stylebox_override("hover", over)
+		segment.add_theme_stylebox_override("pressed", over)
 
 
 ## Shows the shared selection the way the current lens shows anything: the graph
@@ -1471,24 +1553,24 @@ func _zoomable_view() -> String:
 ## Points the slider at the front view's range and value. Hidden on views with no
 ## zoom, because a control that does nothing teaches that the whole strip does nothing.
 func _refresh_view_zoom_slider() -> void:
-	if view_zoom_slider == null:
+	if view_zoom_readout == null:
 		return
-	# Range setters clamp, and clamping emits value_changed: without the flag,
-	# pointing the slider at a view zooms that view to the slider's old floor.
 	_zoom_slider_syncing = true
 	var which := _zoomable_view()
-	view_zoom_slider.visible = which != ""
-	view_zoom_readout.visible = which != ""
-	if which == "Graph":
-		view_zoom_slider.min_value = graph_edit.zoom_min
-		view_zoom_slider.max_value = graph_edit.zoom_max
-		view_zoom_slider.set_value_no_signal(graph_edit.zoom)
-	elif which == "Rack":
-		view_zoom_slider.min_value = 0.25
-		view_zoom_slider.max_value = 1.0
-		view_zoom_slider.set_value_no_signal(rack.view_zoom)
+	var span := _view_zoom_span()
+	var at := _view_zoom()
+	for control: Control in [view_zoom_out, view_zoom_readout, view_zoom_in,
+			view_fit_button]:
+		if control != null:
+			control.visible = which != ""
 	if which != "":
-		view_zoom_readout.text = "%d%%" % roundi(view_zoom_slider.value * 100.0)
+		view_zoom_readout.text = "%d%%" % roundi(at * 100.0)
+		# A button that cannot do anything says so. The ends of the range are reachable
+		# and the press that would go past them is not.
+		if view_zoom_out != null:
+			view_zoom_out.disabled = at <= span.x + 0.001
+		if view_zoom_in != null:
+			view_zoom_in.disabled = at >= span.y - 0.001
 	_zoom_slider_syncing = false
 
 
@@ -1935,15 +2017,88 @@ func _on_module_theme_requested(node_id: String, at: Vector2) -> void:
 	menu.popup(Rect2i(Vector2i(at), Vector2i(1, 1)))
 
 
-func _on_view_zoom_slider(value: float) -> void:
+## Points the view in front at a zoom, and says so.
+func _set_view_zoom(value: float) -> void:
 	if view_zoom_readout == null or _zoom_slider_syncing:
 		return
 	var which := _zoomable_view()
+	var span := _view_zoom_span()
+	var wanted := clampf(value, span.x, span.y)
 	if which == "Graph":
-		graph_edit.zoom = value
+		graph_edit.zoom = wanted
 	elif which == "Rack":
-		rack.view_zoom = value
-	view_zoom_readout.text = "%d%%" % roundi(value * 100.0)
+		rack.view_zoom = wanted
+	view_zoom_readout.text = "%d%%" % roundi(wanted * 100.0)
+
+
+## What the view in front will accept, as a low and a high.
+func _view_zoom_span() -> Vector2:
+	match _zoomable_view():
+		"Graph":
+			return Vector2(graph_edit.zoom_min, graph_edit.zoom_max)
+		"Rack":
+			return Vector2(0.25, 1.0)
+	return Vector2(1.0, 1.0)
+
+
+## Where the view in front is standing.
+func _view_zoom() -> float:
+	match _zoomable_view():
+		"Graph":
+			return graph_edit.zoom
+		"Rack":
+			return rack.view_zoom
+	return 1.0
+
+
+## One press of minus or plus. A ratio rather than a step, because zoom is a ratio: the
+## same press has to feel the same at 30% as at 200%, and a fixed step is either useless
+## at one end or violent at the other.
+func _step_view_zoom(direction: int) -> void:
+	_set_view_zoom(_view_zoom() * (1.2 if direction > 0 else 1.0 / 1.2))
+	_refresh_view_zoom_slider()
+
+
+## Fit, for whichever view is in front.
+func _fit_view_zoom() -> void:
+	match _zoomable_view():
+		"Graph":
+			graph_edit.fit_graph()
+		"Rack":
+			rack.fit_case()
+	_refresh_view_zoom_slider.call_deferred()
+
+
+## One of the cluster's three buttons. Direction 0 is Fit.
+func _zoom_button(label: String, tip: String, direction: int) -> Button:
+	var button := Button.new()
+	button.text = label
+	button.tooltip_text = tip
+	button.visible = false
+	button.focus_mode = Control.FOCUS_NONE
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# Compact on purpose. These sit in a strip of tabs, next to a document name, and at
+	# the theme's ordinary button padding four of them are the loudest thing in the row
+	# — a camera control is furniture, and furniture is small.
+	button.custom_minimum_size = Vector2(Design.scale(28 if label != "Fit" else 40),
+		Design.scale(26))
+	button.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+	for state: Array in [["normal", Design.Surface.NODE],
+			["hover", Design.Surface.RAISED], ["pressed", Design.Surface.ACTIVE]]:
+		var box := Design.padded_panel(int(state[1]), Design.SPACE_S, 0,
+			Design.RADIUS_BUTTON)
+		box.border_color = Design.BORDERS[Design.Surface.RAISED]
+		button.add_theme_stylebox_override(str(state[0]), box)
+	var faded := Design.padded_panel(Design.Surface.NODE, Design.SPACE_S, 0,
+		Design.RADIUS_BUTTON)
+	faded.bg_color = Color(Design.SURFACES[Design.Surface.NODE], 0.4)
+	faded.border_color = Color(Design.BORDERS[Design.Surface.RAISED], 0.4)
+	button.add_theme_stylebox_override("disabled", faded)
+	if direction == 0:
+		button.pressed.connect(_fit_view_zoom)
+	else:
+		button.pressed.connect(func() -> void: _step_view_zoom(direction))
+	return button
 
 
 func _on_file_menu(id: int) -> void:
@@ -3375,16 +3530,16 @@ func _process(_delta: float) -> void:
 			roll_scroll.set_value_no_signal(want)
 		_roll_scroll_syncing = false
 
-	# The slider follows the view when zoom changes by any other hand — Ctrl+wheel,
-	# the graph's own buttons, a fitted case. Cheap, and quiet: no_signal, so the
-	# follow never argues with the drag.
-	if view_zoom_slider != null and view_zoom_slider.visible:
+	# The readout follows the view when the zoom changes by any other hand — Ctrl+wheel,
+	# a fitted case, a lens that remembers where it was standing. Cheap, and the only way
+	# the number can be trusted: this cluster is not the only way to zoom and was never
+	# meant to be.
+	if view_zoom_readout != null and view_zoom_readout.visible:
 		var which := _zoomable_view()
 		var actual: float = graph_edit.zoom if which == "Graph" \
 			else (rack.view_zoom if which == "Rack" else -1.0)
-		if actual > 0.0 and absf(actual - view_zoom_slider.value) > 0.005:
-			view_zoom_slider.set_value_no_signal(actual)
-			view_zoom_readout.text = "%d%%" % roundi(actual * 100.0)
+		if actual > 0.0 and view_zoom_readout.text != "%d%%" % roundi(actual * 100.0):
+			_refresh_view_zoom_slider()
 	# Before the early return: the dock's cables have to follow the graph as it scrolls,
 	# zooms and has nodes dragged under them, and none of that waits for an engine.
 	_refresh_seam_cables()
@@ -9320,7 +9475,17 @@ func _refresh_document_label() -> void:
 	# A dot rather than an asterisk, and the name goes bright rather than gaining
 	# punctuation — the change should be noticeable without the label jumping about,
 	# and a leading "*" shifts every character along by one.
-	var shown := document_name + ("  (unsaved)" if unsaved else "")
+	# The state is a dot and a word beside the name rather than a parenthesis after it:
+	# "(unsaved)" is only ever there when something is wrong, so its absence has to be
+	# read as the good news, and an absence is a poor way to say anything. Saved says
+	# saved.
+	if save_dot != null:
+		save_dot.texture = _icon(Icons.Kind.DOT,
+			Design.INK_SECOND if unsaved else Design.ACCENT, Design.SIZE_SECONDARY)
+		save_word.text = "Unsaved" if unsaved else "Saved"
+		save_word.add_theme_color_override("font_color",
+			Design.INK_NORMAL if unsaved else Design.INK_SECOND)
+	var shown := document_name
 	if dive_stack.is_empty():
 		document_label.text = "[right]%s[/right]" % shown
 	else:
@@ -9333,8 +9498,7 @@ func _refresh_document_label() -> void:
 				parts.append("[url=%d]%s[/url]" % [index, segments[index]])
 			else:
 				parts.append(segments[index])
-		document_label.text = "[right]%s%s[/right]" % [" > ".join(parts),
-			"  (unsaved)" if unsaved else ""]
+		document_label.text = "[right]%s[/right]" % " > ".join(parts)
 	# Because the label is clipped, this is the only place a long name can be read whole.
 	document_label.tooltip_text = shown
 	document_label.add_theme_color_override("default_color",

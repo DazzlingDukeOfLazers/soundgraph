@@ -2586,16 +2586,19 @@ func _initialize() -> void:
 	await main._load_example("First Synth")
 	await process_frame
 	check(not main.unsaved, "a freshly opened patch has nothing unsaved")
-	check(not main.document_label.text.contains("unsaved"),
-		"and its name is plain (%s)" % main.document_label.text)
+	check(main.save_word.text == "Saved" and not main.document_label.text.contains(
+			"unsaved"),
+		"and the strip says Saved beside a name that carries no punctuation about it "
+			+ "(%s)" % main.save_word.text)
 
 	main._begin_edit()
 	main._set_parameter("filter", "cutoff", 2500.0)
 	main._commit_edit("set cutoff")
 	await process_frame
 	check(main.unsaved, "changing something marks it unsaved")
-	check(main.document_label.text.contains("unsaved"),
-		"and the document name says so (%s)" % main.document_label.text)
+	check(main.save_word.text == "Unsaved",
+		"and the strip beside the name says so, in a word rather than in a parenthesis "
+			+ "whose absence was the good news (%s)" % main.save_word.text)
 
 	# Opening another document clears it, or the mark would follow you around for the
 	# rest of the session and stop meaning anything.
@@ -8302,7 +8305,7 @@ func _initialize() -> void:
 	# used to check lived on the case band and vanished with the nodes the band was
 	# measured from — a room with no door — and the fix that pinned chips to the mount
 	# has been retired for the better one: the door is outside the room.
-	check(main.view_switch != null and main.view_switch.get_child_count() == 4,
+	check(main.view_segments != null and main.view_segments.get_child_count() == 4,
 		"the lens switch stands above the canvas with all four views on it")
 	# And the band stops being a drag handle while it is up: there are no visible nodes
 	# under it, so a drag would move things nobody can see and leave an undo step behind.
@@ -8433,16 +8436,16 @@ func _initialize() -> void:
 		"the workspace tabs are Patch, Sandbox and Outline — no lens among them (%s)"
 			% str(tab_titles))
 	var segment_names: Array = []
-	for segment in main.view_switch.get_children():
+	for segment in main.view_segments.get_children():
 		segment_names.append((segment as Button).text)
 	check(segment_names == ["Rack", "Graph", "Schematic", "Face"],
 		"and the lens switch reads Rack, Graph, Schematic, Face (%s)"
 			% str(segment_names))
 	check(not main.face_mode_switch.visible,
 		"Face's View/Edit pair is nowhere to be seen while another lens is up")
-	var mode_size: int = (main.face_mode_switch.get_child(0) as Button)\
+	var mode_size: int = (main.face_mode_segments.get_child(0) as Button)\
 		.get_theme_font_size("font_size")
-	var lens_size: int = (main.view_switch.get_child(0) as Button)\
+	var lens_size: int = (main.view_segments.get_child(0) as Button)\
 		.get_theme_font_size("font_size")
 	check(mode_size < lens_size,
 		"and it is set smaller than the lenses — a mode, not a peer (%d vs %d)"
@@ -10510,23 +10513,34 @@ func _initialize() -> void:
 		"and fitting the window spreads them far wider than that (free %.0f vs cased %.0f)"
 			% [widest_free, widest_cased])
 
-	# The strip's zoom slider: one control, two views, two memories. It stands beside
-	# the tabs because Ctrl+wheel is a gesture nobody is told about, and it must point
-	# at whichever view is in front without the two values bleeding into each other.
+	# The strip's zoom cluster: one control, two views, two memories. It stands beside
+	# the tabs because Ctrl+wheel is a gesture nobody is told about, and it must point at
+	# whichever view is in front without the two values bleeding into each other.
+	#
+	# It used to be a slider here and minus, a percentage, plus and Fit on the canvas —
+	# two interfaces over one number, one of which only worked in the graph.
 	await main._set_patch_view(main.PatchView.GRAPH)
 	for i in 4:
 		await process_frame
 	main._refresh_view_zoom_slider()
-	check(main.view_zoom_slider.visible,
-		"the zoom slider shows for the graph view")
-	main._on_view_zoom_slider(0.5)
+	check(main.view_zoom_readout.visible and main.view_zoom_out.visible
+			and main.view_zoom_in.visible and main.view_fit_button.visible,
+		"the zoom cluster shows for the graph view")
+	check(not main.graph_edit.show_zoom_buttons and not main.graph_edit.show_zoom_label,
+		"and the canvas has stopped saying the same thing in its own vocabulary")
+	main._set_view_zoom(0.5)
 	check(is_equal_approx(main.graph_edit.zoom, 0.5),
-		"and dragging it zooms the graph (%.2f)" % main.graph_edit.zoom)
+		"setting it zooms the graph (%.2f)" % main.graph_edit.zoom)
+	main._step_view_zoom(1)
+	check(main.graph_edit.zoom > 0.5
+			and main.view_zoom_readout.text == "%d%%" % roundi(main.graph_edit.zoom * 100.0),
+		"plus steps up and the readout follows (%s)" % main.view_zoom_readout.text)
+	main._set_view_zoom(0.5)
 	await main._set_patch_view(main.PatchView.RACK)
 	for i in 6:
 		await process_frame
 	main._refresh_view_zoom_slider()
-	main._on_view_zoom_slider(0.4)
+	main._set_view_zoom(0.4)
 	check(is_equal_approx(main.rack.view_zoom, 0.4)
 			and is_equal_approx(main.graph_edit.zoom, 0.5),
 		"on the rack lens it zooms the rack and leaves the graph's distance alone")
@@ -10534,9 +10548,9 @@ func _initialize() -> void:
 	for i in 6:
 		await process_frame
 	main._refresh_view_zoom_slider()
-	check(absf(main.view_zoom_slider.value - 0.5) < 0.01,
-		"and coming back, the slider remembers the graph's own value (%.2f)"
-			% main.view_zoom_slider.value)
+	check(main.view_zoom_readout.text == "50%",
+		"and coming back, the readout remembers the graph's own value (%s)"
+			% main.view_zoom_readout.text)
 	main.rack.view_zoom = 1.0
 	main.rack.case_hp = 0
 

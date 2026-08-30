@@ -279,7 +279,11 @@ func _build() -> void:
 	# the two commands whose curved arrows genuinely are universal, the icons are drawn
 	# rather than hoped for in a font, and these were the two widest buttons in the bar's
 	# narrowest group. The tooltips still say the word and the shortcut.
-	var edit_group := _toolbar_group(bar)
+	# No rule between Add node and undo/redo. Making something and taking it back are one
+	# group — the thing you do and the way out of it — and a rule between them said there
+	# were four groups in this bar where there are three: the name, the work, and the
+	# program. Separators are for the joins that mean something.
+	var edit_group := _toolbar_group(bar, true)
 	toolbar_edit_group = edit_group
 	undo_button = Button.new()
 	undo_button.icon = _icon(Icons.Kind.UNDO, Design.INK_NORMAL)
@@ -606,9 +610,15 @@ func _build() -> void:
 	var burger := MenuButton.new()
 	toolbar_menu_button = burger
 	burger.icon = _icon(Icons.Kind.HAMBURGER, Design.INK_NORMAL)
-	# Borderless: the glyph is the button. A frame around three bars read as a tiny
-	# window that had lost its contents.
-	burger.flat = true
+	# A bounded square, the size of undo and redo. It was borderless on the argument
+	# that the glyph is the button, which is true of a glyph nobody has to find: this
+	# one is the way into every command in the program and it sits in the corner with
+	# nothing around it. The frame is the same quiet one its neighbours wear, and the
+	# forty-pixel floor is the hit area they already have.
+	# Said out loud, because a MenuButton is flat unless it is told otherwise and
+	# deleting the line that said so left it exactly as it was.
+	burger.flat = false
+	burger.custom_minimum_size = Vector2(Design.scale(40), Design.scale(40))
 	burger.tooltip_text = "File, edit, patch, arrange, view, audio, help"
 	var burger_popup := burger.get_popup()
 	# Marks on the doors and nowhere else. Seven rows are what the eye lands on when the
