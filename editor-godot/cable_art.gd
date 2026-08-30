@@ -166,6 +166,12 @@ class Style extends RefCounted:
 	## on top reads as a second stripe painted on a flat line.
 	var edge_darken := 0.35
 	var edge_offset := Vector2(0.7, 0.8)
+	## How much of the cable's width the saturated body keeps, the rest going to the
+	## dark same-hue shell that wraps it. 1.0 is the old construction — shell visible
+	## only as the offset crescent — and the cords run narrower so the body sits inside
+	## a darker version of itself all the way round. The total apparent diameter does
+	## not change: the shell fills the envelope the offset edge already defined.
+	var body_core := 1.0
 
 	## The highlight: one thin bright line, in the cable's own colour lightened.
 	##
@@ -465,14 +471,24 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 		canvas.draw_polyline(shifted(points, style.shadow_offset),
 			Color(0.0, 0.0, 0.0, style.shadow_alpha), style.shadow_width, true)
 
+	var body_width := style.thickness * style.body_core
 	if level == Detail.FULL:
 		var edge := darken(colour, style.edge_darken)
+		# The shell, in two passes over one envelope: a centred tube at full width, so
+		# the body sits inside a darker version of itself all the way round, and the
+		# offset pass toward lower-right, where the light does not reach — which keeps
+		# the shell asymmetric enough to read as a lit cylinder rather than an outline.
+		# The envelope is the same one the offset edge always defined; the roundness
+		# comes from the body narrowing into it, not from anything getting wider.
+		if style.body_core < 1.0:
+			canvas.draw_polyline(points, edge, style.thickness, true)
+			_round_joins(canvas, points, Vector2.ZERO, edge, style.thickness)
 		canvas.draw_polyline(shifted(points, style.edge_offset), edge,
 			style.thickness, true)
 		_round_joins(canvas, points, style.edge_offset, edge, style.thickness)
 
-	canvas.draw_polyline(points, colour, style.thickness, true)
-	_round_joins(canvas, points, Vector2.ZERO, colour, style.thickness)
+	canvas.draw_polyline(points, colour, body_width, true)
+	_round_joins(canvas, points, Vector2.ZERO, colour, body_width)
 	canvas.draw_polyline(shifted(points, style.highlight_offset),
 		Color(lighten(colour, style.highlight_lighten), style.highlight_alpha),
 		style.highlight_width, true)

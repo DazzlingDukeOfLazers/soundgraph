@@ -2405,6 +2405,9 @@ class CordLayer extends Control:
 		var style := CableArt.Style.new()
 		style.thickness = maxf(8.0 * z, 2.4)
 		style.edge_offset = Vector2(1.3, 1.5) * z
+		# Goal 2, same figures as the rack: one shell, two views.
+		style.body_core = 0.84
+		style.edge_darken = 0.42
 		style.highlight_width = maxf(2.2 * z, 1.0)
 		style.highlight_offset = Vector2(-1.3, -1.5) * z
 		style.highlight_alpha = 0.6

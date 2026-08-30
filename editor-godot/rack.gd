@@ -1449,6 +1449,11 @@ class CableLayer extends Control:
 		# figures tuned for the thin one.
 		style.thickness = 10.0 if traced else 8.5
 		style.edge_offset = Vector2(1.3, 1.5)
+		# Goal 2: the shell does the form work. The body keeps 84% of the width and
+		# the dark same-hue shell takes the rest, a shade deeper than before — 0.42
+		# keeps every hue obviously itself while making the tube read as a volume.
+		style.body_core = 0.84
+		style.edge_darken = 0.42
 		style.highlight_width = 2.2
 		style.highlight_offset = Vector2(-1.3, -1.5)
 		style.highlight_alpha = 0.6
@@ -1470,7 +1475,7 @@ class CableLayer extends Control:
 		# the same-hue edge deepens and widens a touch and the highlight stands down —
 		# richer perimeter, not a muddier cable.
 		if style.panel_is_light:
-			style.edge_darken = 0.5
+			style.edge_darken = 0.52
 			style.edge_offset = Vector2(0.9, 1.0)
 			style.highlight_alpha = 0.4
 			style.shadow_alpha = 0.22
