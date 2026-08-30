@@ -2540,18 +2540,13 @@ class PlugOverlay extends Control:
 		for site in plug_sites():
 			var at: Vector2 = site[0]
 			var ink: Color = site[2]
-			var away: Vector2 = site[1]
-			# Sized against the cord, not the old thin line: a neck narrower than the
-			# cable it necks into reads as the cable pinching at the panel.
-			var neck := maxf(8.0 * graph.zoom, 3.5)
-			# The neck's contact shadow, from the reference inset: a cable leaving a
-			# socket sits just off the panel and darkens it underneath. One soft dot is
-			# the whole effect.
-			draw_circle(at + away * neck * 0.6 + Vector2(0.0, 1.6 * graph.zoom),
-				maxf(4.4 * graph.zoom, 2.0), Color(0.0, 0.0, 0.0, 0.3))
-			draw_line(at, at + away * neck, ink, maxf(7.0 * graph.zoom, 2.4), true)
-			# The mouth reads as the cable's own cut end — dark rim, lighter tube face —
-			# rather than a flat plug of colour, which is the detail the inset labels.
+			# Goal 5: two marks, and no more. The neck line and its contact dot are
+			# gone — the neck was a bridge for the old thin native line, and the cord
+			# now reaches the anchor carrying its own width and its own shadow, so the
+			# neck had become a second cable drawn over the first. What remains is the
+			# approved grammar exactly: the mouth as the cable's cut end — dark rim,
+			# lighter tube face — and the collar of the cable's colour seated in the
+			# socket ring. An occupied jack is lit; an empty one is a hole.
 			draw_circle(at, maxf(3.6 * graph.zoom, 1.8), CableArt.darken(ink, 0.35))
 			draw_circle(at, maxf(2.2 * graph.zoom, 1.1), ink.lightened(0.12))
 			draw_arc(at, maxf(5.8 * graph.zoom, 2.8), 0.0, TAU, 20, ink,

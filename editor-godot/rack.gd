@@ -1411,9 +1411,11 @@ class CableLayer extends Control:
 	## which is the thing you actually trace.
 	func _draw_landing(at: Vector2, ink: Color, style: CableArt.Style) -> void:
 		var radius := Rack.jack_radius()
-		# The mouth: the cable disappearing in. A touch darker than the body, the way
-		# the cable's own edge pass is, so the hole still reads as a hole.
-		draw_circle(at, style.thickness * 0.62, CableArt.darken(ink, 0.25))
+		# The mouth as the cable's cut end — dark rim, lighter tube face — the same two
+		# marks the graph draws, so the transition is one grammar in both views. Goal 5
+		# aligned this; before it the rack's mouth was a single flat darkened disc.
+		draw_circle(at, style.thickness * 0.62, CableArt.darken(ink, 0.35))
+		draw_circle(at, style.thickness * 0.38, ink.lightened(0.12))
 		# The collar: the occupancy cue, and the only ring the endpoint needs. Inside
 		# the module's own metal ring, so the hardware stays the hardware and the
 		# colour reads as something seated in it.
