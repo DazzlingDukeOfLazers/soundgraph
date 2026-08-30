@@ -35,6 +35,8 @@ enum Action {
 
 const KIND_NAMES := ["NODE", "PATCH", "BANK_ITEM"]
 const ACTION_NAMES := ["ADD_NODE", "LOAD_PATCH", "OPEN_IN_SANDBOX"]
+## What an action is called where somebody can read it.
+const ACTION_LABELS := ["Add node", "Load example", "Open in sandbox"]
 
 ## Where a node lands in the rail, by the category dsp-core gives it.
 ##
@@ -95,6 +97,10 @@ var tags: PackedStringArray = PackedStringArray()
 var search_terms: PackedStringArray = PackedStringArray()
 ## What the system it came from calls it, which is not always what the browser calls it.
 var source_ref := ""
+## A node's sockets, by name. Here because the preview pane reads them and the core
+## already knows them — the rule about not inventing metadata cuts both ways.
+var inputs: PackedStringArray = PackedStringArray()
+var outputs: PackedStringArray = PackedStringArray()
 var primary_action := Action.ADD_NODE
 var secondary_actions: Array = []
 
@@ -114,6 +120,10 @@ static func from_node(type_name: String, descriptor: Dictionary) -> BrowserItem:
 	for term in descriptor.get("search_terms", []):
 		item.search_terms.append(str(term))
 	item.primary_action = Action.ADD_NODE
+	for port: Dictionary in descriptor.get("inputs", []):
+		item.inputs.append(str(port.get("name", "")))
+	for port: Dictionary in descriptor.get("outputs", []):
+		item.outputs.append(str(port.get("name", "")))
 	return item
 
 
@@ -168,6 +178,35 @@ func matches(query: String, ranked: Dictionary) -> bool:
 		if not lowered.contains(str(word)):
 			return false
 	return true
+
+
+## What the preview pane shows under the description: a heading and its lines, in the
+## order they should be read.
+##
+## Here rather than in the pane. The pane draws headings and lines and knows nothing about
+## nodes or banks, which is the whole point of the step before this one — the alternative
+## is a preview pane that grows a branch per kind, which is where the provider shapes were
+## always going to leak back in.
+##
+## `facts` is what only the editor can answer: how many nodes a patch has, what it plays
+## through. It is fetched when a patch is actually looked at, because three hundred patch
+## files are not read to draw a list.
+func sections(facts: PackedStringArray) -> Array:
+	var out: Array = []
+	if inputs.size() > 0:
+		out.append({"heading": "Inputs", "lines": inputs})
+	if outputs.size() > 0:
+		out.append({"heading": "Outputs", "lines": outputs})
+	if kind != Kind.NODE and tags.size() > 0:
+		out.append({"heading": "Source", "lines": tags})
+	if facts.size() > 0:
+		out.append({"heading": "Includes", "lines": facts})
+	return out
+
+
+## Whether looking at this costs a file read.
+func needs_facts() -> bool:
+	return kind != Kind.NODE
 
 
 func kind_name() -> String:

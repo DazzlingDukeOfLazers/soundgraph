@@ -41,6 +41,47 @@ func rack_ready(main) -> void:
 	main.rack.rebuild()
 
 
+## The preview pane's headed sections, in order.
+func _pane_headings(main) -> Array:
+	var found: Array = []
+	for child in main.node_browser._preview_body.get_children():
+		var label := child as Label
+		if label != null and label.has_meta("heading"):
+			found.append(label.text)
+	return found
+
+
+## The lines under one of its headings.
+func _pane_lines(main, heading: String) -> Array:
+	var found: Array = []
+	var inside := false
+	for child in main.node_browser._preview_body.get_children():
+		var label := child as Label
+		if label == null:
+			continue
+		if label.has_meta("heading"):
+			inside = label.text == heading
+		elif inside:
+			found.append(label.text)
+	return found
+
+
+## What the pane offers, and which of those are drawn but not yet wired.
+func _pane_buttons(main) -> Array:
+	var found: Array = []
+	for child in main.node_browser._preview_actions.get_children():
+		found.append((child as Button).text)
+	return found
+
+
+func _pane_disabled(main) -> Array:
+	var found: Array = []
+	for child in main.node_browser._preview_actions.get_children():
+		if (child as Button).disabled:
+			found.append((child as Button).text)
+	return found
+
+
 ## One item out of the browser's catalogue, by id.
 func _browser_item(main, id: String) -> BrowserItem:
 	for entry: Variant in main.node_browser.catalogue:
@@ -799,6 +840,83 @@ func _initialize() -> void:
 		main.node_browser._on_search_key(_key(KEY_UP))
 	check(main.node_browser.selected_item == "SineOscillator",
 		"up comes back to the first and stops there")
+
+	# ---- the preview pane -------------------------------------------------------------
+	# Selection alone drives it — no second click — and it describes all three kinds
+	# through one rendering path. The pane draws a name, a badge, headed lists and
+	# buttons; every item answers for its own content. A branch per kind in here is where
+	# the provider shapes would leak back into the interface.
+	main.node_browser.select_category("Sources")
+	main.node_browser.search_field.text = ""
+	main.node_browser.refresh_results()
+	await process_frame
+	check(main.node_browser._preview_name.text == "Sine Oscillator"
+			and main.node_browser._preview_badge.text == "SOURCES · NODE",
+		"the pane names the lit item and says what it is (%s / %s)"
+			% [main.node_browser._preview_name.text,
+				main.node_browser._preview_badge.text])
+	var pane_headings := _pane_headings(main)
+	check(pane_headings == ["INPUTS", "OUTPUTS"],
+		"a node shows its sockets and nothing invented (%s)"
+			% ", ".join(PackedStringArray(pane_headings)))
+	var pane_buttons := _pane_buttons(main)
+	check(pane_buttons == ["Add node"] and not _pane_disabled(main).has("Add node"),
+		"and one live Add node (%s)" % ", ".join(PackedStringArray(pane_buttons)))
+
+	# The keyboard drives it too: moving the lit result redraws the pane, with no second
+	# click and nothing stale left behind.
+	main.node_browser._on_search_key(_key(KEY_DOWN))
+	await process_frame
+	check(main.node_browser._preview_name.text == "Saw Oscillator",
+		"down the results redraws the pane (%s)" % main.node_browser._preview_name.text)
+
+	main.node_browser.select_category("Examples")
+	main.node_browser.select_item("device:First Synth")
+	await process_frame
+	pane_headings = _pane_headings(main)
+	pane_buttons = _pane_buttons(main)
+	check(main.node_browser._preview_badge.text == "EXAMPLES · PATCH"
+			and pane_headings == ["INCLUDES"],
+		"a patch shows what is in it (%s / %s)"
+			% [main.node_browser._preview_badge.text,
+				", ".join(PackedStringArray(pane_headings))])
+	var includes := _pane_lines(main, "INCLUDES")
+	check(includes.has("7 nodes") and includes.has("7 connections")
+			and includes.has("Keyboard input") and includes.has("Audio output"),
+		"counted from the patch file rather than guessed (%s)"
+			% ", ".join(PackedStringArray(includes)))
+	check(pane_buttons == ["Load example", "Open in sandbox"]
+			and _pane_disabled(main).size() == 2,
+		"and offers what the item says it offers, drawn but not yet wired (%s)"
+			% ", ".join(PackedStringArray(pane_buttons)))
+
+	main.node_browser.select_category("DX7 bank")
+	main.node_browser.select_item("device:DX7: algo-01")
+	await process_frame
+	pane_buttons = _pane_buttons(main)
+	check(main.node_browser._preview_badge.text == "DX7 BANK · BANK ITEM"
+			and _pane_headings(main) == ["SOURCE", "INCLUDES"],
+		"a bank voice says which bank, and what is in it (%s / %s)"
+			% [main.node_browser._preview_badge.text,
+				", ".join(PackedStringArray(_pane_headings(main)))])
+	check(pane_buttons == ["Add node", "Open in sandbox"]
+			and _pane_disabled(main) == ["Open in sandbox"],
+		"with the action that exists live and the one that does not disabled (%s)"
+			% ", ".join(PackedStringArray(_pane_disabled(main))))
+
+	# Nothing found: a quiet empty state, not the last thing that was selected.
+	main.node_browser.select_category("All")
+	main.node_browser.search_field.text = "zzzzqq"
+	main.node_browser.refresh_results()
+	await process_frame
+	check(main.node_browser._result_rows.is_empty()
+			and main.node_browser._preview_name.text == "No matching items"
+			and _pane_buttons(main).is_empty(),
+		"an empty search empties the pane rather than leaving it stale (%s)"
+			% main.node_browser._preview_name.text)
+	main.node_browser.search_field.text = ""
+	main.node_browser.refresh_results()
+	await process_frame
 
 	# Enter. What it ought to do per content type is step seven; what it does now is what
 	# the palette does, which is add the thing.

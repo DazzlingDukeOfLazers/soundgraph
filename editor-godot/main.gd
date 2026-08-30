@@ -1250,6 +1250,7 @@ func _build_ui() -> void:
 	_build_search_popup()
 	node_browser = NodeBrowser.new()
 	node_browser.ranker = Callable(engine, "search_nodes")
+	node_browser.facts = _browser_facts
 	node_browser.item_activated.connect(_add_from_browser)
 	add_child(node_browser)
 
@@ -7542,6 +7543,43 @@ func _write_speech_buffer(node_id: String, bytes: PackedByteArray, phrases: int)
 	_say("%d phrase%s, %d bytes of chip-speak in buffer \"%s\" — the root note " \
 		% [phrases, "s" if phrases > 1 else "", bytes.size(), name] \
 		+ "says the first, each semitone up the next")
+
+
+## What a patch is made of, for the browser's preview pane.
+##
+## Read from the file when somebody looks at it. The alternative is opening three hundred
+## patches to draw a list of their names, which is the sort of eager work that turns a
+## browser into a wait.
+func _browser_facts(item: BrowserItem) -> PackedStringArray:
+	var lines := PackedStringArray()
+	if not _examples.has(item.source_ref):
+		return lines
+	var file := FileAccess.open(_example_path(_examples[item.source_ref]),
+		FileAccess.READ)
+	if file == null:
+		return lines
+	var patch_file: Variant = JSON.parse_string(file.get_as_text())
+	if not (patch_file is Dictionary):
+		return lines
+	var nodes: Array = (patch_file as Dictionary).get("nodes", [])
+	var wires: Array = (patch_file as Dictionary).get("connections", [])
+	lines.append("%d node%s" % [nodes.size(), "" if nodes.size() == 1 else "s"])
+	lines.append("%d connection%s" % [wires.size(), "" if wires.size() == 1 else "s"])
+	# What it plays through, from its own terminals rather than from a guess: the host on
+	# an Input or Output node is the seam it is wired to.
+	var terminals := {}
+	for node: Dictionary in nodes:
+		var host := str(node.get("host", ""))
+		match "%s/%s" % [str(node.get("type", "")), host]:
+			"Input/note":
+				terminals["Keyboard input"] = true
+			"Input/audio":
+				terminals["Audio input"] = true
+			"Output/stereo":
+				terminals["Audio output"] = true
+	for terminal in terminals:
+		lines.append(str(terminal))
+	return lines
 
 
 ## Enter in the browser. The same route the search palette takes, because it is the same

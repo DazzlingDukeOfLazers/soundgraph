@@ -29,16 +29,21 @@ const COLUMN_PREVIEW := 360
 ## not scale, so a height that did meant the browser was tall enough for fourteen
 ## categories at one setting and showed eleven and a scrollbar at another.
 const BROWSER_HEIGHT := 800
-## How much of the window the browser may take. Raised from 0.84, which left the rail
-## twenty pixels short of its fourteen rows: the row height is what the eye is being
-## asked about, so the panel is what gave way.
-const HEIGHT_SHARE := 0.88
+## How much of the window the browser may take. It was raised once, from 0.84, when the
+## rail came up twenty pixels short of its fourteen rows: the row height is what the eye
+## is being asked about, so the panel is what gave way.
+const HEIGHT_SHARE := 0.82
 ## The gutter the shadow falls into, inside the popup's own rectangle.
 const SHADOW := 14
 ## How far the panel's visible top edge sits below the toolbar button that opened it.
 const DROP := 14
-## Padding either side plus two column gaps: 964, inside the spec's 900-1000.
-const WIDTH := COLUMN_CATEGORIES + COLUMN_RESULTS + COLUMN_PREVIEW + GUTTER * 4
+## The window's own width. Inside the spec's 900-1000, and the figure the three columns
+## then share; the panel drawn inside it is this less the shadow gutter on either side.
+##
+## A real number rather than the columns added up, because the columns are a ratio and
+## this is a measurement — the arithmetic version claimed to be 964 and produced 910 once
+## the popup's frame had had its say, which is a comment that lies about its own line.
+const WIDTH := 910
 ## Panel padding, column gap and section spacing are one figure, as the spec asks. The
 ## design system already calls 16 SPACE_L; this names it for the places that read as
 ## "the browser's gutter" rather than as "a spacing step".
@@ -111,6 +116,10 @@ var catalogue: Array = []
 ## The core's own node ranking, so "make quieter" finds the same node here as on the
 ## command line. Query in, ranked type names out.
 var ranker: Callable = Callable()
+## What only the editor can say about a patch: how many nodes it has, what it plays
+## through. Item in, lines out. Asked when a patch is looked at, not when it is listed —
+## three hundred patch files are not read to draw a list.
+var facts: Callable = Callable()
 
 var search_field: LineEdit
 var results_list: VBoxContainer
@@ -125,6 +134,11 @@ static var CATEGORY_ORDER: Array = _category_order()
 
 var _results: ScrollContainer
 var _result_rows: Array = []
+
+var _preview_name: Label
+var _preview_badge: Label
+var _preview_body: VBoxContainer
+var _preview_actions: VBoxContainer
 
 
 func _ready() -> void:
@@ -195,6 +209,7 @@ func _ready() -> void:
 	preview_column = _column(columns, COLUMN_PREVIEW, "PREVIEW & DETAILS", false)
 	_build_rail()
 	_build_results()
+	_build_preview()
 	category_chosen.connect(func(_category: String) -> void: refresh_results())
 
 
@@ -391,6 +406,17 @@ func select_item(id: String) -> void:
 		_dress_row(row, chosen)
 		if chosen and _results != null:
 			_results.ensure_control_visible(row)
+	if _preview_body != null:
+		show_details(item_by_id(id))
+
+
+## The item behind an id, or null.
+func item_by_id(id: String) -> BrowserItem:
+	for entry: Variant in catalogue:
+		var item := entry as BrowserItem
+		if item != null and item.id == id:
+			return item
+	return null
 
 
 ## Enter. What ought to happen to a given kind of item is step seven's question; for now
@@ -410,6 +436,139 @@ func step_selection(step: int) -> void:
 			at = i
 	select_item(str((_result_rows[clampi(at + step, 0, _result_rows.size() - 1)]
 		as Button).get_meta("id")))
+
+
+## The right pane: what the lit item is, and what taking it would do.
+##
+## It draws a name, a badge, a description, some headed lists and some buttons, and it
+## knows nothing at all about nodes, patches or banks — every item answers `sections()`
+## for itself. A pane with a branch per kind is where the provider shapes leak back into
+## the interface, which is what the step before this one was for.
+func _build_preview() -> void:
+	_preview_name = Label.new()
+	_preview_name.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+	_preview_name.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_NODE_TITLE))
+	_preview_name.add_theme_color_override("font_color", Design.INK_BRIGHT)
+	_preview_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	preview_column.add_child(_preview_name)
+
+	# Category first, kind second: where it lives is what a reader is orienting by, and
+	# what it is settles the question the name raised. Small uppercase grey, like every
+	# other structural label in the browser.
+	_preview_badge = Label.new()
+	_preview_badge.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+	_preview_badge.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	_preview_badge.add_theme_color_override("font_color", Design.INK_SECOND)
+	preview_column.add_child(_preview_badge)
+
+	# Inside a scroller, and not because anybody expects to scroll it. A window is sized
+	# by what its contents demand, so a long description made the browser taller than the
+	# cap that keeps it floating over the editor — the pane grew until it reached the
+	# bottom of the screen and took its own buttons with it.
+	var body_scroll := ScrollContainer.new()
+	body_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	preview_column.add_child(body_scroll)
+	_preview_body = VBoxContainer.new()
+	_preview_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_preview_body.add_theme_constant_override("separation", Design.SPACE_M)
+	body_scroll.add_child(_preview_body)
+
+	# Anchored at the foot of the pane. Descriptions vary in length and the thing you came
+	# to press should not move about with them.
+	_preview_actions = VBoxContainer.new()
+	_preview_actions.add_theme_constant_override("separation", Design.SPACE_S)
+	preview_column.add_child(_preview_actions)
+
+
+## Redraws the pane for whatever is lit. Selection alone: no second click.
+func show_details(item: BrowserItem) -> void:
+	for child in _preview_body.get_children():
+		_preview_body.remove_child(child)
+		child.queue_free()
+	for child in _preview_actions.get_children():
+		_preview_actions.remove_child(child)
+		child.queue_free()
+
+	if item == null:
+		_preview_name.text = "No matching items"
+		_preview_badge.text = ""
+		_preview_body.add_child(_preview_line(
+			"Try another search, or another category.", true))
+		return
+
+	_preview_name.text = item.display_name
+	_preview_badge.text = "%s · %s" % [item.category.to_upper(),
+		item.kind_name().replace("_", " ")]
+	if item.description != "":
+		_preview_body.add_child(_preview_line(item.description, true))
+
+	var answers := PackedStringArray()
+	if item.needs_facts() and facts.is_valid():
+		answers = facts.call(item)
+	for section: Dictionary in item.sections(answers):
+		_preview_body.add_child(_preview_rule())
+		var heading := Label.new()
+		heading.text = str(section["heading"]).to_upper()
+		heading.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
+		heading.add_theme_font_size_override("font_size",
+			Design.type(Design.SIZE_SECONDARY))
+		heading.add_theme_color_override("font_color",
+			Design.INK_SECOND.lerp(Design.SURFACES[Design.Surface.RAISED], 0.3))
+		# Marked as a heading rather than left to be recognised by its capitals. A section
+		# called SOURCE whose only line reads DX7 has two labels in capitals, and the check
+		# that read the pane could not tell them apart.
+		heading.set_meta("heading", true)
+		_preview_body.add_child(heading)
+		for line in section["lines"]:
+			_preview_body.add_child(_preview_line(str(line), false))
+
+	var taking: Array = [item.primary_action]
+	taking.append_array(item.secondary_actions)
+	for i in taking.size():
+		_preview_actions.add_child(_action_button(item, int(taking[i]), i == 0))
+
+
+func _preview_line(text: String, quiet: bool) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+	label.add_theme_color_override("font_color",
+		Design.INK_SECOND if quiet else Design.INK_NORMAL)
+	return label
+
+
+func _preview_rule() -> Control:
+	var rule := Panel.new()
+	rule.custom_minimum_size.y = 1
+	var line := StyleBoxFlat.new()
+	line.bg_color = Design.BORDERS[Design.Surface.RAISED].lerp(
+		Design.SURFACES[Design.Surface.RAISED], 0.45)
+	rule.add_theme_stylebox_override("panel", line)
+	return rule
+
+
+## One action, named by the item rather than by the pane.
+##
+## Live only where the action already exists and is safe to take: Add node is what Enter
+## has done since step three. Load example replaces the patch somebody is editing and
+## Open in sandbox has no route yet, so they are drawn and disabled rather than drawn and
+## lying. Step seven is where the descriptors become behaviour; a button that looks ready
+## and does nothing would be a worse answer than a button that says it is not.
+func _action_button(item: BrowserItem, action: int, primary: bool) -> Button:
+	var button := Button.new()
+	button.text = BrowserItem.ACTION_LABELS[action]
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size.y = RESULT_HEIGHT
+	if action == BrowserItem.Action.ADD_NODE:
+		button.pressed.connect(func() -> void: item_activated.emit(item.id))
+	else:
+		button.disabled = true
+		button.tooltip_text = "Not wired up yet."
+	return Design.make_primary(button) if primary and not button.disabled else button
 
 
 ## The left rail: three families of category, one rule between each.
@@ -618,14 +777,15 @@ func open_beside(anchor: Rect2i) -> void:
 	# rather than pushing its close button off the edge.
 	var outer := Vector2i(mini(WIDTH, int(screen.x * 0.86)),
 		mini(BROWSER_HEIGHT, int(screen.y * HEIGHT_SHARE)))
-	# A PopupPanel is sized by its contents plus its own frame, so what it is handed is
-	# the content box and the padding lands outside it. Handing it the outer figure gave
-	# a panel wider than the cap it had just been given — which on a small window is the
-	# difference between floating over the editor and covering it. The frame is measured
-	# from the theme rather than written down, so different padding cannot quietly
-	# reintroduce the overflow.
-	var frame := Vector2i(get_theme_stylebox("panel").get_minimum_size())
-	size = outer - frame
+	# A ceiling, not a request. A window is sized by whatever its contents demand and the
+	# figure handed to it is only a floor, so the browser grew every time a column did:
+	# the preview pane's buttons pushed it fifty pixels past the cap that keeps it
+	# floating over the editor rather than covering it, and off the bottom of the screen
+	# went the buttons that caused it. With a ceiling the columns' own scrollers absorb
+	# what will not fit, which is what they are for — and these constants now mean the
+	# window they name, instead of a figure the frame adjusts on the way out.
+	max_size = outer
+	size = outer
 
 	# The visible edge sits DROP below the button, not the window's edge: the shadow
 	# gutter lives inside the popup's rectangle, so a drop measured from the window
@@ -637,7 +797,7 @@ func open_beside(anchor: Rect2i) -> void:
 	var margin := Design.scale(Design.SPACE_M)
 	at.x = clampi(at.x, margin, maxi(margin, screen.x - outer.x - margin))
 	at.y = clampi(at.y, margin, maxi(margin, screen.y - outer.y - margin))
-	popup(Rect2i(at, outer - frame))
+	popup(Rect2i(at, outer))
 	# Every opening is a fresh look: an old query still in the field is a browser that
 	# says there are two oscillators. The field takes the focus, so typing works with
 	# nothing clicked first.

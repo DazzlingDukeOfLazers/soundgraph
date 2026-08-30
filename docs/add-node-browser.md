@@ -250,6 +250,45 @@ of the rail, every item says what taking it would do, and every row drawn is an 
 the catalogue — a row the catalogue cannot account for is the old shapes growing a second
 path back into the column.
 
+## Step 5 — preview and details
+
+Selection drives the right pane. No thumbnails, no favourites, no action behaviour.
+
+The pane draws a name, a badge, a description, headed lists and buttons, **and knows
+nothing about nodes, patches or banks**. Every item answers `sections()` for itself, so
+the pane has no branch per kind — which is the thing step 4 was for, and the place the
+provider shapes were always going to leak back in.
+
+```
+Sine Oscillator        SOURCES · NODE       inputs, outputs        [Add node]
+First Synth            EXAMPLES · PATCH     7 nodes, 7 connections [Load example]
+                                            keyboard in, audio out [Open in sandbox]
+DX7: algo-01           DX7 BANK · BANK ITEM source, 16 nodes       [Add node]
+                                            27 connections         [Open in sandbox]
+```
+
+Nothing invented: a node's ports are the core's own, and a patch's counts are read from
+its file — when it is looked at, not when it is listed, because three hundred patches are
+not opened to draw a list of their names.
+
+**The buttons say what the item said.** `Add node` is live — it is what Enter has done
+since step 3. `Load example` replaces the patch somebody is editing and `Open in sandbox`
+has no route yet, so both are drawn and disabled rather than drawn and lying. Step 7 turns
+the descriptors into behaviour.
+
+### The window is a ceiling now
+
+The pane broke the browser's geometry the first time it drew: a window is sized by
+whatever its contents demand, and the size it is handed is only a floor, so the buttons
+pushed the browser fifty pixels past the cap that keeps it floating over the editor — and
+off the bottom of the screen went the buttons that caused it.
+
+`max_size` fixed it, and the constants were rewritten to mean what they say. `WIDTH` is
+910 because that is the window's width, not because 220 + 320 + 360 + four gutters comes
+to 964 and the frame then takes 54 back. The columns share what the width gives them; the
+scrollers absorb what does not fit. Geometry unchanged from step 2: 910x738 window,
+872x700 panel, top edge 19px under the button, rail 530 in 545 and not scrolling.
+
 ### The type grammar
 
 Small uppercase grey labels for structural regions; normal mixed case for anything
