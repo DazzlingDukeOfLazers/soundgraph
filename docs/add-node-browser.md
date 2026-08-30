@@ -160,11 +160,13 @@ Examples     48     Node bank   48     FM bank    128     DX7 bank  68
 
 Two findings:
 
-**Three nodes have no row.** Sampler, Speech and Plugin Instrument are sources that are
-not oscillators, and the rail has no word for them. They are reachable under All and by
-name, and the rail is frozen, so they are recorded in `NODE_ROWS` as deliberately
-homeless and the suite fails if a fourth ever joins them. Renaming `Oscillators` to
-`Sources` would house all three and cost one word.
+**Three nodes had no row, so the row was renamed.** Sampler, Speech and Plugin
+Instrument are sources that are not oscillators, and `Oscillators` had no word for them.
+They spent one review as recorded exceptions before the obvious fix: the rail's first row
+is `Sources`, and every node in the core now has a category. An exception list whose
+invariant is "exactly three things stay uncategorised" is a taxonomy asking to be fixed,
+and the next generator to arrive would have joined them. The suite checks that nothing is
+homeless rather than that the expected few are.
 
 **Examples absorbed the synth and drum shelves.** The old palette had chips for synth,
 drums, dx7, clones and nodes; the rail has Examples and three banks. So Examples holds
@@ -176,6 +178,14 @@ separate them. That is exactly the landmark grammar the step was for, and it wor
 Node families are mapped by the core's own category with a short override list, not by a
 list of node names: a node added to dsp-core lands somewhere sensible on its own, where a
 hand-written list would silently drop it.
+
+### The column is called Browse
+
+`NODES` over a result labelled `PATCHES` was the interface contradicting itself in one
+screen: `All` searches everything the moment there is a query, which is the behaviour
+worth keeping, so the language moved instead. The heading is `BROWSE` and the placeholder
+is `Search…` — neither promises nodes, and both are honest before a query exists in a way
+`RESULTS` would not be.
 
 ### The keyboard
 

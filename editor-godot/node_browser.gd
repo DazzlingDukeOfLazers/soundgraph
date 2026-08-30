@@ -58,7 +58,7 @@ var _close_button: Button
 ## announcing itself rather than being read.
 const CATEGORIES: Array = [
 	["All", Icons.Kind.GRID],
-	["Oscillators", Icons.Kind.WAVE],
+	["Sources", Icons.Kind.WAVE],
 	["Filters", Icons.Kind.FUNNEL],
 	["Envelopes", Icons.Kind.ENVELOPE],
 	["Modulation", Icons.Kind.ZIGZAG],
@@ -109,7 +109,7 @@ var _rail_stack: VBoxContainer
 ## delay line is an effect, and should not have to.
 const CORE_FAMILIES := {
 	"Terminals": "MIDI & IO",
-	"Sources": "Oscillators",
+	"Sources": "Sources",
 	"Filters": "Filters",
 	"Time": "Effects",
 	"Amplitude": "Mixing",
@@ -123,9 +123,11 @@ const CORE_FAMILIES := {
 ## sequencers are modulation as far as the core is concerned, and are their own rows here
 ## because that is how they are looked for.
 ##
-## The empty strings are the honest ones: three sources that are not oscillators, and no
-## row on the rail says what they are. They are findable under All and by name, and the
-## rail is frozen, so they are recorded here rather than filed somewhere wrong.
+## What is no longer here: three exceptions for Sampler, Speech and Plugin Instrument,
+## which the rail had no word for while its first row said Oscillators. It says Sources
+## now, and every node in the core has a category — an exception list whose invariant is
+## "exactly three things stay uncategorised" is a taxonomy asking to be fixed, and the
+## next generator that arrives would have joined them.
 const NODE_ROWS := {
 	"ADSR": "Envelopes",
 	"AhdEnvelope": "Envelopes",
@@ -136,9 +138,6 @@ const NODE_ROWS := {
 	"Drive": "Effects",
 	"Crush": "Effects",
 	"MidiCC": "MIDI & IO",
-	"Sampler": "",
-	"Speech": "",
-	"PluginInstrument": "",
 }
 
 ## Which bank a device belongs to, by the prefix on its label. Everything else — the
@@ -231,7 +230,12 @@ func _ready() -> void:
 	body.add_child(columns)
 
 	categories_column = _column(columns, COLUMN_CATEGORIES, "CATEGORIES", true)
-	results_column = _column(columns, COLUMN_RESULTS, "NODES", true)
+	# Browse, not Nodes, and not Results either. The column lists patches and bank voices
+	# beside nodes the moment a search reaches past the node vocabulary, so a heading that
+	# said NODES over a row labelled PATCHES was the interface contradicting itself in one
+	# screen. Results makes an idle list sound like the answer to a question nobody asked;
+	# this column is useful before there is a query.
+	results_column = _column(columns, COLUMN_RESULTS, "BROWSE", true)
 	preview_column = _column(columns, COLUMN_PREVIEW, "PREVIEW & DETAILS", false)
 	_build_rail()
 	_build_results()
@@ -262,7 +266,7 @@ func _build_results() -> void:
 	line.add_child(lens)
 
 	search_field = LineEdit.new()
-	search_field.placeholder_text = "Search nodes"
+	search_field.placeholder_text = "Search…"
 	search_field.flat = true
 	# The frame around it is the PanelContainer's. A LineEdit that draws its own focus
 	# box inside somebody else's frame is two borders and a gap.

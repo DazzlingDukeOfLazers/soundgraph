@@ -539,7 +539,7 @@ func _initialize() -> void:
 	var rail_listed: Array = []
 	for row: Button in main.node_browser._rows:
 		rail_listed.append(str(row.get_meta("category")))
-	check(rail_listed == ["All", "Oscillators", "Filters", "Envelopes", "Modulation",
+	check(rail_listed == ["All", "Sources", "Filters", "Envelopes", "Modulation",
 			"Utilities", "Mixing", "Effects", "MIDI & IO", "Sequencers", "Examples",
 			"Node bank", "FM bank", "DX7 bank"],
 		"the rail carries the fourteen categories in order (%d)" % rail_listed.size())
@@ -594,19 +594,20 @@ func _initialize() -> void:
 	check(main.node_browser.selected_category == "All", "up comes back to All")
 
 	# ---- the middle column ------------------------------------------------------------
-	# Every node has to land somewhere. Three of them do not: Sampler, Speech and Plugin
-	# Instrument are sources that are not oscillators, and no row on the rail says what
-	# they are. They are findable under All and by name, and this check is here so that
-	# the day a fourth joins them somebody is told rather than the node quietly vanishing
-	# from every category.
+	# Every node lands somewhere. This began as a list of three exceptions — Sampler,
+	# Speech and Plugin Instrument, sources that are not oscillators — and the rail's
+	# first row is called Sources now instead. A node with no category is findable only by
+	# name, which is the browser failing at the one thing it is for, so the check is that
+	# there are none rather than that there are the expected few.
 	var homeless: Array = []
 	for item: Dictionary in main.node_browser.catalogue:
 		if str(item.get("kind", "")) == "node" and main.node_browser.row_of(item) == "":
 			homeless.append(str(item.get("id", "")))
 	homeless.sort()
-	check(homeless == ["PluginInstrument", "Sampler", "Speech"],
-		"every node but the three recorded sources has a category (%s)"
-			% ", ".join(PackedStringArray(homeless)))
+	check(homeless.is_empty(),
+		"every node in the core has a category (%s)"
+			% ("none homeless" if homeless.is_empty()
+				else ", ".join(PackedStringArray(homeless))))
 
 	# All, browsing: the node vocabulary alone, down the rail's own order. Three hundred
 	# devices under an empty search would bury the fifty things you wire together.
@@ -628,13 +629,13 @@ func _initialize() -> void:
 	check(devices_under_all == 0 and shown.size() > 40,
 		"All browses the nodes and only the nodes (%d rows, %d of them devices)"
 			% [shown.size(), devices_under_all])
-	check(landmarks.slice(0, 3) == ["OSCILLATORS", "FILTERS", "ENVELOPES"],
+	check(landmarks.slice(0, 3) == ["SOURCES", "FILTERS", "ENVELOPES"],
 		"under landmarks that read down the rail (%s)"
 			% ", ".join(PackedStringArray(landmarks.slice(0, 3))))
 
-	# A category is a scope. Oscillators holds the oscillators, and one group needs no
-	# heading of its own.
-	main.node_browser.select_category("Oscillators")
+	# A category is a scope. Sources holds every generator, and one group needs no heading
+	# of its own — the oscillators and the other sources are told apart inside it later.
+	main.node_browser.select_category("Sources")
 	await process_frame
 	shown = []
 	var oscillator_landmarks := 0
@@ -644,8 +645,8 @@ func _initialize() -> void:
 		elif child is MarginContainer:
 			oscillator_landmarks += 1
 	check(shown == ["SineOscillator", "SawOscillator", "SquareOscillator", "Noise",
-			"NoiseOscillator"],
-		"Oscillators holds the five oscillators (%s)"
+			"NoiseOscillator", "Sampler", "Speech", "PluginInstrument"],
+		"Sources holds every generator, sampler and speech among them (%s)"
 			% ", ".join(PackedStringArray(shown)))
 	check(oscillator_landmarks == 0,
 		"and no heading, because a landmark over the only group is the column's own name")
@@ -695,7 +696,7 @@ func _initialize() -> void:
 	# The keyboard, through the handler the field hands its arrow keys to — a focused
 	# LineEdit spends them on its caret, so unhandled input never sees them. The routing
 	# itself was watched windowed; headless, a popup that is never drawn takes no input.
-	main.node_browser.select_category("Oscillators")
+	main.node_browser.select_category("Sources")
 	main.node_browser.search_field.text = ""
 	main.node_browser.refresh_results()
 	await process_frame
