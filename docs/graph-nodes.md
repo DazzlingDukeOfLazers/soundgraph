@@ -234,3 +234,64 @@ four node types are untouched. Detail bands identical at every zoom. One title c
 40% — `Amp Envelope` now fits its canonical name in a node eighteen pixels wider, so it no
 longer needs its compact one. That is a consequence of the grid rather than a width class,
 and it is recorded here because the next person to read the title numbers will wonder.
+
+## Step 5 — control typography
+
+`node_text.gd` holds six roles and every decision about face, size and colour that goes
+with them. They were being made where each label was built, which is how two of them ended
+up identical.
+
+```
+NODE_TITLE      semibold, node-title size, bright        identity
+PARAM_VALUE     numeric face with tabular figures,       the loudest thing inside
+                numeric size, bright
+PARAM_UNIT      unit face, unit size, secondary          the value's family, one down
+PARAM_LABEL     medium, body size, secondary             subordinate to its value
+PORT_LABEL      regular, body size, secondary a shade    the quietest text on the node
+                quieter
+CONTROL_OPTION  medium, control size, bright             a dropdown's value reads as one
+```
+
+Reading order, which is the test: **node name → values → parameter names → port labels.**
+Before this, a parameter's name and a port's name were both medium weight, body size,
+normal ink — and the value was bright. Four ranks of information, two ranks of type.
+
+### The Amplifier's two `gain`s
+
+Not renamed. The port one is regular weight in the quietest ink on the node, beside its
+socket; the parameter one is medium in secondary ink, centred under the knob it names,
+with its value bright underneath. They are now different kinds of text saying the same
+word, which is what they are.
+
+It is better and it is not finished: the two are still the same size, and what will
+actually settle it is position — a port label that reads as belonging to its socket rather
+than sitting in the same column of text. That is step 7, and this is the note the brief
+asked for rather than a rename.
+
+### The floor bites from above
+
+The first cut of `PARAM_LABEL` dropped it to the secondary size, which is the obvious way
+to make a label subordinate. At XL that is 19px against a `MIN_SCREEN_LABEL` floor of 20 —
+so at **100% zoom** every parameter name went under the legibility floor, the compensation
+system took them over, and the node lost its parameter names and its values at the one
+zoom where nothing should be compensated.
+
+Rank is carried by weight and ink here, which the floor has no opinion about. The lesson
+generalises: on this editor, type size is load-bearing for the level-of-detail system, and
+"make it smaller so it recedes" is not available below the floor.
+
+### Measured
+
+Tabular figures were already in place — `Design.numeric_font` sets `tnum` — so values do
+not shove their units sideways as they change; the roles make it explicit rather than
+incidental.
+
+Node sizes moved by one to three pixels, from the regular-weight port labels being
+narrower than the medium ones they replaced. Topology, positions, ports, cables, control
+values, chassis, grid and the other four node types are unchanged, and the detail bands
+draw the same 66 / 24 / 0 / 0 controls at the same four zooms.
+
+Precision is untouched: `0.700`, `900.0 Hz`, `0.000 octaves/s` are as they were. Three
+decimals on a gain of 0.7 and on a sweep of zero is more precision than either reading
+needs, and that is a formatting decision rather than a typographic one — recorded here,
+not taken.

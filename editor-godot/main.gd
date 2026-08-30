@@ -4529,7 +4529,8 @@ func _create_widget(node: Dictionary) -> void:
 		# were scanning for — the name — had to be picked out of each one. Same
 		# information, ranked: the unit is metadata and now looks like it. Parentheses
 		# gone too; they were doing the separating that a colour change does better.
-		var left := _port_label(inputs[row] if row < inputs.size() else {}, false)
+		var left := _port_label(inputs[row] if row < inputs.size() else {}, false,
+			gridded)
 		left.set_meta("port_label", true)
 		gutters.append(left)
 		line.add_child(left)
@@ -4555,7 +4556,8 @@ func _create_widget(node: Dictionary) -> void:
 		line.add_child(cells)
 		line.set_meta("cells_box", cells)
 
-		var right := _port_label(outputs[row] if row < outputs.size() else {}, true)
+		var right := _port_label(outputs[row] if row < outputs.size() else {}, true,
+			gridded)
 		right.set_meta("port_label", true)
 		right_gutters.append(right)
 		line.add_child(right)
@@ -4915,7 +4917,7 @@ func _port_icon(type_name: String, key: String = ModuleThemes.CATEGORY) -> Textu
 
 
 ## One side of a port row: the name in ordinary ink, the unit behind it in secondary.
-func _port_label(port: Dictionary, align_right: bool) -> Control:
+func _port_label(port: Dictionary, align_right: bool, roles: bool = false) -> Control:
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.alignment = BoxContainer.ALIGNMENT_END if align_right \
@@ -4932,9 +4934,13 @@ func _port_label(port: Dictionary, align_right: bool) -> Control:
 	var name_label := Label.new()
 	name_label.text = Rack.face_text(port)
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
-	name_label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
-	name_label.add_theme_color_override("font_color", Design.INK_NORMAL)
+	if roles:
+		NodeText.dress(name_label, NodeText.Role.PORT_LABEL)
+	else:
+		name_label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+		name_label.add_theme_font_size_override("font_size",
+			Design.type(Design.SIZE_BODY))
+		name_label.add_theme_color_override("font_color", Design.INK_NORMAL)
 	name_label.set_meta("port_label", true)
 	# Operational: what is plugged in here is not guessable from the colour alone, so
 	# the name is pinned to a readable size in screen space rather than shrinking with
@@ -5378,9 +5384,10 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# Control, name, value, with one micro unit between them on the grid — they were
 	# touching, which is why a knob and the word under it read as one lump rather than as
 	# a control and its name.
+	# Whether this node is through the pass, asked once for the whole cell.
+	var roles := NodeIdentity.in_proving_ground(str(node.get("type", "")))
 	row.add_theme_constant_override("separation",
-		Design.scale(NodeGrid.LABEL_GAP) if NodeIdentity.in_proving_ground(
-			str(node.get("type", ""))) else 0)
+		Design.scale(NodeGrid.LABEL_GAP) if roles else 0)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.set_meta("cell", "parameter")
@@ -5408,9 +5415,12 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	label.tooltip_text = str(parameter.get("doc", ""))
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
-	label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
-	label.add_theme_color_override("font_color", Design.INK_NORMAL)
+	if roles:
+		NodeText.dress(label, NodeText.Role.PARAM_LABEL)
+	else:
+		label.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+		label.add_theme_font_size_override("font_size", Design.type(Design.SIZE_BODY))
+		label.add_theme_color_override("font_color", Design.INK_NORMAL)
 	label.set_meta("screen_min", Design.MIN_SCREEN_LABEL)
 	label.set_meta("screen_kind", "parameter")
 
@@ -5467,15 +5477,21 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		# been hidden with the control that carried it, which is the same failure as an
 		# unlabelled slider seen from the other end. A dropdown is a control; the option
 		# it is showing is information, and information survives the control.
+		if roles:
+			NodeText.dress(options, NodeText.Role.CONTROL_OPTION)
 		var chosen := Label.new()
 		chosen.text = str(parameter["enum"][clampi(int(round(current)), 0,
 			parameter["enum"].size() - 1)])
 		chosen.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		chosen.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		chosen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		chosen.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
-		chosen.add_theme_font_size_override("font_size", Design.type(Design.SIZE_NUMERIC))
-		chosen.add_theme_color_override("font_color", Design.INK_BRIGHT)
+		if roles:
+			NodeText.dress(chosen, NodeText.Role.CONTROL_OPTION)
+		else:
+			chosen.add_theme_font_override("font", Design.font(Design.WEIGHT_MEDIUM))
+			chosen.add_theme_font_size_override("font_size",
+				Design.type(Design.SIZE_NUMERIC))
+			chosen.add_theme_color_override("font_color", Design.INK_BRIGHT)
 		chosen.set_meta("screen_min", Design.MIN_SCREEN_LABEL)
 		chosen.set_meta("screen_kind", "value")
 		chosen.visible = false
