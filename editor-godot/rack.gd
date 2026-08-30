@@ -1045,6 +1045,25 @@ func redraw_cables_when_settled() -> void:
 	redraw_cables()
 
 
+## Whether the surface the cables are lying on is a light one.
+##
+## Not Rack.panel_is_light(), which asks the default case and is a constant: since the
+## faceplate merge that static has answered "dark" for every patch ever loaded, so the
+## light-surface cable response has never once fired. Ivory Lab racks have been drawing
+## their cables with the construction tuned for anodised black, which is exactly the
+## kind of thing a stress test exists to find.
+##
+## The patch's own panel style decides, because that is what most of the surface under
+## a cable is. A rack with per-module overrides is approximated by its prevailing
+## theme, which is the honest answer short of asking each cable what it crosses — and
+## that question belongs with the stand-down work, where it is already noted.
+func cables_on_light_panel() -> bool:
+	var theme := str(patch.get("arrangement", {}).get("theme", ""))
+	if theme == "" or theme == ModuleThemes.CATEGORY:
+		return Rack.panel_is_light()
+	return ModuleThemes.token(theme, "faceplate").get_luminance() > 0.42
+
+
 ## The panel being read, in rack space, or an empty rect.
 func inspected_rect() -> Rect2:
 	if inspected_id == "":
@@ -1484,16 +1503,25 @@ class CableLayer extends Control:
 		# a 2.75 px minimum cable is 2.75 px of glass, which at half zoom is 5.5 of ours.
 		var zoom: float = maxf(get_global_transform().get_scale().x, 0.01)
 		style.screen_scale = zoom
-		style.panel_is_light = Rack.panel_is_light()
-		# The same hue on every surface; the construction adapts instead of the colour.
-		# On cream the candy body loses its silhouette before it loses its identity, so
-		# the same-hue edge deepens and widens a touch and the highlight stands down —
-		# richer perimeter, not a muddier cable.
+		style.panel_is_light = rack.cables_on_light_panel()
+		# Goal 9: the same hue on every surface, and only the material response adapts.
+		#
+		# A candy cable on cream loses its silhouette long before it loses its identity,
+		# so the shell works harder, the sheen stands down — a bright glint against a
+		# bright plate is one more light thing on a light thing — and the shadow holds
+		# its ground, since on cream it is doing more of the separating than it does on
+		# black. Three strengths, and nothing else: the mass, the shell geometry, the
+		# glint geometry, the shadow geometry, the hang, the fan, the crossings and the
+		# hues are all as frozen.
+		#
+		# Chartreuse is the one that decides these numbers. It is the closest of the
+		# four to cream in luminance and the temptation is to darken the body until it
+		# separates, which turns it olive and throws away the one thing it is for. The
+		# core stays radioactive; the shell earns the contrast.
 		if style.panel_is_light:
-			style.edge_darken = 0.52
-			style.edge_offset = Vector2(0.9, 1.0)
-			style.highlight_alpha = 0.4
-			style.shadow_alpha = 0.26
+			style.edge_darken = 0.55
+			style.highlight_alpha = 0.38
+			style.shadow_alpha = 0.30
 		style.thickness = maxf(style.thickness, style.min_thickness / zoom)
 		if dim > 0.0:
 			style.thickness *= DIM_WIDTH
