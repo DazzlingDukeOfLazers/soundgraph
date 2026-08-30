@@ -25,6 +25,8 @@ const MAX_PLUGIN_STATE_CHARS := 4 * 1024 * 1024
 
 const Scope := preload("res://scope.gd")
 const PatchGraph := preload("res://patch_graph.gd")
+## The Add Node browser.
+const NodeBrowser := preload("res://node_browser.gd")
 ## The generated faceplate finishes, so a panel in the graph is grained like the same
 ## panel on the rack.
 const Faceplate := preload("res://faceplate.gd")
@@ -359,6 +361,8 @@ var _level_cursor := 0
 var health_label: Label
 var diagnostics_heading: Label
 var search_popup: PopupPanel
+## The Add Node browser. Its own surface, like the rack and the schematic.
+var node_browser: NodeBrowser
 var search_field: LineEdit
 var search_results: VBoxContainer
 var search_hint: Label
@@ -709,7 +713,11 @@ func _build_ui() -> void:
 	_scan_examples()
 	toolbar = EditorToolbar.new(_examples, _build_description())
 	toolbar.is_muted = func() -> bool: return muted
-	toolbar.add_node_requested.connect(_open_search)
+	# Add node opens the browser; Ctrl+Space still opens the search palette. The browser
+	# is a shell until its own steps fill it, and retiring a working path in favour of a
+	# scaffold would make the editor worse in exchange for a screenshot. See
+	# docs/add-node-browser.md — the palette goes when the browser can do its job.
+	toolbar.add_node_requested.connect(_open_node_browser)
 	toolbar.feedback_requested.connect(_open_feedback)
 	toolbar.undo_requested.connect(_undo)
 	toolbar.redo_requested.connect(_redo)
@@ -1240,6 +1248,8 @@ func _build_ui() -> void:
 	_fit_keyboard_dock.call_deferred()
 	_refresh_keyboard_range()
 	_build_search_popup()
+	node_browser = NodeBrowser.new()
+	add_child(node_browser)
 
 	file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -7530,6 +7540,18 @@ func _write_speech_buffer(node_id: String, bytes: PackedByteArray, phrases: int)
 	_say("%d phrase%s, %d bytes of chip-speak in buffer \"%s\" — the root note " \
 		% [phrases, "s" if phrases > 1 else "", bytes.size(), name] \
 		+ "says the first, each semitone up the next")
+
+
+## Opens the browser under the control that asked for it.
+##
+## The toolbar button's own rectangle, in viewport coordinates, so the panel arrives
+## where the hand already is rather than at a corner the editor picked.
+func _open_node_browser() -> void:
+	var anchor := Rect2i(Vector2i(Design.scale(120), Design.scale(60)), Vector2i.ZERO)
+	if toolbar != null and toolbar.toolbar_add_button != null:
+		var button: Button = toolbar.toolbar_add_button
+		anchor = Rect2i(button.get_global_rect())
+	node_browser.open_beside(anchor)
 
 
 func _open_search(at_position: Vector2 = Vector2(120, 120)) -> void:

@@ -39,6 +39,7 @@ enum Kind {
 	HAMBURGER,      ## the everything-else menu
 	PAUSE,          ## the roll mid-run: press again to rest
 	HEART,          ## loved — the reader's own mark, not the program's
+	CROSS,          ## dismiss a panel
 }
 
 
@@ -93,6 +94,15 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			_disc(image, Vector2(middle + lobe * 0.92, middle - reach * 0.30), lobe, colour)
 			_triangle(image, Vector2(middle, middle + reach * 0.05), reach * 1.08,
 				PI * 0.5, colour)
+		Kind.CROSS:
+			# Two strokes. The multiplication sign is in the font and the ballot X is
+			# not, and reaching for either is how a close button becomes a tofu box on
+			# somebody else's machine — the suite catches that, and this is the answer
+			# it wants.
+			_stroke(image, Vector2(middle - reach * 0.75, middle - reach * 0.75),
+				Vector2(middle + reach * 0.75, middle + reach * 0.75), colour)
+			_stroke(image, Vector2(middle + reach * 0.75, middle - reach * 0.75),
+				Vector2(middle - reach * 0.75, middle + reach * 0.75), colour)
 		Kind.PAUSE:
 			# Two uprights, the play triangle's opposite number.
 			for side: int in [-1, 1]:

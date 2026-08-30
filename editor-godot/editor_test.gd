@@ -491,6 +491,45 @@ func _initialize() -> void:
 	main._toggle_loved("Comb")
 	check(not main._loved_nodes.has("Comb"), "and a second tap takes the love back")
 
+	# ---- the Add node browser ---------------------------------------------------------
+	# The shell only, which is all Step 1 builds: that the toolbar's own button opens it,
+	# that all three ways out work, and that it leaves the editor it floats over alone.
+	# The button is pressed through its signal rather than reached for by name, because
+	# the thing worth pinning is the route a person takes.
+	# Settle first. The graph fits itself to the view a frame or two after it is asked
+	# to, so a zoom read straight after the checks above is still moving on its own —
+	# and this check would have reported the suite's own leftover as the browser
+	# disturbing the patch.
+	await process_frame
+	await process_frame
+	var zoom_before: float = main.graph_edit.zoom
+	main.toolbar.add_node_requested.emit()
+	await process_frame
+	await process_frame
+	check(main.node_browser.visible, "Add node opens the browser")
+	check(main.node_browser.categories_column != null
+			and main.node_browser.results_column != null
+			and main.node_browser.preview_column != null,
+		"with the three columns the rest of the plan fills")
+	check(is_equal_approx(main.graph_edit.zoom, zoom_before),
+		"and the patch underneath is left where it was (%f -> %f)"
+			% [zoom_before, main.graph_edit.zoom])
+	main.node_browser._close_button.pressed.emit()
+	await process_frame
+	check(not main.node_browser.visible, "the close button closes it")
+
+	main.toolbar.add_node_requested.emit()
+	await process_frame
+	await process_frame
+	var escape := InputEventKey.new()
+	escape.keycode = KEY_ESCAPE
+	escape.physical_keycode = KEY_ESCAPE
+	escape.pressed = true
+	Input.parse_input_event(escape)
+	await process_frame
+	await process_frame
+	check(not main.node_browser.visible, "and so does Esc")
+
 	# ---- feedback leaves through an outbox --------------------------------------------
 	# The outbox is the deliverable and the only thing tested: the network belongs to
 	# the vendored submitter, and the live service is not this suite's to lean on.
