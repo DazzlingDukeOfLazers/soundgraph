@@ -544,9 +544,40 @@ func _get_connection_line(from_position: Vector2, to_position: Vector2) -> Packe
 	if cable_style == Rack.CableStyle.CATENARY:
 		var span := absf(b.x - a.x)
 		var sag := clampf(span * Rack.SAG_FRACTION, Rack.SAG_MIN, Rack.SAG_MAX)
+		# Goal 6: each cable hangs its own way, deterministically.
+		#
+		# Sag was a pure function of span, so eight equal spans hung eight identical
+		# curves — the bundle read as one cable duplicated, which no real loom does.
+		# The variation is seeded from the endpoints, so a cable keeps its exact hang
+		# across every redraw and every relaunch, and re-rolls only when its ends
+		# actually move. Amplitudes are the approved conservative set: ±5% depth, ±3%
+		# midpoint bias, ±3° of endpoint tangent — cousins, not siblings.
+		var weave := RandomNumberGenerator.new()
+		# Seeded from the endpoints quantised to a 4px grid, not from raw floats: port
+		# positions carry sub-pixel layout jitter between runs, and a seed built from
+		# the raw values re-rolled one cable's hang from launch to launch — caught by
+		# rendering the candidate twice and diffing, which is what "deterministic" has
+		# to mean to be worth claiming. A cable re-rolls only when its ends actually
+		# move somewhere.
+		weave.seed = hash("%d:%d:%d:%d" % [roundi(a.x / 4.0), roundi(a.y / 4.0),
+			roundi(b.x / 4.0), roundi(b.y / 4.0)])
+		sag *= 1.0 + (weave.randf() * 2.0 - 1.0) * 0.05
+		var bias := (weave.randf() * 2.0 - 1.0) * 0.03
+		var lean_a := tan(deg_to_rad((weave.randf() * 2.0 - 1.0) * 3.0))
+		var lean_b := tan(deg_to_rad((weave.randf() * 2.0 - 1.0) * 3.0))
 		var hung := Rack.catenary(a, b, sag)
 		var hung_scaled := PackedVector2Array()
-		for point in hung:
+		var last := maxi(hung.size() - 1, 1)
+		for index in hung.size():
+			var point: Vector2 = hung[index]
+			var t := float(index) / float(last)
+			# The apex drifts sideways by the bias; the ends stay planted.
+			point.x += bias * span * sin(PI * t)
+			# The tangent lean: a small vertical shear near each end, fading out a
+			# quarter of the way along, so the cable leaves its socket at its own
+			# angle and rejoins the family curve by mid-drape.
+			point.y += lean_a * (point.x - a.x) * maxf(0.0, 1.0 - t / 0.25)
+			point.y += lean_b * (point.x - b.x) * maxf(0.0, 1.0 - (1.0 - t) / 0.25) * -1.0
 			hung_scaled.append(point * scale)
 		return hung_scaled
 
