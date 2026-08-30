@@ -1057,6 +1057,20 @@ func redraw_cables_when_settled() -> void:
 ## a cable is. A rack with per-module overrides is approximated by its prevailing
 ## theme, which is the honest answer short of asking each cable what it crosses — and
 ## that question belongs with the stand-down work, where it is already noted.
+##
+## The approximation has one measured edge, found by the integration sweep and left
+## deliberately unfixed. A cable crosses cream panels *and* the dark canvas in the gaps
+## between rack rows, and it is built once for the whole run. On Ivory Lab, whose audio
+## lead is a near-black 1a1a1a chosen to look like a real black patch cord on cream —
+## which it does, beautifully — that lead measures 1.43:1 against the canvas while it
+## is in a gap. Its red neighbours measure 4.6:1 and are fine, and no other theme
+## carries a near-black cable, so this is one lead of one palette for the width of a
+## rail.
+##
+## Every available fix reopens something already settled: the glint strength Goal 9
+## approved, the palette Goal 9 froze, or the per-surface sampling that was deliberately
+## deferred as a much larger rendering problem. So it is written down rather than
+## patched around, which is the cheaper mistake to undo.
 func cables_on_light_panel() -> bool:
 	var theme := str(patch.get("arrangement", {}).get("theme", ""))
 	if theme == "" or theme == ModuleThemes.CATEGORY:
