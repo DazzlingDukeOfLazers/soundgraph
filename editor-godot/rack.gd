@@ -1463,9 +1463,15 @@ class CableLayer extends Control:
 		# settled are untouched.
 		style.highlight_width = 1.5
 		style.highlight_offset = Vector2(-2.0, -2.3)
+		# Goal 4: the cast shadow seats the cable. At 0.2 alpha a black shadow on a
+		# near-black canvas was a rumour, and the cable floated; denser, a step
+		# tighter, and pushed further lower-right — opposite the highlight, one light
+		# — it reads as a cord hanging just off the surface. Shadow family only:
+		# everything above this line is frozen where Goals 1-3 left it.
+		style.shadow_alpha = 0.32
+		style.shadow_width = 9.5
+		style.shadow_offset = Vector2(2.0, 2.8)
 		style.highlight_alpha = 0.6
-		style.shadow_width = 11.0
-		style.shadow_alpha = 0.2
 		# What the plug has to fit inside. Measured, not assumed: it is the difference
 		# between a rack whose modules have four ports in a column and one whose modules
 		# have two, and the renderer should not have to be retuned when that changes.
@@ -1485,7 +1491,7 @@ class CableLayer extends Control:
 			style.edge_darken = 0.52
 			style.edge_offset = Vector2(0.9, 1.0)
 			style.highlight_alpha = 0.4
-			style.shadow_alpha = 0.22
+			style.shadow_alpha = 0.26
 		style.thickness = maxf(style.thickness, style.min_thickness / zoom)
 		if dim > 0.0:
 			style.thickness *= DIM_WIDTH

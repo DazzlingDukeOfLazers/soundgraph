@@ -2412,8 +2412,12 @@ class CordLayer extends Control:
 		style.highlight_width = maxf(1.5 * z, 0.9)
 		style.highlight_offset = Vector2(-2.0, -2.3) * z
 		style.highlight_alpha = 0.6
-		style.shadow_width = 11.0 * z
-		style.shadow_alpha = 0.2
+		# Goal 4, same figures as the rack — and the offset finally scales with the
+		# zoom, which it never had: the Style default (1, 2) was used unscaled, so at
+		# 50% the shadow sat proportionally twice as far from its cable.
+		style.shadow_width = 9.5 * z
+		style.shadow_alpha = 0.32
+		style.shadow_offset = Vector2(2.0, 2.8) * z
 		for connection in graph.get_connection_list():
 			var from_widget := graph.get_node_or_null(
 				NodePath(str(connection["from_node"]))) as GraphNode
@@ -2544,7 +2548,7 @@ class PlugOverlay extends Control:
 			# socket sits just off the panel and darkens it underneath. One soft dot is
 			# the whole effect.
 			draw_circle(at + away * neck * 0.6 + Vector2(0.0, 1.6 * graph.zoom),
-				maxf(4.4 * graph.zoom, 2.0), Color(0.0, 0.0, 0.0, 0.22))
+				maxf(4.4 * graph.zoom, 2.0), Color(0.0, 0.0, 0.0, 0.3))
 			draw_line(at, at + away * neck, ink, maxf(7.0 * graph.zoom, 2.4), true)
 			# The mouth reads as the cable's own cut end — dark rim, lighter tube face —
 			# rather than a flat plug of colour, which is the detail the inset labels.
