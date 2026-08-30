@@ -4640,8 +4640,21 @@ func _create_widget(node: Dictionary) -> void:
 			var widest := 0.0
 			for label: Control in side:
 				widest = maxf(widest, label.get_combined_minimum_size().x)
+			# Capped. One long port name is allowed to widen its own gutter and not to
+			# set the width of the node system; past the ceiling it clips, and the node
+			# says so rather than growing quietly.
+			var ceiling := float(Design.scale(NodeGrid.PORT_GUTTER_MAX))
+			if widest > ceiling:
+				widget.set_meta("gutter_overflow", widest - ceiling)
+				widest = ceiling
 			for label: Control in side:
 				label.custom_minimum_size.x = widest
+		# And the node stands at its class. A width that emerges from whatever minimum
+		# sizes the controls asked for is not a class; this is the one place a node's
+		# width is decided, and the specimens were measured to arrive at the figures.
+		var class_width := NodeGrid.width_for(str(node.get("type", "")))
+		if class_width > 0:
+			widget.custom_minimum_size.x = class_width
 
 	if str(node.get("type", "")) in ["PluginEffect", "PluginInstrument"]:
 		var plugin_line := HBoxContainer.new()

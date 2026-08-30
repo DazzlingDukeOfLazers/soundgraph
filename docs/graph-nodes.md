@@ -407,3 +407,75 @@ The duplicate `gain` reads as two different things now, and it is placement that
 rather than type: one sits on the perimeter beside a blue diamond, the other under a knob
 above its own value. The spatial grammar separates them, which is what step 5 predicted it
 would take.
+
+## The acceptance sheet, before step 8
+
+The three specimens together at 100%, 66% and 40%, each captured from the real patch and
+composed side by side at one scale per sheet. Five questions, answered honestly:
+
+**Does any node look a generation older than the others?** No. The three share a header,
+a socket grammar, a control language and a type ranking, and the four types that have not
+been through the pass are visibly of the older generation in the same patch — which is
+the evidence the scope is real rather than a claim.
+
+**Can the signal path be followed before reading labels?** Yes, and shape does most of it:
+round sockets are audio, diamonds are control, and the cables carry the same colours.
+
+**Do ports dominate?** No, and it is close. At 100% the sockets are the smallest marks on
+the node; at 66% they and the header are all that is left, which is the band doing its
+job.
+
+**Is the body calm?** Yes at 100%. The Lowpass is the busiest and it is the one with six
+ports and four controls.
+
+**At 40%, does the graph become simpler or merely smaller?** Simpler: the controls are
+gone, the names are compact where they need to be, and what remains is a labelled box with
+sockets.
+
+## Step 8 — width classes, measured rather than chosen
+
+The specimens were measured under the frozen language first, at base scale:
+
+```
+node          width  title needs  compact  columns  control room  gutters L/R
+Gain           170        96         60       1          84         30 / 23
+ADSR           294       136         95       2         184         31 / 23
+StateVariable  368        91         64       2         184         74 / 23
+```
+
+The classes are those widths rounded up onto the eight the rest of the node is built on:
+
+```
+Narrow     176    Gain
+Standard   296    ADSR
+Wide       376    StateVariableFilter
+```
+
+Not equal increments, and there is no reason they should be — a class exists to give the
+graph a rhythm of a few repeated widths, not to make a table of round numbers. There is no
+fourth class yet; one arrives when a node earns it, measured the same way.
+
+`NodeGrid.WIDTH_CLASS` maps type to class. That is metadata: a width that emerges from
+whatever minimum sizes the controls happened to ask for is not a class, it is an accident
+with a name.
+
+### What changed
+
+```
+Amplifier      230 -> 238    (+8)
+Amp Envelope   397 -> 400    (+3)
+Lowpass        497 -> 508    (+11)
+```
+
+Titles are unchanged at 100, 66, 40 and 28% — canonical where they were canonical, compact
+where they were compact. No other node moved; topology, ports, cables and values are as
+they were.
+
+### The long-label ceiling
+
+`PORT_GUTTER_MAX` is 96 at base scale. The longest gutter in the proving ground is the
+Lowpass's 74, so it does not bind today; it is there so that the first node with a
+genuinely long port name clips and records the overflow on itself rather than dragging the
+width system wider. What to do about such a label — a compact port name, a second line, a
+tooltip — is its own policy, and this is the ceiling that stops it being decided by
+accident.

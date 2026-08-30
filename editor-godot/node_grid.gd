@@ -66,6 +66,49 @@ const CELL_ROW := 72
 const PORT_ROW := 24
 
 
+## What a node is allowed to let one port label do to its width. The Lowpass's longest
+## gutter is 74 at base scale, so this does not bind today; it is here so that the first
+## node with a genuinely long port name is clipped and recorded rather than dragging the
+## whole system wider. A compact-label policy is a later question and this is the ceiling
+## that keeps it from being answered by accident.
+const PORT_GUTTER_MAX := 96
+
+## The width classes, derived from the three specimens rather than chosen for them.
+##
+## Measured under the frozen step 3-7 language, at base scale: Gain stands at 170, ADSR at
+## 294, StateVariableFilter at 368. The classes are those figures rounded up onto the
+## eight, which is what the rest of the node is built on — 176, 296, 376. They are not
+## equal increments and there is no reason they should be: a class exists to give the
+## graph a rhythm of a few repeated widths, not to make a table of round numbers.
+##
+## There is no fourth class yet. One arrives when a node earns it, measured the same way.
+enum Width { NARROW, STANDARD, WIDE }
+const WIDTHS := [176, 296, 376]
+
+## Which class a type belongs to. Metadata, decided here — a width that emerges from
+## whatever minimum sizes the controls happened to ask for is not a class, it is an
+## accident with a name.
+const WIDTH_CLASS := {
+	"Gain": Width.NARROW,
+	"ADSR": Width.STANDARD,
+	"StateVariableFilter": Width.WIDE,
+}
+
+
+## The width a type stands at, scaled, or 0 for a type with no class yet.
+static func width_for(type_name: String) -> int:
+	if not WIDTH_CLASS.has(type_name):
+		return 0
+	return Design.scale(WIDTHS[int(WIDTH_CLASS[type_name])])
+
+
+## What a class is called, for the record and for anything that reports on it.
+static func width_class_name(type_name: String) -> String:
+	if not WIDTH_CLASS.has(type_name):
+		return ""
+	return ["Narrow", "Standard", "Wide"][int(WIDTH_CLASS[type_name])]
+
+
 ## The gap between rows, scaled. Godot wants these as ints in theme constants.
 static func row_gap() -> int:
 	return Design.scale(ROW_GAP)
