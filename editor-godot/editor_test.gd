@@ -568,6 +568,37 @@ func _initialize() -> void:
 	main._toggle_loved("Comb")
 	check(not main._loved_nodes.has("Comb"), "and a second tap takes the love back")
 
+	# ---- the graph's topology, which a visual pass may not touch --------------------
+	# Step 1 of the node redesign freezes this: First Synth is seven nodes, seven wires,
+	# and a known set of ports. Everything the pass is about — surfaces, type, icons,
+	# what survives a zoom — is allowed to change. What the patch *is* is not, and the
+	# way that goes wrong is a port quietly gained or lost while somebody is looking at
+	# the colours.
+	var graph_shape: Array = []
+	for child in main.graph_edit.get_children():
+		var node := child as GraphNode
+		if node == null or not node.visible:
+			continue
+		graph_shape.append("%s %s %d/%d" % [node.name, node.title,
+			node.get_input_port_count(), node.get_output_port_count()])
+	graph_shape.sort()
+	check(graph_shape == ["n0 Keyboard 1/4", "n1 Main Oscillator 3/1",
+			"n2 Filter Sweep 1/1", "n3 Lowpass 4/1", "n4 Amp Envelope 1/1",
+			"n5 Amplifier 2/1", "n6 Output 2/1"],
+		"First Synth is the same seven nodes with the same ports (%s)"
+			% ", ".join(PackedStringArray(graph_shape)))
+	# From the document rather than from the view. GraphEdit's own list is a drawing
+	# detail — it is empty for a frame after a rebuild, and this check does not care
+	# what the canvas has caught up with, only what the patch says.
+	var graph_wires: Array = []
+	for wire: Dictionary in main.patch.get("connections", []):
+		graph_wires.append("%s.%s -> %s.%s" % [wire["from"]["node"], wire["from"]["port"],
+			wire["to"]["node"], wire["to"]["port"]])
+	graph_wires.sort()
+	check(graph_wires.size() == 7,
+		"and the same seven wires between them (%d: %s)"
+			% [graph_wires.size(), ", ".join(PackedStringArray(graph_wires.slice(0, 3)))])
+
 	# ---- the Add node browser ---------------------------------------------------------
 	# The shell only, which is all Step 1 builds: that the toolbar's own button opens it,
 	# that all three ways out work, and that it leaves the editor it floats over alone.

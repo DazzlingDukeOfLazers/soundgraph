@@ -1,0 +1,687 @@
+{
+  "connections": [
+    {
+      "from": "n0",
+      "in": 0,
+      "out": 0,
+      "to": "n1"
+    },
+    {
+      "from": "n0",
+      "in": 0,
+      "out": 1,
+      "to": "n4"
+    },
+    {
+      "from": "n1",
+      "in": 0,
+      "out": 0,
+      "to": "n3"
+    },
+    {
+      "from": "n2",
+      "in": 2,
+      "out": 0,
+      "to": "n3"
+    },
+    {
+      "from": "n3",
+      "in": 0,
+      "out": 0,
+      "to": "n5"
+    },
+    {
+      "from": "n4",
+      "in": 1,
+      "out": 0,
+      "to": "n5"
+    },
+    {
+      "from": "n5",
+      "in": 0,
+      "out": 0,
+      "to": "n6"
+    }
+  ],
+  "detail_mode": "ADAPTIVE",
+  "nodes": [
+    {
+      "at": [
+        0.0,
+        540.0
+      ],
+      "name": "n0",
+      "ports": {
+        "in": [
+          {
+            "at": [
+              0.0,
+              86.0
+            ],
+            "type": 1
+          }
+        ],
+        "out": [
+          {
+            "at": [
+              479.0,
+              86.0
+            ],
+            "type": 1
+          },
+          {
+            "at": [
+              479.0,
+              132.0
+            ],
+            "type": 1
+          },
+          {
+            "at": [
+              479.0,
+              178.0
+            ],
+            "type": 1
+          },
+          {
+            "at": [
+              479.0,
+              224.0
+            ],
+            "type": 1
+          }
+        ]
+      },
+      "size": [
+        479.0,
+        257.0
+      ],
+      "title": "Keyboard"
+    },
+    {
+      "at": [
+        594.0,
+        0.0
+      ],
+      "name": "n1",
+      "ports": {
+        "in": [
+          {
+            "at": [
+              0.0,
+              86.0
+            ],
+            "type": 1
+          },
+          {
+            "at": [
+              0.0,
+              132.0
+            ],
+            "type": 1
+          },
+          {
+            "at": [
+              0.0,
+              178.0
+            ],
+            "type": 0
+          }
+        ],
+        "out": [
+          {
+            "at": [
+              339.0,
+              86.0
+            ],
+            "type": 0
+          }
+        ]
+      },
+      "size": [
+        339.0,
+        211.000015258789
+      ],
+      "title": "Main Oscillator"
+    },
+    {
+      "at": [
+        594.0,
+        540.0
+      ],
+      "name": "n2",
+      "ports": {
+        "in": [
+          {
+            "at": [
+              0.0,
+              86.0
+            ],
+            "type": 1
+          }
+        ],
+        "out": [
+          {
+            "at": [
+              430.0,
+              86.0
+            ],
+            "type": 1
+          }
+        ]
+      },
+      "size": [
+        430.0,
+        119.000015258789
+      ],
+      "title": "Filter Sweep"
+    },
+    {
+      "at": [
+        1188.0,
+        0.0
+      ],
+      "name": "n3",
+      "ports": {
+        "in": [
+          {
+            "at": [
+              0.0,
+              86.0
+            ],
+            "type": 0
+          },
+          {
+            "at": [
+              0.0,
+              132.0
+            ],
+            "type": 1
+          },
+          {
+            "at": [
+              0.0,
+              178.0
+            ],
+            "type": 1
+          },
+          {
+            "at": [
+              0.0,
+              224.0
+            ],
+            "type": 1
+          }
+        ],
+        "out": [
+          {
+            "at": [
+              487.0,
+              86.0
+            ],
+            "type": 0
+          }
+        ]
+      },
+      "size": [
+        487.999969482422,
+        257.0
+      ],
+      "title": "Lowpass"
+    },
+    {
+      "at": [
+        594.0,
+        1080.0
+      ],
+      "name": "n4",
+      "ports": {
+        "in": [
+          {
+            "at": [
+              0.0,
+              86.0
+            ],
+            "type": 1
+          }
+        ],
+        "out": [
+          {
+            "at": [
+              388.0,
+              86.0
+            ],
+            "type": 1
+          }
+        ]
+      },
+      "size": [
+        388.0,
+        119.0
+      ],
+      "title": "Amp Envelope"
+    },
+    {
+      "at": [
+        1782.0,
+        0.0
+      ],
+      "name": "n5",
+      "ports": {
+        "in": [
+          {
+            "at": [
+              0.0,
+              86.0
+            ],
+            "type": 0
+          },
+          {
+            "at": [
+              0.0,
+              132.0
+            ],
+            "type": 1
+          }
+        ],
+        "out": [
+          {
+            "at": [
+              225.0,
+              86.0
+            ],
+            "type": 0
+          }
+        ]
+      },
+      "size": [
+        225.0,
+        165.0
+      ],
+      "title": "Amplifier"
+    },
+    {
+      "at": [
+        2376.0,
+        0.0
+      ],
+      "name": "n6",
+      "ports": {
+        "in": [
+          {
+            "at": [
+              0.0,
+              86.0
+            ],
+            "type": 0
+          },
+          {
+            "at": [
+              0.0,
+              132.0
+            ],
+            "type": 0
+          }
+        ],
+        "out": [
+          {
+            "at": [
+              392.0,
+              86.0
+            ],
+            "type": 0
+          }
+        ]
+      },
+      "size": [
+        392.000061035156,
+        165.0
+      ],
+      "title": "Output"
+    }
+  ],
+  "patch": "First Synth",
+  "ui_scale": "XL",
+  "window": [
+    1440,
+    900
+  ],
+  "zooms": [
+    {
+      "adaptive_would_be": 0,
+      "detail": 0,
+      "nodes": [
+        {
+          "compensated": false,
+          "controls_visible": 12,
+          "name": "n0",
+          "screen_size": [
+            479.0,
+            453.0
+          ],
+          "title": "Keyboard",
+          "title_fits": true
+        },
+        {
+          "compensated": false,
+          "controls_visible": 7,
+          "name": "n1",
+          "screen_size": [
+            339.0,
+            309.0
+          ],
+          "title": "Main Oscillator",
+          "title_fits": true
+        },
+        {
+          "compensated": false,
+          "controls_visible": 11,
+          "name": "n2",
+          "screen_size": [
+            430.0,
+            361.0
+          ],
+          "title": "Filter Sweep",
+          "title_fits": true
+        },
+        {
+          "compensated": false,
+          "controls_visible": 14,
+          "name": "n3",
+          "screen_size": [
+            488.0,
+            453.0
+          ],
+          "title": "Lowpass",
+          "title_fits": true
+        },
+        {
+          "compensated": false,
+          "controls_visible": 10,
+          "name": "n4",
+          "screen_size": [
+            388.0,
+            361.0
+          ],
+          "title": "Amp Envelope",
+          "title_fits": true
+        },
+        {
+          "compensated": false,
+          "controls_visible": 5,
+          "name": "n5",
+          "screen_size": [
+            225.0,
+            263.0
+          ],
+          "title": "Amplifier",
+          "title_fits": true
+        },
+        {
+          "compensated": false,
+          "controls_visible": 7,
+          "name": "n6",
+          "screen_size": [
+            392.0,
+            263.0
+          ],
+          "title": "Output",
+          "title_fits": true
+        }
+      ],
+      "zoom": 1.0
+    },
+    {
+      "adaptive_would_be": 2,
+      "detail": 2,
+      "nodes": [
+        {
+          "compensated": true,
+          "controls_visible": 5,
+          "name": "n0",
+          "screen_size": [
+            316.1,
+            169.6
+          ],
+          "title": "Keyboard",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 4,
+          "name": "n1",
+          "screen_size": [
+            223.7,
+            139.3
+          ],
+          "title": "Main Oscillator",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 2,
+          "name": "n2",
+          "screen_size": [
+            283.8,
+            78.5
+          ],
+          "title": "Filter Sweep",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 5,
+          "name": "n3",
+          "screen_size": [
+            322.1,
+            169.6
+          ],
+          "title": "Lowpass",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 2,
+          "name": "n4",
+          "screen_size": [
+            256.1,
+            78.5
+          ],
+          "title": "Amp Envelope",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 3,
+          "name": "n5",
+          "screen_size": [
+            148.5,
+            108.9
+          ],
+          "title": "Amplifier",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 3,
+          "name": "n6",
+          "screen_size": [
+            258.7,
+            108.9
+          ],
+          "title": "Output",
+          "title_fits": true
+        }
+      ],
+      "zoom": 0.66
+    },
+    {
+      "adaptive_would_be": 3,
+      "detail": 3,
+      "nodes": [
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n0",
+          "screen_size": [
+            191.6,
+            102.8
+          ],
+          "title": "Keyboard",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n1",
+          "screen_size": [
+            135.6,
+            84.4
+          ],
+          "title": "Main Oscilla…",
+          "title_fits": false
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n2",
+          "screen_size": [
+            172.0,
+            47.6
+          ],
+          "title": "Filter Sweep",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n3",
+          "screen_size": [
+            195.2,
+            102.8
+          ],
+          "title": "Lowpass",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n4",
+          "screen_size": [
+            155.2,
+            47.6
+          ],
+          "title": "Amp Envelop…",
+          "title_fits": false
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n5",
+          "screen_size": [
+            90.0,
+            66.0
+          ],
+          "title": "Amplifi…",
+          "title_fits": false
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n6",
+          "screen_size": [
+            156.8,
+            66.0
+          ],
+          "title": "Output",
+          "title_fits": true
+        }
+      ],
+      "zoom": 0.4
+    },
+    {
+      "adaptive_would_be": 3,
+      "detail": 3,
+      "nodes": [
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n0",
+          "screen_size": [
+            134.1,
+            72.0
+          ],
+          "title": "Keyboard",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n1",
+          "screen_size": [
+            94.9,
+            59.1
+          ],
+          "title": "Main Osc…",
+          "title_fits": false
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n2",
+          "screen_size": [
+            120.4,
+            33.3
+          ],
+          "title": "Filter Swe…",
+          "title_fits": false
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n3",
+          "screen_size": [
+            136.6,
+            72.0
+          ],
+          "title": "Lowpass",
+          "title_fits": true
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n4",
+          "screen_size": [
+            108.6,
+            33.3
+          ],
+          "title": "Amp Env…",
+          "title_fits": false
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n5",
+          "screen_size": [
+            63.0,
+            46.2
+          ],
+          "title": "Ampl…",
+          "title_fits": false
+        },
+        {
+          "compensated": true,
+          "controls_visible": 0,
+          "name": "n6",
+          "screen_size": [
+            109.8,
+            46.2
+          ],
+          "title": "Output",
+          "title_fits": true
+        }
+      ],
+      "zoom": 0.28
+    }
+  ]
+}
