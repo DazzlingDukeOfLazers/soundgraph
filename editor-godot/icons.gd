@@ -40,6 +40,22 @@ enum Kind {
 	PAUSE,          ## the roll mid-run: press again to rest
 	HEART,          ## loved — the reader's own mark, not the program's
 	CROSS,          ## dismiss a panel
+
+	# The Add Node browser's category rail. One family, drawn on the same grid at the
+	# same weight as everything above — a category mark is there to be recognised as a
+	# shape before it is read as a word, which nine borrowed styles cannot do.
+	GRID,           ## everything there is
+	WAVE,           ## oscillators — the smooth one
+	FUNNEL,         ## filters
+	ENVELOPE,       ## attack, decay, sustain, release
+	ZIGZAG,         ## modulation — a wave with corners, so it is not the oscillator
+	SPLIT,          ## utilities — one in, two out
+	FADERS,         ## mixing
+	ECHO,           ## effects
+	PLUG,           ## MIDI and IO
+	STEPS,          ## sequencers
+	EXAMPLE,        ## a patch you can run
+	BANK,           ## a library of them — shared by all three banks on purpose
 }
 
 
@@ -94,6 +110,100 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			_disc(image, Vector2(middle + lobe * 0.92, middle - reach * 0.30), lobe, colour)
 			_triangle(image, Vector2(middle, middle + reach * 0.05), reach * 1.08,
 				PI * 0.5, colour)
+		Kind.GRID:
+			for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1),
+					Vector2(1, 1)]:
+				_box(image, Vector2(middle, middle) + corner * reach * 0.55,
+					reach * 0.3, colour)
+		Kind.WAVE:
+			# One cycle, sampled. The oscillator mark and the modulation mark are the
+			# same gesture with and without corners, which is the actual difference
+			# between the two families.
+			var previous := Vector2(middle - reach * 1.1, middle)
+			for i in 10:
+				var t: float = float(i + 1) / 10.0
+				var point := Vector2(middle + reach * (t * 2.2 - 1.1),
+					middle - sin(t * TAU) * reach * 0.72)
+				_stroke(image, previous, point, colour)
+				previous = point
+		Kind.ZIGZAG:
+			var corners: Array = [Vector2(-1.1, 0.5), Vector2(-0.55, -0.6),
+				Vector2(0.0, 0.5), Vector2(0.55, -0.6), Vector2(1.1, 0.5)]
+			for i in corners.size() - 1:
+				_stroke(image, Vector2(middle, middle) + (corners[i] as Vector2) * reach,
+					Vector2(middle, middle) + (corners[i + 1] as Vector2) * reach, colour)
+		Kind.FUNNEL:
+			_stroke(image, Vector2(middle - reach, middle - reach * 0.8),
+				Vector2(middle + reach, middle - reach * 0.8), colour)
+			_stroke(image, Vector2(middle - reach, middle - reach * 0.8),
+				Vector2(middle, middle + reach * 0.1), colour)
+			_stroke(image, Vector2(middle + reach, middle - reach * 0.8),
+				Vector2(middle, middle + reach * 0.1), colour)
+			_stroke(image, Vector2(middle, middle + reach * 0.1),
+				Vector2(middle, middle + reach * 0.9), colour)
+		Kind.ENVELOPE:
+			var stages: Array = [Vector2(-1.1, 0.8), Vector2(-0.45, -0.8),
+				Vector2(0.0, -0.1), Vector2(0.5, -0.1), Vector2(1.1, 0.8)]
+			for i in stages.size() - 1:
+				_stroke(image, Vector2(middle, middle) + (stages[i] as Vector2) * reach,
+					Vector2(middle, middle) + (stages[i + 1] as Vector2) * reach, colour)
+		Kind.SPLIT:
+			# One in, two out, with the junction marked. Without the dot the three
+			# strokes close up into a plain arrowhead at rail size.
+			var fork := Vector2(middle + reach * 0.1, middle)
+			_stroke(image, Vector2(middle - reach * 1.1, middle), fork, colour)
+			_stroke(image, fork, Vector2(middle + reach * 0.95, middle - reach * 0.7),
+				colour)
+			_stroke(image, fork, Vector2(middle + reach * 0.95, middle + reach * 0.7),
+				colour)
+			_disc(image, fork, reach * 0.26, colour)
+		Kind.FADERS:
+			# Three tracks with their caps at three heights. The caps are the whole
+			# reading: three bare uprights is a barcode.
+			var heights: Array = [-0.25, 0.35, -0.6]
+			for track in 3:
+				var x: float = middle + reach * (float(track) - 1.0) * 0.8
+				_stroke(image, Vector2(x, middle - reach * 0.9),
+					Vector2(x, middle + reach * 0.9), colour)
+				_box(image, Vector2(x, middle + reach * float(heights[track])),
+					reach * 0.3, colour)
+		Kind.ECHO:
+			var source := Vector2(middle - reach * 0.75, middle)
+			_disc(image, source, reach * 0.28, colour)
+			for ring: float in [0.7, 1.25]:
+				_arc(image, source, reach * ring, -TAU * 0.16, TAU * 0.16, colour)
+		Kind.PLUG:
+			_arc(image, Vector2(middle, middle), reach * 0.95, 0.0, TAU, colour)
+			for pin in 3:
+				var angle: float = PI * (0.62 + 0.38 * float(pin))
+				_disc(image, Vector2(middle, middle)
+					+ Vector2(cos(angle), sin(angle)) * reach * 0.45,
+					reach * 0.2, colour)
+		Kind.STEPS:
+			# A pattern, not a bar chart: two rows of cells, on and off, which is what a
+			# step sequencer looks like from across the room.
+			for step in 4:
+				var x: float = middle + reach * (float(step) - 1.5) * 0.62
+				var high: bool = step % 2 == 0
+				_box(image, Vector2(x, middle + reach * (0.4 if high else -0.4)),
+					reach * 0.26, colour)
+		Kind.EXAMPLE:
+			# A patch in a frame, with the play mark of the transport it runs under.
+			var edge := reach * 0.95
+			for pair: Array in [[-1, -1, 1, -1], [1, -1, 1, 1], [1, 1, -1, 1],
+					[-1, 1, -1, -1]]:
+				_stroke(image, Vector2(middle + edge * pair[0], middle + edge * pair[1]),
+					Vector2(middle + edge * pair[2], middle + edge * pair[3]), colour)
+			_triangle(image, Vector2(middle - reach * 0.16, middle), reach * 0.5, 0.0,
+				colour)
+		Kind.BANK:
+			# Stacked plates. All three banks wear it: they are one family of thing, and
+			# the word beside it is what says which.
+			for plate in 3:
+				var y: float = middle + reach * (float(plate) - 1.0) * 0.62
+				var width: float = reach * (1.05 - 0.12 * float(plate))
+				_stroke(image, Vector2(middle - width, y), Vector2(middle + width, y),
+					colour)
 		Kind.CROSS:
 			# Two strokes. The multiplication sign is in the font and the ballot X is
 			# not, and reaching for either is how a close button becomes a tofu box on

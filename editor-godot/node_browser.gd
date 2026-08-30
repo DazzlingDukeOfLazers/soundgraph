@@ -24,7 +24,15 @@ extends PopupPanel
 const COLUMN_CATEGORIES := 220
 const COLUMN_RESULTS := 320
 const COLUMN_PREVIEW := 360
-const BROWSER_HEIGHT := 620
+## Real pixels, like the width and for the same reason — and set above the window cap
+## below, so the cap is what decides the height at every UI scale. The rail's contents do
+## not scale, so a height that did meant the browser was tall enough for fourteen
+## categories at one setting and showed eleven and a scrollbar at another.
+const BROWSER_HEIGHT := 800
+## How much of the window the browser may take. Raised from 0.84, which left the rail
+## twenty pixels short of its fourteen rows: the row height is what the eye is being
+## asked about, so the panel is what gave way.
+const HEIGHT_SHARE := 0.88
 ## The gutter the shadow falls into, inside the popup's own rectangle.
 const SHADOW := 14
 ## How far the panel's visible top edge sits below the toolbar button that opened it.
@@ -43,7 +51,55 @@ var preview_column: VBoxContainer
 
 var _close_button: Button
 
-const Icons := preload("res://icons.gd")
+## What the rail holds, in order: a name and its mark, or null for a rule between
+## families. Three families, and the rules are what say so — the primitive node classes,
+## then the examples, then the banks. Deliberately not section headings: CATEGORIES is
+## already a heading, and a heading under a heading over three rows is a hierarchy
+## announcing itself rather than being read.
+const CATEGORIES: Array = [
+	["All", Icons.Kind.GRID],
+	["Oscillators", Icons.Kind.WAVE],
+	["Filters", Icons.Kind.FUNNEL],
+	["Envelopes", Icons.Kind.ENVELOPE],
+	["Modulation", Icons.Kind.ZIGZAG],
+	["Utilities", Icons.Kind.SPLIT],
+	["Mixing", Icons.Kind.FADERS],
+	["Effects", Icons.Kind.ECHO],
+	["MIDI & IO", Icons.Kind.PLUG],
+	["Sequencers", Icons.Kind.STEPS],
+	null,
+	["Examples", Icons.Kind.EXAMPLE],
+	null,
+	["Node bank", Icons.Kind.BANK],
+	["FM bank", Icons.Kind.BANK],
+	["DX7 bank", Icons.Kind.BANK],
+]
+
+## Room to scan, and not scaled with the UI. Fourteen rows at an XL scale factor is more
+## rail than there is browser, and the one thing this must not do is rebuild the scrolling
+## pile it exists to replace. The text inside still scales.
+const ROW_HEIGHT := 36
+const ROW_ICON := 20
+## Above and below a rule between families. Enough to read as a break, and no more: the
+## rail's budget is the whole reason the rows are not taller.
+const RULE_AIR := 6
+## What the rail has to fit into, in pixels, at the tightest supported combination:
+## a 1440x900 window at XL, where the panel's own furniture — padding, title row, column
+## heading — takes 193 of the 738 the window cap allows. Comfortable and Compact leave
+## six and eight more. Measured windowed, because a popup that is never drawn has no
+## size, which is also why the suite checks the rail's content against this figure rather
+## than against the scrollbar.
+const RAIL_BUDGET := 545
+
+## Which row is lit. The middle column will read it in step 3; nothing does yet, and the
+## signal is here so that when something does, the rail does not have to be rewritten.
+var selected_category := "All"
+
+signal category_chosen(category: String)
+
+var _rows: Array = []
+var _rail: ScrollContainer
+var _rail_stack: VBoxContainer
 
 
 func _ready() -> void:
@@ -107,6 +163,135 @@ func _ready() -> void:
 	categories_column = _column(columns, COLUMN_CATEGORIES, "CATEGORIES", true)
 	results_column = _column(columns, COLUMN_RESULTS, "NODES", true)
 	preview_column = _column(columns, COLUMN_PREVIEW, "PREVIEW & DETAILS", false)
+	_build_rail()
+
+
+## The left rail: three families of category, one rule between each.
+##
+## Rows are buttons because a row is a thing you press, and a Button already knows what
+## hover and press look like on this machine. Nothing about a row suggests a submenu —
+## no chevron, no disclosure, no hover-to-open. Pressing one changes the middle column,
+## which is the whole of the interaction and the reason the old menu is going.
+func _build_rail() -> void:
+	_rail = ScrollContainer.new()
+	_rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_rail.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# It is sized so that it does not scroll — but a short window is not an excuse to
+	# clip the banks off the bottom.
+	categories_column.add_child(_rail)
+	var stack := VBoxContainer.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# No air between rows: fourteen of them plus two rules have to fit without the rail
+	# scrolling, and a category list you scroll is the thing this browser exists to stop
+	# being. Each row carries its own padding, so they do not touch.
+	stack.add_theme_constant_override("separation", 0)
+	_rail.add_child(stack)
+	_rail_stack = stack
+
+	for entry: Variant in CATEGORIES:
+		if entry == null:
+			# A rule and the air around it, doing the work a section heading would
+			# otherwise do more loudly.
+			var margin := MarginContainer.new()
+			margin.add_theme_constant_override("margin_top", RULE_AIR)
+			margin.add_theme_constant_override("margin_bottom", RULE_AIR)
+			var rule := Panel.new()
+			rule.custom_minimum_size.y = 1
+			var line := StyleBoxFlat.new()
+			line.bg_color = Design.BORDERS[Design.Surface.RAISED].lerp(
+				Design.SURFACES[Design.Surface.RAISED], 0.3)
+			rule.add_theme_stylebox_override("panel", line)
+			margin.add_child(rule)
+			stack.add_child(margin)
+			continue
+
+		var row := Button.new()
+		var name := str((entry as Array)[0])
+		row.text = name
+		row.set_meta("category", name)
+		row.set_meta("mark", int((entry as Array)[1]))
+		row.custom_minimum_size.y = ROW_HEIGHT
+		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		row.focus_mode = Control.FOCUS_NONE
+		row.add_theme_constant_override("h_separation", Design.SPACE_M)
+		row.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
+		row.pressed.connect(func() -> void: select_category(name))
+		stack.add_child(row)
+		_rows.append(row)
+
+	select_category(selected_category)
+
+
+## Lights one row and leaves the rest alone.
+func select_category(category: String) -> void:
+	selected_category = category
+	for row: Button in _rows:
+		_dress_row(row, str(row.get_meta("category")) == category)
+	if _rail != null:
+		for row: Button in _rows:
+			if str(row.get_meta("category")) == category:
+				_rail.ensure_control_visible(row)
+	category_chosen.emit(category)
+
+
+## A row in its two states.
+##
+## Selected is a tint of the accent rather than the accent: a rail of fourteen rows with
+## one of them painted mint is a button somebody put in a list. The fill says where you
+## are, the edge holds it together, and the ink and the mark carry the colour.
+func _dress_row(row: Button, chosen: bool) -> void:
+	var surface: Color = Design.SURFACES[Design.Surface.RAISED]
+	var quiet := StyleBoxFlat.new()
+	quiet.bg_color = Color(surface, 0.0)
+	quiet.set_corner_radius_all(Design.RADIUS_BUTTON)
+	quiet.content_margin_left = Design.scale(Design.SPACE_M)
+	quiet.content_margin_right = Design.scale(Design.SPACE_M)
+	var hover := quiet.duplicate() as StyleBoxFlat
+	hover.bg_color = surface.lerp(Design.INK_NORMAL, 0.07)
+
+	var ink: Color = Design.INK_SECOND
+	if chosen:
+		var lit := quiet.duplicate() as StyleBoxFlat
+		lit.bg_color = surface.lerp(Design.ACCENT, 0.16)
+		lit.set_border_width_all(1)
+		lit.border_color = Design.ACCENT.lerp(surface, 0.45)
+		ink = Design.ACCENT
+		row.add_theme_stylebox_override("normal", lit)
+		row.add_theme_stylebox_override("hover", lit)
+		row.add_theme_stylebox_override("pressed", lit)
+	else:
+		row.add_theme_stylebox_override("normal", quiet)
+		row.add_theme_stylebox_override("hover", hover)
+		row.add_theme_stylebox_override("pressed", hover)
+	row.add_theme_color_override("font_color", ink)
+	row.add_theme_color_override("font_hover_color",
+		ink if chosen else Design.INK_NORMAL)
+	row.add_theme_color_override("font_pressed_color", ink)
+	row.icon = Icons.get_icon(int(row.get_meta("mark")), Design.scale(ROW_ICON), ink)
+
+
+## Up and down move the lit row, skipping the rules between families.
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not visible or _rows.is_empty():
+		return
+	var key := event as InputEventKey
+	if key == null or not key.pressed:
+		return
+	var step := 0
+	match key.keycode:
+		KEY_DOWN:
+			step = 1
+		KEY_UP:
+			step = -1
+		_:
+			return
+	var at := 0
+	for i in _rows.size():
+		if str((_rows[i] as Button).get_meta("category")) == selected_category:
+			at = i
+	select_category(str((_rows[clampi(at + step, 0, _rows.size() - 1)] as Button)
+		.get_meta("category")))
+	get_viewport().set_input_as_handled()
 
 
 ## One column: a heading, the body the later steps fill, and the hairline that separates
@@ -162,7 +347,7 @@ func open_beside(anchor: Rect2i) -> void:
 	# The columns share what is left by ratio, so a small window narrows the browser
 	# rather than pushing its close button off the edge.
 	var outer := Vector2i(mini(WIDTH, int(screen.x * 0.86)),
-		mini(Design.scale(BROWSER_HEIGHT), int(screen.y * 0.84)))
+		mini(BROWSER_HEIGHT, int(screen.y * HEIGHT_SHARE)))
 	# A PopupPanel is sized by its contents plus its own frame, so what it is handed is
 	# the content box and the padding lands outside it. Handing it the outer figure gave
 	# a panel wider than the cap it had just been given — which on a small window is the

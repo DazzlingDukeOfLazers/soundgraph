@@ -39,6 +39,15 @@ func rack_ready(main) -> void:
 	main.rack.rebuild()
 
 
+## One key press, through the input system rather than into a handler.
+func _press(keycode: int) -> void:
+	var key := InputEventKey.new()
+	key.keycode = keycode
+	key.physical_keycode = keycode
+	key.pressed = true
+	Input.parse_input_event(key)
+
+
 ## Every scrap of text in a tree, however deep.
 
 ## Every parameter cell in a node, however they are grouped into lines.
@@ -514,6 +523,61 @@ func _initialize() -> void:
 	check(is_equal_approx(main.graph_edit.zoom, zoom_before),
 		"and the patch underneath is left where it was (%f -> %f)"
 			% [zoom_before, main.graph_edit.zoom])
+	# The rail. Fourteen categories in three families, and it must not scroll: a browser
+	# that answers a scrolling list with a narrower scrolling list has not replaced
+	# anything. This is the check that fails if a row ever gets taller.
+	var browser_rail: ScrollContainer = main.node_browser._rail
+	var rail_listed: Array = []
+	for row: Button in main.node_browser._rows:
+		rail_listed.append(str(row.get_meta("category")))
+	check(rail_listed == ["All", "Oscillators", "Filters", "Envelopes", "Modulation",
+			"Utilities", "Mixing", "Effects", "MIDI & IO", "Sequencers", "Examples",
+			"Node bank", "FM bank", "DX7 bank"],
+		"the rail carries the fourteen categories in order (%d)" % rail_listed.size())
+	# Against the rail's budget rather than against its scrollbar: a popup that is never
+	# drawn has no size, so headless there is nothing for a scrollbar to be wrong about.
+	# The figure is the rail's real height at the tightest supported window and scale,
+	# measured with the editor on screen — see NodeBrowser.RAIL_BUDGET.
+	var rail_wants: float = browser_rail.get_child(0).get_combined_minimum_size().y
+	check(rail_wants <= main.node_browser.RAIL_BUDGET,
+		"and they fit the rail without scrolling (%d of %d)"
+			% [int(rail_wants), main.node_browser.RAIL_BUDGET])
+	check(main.node_browser.selected_category == "All", "All is lit to begin with")
+
+	# Pressed through the button's own signal, which is the route a click takes.
+	(main.node_browser._rows[2] as Button).pressed.emit()
+	await process_frame
+	check(main.node_browser.selected_category == "Filters",
+		"pressing a row lights it (%s)" % main.node_browser.selected_category)
+	var rail_row: Button = main.node_browser._rows[2]
+	var rail_next: Button = main.node_browser._rows[3]
+	var rail_lit: StyleBoxFlat = rail_row.get_theme_stylebox("normal")
+	var rail_unlit: StyleBoxFlat = rail_next.get_theme_stylebox("normal")
+	check(rail_lit.bg_color != rail_unlit.bg_color and rail_lit.border_width_top > 0,
+		"and the lit row is a filled, edged row rather than a differently coloured word")
+	var rail_on_fill: float = Design.contrast(rail_row.get_theme_color("font_color"),
+		rail_lit.bg_color)
+	check(rail_on_fill >= 4.5,
+		"whose label still reads against its own fill (%.1f:1)" % rail_on_fill)
+
+	# Up and down walk the whole rail, rules and all, and stop at the ends rather than
+	# wrapping — there is nowhere above All to go.
+	main.node_browser.select_category("All")
+	for i in 13:
+		_press(KEY_DOWN)
+		await process_frame
+	check(main.node_browser.selected_category == "DX7 bank",
+		"down walks from All to the last bank (%s)"
+			% main.node_browser.selected_category)
+	_press(KEY_DOWN)
+	await process_frame
+	check(main.node_browser.selected_category == "DX7 bank",
+		"and stops there rather than wrapping")
+	for i in 20:
+		_press(KEY_UP)
+		await process_frame
+	check(main.node_browser.selected_category == "All", "up comes back to All")
+
 	main.node_browser._close_button.pressed.emit()
 	await process_frame
 	check(not main.node_browser.visible, "the close button closes it")
@@ -1877,9 +1941,7 @@ func _initialize() -> void:
 	# And the icons that replaced those symbols actually mark pixels. An icon that draws
 	# nothing is the same failure wearing a new hat — invisible, and reported by nothing.
 	var blank := []
-	for kind in [Icons.Kind.CARET_RIGHT, Icons.Kind.CARET_DOWN, Icons.Kind.DOT,
-			Icons.Kind.TICK, Icons.Kind.STOP, Icons.Kind.PLAY, Icons.Kind.CHEVRON_LEFT,
-			Icons.Kind.CHEVRON_RIGHT, Icons.Kind.ARROW_RIGHT]:
+	for kind in Icons.Kind.values():
 		var drawn: Image = Icons.get_icon(kind, 16, Design.INK_NORMAL).get_image()
 		var marked := 0
 		for y in drawn.get_height():
@@ -1890,21 +1952,24 @@ func _initialize() -> void:
 			blank.append(str(kind))
 	check(blank.is_empty(),
 		"every icon draws something (%s)"
-			% ("all nine" if blank.is_empty() else "blank: " + ", ".join(blank)))
+			% ("all %d" % Icons.Kind.size() if blank.is_empty()
+				else "blank: " + ", ".join(blank)))
 
-	# And they are told apart. Nine icons that all drew the same blob would pass the check
-	# above and be worthless.
+	# And they are told apart. Icons that all drew the same blob would pass the check above
+	# and be worthless. At 24px, which is about what the category rail draws them at: the
+	# marks are a family by design and two of them being one shape is exactly the failure
+	# a family invites.
 	var shapes := {}
-	for kind in [Icons.Kind.CARET_RIGHT, Icons.Kind.DOT, Icons.Kind.TICK, Icons.Kind.STOP,
-			Icons.Kind.PLAY, Icons.Kind.ARROW_RIGHT]:
-		var drawn: Image = Icons.get_icon(kind, 16, Design.INK_NORMAL).get_image()
+	for kind in Icons.Kind.values():
+		var drawn: Image = Icons.get_icon(kind, 24, Design.INK_NORMAL).get_image()
 		var signature := ""
 		for y in drawn.get_height():
 			for x in drawn.get_width():
 				signature += "1" if drawn.get_pixel(x, y).a > 0.5 else "0"
 		shapes[signature] = true
-	check(shapes.size() == 6,
-		"and no two of them are the same shape (%d distinct of 6)" % shapes.size())
+	check(shapes.size() == Icons.Kind.size(),
+		"and no two of them are the same shape (%d distinct of %d)"
+			% [shapes.size(), Icons.Kind.size()])
 
 	# ---- the inspector gets out of the way -----------------------------------------
 	# It held 380px of the window whether it was showing a node's parameters or the words

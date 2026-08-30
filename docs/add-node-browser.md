@@ -78,6 +78,50 @@ proportions:
   the surface they sit on; when the columns carry lists they should recede under them.
 - **The old palette stays on Ctrl+Space.** Confirmed rather than changed.
 
+## Step 2 — the category rail
+
+Fourteen rows in three families, `All` lit to begin with, up and down to walk it. No
+search, no results, no preview: those are steps 3 and 5.
+
+**Three families, two rules, no headings.** The primitive node classes, then Examples,
+then the three banks. A rule and six pixels of air on each side say "different kind of
+thing" quietly; a section heading under a section heading, over three rows, is a
+hierarchy announcing itself rather than being read.
+
+**No chevrons, no disclosure, no hover-to-open.** Pressing a row changes the middle
+column. That is the whole interaction, and it is the reason the old menu is going.
+
+**The marks are drawn, and they are a set.** Twelve new glyphs in `icons.gd`, on the
+existing grid at the existing single stroke weight — a category mark earns its place by
+being recognised as a shape before it is read as a word, which nine borrowed icon styles
+cannot do. The oscillator and modulation marks are deliberately the same gesture with and
+without corners. All three banks wear the *same* mark: they are one family of thing and
+the word beside it says which. `editor_test` now renders every icon in the enum at rail
+size and fails if any two of them are the same shape.
+
+**The rail must not scroll**, and it very nearly did. Fourteen rows at 36px plus two
+rules want 530px; the shell had 509. Three things gave way, in this order:
+
+- Row separation went to zero. Rows carry their own padding, so they still do not touch.
+- Row height and the rail's contents stopped scaling with the UI scale — the same choice
+  the panel width made, for the same reason. A rail that scales its rows but not its
+  budget shows fourteen categories at one setting and eleven and a scrollbar at another.
+- The browser's height cap went from 0.84 of the window to 0.88, and its height became a
+  real figure above that cap so the cap is what decides at every scale. The panel grew
+  36px: the row height is the thing the eye is being asked about, so the panel is what
+  gave way.
+
+That leaves 530 in 545 at the tightest supported combination — a 1440x900 window at XL,
+where the panel's furniture takes 193px. `NodeBrowser.RAIL_BUDGET` carries that figure
+and the suite checks the rail's contents against it, because a popup that is never drawn
+has no size and headless there is nothing for a scrollbar to be wrong about. The rail was
+watched not scrolling at all three UI scales with the editor on screen.
+
+**Selected is a tint, not the accent.** A rail of fourteen rows with one painted mint is a
+button somebody put in a list. The fill (16% accent over the surface) says where you are,
+a 45%-muted accent edge holds it together, and the ink and the mark carry the colour at
+5.9:1 against their own fill.
+
 ### The type grammar
 
 Small uppercase grey labels for structural regions; normal mixed case for anything
