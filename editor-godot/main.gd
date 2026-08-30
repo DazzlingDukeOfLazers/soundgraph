@@ -7544,41 +7544,6 @@ func _write_speech_buffer(node_id: String, bytes: PackedByteArray, phrases: int)
 		+ "says the first, each semitone up the next")
 
 
-## What the browser lists: every addable node, then every device, flattened to the four
-## fields the middle column reads.
-##
-## Built here rather than in the browser because the registry and the example shelf are
-## the editor's, and a browser that reaches into both is a browser that has to be
-## rebuilt when either moves. Step four normalises this properly; this is the least that
-## makes the column work.
-func _browser_catalogue() -> Array:
-	var items: Array = []
-	for type_name in _addable(PackedStringArray(registry.keys())):
-		var descriptor: Dictionary = registry.get(type_name, {})
-		items.append({
-			"id": str(type_name),
-			"name": str(descriptor.get("display_name", type_name)),
-			"family": str(descriptor.get("category", "")),
-			"kind": "node",
-		})
-	for label in _examples:
-		# "FM: accordion" is a family and a name, and the row only wants the name — the
-		# family is already the heading it is sitting under.
-		var text := str(label)
-		var family := ""
-		var name := text
-		if text.contains(":"):
-			family = text.get_slice(":", 0)
-			name = text.substr(family.length() + 1).strip_edges()
-		items.append({
-			"id": "device:%s" % text,
-			"name": name,
-			"family": family,
-			"kind": "device",
-		})
-	return items
-
-
 ## Enter in the browser. The same route the search palette takes, because it is the same
 ## job: what a Load example or an Open in sandbox ought to do instead is step seven.
 func _add_from_browser(id: String) -> void:
@@ -7596,8 +7561,10 @@ func _open_node_browser() -> void:
 		var button: Button = toolbar.toolbar_add_button
 		anchor = Rect2i(button.get_global_rect())
 	# Rebuilt on every opening: the example shelf and the registry can both have grown
-	# since the last one — a plugin scan, a device saved.
-	node_browser.catalogue = _browser_catalogue()
+	# since the last one — a plugin scan, a device saved. Which node names can be added is
+	# the editor's rule about its own graph, so it is answered here and handed over.
+	node_browser.catalogue = BrowserCatalogue.build(registry,
+		_addable(PackedStringArray(registry.keys())), _examples)
 	node_browser.open_beside(anchor)
 
 

@@ -204,6 +204,52 @@ Load example and an Open in sandbox become different things from an Add node; un
 one route serves all three, and the browser stays open, because patches are built several
 nodes at a time.
 
+## Step 4 — one item vocabulary
+
+Deliberately invisible. Four states rendered before and after: **zero differing pixels**
+in all four, and the same searches return the same rows in the same order.
+
+The browser used to be handed dictionaries that still smelled of where they were found —
+a node carrying the core's category, a device carrying the prefix on its label — and it
+worked out what to do with each as it drew them. That works for two sources and stops
+working at four. The place where the old shapes leak back in is the preview pane, which
+is the next thing being built, so the leak was closed first.
+
+`BrowserItem` (`editor-godot/browser_item.gd`) holds the rule this step exists for:
+
+```
+kind      what the object is        NODE   PATCH   BANK_ITEM
+category  where the browser puts it Sources, Examples, DX7 bank, …
+```
+
+They were one field. A bank voice and a worked patch are both patches to open, and belong
+in different rows of the rail; a node and a bank voice both drop into the graph as a node,
+and are not the same kind of object at all.
+
+Actions are carried as descriptors, not buttons: a node's primary is `ADD_NODE`, a
+patch's is `LOAD_PATCH` with `OPEN_IN_SANDBOX` behind it. Nothing reads them yet — Enter
+still takes the palette's one route for everything — and step 7 is where the browser
+starts honouring them instead of asking what kind of thing it is holding.
+
+`BrowserCatalogue` is the provider layer: two providers today, and a third would be a
+provider rather than a new shape for the browser to learn. What comes out is one list, and
+after it there is one pipeline — scope by category, match, group, draw.
+
+Node ranking is still the core's. Normalising did not mean throwing the specialised
+ranking away; `BrowserItem.matches` asks the core's result set about a node and matches a
+device's own name itself, and one vocabulary comes back from both.
+
+The fields are the ones something reads: `id`, `display_name`, `kind`, `category`,
+`group`, `description`, `tags`, `search_terms`, `source_ref`, `primary_action`,
+`secondary_actions`. No author, no rating, no complexity score. They arrive when a pane
+needs them.
+
+Pinned: the catalogue is `BrowserItem`s and nothing else, no two items share an id, every
+item has one of the three kinds and all three are in use, every item's category is a row
+of the rail, every item says what taking it would do, and every row drawn is an item from
+the catalogue — a row the catalogue cannot account for is the old shapes growing a second
+path back into the column.
+
 ### The type grammar
 
 Small uppercase grey labels for structural regions; normal mixed case for anything

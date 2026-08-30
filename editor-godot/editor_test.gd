@@ -21,6 +21,8 @@ const Transcribe := preload("res://transcribe.gd")
 const ModuleThemes := preload("res://module_themes.gd")
 ## The generated faceplate finishes.
 const Faceplate := preload("res://faceplate.gd")
+## The Add Node browser, for its category list.
+const NodeBrowserScript := preload("res://node_browser.gd")
 ## The third way of looking at a patch.
 const Schematic := preload("res://schematic.gd")
 ## Headless checks on the editor itself.
@@ -37,6 +39,15 @@ var failures := 0
 
 func rack_ready(main) -> void:
 	main.rack.rebuild()
+
+
+## One item out of the browser's catalogue, by id.
+func _browser_item(main, id: String) -> BrowserItem:
+	for entry: Variant in main.node_browser.catalogue:
+		var item := entry as BrowserItem
+		if item != null and item.id == id:
+			return item
+	return null
 
 
 ## One key event, for the handlers that are handed keys directly.
@@ -600,14 +611,94 @@ func _initialize() -> void:
 	# name, which is the browser failing at the one thing it is for, so the check is that
 	# there are none rather than that there are the expected few.
 	var homeless: Array = []
-	for item: Dictionary in main.node_browser.catalogue:
-		if str(item.get("kind", "")) == "node" and main.node_browser.row_of(item) == "":
-			homeless.append(str(item.get("id", "")))
+	for item: BrowserItem in main.node_browser.catalogue:
+		if item.kind == BrowserItem.Kind.NODE and item.category == "":
+			homeless.append(item.id)
 	homeless.sort()
 	check(homeless.is_empty(),
 		"every node in the core has a category (%s)"
 			% ("none homeless" if homeless.is_empty()
 				else ", ".join(PackedStringArray(homeless))))
+
+	# ---- one item vocabulary ----------------------------------------------------------
+	# The browser is handed BrowserItems and nothing else. Everything below is the shape
+	# of that contract, because the preview pane is the next thing built and the preview
+	# pane is exactly where the old per-source differences would leak back into the UI.
+	var rail_rows: Array = []
+	for entry: Variant in NodeBrowserScript.CATEGORIES:
+		if entry != null:
+			rail_rows.append(str((entry as Array)[0]))
+	var seen_ids := {}
+	var duplicate_ids: Array = []
+	var bad_kind := 0
+	var bad_category: Array = []
+	var actionless := 0
+	var not_items := 0
+	var kinds_present := {}
+	for entry: Variant in main.node_browser.catalogue:
+		var item := entry as BrowserItem
+		if item == null:
+			not_items += 1
+			continue
+		if seen_ids.has(item.id):
+			duplicate_ids.append(item.id)
+		seen_ids[item.id] = true
+		if item.kind < 0 or item.kind >= BrowserItem.KIND_NAMES.size():
+			bad_kind += 1
+		if not rail_rows.has(item.category):
+			bad_category.append("%s -> %s" % [item.id, item.category])
+		if item.primary_action < 0 \
+				or item.primary_action >= BrowserItem.ACTION_NAMES.size():
+			actionless += 1
+		kinds_present[item.kind_name()] = true
+	check(not_items == 0 and main.node_browser.catalogue.size() > 300,
+		"the catalogue is BrowserItems and nothing else (%d items, %d strangers)"
+			% [main.node_browser.catalogue.size(), not_items])
+	check(duplicate_ids.is_empty(),
+		"no two items share an id (%s)"
+			% ("none" if duplicate_ids.is_empty()
+				else ", ".join(PackedStringArray(duplicate_ids.slice(0, 4)))))
+	check(bad_kind == 0 and kinds_present.size() == 3,
+		"every item has one of the three kinds, and all three are in use (%s)"
+			% ", ".join(PackedStringArray(kinds_present.keys())))
+	check(bad_category.is_empty(),
+		"every item's category is a row of the rail (%s)"
+			% ("all of them" if bad_category.is_empty()
+				else ", ".join(PackedStringArray(bad_category.slice(0, 4)))))
+	check(actionless == 0, "and every item says what taking it would do")
+
+	# Kind and category are different questions, and used to be one field. A bank voice
+	# and a worked patch are both patches to open and belong in different rows; a node and
+	# a bank voice both drop into the graph and are not the same kind of object.
+	var sine := _browser_item(main, "SineOscillator")
+	var patch := _browser_item(main, "device:First Synth")
+	var bank_voice := _browser_item(main, "device:DX7: algo-01")
+	check(sine != null and sine.kind_name() == "NODE" and sine.category == "Sources"
+			and sine.primary_action == BrowserItem.Action.ADD_NODE,
+		"a node is a NODE in Sources that adds a node")
+	check(patch != null and patch.kind_name() == "PATCH" and patch.category == "Examples"
+			and patch.primary_action == BrowserItem.Action.LOAD_PATCH
+			and patch.secondary_actions.has(BrowserItem.Action.OPEN_IN_SANDBOX),
+		"a worked patch is a PATCH in Examples that loads, with a sandbox behind it")
+	check(bank_voice != null and bank_voice.kind_name() == "BANK_ITEM"
+			and bank_voice.category == "DX7 bank"
+			and bank_voice.display_name == "algo-01",
+		"a bank voice is a BANK_ITEM in its own bank, named without its shelf")
+
+	# Every row drawn comes from an item. A row the catalogue cannot account for is the
+	# old shapes growing a second path back into the column.
+	main.node_browser.select_category("All")
+	main.node_browser.search_field.text = "delay"
+	main.node_browser.refresh_results()
+	await process_frame
+	var orphans: Array = []
+	for row: Button in main.node_browser._result_rows:
+		if not seen_ids.has(str(row.get_meta("id"))):
+			orphans.append(str(row.get_meta("id")))
+	check(orphans.is_empty(),
+		"every row drawn is an item from the catalogue (%s)"
+			% ("all of them" if orphans.is_empty()
+				else ", ".join(PackedStringArray(orphans))))
 
 	# All, browsing: the node vocabulary alone, down the rail's own order. Three hundred
 	# devices under an empty search would bury the fifty things you wire together.

@@ -101,56 +101,12 @@ var _rows: Array = []
 var _rail: ScrollContainer
 var _rail_stack: VBoxContainer
 
-## Where a node lands in the rail, by the category dsp-core gives it.
+## What there is to show: BrowserItems, from BrowserCatalogue, handed over by the editor.
 ##
-## A map of nine core categories rather than a list of fifty node names: a node added to
-## the core lands somewhere sensible on its own, where a hand-written list would quietly
-## drop it. The rail's names are the editor's — the core has no opinion about whether a
-## delay line is an effect, and should not have to.
-const CORE_FAMILIES := {
-	"Terminals": "MIDI & IO",
-	"Sources": "Sources",
-	"Filters": "Filters",
-	"Time": "Effects",
-	"Amplitude": "Mixing",
-	"Effects": "Effects",
-	"Maths": "Utilities",
-	"Utilities": "Utilities",
-	"Modulation": "Modulation",
-}
-
-## The nodes whose core family is right and whose rail row is not. Envelopes and
-## sequencers are modulation as far as the core is concerned, and are their own rows here
-## because that is how they are looked for.
-##
-## What is no longer here: three exceptions for Sampler, Speech and Plugin Instrument,
-## which the rail had no word for while its first row said Oscillators. It says Sources
-## now, and every node in the core has a category — an exception list whose invariant is
-## "exactly three things stay uncategorised" is a taxonomy asking to be fixed, and the
-## next generator that arrives would have joined them.
-const NODE_ROWS := {
-	"ADSR": "Envelopes",
-	"AhdEnvelope": "Envelopes",
-	"StepSequencer": "Sequencers",
-	"Euclid": "Sequencers",
-	"Arpeggio": "Sequencers",
-	"Clock": "Sequencers",
-	"Drive": "Effects",
-	"Crush": "Effects",
-	"MidiCC": "MIDI & IO",
-}
-
-## Which bank a device belongs to, by the prefix on its label. Everything else — the
-## worked patches, the game sounds, the synth and drum machine voices — is an example.
-const DEVICE_ROWS := {
-	"Node": "Node bank",
-	"FM": "FM bank",
-	"DX7": "DX7 bank",
-}
-
-## Rows the middle column is built from, handed over by the editor: each is
-## {id, name, family, kind}. Step 4 normalises this properly; for now it is the least
-## the column needs and the browser does not reach into the registry itself.
+## The browser no longer knows that a node came from the core's registry and a patch from
+## the example shelf. It asks each item where it goes and whether a query finds it, and
+## the answers arrive in one vocabulary — which is the whole reason the preview pane is
+## being built after this and not before.
 var catalogue: Array = []
 ## The core's own node ranking, so "make quieter" finds the same node here as on the
 ## command line. Query in, ranked type names out.
@@ -315,6 +271,9 @@ func refresh_results() -> void:
 	_result_rows.clear()
 
 	var query := search_field.text.strip_edges() if search_field != null else ""
+	# The core's ranking, as a set for the items to be asked about. Delegating the node
+	# half of the search is not a hole in the normalisation: one vocabulary comes back
+	# either way, and the core is better at this than a name match would be.
 	var ranked := {}
 	if query != "" and ranker.is_valid():
 		for name in ranker.call(query):
@@ -322,24 +281,18 @@ func refresh_results() -> void:
 
 	var groups: Array = []
 	var members := {}
-	for item: Dictionary in catalogue:
-		var kind := str(item.get("kind", ""))
+	for item: BrowserItem in catalogue:
 		if selected_category == "All":
-			if query == "" and kind != "node":
+			if query == "" and item.kind != BrowserItem.Kind.NODE:
 				continue
-		elif row_of(item) != selected_category:
+		elif item.category != selected_category:
 			continue
-		if query != "":
-			if kind == "node":
-				if not ranked.has(str(item.get("id", ""))):
-					continue
-			elif not _matches(str(item.get("name", "")), query):
-				continue
-		var group := group_of(item)
-		if not members.has(group):
-			members[group] = []
-			groups.append(group)
-		(members[group] as Array).append(item)
+		if not item.matches(query, ranked):
+			continue
+		if not members.has(item.group):
+			members[item.group] = []
+			groups.append(item.group)
+		(members[item.group] as Array).append(item)
 
 	# Nodes land under their own rail row, so All reads down the rail rather than down
 	# whatever order the registry happens to be in. Device families keep theirs, which is
@@ -358,7 +311,7 @@ func refresh_results() -> void:
 	for group: String in groups:
 		if landmarks:
 			results_list.add_child(_group_heading(group))
-		for item: Dictionary in members[group]:
+		for item: BrowserItem in members[group]:
 			var row := _result_row(item)
 			results_list.add_child(row)
 			_result_rows.append(row)
@@ -373,16 +326,6 @@ func refresh_results() -> void:
 	select_item(str((_result_rows[0] as Button).get_meta("id")))
 
 
-## The landmark an item sits under: its rail row if it is a node, its shelf if it is a
-## device. A worked patch has no shelf and no prefix, and Patches is what it is.
-func group_of(item: Dictionary) -> String:
-	if str(item.get("kind", "")) == "node":
-		var row := row_of(item)
-		return row if row != "" else "Other"
-	var family := str(item.get("family", ""))
-	return family if family != "" else "Patches"
-
-
 ## The rail's own order, for sorting the landmarks under All by it.
 static func _category_order() -> Array:
 	var names: Array = []
@@ -391,26 +334,6 @@ static func _category_order() -> Array:
 			names.append(str((entry as Array)[0]))
 	names.append("Other")
 	return names
-
-
-## Which rail row an item belongs under.
-func row_of(item: Dictionary) -> String:
-	var id := str(item.get("id", ""))
-	if str(item.get("kind", "")) == "node":
-		if NODE_ROWS.has(id):
-			return str(NODE_ROWS[id])
-		return str(CORE_FAMILIES.get(str(item.get("family", "")), ""))
-	return str(DEVICE_ROWS.get(str(item.get("family", "")), "Examples"))
-
-
-## Every word of the query somewhere in the name. No ranking science: the core does the
-## ranking for nodes, and for a list of devices "kit" finding the kits is the whole job.
-func _matches(name: String, query: String) -> bool:
-	var lowered := name.to_lower()
-	for word in query.to_lower().split(" ", false):
-		if not lowered.contains(str(word)):
-			return false
-	return true
 
 
 func _group_heading(group: String) -> Control:
@@ -428,17 +351,17 @@ func _group_heading(group: String) -> Control:
 	return holder
 
 
-func _result_row(item: Dictionary) -> Button:
+func _result_row(item: BrowserItem) -> Button:
 	var row := Button.new()
-	row.text = str(item.get("name", ""))
-	row.set_meta("id", str(item.get("id", "")))
-	row.set_meta("category", str(item.get("id", "")))
+	row.text = item.display_name
+	row.set_meta("id", item.id)
+	row.set_meta("category", item.id)
 	row.custom_minimum_size.y = RESULT_HEIGHT
 	row.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	row.focus_mode = Control.FOCUS_NONE
 	row.clip_text = true
 	row.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
-	row.pressed.connect(func() -> void: select_item(str(item.get("id", ""))))
+	row.pressed.connect(func() -> void: select_item(item.id))
 	return row
 
 
