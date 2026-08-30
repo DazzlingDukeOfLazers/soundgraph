@@ -2025,6 +2025,26 @@ func _letter_widget(widget: GraphNode, key: String) -> void:
 ## Its own lettering, and not the plate's: the field is the hardware colour in every
 ## style, so its text is light in every style, and the legend that reads on the faceplate
 ## would be black on black half the time.
+## A dropdown that belongs to the node rather than to a form.
+##
+## It was the loudest thing on the Lowpass: a bright slab with a heavy border, sitting
+## between two knobs that had just been quietened. The surface is the node's own, the
+## edge is the hairline everything else here wears, and the arrow is the editor's drawn
+## caret rather than the theme's.
+func _dress_option(chooser: OptionButton) -> void:
+	NodeText.dress(chooser, NodeText.Role.CONTROL_OPTION)
+	for state: Array in [["normal", Design.Surface.NODE],
+			["hover", Design.Surface.RAISED],
+			["pressed", Design.Surface.ACTIVE],
+			["focus", Design.Surface.NODE]]:
+		var box := Design.padded_panel(int(state[1]), Design.SPACE_M,
+			Design.SPACE_XS, Design.RADIUS_BUTTON)
+		box.border_color = Design.BORDERS[Design.Surface.RAISED]
+		chooser.add_theme_stylebox_override(str(state[0]), box)
+	chooser.add_theme_icon_override("arrow",
+		Icons.get_icon(Icons.Kind.CARET_DOWN, Design.scale(14), Design.INK_SECOND))
+
+
 func _mount_chooser(chooser: OptionButton, key: String, skin: Dictionary) -> void:
 	if key == ModuleThemes.CATEGORY:
 		for state in ["normal", "hover", "pressed", "focus", "disabled"]:
@@ -2035,6 +2055,11 @@ func _mount_chooser(chooser: OptionButton, key: String, skin: Dictionary) -> voi
 		chooser.remove_theme_font_override("font")
 		if chooser.has_meta("lip"):
 			(chooser.get_meta("lip") as Panel).visible = false
+		# Unpainted means the editor's own chrome, unless the node is through the pass —
+		# in which case its dropdown belongs to the node, and this is where it is put
+		# back, because this function has just taken it off.
+		if bool(chooser.get_meta("node_diagram", false)):
+			_dress_option(chooser)
 		return
 	var field: Color = skin.get("hardware", Color(0.13, 0.13, 0.14))
 	var wall: Color = skin.get("hardware_hi", Color(0.3, 0.31, 0.33))
@@ -5478,7 +5503,12 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		# unlabelled slider seen from the other end. A dropdown is a control; the option
 		# it is showing is information, and information survives the control.
 		if roles:
-			NodeText.dress(options, NodeText.Role.CONTROL_OPTION)
+			# Marked, then dressed. The mark is what survives _mount_chooser, which
+			# strips every stylebox off an unpainted module's dropdown on its way past —
+			# so this styling was being applied and then quietly removed, and the only
+			# reason it was noticed is that the font size it does not strip stayed put.
+			options.set_meta("node_diagram", true)
+			_dress_option(options)
 		var chosen := Label.new()
 		chosen.text = str(parameter["enum"][clampi(int(round(current)), 0,
 			parameter["enum"].size() - 1)])
@@ -5527,6 +5557,10 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# Compact still means "dial only, no drawn captions" — the captions below are real
 	# Labels so the level of detail can reach them. Same dial, same size, same keyboard.
 	slider.compact = true
+	# And on the three types through the node pass, drawn as a diagram rather than as a
+	# moulded part. Same control, same size, same descriptor, same keyboard: only the
+	# picture differs, which is the same relationship the fader already has with it.
+	slider.diagram = roles
 	slider.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	slider.node_id = node_id
 	slider.descriptor = parameter

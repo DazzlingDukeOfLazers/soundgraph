@@ -2020,6 +2020,21 @@ class Knob extends Control:
 	## than the sliders it replaced, which is the opposite of the point. Same control,
 	## same keyboard, same signal path — one draws its own caption and one does not.
 	var compact := false
+	## Drawn as a diagram rather than as a piece of hardware.
+	##
+	## The rack's knob is a moulded part: collar, cap, moulding line, sheen, a shadow
+	## under it and a printed scale around it. That is right on a faceplate and wrong in
+	## the graph, which is a drawing of the patch rather than a photograph of it — and
+	## the detail does not survive being shrunk anyway. Nine primitives at 100% become
+	## a textured grey circle at 40%.
+	##
+	## The diagram keeps what says where the knob is set and drops everything that says
+	## what it is made of.
+	var diagram := false
+	## Whether the diagram prints three reference marks. Off by default: see the proof
+	## sheet in docs/graph-nodes.md — at the size a graph node actually draws a knob, the
+	## marks are three grey pixels that read as dirt on the glass.
+	var diagram_ticks := false
 
 	## Dial size, as a fraction of the rack's. The panel packs knobs three to a module
 	## where the rack fits two, and it gets the room by shrinking the dial rather than
@@ -2274,6 +2289,9 @@ class Knob extends Control:
 		var centre := Vector2(size.x * 0.5,
 			size.y * 0.5 if compact else radius + 6.0)
 		var angle := START + SWEEP * _position
+		if diagram:
+			_draw_diagram(centre, radius, angle)
+			return
 
 		# Printed ticks around the travel, the way a panel marks a pot's range.
 		#
@@ -2389,6 +2407,60 @@ class Knob extends Control:
 		draw_string(value_font, Vector2(Rack.KNOB_PAD, value_baseline),
 			Rack.elided(value_font, _value_text(), value_size, room),
 			HORIZONTAL_ALIGNMENT_CENTER, room, value_size, _legend(false))
+
+
+	## The knob as a diagram: four marks, and every one of them says where it is set.
+	##
+	##   track     where it can go        one thin arc, quiet
+	##   arc       where it is            the same arc in mint, from the minimum
+	##   body      the control itself     one disc, one edge
+	##   pointer   where it is, again     the strongest thing on it
+	##
+	## The value is said twice on purpose — by the arc's length, which is readable at a
+	## glance and at any size, and by the pointer, which is readable precisely. That
+	## redundancy is the whole reason this survives being shrunk while nine layers of
+	## moulding did not.
+	##
+	## What is gone: the collar, the cast shadow, the cap, the moulding line, the sheen,
+	## the dark under-stroke on the pointer and the eleven printed ticks. None of them
+	## carried state.
+	func _draw_diagram(centre: Vector2, radius: float, angle: float) -> void:
+		# The body first, so the arcs outside it read as a scale around a control rather
+		# than as a ring with something in the middle.
+		var body: Color = skin.get("knob", Rack.KNOB_BODY)
+		draw_circle(centre, radius, body)
+		draw_arc(centre, radius, 0.0, TAU, 40, Color(0.0, 0.0, 0.0, 0.35), 1.0, true)
+
+		# Travel, then value. Two pixels of arc rather than two and a half, hugging the
+		# body at the same distance the rack's does, so a knob is the same object in both
+		# views even though it is drawn differently.
+		var track_width := maxf(radius * 0.14, 2.0)
+		draw_arc(centre, radius + 3.0, START, START + SWEEP, 40, Rack.KNOB_TRACK,
+			track_width, true)
+		if _position > 0.001:
+			draw_arc(centre, radius + 3.0, START, angle, 40, Rack.SELECTED,
+				track_width, true)
+
+		if diagram_ticks:
+			var marks: Color = skin.get("muted", Color(0, 0, 0, 0))
+			if marks.a <= 0.0:
+				marks = Color(rack.ink_dim, 0.7)
+			for tick in 3:
+				var at := START + SWEEP * (float(tick) * 0.5)
+				var out := Vector2(cos(at), sin(at))
+				draw_line(centre + out * (radius + 6.0),
+					centre + out * (radius + 9.0), marks, 1.4, true)
+
+		# The pointer, which is the one part that has to survive everything. From the
+		# middle to the edge, in the ink the panel letters with, and thick enough that
+		# shrinking it leaves a line rather than a suggestion — a fifth of the radius,
+		# floored at two pixels, where the rack's was a fixed 2.8 over a dark 4.4 and
+		# became a grey smudge on top of a darker smudge.
+		var pointer: Color = skin.get("pointer", Color(0, 0, 0, 0))
+		var index := Vector2(cos(angle), sin(angle))
+		draw_line(centre + index * radius * 0.18, centre + index * (radius - 1.5),
+			rack.ink if pointer.a <= 0.0 else pointer,
+			maxf(radius * 0.2, 2.0), true)
 
 
 ## A vertical fader: the same control as Knob wearing a different picture.

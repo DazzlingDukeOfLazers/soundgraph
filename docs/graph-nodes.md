@@ -295,3 +295,59 @@ Precision is untouched: `0.700`, `900.0 Hz`, `0.000 octaves/s` are as they were.
 decimals on a gain of 0.7 and on a sweep of zero is more precision than either reading
 needs, and that is a formatting decision rather than a typographic one — recorded here,
 not taken.
+
+## Step 6 — the control as a diagram
+
+The rack's knob is a moulded part: a collar, a cast shadow, a cap, a moulding line, a
+sheen, a dark under-stroke beneath the pointer and eleven printed ticks around it. That is
+right on a faceplate. In the graph it is nine primitives that say what the knob is made
+of, and at 40% they average into a textured grey circle.
+
+`Rack.Knob` gained a `diagram` flag — the same control, same descriptor, same drag, same
+keyboard, a different picture, which is the relationship the fader already had with it.
+Four marks, and every one says where the knob is set:
+
+```
+track     where it can go       one thin arc, quiet
+arc       where it is           the same arc in mint, from the minimum
+body      the control itself    one disc, one edge
+pointer   where it is, again    the strongest mark on it
+```
+
+The value is said twice on purpose. The arc reads at a glance and at any size; the pointer
+reads precisely. That redundancy is why this survives being shrunk when nine layers of
+moulding did not. The pointer is a fifth of the radius and floored at two pixels, where
+the rack's was a fixed 2.8 over a dark 4.4 — two smudges once the zoom got hold of it.
+
+### Ticks: compared, then dropped
+
+The proof sheet has three bands — the old knob, the diagram, the diagram with three
+reference marks — each at 96px, then at the size a node actually draws it, then that at
+66% and 40%, with the knob at 10%, 50% and 90% of its travel.
+
+Three marks are legible on the 96px specimen and gone by 66% of actual size. They are not
+carrying position; the arc is. `diagram_ticks` exists and is off, so the comparison can be
+made again rather than argued about.
+
+The enlarged specimen does look too simple, which the brief predicted. The actual-size
+column is the one that decides, and there the diagram is clearer at every position.
+
+### The dropdown
+
+`mode` was the loudest thing on the Lowpass: a bright slab with a heavy border between two
+knobs that had just been quietened. It is the node's own surface now, with the hairline
+every other edge here wears and the editor's drawn caret instead of the theme's arrow.
+
+It took two goes, and the first failure is worth keeping: `_mount_chooser` strips every
+stylebox off an unpainted module's dropdown as it passes, so the styling was applied and
+then quietly removed. The only reason it was caught is that the font size it does *not*
+strip stayed put, so the control was half-dressed rather than plainly wrong. The node's
+dropdown carries a `node_diagram` mark, and `_mount_chooser` puts the dress back where it
+has just taken it off.
+
+### Measured
+
+Node sizes are unchanged from step 5 — the diagram occupies the same box as the moulding
+it replaced. Topology, ports, cables, values, typography, grid, chassis, detail bands and
+the other four types are all as they were: the same 66 / 24 / 0 / 0 controls at the same
+four zooms, the same seven nodes and seven wires.
