@@ -1517,13 +1517,20 @@ func _dress_anatomy(widget: GraphNode, lit: bool) -> void:
 	head.border_color = edge
 	widget.add_theme_stylebox_override("titlebar", head)
 
-	var body := Design.padded_panel(Design.Surface.NODE, ANATOMY_GUTTER,
-		Design.SPACE_S, Design.RADIUS_NODE)
+	var body := Design.padded_panel(Design.Surface.NODE, NodeGrid.INSET_X,
+		NodeGrid.INSET_TOP, Design.RADIUS_NODE)
+	# Top and bottom differ, so they are set rather than passed: the space under the
+	# header's rule and the space above the body's foot are two measurements that happen
+	# to be equal today and are not the same thing.
+	body.content_margin_top = Design.scale(NodeGrid.INSET_TOP)
+	body.content_margin_bottom = Design.scale(NodeGrid.INSET_BOTTOM)
 	body.corner_radius_top_left = 0
 	body.corner_radius_top_right = 0
 	body.border_width_top = 0
 	body.border_color = edge
 	widget.add_theme_stylebox_override("panel", body)
+	# One gap between rows, from the grid rather than from the editor's general spacing.
+	widget.add_theme_constant_override("separation", NodeGrid.row_gap())
 
 	# Selection keeps the accent it has everywhere else, on the same anatomy.
 	var head_lit := head.duplicate() as StyleBoxFlat
@@ -4448,6 +4455,14 @@ func _create_widget(node: Dictionary) -> void:
 	# front, which is the entire point of having said so. Anything without a panel wraps
 	# its whole surface PARAMETERS_PER_LINE to a line, as it always did.
 	var parameters: Array = descriptor.get("parameters", [])
+	# Whether this node lays out on the grid. Asked once, here, rather than in each of
+	# the places below that would otherwise each have their own opinion.
+	var gridded := NodeIdentity.in_proving_ground(str(node.get("type", "")))
+	# The port labels, kept so their columns can be squared up once they all exist. A
+	# gutter cannot know how wide it should be until the widest label in it has been
+	# built.
+	var gutters: Array = []
+	var right_gutters: Array = []
 	var grid: Array = descriptor.get("panel_rows", []).duplicate()
 	# The Step Sequencer wears a bar of piano roll instead of sixteen number
 	# cells: length keeps its cell up here, the steps become the grid appended
@@ -4498,7 +4513,8 @@ func _create_widget(node: Dictionary) -> void:
 
 	for row in maxi(port_rows, cell_lines):
 		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
+		line.add_theme_constant_override("separation",
+			NodeGrid.column_gap() if gridded else Design.scale(Design.SPACE_M))
 		line.alignment = BoxContainer.ALIGNMENT_CENTER
 		line.set_meta("row", "module")
 		# A row with a slot on it may never be hidden. GraphEdit binds a slot to the index
@@ -4515,10 +4531,12 @@ func _create_widget(node: Dictionary) -> void:
 		# gone too; they were doing the separating that a colour change does better.
 		var left := _port_label(inputs[row] if row < inputs.size() else {}, false)
 		left.set_meta("port_label", true)
+		gutters.append(left)
 		line.add_child(left)
 
 		var cells := HBoxContainer.new()
-		cells.add_theme_constant_override("separation", Design.scale(Design.SPACE_M))
+		cells.add_theme_constant_override("separation",
+			NodeGrid.column_gap() if gridded else Design.scale(Design.SPACE_M))
 		cells.alignment = BoxContainer.ALIGNMENT_BEGIN if rail_right \
 			else BoxContainer.ALIGNMENT_END if rail_left \
 			else BoxContainer.ALIGNMENT_CENTER
@@ -4526,12 +4544,20 @@ func _create_widget(node: Dictionary) -> void:
 		cells.set_meta("cells", true)
 		if row < grid.size():
 			for parameter: Dictionary in grid[row]:
-				cells.add_child(_build_parameter_row(node, parameter))
+				var cell := _build_parameter_row(node, parameter)
+				# One column width for every cell, so the control on the second row
+				# lands under the control on the first. Without it each row centres its
+				# own contents and two rows of two read as four separate islands, which
+				# is exactly what the Lowpass looked like.
+				if gridded:
+					cell.custom_minimum_size.x = Design.scale(NodeGrid.COLUMN)
+				cells.add_child(cell)
 		line.add_child(cells)
 		line.set_meta("cells_box", cells)
 
 		var right := _port_label(outputs[row] if row < outputs.size() else {}, true)
 		right.set_meta("port_label", true)
+		right_gutters.append(right)
 		line.add_child(right)
 		widget.add_child(line)
 
@@ -4539,7 +4565,7 @@ func _create_widget(node: Dictionary) -> void:
 		# past the first line behind an "n more" click, which taxed every look at a
 		# freshly loaded patch — the way to see less of a module is to zoom out, not
 		# to unwrap it knob by knob.
-		_fit_row_height(line)
+		_fit_row_height(line, gridded)
 
 		if row >= port_rows:
 			continue
@@ -4561,6 +4587,18 @@ func _create_widget(node: Dictionary) -> void:
 		if has_output:
 			widget.set_slot_custom_icon_right(row,
 				_port_icon(outputs[row]["type"], _panel_style_of(str(node["id"]))))
+
+	# The gutters, squared up now that every label in them exists. Each side takes the
+	# width of its own longest label, so the control region has one left edge and one
+	# right edge down the whole node — and a node with two short port names does not
+	# reserve room for a node with long ones.
+	if gridded:
+		for side: Array in [gutters, right_gutters]:
+			var widest := 0.0
+			for label: Control in side:
+				widest = maxf(widest, label.get_combined_minimum_size().x)
+			for label: Control in side:
+				label.custom_minimum_size.x = widest
 
 	if str(node.get("type", "")) in ["PluginEffect", "PluginInstrument"]:
 		var plugin_line := HBoxContainer.new()
@@ -4943,10 +4981,14 @@ func _unit_label(unit: String) -> Label:
 ## row that kept its tall minimum after its knobs were folded away left a node with a band
 ## of empty panel where the controls used to be — which is the "full node with pieces
 ## missing" that the level of detail exists to avoid.
-func _fit_row_height(line: Control) -> void:
+func _fit_row_height(line: Control, gridded: bool = false) -> void:
 	var cells: Control = line.get_meta("cells_box") if line.has_meta("cells_box") else null
 	var tall: bool = cells != null and cells.visible and cells.get_child_count() > 0
-	line.custom_minimum_size.y = Design.scale(
+	# On the grid, a row is one of two heights and both are multiples of eight, so every
+	# row below them lands on the rhythm too. Off it, the two figures this pass inherited:
+	# 74 and 28, near enough to look deliberate and far enough off to put everything
+	# underneath them half a unit out.
+	line.custom_minimum_size.y = NodeGrid.row_height(tall) if gridded else Design.scale(
 		Design.PARAMETER_CELL_HEIGHT if tall else Design.NODE_ROW_HEIGHT)
 	# A row with nothing on it at all disappears — unless it is carrying a slot, in which
 	# case it stays whatever else happens, because a hidden row renumbers the cables.
@@ -5333,7 +5375,12 @@ func _control_zone(control: Control) -> Control:
 ## graph's behaviour, still draggable, still typeable, still legible when zoomed out.
 func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	var row := VBoxContainer.new()
-	row.add_theme_constant_override("separation", 0)
+	# Control, name, value, with one micro unit between them on the grid — they were
+	# touching, which is why a knob and the word under it read as one lump rather than as
+	# a control and its name.
+	row.add_theme_constant_override("separation",
+		Design.scale(NodeGrid.LABEL_GAP) if NodeIdentity.in_proving_ground(
+			str(node.get("type", ""))) else 0)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.set_meta("cell", "parameter")

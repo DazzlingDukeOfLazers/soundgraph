@@ -171,3 +171,66 @@ The adaptive bands are untouched: the same 0.60 and 0.40, the same hysteresis, t
 counts at every zoom. Cables, serialisation, node ids, control values and the other four
 node types are as they were. Width classes are step 8, so nothing was widened to make a
 name fit — the compact name is the answer at this size, by design.
+
+## Step 4 — the internal grid
+
+`node_grid.gd` holds every figure the inside of a node is built from. Before it they were
+spread through the builder — `SPACE_M` here, a bare `0` there, a row height that happened
+to be 74 — and the result was what you would expect: controls that had each been nudged
+until they looked right on whichever node somebody was looking at.
+
+```
+INSET_X       12    body edge to anything inside it, and the header's own inset
+INSET_TOP      8    under the header's rule, before the first row
+INSET_BOTTOM   8    under the last row, before the body's foot
+ROW_GAP        8    between rows
+COLUMN_GAP    16    between controls on a row, and between a port label and the controls
+COLUMN        84    one control column, shared by every cell
+LABEL_GAP      4    control to its name
+VALUE_GAP      4    name to its value
+CELL_ROW      72    a row carrying controls
+PORT_ROW      24    a row carrying only ports
+```
+
+Eights, or fours where the gap is inside one object rather than between two. `CELL_ROW`
+and `PORT_ROW` were 74 and 28 — near enough to the rhythm to look deliberate, far enough
+off it to put every row below them half a unit out.
+
+### What was actually wrong with the Lowpass
+
+Not the spacing. The controls sat in a box that expands to fill, centred between two port
+labels of different lengths — so `mod` on one row and `cutoff Hz` on the next moved the
+whole control block sideways, and two tidy rows read as four islands.
+
+**The gutters are equal within a node and measured from that node's own longest port
+label.** Equal, so the control region has one left edge and one right edge on every row;
+measured per node, because a fixed figure is a width class in disguise — 88px was tried,
+and the Amplifier, which has two short port names and one knob, went from 219 to 314
+holding two gutters sized for a node it is not.
+
+With that, cutoff sits over mode and resonance over sweep: two rows, by rule rather than
+by nudging.
+
+### The three specimens
+
+```
+Gain        one column, two ports      219x147 -> 231x150
+ADSR        a regular 2x2              382x101 -> 400x101
+SVF         mixed two-column           482x239 -> 500x248
+```
+
+Twelve to eighteen pixels wider, from the gaps: `COLUMN_GAP` is 16 where the old
+separation was 12, and it is paid twice on a row. Three pixels taller on two of them, from
+the micro gaps inside the cells. `COLUMN` is 84 rather than the 104 tried first, because
+84 is the floor the builder already used for a name box — the column is not there to make
+cells wider, it is there to make them the same.
+
+The simple node stayed simple: the Amplifier is 231 wide, not 314.
+
+### Measured
+
+Topology unchanged: seven nodes, seven wires, no moves, no ports gained or lost. The other
+four node types are untouched. Detail bands identical at every zoom. One title changed at
+40% — `Amp Envelope` now fits its canonical name in a node eighteen pixels wider, so it no
+longer needs its compact one. That is a consequence of the grid rather than a width class,
+and it is recorded here because the next person to read the title numbers will wonder.
