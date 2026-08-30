@@ -21,6 +21,8 @@ const Transcribe := preload("res://transcribe.gd")
 const ModuleThemes := preload("res://module_themes.gd")
 ## The generated faceplate finishes.
 const Faceplate := preload("res://faceplate.gd")
+## The graph, for the case's own constants.
+const PatchGraphScript := preload("res://patch_graph.gd")
 ## The Add Node browser, for its category list.
 const NodeBrowserScript := preload("res://node_browser.gd")
 ## The third way of looking at a patch.
@@ -9161,6 +9163,35 @@ func _initialize() -> void:
 				and uncased == "":
 			uncased = str(mounted.name)
 	check(uncased == "", "with every node inside it (%s)" % uncased)
+
+	# The case has to read as a surface the modules stand on, which it did not: the grid
+	# ran through it at full strength and the floor was a translucent tint, so the case
+	# and the world it sits in were one plane with a faint line around part of it.
+	var canvas_ink: Color = Design.SURFACES[Design.Surface.CANVAS]
+	var floor_ink: Color = main.graph_edit.case_ground()
+	var lift: float = floor_ink.get_luminance() / maxf(canvas_ink.get_luminance(), 0.001)
+	check(floor_ink.a >= 1.0 and lift > 1.2 and lift < 1.7,
+		"the case floor is an opaque, measured step off the canvas (%.2fx)" % lift)
+	var quietest := 1.0
+	for tier: float in PatchGraphScript.GRID_INSIDE:
+		quietest = minf(quietest, tier)
+	check(PatchGraphScript.GRID_INSIDE.size() == 3 and quietest >= 0.3
+			and PatchGraphScript.GRID_INSIDE.max() < 0.75,
+		"and the grid crosses it quietly rather than through it (%s)"
+			% str(PatchGraphScript.GRID_INSIDE))
+
+	# Air between the band and the first module. Without it the perimeter and a module's
+	# own title bar are a few pixels apart and read as one muddle.
+	var band_foot: float = case_frame.position.y + float(Design.scale(
+		PatchGraphScript.CASE_BAND))
+	var topmost := 100000.0
+	for child in main.graph_edit.get_children():
+		var mounted := child as GraphNode
+		if mounted != null and mounted.visible:
+			topmost = minf(topmost, mounted.position_offset.y)
+	check(topmost - band_foot >= float(Design.scale(Design.SPACE_M)),
+		"and the band has clear space under it before the first module (%d)"
+			% int(topmost - band_foot))
 
 	# ---- mixed mode: a whole patch as one node in the palette ------------------------
 	# The main way to build is mixing modules and nodes: a DX7 voice drops onto any

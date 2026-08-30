@@ -1189,12 +1189,37 @@ func case_box() -> Rect2:
 			return mount_box.grow_individual(0.0,
 				float(Design.scale(CASE_BAND)), 0.0, 0.0)
 		return Rect2()
-	return box.grow(float(Design.scale(Design.SPACE_L))) \
-		.grow_individual(0.0, float(Design.scale(CASE_BAND)), 0.0, 0.0)
+	# The air is part of the boundary. A module up against the perimeter makes the
+	# perimeter interact with its title bar, and two lines a few pixels apart read as one
+	# muddle rather than as a thing inside another thing — so the sides and the floor get
+	# a wider margin, and the band gets clear space under it before the first module.
+	return box.grow(float(Design.scale(Design.SPACE_XL))) \
+		.grow_individual(0.0,
+			float(Design.scale(CASE_BAND)) + float(Design.scale(Design.SPACE_M)),
+			0.0, 0.0)
 
 
 ## The band along the top of the case, where its name sits. Before UI scaling.
 const CASE_BAND := 30.0
+
+## How much of the grid survives inside the case, per tier.
+##
+## The case used to be drawn under a grid at full strength, which is the whole reason it
+## did not read as a surface: the canvas ran straight through it, so the perimeter was a
+## line somebody had drawn on the world rather than the edge of a thing standing on it.
+## The geometry still crosses the floor — a case is a sheet on the canvas, not a hole cut
+## out of it — at enough less that the eye reads three planes: world, case, module.
+const GRID_INSIDE := [0.4, 0.5, 0.6]
+
+
+## The colour the case floor is painted, an opaque step off the canvas.
+##
+## Opaque and measured, where it used to be a dark tint at 55%: a translucent floor lets
+## the canvas through, so the case and the world it sits in were the same surface with a
+## line around part of it. The step is small on purpose — five or six percent, enough to
+## be consistently different and not enough to become a card behind the modules.
+static func case_ground() -> Color:
+	return Design.SURFACES[Design.Surface.CANVAS].lightened(0.035)
 
 ## What the case is called: the instrument's name, set by main from the document. Empty
 ## draws nothing at all, which is right for a patch with no nodes in it yet — a case
@@ -1322,11 +1347,31 @@ func _draw_case() -> void:
 	# so the aluminium and the title are skipped while it is up. The chips are not: they
 	# are how you leave, and the way out of a view cannot live only in the view you left.
 	if not face_up:
-		# The rack's own case colours, so the graph's boundary and the panel's are the
-		# same aluminium rather than two greys that happen to be close.
-		draw_rect(box, Color(Rack.PANEL_LOW.darkened(0.35), 0.55))
-		draw_rect(box, Rack.PANEL_EDGE, false, 1.0)
-		Rack.draw_rail(self, Rect2(box.position, Vector2(box.size.x, band)))
+		draw_rect(box, case_ground())
+
+		# The band. A shade up from the floor and a hairline under it, and nothing more:
+		# it holds the case's name, and a case is one level quieter than the modules
+		# standing in it. It used to be a rack rail, threaded strip and all, which is
+		# module-grade hardware on the thing modules sit on.
+		draw_rect(Rect2(box.position, Vector2(box.size.x, band)),
+			case_ground().lightened(0.035))
+		draw_line(box.position + Vector2(0.0, band),
+			box.position + Vector2(box.size.x, band), Color(1, 1, 1, 0.07), 1.0)
+
+		# Two values on the perimeter rather than one. A single hairline at 7% white was
+		# a rectangle you could find if you went looking; lit along the top and left,
+		# shaded down the bottom and right, it is a shallow sheet lying on the canvas.
+		# Small differences on purpose — the alternative is a group box from 1995.
+		draw_rect(box, Color(1, 1, 1, 0.14), false, 1.0)
+		draw_line(box.position + Vector2(1.0, 1.0),
+			box.position + Vector2(box.size.x - 1.0, 1.0), Color(1, 1, 1, 0.05), 1.0)
+		draw_line(box.position + Vector2(1.0, 1.0),
+			box.position + Vector2(1.0, box.size.y - 1.0), Color(1, 1, 1, 0.05), 1.0)
+		draw_line(box.position + Vector2(1.0, box.size.y - 1.0),
+			box.end - Vector2(1.0, 1.0), Color(0, 0, 0, 0.22), 1.0)
+		draw_line(box.position + Vector2(box.size.x - 1.0, 1.0),
+			box.end - Vector2(1.0, 1.0), Color(0, 0, 0, 0.22), 1.0)
+
 		draw_string(font, box.position + Vector2(float(Design.scale(Design.SPACE_M)),
 			band * 0.72), case_title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 			text_size, Design.INK_SECOND)
@@ -1346,27 +1391,55 @@ func _draw() -> void:
 	var right := (scroll_offset.x + size.x) / scale
 	var bottom := (scroll_offset.y + size.y) / scale
 
+	# Where the case floor is, in screen coordinates, so the grid can cross it quietly.
+	# Zero-size when there is no case, and every line is then drawn in one piece.
+	var floor_box := Rect2()
+	if case_title != "" and not face_up:
+		var case_frame := case_box()
+		if case_frame.size.x > 0.0:
+			floor_box = Rect2(case_frame.position * scale - scroll_offset,
+				case_frame.size * scale)
+
 	# Heaviest last, so a column line is drawn over the row and snap lines that share it.
 	for tier in [
-		[grid_minor, grid_minor_colour, 1.0],
-		[grid_half_major, grid_half_major_colour, 1.0],
-		[grid_major, grid_major_colour, 2.0],
+		[grid_minor, grid_minor_colour, 1.0, GRID_INSIDE[0]],
+		[grid_half_major, grid_half_major_colour, 1.0, GRID_INSIDE[1]],
+		[grid_major, grid_major_colour, 2.0, GRID_INSIDE[2]],
 	]:
 		var step: float = tier[0]
 		if step <= 0.0 or step * scale < 5.0:
 			continue   # too dense to read at this zoom, and expensive to draw
 		var colour: Color = tier[1]
 		var width: float = tier[2]
+		var inside := Color(colour, colour.a * float(tier[3]))
 
 		var x := floorf(left / step) * step
 		while x <= right:
 			var screen := x * scale - scroll_offset.x
-			draw_line(Vector2(screen, 0.0), Vector2(screen, size.y), colour, width)
+			if floor_box.size.x > 0.0 and screen >= floor_box.position.x \
+					and screen <= floor_box.end.x:
+				draw_line(Vector2(screen, 0.0),
+					Vector2(screen, floor_box.position.y), colour, width)
+				draw_line(Vector2(screen, floor_box.position.y),
+					Vector2(screen, floor_box.end.y), inside, width)
+				draw_line(Vector2(screen, floor_box.end.y),
+					Vector2(screen, size.y), colour, width)
+			else:
+				draw_line(Vector2(screen, 0.0), Vector2(screen, size.y), colour, width)
 			x += step
 		var y := floorf(top / step) * step
 		while y <= bottom:
 			var screen := y * scale - scroll_offset.y
-			draw_line(Vector2(0.0, screen), Vector2(size.x, screen), colour, width)
+			if floor_box.size.y > 0.0 and screen >= floor_box.position.y \
+					and screen <= floor_box.end.y:
+				draw_line(Vector2(0.0, screen),
+					Vector2(floor_box.position.x, screen), colour, width)
+				draw_line(Vector2(floor_box.position.x, screen),
+					Vector2(floor_box.end.x, screen), inside, width)
+				draw_line(Vector2(floor_box.end.x, screen),
+					Vector2(size.x, screen), colour, width)
+			else:
+				draw_line(Vector2(0.0, screen), Vector2(size.x, screen), colour, width)
 			y += step
 
 
