@@ -41,6 +41,9 @@ const CASE_WIDTHS := [0, 84, 104, 168]
 
 const PatchGraph := preload("res://patch_graph.gd")
 
+## Where section labels' ids start, well clear of every setting's.
+const SECTION_ID := 900
+
 ## Large example groups become submenus so the curated top level survives the banks.
 const EXAMPLE_SUBMENU_THRESHOLD := 16
 
@@ -58,6 +61,8 @@ var redo_button: Button
 var message_label: Label
 var transport_dot: TextureRect
 var view_popup: PopupMenu
+## The word beside the transport dot.
+var transport_word: Label
 ## The Audio menu, which holds the one setting that is not a View setting.
 var _audio_menu: PopupMenu
 var arrange_popup: PopupMenu
@@ -381,14 +386,15 @@ func _build() -> void:
 	# one — its own index — so "Cable style" became id 0 and stole every tick meant for
 	# Catenary, which is id 0 as well. The separator cannot be selected and cannot
 	# collide, and is what a group heading inside a menu is for.
-	graph_menu.add_separator("Cable style")
+	_section(graph_menu, "Cable style")
 	graph_menu.add_radio_check_item("Catenary", 0)
 	graph_menu.add_radio_check_item("PCB", 1)
 	# The two readings of a zoomed-out graph. Adaptive is the map: the drawing
 	# simplifies as you leave so the surviving words stay readable. 1:1 is the
 	# photograph: the full module — controls, text, everything — at every zoom,
 	# smaller only because it is farther away.
-	graph_menu.add_separator("Detail")
+	graph_menu.add_separator()
+	_section(graph_menu, "Detail")
 	graph_menu.add_radio_check_item("Adaptive", 70)
 	graph_menu.add_radio_check_item("1:1", 71)
 	graph_menu.set_item_tooltip(graph_menu.get_item_index(70),
@@ -398,7 +404,7 @@ func _build() -> void:
 	graph_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
 
 	var rack_menu := _submenu(view_popup, "RackDisplayMenu", "Rack display")
-	rack_menu.add_separator("Width")
+	_section(rack_menu, "Width")
 	for index in CASE_LABELS.size():
 		# Without the "Case:" the labels carry elsewhere. Under a heading that says
 		# Width, inside a door that says Rack display, saying it a third time is the
@@ -408,14 +414,19 @@ func _build() -> void:
 		var width_label := str(CASE_LABELS[index]).trim_prefix("Case: ")
 		rack_menu.add_radio_check_item(
 			width_label.substr(0, 1).to_upper() + width_label.substr(1), 10 + index)
-	rack_menu.add_separator("Presentation")
+	rack_menu.add_separator()
+	_section(rack_menu, "Presentation")
 	for index in Rack.DENSITY_NAMES.size():
 		rack_menu.add_radio_check_item(Rack.DENSITY_NAMES[index], 40 + index)
-	rack_menu.add_separator()
+	rack_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+
 	# What the panels are painted in. A whole-rack default, because a rack that is one
 	# family reads as a rack; individual panels are repainted by right-clicking them,
 	# which is where somebody is already pointing when they want to change one.
-	var panels_popup := _submenu(rack_menu, "PanelsMenu", "Panels")
+	#
+	# Its own door rather than a room inside Rack display: width and presentation
+	# describe the rack, and a panel is a panel in every view that draws one.
+	var panels_popup := _submenu(view_popup, "PanelsMenu", "Panels")
 	panels_popup.add_radio_check_item("Category colours", 200)
 	panels_popup.set_item_tooltip(0,
 		"One graphite panel each, with a stripe saying what the module is.")
@@ -425,8 +436,24 @@ func _build() -> void:
 		panels_popup.add_radio_check_item(ModuleThemes.display_name(key), 201 + index)
 		panels_popup.set_item_tooltip(panels_popup.get_item_index(201 + index),
 			str(ModuleThemes.THEMES[key].get("blurb", "")))
-	panels_popup.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
-	rack_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
+	# The wordmark's QR, with the panels rather than alone at the foot of View. It is a
+	# thing drawn on the interface, which is what this door holds; on its own it was a
+	# checkbox nobody had decided the kind of.
+	panels_popup.add_separator()
+	panels_popup.add_check_item("Show QR code", 104)
+	panels_popup.set_item_tooltip(panels_popup.get_item_index(104),
+		"The door into the program: mutantfactory.net/soundgraph, beside the "
+		+ "wordmark. Untick to work without it watching.")
+	panels_popup.about_to_popup.connect(func() -> void:
+		panels_popup.set_item_checked(panels_popup.get_item_index(104),
+			toolbar_qr != null and toolbar_qr.visible))
+	panels_popup.id_pressed.connect(func(id: int) -> void:
+		if id == 104:
+			if toolbar_qr != null:
+				toolbar_qr.visible = not toolbar_qr.visible
+				Settings.store("qr_visible", toolbar_qr.visible)
+			return
+		view_action.emit(id))
 
 	var zoom_menu := _submenu(view_popup, "ZoomMenu", "Zoom")
 	zoom_menu.add_item("Fit to screen", 72)
@@ -469,24 +496,7 @@ func _build() -> void:
 	access_menu.add_check_item("Reduce motion", 20)
 	access_menu.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
 
-	view_popup.add_separator()
-	# The wordmark's QR, which is a thing on the screen and therefore a View question.
-	# It was a root-level checkbox between Mute and Make module, which is where a
-	# setting goes when nobody has decided what kind of thing it is.
-	view_popup.add_check_item("QR code", 104)
-	view_popup.set_item_tooltip(view_popup.get_item_index(104),
-		"The door into the program: mutantfactory.net/soundgraph, beside the "
-		+ "wordmark. Untick to work without it watching.")
-	view_popup.id_pressed.connect(func(id: int) -> void:
-		if id == 104:
-			if toolbar_qr != null:
-				toolbar_qr.visible = not toolbar_qr.visible
-				Settings.store("qr_visible", toolbar_qr.visible)
-			return
-		view_action.emit(id))
-	view_popup.about_to_popup.connect(func() -> void:
-		view_popup.set_item_checked(view_popup.get_item_index(104),
-			toolbar_qr != null and toolbar_qr.visible))
+	view_popup.id_pressed.connect(func(id: int) -> void: view_action.emit(id))
 
 	# ---- Audio ---------------------------------------------------------------------
 	# One command today. It has its own door because mute is not a view setting, not a
@@ -567,6 +577,18 @@ func _build() -> void:
 	transport_dot.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 	status_group.add_child(transport_dot)
 
+	# And the word beside it. A lit dot on its own is colour carrying meaning by itself,
+	# which is a thing to hover over to find out about; two syllables say what the light
+	# is for and the tooltip still says what it is doing. It is the first thing given up
+	# when the bar runs out of room, because by then the dot is all there is space for.
+	transport_word = Label.new()
+	transport_word.text = "Audio"
+	transport_word.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	transport_word.add_theme_font_size_override("font_size",
+		Design.type(Design.SIZE_SECONDARY))
+	transport_word.add_theme_color_override("font_color", Design.INK_SECOND)
+	status_group.add_child(transport_word)
+
 	# ---- the hamburger, upper right --------------------------------------------
 	# Seven doors, each one a concept: what you open, what you undo, what you do to the
 	# patch, how it is laid out, how it is drawn, what it sounds like, and where to get
@@ -604,12 +626,31 @@ func _build() -> void:
 	add_child(bar)
 
 
+## A section label inside a menu: small, muted, unselectable.
+##
+## A disabled item rather than a titled separator, which drew a rule across the menu on
+## each side of the word and made every group look like an HTML fieldset. The separators
+## between groups already carry the hierarchy; this is the same small uppercase grey the
+## rest of the editor uses for the name of a region.
+##
+## The id is explicit and far out of the settings' range. An item given no id is given
+## its own index instead, which is how "Cable style" became id 0 and quietly stole every
+## tick meant for Catenary.
+func _section(menu: PopupMenu, text: String) -> void:
+	menu.add_item(text.to_upper(), SECTION_ID + menu.item_count)
+	menu.set_item_disabled(menu.item_count - 1, true)
+
+
 ## One submenu, parented and linked in a single move.
 func _submenu(parent: PopupMenu, node_name: String, label: String) -> PopupMenu:
 	var menu := PopupMenu.new()
 	menu.name = node_name
 	parent.add_child(menu)
-	parent.add_submenu_item(label, node_name)
+	# With an id of its own, out of the settings' range. A door given no id is given its
+	# own index, so the first door in a menu is id 0 — which is also the id of the
+	# catenary cable style, and a tick meant for the setting landed on the door instead.
+	# Same landmine as the section labels, one level up.
+	parent.add_submenu_item(label, node_name, SECTION_ID + parent.item_count)
 	return menu
 
 
@@ -666,7 +707,12 @@ func _item_of(menu: PopupMenu, id: int) -> Array:
 	if menu == null:
 		return []
 	for index in menu.item_count:
-		if menu.get_item_id(index) == id and not menu.is_item_separator(index):
+		# Checkable only. A setting is a thing that can be on or off, and insisting on
+		# that means a door or a label that happens to share an id can never be mistaken
+		# for one — belt to the explicit ids' braces.
+		if menu.get_item_id(index) != id or menu.is_item_separator(index):
+			continue
+		if menu.is_item_checkable(index) or menu.is_item_radio_checkable(index):
 			return [menu, index]
 	for child in menu.get_children():
 		var found := _item_of(child as PopupMenu, id)
@@ -716,6 +762,8 @@ func _apply_toolbar_rung(rung: int) -> void:
 		# inside it, it is the one control whose loss would strand the user.
 		toolbar_add_button.text = "+  Add node" if toolbar_rung < Rung.VERB else "+"
 	_show_toolbar_group(toolbar_edit_group, toolbar_rung < Rung.EDIT)
+	if transport_word != null:
+		transport_word.visible = toolbar_rung < Rung.IDENTITY
 
 
 ## Picks the highest rung the window can afford, from the top.

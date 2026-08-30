@@ -1563,6 +1563,7 @@ func _sync_view_menu() -> void:
 	toolbar.tick_one_of(range(50, 50 + Design.SCALE_NAMES.size()), 50 + Design.ui_scale)
 	toolbar.tick_one_of(range(30, 30 + Design.PALETTE_NAMES.size()), 30 + Design.palette)
 	toolbar.tick(20, Design.reduced_motion)
+	toolbar.tick(104, toolbar_qr != null and toolbar_qr.visible)
 	_sync_panels_menu()
 
 
