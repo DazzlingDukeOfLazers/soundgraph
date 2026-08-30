@@ -479,3 +479,73 @@ genuinely long port name clips and records the overflow on itself rather than dr
 width system wider. What to do about such a label — a compact port name, a second line, a
 tooltip — is its own policy, and this is the ceiling that stops it being decided by
 accident.
+
+## Step 9 — the identity glyph
+
+### On the Noun Project
+
+There is no Noun Project integration in this repository and no key on this machine: no
+client, no environment variable, nothing in `tools/`, nothing in the history. So no search
+was run and nothing was mined, and there is no attribution to record — a reference log for
+searches that did not happen would be worse than no log.
+
+It costs the step nothing. The brief's own preferred metaphor for two of the three is
+"locally drawn", and the third came down to two candidates that are both schematic
+conventions rather than anybody's artwork. If the API is wired up later, the place to use
+it is the rollout, where fifty types need concepts rather than three.
+
+### The marks
+
+```
+Gain                  the amplifier symbol: a triangle in the signal path
+StateVariableFilter   the response: flat, a knee, away down the top end
+ADSR                  the envelope's own polyline, attack through release
+```
+
+All three describe behaviour rather than equipment — a response curve rather than a
+filter, the amplifier symbol rather than an amplifier. A picture of the hardware would be
+the third time this pass has had to walk back out of a rack.
+
+**Gain was a comparison.** The other candidate was amplitude growing along a signal: a
+horizontal line with a short upright at one end and a tall one at the other. At header
+size the two uprights and the line read as a plus sign. The triangle is what a gain stage
+is called on every schematic ever printed and it survives the size, so the level candidate
+was drawn, rejected and deleted rather than kept as a second option nobody would choose.
+
+**The envelope reuses the browser rail's mark**, which is the same idea in a different
+place — one icon set, used twice. The filter does not: the rail's Filters row is a funnel,
+which names the *category*, and the node names the *operation*. Two marks for related
+things, and it is deliberate; recorded here because it is the sort of thing that looks
+like an oversight later.
+
+### Where it sits
+
+At the left of the title, in a cell that is reserved whether or not a type has a glyph
+yet, so rolling the rest of the library through the pass cannot make titles jitter
+sideways. Identity ink, not a signal colour: a lowpass is not green because audio is
+green. Title stronger than mark, mark stronger than metadata — the ranking the menu's
+doors already use.
+
+### The mark stands down when the title is compensated
+
+At 66% and below the node's own title Label is hidden and the name is drawn at the
+legibility floor from the node's left edge. A mark left in place there has two ways to go
+and both are wrong: over the letters, or in front of them — taking room the name needs and
+pushing it into its compact form earlier than it should, which is a threshold moved by a
+decoration. So the glyph fades with the Label it belongs to. The identity glyph is a
+full-size device; below that, the name is the identity.
+
+That is the honest limitation of this step: **the accelerator is not there in the band
+where reading is hardest.** Making it survive means revisiting how the compensated title
+divides the header, which is step 12's question and not this one's.
+
+### Measured
+
+Node sizes byte-identical to step 8. Titles identical at 100, 66, 40 and 28% — canonical
+and compact exactly where they were. No node widened, no threshold moved, no control,
+port, dropdown or header dimension touched.
+
+Blind test: with the titles hidden, the three headers read as an amplifier, a time
+contour and a frequency response. The envelope and the response curve are the closest pair
+— both are angular lines — and they still separate: one rises before it falls and holds a
+plateau, the other starts flat and only falls.

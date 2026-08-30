@@ -2761,6 +2761,10 @@ class ScreenText extends Control:
 					if node.has_meta("title_label") else null
 				if title != null:
 					title.self_modulate.a = 1.0
+				var mark: Control = node.get_meta("glyph") \
+					if node.has_meta("glyph") else null
+				if mark != null:
+					mark.self_modulate.a = 1.0
 				for marked in _marked(node):
 					marked.self_modulate.a = 1.0
 			return
@@ -2795,6 +2799,15 @@ class ScreenText extends Control:
 		var label: Label = node.get_meta("title_label") if node.has_meta("title_label") else null
 		if label != null:
 			label.self_modulate.a = 0.0 if active else 1.0
+		# The identity glyph goes with it. Once the title is being drawn up here at the
+		# legibility floor, the header is a strip the width of a name and the mark has two
+		# ways to go, both wrong: over the letters, or in front of them — taking room the
+		# name needs and pushing it into its compact form earlier than it should, which is
+		# a threshold moved by a decoration. The mark belongs to the full-size header;
+		# below that, the name is the identity.
+		var mark: Control = node.get_meta("glyph") if node.has_meta("glyph") else null
+		if mark != null:
+			mark.self_modulate.a = 0.0 if active else 1.0
 		if not active:
 			return
 

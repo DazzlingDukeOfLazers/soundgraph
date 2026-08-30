@@ -37,6 +37,30 @@ const COMPACT := {
 }
 
 
+## The mark on a node's header, by type.
+##
+## It answers "what kind of signal operation is this" before the title is read, which is
+## why every one of these describes behaviour rather than equipment: a response curve
+## rather than a filter, the amplifier symbol rather than an amplifier. A picture of the
+## hardware would be the third time this pass has had to walk back out of a rack.
+##
+## Node identity and port semantics are separate systems, so these are drawn in the
+## editor's own identity ink and never in a signal colour — a lowpass is not green
+## because audio is green.
+const GLYPH := {
+	"Gain": Icons.Kind.GAIN_TRIANGLE,
+	"StateVariableFilter": Icons.Kind.RESPONSE_LOW,
+	"ADSR": Icons.Kind.ENVELOPE,
+}
+
+
+## The glyph for a type, or -1 for one that has none yet. The cell is reserved either
+## way: a header whose title starts in a different place depending on whether its type
+## has been drawn yet is a graph that jitters as it is rolled out.
+static func glyph_of(type_name: String) -> int:
+	return int(GLYPH.get(type_name, -1))
+
+
 ## Whether this type is one of the three being designed on.
 static func in_proving_ground(type_name: String) -> bool:
 	return PROVING_GROUND.has(type_name)

@@ -1552,6 +1552,24 @@ func _dress_anatomy(widget: GraphNode, lit: bool) -> void:
 	var bar := widget.get_titlebar_hbox()
 	if bar != null:
 		bar.custom_minimum_size.y = Design.scale(ANATOMY_HEADER)
+		bar.add_theme_constant_override("separation", Design.scale(Design.SPACE_S))
+		# The identity glyph, in a cell that is reserved whether or not the type has a
+		# glyph yet: every title on the pass starts at the same x, so rolling the rest of
+		# the library through it cannot make the graph jitter. Secondary ink — the mark
+		# is subordinate to the name, the same relationship the menu's doors have.
+		var mark: TextureRect = widget.get_meta("glyph") if widget.has_meta("glyph") 			else null
+		if mark == null:
+			mark = TextureRect.new()
+			mark.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+			mark.custom_minimum_size = Vector2(Design.scale(ANATOMY_GLYPH),
+				Design.scale(ANATOMY_GLYPH))
+			mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			bar.add_child(mark)
+			bar.move_child(mark, 0)
+			widget.set_meta("glyph", mark)
+		var kind := NodeIdentity.glyph_of(str(widget.get_meta("type", "")))
+		mark.texture = Icons.get_icon(kind, Design.scale(ANATOMY_GLYPH),
+			Design.INK_SECOND) if kind >= 0 else null
 	var title_label := _title_label(widget)
 	if title_label != null:
 		title_label.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
@@ -1576,6 +1594,9 @@ func _dress_anatomy(widget: GraphNode, lit: bool) -> void:
 ## each other and with everything else drawn from these tokens.
 const ANATOMY_GUTTER := Design.SPACE_M
 const ANATOMY_HEADER := 28
+## The identity glyph's cell, inside the header rather than beside it: the region does
+## not grow to hold the mark.
+const ANATOMY_GLYPH := 18
 
 
 ## One segment of a switch, chosen or not.

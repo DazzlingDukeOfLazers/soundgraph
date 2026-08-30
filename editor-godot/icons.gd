@@ -67,6 +67,17 @@ enum Kind {
 	BANK,           ## a library of them — shared by all three banks on purpose
 	SEARCH,         ## the field at the top of the results
 
+	# The node identity glyphs. A mark on a node header answers "what kind of signal
+	# operation is this" before the title is read, so these describe behaviour rather
+	# than equipment: a response curve, not a filter; a gain stage, not an amplifier
+	# with a handle on it.
+	RESPONSE_LOW,   ## a lowpass: flat, then falling
+	GAIN_TRIANGLE,  ## a gain stage, as the amplifier symbol
+	# A second gain candidate was drawn and thrown away: a signal line with a short
+	# upright at one end and a tall one at the other, meaning "small in, large out". At
+	# header size the two uprights and the line read as a plus sign. The triangle is the
+	# amplifier symbol on every schematic ever printed, and it survives the size.
+
 	# The seven doors of the main menu. Marks on the roots only: a menu whose every row
 	# has a picture is a menu you read twice, and the doors are the rows the eye lands
 	# on first. Same grid, same weight, same family as everything above.
@@ -245,6 +256,32 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				var width: float = reach * (1.05 - 0.12 * float(plate))
 				_stroke(image, Vector2(middle - width, y), Vector2(middle + width, y),
 					colour)
+		Kind.RESPONSE_LOW:
+			# The response, drawn the way it is drawn on paper: flat across the band it
+			# passes, a knee, and away down the top end. Not a funnel — a funnel is a
+			# picture of a filter, and this is a picture of what a filter does.
+			var knee := Vector2(middle + reach * 0.1, middle - reach * 0.5)
+			_stroke(image, Vector2(middle - reach * 1.1, middle - reach * 0.5), knee,
+				colour)
+			if small:
+				# One fall instead of two segments: at header size the curve's shoulder
+				# is a pixel and a half and reads as a kink rather than as a corner.
+				_stroke(image, knee, Vector2(middle + reach * 1.05, middle + reach * 0.85),
+					colour)
+			else:
+				_stroke(image, knee, Vector2(middle + reach * 0.62, middle + reach * 0.1),
+					colour)
+				_stroke(image, Vector2(middle + reach * 0.62, middle + reach * 0.1),
+					Vector2(middle + reach * 1.05, middle + reach * 0.85), colour)
+		Kind.GAIN_TRIANGLE:
+			# The amplifier symbol, which is what a gain stage is called on a schematic:
+			# a triangle in the signal path, pointing the way the signal goes.
+			_triangle(image, Vector2(middle - reach * 0.1, middle), reach * 1.0, 0.0,
+				colour)
+			_stroke(image, Vector2(middle - reach * 1.15, middle),
+				Vector2(middle - reach * 0.6, middle), colour)
+			_stroke(image, Vector2(middle + reach * 0.78, middle),
+				Vector2(middle + reach * 1.15, middle), colour)
 		Kind.FOLDER:
 			# The back plate and the tab that names a folder a folder.
 			var top := middle - reach * 0.55
