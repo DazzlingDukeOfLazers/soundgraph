@@ -57,6 +57,15 @@ enum Kind {
 	EXAMPLE,        ## a patch you can run
 	BANK,           ## a library of them — shared by all three banks on purpose
 	SEARCH,         ## the field at the top of the results
+
+	# The seven doors of the main menu. Marks on the roots only: a menu whose every row
+	# has a picture is a menu you read twice, and the doors are the rows the eye lands
+	# on first. Same grid, same weight, same family as everything above.
+	FOLDER,         ## File
+	PENCIL,         ## Edit
+	EYE,            ## View
+	SPEAKER,        ## Audio
+	QUESTION,       ## Help
 }
 
 
@@ -205,6 +214,76 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				var width: float = reach * (1.05 - 0.12 * float(plate))
 				_stroke(image, Vector2(middle - width, y), Vector2(middle + width, y),
 					colour)
+		Kind.FOLDER:
+			# The back plate and the tab that names a folder a folder.
+			var top := middle - reach * 0.55
+			var foot := middle + reach * 0.7
+			_stroke(image, Vector2(middle - reach, top),
+				Vector2(middle - reach, foot), colour)
+			_stroke(image, Vector2(middle + reach, top + reach * 0.3),
+				Vector2(middle + reach, foot), colour)
+			_stroke(image, Vector2(middle - reach, foot),
+				Vector2(middle + reach, foot), colour)
+			_stroke(image, Vector2(middle - reach, top),
+				Vector2(middle - reach * 0.15, top), colour)
+			_stroke(image, Vector2(middle - reach * 0.15, top),
+				Vector2(middle + reach * 0.1, top + reach * 0.3), colour)
+			_stroke(image, Vector2(middle + reach * 0.1, top + reach * 0.3),
+				Vector2(middle + reach, top + reach * 0.3), colour)
+		Kind.PENCIL:
+			# A shaft on the diagonal, a nib at the near end, a ferrule at the far one.
+			# The shaft's two sides are offset along the perpendicular, which for a
+			# diagonal running up-right is down-right. The first attempt offset them
+			# along the shaft instead and drew one line twice.
+			var nib := Vector2(middle - reach * 0.9, middle + reach * 0.9)
+			var butt := Vector2(middle + reach * 0.85, middle - reach * 0.85)
+			var across := Vector2(0.33, 0.33) * reach
+			_stroke(image, nib + across, butt + across, colour)
+			_stroke(image, nib - across, butt - across, colour)
+			_stroke(image, butt + across, butt - across, colour)
+			_triangle(image, nib + Vector2(-0.28, 0.28) * reach, reach * 0.5,
+				TAU * 0.375, colour)
+		Kind.EYE:
+			# Two arcs meeting at the corners, and the pupil between them.
+			# Each lid is the far side of a circle whose centre is on the other side of
+			# the eye: sweeping the near side instead gave a pinched slot the size of
+			# the pupil.
+			_arc(image, Vector2(middle, middle + reach * 0.9), reach * 1.3,
+				-TAU * 0.44, -TAU * 0.06, colour)
+			_arc(image, Vector2(middle, middle - reach * 0.9), reach * 1.3,
+				TAU * 0.06, TAU * 0.44, colour)
+			_disc(image, Vector2(middle, middle), reach * 0.3, colour)
+		Kind.SPEAKER:
+			# A driver and the air leaving it. The effects mark is a dot and two arcs;
+			# this one has a body, which is the difference between a thing that sounds
+			# and a thing that happens to a sound.
+			# Throat, cone, air. Drawn as an outline rather than as a box behind a
+			# triangle, which merged into an arrowhead and read as Play.
+			_box(image, Vector2(middle - reach * 0.85, middle), reach * 0.26, colour)
+			_stroke(image, Vector2(middle - reach * 0.6, middle - reach * 0.26),
+				Vector2(middle - reach * 0.1, middle - reach * 0.8), colour)
+			_stroke(image, Vector2(middle - reach * 0.6, middle + reach * 0.26),
+				Vector2(middle - reach * 0.1, middle + reach * 0.8), colour)
+			_stroke(image, Vector2(middle - reach * 0.1, middle - reach * 0.8),
+				Vector2(middle - reach * 0.1, middle + reach * 0.8), colour)
+			for ring: float in [0.62, 1.0]:
+				_arc(image, Vector2(middle - reach * 0.05, middle), reach * ring,
+					-TAU * 0.13, TAU * 0.13, colour)
+		Kind.QUESTION:
+			# The hook, the stem and the point, inside the ring that says "ask".
+			# The mark without its ring. A circle round it left the hook four pixels
+			# tall at the size a menu draws this, and a question mark you cannot read
+			# is a smudge in a circle.
+			# Angles increase clockwise on a screen, so the hook is swept from the left
+			# up over the top and down the right — 0.5 of a turn to just past a whole
+			# one. Sweeping to 0.09 instead took the long way under and drew a hook
+			# hanging off the bottom, which reads as a letter nobody asked for.
+			var pivot := Vector2(middle, middle - reach * 0.45)
+			_arc(image, pivot, reach * 0.52, TAU * 0.5, TAU * 1.06, colour)
+			_stroke(image, pivot + Vector2(cos(TAU * 0.06), sin(TAU * 0.06)) * reach * 0.52,
+				Vector2(middle + reach * 0.06, middle + reach * 0.3), colour)
+			_disc(image, Vector2(middle + reach * 0.06, middle + reach * 0.8),
+				reach * 0.19, colour)
 		Kind.SEARCH:
 			var lens := Vector2(middle - reach * 0.22, middle - reach * 0.22)
 			_arc(image, lens, reach * 0.72, 0.0, TAU, colour)

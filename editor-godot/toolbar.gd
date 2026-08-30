@@ -607,11 +607,24 @@ func _build() -> void:
 	burger.flat = true
 	burger.tooltip_text = "File, edit, patch, arrange, view, audio, help"
 	var burger_popup := burger.get_popup()
-	for door: Array in [[file_popup, "File"], [edit_popup, "Edit"],
-			[patch_popup, "Patch"], [arrange_popup, "Arrange"], [view_popup, "View"],
-			[audio_popup, "Audio"], [help_popup, "Help"]]:
+	# Marks on the doors and nowhere else. Seven rows are what the eye lands on when the
+	# menu opens, and a shape is quicker to find than a word once you know which one you
+	# want; the rows behind them stay text, because a picture beside every command is a
+	# menu you have to read twice. Two of the seven are marks the browser's category rail
+	# already uses — the junction for a patch, the grid for an arrangement — which is
+	# what having one icon set is for.
+	for door: Array in [[file_popup, "File", Icons.Kind.FOLDER],
+			[edit_popup, "Edit", Icons.Kind.PENCIL],
+			[patch_popup, "Patch", Icons.Kind.SPLIT],
+			[arrange_popup, "Arrange", Icons.Kind.GRID],
+			[view_popup, "View", Icons.Kind.EYE],
+			[audio_popup, "Audio", Icons.Kind.SPEAKER],
+			[help_popup, "Help", Icons.Kind.QUESTION]]:
 		burger_popup.add_child(door[0])
-		burger_popup.add_submenu_item(str(door[1]), (door[0] as PopupMenu).name)
+		burger_popup.add_submenu_item(str(door[1]), (door[0] as PopupMenu).name,
+			SECTION_ID + burger_popup.item_count)
+		burger_popup.set_item_icon(burger_popup.item_count - 1,
+			_icon(int(door[2]), Design.INK_SECOND))
 	toolbar_menu_popup = burger_popup
 	bar.add_child(_defocus(burger))
 
