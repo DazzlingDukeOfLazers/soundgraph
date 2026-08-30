@@ -1454,8 +1454,15 @@ class CableLayer extends Control:
 		# keeps every hue obviously itself while making the tube read as a volume.
 		style.body_core = 0.84
 		style.edge_darken = 0.42
-		style.highlight_width = 2.2
-		style.highlight_offset = Vector2(-1.3, -1.5)
+		# Goal 3: the highlight narrows and commits to its direction. At 2.2 wide it
+		# read as a stripe painted along the tube; at 1.5, pushed further toward the
+		# upper-left where the light actually is, it reads as the sheen on a curved
+		# surface. It kisses the top of the body into the shell — 3.8px of reach
+		# against the 4.25px envelope — so it stays inside the silhouette Goal 1
+		# froze. Width and position only: lighten, alpha, and everything Goal 2
+		# settled are untouched.
+		style.highlight_width = 1.5
+		style.highlight_offset = Vector2(-2.0, -2.3)
 		style.highlight_alpha = 0.6
 		style.shadow_width = 11.0
 		style.shadow_alpha = 0.2

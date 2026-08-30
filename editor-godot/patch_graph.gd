@@ -2408,8 +2408,9 @@ class CordLayer extends Control:
 		# Goal 2, same figures as the rack: one shell, two views.
 		style.body_core = 0.84
 		style.edge_darken = 0.42
-		style.highlight_width = maxf(2.2 * z, 1.0)
-		style.highlight_offset = Vector2(-1.3, -1.5) * z
+		# Goal 3, same figures as the rack: narrower, further into the light.
+		style.highlight_width = maxf(1.5 * z, 0.9)
+		style.highlight_offset = Vector2(-2.0, -2.3) * z
 		style.highlight_alpha = 0.6
 		style.shadow_width = 11.0 * z
 		style.shadow_alpha = 0.2
