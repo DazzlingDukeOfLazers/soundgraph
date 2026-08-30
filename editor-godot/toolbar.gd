@@ -628,17 +628,24 @@ func _build() -> void:
 
 ## A section label inside a menu: small, muted, unselectable.
 ##
-## A disabled item rather than a titled separator, which drew a rule across the menu on
-## each side of the word and made every group look like an HTML fieldset. The separators
-## between groups already carry the hierarchy; this is the same small uppercase grey the
-## rest of the editor uses for the name of a region.
+## A labelled separator, with the rules either side of the word taken off it in the theme
+## — that pairing is what made the first attempt look like an HTML fieldset, and it was
+## the rules that were wrong rather than the separator. It reads in the editor's own
+## label grey now, a clear step above the grey of a disabled command, because a heading
+## that looks unavailable is a heading somebody tries to click.
 ##
-## The id is explicit and far out of the settings' range. An item given no id is given
-## its own index instead, which is how "Cable style" became id 0 and quietly stole every
-## tick meant for Catenary.
+## The first attempt was a disabled item, which also meant an id, which meant one more
+## thing that could collide with a setting's. A separator has no id at all.
 func _section(menu: PopupMenu, text: String) -> void:
-	menu.add_item(text.to_upper(), SECTION_ID + menu.item_count)
-	menu.set_item_disabled(menu.item_count - 1, true)
+	menu.add_separator(text.to_upper())
+	if menu.item_count == 1:
+		# A menu that opens with a label at the top opens with the highlight on the
+		# label, because a popup focuses its first row and does not care that this one
+		# is not a row. Arrowing already skips it; this is only the first frame, and
+		# only for a keyboard.
+		menu.about_to_popup.connect(func() -> void:
+			if menu.item_count > 1:
+				menu.set_focused_item(1))
 
 
 ## One submenu, parented and linked in a single move.

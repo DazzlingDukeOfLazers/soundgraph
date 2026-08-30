@@ -583,6 +583,18 @@ func _apply_theme() -> void:
 			Design.RADIUS_BUTTON, true))
 	Design.set_box(editor_theme, "panel", "PopupMenu",
 		Design.padded_panel(Design.Surface.RAISED, Design.SPACE_S, Design.SPACE_S))
+	# A labelled separator is how a menu names a group of its items, and Godot draws it
+	# as a rule, the word, and another rule — which turns every group in a cascading
+	# menu into a fieldset from a 1998 web form. The word is kept and the rules are
+	# taken off; the plain separator between groups keeps its own line, which is the one
+	# that was carrying the hierarchy all along.
+	Design.set_box(editor_theme, "labeled_separator_left", "PopupMenu",
+		StyleBoxEmpty.new())
+	Design.set_box(editor_theme, "labeled_separator_right", "PopupMenu",
+		StyleBoxEmpty.new())
+	# And it reads as a label rather than as an unavailable command: a clear step above
+	# the disabled grey, a clear step under the ink of the items it names.
+	Design.set_colour(editor_theme, "font_separator_color", "PopupMenu", Design.INK_SECOND)
 
 	# ---- nodes ----------------------------------------------------------------------
 	# A node is one level above the canvas and its header one above that, so the header
