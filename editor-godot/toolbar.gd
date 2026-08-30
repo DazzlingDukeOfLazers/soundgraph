@@ -44,6 +44,10 @@ const PatchGraph := preload("res://patch_graph.gd")
 ## Where section labels' ids start, well clear of every setting's.
 const SECTION_ID := 900
 
+## The optical cell the seven door marks are drawn in — one figure, so that a wide glyph
+## and a tall one occupy the same square and the column of them reads as a column.
+const DOOR_ICON := 20
+
 ## Large example groups become submenus so the curated top level survives the banks.
 const EXAMPLE_SUBMENU_THRESHOLD := 16
 
@@ -623,8 +627,12 @@ func _build() -> void:
 		burger_popup.add_child(door[0])
 		burger_popup.add_submenu_item(str(door[1]), (door[0] as PopupMenu).name,
 			SECTION_ID + burger_popup.item_count)
+		# A shade above the label grey, because these rows also carry the submenu
+		# chevrons and a mark that names a door should not read as quieter than the
+		# arrow saying the door opens.
 		burger_popup.set_item_icon(burger_popup.item_count - 1,
-			_icon(int(door[2]), Design.INK_SECOND))
+			_icon(int(door[2]), Design.INK_SECOND.lerp(Design.INK_NORMAL, 0.4),
+				DOOR_ICON))
 	toolbar_menu_popup = burger_popup
 	bar.add_child(_defocus(burger))
 

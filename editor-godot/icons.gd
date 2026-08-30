@@ -21,6 +21,15 @@ extends RefCounted
 ## set rather than a collection.
 const STROKE := 2.0
 
+## Below this, a glyph may be drawn differently rather than smaller.
+##
+## Optical sizing, which is what a type designer does when a face is cut for eight point:
+## not the same drawing scaled down, but the same idea drawn for the space it has. Three
+## marks here take it up. A junction of three lines at menu size is a chevron; the eye's
+## two lids close on its pupil; the grid's four cells shrink until the space between them
+## is what you see. The rest scale honestly, because they were simple enough to.
+const OPTICAL_SIZE := 30
+
 static var _cache: Dictionary = {}
 
 
@@ -79,6 +88,9 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 	image.fill(Color(0, 0, 0, 0))
 	var middle := (size - 1) * 0.5
 	var reach := size * 0.28
+	# Whether this is the small cut. Read once so a glyph can ask without repeating the
+	# threshold, and so the threshold is written down in exactly one place.
+	var small := size <= OPTICAL_SIZE
 
 	match kind:
 		Kind.CARET_RIGHT:
@@ -121,10 +133,13 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			_triangle(image, Vector2(middle, middle + reach * 0.05), reach * 1.08,
 				PI * 0.5, colour)
 		Kind.GRID:
+			# Bigger cells, further apart, at menu size: four squares of three pixels
+			# read as a texture rather than as an arrangement of anything.
+			var cell: float = reach * (0.38 if small else 0.3)
+			var spread: float = reach * (0.62 if small else 0.55)
 			for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1),
 					Vector2(1, 1)]:
-				_box(image, Vector2(middle, middle) + corner * reach * 0.55,
-					reach * 0.3, colour)
+				_box(image, Vector2(middle, middle) + corner * spread, cell, colour)
 		Kind.WAVE:
 			# One cycle, sampled. The oscillator mark and the modulation mark are the
 			# same gesture with and without corners, which is the actual difference
@@ -158,6 +173,22 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				_stroke(image, Vector2(middle, middle) + (stages[i] as Vector2) * reach,
 					Vector2(middle, middle) + (stages[i + 1] as Vector2) * reach, colour)
 		Kind.SPLIT:
+			if small:
+				# Nodes and the cords between them, drawn as nodes. The junction reads
+				# as a chevron once its three lines are eleven pixels long, and a
+				# chevron says "next" rather than "patch".
+				# Fat ports and short cords. The first cut kept the span of the large
+				# glyph and gave the ports two pixels each, which is a chevron with a
+				# dot on it — the nodes have to be the biggest thing in the mark for
+				# the mark to be about nodes.
+				var here := Vector2(middle - reach * 0.62, middle)
+				for side: float in [-1.0, 1.0]:
+					var there := Vector2(middle + reach * 0.66,
+						middle + reach * 0.58 * side)
+					_stroke(image, here, there, colour)
+					_disc(image, there, reach * 0.4, colour)
+				_disc(image, here, reach * 0.44, colour)
+				return _finish(image, key)
 			# One in, two out, with the junction marked. Without the dot the three
 			# strokes close up into a plain arrowhead at rail size.
 			var fork := Vector2(middle + reach * 0.1, middle)
@@ -244,15 +275,25 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			_triangle(image, nib + Vector2(-0.28, 0.28) * reach, reach * 0.5,
 				TAU * 0.375, colour)
 		Kind.EYE:
-			# Two arcs meeting at the corners, and the pupil between them.
-			# Each lid is the far side of a circle whose centre is on the other side of
-			# the eye: sweeping the near side instead gave a pinched slot the size of
-			# the pupil.
-			_arc(image, Vector2(middle, middle + reach * 0.9), reach * 1.3,
-				-TAU * 0.44, -TAU * 0.06, colour)
-			_arc(image, Vector2(middle, middle - reach * 0.9), reach * 1.3,
-				TAU * 0.06, TAU * 0.44, colour)
-			_disc(image, Vector2(middle, middle), reach * 0.3, colour)
+			# Two arcs meeting at the corners, and the pupil between them. Each lid is
+			# the far side of a circle whose centre is on the other side of the eye:
+			# sweeping the near side instead gave a pinched slot the size of the pupil.
+			#
+			# The small cut opens the lids and grows the pupil. Scaled down, the arcs
+			# close to within a pixel or two of the pupil and the mark becomes one dark
+			# smudge — a silhouette with a hole in it is the most an eye can be at this
+			# size, so at this size that is what it is.
+			# The lens opens by moving each lid's centre closer, not by growing it: the
+			# first small cut left half a pixel of white between the lids and the pupil
+			# and read as a flat slot.
+			var lid: float = reach * (1.55 if small else 1.3)
+			var away: float = reach * (1.0 if small else 0.9)
+			var span: float = 0.4 if small else 0.44
+			_arc(image, Vector2(middle, middle + away), lid,
+				-TAU * span, -TAU * (0.5 - span), colour)
+			_arc(image, Vector2(middle, middle - away), lid,
+				TAU * (0.5 - span), TAU * span, colour)
+			_disc(image, Vector2(middle, middle), reach * (0.4 if small else 0.3), colour)
 		Kind.SPEAKER:
 			# A driver and the air leaving it. The effects mark is a dot and two arcs;
 			# this one has a body, which is the difference between a thing that sounds
@@ -328,6 +369,15 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			_triangle(image, tip - tangent * reach * 0.1, reach * 0.62,
 				tangent.angle(), colour)
 
+	return _finish(image, key)
+
+
+## Caches a drawn glyph under its key and hands it back.
+##
+## Its own function because a glyph with a small cut returns from the middle of the
+## match, and two copies of "make a texture, cache it, return it" is two places for the
+## caching to be forgotten.
+static func _finish(image: Image, key: String) -> Texture2D:
 	var texture := ImageTexture.create_from_image(image)
 	_cache[key] = texture
 	return texture
