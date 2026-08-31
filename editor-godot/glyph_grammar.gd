@@ -51,6 +51,20 @@ extends RefCounted
 ## 8. Behaviour, not hardware. A response curve rather than a filter; an amplifier symbol
 ##    rather than an amplifier. A drawing of equipment belongs in the rack, and this pass
 ##    has already had to walk back out of one.
+## 9b. The open field is full, and a new concept that wants another curve has to prove
+##    it. Fifteen of these marks are a line doing something across the same square —
+##    waveforms, responses, contours, transfer functions — and by step 14F three
+##    candidates in one batch failed against marks that were already there. A drawing
+##    whose distinction from an existing one is a kink, a plateau, an extra peak or one
+##    stroke is not a new mark. Reach instead for **enclosure, topology, an object
+##    boundary, repeated structure or a spatial relationship** — the sample's brackets
+##    and the operators' ring are both that — or reserve the cell.
+## 9c. Empty is part of the vocabulary. A reserved cell is a finished state, not an
+##    unfinished one: Phaser, Allpass, Clip, Abs and MinMax all ship without a mark and
+##    look restrained rather than broken, because the cell is reserved either way and the
+##    name is doing the work. Coverage is not the quality metric; honesty is. A mark that
+##    is nearly right is worse than none, because it teaches the reader something untrue
+##    and they have no way to find out.
 ## 9a. Repetition count is silhouette. How many times a shape repeats inside the field is
 ##    part of its outline, not a detail on it — two cycles of a sine and one cycle of a
 ##    sine are told apart instantly and neither is wearing a badge. This is what separates
@@ -425,6 +439,42 @@ static func resonances(small: bool, peaks: bool) -> Array:
 ## repeated — and that is the whole difference between the two nodes.
 const ECHO_HEIGHTS := [1.0, 0.6, 0.32]
 const ECHO_HEIGHTS_SMALL := [1.0, 0.5]
+
+
+## A sample: a bounded piece of signal.
+##
+## The enclosure is the whole idea and it is brackets rather than a box, because a box at
+## header size fills in — the keyboard proved that, three ways. Two uprights leave the
+## interior open and the marks that say "bounded" are on the outside of the content
+## instead of around it.
+##
+## It is also the first mark in the set to use enclosure for identity rather than a curve,
+## which is where the saturation rule says new concepts have to go.
+const SAMPLE_BOUNDS := 1.05
+const SAMPLE_HEIGHT := 0.9
+const SAMPLE_SPAN := 0.62
+const SAMPLE_AMPLITUDE := 0.55
+
+
+## The signal inside the brackets: one cycle, kept well clear of them.
+## Narrower and shallower at header size, and half a cycle instead of a whole one. At the
+## full span the wave's ends touch the brackets and the three marks weld into one blob —
+## what has to survive is that there is *something* between two bounds, not which wave.
+const SAMPLE_SPAN_SMALL := 0.42
+const SAMPLE_AMPLITUDE_SMALL := 0.5
+
+
+static func sampled(small: bool) -> Array:
+	var points: Array = []
+	var steps := 8 if small else 14
+	var span: float = SAMPLE_SPAN_SMALL if small else SAMPLE_SPAN
+	var high: float = SAMPLE_AMPLITUDE_SMALL if small else SAMPLE_AMPLITUDE
+	var cycles := 0.5 if small else 1.0
+	for i in steps + 1:
+		var t := float(i) / float(steps)
+		points.append(Vector2(lerpf(-span, span, t),
+			-sin(t * TAU * cycles) * high))
+	return points
 
 
 # ---- the maths family -----------------------------------------------------------------

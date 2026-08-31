@@ -228,6 +228,13 @@ const WIDTH_CLASS := {
 	"Abs": Width.NARROW,
 	"Clip": Width.STANDARD,
 	"MinMax": Width.WIDE,
+	# 14G, by the validator.
+	"AudioInput": Width.NARROW,
+	"CableTest": Width.NARROW,
+	"PluginInstrument": Width.STANDARD,
+	"Sampler": Width.WIDE,
+	"Speech": Width.WIDE,
+	"PluginEffect": Width.WIDE,
 }
 
 

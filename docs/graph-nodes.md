@@ -1384,3 +1384,86 @@ the operators did, rather than for another curve.
 
 Compare and Abs to Narrow, Clip to Standard, MinMax to Wide, by the validator at every
 interface scale. Twenty-eight migrated types.
+
+## Step 14G — the specialty batch
+
+Six types migrated. **Two got marks, four ship with reserved cells**, and that is the
+batch succeeding rather than falling short.
+
+### Two of the priority groups do not exist
+
+There are no DX7 or OPL2 operator node types. Those are **importers** — they read a
+cartridge or a bank and build a graph out of the ordinary types, so there is no operator
+object to migrate and no operator family to invent. That is the third time the rollout has
+found a category that exists in the vocabulary and not in the registry, after the routing
+nodes and the filter siblings.
+
+### The results
+
+```
+A  mechanical migration
+   Sampler              Wide       enclosure: two bounds with signal between them
+   AudioInput           Narrow     the input seam's mark, shared
+
+B  migrated, glyph intentionally unresolved
+   Speech               Wide
+   PluginEffect         Wide
+   PluginInstrument     Standard
+   CableTest            Narrow
+
+C  held
+   none
+```
+
+### The sampler is the first mark that is not a curve
+
+Brackets rather than a box, because a box at header size fills in — the keyboard proved
+that three ways. Two uprights leave the interior open, and the marks that say "bounded"
+sit outside the content instead of around it.
+
+It needed one optical cut. At full span the wave's ends touched the brackets and the three
+marks welded into a blob; at header size the interior is narrower, shallower and half a
+cycle instead of a whole one. What has to survive down there is that there is *something*
+between two bounds, not which wave it is.
+
+This is rule 9b in practice, and it worked: the open field was full and the enclosure was
+empty.
+
+### Why the four are reserved
+
+**Speech.** The Noun Project's entire corpus for it is loudspeakers, microphones and
+documents — equipment and paperwork, not a signal operation. Nothing to reduce and nothing
+to converge on. The node is called Speak and the name does the work.
+
+**The two plugin hosts.** Their meaning is that the processing comes from outside
+SoundGraph's own vocabulary. The one corpus lead worth anything is a corner-bracket frame
+with an arrow entering it, which is four marks plus content in a cell that holds about
+two. Recorded for whoever tries again.
+
+**Cable Test.** A diagnostic. There is no signal operation to draw.
+
+### Two rules from the last two batches, now in the contract
+
+**9b — the open field is full.** Fifteen marks are a line doing something across the same
+square, and 14F had three candidates in one batch fail against marks already there. A
+drawing whose distinction is a kink, a plateau, an extra peak or one stroke is not a new
+mark. Reach for enclosure, topology, an object boundary, repeated structure or a spatial
+relationship — the sample's brackets and the operators' ring are both that — or reserve
+the cell.
+
+**9c — empty is part of the vocabulary.** A reserved cell is a finished state. Six types
+ship without a mark now and they look restrained rather than broken, because the cell is
+reserved either way and the name is doing the work. Coverage is not the quality metric. A
+mark that is nearly right is worse than none, because it teaches the reader something
+untrue and they have no way to find out.
+
+### Where the corpus stands
+
+**Thirty-four migrated types**, six of them with reserved cells: Phaser, Allpass, Clip,
+Abs, MinMax, and now Speech, the two plugin hosts and Cable Test — nine, once this batch
+lands.
+
+What is left is not specialty at all. It is one ordinary family nobody has done yet —
+dynamics and the remaining modulation types: Drive, Crush, Compressor, AHD Envelope,
+Arpeggio, Retrigger, Euclid, Scale Quantizer, MIDI CC, Note Triggers, Trigger Bus, Level's
+neighbours. They belong in an ordinary batch, not this one.

@@ -110,6 +110,10 @@ enum Kind {
 	THRESHOLD,      ## a signal climbing through a level
 	EXTREMUM_HIGH,  ## the greater of two signals
 	EXTREMUM_LOW,   ## the lesser
+
+	# Enclosure rather than another curve, which is where the saturation rule sends new
+	# concepts once the open field is full.
+	SAMPLE,         ## a bounded piece of signal
 	FLAT,           ## a constant — the value that does not change
 	MODULATION,     ## a slow wave that moves something else
 	ORIGINATE,      ## the patch's edge, signal entering
@@ -351,6 +355,14 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			for run: Array in GlyphGrammar.steps(small):
 				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
 					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.SAMPLE:
+			# Brackets, not a box: a box at header size fills in, which the keyboard proved
+			# three ways. The uprights leave the interior open.
+			for side: float in [-1.0, 1.0]:
+				var x := middle + reach * GlyphGrammar.SAMPLE_BOUNDS * side
+				_stroke(image, Vector2(x, middle - reach * GlyphGrammar.SAMPLE_HEIGHT),
+					Vector2(x, middle + reach * GlyphGrammar.SAMPLE_HEIGHT), colour)
+			_polyline(image, GlyphGrammar.sampled(small), middle, reach, colour)
 		Kind.CLIP_CURVE:
 			_polyline(image, GlyphGrammar.clipped(small), middle, reach, colour)
 		Kind.RECTIFIED:

@@ -55,7 +55,10 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	# 14F: the maths types that exist. There is no Subtract, Divide, Negate or Modulo in
 	# the registry, so the ring family gained no siblings — it is Add and Multiply and
 	# that is all there is to be consistent with.
-	"Compare", "MinMax", "Clip", "Abs"]
+	"Compare", "MinMax", "Clip", "Abs",
+	# 14G: the specialty types. There are no DX7 or OPL2 operator node types to migrate —
+	# those are importers that build graphs out of the ordinary ones.
+	"Sampler", "Speech", "AudioInput", "PluginEffect", "PluginInstrument", "CableTest"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -110,6 +113,12 @@ const COMPACT := {
 	"MinMax": "Min/Max",
 	"Clip": "Clip",
 	"Abs": "Abs",
+	"Sampler": "Sampler",
+	"Speech": "Speak",
+	"AudioInput": "Audio in",
+	"PluginEffect": "Plugin",
+	"PluginInstrument": "Plugin",
+	"CableTest": "Cables",
 	# And three whose canonical name is already short enough to fit anywhere. They are
 	# written down anyway, because a compact name is part of a migrated type's contract
 	# rather than a repair applied when today's geometry happens to need one. A type
@@ -198,6 +207,20 @@ const GLYPH := {
 	# The ring does not rescue them either. It carries a plus and a cross at header size
 	# and nothing larger — its interior is under three pixels there.
 	"Compare": Icons.Kind.THRESHOLD,
+	# 14G. The sampler is the first mark in the set whose identity is an enclosure rather
+	# than a curve, which is where rule 9b sends new concepts now that the open field is
+	# full: two bounds with a piece of signal between them.
+	"Sampler": Icons.Kind.SAMPLE,
+	# And an audio input is the patch's edge with signal entering, which is what the note
+	# seam already is. One mark, two types, the word beside it saying which.
+	"AudioInput": Icons.Kind.ORIGINATE,
+	# Reserved, and each for its own reason. Speech: the Noun Project's whole corpus for
+	# it is loudspeakers, microphones and documents — equipment and paperwork, not a
+	# signal operation, and this node's own name does the work. The plugin hosts: their
+	# meaning is that the processing comes from outside SoundGraph's vocabulary, and the
+	# one corpus lead is a corner-bracket frame with an arrow entering it, which is four
+	# marks plus content in a cell that fits about two. Cable Test is a diagnostic and has
+	# no signal operation to draw at all.
 	"Delay": Icons.Kind.ECHO_TRAIN,
 	"Comb": Icons.Kind.RESPONSE_COMB,
 	"Formant": Icons.Kind.RESPONSE_FORMANT,
