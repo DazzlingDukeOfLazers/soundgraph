@@ -859,3 +859,72 @@ them all to Wide.
 `editor_test.gd` now holds every migrated node at exactly its declared class, and reports
 the overflow when one will not fit — which is a design question raised rather than
 absorbed.
+
+## Step 14B — the first family batch, and two exceptions
+
+Three types adopted the language and needed nothing new. Three more were held, and the
+batch as named could not be run at all. Both of those are reported here rather than worked
+around, which is what the batch was for.
+
+### Exception 1 — Highpass, Bandpass and Notch are not node types
+
+They are `mode` values. `StateVariableFilter` has four — lowpass, highpass, bandpass,
+notch — and `OnePoleFilter` has two. There is no type to migrate and no type to hang a
+glyph on, so the three response curves step 10 drew and proved have nothing to attach to
+under the current rule, which keys a glyph to a type.
+
+That also means there is a **live defect**, introduced in step 9 and invisible until now:
+a StateVariableFilter set to notch wears a lowpass mark. First Synth's filter happens to
+be in lowpass mode, which is why nobody saw it, and a mark that says the wrong thing is
+worse than no mark at all.
+
+The fix is a rule the grammar does not currently have — **a glyph keyed by a type and a
+mode, for a type that declares one** — and a new rule is a design decision rather than
+something a migration gets to make. It is small, it would put the four drawings to work,
+and it would make the filter's header say what the filter is actually doing. Not taken
+here.
+
+### Exception 2 — the batch asked for a fourth width class
+
+Measured at Comfortable, which the step 14A finding established as the binding scale:
+
+```
+Noise                 290     Standard      migrated
+Phaser                326     Wide          migrated
+NoiseOscillator       354     Wide          migrated
+OnePoleFilter         405     -- no class holds it
+SquareOscillator      410     -- no class holds it
+SineOscillator        413     -- no class holds it
+```
+
+Three independent types inside eight units of each other, all just past Wide at 376. That
+is a cluster earning a class rather than one node being awkward, and rounded onto the
+eight the figure would be **416**. It is not added, and the three types are held out of
+`MIGRATED` until the decision is taken.
+
+### What went in
+
+Noise, NoiseOscillator and Phaser, on the mechanical checklist and with no new ideas. All
+three stand at exactly their declared class at both interface scales, zero elided titles,
+topology and values untouched.
+
+Two things worth noting from them. Both noise sources wear the same mark, because they are
+the same operation and the word beside it says which — the same reasoning the browser's
+three banks share one. And **the Phaser ships with no glyph at all**: its family, things
+that happen over time, has not been drawn, the identity cell is reserved whether or not a
+type has a mark, and the title still starts where every other title starts. It is the
+first type to ship on "no glyph beats a misleading glyph", and it costs nothing.
+
+### The generator family needed one rule, and it was earned
+
+A sine oscillator and an LFO are both a sine. The grammar had no way to tell them apart
+until this batch, and the answer is not a badge: **a generator's waveform repeats and a
+control's does not.** Two cycles against one. The shape's own frequency is the silhouette,
+which is rule 9, and it is also simply true — an oscillator runs at audio rate and an LFO
+does not.
+
+Noise took a second attempt. Drawn as a polyline of unequal heights it is a zigzag, and at
+header size a zigzag is the sine's ripple; the two were indistinguishable on the proof
+sheet. Drawn as unequal bars standing off a centre line it says the thing that actually
+separates noise from every other waveform — that no two excursions are alike and none
+follows from the last — and it is unlike anything else in the set at every size.

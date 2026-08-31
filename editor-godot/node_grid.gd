@@ -140,6 +140,25 @@ const WIDTHS := [176, 296, 376]
 ## specimen, the ADSR at 294, and rounded to 296. The very next type to arrive wanted 299.
 ## A batch that puts several types in the 296-to-330 range is evidence to re-derive it
 ## rather than to keep sending them all to Wide.
+##
+## ## The fourth class the first batch asked for
+##
+## Wide has the same problem and the evidence arrived immediately. Measured at Comfortable:
+##
+## [codeblock]
+## Noise                 290     Standard
+## Phaser                326     Wide
+## NoiseOscillator       354     Wide
+## OnePoleFilter         405     -- no class holds it
+## SquareOscillator      410     -- no class holds it
+## SineOscillator        413     -- no class holds it
+## [/codeblock]
+##
+## Three independent types inside eight units of each other, all just past Wide. That is
+## the cluster that earns a class rather than one node being awkward, and rounded up onto
+## the eight the figure would be **416**. It is not added here, because a new class is a
+## design decision and a migration does not get to make one — the three types are held out
+## of `NodeIdentity.MIGRATED` until it is taken.
 const WIDTH_CLASS := {
 	"Gain": Width.NARROW,
 	"ADSR": Width.STANDARD,
@@ -148,6 +167,10 @@ const WIDTH_CLASS := {
 	"seam:Output/stereo": Width.WIDE,
 	"LFO": Width.WIDE,
 	"seam:Input/note": Width.WIDE,
+	# The first family batch, measured at Comfortable because that is the binding scale.
+	"Noise": Width.STANDARD,
+	"Phaser": Width.WIDE,
+	"NoiseOscillator": Width.WIDE,
 }
 
 

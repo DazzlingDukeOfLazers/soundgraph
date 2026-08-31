@@ -196,6 +196,20 @@ const SAW_CONTOUR := [Vector2(-1.1, 0.72), Vector2(0.0, -0.72), Vector2(0.0, 0.7
 const SAW_SMALL := [Vector2(-1.0, 0.72), Vector2(0.45, -0.72), Vector2(0.45, 0.72),
 	Vector2(1.05, -0.28)]
 
+## How many cycles a generator's waveform is drawn with, against the one a control mark
+## gets.
+##
+## This is the rule that keeps a sine oscillator apart from an LFO, and it is the first
+## thing the rollout demanded that the three specimens had not already taught. Both marks
+## are a sine; what differs is that a generator's waveform *repeats* and a modulation is
+## one slow excursion. Two ripples against one broad curve is a silhouette — the shape's
+## own frequency — rather than a badge stuck on one of them.
+##
+## It is also true rather than decorative: an oscillator runs at audio rate and an LFO
+## does not, and the marks say exactly that.
+const GENERATOR_CYCLES := 2.0
+const CONTROL_CYCLES := 1.0
+
 ## A slow modulation, as one large smooth cycle.
 ##
 ## The control family's mark for a thing that moves other things. Angular against smooth
@@ -210,15 +224,54 @@ const MODULATION_SPAN := 1.1
 const MODULATION_SEGMENTS := 14
 
 
-## The modulation wave, as points in reach units.
-static func modulation(small: bool) -> Array:
+## A sine, as points in reach units, over however many cycles the family asks for.
+static func sine(cycles: float, small: bool) -> Array:
 	var points: Array = []
-	var steps: int = 9 if small else MODULATION_SEGMENTS
+	var steps := int((9 if small else MODULATION_SEGMENTS) * cycles)
 	for i in steps + 1:
 		var t := float(i) / float(steps)
 		var x := lerpf(-MODULATION_SPAN, MODULATION_SPAN, t)
-		points.append(Vector2(x, -sin(t * TAU) * MODULATION_AMPLITUDE))
+		points.append(Vector2(x, -sin(t * TAU * cycles) * MODULATION_AMPLITUDE))
 	return points
+
+
+## The modulation wave: one slow excursion, which is what an LFO is.
+static func modulation(small: bool) -> Array:
+	return sine(CONTROL_CYCLES, small)
+
+
+## A square wave, two cycles, as the generator family draws one. Corners against the
+## sine's curve and the saw's ramp: three waveforms, three outlines, no badges.
+static func square(small: bool) -> Array:
+	var points: Array = []
+	var high := -MODULATION_AMPLITUDE
+	var low := MODULATION_AMPLITUDE
+	var steps := int(GENERATOR_CYCLES * 2.0)
+	var span := MODULATION_SPAN * 2.0 / float(steps)
+	var y := high
+	points.append(Vector2(-MODULATION_SPAN, y))
+	for i in steps:
+		var x := -MODULATION_SPAN + span * float(i + 1)
+		points.append(Vector2(x, y))
+		if i < steps - 1 or not small:
+			y = low if is_equal_approx(y, high) else high
+			points.append(Vector2(x, y))
+	return points
+
+
+## Noise, as the one waveform with no period: excursions of unequal height, drawn as bars
+## standing off a centre line rather than joined into a run.
+##
+## Joined up they are a zigzag, and at header size a zigzag is the sine's ripple — the two
+## were indistinguishable on the first proof sheet. Bars say the thing that actually
+## separates noise from every other waveform, which is that no two excursions are alike
+## and none of them follows from the last.
+##
+## Written down rather than generated: a glyph that is different every time it is drawn is
+## not a glyph. Six at full size and four at header size, because six bars inside fifteen
+## pixels merge into a block.
+const NOISE_BARS := [0.55, 0.92, 0.30, 0.72, 0.44, 0.85]
+const NOISE_BARS_SMALL := [0.5, 0.92, 0.34, 0.75]
 
 
 # ---- the routing family --------------------------------------------------------------

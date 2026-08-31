@@ -88,6 +88,9 @@ enum Kind {
 
 	# The four that finished First Synth.
 	SAW_WAVE,       ## a sawtooth oscillator: the waveform it makes
+	SINE_WAVE,      ## and a sine one
+	SQUARE_WAVE,    ## and a square one
+	NOISE_WAVE,     ## and the one with no period at all
 	MODULATION,     ## a slow wave that moves something else
 	ORIGINATE,      ## the patch's edge, signal entering
 	TERMINATE,      ## the patch's edge, signal leaving
@@ -300,7 +303,28 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 		Kind.SAW_WAVE:
 			_polyline(image, GlyphGrammar.SAW_SMALL if small
 				else GlyphGrammar.SAW_CONTOUR, middle, reach, colour)
+		Kind.SINE_WAVE:
+			_polyline(image, GlyphGrammar.sine(GlyphGrammar.GENERATOR_CYCLES, small),
+				middle, reach, colour)
+		Kind.SQUARE_WAVE:
+			_polyline(image, GlyphGrammar.square(small), middle, reach, colour)
+		Kind.NOISE_WAVE:
+			# Not a polyline. Joined up, an irregular run of points is a zigzag, and at
+			# header size a zigzag is the sine's ripple — the two were indistinguishable
+			# on the proof sheet. Unequal bars standing off a centre line say the one
+			# thing noise has to say, which is that no two excursions are alike, and they
+			# say it without a line implying that they follow one another.
+			var bars: Array = GlyphGrammar.NOISE_BARS_SMALL if small 				else GlyphGrammar.NOISE_BARS
+			for i in bars.size():
+				var x: float = middle + reach * lerpf(-1.05, 1.05,
+					float(i) / float(bars.size() - 1))
+				var height: float = reach * float(bars[i])
+				_stroke(image, Vector2(x, middle - height), Vector2(x, middle + height),
+					colour)
 		Kind.MODULATION:
+			# One cycle against the generators' two. A sine oscillator and an LFO are
+			# both a sine and the difference is that one repeats: the shape's own
+			# frequency is the silhouette, which is rule 9 and is also simply true.
 			_polyline(image, GlyphGrammar.modulation(small), middle, reach, colour)
 		Kind.ORIGINATE, Kind.TERMINATE:
 			# The edge of the patch, and which side of it the signal is on. A bar is the

@@ -32,7 +32,14 @@ extends RefCounted
 ## other on the canvas, they are keyed by the port they stand for, and the language does
 ## not have an opinion about which kind of node it is dressing.
 const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
-	"SawOscillator", "LFO", "seam:Input/note", "seam:Output/stereo"]
+	"SawOscillator", "LFO", "seam:Input/note", "seam:Output/stereo",
+	# The first family batch. Three of the six candidates went in and three did not:
+	# SineOscillator, SquareOscillator and OnePoleFilter measure 413, 410 and 405 at the
+	# Comfortable scale against a Wide class of 376, and no class holds them. Three
+	# independent types inside eight units of each other is evidence for a fourth class
+	# rather than for stretching a third, and a new class is a design decision and not
+	# something a migration gets to make. See docs/graph-nodes.md.
+	"NoiseOscillator", "Noise", "Phaser"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -90,6 +97,15 @@ const GLYPH := {
 	# across. See `docs/node-glyph-grammar.md`.
 	"seam:Input/note": Icons.Kind.ORIGINATE,
 	"seam:Output/stereo": Icons.Kind.TERMINATE,
+	# The generator family again, keyed by the waveform each one makes. Noise is the
+	# waveform with no period, and both noise sources wear it: they are the same
+	# operation and the word beside the mark is what says which.
+	"NoiseOscillator": Icons.Kind.NOISE_WAVE,
+	"Noise": Icons.Kind.NOISE_WAVE,
+	# And the Phaser has none. Its family — things that happen over time — has not been
+	# drawn, and the identity cell is reserved whether or not a type has a mark, so a
+	# node with no glyph costs nothing and claims nothing. No glyph beats a misleading
+	# one, and this is the first type to ship on that rule.
 }
 
 
