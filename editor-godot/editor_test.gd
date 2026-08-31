@@ -2582,31 +2582,41 @@ func _initialize() -> void:
 	# GraphNode ships with normal and selected and nothing between them, so a node under
 	# the pointer looked exactly like one three columns away — and in a patch dense enough
 	# to need the mouse, "which one am I about to click" is a real question.
+	#
+	# Asked of `NodeState` rather than of the absence of an override. Every node in First
+	# Synth is through the pass now, so all of them carry their anatomy at rest and
+	# "has no stylebox override" stopped meaning "is resting" — it was the old
+	# unmigrated path being checked, on a node that is no longer on it.
 	var hover_target: GraphNode = main.widgets["osc"]
 	hover_target.selected = false
 	main._set_node_hovered(hover_target, false)
-	check(not hover_target.has_theme_stylebox_override("panel"),
-		"a node at rest uses the plain style")
+	var resting_box := hover_target.get_theme_stylebox("panel") as StyleBoxFlat
+	check(resting_box.border_color == NodeState.perimeter(false, false),
+		"a node at rest wears the resting perimeter")
 
 	main._set_node_hovered(hover_target, true)
-	check(hover_target.has_theme_stylebox_override("panel"),
-		"hovering one gives it a state of its own")
 	var hovered_box := hover_target.get_theme_stylebox("panel") as StyleBoxFlat
-	var resting_box := main.theme.get_stylebox("panel", "GraphNode") as StyleBoxFlat
-	check(hovered_box.border_color != resting_box.border_color,
-		"which differs from resting")
+	check(hovered_box.border_color == NodeState.perimeter(false, true) \
+		and hovered_box.border_color != resting_box.border_color,
+		"hovering one gives it a state of its own")
 	# And differs from selected, or three states would be two.
-	var selected_box := main.theme.get_stylebox("panel_selected", "GraphNode") as StyleBoxFlat
-	check(hovered_box.border_color != selected_box.border_color,
+	check(hovered_box.border_color != NodeState.perimeter(true, true),
 		"and from selected, so the three are told apart rather than compared")
-	check(hovered_box.bg_color == resting_box.bg_color,
-		"hover moves the border only, leaving the lift to mean selected")
+	# Hover moves the surface too, and by a measured amount: at a third of a step the
+	# border alone put the hovered node 1.08 times the resting one, which nobody could
+	# see. Step 11 raised it and this is the check that it stayed raised.
+	check(hovered_box.bg_color != resting_box.bg_color,
+		"and lifts the surface, because a border alone was not visible")
 
 	# A selected node stays looking selected when the pointer crosses it. Otherwise
-	# reaching for a node would make the current selection flicker.
+	# reaching for a node would make the current selection flicker. GraphNode draws a
+	# selected node from panel_selected and never consults panel, so the mint perimeter
+	# wins whatever the pointer is doing.
 	hover_target.selected = true
 	main._set_node_hovered(hover_target, true)
-	check(not hover_target.has_theme_stylebox_override("panel"),
+	var chosen_box := hover_target.get_theme_stylebox("panel_selected") as StyleBoxFlat
+	check(chosen_box.border_color == NodeState.perimeter(true, true) \
+		and chosen_box.border_width_left == NodeState.SELECTION_EDGE,
 		"and hovering a selected node leaves it selected-looking")
 	hover_target.selected = false
 	main._set_node_hovered(hover_target, false)
@@ -8643,7 +8653,13 @@ func _initialize() -> void:
 		main._set_module_theme(first_node, "")
 		await process_frame
 		var ps_bare: Label = main._title_label(ps_widget)
-		check(not ps_widget.has_theme_stylebox_override("titlebar"),
+		# The paint comes off; the anatomy stays. A migrated node always carries a
+		# titlebar of its own now, so what says the faceplate is gone is that the
+		# header is back to the state grammar's own surface rather than a module
+		# theme's colour.
+		var ps_head := ps_widget.get_theme_stylebox("titlebar") as StyleBoxFlat
+		check(ps_head.bg_color == NodeState.header(false, false,
+				NodeState.Health.WELL),
 			"and putting it back on the patch's panels takes the header paint off")
 		check(ps_bare != null
 				and ps_bare.get_theme_color("font_color") == Design.INK_BRIGHT,

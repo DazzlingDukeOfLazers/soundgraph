@@ -33,6 +33,11 @@ const SPECIMENS := ["GAIN_TRIANGLE", "RESPONSE_LOW", "ENVELOPE"]
 const FILTERS := ["RESPONSE_LOW", "RESPONSE_HIGH", "RESPONSE_BAND", "RESPONSE_NOTCH"]
 const ROUTING := ["ROUTE_SPLIT", "ROUTE_MERGE", "ROUTE_SWITCH"]
 
+## The four that finished First Synth, shown beside the three they have to sit with. The
+## pair to look at is the sawtooth against the modulation wave: two signal generators, one
+## angular and one smooth, and the whole question is whether that reads at header size.
+const FIRST_SYNTH := ["SAW_WAVE", "MODULATION", "ORIGINATE", "TERMINATE"]
+
 ## The contact sheet's own geometry. Every mark is shown at the same drawn size whatever
 ## it was rendered at, which is the only way four sizes can be compared: the 10-pixel cut
 ## and the 96-pixel one differ in how they are drawn, not in how big they are on the page.
@@ -54,7 +59,7 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(folder)
 
 	var names: Array = []
-	for group: Array in [SPECIMENS, FILTERS, ROUTING]:
+	for group: Array in [SPECIMENS, FIRST_SYNTH, FILTERS, ROUTING]:
 		for one: String in group:
 			if not names.has(one):
 				names.append(one)

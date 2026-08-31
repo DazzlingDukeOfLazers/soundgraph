@@ -180,6 +180,47 @@ static func polyline(plan: Array, small: bool) -> Array:
 	return points
 
 
+## One cycle of a sawtooth, as the generator family draws a waveform: the shape the node
+## actually makes, in the field, at the field's own width.
+##
+## A saw and not a sine because this type is a `SawOscillator`. That is the generator
+## family's whole rule — the mark is the waveform — and it is what keeps the oscillator
+## and the modulator apart without either of them wearing a distinguishing decoration.
+## The corpus agrees: every sawtooth in the Noun Project's signal-processing collections
+## is this drawing.
+const SAW_CONTOUR := [Vector2(-1.1, 0.72), Vector2(0.0, -0.72), Vector2(0.0, 0.72),
+	Vector2(1.1, -0.72)]
+
+## And at header size, one tooth instead of two. Two ramps and a vertical inside fifteen
+## pixels is a hatched box; one ramp with its return is still unmistakably a saw.
+const SAW_SMALL := [Vector2(-1.0, 0.72), Vector2(0.45, -0.72), Vector2(0.45, 0.72),
+	Vector2(1.05, -0.28)]
+
+## A slow modulation, as one large smooth cycle.
+##
+## The control family's mark for a thing that moves other things. Angular against smooth
+## is what separates it from the oscillator, and that is a silhouette rather than a
+## detail — rule 9 — which is also where the corpus landed on its own: every icon filed
+## under "modulation" is a sinuous curve and every one under "sawtooth" is a ramp.
+##
+## Sampled rather than arced so the two ends leave the field horizontally, the way a wave
+## drawn on paper does.
+const MODULATION_AMPLITUDE := 0.78
+const MODULATION_SPAN := 1.1
+const MODULATION_SEGMENTS := 14
+
+
+## The modulation wave, as points in reach units.
+static func modulation(small: bool) -> Array:
+	var points: Array = []
+	var steps: int = 9 if small else MODULATION_SEGMENTS
+	for i in steps + 1:
+		var t := float(i) / float(steps)
+		var x := lerpf(-MODULATION_SPAN, MODULATION_SPAN, t)
+		points.append(Vector2(x, -sin(t * TAU) * MODULATION_AMPLITUDE))
+	return points
+
+
 # ---- the routing family --------------------------------------------------------------
 #
 # Terminals and the cords between them, which is what the reader is already looking at:

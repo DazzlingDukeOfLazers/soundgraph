@@ -25,10 +25,12 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 
-## The three proving-ground nodes as they are named in First Synth, and the four that
-## have not been through the pass — kept so the sheet shows the difference rather than
-## asserting it.
-const MIGRATED := ["Amplifier", "Lowpass", "Amp Envelope"]
+## Every node in First Synth, as they are named in it. All seven now: step 14 finished
+## the patch, so there is no longer an unmigrated node to hold one up against — which is
+## the milestone, and also the reason this list is the whole patch rather than a subset
+## of it.
+const MIGRATED := ["Amplifier", "Lowpass", "Amp Envelope", "Main Oscillator",
+	"Filter Sweep", "Keyboard", "Output"]
 const SPECIMEN := "Lowpass"
 
 ## Where the whole patch is photographed, which is what the brief asks for and what a

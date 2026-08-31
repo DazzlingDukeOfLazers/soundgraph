@@ -85,6 +85,12 @@ enum Kind {
 	ROUTE_SPLIT,    ## one terminal in, two out
 	ROUTE_MERGE,    ## two in, one out
 	ROUTE_SWITCH,   ## one in, two possible, one of them made
+
+	# The four that finished First Synth.
+	SAW_WAVE,       ## a sawtooth oscillator: the waveform it makes
+	MODULATION,     ## a slow wave that moves something else
+	ORIGINATE,      ## the patch's edge, signal entering
+	TERMINATE,      ## the patch's edge, signal leaving
 	# A second gain candidate was drawn and thrown away: a signal line with a short
 	# upright at one end and a tall one at the other, meaning "small in, large out". At
 	# header size the two uprights and the line read as a plus sign. The triangle is the
@@ -291,6 +297,28 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				Vector2(middle - reach * 0.6, middle), colour)
 			_stroke(image, Vector2(middle + reach * 0.78, middle),
 				Vector2(middle + reach * 1.15, middle), colour)
+		Kind.SAW_WAVE:
+			_polyline(image, GlyphGrammar.SAW_SMALL if small
+				else GlyphGrammar.SAW_CONTOUR, middle, reach, colour)
+		Kind.MODULATION:
+			_polyline(image, GlyphGrammar.modulation(small), middle, reach, colour)
+		Kind.ORIGINATE, Kind.TERMINATE:
+			# The edge of the patch, and which side of it the signal is on. A bar is the
+			# boundary; the line is the signal running to it or away from it.
+			#
+			# Not an arrow — the set has one already and it means flow rather than
+			# destination — and not a speaker or a keyboard, because a seam is not the
+			# equipment on the other side of it. What kind of signal crosses here is
+			# said by the socket's own colour and shape, which is a channel that already
+			# exists and does not need saying twice.
+			#
+			# One drawing mirrored, which is the same family rule that gave the highpass
+			# and the merge: siblings differ by silhouette, and a mirror is a silhouette.
+			var side: float = -1.0 if kind == Kind.ORIGINATE else 1.0
+			_stroke(image, Vector2(middle - reach * 1.1 * side, middle),
+				Vector2(middle + reach * 0.55 * side, middle), colour)
+			_stroke(image, Vector2(middle + reach * 0.55 * side, middle - reach * 0.8),
+				Vector2(middle + reach * 0.55 * side, middle + reach * 0.8), colour)
 		Kind.ROUTE_SPLIT, Kind.ROUTE_MERGE, Kind.ROUTE_SWITCH:
 			# Terminals and the cords between them — the graph itself, at glyph size.
 			# Nothing else in the set is discs joined by strokes, so these read as a

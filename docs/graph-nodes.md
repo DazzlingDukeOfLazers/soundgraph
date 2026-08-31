@@ -745,3 +745,82 @@ reading means milliseconds, 440 over a kilohertz reading means hertz — and wha
 them is the parameter's own range rather than a guess. The property the suite holds is a
 fixed point rather than equality: what the field shows, parsed and shown again, is the
 same string. A display is a rounding and always was.
+
+## Step 14 — First Synth, all seven
+
+The four that were left — Main Oscillator, Filter Sweep, Keyboard and Output — take the
+frozen steps 3–13 language. `NodeIdentity.MIGRATED` is seven types now, which is every
+node in the patch, and the graph can finally be judged as a composition rather than as
+three islands inside the old interface.
+
+**Nothing new was designed.** Two glyphs came straight out of the family grammar, one out
+of the seam idea, and the fourth was abandoned after three attempts.
+
+### Widths: all four fitted classes that already existed
+
+```
+type                  natural   class      as drawn
+SawOscillator           253     Standard      400
+seam:Output/stereo      286     Standard      401
+LFO                     326     Wide          508
+seam:Input/note         350     Wide          508
+```
+
+Natural is base scale under the frozen anatomy, drawn is at XL. Three at Narrow/Standard
+/Wide already existed and no fifth was needed, which is the first real evidence that three
+is enough — a class system whose first four arrivals each want a new class is not one.
+
+The cost is visible and worth naming: the Keyboard's content wants 350 and its class gives
+it 376, so it carries the widest empty margin in the patch. That is what a class system
+buys a rhythm with. The Output stands one pixel over its class at 401, because the class
+is a floor rather than a cap and its content asks for that pixel.
+
+### The saw and the sweep
+
+The pair the step was really about. They come apart without either wearing a
+distinguishing decoration, because the family grammar already had the answer: a generator
+is drawn as **the waveform it makes**, so a `SawOscillator` is a sawtooth, and a modulator
+is drawn as **the shape of a value over time**, so an LFO is one large smooth cycle.
+Angular against smooth — a silhouette rather than a detail, which is rule 9.
+
+The Noun Project agrees and was asked for free: every icon filed under `sawtooth` is a
+ramp and every one under `modulation` is a sinuous curve. Nothing was downloaded.
+
+### The keyboard that could not be drawn
+
+Three cuts were drawn — a full case with black keys hanging into it, an open pair of rails,
+and keys standing on a front rail with no case. All three fill in at header size, and the
+reason is structural rather than fixable: a keyboard's identity is *many parallel
+elements* and the glyph field is about seven stroke widths across. You cannot draw many
+parallel things in seven stroke widths.
+
+So the seams are drawn as what they are — the edge of the patch — rather than as the
+equipment on the other side of it. A bar for the boundary and a line for the signal
+crossing it, mirrored for direction: `⊢` entering, `⊣` leaving. One drawing, two members,
+told apart by a mirror, which is the same rule that gave the highpass and the merge. What
+kind of signal crosses is said by the socket's own colour and shape, a channel that
+already exists and does not need saying twice.
+
+### One key, asked the same way everywhere
+
+The migration turned up a real bug and it took three edits to finish. A seam is keyed by
+the port it stands for — `seam:Input/note` — and the patch document's own `type` field
+says only `Input`. `_type_key()` has always existed to reconcile them, and three places
+were not using it: the width class, the diagram-control switch, and the parameter row's.
+
+The symptoms were exactly what you would expect from two keys for one thing. The seams
+took the new anatomy from `_style_widget` (which uses the key) and missed their width
+class (which did not). The Output's safety-limit dropdown came out with a native chevron
+and rounded corners next to a Filter Sweep whose dropdown was flat and square, and its
+level knob kept the rack's tick ring while every other migrated knob had shed it.
+
+### The gate
+
+Seven nodes, seven wires, every port count and every position identical to the step 1
+baseline. Zero elided titles across thirty-three zooms — the whole patch reads as whole
+words at 28%, where two of the four used to be cut.
+
+Four suite checks were rewritten rather than deleted. They asserted the old unmigrated
+hover mechanism — "a node at rest has no stylebox override" — on `osc`, which is now
+migrated and therefore always carries its anatomy. They ask `NodeState` now, which is what
+the fact actually is.

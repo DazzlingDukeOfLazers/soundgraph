@@ -12,7 +12,7 @@ extends RefCounted
 ## Everything is a multiple of eight, or of four where a gap is inside one object rather
 ## than between two. The exceptions are named and there are none.
 ##
-## Applied only to `NodeIdentity.PROVING_GROUND` while the pass is being reviewed; the
+## Applied only to `NodeIdentity.MIGRATED` while the pass is being reviewed; the
 ## rest of the library keeps the old figures, which is what makes the difference visible
 ## in one patch.
 
@@ -88,10 +88,26 @@ const WIDTHS := [176, 296, 376]
 ## Which class a type belongs to. Metadata, decided here — a width that emerges from
 ## whatever minimum sizes the controls happened to ask for is not a class, it is an
 ## accident with a name.
+## Measured, then rounded up to the smallest class that holds them. The four that
+## finished First Synth all fitted classes that already existed, which is the first real
+## evidence that three is enough — a class system whose first four arrivals each need a
+## new class is not a class system.
+##
+## [codeblock]
+## type                  natural   class      as drawn
+## SawOscillator           253     Standard      296
+## seam:Output/stereo      286     Standard      296
+## LFO                     326     Wide          376
+## seam:Input/note         350     Wide          376
+## [/codeblock]
 const WIDTH_CLASS := {
 	"Gain": Width.NARROW,
 	"ADSR": Width.STANDARD,
+	"SawOscillator": Width.STANDARD,
+	"seam:Output/stereo": Width.STANDARD,
 	"StateVariableFilter": Width.WIDE,
+	"LFO": Width.WIDE,
+	"seam:Input/note": Width.WIDE,
 }
 
 

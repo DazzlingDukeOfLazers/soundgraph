@@ -21,7 +21,7 @@ extends RefCounted
 ## the right one. That is the order, and before this every one of them was fighting for
 ## the same rank.
 ##
-## Applied to `NodeIdentity.PROVING_GROUND` only while the pass is being reviewed.
+## Applied to `NodeIdentity.MIGRATED` only while the pass is being reviewed.
 
 enum Role {
 	NODE_TITLE,      ## the name in the header — step 3 set this and it is unchanged

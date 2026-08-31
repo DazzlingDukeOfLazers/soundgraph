@@ -21,10 +21,18 @@ extends RefCounted
 ## The compact name is used only when the canonical one will not fit. At every size where
 ## the real name fits, the real name is what is drawn.
 
-## The proving ground: the three types the node pass is being designed on. Nothing else
-## takes the new anatomy until these three are approved, which is the whole point of
-## having a proving ground rather than a release.
-const PROVING_GROUND := ["Gain", "StateVariableFilter", "ADSR"]
+## The types that speak the new language.
+##
+## It began as three — a proving ground, so that the anatomy could be designed on
+## something small enough to look at properly. It is seven now, which is every node in
+## First Synth: the first patch where nothing is left over from the old generation and
+## the graph can be judged as a composition rather than as three islands.
+##
+## The last two are seams rather than ordinary types. A patch's edges are nodes like any
+## other on the canvas, they are keyed by the port they stand for, and the language does
+## not have an opinion about which kind of node it is dressing.
+const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
+	"SawOscillator", "LFO", "seam:Input/note", "seam:Output/stereo"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -34,7 +42,18 @@ const COMPACT := {
 	"Gain": "Amp",
 	"StateVariableFilter": "Filter",
 	"ADSR": "Envelope",
+	# The four that finished First Synth. Two of them have none, and that is an answer
+	# rather than an omission: "Keyboard" and "Output" are already the shortest true
+	# names those things have, and inventing "Keys" and "Out" would be shortening for
+	# its own sake. A type with no compact name simply keeps its canonical one until it
+	# stops fitting, and then draws nothing — which is the step 12 rule and is right.
+	"SawOscillator": "Oscillator",
+	"LFO": "Sweep",
 }
+
+
+## The identity glyphs for the four that finished First Synth, and why each is what it is
+## — see `docs/node-glyph-grammar.md` for the family rules they are built from.
 
 
 ## The mark on a node's header, by type.
@@ -51,6 +70,26 @@ const GLYPH := {
 	"Gain": Icons.Kind.GAIN_TRIANGLE,
 	"StateVariableFilter": Icons.Kind.RESPONSE_LOW,
 	"ADSR": Icons.Kind.ENVELOPE,
+	# The generator family draws the waveform the node makes, so a SawOscillator wears a
+	# sawtooth. That rule is what keeps this apart from the modulator below without
+	# either of them needing a distinguishing decoration bolted on.
+	"SawOscillator": Icons.Kind.SAW_WAVE,
+	# And the control family draws the shape of a value over time. Angular against
+	# smooth: the two marks differ in silhouette rather than in a detail, which is rule
+	# 9, and it is where the corpus landed independently — everything filed under
+	# "modulation" is a sinuous curve and everything under "sawtooth" is a ramp.
+	"LFO": Icons.Kind.MODULATION,
+	# A seam is the edge of the patch, so it is drawn as an edge: a bar for the boundary
+	# and a line for the signal crossing it, mirrored for the direction. Not a keyboard
+	# and not a speaker — a seam is not the equipment on the other side of it, and what
+	# kind of signal crosses is already said by the socket.
+	#
+	# A keyboard was tried first and three cuts of it were drawn. All three fill in at
+	# header size, and the reason is structural rather than fixable: a keyboard's
+	# identity is many parallel elements and the glyph field is seven stroke widths
+	# across. See `docs/node-glyph-grammar.md`.
+	"seam:Input/note": Icons.Kind.ORIGINATE,
+	"seam:Output/stereo": Icons.Kind.TERMINATE,
 }
 
 
@@ -61,9 +100,9 @@ static func glyph_of(type_name: String) -> int:
 	return int(GLYPH.get(type_name, -1))
 
 
-## Whether this type is one of the three being designed on.
-static func in_proving_ground(type_name: String) -> bool:
-	return PROVING_GROUND.has(type_name)
+## Whether this type speaks the new language yet.
+static func migrated(type_name: String) -> bool:
+	return MIGRATED.has(type_name)
 
 
 ## The compact name for a type, or "" when it has none yet.

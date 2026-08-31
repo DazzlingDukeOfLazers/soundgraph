@@ -1885,13 +1885,13 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 	# plug. Set here rather than at creation because it is a fact about the paint as
 	# much as about the type, and the paint can change while the node stands there.
 	widget.set_meta("diagram_ports", key == ModuleThemes.CATEGORY
-		and NodeIdentity.in_proving_ground(str(widget.get_meta("type", ""))))
+		and NodeIdentity.migrated(str(widget.get_meta("type", ""))))
 
 	if key == ModuleThemes.CATEGORY:
 		# No skin on the widget means no plugs at its ports: the flat type-shapes are
 		# the graph's own grammar and the physical one arrives with the faceplate.
 		widget.remove_meta("skin")
-		if NodeIdentity.in_proving_ground(str(widget.get_meta("type", ""))):
+		if NodeIdentity.migrated(str(widget.get_meta("type", ""))):
 			# The raw hover, not the hover-and-not-selected the flat panels use: the
 			# anatomy builds both the ordinary boxes and the selected ones, and a
 			# selected node under the pointer should still lift. Selection owns the
@@ -4560,7 +4560,12 @@ func _create_widget(node: Dictionary) -> void:
 	# grammar — plates, grommets, plugs seated in them — and half a module in each
 	# language is worse than either: the panel suite caught exactly that, a painted patch
 	# whose filter had lost its plugs while its neighbours kept theirs.
-	var gridded := NodeIdentity.in_proving_ground(str(node.get("type", ""))) 		and _panel_style_of(str(node["id"])) == ModuleThemes.CATEGORY
+	# `_type_key`, not the document's own "type". A seam is keyed by the port it
+	# stands for, seam:Input/note, and the raw field says only "Input" — which
+	# is how the two seams in First Synth took the new anatomy from _style_widget
+	# (which uses the key) and missed their width class here (which did not).
+	# One key, asked for the same way everywhere.
+	var gridded := NodeIdentity.migrated(_type_key(node)) 		and _panel_style_of(str(node["id"])) == ModuleThemes.CATEGORY
 	# The port labels, kept so their columns can be squared up once they all exist. A
 	# gutter cannot know how wide it should be until the widest label in it has been
 	# built.
@@ -4718,7 +4723,7 @@ func _create_widget(node: Dictionary) -> void:
 		# And the node stands at its class. A width that emerges from whatever minimum
 		# sizes the controls asked for is not a class; this is the one place a node's
 		# width is decided, and the specimens were measured to arrive at the figures.
-		var class_width := NodeGrid.width_for(str(node.get("type", "")))
+		var class_width := NodeGrid.width_for(_type_key(node))
 		if class_width > 0:
 			widget.custom_minimum_size.x = class_width
 
@@ -5585,7 +5590,11 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 	# touching, which is why a knob and the word under it read as one lump rather than as
 	# a control and its name.
 	# Whether this node is through the pass, asked once for the whole cell.
-	var roles := NodeIdentity.in_proving_ground(str(node.get("type", "")))
+	# `_type_key` again, and this was the third place asking the document directly.
+	# It is why the Output seam's safety-limit dropdown came out undressed —
+	# native chevron, rounded corners — sitting beside a Filter Sweep whose
+	# dropdown was flat and square. One key.
+	var roles := NodeIdentity.migrated(_type_key(node))
 	row.add_theme_constant_override("separation",
 		Design.scale(NodeGrid.LABEL_GAP) if roles else 0)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
