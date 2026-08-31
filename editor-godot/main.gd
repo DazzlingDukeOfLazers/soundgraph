@@ -5766,6 +5766,11 @@ func _build_parameter_row(node: Dictionary, parameter: Dictionary) -> Control:
 		return _to_value(parameter, position)
 	readout.to_position = func(value: float) -> float:
 		return _to_position(parameter, value)
+	# This field's display converts — milliseconds under a second, kilohertz over a
+	# thousand — so its parse has to convert back. Without this, opening the editor on
+	# "10 ms" and pressing return stored ten seconds.
+	readout.read_text = func(typed: String, showing: String) -> float:
+		return ValueText.parse(parameter, typed, showing)
 	readout.value_submitted.connect(func(value: float) -> void:
 		var clamped: float = clampf(value, float(parameter["min"]), float(parameter["max"]))
 		slider.set_value_silently(clamped)
@@ -5830,31 +5835,13 @@ func _to_position(parameter: Dictionary, value: float) -> float:
 
 ## The value as somebody would say it out loud: "10 ms", not "0.010".
 ##
-## A patch format stores seconds and hertz, and a person reading a node should not
-## have to hold the native representation in their head to know what they are looking
-## at. So the unit is always shown, and it changes with the magnitude — milliseconds
-## under a second, kilohertz over a thousand — because that is how the number would
-## be spoken and written down anywhere else.
+## One line now. This used to be two functions here and two more identical ones in the
+## rack, all keying the number of decimals to the value's own magnitude — three under one,
+## two under ten — which is why every value on a normalised control wore three decimals
+## whatever the control was. `ValueText` asks the parameter descriptor instead, and both
+## views call the same implementation.
 func _format_with_unit(parameter: Dictionary, value: float) -> String:
-	var unit := str(parameter.get("unit", ""))
-	if unit == "s" and absf(value) < 1.0:
-		return "%s ms" % _format_value(value * 1000.0)
-	if unit == "Hz" and absf(value) >= 1000.0:
-		return "%s kHz" % _format_value(value / 1000.0)
-	if unit == "":
-		return _format_value(value)
-	return "%s %s" % [_format_value(value), unit]
-
-
-func _format_value(value: float) -> String:
-	var magnitude := absf(value)
-	if magnitude >= 1000.0:
-		return "%.0f" % value
-	if magnitude >= 10.0:
-		return "%.1f" % value
-	if magnitude >= 1.0:
-		return "%.2f" % value
-	return "%.3f" % value
+	return ValueText.of(parameter, value)
 
 
 # ---------------------------------------------------------------------------------

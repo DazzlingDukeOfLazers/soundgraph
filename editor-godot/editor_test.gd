@@ -7724,15 +7724,22 @@ func _initialize() -> void:
 	# A patch stores seconds and hertz; a person should not have to convert in their
 	# head to know whether an attack is fast. Checked through the same formatter the
 	# rows and the undo path both use, so they cannot disagree.
-	var seconds := {"name": "attack", "unit": "s", "default": 0.005}
-	check(main._format_with_unit(seconds, 0.010) == "10.0 ms",
+	#
+	# The strings moved in step 13, from "10.0 ms" to "10 ms" and "4.80 kHz" to
+	# "4.8 kHz": a trailing zero is a claim that the digit was measured. What is checked
+	# here is unchanged — that the unit is carried and that it follows the magnitude —
+	# and how many decimals a parameter earns is design_test's table.
+	var seconds := {"name": "attack", "unit": "s", "min": 0.0, "max": 10.0,
+		"default": 0.005}
+	check(main._format_with_unit(seconds, 0.010) == "10 ms",
 		"a short time reads in milliseconds (%s)" % main._format_with_unit(seconds, 0.010))
 	check(main._format_with_unit(seconds, 2.5).ends_with(" s"),
 		"and a long one in seconds (%s)" % main._format_with_unit(seconds, 2.5))
-	var hertz := {"name": "cutoff", "unit": "Hz", "default": 1000.0}
-	check(main._format_with_unit(hertz, 900.0) == "900.0 Hz",
+	var hertz := {"name": "cutoff", "unit": "Hz", "min": 20.0, "max": 20000.0,
+		"default": 1000.0}
+	check(main._format_with_unit(hertz, 900.0) == "900 Hz",
 		"a frequency reads in hertz (%s)" % main._format_with_unit(hertz, 900.0))
-	check(main._format_with_unit(hertz, 4800.0) == "4.80 kHz",
+	check(main._format_with_unit(hertz, 4800.0) == "4.8 kHz",
 		"and a high one in kilohertz (%s)" % main._format_with_unit(hertz, 4800.0))
 	check(not main._format_with_unit({"name": "mix", "unit": "", "default": 0.5}, 0.55)
 		.contains(" "), "a unitless parameter stays a bare number")

@@ -712,3 +712,36 @@ real question rather than an arithmetic slip.
 
 Empty MAP bodies were audited and left alone. The footprint a node keeps at every zoom is
 what makes the map correspond to the thing it is a map of.
+
+## Step 13 — how a value is written
+
+`0.700` is a debugger printing a float; `0.7` is an instrument telling you its setting.
+`editor-godot/value_text.gd` is the one formatter, and both the graph and the rack call
+it — there used to be two identical copies drifting apart. `docs/value-text.md` is the
+record.
+
+The old rule keyed the decimals to the value's own magnitude, which is why every value on
+a normalised control wore three of them whatever the control was. The new one asks the
+parameter descriptor: enough decimals for about five hundred readings across the range,
+never fewer than three significant figures, then the trailing zeros come off. A gain of 0
+to 4 gets thousandths and a cutoff of 20 to 20000 hertz gets whole hertz, from one rule.
+
+```
+gain 0.700 -> 0.7        cutoff 900.0 Hz -> 900 Hz      resonance 0.550 -> 0.55
+sweep 0.000 octaves/s -> 0 octaves/s     attack 10.0 ms -> 10 ms
+decay 250.0 ms -> 250 ms                 release 300.0 ms -> 300 ms
+```
+
+No node changed size — 238x150, 508x248 and 400x101 before and after.
+
+**The parse was broken and this step fixed it.** A field showing `10.0 ms` seeded its
+editor with that string, and pressing return without changing a character stored **ten
+seconds**: the display converted units and the parse did not, so the one gesture that
+should be a no-op moved the value furthest. It predates this step; the old formatting made
+it harder to notice.
+
+Where no unit is typed the two conversions want opposite answers — 20 over a millisecond
+reading means milliseconds, 440 over a kilohertz reading means hertz — and what separates
+them is the parameter's own range rather than a guess. The property the suite holds is a
+fixed point rather than equality: what the field shows, parsed and shown again, is the
+same string. A display is a rounding and always was.

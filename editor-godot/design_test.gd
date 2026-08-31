@@ -435,6 +435,100 @@ func _initialize() -> void:
 		check(ratio >= 3.0, "%s: its jack rings read on the socket field (%.1f:1)"
 			% [ModuleThemes.display_name(str(key)), ratio])
 
+	# Values are written the way somebody would say them. A table rather than a rule
+	# restated in a second place: these are the readings the three proving-ground nodes
+	# actually show, plus the boundaries a formatter goes wrong at — a value that is not
+	# zero and nearly is, an exact integer, a negative, a unit that changes under the
+	# value's feet, and an enumeration.
+	var readings: Array = [
+		[{"unit": "", "min": 0.0, "max": 4.0}, 0.7, "0.7"],
+		[{"unit": "", "min": 0.0, "max": 4.0}, 1.0, "1"],
+		[{"unit": "", "min": 0.0, "max": 4.0}, 0.755, "0.755"],
+		[{"unit": "", "min": 0.0, "max": 4.0}, 4.0, "4"],
+		[{"unit": "", "min": 0.0, "max": 1.0}, 0.55, "0.55"],
+		[{"unit": "", "min": 0.0, "max": 1.0}, 0.0, "0"],
+		[{"unit": "Hz", "min": 20.0, "max": 20000.0}, 900.0, "900 Hz"],
+		[{"unit": "Hz", "min": 20.0, "max": 20000.0}, 20.0, "20 Hz"],
+		[{"unit": "Hz", "min": 20.0, "max": 20000.0}, 999.0, "999 Hz"],
+		[{"unit": "Hz", "min": 20.0, "max": 20000.0}, 1000.0, "1 kHz"],
+		[{"unit": "Hz", "min": 20.0, "max": 20000.0}, 12345.0, "12.35 kHz"],
+		[{"unit": "octaves/s", "min": -20.0, "max": 20.0}, 0.0, "0 octaves/s"],
+		[{"unit": "octaves/s", "min": -20.0, "max": 20.0}, -3.5, "-3.5 octaves/s"],
+		[{"unit": "s", "min": 0.0, "max": 10.0}, 0.010, "10 ms"],
+		[{"unit": "s", "min": 0.0, "max": 10.0}, 0.250, "250 ms"],
+		[{"unit": "s", "min": 0.0, "max": 10.0}, 0.300, "300 ms"],
+		[{"unit": "s", "min": 0.0, "max": 10.0}, 0.0, "0 ms"],
+		[{"unit": "s", "min": 0.0, "max": 10.0}, 2.5, "2.5 s"],
+		# Not zero, and must not be written as though it were.
+		[{"unit": "s", "min": 0.0, "max": 10.0}, 0.0005, "0.5 ms"],
+		[{"unit": "", "min": 0.0, "max": 3.0,
+			"enum": ["lowpass", "highpass", "bandpass", "notch"]}, 2.0, "bandpass"],
+	]
+	for reading: Array in readings:
+		var got := ValueText.of(reading[0] as Dictionary, float(reading[1]))
+		check(got == str(reading[2]), "%s reads as %s%s" % [
+			JSON.stringify(reading[1]), reading[2],
+			"" if got == str(reading[2]) else " (got %s)" % got])
+
+	# What the field puts on screen has to come back as the value it came from. The
+	# gesture that has to be a no-op — open the editor, press return, change nothing —
+	# used to store ten seconds for an attack of ten milliseconds, because the display
+	# converted units and the parse did not.
+	# The property is a fixed point, not equality. A display is a rounding — "12.35 kHz"
+	# is 12345 hertz shown to the resolution the parameter earns — so re-typing it commits
+	# that rounding, and it always did. What must be true is that the reading does not
+	# *drift*: what the field shows, parsed and shown again, is the same string. That
+	# holds the unit conversion honest (ten milliseconds read back as ten seconds fails it
+	# by a factor of a thousand) without pretending a rounded display carries every bit.
+	for reading: Array in readings:
+		var descriptor: Dictionary = reading[0]
+		if descriptor.has("enum"):
+			continue
+		var shown := ValueText.of(descriptor, float(reading[1]))
+		var again := ValueText.of(descriptor,
+			ValueText.parse(descriptor, shown, shown))
+		check(again == shown, "%s reads back as itself%s"
+			% [shown, "" if again == shown else " (got %s)" % again])
+		# And with the unit rubbed out, which is what a typist does when they mean to
+		# replace the number: the unit that was on screen is the one they meant.
+		var bare := ValueText._numeric_prefix(shown)
+		var without := ValueText.of(descriptor,
+			ValueText.parse(descriptor, bare, shown))
+		check(without == shown, "%s without its unit still means %s%s"
+			% [bare, shown, "" if without == shown else " (got %s)" % without])
+
+	# The two cases the inference has to get right, and they want opposite answers. A
+	# field showing "1 kHz" handed a bare 440 means hertz; a field showing "10 ms" handed
+	# a bare 20 means milliseconds. The parameter's own range is what separates them.
+	var cutoff := {"unit": "Hz", "min": 20.0, "max": 20000.0}
+	var attack := {"unit": "s", "min": 0.0, "max": 10.0}
+	check(is_equal_approx(ValueText.parse(cutoff, "440", "1 kHz"), 440.0),
+		"440 typed over a kilohertz reading means hertz (%s)"
+			% ValueText.parse(cutoff, "440", "1 kHz"))
+	check(is_equal_approx(ValueText.parse(cutoff, "5", "1 kHz"), 5000.0),
+		"but 5 over the same reading means kilohertz (%s)"
+			% ValueText.parse(cutoff, "5", "1 kHz"))
+	check(is_equal_approx(ValueText.parse(attack, "20", "10 ms"), 0.02),
+		"20 typed over a millisecond reading means milliseconds (%s)"
+			% ValueText.parse(attack, "20", "10 ms"))
+	check(is_equal_approx(ValueText.parse(attack, "20 s", "10 ms"), 20.0),
+		"and a unit that was typed on purpose is believed (%s)"
+			% ValueText.parse(attack, "20 s", "10 ms"))
+
+	# And the cell a value lives in is sized for the longest reading the parameter can
+	# produce, not for its two ends. Stripped of trailing zeros the ends are often the
+	# *shortest* strings a parameter has, and a cell measured on them is too narrow for
+	# nearly every value it then holds — a knob that resizes its own cell while it is
+	# being turned.
+	for reading: Array in readings:
+		var descriptor: Dictionary = reading[0]
+		if descriptor.has("enum"):
+			continue
+		var room := ValueText.widest(descriptor).length()
+		check(str(reading[2]).length() <= room,
+			"%s fits the space reserved for it (%d <= %d)" % [reading[2],
+				str(reading[2]).length(), room])
+
 	# A type that has been through the pass never has its name cut. Canonical while it
 	# fits, then the written-down compact name, then nothing — the governing rule of the
 	# whole pass applied to its own last case, because five letters and an ellipsis is

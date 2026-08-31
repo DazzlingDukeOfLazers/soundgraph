@@ -244,19 +244,25 @@ func _begin_typing() -> void:
 	_entry.select_all()
 
 
+## How a typed string becomes the value that gets stored.
+##
+## The default reads the number and ignores whatever unit is written after it, which is
+## right for a field whose display and its storage are in the same unit — a tempo, a
+## count, a level. It is wrong for one whose display *converts*, and the caller is the
+## only one holding the descriptor that says so, so the caller may replace it. It is given
+## the typed string and the string that was on screen before typing began, because a
+## typist who deleted the unit meant the one they were looking at.
+var read_text: Callable = func(typed: String, _showing: String) -> float:
+	return ValueText._numeric_prefix(typed).to_float()
+
+
 func _on_typed(entered: String) -> void:
-	# Units are stripped rather than rejected. The field displays "440.0 Hz", so the
+	# Units are stripped rather than rejected. The field displays "440 Hz", so the
 	# obvious thing to do is edit that string and press return — refusing it because of
 	# the unit the field itself put there would be a small cruelty.
-	var cleaned := ""
-	for character in entered.strip_edges():
-		if character in "0123456789.-+eE":
-			cleaned += character
-		else:
-			break
-	if cleaned.is_valid_float():
+	if ValueText._numeric_prefix(entered).is_valid_float():
 		drag_started.emit()
-		value_submitted.emit(cleaned.to_float())
+		value_submitted.emit(read_text.call(entered, _label.text))
 		drag_finished.emit()
 	_cancel_typing()
 

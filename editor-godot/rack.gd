@@ -2072,10 +2072,10 @@ class Knob extends Control:
 		return Rack.face_text(descriptor)
 
 	func _value_text() -> String:
-		if descriptor.has("enum"):
-			var options: Array = descriptor["enum"]
-			return str(options[clampi(int(value()), 0, options.size() - 1)])
-		return Rack.format_value(value())
+		# Without its unit: a faceplate says the unit once, under the name, the way a
+		# panel does. The graph says it beside the number because a graph node has no
+		# legend to put it on.
+		return ValueText.number(descriptor, value())
 
 	## The widest this knob's value will ever be, so the cell does not resize while it is
 	## being turned.
@@ -2091,9 +2091,11 @@ class Knob extends Control:
 				if str(option).length() > longest.length():
 					longest = str(option)
 			return longest
-		var low := Rack.format_value(float(descriptor.get("min", 0.0)))
-		var high := Rack.format_value(float(descriptor.get("max", 1.0)))
-		return low if low.length() > high.length() else high
+		# Not the longer of the two ends. Once trailing zeros are gone the ends are often
+		# the *shortest* readings a parameter has — a gain of 0 to 4 writes them as "0"
+		# and "4" while everything between writes "0.75" — so a cell sized on the ends
+		# would be too narrow for almost every value it goes on to hold.
+		return ValueText.widest(descriptor, false)
 
 	func _get_minimum_size() -> Vector2:
 		if compact:
@@ -2767,12 +2769,4 @@ static func elided(font: Font, text: String, size: int, room: float) -> String:
 	return "…"
 
 
-static func format_value(value: float) -> String:
-	var magnitude := absf(value)
-	if magnitude >= 1000.0:
-		return "%.0f" % value
-	if magnitude >= 10.0:
-		return "%.1f" % value
-	if magnitude >= 1.0:
-		return "%.2f" % value
-	return "%.3f" % value
+
