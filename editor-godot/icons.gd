@@ -73,6 +73,18 @@ enum Kind {
 	# with a handle on it.
 	RESPONSE_LOW,   ## a lowpass: flat, then falling
 	GAIN_TRIANGLE,  ## a gain stage, as the amplifier symbol
+
+	# Step 10's proof that the grammar makes families rather than one-off pictures. Two
+	# of them, drawn but attached to nothing: the filter siblings, which are the lowpass
+	# read the other three ways, and the routing siblings, which are the graph itself at
+	# glyph size. Both are constructed from `GlyphGrammar` — every number they stand on
+	# is written down there, not here.
+	RESPONSE_HIGH,  ## a highpass: rising, then flat
+	RESPONSE_BAND,  ## a bandpass: a hill
+	RESPONSE_NOTCH, ## a notch: a valley
+	ROUTE_SPLIT,    ## one terminal in, two out
+	ROUTE_MERGE,    ## two in, one out
+	ROUTE_SWITCH,   ## one in, two possible, one of them made
 	# A second gain candidate was drawn and thrown away: a signal line with a short
 	# upright at one end and a tall one at the other, meaning "small in, large out". At
 	# header size the two uprights and the line read as a plus sign. The triangle is the
@@ -256,23 +268,17 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				var width: float = reach * (1.05 - 0.12 * float(plate))
 				_stroke(image, Vector2(middle - width, y), Vector2(middle + width, y),
 					colour)
-		Kind.RESPONSE_LOW:
+		Kind.RESPONSE_LOW, Kind.RESPONSE_HIGH, Kind.RESPONSE_BAND, Kind.RESPONSE_NOTCH:
 			# The response, drawn the way it is drawn on paper: flat across the band it
-			# passes, a knee, and away down the top end. Not a funnel — a funnel is a
+			# passes, a knee, and away down the stop end. Not a funnel — a funnel is a
 			# picture of a filter, and this is a picture of what a filter does.
-			var knee := Vector2(middle + reach * 0.1, middle - reach * 0.5)
-			_stroke(image, Vector2(middle - reach * 1.1, middle - reach * 0.5), knee,
-				colour)
-			if small:
-				# One fall instead of two segments: at header size the curve's shoulder
-				# is a pixel and a half and reads as a kink rather than as a corner.
-				_stroke(image, knee, Vector2(middle + reach * 1.05, middle + reach * 0.85),
-					colour)
-			else:
-				_stroke(image, knee, Vector2(middle + reach * 0.62, middle + reach * 0.1),
-					colour)
-				_stroke(image, Vector2(middle + reach * 0.62, middle + reach * 0.1),
-					Vector2(middle + reach * 1.05, middle + reach * 0.85), colour)
+			#
+			# Four marks, one drawing. The plan is a list of levels and the grammar puts
+			# the knees in, which is the whole point of having a grammar: the highpass is
+			# not a second opinion about what a filter looks like, it is the lowpass read
+			# the other way round.
+			_polyline(image, GlyphGrammar.polyline(_response_plan(kind), small),
+				middle, reach, colour)
 		Kind.GAIN_TRIANGLE:
 			# The amplifier symbol, which is what a gain stage is called on a schematic:
 			# a triangle in the signal path, pointing the way the signal goes.
@@ -282,6 +288,38 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				Vector2(middle - reach * 0.6, middle), colour)
 			_stroke(image, Vector2(middle + reach * 0.78, middle),
 				Vector2(middle + reach * 1.15, middle), colour)
+		Kind.ROUTE_SPLIT, Kind.ROUTE_MERGE, Kind.ROUTE_SWITCH:
+			# Terminals and the cords between them — the graph itself, at glyph size.
+			# Nothing else in the set is discs joined by strokes, so these read as a
+			# family before any one of them is read as a member of it.
+			var geometry := GlyphGrammar.routing(small)
+			var terminal: float = geometry[0]
+			var out_x: float = geometry[1]
+			var fan_y: float = geometry[2]
+			# The merge is the split mirrored, so one drawing serves both: `side` is
+			# which way the fan points and everything else follows it.
+			var side: float = -1.0 if kind == Kind.ROUTE_MERGE else 1.0
+			var trunk := Vector2(middle - reach * out_x * side, middle)
+			var junction := Vector2(
+				middle + reach * GlyphGrammar.JUNCTION_X * side, middle)
+			_stroke(image, trunk, junction, colour)
+			for lean: float in [-1.0, 1.0]:
+				var end := Vector2(middle + reach * out_x * side,
+					middle + reach * fan_y * lean)
+				# The switch draws one cord, not two. Two possible ways and one of them
+				# made is what a switch is; a second cord would make it a split.
+				# The switch draws one cord, not two. Two ways available and one of them
+				# made is what a switch is; a second cord would make it a split.
+				#
+				# Two other ways of saying it were drawn and are worse. A stub on the
+				# unmade branch — a cord that starts and stops — closes most of the gap it
+				# is meant to open, and at header size the switch became the split exactly.
+				# A blade that leans without arriving reads at 96 and loses the aim at 24.
+				if kind != Kind.ROUTE_SWITCH or lean < 0.0:
+					_stroke(image, junction, end, colour)
+				_disc(image, end, reach * terminal, colour)
+			_disc(image, trunk, reach * terminal, colour)
+			_disc(image, junction, reach * GlyphGrammar.JUNCTION, colour)
 		Kind.FOLDER:
 			# The back plate and the tab that names a folder a folder.
 			var top := middle - reach * 0.55
@@ -407,6 +445,28 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				tangent.angle(), colour)
 
 	return _finish(image, key)
+
+
+## A run of points in reach units, stroked end to end from the centre of the cell.
+static func _polyline(image: Image, points: Array, middle: float, reach: float,
+		colour: Color) -> void:
+	var origin := Vector2(middle, middle)
+	for i in points.size() - 1:
+		_stroke(image, origin + (points[i] as Vector2) * reach,
+			origin + (points[i + 1] as Vector2) * reach, colour)
+
+
+## Which of the four responses a kind wants. The lowpass is the default because it is the
+## specimen the other three were derived from.
+static func _response_plan(kind: int) -> Array:
+	match kind:
+		Kind.RESPONSE_HIGH:
+			return GlyphGrammar.RESPONSE_HIGH
+		Kind.RESPONSE_BAND:
+			return GlyphGrammar.RESPONSE_BAND
+		Kind.RESPONSE_NOTCH:
+			return GlyphGrammar.RESPONSE_NOTCH
+	return GlyphGrammar.RESPONSE_LOW
 
 
 ## Caches a drawn glyph under its key and hands it back.

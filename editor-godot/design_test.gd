@@ -433,6 +433,34 @@ func _initialize() -> void:
 		check(ratio >= 3.0, "%s: its jack rings read on the socket field (%.1f:1)"
 			% [ModuleThemes.display_name(str(key)), ratio])
 
+	# Every icon marks pixels. An icon that silently draws nothing is the tofu box in a
+	# new hat: not an error, just a rectangle of nothing where a mark should be, and
+	# nothing in the build says so. Checked at the two sizes the set is actually used
+	# at — a menu door and a node header.
+	for name: String in Icons.Kind.keys():
+		for size: int in [20, 24]:
+			var image: Image = Icons.get_icon(int(Icons.Kind[name]), size,
+				Design.INK_SECOND).get_image()
+			var inked := 0
+			for y in image.get_height():
+				for x in image.get_width():
+					if image.get_pixel(x, y).a > 0.0:
+						inked += 1
+			check(inked > 0, "%s draws something at %d (%d px)" % [name, size, inked])
+
+	# And stays inside its cell. The field is what keeps a mark from crowding the word
+	# beside it, and a glyph that reaches the edge of its box is a glyph that will touch
+	# the title on somebody else's interface scale.
+	for name: String in Icons.Kind.keys():
+		var image: Image = Icons.get_icon(int(Icons.Kind[name]), 96,
+			Design.INK_SECOND).get_image()
+		var edge := 0
+		for i in 96:
+			for pair: Array in [[i, 0], [i, 95], [0, i], [95, i]]:
+				if image.get_pixel(pair[0], pair[1]).a > 0.0:
+					edge += 1
+		check(edge == 0, "%s stays off the edge of its cell" % name)
+
 	if failures == 0:
 		print("all design checks passed")
 	else:

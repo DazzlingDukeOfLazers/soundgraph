@@ -605,3 +605,34 @@ Blind test: with the titles hidden, the three headers read as an amplifier, a ti
 contour and a frequency response. The envelope and the response curve are the closest pair
 — both are angular lines — and they still separate: one rises before it falls and holds a
 plateau, the other starts flat and only falls.
+
+## Step 10 — the family grammar
+
+Not forty icons. The three marks that worked, turned into the rules they obey, and two
+families drawn to prove the rules produce siblings rather than one-off pictures.
+
+`editor-godot/glyph_grammar.gd` holds the contract and the family plans;
+`editor-godot/glyph_sheet.gd` renders the proof. The reasoning, the sheet's row order and
+the two places the grammar strains are in `docs/node-glyph-grammar.md`; when to search the
+Noun Project and what it costs is in `docs/icon-sourcing.md`.
+
+Three things worth carrying out of it:
+
+**The specimens are unchanged, and that is measured.** The lowpass was rewritten to be
+constructed from the shared grammar rather than from its own hand-placed numbers, and all
+twelve renders — three marks, four sizes — come out pixel for pixel identical to the
+capture taken before the change. A refactor that claims to change nothing should be made
+to prove it.
+
+**The proof sheet found a rule.** Siblings have to differ in silhouette, not in a detail.
+Mirroring is a silhouette and the highpass is immediately the lowpass; removing one stroke
+is not, and the routing switch is legible only if you already suspect it. Three
+constructions were drawn for the switch and the best of them still fails, which is
+recorded as a failure rather than nudged until it photographs well.
+
+**Nothing was migrated.** Gain, StateVariableFilter and ADSR are still the only types
+wearing a mark. The seven new glyphs are attached to nothing.
+
+`design_test.gd` now checks every icon marks pixels and stays inside its cell — the first
+because an icon that silently draws nothing is the tofu box in a new hat, the second
+because the field is what keeps a mark off the title beside it.
