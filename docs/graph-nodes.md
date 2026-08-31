@@ -1578,3 +1578,88 @@ spacing and by height, and none of them is a badge on another.
 MIDI CC, Note Triggers and Trigger Bus to Standard, Retrigger and Euclid to Wide.
 
 **Forty-three migrated types**, twelve with reserved cells, two held on width.
+
+## Step 15A — the inventory
+
+`editor-godot/inventory.gd` enumerates the registry rather than remembering it, classifies
+every runtime type, and measures the narrowest width each one is still valid at — by
+binary search on a ladder of eights, not by trying the four classes. Class membership only
+says which of four buckets a type fell into; the question is whether those four buckets
+are where the corpus actually sits.
+
+### The denominator
+
+```
+51 runtime types
+   34  migrated
+   11  migrated, glyph intentionally reserved
+    6  held
+   registry runtime types = migrated + held    yes
+```
+
+Forty-five of fifty-one are through the system. That is the real number the running
+count was approximating.
+
+### Three of the six are held for bookkeeping, not design
+
+```
+NoteInput          336   the bare terminal type
+StereoOutput       296   the bare terminal type
+seam:Input/audio     —   a seam kind
+```
+
+`seam:Input/note` and `seam:Output/stereo` are migrated; `NoteInput` and `StereoOutput`
+are the same nodes reached by their own registry keys rather than through a seam, and
+`seam:Input/audio` is the third seam kind that never came up because no example patch uses
+one. None of them needs a decision. They were missed because the migration was driven by
+what appeared in patches.
+
+### The width evidence, and it changed the answer
+
+```
+Arpeggio          432
+Slide             440
+ScaleQuantizer    536      Extra class is 416
+```
+
+**Arpeggio and Slide are eight units apart.** That is a cluster by exactly the standard
+that earned `Extra` — three types inside eight units, at 405, 410 and 413. Two is thinner
+evidence than three, and both types are currently unmigratable without it, and they agree
+with each other to the width of one grid unit.
+
+Scale Quantizer is alone at 536, ninety-six above the next figure. That is an outlier and
+its layout is the thing to look at rather than the class ladder.
+
+Slide was held in 14C as a lone outlier at 433. It is not lone any more.
+
+### What the histogram says about the classes
+
+```
+120-159   ##                  2
+160-199   ##########         10
+200-239   #                   1
+240-279   ##                  2
+280-319   ##############     14
+320-359   ######              6
+360-399   ######              6
+400-439   #####               5
+440-479   #                   1
+520-559   #                   1
+
+declared: 176   296   376   416
+```
+
+**Narrow and Standard sit on the two real peaks.** Ten types cluster at 160–199 and
+fourteen at 280–319, and 176 and 296 are inside them. Those two classes were discovered.
+
+**Wide and Extra cut a flat continuum.** Seventeen types spread almost evenly from 320 to
+439 with no peak anywhere in it, and 376 and 416 are two cuts through that spread rather
+than two clusters in it. They work — every migrated type validates — but they were not
+found the way the lower two were.
+
+**The widest gap in the ladder is between Narrow and Standard**, and three types sit in
+it: TriggerBus at 184, StereoLevel at 192 and Sample & Hold at 200, each carrying about a
+hundred units of slack inside Standard. That gap is a hundred and twenty units, wider than
+any other.
+
+Nothing was changed. This step reads.
