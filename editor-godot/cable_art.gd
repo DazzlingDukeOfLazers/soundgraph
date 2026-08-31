@@ -528,6 +528,181 @@ static func crossings(upper: PackedVector2Array,
 	return hits
 
 
+## How a crossing is separated, and the harness hook that swaps the construction.
+##
+## Cable pass, goal 1. The measured defect is narrow and it is worth restating, because a
+## general "improve crossings" would be the wrong work: the baseline found **zero** shallow
+## crossings in the hostile patch — Goal 6's per-cable hang and Goal 7's departure splay
+## have already made every intersection transverse — and fifteen of the thirty-two are
+## between cables of the *same colour*. So the target is exactly:
+##
+## > At a transverse crossing between visually identical cables, a reader can immediately
+## > tell which strand continues through the intersection.
+##
+## Named for what it does rather than for one candidate's geometry. "Bridge" would smuggle
+## in the bump.
+##
+## [codeblock]
+## NONE       nothing; the reference, so the sheet shows what a treatment is buying
+## HALO       a darker halo under the upper cable — the incumbent, shipped since goal 8
+## KNOCKOUT   the lower cable erased for a short span, and the upper drawn over the gap
+## BUMP       the upper cable locally lifted into an arc
+## [/codeblock]
+enum Crossing { NONE, HALO, KNOCKOUT, BUMP }
+
+## Set by `crossing_sheet.gd` while it renders the comparison, and by nothing else.
+##
+## KNOCKOUT since goal 1. The sheet put all four on the same twelve same-colour crossings
+## and the reference column settled it: with nothing at all the two strands fuse into a
+## lozenge, and the halo — the incumbent — barely changes that, because darkening the upper
+## cable's underside says nothing when the cable underneath is the same colour. The knockout
+## reads immediately as one line passing over another, and it does it while adding
+## twenty-two units of ink across twelve crossings against the bump's thirteen hundred.
+static var crossing_style := Crossing.KNOCKOUT
+
+## Whether the treatment is applied only where both cables are the same colour.
+##
+## Same-colour first, because that is what the baseline measured as the defect. Whether
+## treating all thirty-two reads better than conditionally treating fifteen is a question
+## the sheet answers rather than one to assume — a conditional treatment is a rule with an
+## exception in it, and those have to earn their keep.
+static var crossing_same_colour_only := true
+
+## Clearance either side of the upper cable, as a fraction of its own width. The gap has to
+## read as a gap and not as a nick, and it must not be so wide that the lower cable looks
+## cut in half rather than passed over.
+const KNOCKOUT_CLEARANCE := 0.55
+
+## How far a bump lifts, and over what span, as fractions of the cable's own width.
+const BUMP_LIFT := 1.15
+const BUMP_SPAN := 3.0
+
+
+## A short piece of a path, centred on a point, following the path rather than a chord.
+##
+## The halo below takes every vertex within a radius, which on a smooth curve can find
+## fewer than two and on a bendy one finds a piece whose length is nothing like the radius.
+## A knockout has to be a specific length — the upper cable's width plus clearance — so it
+## walks the path instead.
+static func span_at(points: PackedVector2Array, at: Vector2,
+		half_length: float) -> PackedVector2Array:
+	if points.size() < 2:
+		return PackedVector2Array()
+	# The segment the point lies on, by distance rather than by containment: `at` comes
+	# from an intersection test and is on the segment to within floating point, not on it.
+	var best := 0
+	var nearest := INF
+	for i in points.size() - 1:
+		var closest := Geometry2D.get_closest_point_to_segment(at, points[i],
+			points[i + 1])
+		var away := closest.distance_squared_to(at)
+		if away < nearest:
+			nearest = away
+			best = i
+	var out := PackedVector2Array([at])
+	# Backwards along the path, then forwards, accumulating real length.
+	var left := half_length
+	var i := best
+	var from := at
+	while left > 0.0 and i >= 0:
+		var step := from.distance_to(points[i])
+		if step >= left:
+			out.insert(0, from + (points[i] - from).normalized() * left)
+			left = 0.0
+		else:
+			out.insert(0, points[i])
+			left -= step
+			from = points[i]
+			i -= 1
+	if left > 0.0 and out.size() >= 2:
+		# Ran off the end of the path: extend along its own last direction rather than
+		# stopping short, so a crossing near an endpoint still gets a full-length gap.
+		var heading := (out[0] - out[1]).normalized()
+		out.insert(0, out[0] + heading * left)
+	left = half_length
+	i = best + 1
+	from = at
+	while left > 0.0 and i < points.size():
+		var step := from.distance_to(points[i])
+		if step >= left:
+			out.append(from + (points[i] - from).normalized() * left)
+			left = 0.0
+		else:
+			out.append(points[i])
+			left -= step
+			from = points[i]
+			i += 1
+	if left > 0.0 and out.size() >= 2:
+		var heading := (out[out.size() - 1] - out[out.size() - 2]).normalized()
+		out.append(out[out.size() - 1] + heading * left)
+	return out
+
+
+## The lower cable erased where the upper one passes over it.
+##
+## Nothing is added on top: the gap is cut in the ground colour and the upper cable is then
+## drawn by the ordinary path, unchanged. That is the whole claim — *these lines cross and
+## do not join* — said with the least ink of the three, and said only where it is needed.
+##
+## Cut along the **lower** cable and across its full drawn extent, shadow included. A gap
+## that erases the body and leaves the shadow reads as a cable with a bruise on it. Two
+## passes for the same reason `draw_cable` lays two shadows: the wide offset one first,
+## then the tight one.
+##
+## No dot, no ring, no taper. Anything that closes across the gap becomes a junction mark,
+## and a junction mark on a patch cable is a claim that two signals meet.
+static func draw_crossing_knockout(canvas: CanvasItem, lower: PackedVector2Array,
+		at: Vector2, style: Style, ground: Color) -> void:
+	var half: float = style.thickness * (0.5 + KNOCKOUT_CLEARANCE)
+	var gap := span_at(lower, at, half)
+	if gap.size() < 2:
+		return
+	var opaque := Color(ground.r, ground.g, ground.b, 1.0)
+	canvas.draw_polyline(shifted(gap, style.shadow_offset * 1.9), opaque,
+		style.shadow_width + style.thickness * 0.7, true)
+	canvas.draw_polyline(shifted(gap, style.shadow_offset), opaque,
+		style.shadow_width, true)
+	canvas.draw_polyline(gap, opaque, style.thickness + style.edge_offset.length() * 2.0,
+		true)
+
+
+## The upper cable's path, lifted into a local arc where it crosses.
+##
+## The third candidate, and the one expected to lose: it is the most explicit silhouette of
+## the three and it is the only one that says something untrue. The route is a fact about
+## the patch, and a cable that visibly detours around another cable has been drawn going
+## somewhere it does not go. It also reads as printed-circuit crossover notation, which is
+## a different language from a patch cable.
+##
+## Drawn from a displaced copy, so the route itself and the connection coordinates are
+## untouched — the distortion is in the picture and not in the document.
+static func bumped(points: PackedVector2Array, ats: Array,
+		style: Style) -> PackedVector2Array:
+	if ats.is_empty() or points.size() < 2:
+		return points
+	var span: float = style.thickness * BUMP_SPAN
+	var lift: float = style.thickness * BUMP_LIFT
+	var out := PackedVector2Array()
+	for i in points.size():
+		var point := points[i]
+		var heading: Vector2 = (points[mini(i + 1, points.size() - 1)]
+			- points[maxi(i - 1, 0)]).normalized()
+		if heading == Vector2.ZERO:
+			out.append(point)
+			continue
+		# One consistent side, always. Alternating would encode something, and the
+		# constraint is that a crossing mark says nothing about direction or about which
+		# cable matters more.
+		var side := Vector2(-heading.y, heading.x)
+		var push := 0.0
+		for at: Vector2 in ats:
+			var away := point.distance_to(at)
+			if away < span:
+				push = maxf(push, lift * cos(PI * 0.5 * away / span))
+		out.append(point + side * push)
+	return out
+
+
 ## A short darker shadow under the upper cable, local to where it passes over another.
 ##
 ## The same trick that made the plug read: topology by occlusion rather than by depth. The

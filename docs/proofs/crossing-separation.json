@@ -1,0 +1,30 @@
+{
+  "ink": {
+    "bump": {
+      "ink_added": 1391.1,
+      "ink_removed": 1085.6,
+      "touched": 10477
+    },
+    "halo": {
+      "ink_added": 0.0,
+      "ink_removed": 116.9,
+      "touched": 659
+    },
+    "knockout": {
+      "ink_added": 21.5,
+      "ink_removed": 229.4,
+      "touched": 1359
+    },
+    "knockout, every crossing": {
+      "ink_added": 63.7,
+      "ink_removed": 759.3,
+      "touched": 4468
+    },
+    "none": {
+      "ink_added": 0.0,
+      "ink_removed": 0.0,
+      "touched": 0
+    }
+  },
+  "same_colour": 12
+}

@@ -128,6 +128,93 @@ Three techniques, tested separately and in this order:
 3. **Sparse type marking** — very infrequent inline semantic marks or texture, as the
    grayscale fallback for problem 3. **Only after crossings work**, and deliberately last.
 
+## Goal 1 — crossing separation
+
+**Not "improve crossings".** The measured defect is narrow, and the goal is stated as the
+narrow thing:
+
+> At a transverse crossing between visually identical cables, a reader can immediately tell
+> which strand continues through the intersection.
+
+Nothing else moved: not width, routing, splay, bundling, MAP scaling or node trespass. The
+route geometry and the connection coordinates are untouched; the treatment is a drawing.
+
+Named **crossing separation**, not "bridge". A bridge is one candidate's geometry and the
+name would have smuggled it in.
+
+### The exclusion the incumbent had lost
+
+Before any candidate was drawn, the sheet found something the baseline had not: the cord
+layer was treating **fan-out convergences as crossings.** Cables leaving one output or
+arriving at one input meet by design, and a separation mark there says the opposite of what
+is true — the clock's three-way fan-out was being marked as three crossings. GraphEdit's own
+thin-line crossing pass had that exclusion; the cord layer that replaced it never did.
+
+Restoring it took the specimen from 31 crossings to 27, and the same-colour set from 16 to
+12. Four of the sixteen "hard cases" were cables that genuinely join.
+
+### The four columns
+
+| | what it does | pixels | ink added | ink removed |
+|---|---|---|---|---|
+| none | nothing — the reference | 0 | 0 | 0 |
+| halo | darker halo under the upper cable (the incumbent, goal 8) | 659 | 0 | 117 |
+| **knockout** | **lower cable erased for a short span, upper drawn over the gap** | **1359** | **22** | **229** |
+| bump | upper cable lifted into a local arc | 10477 | 1391 | 1086 |
+| knockout, every crossing | the unconditional rule | 4468 | 64 | 759 |
+
+Measured at the crossings rather than across the frame. The frame-wide diff was tried first
+and was not reproducible — three runs gave 908, 940 and 890 touched pixels for one treatment,
+because something else in the editor moves between captures. The crops are taken back to back
+at one scroll position with nothing changed but the construction, and they repeat to within a
+pixel.
+
+### What the sheet showed
+
+**Knockout wins, as expected, and the reference column is what makes the case.** With
+nothing at all, two identical blue strands fuse into a lozenge at the crossing and there is
+no way to tell which continues. **The halo barely changes that** — darkening the upper
+cable's underside says nothing when the cable underneath is the same colour, which is
+precisely the case it was never tested on. The knockout reads immediately as one line
+passing over another, and it does it with twenty-two units of added ink across twelve
+crossings.
+
+**The bump loses on both counts.** It adds sixty-three times the ink, and it says something
+untrue: the cable visibly detours around another cable, and the route is a fact about the
+patch. It also reads as printed-circuit crossover notation, which is a different language
+from a patch cord.
+
+At 40% and 28% the treatment is invisible, which is the intended behaviour — almost nothing
+until you need to trace a route.
+
+### The constraints, and how they are met
+
+| Constraint | How |
+|---|---|
+| never resembles an electrical junction | nothing is drawn *at* the crossing; a gap is cut. No dot, no ring, no taper — anything that closes across the gap becomes a junction mark |
+| implies no direction | the gap is symmetric about the intersection and follows the lower cable's own path |
+| encodes no type, activity, selection or focus | it is one shape in the ground colour, and it appears at every qualifying crossing regardless of what the cables carry |
+| route geometry unchanged | the knockout is a drawing pass; `_get_connection_line` is untouched. Only the bump displaces anything, and even it draws from a copy |
+| local to the crossing | the gap is the upper cable's width plus clearance either side, `span_at` walks the path to that length, and `editor_test` holds it at exactly that |
+| deterministic priority | connection order, which is the file's order — the same rule the layer already used, and nothing semantic invented about which cable deserves to be on top |
+
+### The open question: conditional or unconditional
+
+Shipped **same-colour only**, as instructed. Both are rendered
+(`crossing-knockout-*.png` and `crossing-knockout-all-*.png`) and neither looks wrong.
+
+The argument for making it unconditional is worth putting on the record, because it is not
+about ink: **a treatment that appears at some crossings and not others is a channel that
+looks like it means something.** A reader who sees a gap at one intersection and none at the
+next cannot recover "these two happened to be the same colour" as the reason. The cost is
+forty-two more units of ink across fifteen more crossings, and the frames at 100% and 40%
+show no artefact from it.
+
+Against it: the colours already answer a mint-over-blue crossing, and ink spent on a case
+that is already answered is ink spent.
+
+Not decided here.
+
 ### What not to start with
 
 Dashed control cables, or any repeating pattern. With thirty-five intersecting cables, a

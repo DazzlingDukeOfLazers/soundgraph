@@ -23,6 +23,7 @@ const ModuleThemes := preload("res://module_themes.gd")
 const Faceplate := preload("res://faceplate.gd")
 ## The graph, for the case's own constants.
 const PatchGraphScript := preload("res://patch_graph.gd")
+const CableArtScript := preload("res://cable_art.gd")
 ## The Add Node browser, for its category list.
 const NodeBrowserScript := preload("res://node_browser.gd")
 ## The third way of looking at a patch.
@@ -11190,6 +11191,67 @@ func _initialize() -> void:
 			"no control survives past FULL in the dense graph (%d aimable)" % ghosts)
 		check(half_cells == 0,
 			"no parameter cell reaches the reader as half a pair (%d)" % half_cells)
+
+	# ---- cable pass, goal 1: crossing separation -------------------------------------
+	# The dense graph is already open from the block above, which is why this sits here.
+	#
+	# The pictures are `crossing_sheet.gd`'s job — this pass has no rendering server. What
+	# is checkable without one is the geometry the treatment stands on, and the two rules
+	# that decide where it is applied at all.
+	check(CableArtScript.crossing_style == CableArtScript.Crossing.KNOCKOUT,
+		"the shipped crossing treatment is the knockout")
+	check(CableArtScript.crossing_same_colour_only,
+		"and it is applied where the colours cannot tell the strands apart")
+
+	# The gap is local and it is a specific length: the upper cable's width plus clearance
+	# either side. A treatment that ran along the cable would be a second channel painted
+	# down its length, which is the thing the brief rules out.
+	var straight := PackedVector2Array([Vector2(0, 0), Vector2(200, 0)])
+	var gap := CableArtScript.span_at(straight, Vector2(100, 0), 12.0)
+	var gap_length := 0.0
+	for step in range(gap.size() - 1):
+		gap_length += gap[step].distance_to(gap[step + 1])
+	check(absf(gap_length - 24.0) < 0.5,
+		"a knockout spans exactly what it is asked for (%.1f of 24)" % gap_length)
+
+	# And it stays local when the crossing is at the very end of a route, where walking
+	# the path runs out of path. It extends along the cable's own direction rather than
+	# stopping short, so a crossing near a socket still gets a full gap.
+	var stub := CableArtScript.span_at(straight, Vector2(4, 0), 12.0)
+	var stub_length := 0.0
+	for step in range(stub.size() - 1):
+		stub_length += stub[step].distance_to(stub[step + 1])
+	check(absf(stub_length - 24.0) < 0.5,
+		"including at the end of a route (%.1f of 24)" % stub_length)
+
+	# Cables leaving one output or arriving at one input meet by design, and a separation
+	# mark there would say the opposite of what is true. The cord layer that replaced
+	# GraphEdit's own crossing pass had lost that exclusion, so the clock's three-way
+	# fan-out was being marked as three crossings.
+	var cord_layer: Node = null
+	for child in main.graph_edit.get_children():
+		if child.has_method("crossing_sites"):
+			cord_layer = child
+	check(cord_layer != null, "the cord layer is the one that knows where crossings are")
+	if cord_layer != null:
+		var sites: Array = cord_layer.crossing_sites()
+		check(sites.size() > 0,
+			"the dense graph has crossings to separate (%d)" % sites.size())
+		var ports := {}
+		for wire in main.graph_edit.get_connection_list():
+			ports["%s:%d" % [str(wire["from_node"]), int(wire["from_port"])]] = true
+		# A fan-out convergence sits on its shared port. None of the sites may.
+		var on_a_port := 0
+		for site: Dictionary in sites:
+			for widget_id in main.widgets:
+				var widget: GraphNode = main.widgets[widget_id]
+				for index in widget.get_output_port_count():
+					var at: Vector2 = (widget.position_offset
+						+ widget.get_output_port_position(index)) * main.graph_edit.zoom 						- main.graph_edit.scroll_offset
+					if at.distance_to(site["at"] as Vector2) < 4.0:
+						on_a_port += 1
+		check(on_a_port == 0,
+			"and none of them is a fan-out meeting at its own port (%d)" % on_a_port)
 
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with

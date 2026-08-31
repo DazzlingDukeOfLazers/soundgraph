@@ -2562,15 +2562,12 @@ class CordLayer extends Control:
 			_fingerprint = current
 			queue_redraw()
 
-	func _draw() -> void:
-		if graph == null or graph.face_up:
-			return
-		graph._rebuild_departure_signs()
-		# One style per frame, scaled to the view. The stack's offsets and widths scale
-		# with the zoom the same way the body does, or the cord flattens back into a
-		# line the moment you step back — which is the exact failure this layer ends.
+	## The style this frame is drawn in. One per frame, scaled to the view: the stack's
+	## offsets and widths scale with the zoom the same way the body does, or the cord
+	## flattens back into a line the moment you step back — the exact failure this layer
+	## ends. Split out so `crossing_sites` and `_draw` cannot disagree about it.
+	func _style() -> CableArt.Style:
 		var z: float = graph.zoom if graph.zoom > 0.0 else 1.0
-		var cords: Array = []
 		var style := CableArt.Style.new()
 		style.thickness = maxf(8.0 * z, 2.4)
 		style.edge_offset = Vector2(1.3, 1.5) * z
@@ -2587,6 +2584,13 @@ class CordLayer extends Control:
 		style.shadow_width = 9.5 * z
 		style.shadow_alpha = 0.32
 		style.shadow_offset = Vector2(2.0, 2.8) * z
+		return style
+
+
+	## Every cord in this frame as [points in this layer's space, ink].
+	func _lay() -> Array:
+		var z: float = graph.zoom if graph.zoom > 0.0 else 1.0
+		var cords: Array = []
 		for connection in graph.get_connection_list():
 			var from_widget := graph.get_node_or_null(
 				NodePath(str(connection["from_node"]))) as GraphNode
@@ -2610,18 +2614,96 @@ class CordLayer extends Control:
 				str(from_widget.get_meta("type", "")), int(connection["from_port"]))
 			if cord_override.a > 0.0:
 				cord_ink = cord_override
-			cords.append([local, cord_ink])
+			# The port at each end travels with the cord. Two cables leaving one output
+			# or arriving at one input meet **by design**, and a separation mark on that
+			# meeting says the opposite of what is true — which is the one thing a
+			# crossing treatment may never say. GraphEdit's own thin-line crossing pass
+			# had this exclusion; the cord layer that replaced it never did, so the
+			# clock's three-way fan-out was being marked as three crossings.
+			cords.append([local, cord_ink,
+				"%s:%d" % [str(connection["from_node"]), int(connection["from_port"])],
+				"%s:%d" % [str(connection["to_node"]), int(connection["to_port"])]])
+		return cords
 
-		# Drawn in connection order with the rack's own occlusion: where a cord crosses
-		# one already down, the earlier cord breaks in shadow under it. Deterministic —
-		# the file's order and nothing else — so crossings never reshuffle underfoot.
+
+	## Whether two cords meet because they share a port rather than because they cross.
+	func _joined(a: Array, b: Array) -> bool:
+		return a[2] == b[2] or a[3] == b[3]
+
+
+	func _draw() -> void:
+		if graph == null or graph.face_up:
+			return
+		graph._rebuild_departure_signs()
+		var style := _style()
+		var cords := _lay()
+
+		# Drawn in connection order, and that order is the whole of the crossing priority:
+		# where a cord crosses one already down, this one is over. Deterministic — the
+		# file's order and nothing else — so crossings never reshuffle underfoot, and
+		# nothing semantic is invented about which cable deserves to be on top.
+		#
+		# The ground a knockout is cut in, taken from the theme so it keeps matching the
+		# canvas rather than being a constant that drifts out of step with it.
+		var ground: Color = graph.get_theme_color("bg", "GraphEdit") \
+			if graph.has_theme_color("bg", "GraphEdit") else Color(0.13, 0.14, 0.17)
+		var laid: Array = []
+		for entry in cords:
+			var meetings: Array = []
+			for earlier in laid:
+				if _joined(entry, earlier):
+					continue
+				# Same colour only, when that is the rule: the measured defect is two
+				# identical strands, and a treatment on a mint-over-blue crossing is ink
+				# spent on a case the colours already answer.
+				if CableArt.crossing_same_colour_only \
+						and not _same_ink(entry[1], earlier[1]):
+					continue
+				for at: Vector2 in CableArt.crossings(entry[0], earlier[0]):
+					meetings.append(at)
+					match CableArt.crossing_style:
+						CableArt.Crossing.HALO:
+							CableArt.draw_crossing_shadow(self, entry[0], at, style)
+						CableArt.Crossing.KNOCKOUT:
+							CableArt.draw_crossing_knockout(self, earlier[0], at, style,
+								ground)
+			var drawn: PackedVector2Array = entry[0]
+			if CableArt.crossing_style == CableArt.Crossing.BUMP:
+				drawn = CableArt.bumped(drawn, meetings, style)
+			CableArt.draw_cable(self, drawn, entry[1], style)
+			laid.append(entry)
+
+	## Whether two cords are drawn in the same ink, which is what makes a crossing
+	## ambiguous in the first place.
+	func _same_ink(a: Color, b: Color) -> bool:
+		return absf(a.r - b.r) < 0.02 and absf(a.g - b.g) < 0.02 \
+			and absf(a.b - b.b) < 0.02
+
+
+	## Every crossing in this frame, in this layer's own coordinates.
+	##
+	## Public and pure so the proof sheet can find the crossings without rendering and
+	## then photograph them — the same arrangement `plug_sites` has, and for the same
+	## reason: a harness that works out where the crossings are for itself is a second
+	## implementation of `CableArt.crossings`, and it can agree with the geometry while
+	## disagreeing with what was drawn.
+	##
+	## Order is draw order, so `over` and `under` are the priority as painted.
+	func crossing_sites() -> Array:
+		var sites: Array = []
+		if graph == null or graph.face_up:
+			return sites
+		var cords := _lay()
 		var laid: Array = []
 		for entry in cords:
 			for earlier in laid:
-				for at: Vector2 in CableArt.crossings(entry[0], earlier):
-					CableArt.draw_crossing_shadow(self, entry[0], at, style)
-			CableArt.draw_cable(self, entry[0], entry[1], style)
-			laid.append(entry[0])
+				if _joined(entry, earlier):
+					continue
+				for at: Vector2 in CableArt.crossings(entry[0], earlier[0]):
+					sites.append({"at": at, "same_colour": _same_ink(entry[1],
+						earlier[1]), "over": entry[1], "under": earlier[1]})
+			laid.append(entry)
+		return sites
 
 
 ## Plugs, seated in the sockets of painted modules.

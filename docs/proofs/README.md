@@ -19,6 +19,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `registry-inventory.json` | `inventory.gd` | every runtime type, its class, its narrowest valid width at every interface scale, and the equation `registry = migrated + held` |
 | `width-classes.json` | `width_sheet.gd` | each type's preferred width, its required class per scale, and the verdict against its declared class |
 | `dense-graph-qa.json` | `qa_sheet.gd` | the eighty-frame matrix: health, identity variants, title columns, and every complaint (none) |
+| `crossing-separation.json` | `crossing_sheet.gd` | goal 1: the same-colour crossings, and the ink each of the four constructions introduces at them |
 | `cable-baseline.json` | `cable_baseline.gd` | the cable pass's step 1: every route's length and detour, every crossing's position, angle and colour pair, every bundle, every trespass, and the cable share of the patch at four zooms |
 
 ## The sheets, on demand
@@ -53,6 +54,9 @@ godot --path editor-godot --script qa_reduced.gd
 
 # the cable pass's baseline: routes, crossings, bundles, trespass, ink share
 CABLE_BASELINE_OUT=/tmp/p godot --headless --path editor-godot --script cable_baseline.gd
+
+# goal 1: none / halo / knockout / bump on the same-colour crossings, plus the ink
+CROSSING_SHEET_OUT=/tmp/p godot --path editor-godot --script crossing_sheet.gd
 ```
 
 `godot` is whatever `git config soundgraph.godot` names.
