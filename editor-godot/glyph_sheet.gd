@@ -81,6 +81,47 @@ const DYNAMICS := ["NARROWING", "CHEVRON_RIGHT", "FUNNEL", "QUANTISED", "HELD",
 const EVENTS := ["ONE_STEP", "SQUARE_WAVE", "HELD", "SPREAD", "PULSE_TRAIN",
 	"ECHO_TRAIN"]
 
+## 15B's collision sheet: the marks that could be mistaken for each other, side by side,
+## at the size a node header actually draws them.
+##
+## The groups above are families — they ask whether a set reads as a set. This asks the
+## opposite question of the same marks: put the two most confusable ones next to each
+## other and see whether a reader could tell them apart at production size. Every pair the
+## brief names, plus the chrome each family has to stay clear of.
+##
+## Rendered at the header cell only. A collision judged at 96 pixels is not judged.
+const COLLISIONS := [
+	# The oldest pair in the language: a sine oscillator and a slow wave that moves
+	# something else are both a sine, and the only thing between them is repetition.
+	["SINE_WAVE", "MODULATION"],
+	# Three ways of drawing events in time, told apart by regularity and by decay.
+	["PULSE_TRAIN", "SPREAD", "ECHO_TRAIN"],
+	# Three staircases: a waveform, an irregular hold, and a regular quantisation.
+	["SQUARE_WAVE", "HELD", "QUANTISED"],
+	# A contour against a response curve — the pair rule 9 was written for.
+	["ENVELOPE", "RESPONSE_BAND"],
+	# The notch against the rectifier that was drawn for Abs and refused.
+	["RESPONSE_NOTCH", "RECTIFIED"],
+	# Periodic notches against repeated peaks.
+	["RESPONSE_COMB", "RESPONSE_FORMANT"],
+	# The two signal-flow conventions, and the dismiss cross they must not become.
+	["SUM_JUNCTION", "PRODUCT", "CROSS"],
+	# A signal climbing through a level, against the two chrome marks nearest it.
+	["THRESHOLD", "ARROW_RIGHT", "CROSS"],
+	# The compressor against the disclosure chevron, which is what a pair of lines
+	# meeting at a point becomes.
+	["NARROWING", "CHEVRON_RIGHT"],
+	# The two edges of a patch, against the enclosure that is neither.
+	["ORIGINATE", "TERMINATE", "SAMPLE"],
+	# Where cords meet, both ways round.
+	["ROUTE_MERGE", "ROUTE_SPLIT"],
+]
+
+## The header cell, at the interface scale the sheet is rendered at. Not a round number
+## on purpose: it is `Design.scale(18)`, which is what a node header asks `Icons` for.
+const HEADER_CELL := 24
+const COLLISION_MAGNIFY := 4
+
 ## The contact sheet's own geometry. Every mark is shown at the same drawn size whatever
 ## it was rendered at, which is the only way four sizes can be compared: the 10-pixel cut
 ## and the 96-pixel one differ in how they are drawn, not in how big they are on the page.
@@ -150,6 +191,35 @@ func _initialize() -> void:
 			sheet.blit_rect(plate, Rect2i(0, 0, drawn, drawn), corner)
 	sheet.save_png("%s/glyph-proof.png" % folder)
 
+	# And the collision sheet, at the header cell and nowhere else. One row per group,
+	# marks left to right in the order above, so a row can be read as "these three, are
+	# they three".
+	var widest := 0
+	for group: Array in COLLISIONS:
+		widest = maxi(widest, group.size())
+	var box := HEADER_CELL * COLLISION_MAGNIFY + PAD
+	var collisions := Image.create(widest * box + PAD, COLLISIONS.size() * box + PAD,
+		false, Image.FORMAT_RGBA8)
+	collisions.fill(Design.SURFACES[Design.Surface.CANVAS])
+	for row in COLLISIONS.size():
+		var group: Array = COLLISIONS[row]
+		for column in group.size():
+			var plate := Image.create(HEADER_CELL, HEADER_CELL, false, Image.FORMAT_RGBA8)
+			plate.fill(ground)
+			var mark: Image = Icons.get_icon(int(Icons.Kind[group[column]]), HEADER_CELL,
+				ink).get_image()
+			mark.convert(Image.FORMAT_RGBA8)
+			plate.blend_rect(mark, Rect2i(0, 0, HEADER_CELL, HEADER_CELL), Vector2i.ZERO)
+			# Nearest neighbour: a mark smoothed up is a picture of a different glyph, and
+			# the whole question here is what the twenty-four pixel cut looks like.
+			plate.resize(HEADER_CELL * COLLISION_MAGNIFY, HEADER_CELL * COLLISION_MAGNIFY,
+				Image.INTERPOLATE_NEAREST)
+			collisions.blit_rect(plate, Rect2i(Vector2i.ZERO, plate.get_size()),
+				Vector2i(PAD + column * box, PAD + row * box))
+	collisions.save_png("%s/glyph-collisions.png" % folder)
+
 	print("%d marks, %d sizes, %d files + the sheet -> %s" % [names.size(), SIZES.size(),
 		written, folder])
+	print("%d collision groups at the %d-pixel header cell" % [COLLISIONS.size(),
+		HEADER_CELL])
 	quit()

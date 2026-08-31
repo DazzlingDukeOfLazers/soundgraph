@@ -11050,6 +11050,123 @@ func _initialize() -> void:
 	check(main.get_tree().root.gui_embed_subwindows == embedding_before,
 		"closing a panel that is not open leaves the editor's own windows alone")
 
+	# ---- step 15B: the dense graph, gated ------------------------------------------
+	# The cosmopolitan pass's acceptance specimen, held here so it cannot rot. Thirty
+	# nodes, all six width classes, three reserved identity cells, a node the validator
+	# genuinely complains about, and the longest name in the corpus beside the shortest.
+	#
+	# `qa_sheet.gd` photographs it and checks the same invariants across five palettes;
+	# this is the headless half, which is everything a palette cannot change. Last in the
+	# suite because it replaces the document, and nothing after it would be looking at
+	# what it thought it was.
+	var dense := FileAccess.get_file_as_string("res://qa/dense-graph.json")
+	check(not dense.is_empty(), "the dense QA graph is readable")
+	if not dense.is_empty():
+		await main._load_text(dense)
+		for _loading in 20:
+			await process_frame
+		main._choose_detail_mode(PatchGraphScript.DetailMode.ADAPTIVE)
+		for _loading in 10:
+			await process_frame
+		check(main.widgets.size() == 30,
+			"the dense QA graph opens whole (%d nodes)" % main.widgets.size())
+
+		# What the contract says a MAP node contains: a silhouette, an identity, sockets,
+		# cables, selection and validity. Not a control. Six survive it today — the plugin
+		# host's three buttons, the CC learn button, the speech words button and the
+		# sequencer's step grid — and every one of them is a control the row system never
+		# owned, so the level of detail was never asked about them. Five are buttons and
+		# are counted here; the step grid draws itself and is caught by `qa_reduced.gd`,
+		# which looks for a leaf that paints rather than for a class.
+		#
+		# Asserted at the known figure rather than at zero. Zero is where this belongs and
+		# is not where it is; a check that cannot fail until somebody fixes it would let a
+		# sixth arrive unnoticed in the meantime. Twelve is the frames it is counted over:
+		# four interface scales by the three zooms that are not FULL.
+		const KNOWN_GHOSTS := 5
+		var elided := 0
+		var over_class := 0
+		var misfit := 0
+		var ghosts := 0
+		var columns_split := 0
+		for scale in Design.SCALE_FACTORS.size():
+			Design.ui_scale = scale
+			main._use_ui_scale(scale)
+			for _scaling in 8:
+				await process_frame
+			for zoom: float in [1.0, 0.66, 0.40, 0.28]:
+				main.graph_edit.zoom = zoom
+				main.graph_edit._update_detail()
+				main._apply_detail(main.graph_edit.detail)
+				for _settling in 10:
+					await process_frame
+				var dense_full: bool = main.graph_edit.detail == PatchGraphScript.Detail.FULL
+				var title_x := -1.0
+				for id in main.widgets:
+					var node: GraphNode = main.widgets[id]
+					var dense_key := str(node.get_meta("type", ""))
+					if not NodeIdentity.migrated(dense_key):
+						continue
+					# The name the reader receives, asked of the renderer rather than
+					# worked out here — a second implementation of the elision is how the
+					# step 1 baseline went on reporting cut names after the renderer had
+					# stopped cutting them.
+					var dense_pinned := Design.screen_minimum(Design.MIN_SCREEN_NODE_TITLE)
+					var dense_shown := node.title
+					if Design.below_screen_minimum(Design.type(Design.SIZE_NODE_TITLE),
+							zoom, dense_pinned):
+						var room: float = node.size.x * zoom - 12.0
+						dense_shown = "" if room < 20.0 else PatchGraphScript.ScreenText._name_for(
+							node, Design.font(Design.WEIGHT_SEMIBOLD), dense_pinned, room)
+					if dense_shown.ends_with("…"):
+						elided += 1
+					var dense_declared := NodeGrid.width_for(dense_key)
+					if dense_declared > 0 and node.size.x > float(dense_declared) + 0.5:
+						over_class += 1
+					if dense_full:
+						misfit += LayoutFit.complaints(node, node.size.x, 0.0).size()
+						# The title column, which is the whole reason an identity cell is
+						# reserved rather than removed. Within one frame, every migrated
+						# node starts its name at the same x.
+						var dense_title: Label = node.get_meta("title_label") \
+							if node.has_meta("title_label") else null
+						if dense_title != null and dense_title.is_visible_in_tree():
+							var inset := dense_title.get_global_rect().position.x \
+								- node.get_global_rect().position.x
+							if title_x < 0.0:
+								title_x = inset
+							elif absf(inset - title_x) > 0.5:
+								columns_split += 1
+					else:
+						var dense_queue: Array = [node]
+						while not dense_queue.is_empty():
+							var next: Node = dense_queue.pop_front()
+							for child in next.get_children():
+								var piece := child as Control
+								if piece == null:
+									continue
+								dense_queue.append(piece)
+								if not piece.is_visible_in_tree():
+									continue
+								if piece.get_parent() == node.get_titlebar_hbox():
+									continue
+								if piece is BaseButton or piece is Range:
+									ghosts += 1
+		Design.ui_scale = Design.Scale.COMFORTABLE
+		check(elided == 0,
+			"no migrated title in the dense graph is ever cut (%d)" % elided)
+		check(over_class == 0,
+			"every dense-graph node stands inside its width class (%d over)" % over_class)
+		check(misfit == 0,
+			"nothing in the dense graph is clipped, overlapping or outside its node (%d)"
+				% misfit)
+		check(columns_split == 0,
+			"the title column holds across the dense graph, reserved cells and all (%d)"
+				% columns_split)
+		check(ghosts <= KNOWN_GHOSTS * 12,
+			"no new control survives past FULL in the dense graph (%d aimable, %d known)"
+				% [ghosts, KNOWN_GHOSTS * 12])
+
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with
 	# frames to spare rather than destroyed underneath it. Order matters and was

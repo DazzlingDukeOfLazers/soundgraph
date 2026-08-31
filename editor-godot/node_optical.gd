@@ -104,6 +104,26 @@ static func name_of(state: int) -> String:
 ## It is written down rather than corrected. The behaviour is right — a mark that has
 ## stopped reading should go — and moving either threshold to make a table look tidy is
 ## what the brief said not to do.
+##
+## ## Two departures the dense-graph QA found, at 15B
+##
+## Written down for the same reason, and neither of them corrected here.
+##
+## **Six controls survive into MAP.** The plugin host's three buttons, the MIDI CC learn
+## button, the Speech words button and the Step Sequencer's step grid are still drawn at
+## 40% and 28%, at every interface scale, and the table above says a MAP node draws no
+## control. Every one of them is a control the row system never owned, so `_apply_detail`
+## was never asked about it: the rule is right and is not reaching them. `editor_test.gd`
+## holds the count at the known figure so a sixth cannot arrive unnoticed.
+##
+## **At REDUCED a parameter can arrive as half a pair.** The table says values survive "as
+## words", and what a reader gets at 66% is sometimes a name with no number and sometimes
+## a bare number with no name — 13% of cells at Comfortable and 29% at Compact, measured
+## by `qa_reduced.gd` through the renderer's own `ScreenText.fit_for`. The cause is that
+## `Fit.NO_ROOM` decides **per label** while a parameter is **a pair**, and nothing states
+## what the unit of removal is. That is a gap in the rule rather than a slip against it,
+## which is why it is the one finding of 15B entitled to reopen the frozen system. See
+## docs/graph-nodes.md.
 const SURVIVAL := {
 	"selection": [true, true, true],
 	"validity": [true, true, true],

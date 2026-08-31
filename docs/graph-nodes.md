@@ -1866,3 +1866,238 @@ the two plugin hosts, Cable Test and Scale Quantizer. Every one of them for a wr
 reason, and none of them looking unfinished.
 
 **The node grammar is frozen.**
+
+---
+
+## Step 15B — the dense graph
+
+The node grammar was frozen at 15A.3. This step does not change it. It builds one
+deliberately hostile graph, photographs it from four distances in three environments,
+measures everything a machine can decide, and files what it finds.
+
+The specimen is `editor-godot/qa/dense-graph.json`: thirty nodes and thirty-five cables,
+arranged to be unpleasant rather than to flatter anything.
+
+```
+all six width classes          Narrow (Add, Multiply, Drive, Gain) through Broad (Scale Quantizer)
+every glyph family             generator, temporal, response, combining, dynamics, maths, edges
+three reserved cells           Drive, Plugin Effect, Speak — two of them adjacent
+one genuinely invalid node     Drive, drive 0.55 against a range of 1 to 30
+the longest name and the shortest   "Sidechain Bus Compressor" and "Q"
+two fan-outs                   the clock's gate to three places, the noise to two
+a four-input mixer into another mixer
+several cables crossing the whole graph, because their ends are at opposite corners
+adjacent nodes from unrelated families   Clock beside Euclid beside Add beside Compressor
+```
+
+`qa_sheet.gd` renders it and audits it. Twenty-six pictures from the representative
+corner — Lab, Paper and Maximum Contrast, at Comfortable and XL, at 100/66/40/28% — and
+**eighty frames of machine checks** over the whole matrix, five palettes by four interface
+scales by four zooms.
+
+### What the machine settled
+
+```
+80 frames checked, 26 shots written
+no complaints
+```
+
+- No migrated title is cut to an ellipsis at any zoom, scale or palette.
+- Every node stands at its declared width class, to the pixel.
+- Nothing is clipped, overlapping, or outside its own frame in FULL.
+- The alert mark appears on exactly the node the validator complained about — checked
+  against the validator's answer rather than against a list written here.
+- Every reserved cell holds its cell and draws no texture.
+- **The title column does not vary by a pixel**, across thirty nodes, five palettes and
+  four interface scales. That is the numeric form of the claim the specification makes in
+  its first section, and it is why the glyph cell is reserved rather than removed.
+- The identity variant resolves: the filter at `mode: 2` wears the bandpass mark, and its
+  dropdown says bandpass.
+
+The decidable half of this is now in `editor_test.gd`, so it runs on every push.
+
+### The ten questions
+
+**1. Can the primary audio path be followed before reading labels?** Yes. Mint reads as one
+continuous run from the oscillator through filter, gain, drive, comb, delay to the mixer and
+out, and it is the only mint run in the frame that reaches the right edge. The control
+cables are a different hue and a different shape of curve — shorter, more vertical — so the
+audio spine separates without anything being labelled.
+
+**2. Can audio, control and event signals be distinguished without labels?** At the sockets,
+yes, and in colour *and* in grayscale: circles are audio, diamonds are control, and the
+grayscale frame keeps both. **Along a cable, colour is the only channel.** In the grayscale
+render every cable is the same mid-grey. A reader can always recover a cable's type by
+looking at either end, so this is bounded — but tracing one wire through a crossing region
+without looking at its ends is not possible without hue. Recorded against the cable design,
+which is not part of the frozen node system.
+
+**3. Do the glyph families feel like one language?** Yes. One weight, one field, one grid,
+one ink, throughout — nothing is darker, larger, more detailed or more literal than its
+neighbours, and nothing reads as chrome. The collision sheet (`glyph-collisions.png`,
+eleven groups at the twenty-four pixel header cell) separates every pair the brief names.
+
+One near-collision, recorded and not redesigned: **the envelope contour against the bandpass
+hill.** Both are a peak; the difference is symmetry and the decay tail. They are never in
+the same role — the envelope is worn by ADSR and AHD, the bandpass only ever as the third
+variant of a filter's mode — so the word beside the mark always disambiguates. Three other
+pairs are deliberate mirrors (input against output seam, mixer against trigger bus, comb
+against formant), where direction or inversion *is* the semantic difference.
+
+**4. Do reserved glyph cells look intentional?** Yes, and this is the sheet to look at
+(`reserved-cells.png`): twelve empty cells in a column with three glyph-bearing headers
+underneath them for scale. They read as a set of nodes whose identity is the word rather
+than a set of unfinished nodes, and the title column is unmoved — measured, not eyeballed.
+A blank cell causes **less** confusion than a bad glyph would, because the eye goes straight
+to the name instead of trying to decode a mark that means nothing.
+
+> **A reserved identity cell is an intentional terminal state, not incomplete work.**
+
+That is now written into `docs/graph-node-system.md`. There is no target of 100% icon
+coverage and pressure toward one should be refused.
+
+**5. Does any node attract attention for a non-semantic reason?** One does: **Plugin
+Effect**, and not for any reason in the node grammar. At 40% and 28% it is the only node in
+the frame with three little buttons drawn on it, and the eye goes there first. See B1 below.
+Otherwise no — the widths repeat, the header tints are quiet, the alert is a single mark,
+and the warning treatment on Drive is legible without dominating.
+
+**6. Does the graph truly simplify as zoom decreases?** Mostly, and this is where the two
+defects live. The bands do their job: controls go, values become words, then words go and
+the node becomes a named silhouette with sockets. There are no orphaned values at FULL and
+no accidental microtext from the row system. But there **is** microtext from outside it —
+five buttons and a step grid that no band ever hides — and there **are** orphaned values at
+REDUCED. Both below.
+
+**7. Is every node identity intentional at MAP scale?** Yes. Zero ellipses in eighty
+frames. The interesting case is Drive: at 28% its Narrow class leaves 37 real pixels, the
+compact name "Drive" needs about 45 at the legibility floor, and so it draws **nothing** —
+while "Add" beside it, three characters, still draws. That asymmetry is the rule working
+rather than failing: remove information rather than reduce its legibility. The node is still
+identifiable by its warning tint, its position and its cables.
+
+**8. Do width classes create rhythm?** Yes, visibly. In the 40% frame the Wide column
+(Delay, Comb, Sampler, Speech, Plugin Effect) lines up as a column, and the Narrow nodes
+(Add, Multiply, Drive, Gain) read as a family of small operators rather than as four
+different accidents. Snug earns its place: Sample and Hold and Trigger Bus at 208 sit level
+with the Narrow group instead of paying a hundred units of slack to be Standard. Broad does
+not look like an oddball — Scale Quantizer at 448 after the reflow is an ordinary two-row
+node with a dropdown on each row, and it is the widest thing in the frame in the same way
+the mixer is the tallest.
+
+**9. Can state channels coexist in density?** Yes, in one frame: Filter is selected (mint
+perimeter), Delay is hovered (lifted surface), Drive is unwell (tinted header and alert
+mark), the output ports carry activity, and sockets throughout are filled or hollow by
+connection. No channel erases another, and all five are still separable at 40%.
+
+**10. Can the patch be understood globally before locally?** Yes. At 40% the graph reads
+left to right as sources (clock, keyboard, audio in, CC, note triggers) → generators and
+patterns (Euclid, Steps, Saw, Noise, LFO) → modulation and utility (Add, Multiply, S&H,
+Scale, Envelope) → transformation (Filter, Gain, Drive, Comb, Delay, Comp) → combination
+(Voices into Master) → Output. Nobody arranged that reading; it falls out of the cables and
+the repeated widths. **This was the finish line, and it holds.**
+
+### Accessibility
+
+The grayscale renders are the test the redundant channels were designed for.
+
+| Channel | Survives grayscale |
+|---|---|
+| signal type at a socket | **yes** — circle against diamond |
+| connected against unconnected | **yes** — filled against outline |
+| selection | **yes** — perimeter luminance, not only mint |
+| health | **yes** — the header tint is a luminance change, not only amber |
+| identity | **yes** — mark and word, neither of them coloured |
+| signal type along a cable | **no** — hue only |
+
+Five of six. The contrast gate that caught the warning-header problem at step 11 still
+holds every palette at 7:1.
+
+### The findings, categorized
+
+The brief's four buckets, and only the fourth may reopen the frozen system.
+
+#### SYSTEMIC DESIGN DEFECT — one
+
+**At REDUCED a parameter can arrive as half a pair.**
+
+The contract says REDUCED shows "values and control state as words". What it actually shows,
+measured by asking the renderer's own `ScreenText.fit_for` rather than by reading pixels:
+
+```
+                   whole   name only   value only   neither
+Compact     66%       69          11           12         5     28 of 97 incomplete
+Comfortable 66%       84           3            8         2     13 of 97 incomplete
+```
+
+So a reader at 66% sees `cutoff` with no number beside it and a bare `4` with no word
+beside it. **An unlabelled 4 is not information; it is a puzzle.**
+
+The cause is a real gap rather than a slip. `Fit.NO_ROOM` — "its box is too narrow to hold
+it honestly, so it is not drawn" — is correct and is the governing rule working. But it
+decides **per label**, and a parameter is **a pair**. Nothing anywhere states what the unit
+of removal is, so half a pair gets removed and the reader is left with the worse half.
+
+Evidence across independent types and contexts: Master Clock, MIDI CC, Main Oscillator,
+Scale Quantizer, Note Triggers, Filter, Delay, Comb, Amp Envelope — at two interface scales,
+in every palette. That meets the bar the brief set.
+
+The candidate rule is small and additive:
+
+> **A parameter's name and its value are removed together. The unit of removal at reduced
+> detail is the cell, not the label.**
+
+**Not implemented.** The system is frozen and this is LOD behaviour; it is put here as the
+one thing 15B found that is entitled to reopen it.
+
+#### BUG — two
+
+**B1. Six controls survive into MAP.** The plugin host's three buttons ("Absent Hall",
+"Slots…", "Panel"), the MIDI CC learn button, the Speech words button and the Step
+Sequencer's step grid are still drawn at 40% and 28%, at every interface scale. The contract
+says MAP draws no control. They are all controls the row system never owned, so
+`_apply_detail` was never asked about them — the rule is right and is simply not reaching
+them. Gated at the known figure in `editor_test.gd` so a sixth cannot arrive unnoticed.
+
+**B2. Load-time diagnostics never reach the health channel.** `_show_diagnostics` is fed by
+`engine.validate_patch`, which parses and validates a *document*. `plugin_unavailable`,
+`implausible_latency` and build-time buffer failures are raised later, when `load_patch`
+actually builds the nodes, and nothing in the editor reads `get_diagnostics_json()`. Proved
+by the QA patch: the engine says
+
+```
+Node 'drive' sets 'drive' outside its range; it will be clamped.   (parameter_out_of_range)
+Node 'plug' plays through 'Absent Hall' by Nobody, which is not available here.
+                                                                  (plugin_unavailable)
+```
+
+and the graph flags only `drive`. A node hosting a missing plugin shows no alert. This is
+the editor's diagnostics plumbing, not the node grammar.
+
+#### CONTENT / METADATA — none
+
+Every compact name, descriptor and class in the dense graph is right.
+
+#### COMPOSITION — one, fixed
+
+The specimen originally named its output mixer "Bus" while the Trigger Bus's compact name is
+also "Bus", so two unrelated nodes read the same at MAP. Renamed to "Master". A property of
+the sample patch, not of the system — but worth recording that the language does not stop
+an author choosing a name that collides with somebody's compact name.
+
+### Definition of done
+
+```
+51/51 runtime types migrated                                yes
+no migrated title ellipsizes                                yes, 80 frames
+every type validates at its declared width class            yes, to the pixel
+the dense graph reads coherently at all four zooms          yes
+default / Maximum Contrast / Paper all survive              yes
+selected / warning / activity / connection stay orthogonal  yes
+reserved glyphs look intentional                            yes, and documented as terminal
+no new systemic design defect emerges                       one, unimplemented, above
+the final system is documented and gated                    docs/graph-node-system.md, editor_test.gd
+```
+
+**The cosmopolitan pass is finished.** Any future node is a consumer of the system unless it
+produces hard evidence that the system lacks a semantic primitive.

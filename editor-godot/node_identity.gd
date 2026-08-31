@@ -20,6 +20,22 @@ extends RefCounted
 ##
 ## The compact name is used only when the canonical one will not fit. At every size where
 ## the real name fits, the real name is what is drawn.
+##
+## ## The reserved-cell policy, settled at 15B
+##
+## Twelve of the fifty-one runtime types have an identity cell and no mark in it, each for
+## a written reason recorded beside its entry in `GLYPH` below. That is a finished answer:
+##
+## > **A reserved identity cell is an intentional terminal state, not incomplete work.**
+##
+## The cell is reserved rather than removed so that every title in the graph starts at the
+## same x whether its type has a mark or not — measured at 15B across thirty nodes, five
+## palettes and four interface scales, and it does not vary by a pixel. `reserved_sheet.gd`
+## puts all twelve side by side with three glyph-bearing headers for scale, and they read
+## as a set of nodes whose identity is the word.
+##
+## There is no target of one hundred per cent icon coverage. A future mark arrives when a
+## type earns one under the nine rules in `GlyphGrammar`, or it does not arrive.
 
 ## The types that speak the new language.
 ##

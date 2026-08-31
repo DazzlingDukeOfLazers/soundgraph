@@ -1,0 +1,129 @@
+{
+  "schema_version": 3,
+  "metadata": {
+    "name": "Dense QA",
+    "description": "Step 15B's specimen. Not a showroom patch and not a musical one: a graph built to stress the node language. Every width class, every glyph family, three reserved identity cells, a node the validator genuinely complains about, a four-input mixer feeding a second one, two fan-outs, several long crossing cables, the longest name in the corpus beside the shortest, and adjacent nodes drawn from families that have nothing to do with each other. It is meant to be unpleasant. If the grammar reads here it reads anywhere."
+  },
+  "plugins": {
+    "hall": {
+      "format": "CLAP",
+      "identity": "com.soundgraph.qa.absent-reverb",
+      "vendor": "Nobody",
+      "name": "Absent Hall"
+    }
+  },
+  "nodes": [
+    {"id": "clk", "type": "Clock", "name": "Master Clock", "position": {"x": 0, "y": 0},
+      "parameters": {"bpm": 128, "division": 3, "swing": 0.12, "width": 5, "beats_per_bar": 4}},
+    {"id": "keys", "type": "Input", "host": "note", "name": "Keyboard", "position": {"x": 0, "y": 620},
+      "parameters": {"glide": 0.04, "transpose": 0, "voices": 1}},
+    {"id": "audin", "type": "Input", "host": "audio", "name": "Q", "position": {"x": 0, "y": 1000},
+      "parameters": {"gain": 1}},
+    {"id": "cc", "type": "MidiCC", "position": {"x": 0, "y": 1300},
+      "parameters": {"cc": 74, "low": 0, "high": 1, "resting": 0.35, "glide": 0.05}},
+    {"id": "ntrig", "type": "NoteTriggers", "position": {"x": 0, "y": 1700},
+      "parameters": {"base": 60, "shift": 0}},
+
+    {"id": "euc", "type": "Euclid", "position": {"x": 520, "y": 0},
+      "parameters": {"steps": 16, "fill": 7, "rotate": 2}},
+    {"id": "seq", "type": "StepSequencer", "position": {"x": 520, "y": 330},
+      "parameters": {"length": 8, "step1": 0, "step2": 0.7, "step3": 0.3, "step4": 1.2,
+        "step5": -0.5, "step6": 0, "step7": 1.0, "step8": 0.2}},
+    {"id": "saw", "type": "SawOscillator", "name": "Main Oscillator", "position": {"x": 520, "y": 900},
+      "parameters": {"frequency": 110}},
+    {"id": "noise", "type": "Noise", "position": {"x": 520, "y": 1180},
+      "parameters": {"colour": 1}},
+    {"id": "lfo", "type": "LFO", "position": {"x": 520, "y": 1420},
+      "parameters": {"rate": 0.25, "shape": 0, "amount": 0.8, "offset": 0}},
+    {"id": "bus", "type": "TriggerBus", "position": {"x": 520, "y": 1780},
+      "parameters": {"shift": 0}},
+
+    {"id": "add", "type": "Add", "position": {"x": 1040, "y": 300},
+      "parameters": {"offset": 0.25}},
+    {"id": "mul", "type": "Multiply", "position": {"x": 1040, "y": 500},
+      "parameters": {"factor": 1500}},
+    {"id": "env", "type": "ADSR", "name": "Amp Envelope", "position": {"x": 1040, "y": 700},
+      "parameters": {"attack": 0.008, "decay": 0.24, "sustain": 0.55, "release": 0.6}},
+    {"id": "snh", "type": "SampleHold", "position": {"x": 1040, "y": 1180}},
+    {"id": "quant", "type": "ScaleQuantizer", "position": {"x": 1040, "y": 1360},
+      "parameters": {"scale": 7, "root": 2}},
+    {"id": "samp", "type": "Sampler", "position": {"x": 1040, "y": 1780},
+      "parameters": {"level": 0.9, "loop": 0, "slices": 1}},
+
+    {"id": "comp", "type": "Compressor", "name": "Sidechain Bus Compressor",
+      "position": {"x": 1560, "y": 0},
+      "parameters": {"threshold": 0.25, "ratio": 4, "attack": 0.006, "release": 0.18, "makeup": 3}},
+    {"id": "svf", "type": "StateVariableFilter", "position": {"x": 1560, "y": 700},
+      "parameters": {"cutoff": 1200, "resonance": 0.42, "mode": 2}},
+    {"id": "sine", "type": "SineOscillator", "position": {"x": 1560, "y": 1360},
+      "parameters": {"frequency": 220, "feedback": 0}},
+    {"id": "formant", "type": "Formant", "position": {"x": 1560, "y": 1780},
+      "parameters": {"morph": 0.4, "emphasis": 0.6}},
+
+    {"id": "amp", "type": "Gain", "position": {"x": 2080, "y": 700},
+      "parameters": {"gain": 0.8}},
+    {"id": "drive", "type": "Drive", "position": {"x": 2080, "y": 960},
+      "parameters": {"drive": 0.55}},
+    {"id": "plug", "type": "PluginEffect", "plugin": "hall", "position": {"x": 2080, "y": 1360}},
+    {"id": "speech", "type": "Speech", "position": {"x": 2080, "y": 1780},
+      "parameters": {"pitch": 1, "speed": 1, "level": 0.8, "loop": 0}},
+
+    {"id": "delay", "type": "Delay", "position": {"x": 2600, "y": 620},
+      "parameters": {"time": 0.25, "feedback": 0.35, "mix": 0.3}},
+    {"id": "comb", "type": "Comb", "position": {"x": 2600, "y": 960},
+      "parameters": {"time": 0.004, "feedback": 0.7, "damp": 0.3}},
+    {"id": "mix2", "type": "Mixer", "name": "Voices", "position": {"x": 2600, "y": 1780},
+      "parameters": {"level1": 0.8, "level2": 0.5, "level3": 0, "level4": 0}},
+
+    {"id": "mix", "type": "Mixer", "name": "Master", "position": {"x": 3120, "y": 1100},
+      "parameters": {"level1": 0.7, "level2": 0.5, "level3": 0.6, "level4": 0.4}},
+
+    {"id": "out", "type": "Output", "host": "stereo", "position": {"x": 3640, "y": 1100},
+      "parameters": {"level": 0.8, "safety_limit": 1}}
+  ],
+  "connections": [
+    {"from": {"node": "clk", "port": "gate"}, "to": {"node": "euc", "port": "clock"}},
+    {"from": {"node": "clk", "port": "gate"}, "to": {"node": "seq", "port": "clock"}},
+    {"from": {"node": "clk", "port": "gate"}, "to": {"node": "snh", "port": "trigger"}},
+
+    {"from": {"node": "keys", "port": "frequency"}, "to": {"node": "saw", "port": "frequency"}},
+    {"from": {"node": "keys", "port": "gate"}, "to": {"node": "env", "port": "gate"}},
+    {"from": {"node": "keys", "port": "frequency"}, "to": {"node": "speech", "port": "note"}},
+    {"from": {"node": "euc", "port": "gate"}, "to": {"node": "speech", "port": "trigger"}},
+
+    {"from": {"node": "noise", "port": "out"}, "to": {"node": "snh", "port": "in"}},
+    {"from": {"node": "noise", "port": "out"}, "to": {"node": "comp", "port": "sidechain"}},
+    {"from": {"node": "snh", "port": "out"}, "to": {"node": "quant", "port": "in"}},
+    {"from": {"node": "quant", "port": "out"}, "to": {"node": "sine", "port": "frequency"}},
+
+    {"from": {"node": "seq", "port": "out"}, "to": {"node": "add", "port": "a"}},
+    {"from": {"node": "cc", "port": "out"}, "to": {"node": "add", "port": "b"}},
+    {"from": {"node": "add", "port": "out"}, "to": {"node": "mul", "port": "a"}},
+    {"from": {"node": "mul", "port": "out"}, "to": {"node": "svf", "port": "cutoff_mod"}},
+
+    {"from": {"node": "saw", "port": "out"}, "to": {"node": "svf", "port": "in"}},
+    {"from": {"node": "svf", "port": "out"}, "to": {"node": "amp", "port": "in"}},
+    {"from": {"node": "env", "port": "out"}, "to": {"node": "amp", "port": "gain"}},
+    {"from": {"node": "amp", "port": "out"}, "to": {"node": "drive", "port": "in"}},
+    {"from": {"node": "drive", "port": "out"}, "to": {"node": "comb", "port": "in"}},
+    {"from": {"node": "comb", "port": "out"}, "to": {"node": "delay", "port": "in"}},
+    {"from": {"node": "delay", "port": "out"}, "to": {"node": "mix", "port": "in1"}},
+
+    {"from": {"node": "sine", "port": "out"}, "to": {"node": "plug", "port": "left"}},
+    {"from": {"node": "plug", "port": "left"}, "to": {"node": "mix", "port": "in2"}},
+
+    {"from": {"node": "audin", "port": "left"}, "to": {"node": "comp", "port": "in"}},
+    {"from": {"node": "comp", "port": "out"}, "to": {"node": "mix", "port": "in3"}},
+
+    {"from": {"node": "ntrig", "port": "bus"}, "to": {"node": "bus", "port": "bus"}},
+    {"from": {"node": "bus", "port": "t1"}, "to": {"node": "samp", "port": "gate"}},
+    {"from": {"node": "samp", "port": "out"}, "to": {"node": "formant", "port": "in"}},
+    {"from": {"node": "lfo", "port": "out"}, "to": {"node": "formant", "port": "morph"}},
+    {"from": {"node": "formant", "port": "out"}, "to": {"node": "mix2", "port": "in1"}},
+    {"from": {"node": "speech", "port": "out"}, "to": {"node": "mix2", "port": "in2"}},
+    {"from": {"node": "mix2", "port": "out"}, "to": {"node": "mix", "port": "in4"}},
+
+    {"from": {"node": "mix", "port": "out"}, "to": {"node": "out", "port": "left"}},
+    {"from": {"node": "mix", "port": "out"}, "to": {"node": "out", "port": "right"}}
+  ]
+}
