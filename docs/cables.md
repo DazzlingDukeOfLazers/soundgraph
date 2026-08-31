@@ -198,22 +198,113 @@ until you need to trace a route.
 | local to the crossing | the gap is the upper cable's width plus clearance either side, `span_at` walks the path to that length, and `editor_test` holds it at exactly that |
 | deterministic priority | connection order, which is the file's order — the same rule the layer already used, and nothing semantic invented about which cable deserves to be on top |
 
-### The open question: conditional or unconditional
+### Goal 1.1 — unconditional, and the grammar closes
 
-Shipped **same-colour only**, as instructed. Both are rendered
-(`crossing-knockout-*.png` and `crossing-knockout-all-*.png`) and neither looks wrong.
+Both rules were rendered and the conditional one lost on **meaning**, not on ink.
 
-The argument for making it unconditional is worth putting on the record, because it is not
-about ink: **a treatment that appears at some crossings and not others is a channel that
-looks like it means something.** A reader who sees a gap at one intersection and none at the
-next cannot recover "these two happened to be the same colour" as the reason. The cost is
-forty-two more units of ink across fifteen more crossings, and the frames at 100% and 40%
-show no artefact from it.
+What a knockout says is *these two paths cross here; they do not join*. That is true of a
+blue over a blue and equally true of a blue over a green. Applying it only where the hues
+coincide makes its presence a fact about the palette rather than about the graph — an
+unexplained channel that looks like it means something and whose real rule no reader can
+recover. The cost of dropping the condition was forty-two ink units across fifteen more
+crossings, and neither the 100% nor the 40% frame shows an artefact from it.
 
-Against it: the colours already answer a mint-over-blue crossing, and ink spent on a case
-that is already answered is ink spent.
+The rule, final:
 
-Not decided here.
+```
+true transverse crossing          knockout
+shared endpoint, fan-out          never
+an actual junction                never
+colour                            irrelevant
+z-order                           connection order; deterministic, and means nothing
+```
+
+Which leaves the crossing grammar as small as it can be:
+
+> **A gap means a crossing. A continuous meeting means a connection.**
+
+**Goal 1 is frozen.**
+
+## Goal 2 — route focus by suppression
+
+Aimed at the long-route problem the baseline measured. The mechanism is a prohibition:
+
+> **The focused cable is drawn at its ordinary resting appearance.** No extra width, no
+> saturation, no glow, no brightening. Focus works because the noise leaves.
+
+Two questions, kept separate. **Cable hover** focuses one connection. **Port hover** focuses
+everything plugged into that one port, because an output with three cables on it really is
+one source feeding three destinations and should read as a family. Neither propagates
+through a node: a cable graph is not a semantic signal chain, and lighting the whole
+downstream network is a different feature with a different meaning.
+
+Crossings are untouched. A dimmed cable still crosses rather than joins, and which cable is
+over does not depend on what the pointer is doing — that would make focus mutate geometry.
+Nodes are untouched entirely, so that this step answers about cables alone.
+
+### The mechanism had to change, and that is the finding
+
+Alpha was the obvious implementation and it does not work. A cord is **six stacked passes**
+— two shadows, two shell strokes, a body and a highlight — and scaling each one's alpha
+independently leaves the composite far more opaque than the number says:
+
+```
+                alpha-scaled          mixed toward the ground
+nominal      background   ratio       background   ratio
+  0.65          0.905      1.11          0.814      1.23
+  0.45          0.820      1.23          0.710      1.41
+  0.25          0.697      1.44          0.608      1.64
+```
+
+At a nominal 45% the alpha version bought a 1.23 luminance ratio, and the three specimens
+were nearly the same picture — the number meant nothing. Mixing each coloured pass toward
+the canvas instead gives a reduction that lands where it is asked to. Hue direction, width
+and path are untouched; what changes is contrast against the ground.
+
+### The level
+
+**0.25 ships, and it was not the expected winner.** The prior was 40–50%, and that was a
+good prior for a mechanism that delivers its nominal figure. This one delivers less, so the
+same effect needs a lower number.
+
+The figure to carry forward is **the achieved ratio, 1.64**, not the nominal 0.25. If the
+mechanism changes again, re-derive the nominal from the ratio.
+
+At 0.25 on the hostile graph at 40%, the focused route threads unmistakably from the
+keyboard down to Speak, and every suppressed cable is still visible with the topology of the
+rest of the patch intact. Nothing has vanished, which is the stated win condition — the
+quietest background that still leaves the network there. At 0.45 the focused route is hard
+to pick out of the field.
+
+### What was measured, not eyeballed
+
+```
+focused keeps      1.002 / 1.000 / 0.998    the prohibition, at all three levels
+routes             point-identical in graph space, focused and not
+crossings          same count, same positions, focused and not
+cable hover        exactly one connection unsuppressed
+port hover         exactly the cables on that port
+nodes              2 sampled pixels, on one short cable near a node edge
+```
+
+### Three instruments were wrong before one was right
+
+Worth recording, because every one of them failed the same way — **a reference frame is only
+a reference for as long as nothing has moved, and in a live program that is about four
+frames.**
+
+1. The luminance ratio compared the focused cables against the background cables. They are
+   different cables carrying different signals and mint is brighter than periwinkle: at 65%
+   suppression it reported the background as *brighter* than the focus.
+2. The node check diffed against a resting frame from the top of the run and reported a
+   floor of 33 changed pixels rising to 180 by the end **in the baseline scene**, where
+   nothing is focused. Not jitter — drift, something in the editor settling over minutes.
+3. With the reference fixed, the focused set still read 0.505. The port-hover cables sit
+   off-screen at 100% in a patch four thousand units wide, and their empty readings were
+   being averaged in as "this cable is black".
+
+All three are now measured from one before/after pair captured back to back, with the view
+centred on the cables being asked about.
 
 ### What not to start with
 

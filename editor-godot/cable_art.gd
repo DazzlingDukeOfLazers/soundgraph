@@ -281,6 +281,32 @@ class Style extends RefCounted:
 	## between two jacks scales with the plug that has to fit in it.
 	var screen_scale := 1.0
 
+	## How loudly this cable is drawn, from 1.0 at rest down to nearly nothing.
+	##
+	## Cable pass, goal 2. Focus in this program works by the field getting **quieter**,
+	## not by the chosen route shouting: a focused cable is drawn at its ordinary resting
+	## appearance and everything unrelated is suppressed. That is the whole mechanism, and
+	## it is why this is a property of the cables that are *not* being looked at.
+	##
+	## Alpha only. Hue, width, path and the goal 1 knockout geometry are untouched, so a
+	## suppressed cable is the same cable seen through less contrast — it still crosses
+	## rather than joins, and it is still the colour it was.
+	var prominence := 1.0
+
+	## The colour a suppressed cable is mixed toward, which is the canvas it lies on.
+	##
+	## Suppression cannot be done by scaling alpha, and the first attempt proved it: a cord
+	## is six stacked passes — two shadows, two shell strokes, a body and a highlight — and
+	## scaling each one's alpha independently leaves the composite far more opaque than the
+	## number suggests. At a nominal 45% the measured luminance ratio was 1.23, and at 25%
+	## it was 1.44, so the three specimens were nearly the same picture and the nominal
+	## figure meant nothing.
+	##
+	## Mixing toward the ground instead gives a reduction that lands where it is asked to.
+	## Hue direction, width and path are untouched; what changes is contrast against the
+	## canvas, which is what prominence means.
+	var ground := Color(0.0, 0.0, 0.0, 0.0)
+
 	func scaled(zoom: float) -> Style:
 		var out := Style.new()
 		for property in get_property_list():
@@ -465,20 +491,35 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 		return
 	var level := style.detail()
 
+	# Goal 2. One multiplier applied to every pass, so a suppressed cable is the same
+	# drawing at less contrast rather than a different drawing. Named rather than inlined
+	# because it appears six times below and a stack where five passes dim and one does not
+	# is a cable with a bright outline round it.
+	var loud: float = clampf(style.prominence, 0.0, 1.0)
+	# Toward the canvas by however much prominence was given up. A pass with no ground to
+	# mix toward falls back to its own colour, so a caller that never sets one is
+	# unaffected — which is every caller that does not suppress.
+	var quiet := func(ink: Color) -> Color:
+		if loud >= 1.0 or style.ground.a <= 0.0:
+			return ink
+		var mixed := ink.lerp(style.ground, 1.0 - loud)
+		mixed.a = ink.a
+		return mixed
+
 	if level != Detail.ICON:
 		# Two passes rather than one, which is the cheapest convincing softness there is:
 		# a wide faint one that lands on the faceplate and a tighter one that sits under
 		# the cable. One hard-edged shadow reads as a second cable drawn in black; this
 		# reads as the panel darkening under something lying across it.
 		canvas.draw_polyline(shifted(points, style.shadow_offset * 1.9),
-			Color(0.0, 0.0, 0.0, style.shadow_alpha * 0.55),
+			Color(0.0, 0.0, 0.0, style.shadow_alpha * 0.55 * loud),
 			style.shadow_width + style.thickness * 0.7, true)
 		canvas.draw_polyline(shifted(points, style.shadow_offset),
-			Color(0.0, 0.0, 0.0, style.shadow_alpha), style.shadow_width, true)
+			Color(0.0, 0.0, 0.0, style.shadow_alpha * loud), style.shadow_width, true)
 
 	var body_width := style.thickness * style.body_core
 	if level == Detail.FULL:
-		var edge := darken(colour, style.edge_darken)
+		var edge: Color = quiet.call(darken(colour, style.edge_darken))
 		# The shell, in two passes over one envelope: a centred tube at full width, so
 		# the body sits inside a darker version of itself all the way round, and the
 		# offset pass toward lower-right, where the light does not reach — which keeps
@@ -492,11 +533,12 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 			style.thickness, true)
 		_round_joins(canvas, points, style.edge_offset, edge, style.thickness)
 
-	canvas.draw_polyline(points, colour, body_width, true)
-	_round_joins(canvas, points, Vector2.ZERO, colour, body_width)
+	var body: Color = quiet.call(colour)
+	canvas.draw_polyline(points, body, body_width, true)
+	_round_joins(canvas, points, Vector2.ZERO, body, body_width)
 	canvas.draw_polyline(shifted(points, style.highlight_offset),
-		Color(lighten(colour, style.highlight_lighten), style.highlight_alpha),
-		style.highlight_width, true)
+		Color(quiet.call(lighten(colour, style.highlight_lighten)),
+			style.highlight_alpha * loud), style.highlight_width, true)
 
 
 ## Where one cable crosses another, as points on the upper cable's path.
@@ -562,11 +604,52 @@ static var crossing_style := Crossing.KNOCKOUT
 
 ## Whether the treatment is applied only where both cables are the same colour.
 ##
-## Same-colour first, because that is what the baseline measured as the defect. Whether
-## treating all thirty-two reads better than conditionally treating fifteen is a question
-## the sheet answers rather than one to assume — a conditional treatment is a rule with an
-## exception in it, and those have to earn their keep.
-static var crossing_same_colour_only := true
+## **False, since goal 1.1, and this is a harness hook rather than a setting.** The sheet
+## rendered both and the conditional rule lost on meaning rather than on ink.
+##
+## What a knockout says is *these two paths cross here; they do not join*, and that is true
+## of a blue crossing a blue and equally true of a blue crossing a green. Applying it only
+## where the hues happen to coincide makes its presence a fact about the palette rather than
+## about the graph — an unexplained channel that looks like it means something, and whose
+## real rule no reader can recover. The cost of dropping the condition was forty-two ink
+## units across fifteen more crossings, which is nothing.
+##
+## So the grammar is now as simple as it can be:
+##
+## > **A gap means a crossing. A continuous meeting means a connection.**
+static var crossing_same_colour_only := false
+
+## The suppression levels goal 2 proofs, and the one it shipped.
+##
+## Starting specimens rather than tokens: three points across the plausible range, judged on
+## the hostile graph, choosing the quietest background at which the topology of the rest of
+## the patch is still readable. A background that vanishes has not been suppressed, it has
+## been deleted, and a reader who cannot see where the other cables go cannot tell what the
+## focused one is threading through.
+const SUPPRESSION_LEVELS := [0.65, 0.45, 0.25]
+
+## What an unrelated cable is drawn at while something else is focused.
+##
+## 0.25, which is the quietest of the three specimens and was not the expected winner. The
+## prior was 40-50%, and it was a good prior for a mechanism that delivers its nominal
+## figure. This one does not: the number is a mix toward the canvas and the *achieved*
+## luminance ratio between a focused cable and the field is what a reader actually receives.
+##
+## [codeblock]
+## nominal   focused keeps   background keeps   ratio
+##   0.65        1.002            0.814          1.23
+##   0.45        1.000            0.710          1.41
+##   0.25        0.998            0.608          1.64
+## [/codeblock]
+##
+## So 1.64 is the figure to carry forward, not 0.25. If the mechanism ever changes, re-derive
+## the nominal from the ratio rather than keeping this number.
+##
+## At 0.25 the hostile graph still reads: every suppressed cable is visible, the topology of
+## the rest of the patch is intact, and nothing has vanished — which is the stated win
+## condition, the quietest background that still leaves the network there. At 0.45 the
+## focused route is hard to pick out of the field at 40%.
+static var suppression := 0.25
 
 ## Clearance either side of the upper cable, as a fraction of its own width. The gap has to
 ## read as a gap and not as a nick, and it must not be so wide that the lower cable looks

@@ -10546,6 +10546,11 @@ func _apply_detail(level: int) -> void:
 func _on_port_hovered(widget_name: String, side: String, index: int) -> void:
 	if graph_edit == null:
 		return
+	# Cable pass, goal 2. The cable field gets quieter around whatever the pointer is
+	# asking about, and a port is asking about everything plugged into it — which for an
+	# output is the fan-out, and a fan-out really is one source feeding several places.
+	graph_edit.focus_port = ("" if widget_name == ""
+		else "%s:%s:%d" % [widget_name, side, index])
 	if widget_name == "":
 		graph_edit.tooltip_text = ""
 		return

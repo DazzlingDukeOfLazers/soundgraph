@@ -1,0 +1,27 @@
+{
+  "complaints": [
+    "short-cable @65%: 2 node pixels changed",
+    "short-cable @45%: 2 node pixels changed",
+    "short-cable @25%: 2 node pixels changed"
+  ],
+  "fan_out": 3,
+  "levels": {
+    "25": {
+      "background_keeps": 0.608,
+      "focused_keeps": 0.998,
+      "ratio": 1.64
+    },
+    "45": {
+      "background_keeps": 0.71,
+      "focused_keeps": 1.0,
+      "ratio": 1.41
+    },
+    "65": {
+      "background_keeps": 0.814,
+      "focused_keeps": 1.002,
+      "ratio": 1.23
+    }
+  },
+  "longest": 2190.5,
+  "shortest": 122.0
+}

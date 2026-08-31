@@ -925,6 +925,11 @@ func _view_fingerprint() -> String:
 	# count, and a cord that lags its own route during the drag looks broken in the
 	# hand.
 	parts.append(str(waypoints.hash()))
+	# What the pointer is asking about. The cord layer redraws off this fingerprint, so a
+	# focus the fingerprint does not mention is a focus that arrives one unrelated edit
+	# later — which is the whole of the treatment failing to appear.
+	parts.append(focus_port)
+	parts.append(str(hovered_cable.hash()))
 	for child in get_children():
 		if child is GraphNode:
 			parts.append("%s:%.0f,%.0f,%.0f,%.0f" % [child.name,
@@ -955,6 +960,18 @@ var hovered_port: Dictionary = {}
 ## that is the only thing anybody wanted to know, which is why following one by eye is
 ## the gesture this view asks for most and supports least.
 var hovered_cable: Dictionary = {}
+
+## The port the pointer is asking about, as "widget:side:index", or empty.
+##
+## Cable pass, goal 2. Separate from `hovered_cable` because the two ask different
+## questions of the field. Hovering a cable means *this connection*; hovering a port means
+## *everything plugged into this port*, which for an output is a fan-out and really is one
+## source feeding several destinations — a family, and it should read as one.
+##
+## Deliberately one connection deep. A cable graph is not a semantic signal chain: the
+## nodes in between transform things, and "light the whole downstream network" is a
+## different feature with a different meaning.
+var focus_port := ""
 
 signal port_hovered(widget_name: String, side: String, index: int)
 
@@ -2622,7 +2639,10 @@ class CordLayer extends Control:
 			# clock's three-way fan-out was being marked as three crossings.
 			cords.append([local, cord_ink,
 				"%s:%d" % [str(connection["from_node"]), int(connection["from_port"])],
-				"%s:%d" % [str(connection["to_node"]), int(connection["to_port"])]])
+				"%s:%d" % [str(connection["to_node"]), int(connection["to_port"])],
+				"%s:%d>%s:%d" % [str(connection["from_node"]),
+					int(connection["from_port"]), str(connection["to_node"]),
+					int(connection["to_port"])]])
 		return cords
 
 
@@ -2647,6 +2667,14 @@ class CordLayer extends Control:
 		# canvas rather than being a constant that drifts out of step with it.
 		var ground: Color = graph.get_theme_color("bg", "GraphEdit") \
 			if graph.has_theme_color("bg", "GraphEdit") else Color(0.13, 0.14, 0.17)
+		# Goal 2: what the pointer is asking about, and therefore which cords get quieter.
+		# Nothing focused is the ordinary case and costs nothing — every cord stays at 1.0
+		# and the graph is exactly what it was.
+		var focused := _focus_of(cords)
+
+		# The canvas a suppressed cord is mixed toward. The same colour a knockout is cut
+		# in, because they are the same fact: this is what is behind a cable.
+		style.ground = ground
 		var laid: Array = []
 		for entry in cords:
 			var meetings: Array = []
@@ -2670,8 +2698,37 @@ class CordLayer extends Control:
 			var drawn: PackedVector2Array = entry[0]
 			if CableArt.crossing_style == CableArt.Crossing.BUMP:
 				drawn = CableArt.bumped(drawn, meetings, style)
+			# The focused cable is drawn at its ordinary resting appearance. Focus works
+			# because the noise leaves, not because the chosen route shouts.
+			var lit: bool = focused.is_empty() or focused.has(entry[4])
+			style.prominence = 1.0 if lit else CableArt.suppression
 			CableArt.draw_cable(self, drawn, entry[1], style)
+			style.prominence = 1.0
 			laid.append(entry)
+
+
+	## Which cords the pointer is asking about, by their own keys. Empty means nothing is
+	## focused, which is not the same as nothing matching — a port hover that lands on an
+	## unconnected socket suppresses nothing rather than suppressing everything.
+	func _focus_of(cords: Array) -> Dictionary:
+		var wanted := {}
+		if graph.focus_port != "":
+			var parts: PackedStringArray = graph.focus_port.split(":")
+			if parts.size() == 3:
+				# An output is index 2 of a cord's key pair, an input is index 3.
+				var at := "%s:%s" % [parts[0], parts[2]]
+				var slot: int = 2 if parts[1] == "right" else 3
+				for entry in cords:
+					if entry[slot] == at:
+						wanted[entry[4]] = true
+		elif not graph.hovered_cable.is_empty():
+			var fields: Array = graph._connection_fields(graph.hovered_cable)
+			var key := "%s:%d>%s:%d" % [str(fields[0]), int(fields[1]),
+				str(fields[2]), int(fields[3])]
+			for entry in cords:
+				if entry[4] == key:
+					wanted[key] = true
+		return wanted
 
 	## Whether two cords are drawn in the same ink, which is what makes a crossing
 	## ambiguous in the first place.

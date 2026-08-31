@@ -11200,8 +11200,8 @@ func _initialize() -> void:
 	# that decide where it is applied at all.
 	check(CableArtScript.crossing_style == CableArtScript.Crossing.KNOCKOUT,
 		"the shipped crossing treatment is the knockout")
-	check(CableArtScript.crossing_same_colour_only,
-		"and it is applied where the colours cannot tell the strands apart")
+	check(not CableArtScript.crossing_same_colour_only,
+		"and it is applied at every true crossing, whatever the two cables are coloured")
 
 	# The gap is local and it is a specific length: the upper cable's width plus clearance
 	# either side. A treatment that ran along the cable would be a second channel painted
@@ -11252,6 +11252,71 @@ func _initialize() -> void:
 						on_a_port += 1
 		check(on_a_port == 0,
 			"and none of them is a fan-out meeting at its own port (%d)" % on_a_port)
+
+	# ---- cable pass, goal 2: focus by suppression ------------------------------------
+	# The pictures and the luminance ratios are `focus_sheet.gd`'s job. What is checkable
+	# without a rendering server is the rule that decides which cables are left alone, and
+	# the prohibition the whole treatment rests on.
+	check(absf(CableArtScript.suppression - 0.25) < 0.001,
+		"unrelated cables are suppressed to a quarter (%.2f)"
+			% CableArtScript.suppression)
+	check(absf(CableArtScript.Style.new().prominence - 1.0) < 0.001,
+		"and a cable is at full prominence unless something else is focused")
+
+	if cord_layer != null:
+		var all_cords: Array = cord_layer._lay()
+		main.graph_edit.focus_port = ""
+		main.graph_edit.hovered_cable = {}
+		check((cord_layer._focus_of(all_cords) as Dictionary).is_empty(),
+			"nothing hovered focuses nothing, so the field is undisturbed at rest")
+
+		# A cable hover is one connection and stops there. Not the chain it sits in: the
+		# nodes between transform things, and lighting the downstream network is a
+		# different feature with a different meaning.
+		var first_cord: Array = all_cords[0]
+		var ends: PackedStringArray = str(first_cord[4]).split(">")
+		var from_end: PackedStringArray = ends[0].split(":")
+		var to_end: PackedStringArray = ends[1].split(":")
+		main.graph_edit.hovered_cable = {"from_node": from_end[0],
+			"from_port": int(from_end[1]), "to_node": to_end[0],
+			"to_port": int(to_end[1])}
+		check((cord_layer._focus_of(all_cords) as Dictionary).size() == 1,
+			"a cable hover focuses exactly that connection")
+		main.graph_edit.hovered_cable = {}
+
+		# A port hover is the family plugged into it, which for an output is the fan-out.
+		var busiest_port := ""
+		var fanned := {}
+		for one: Array in all_cords:
+			fanned[one[2]] = int(fanned.get(one[2], 0)) + 1
+			if busiest_port == "" or int(fanned[one[2]]) > int(fanned.get(busiest_port, 0)):
+				busiest_port = str(one[2])
+		var on_that_port := 0
+		for one: Array in all_cords:
+			if str(one[2]) == busiest_port:
+				on_that_port += 1
+		var port_parts: PackedStringArray = busiest_port.split(":")
+		main.graph_edit.focus_port = "%s:right:%s" % [port_parts[0], port_parts[1]]
+		check((cord_layer._focus_of(all_cords) as Dictionary).size() == on_that_port,
+			"a port hover focuses exactly the %d cables on that port" % on_that_port)
+
+		# And focus moves nothing. The route is a fact about the document; a treatment
+		# that redrew it would have changed the patch to answer a question about it.
+		var relaid: Array = cord_layer._lay()
+		var routes_moved := 0
+		for i in all_cords.size():
+			var was: PackedVector2Array = all_cords[i][0]
+			var now: PackedVector2Array = relaid[i][0]
+			if was.size() != now.size():
+				routes_moved += 1
+				continue
+			for step in was.size():
+				if was[step].distance_to(now[step]) > 0.01:
+					routes_moved += 1
+					break
+		check(routes_moved == 0,
+			"and no route moves because something is focused (%d)" % routes_moved)
+		main.graph_edit.focus_port = ""
 
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with

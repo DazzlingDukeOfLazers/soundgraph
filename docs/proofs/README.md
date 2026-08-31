@@ -20,6 +20,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `width-classes.json` | `width_sheet.gd` | each type's preferred width, its required class per scale, and the verdict against its declared class |
 | `dense-graph-qa.json` | `qa_sheet.gd` | the eighty-frame matrix: health, identity variants, title columns, and every complaint (none) |
 | `crossing-separation.json` | `crossing_sheet.gd` | goal 1: the same-colour crossings, and the ink each of the four constructions introduces at them |
+| `focus-suppression.json` | `focus_sheet.gd` | goal 2: the three suppression levels, what each keeps of its resting luminance, and the achieved ratio |
 | `cable-baseline.json` | `cable_baseline.gd` | the cable pass's step 1: every route's length and detour, every crossing's position, angle and colour pair, every bundle, every trespass, and the cable share of the patch at four zooms |
 
 ## The sheets, on demand
@@ -57,6 +58,9 @@ CABLE_BASELINE_OUT=/tmp/p godot --headless --path editor-godot --script cable_ba
 
 # goal 1: none / halo / knockout / bump on the same-colour crossings, plus the ink
 CROSSING_SHEET_OUT=/tmp/p godot --path editor-godot --script crossing_sheet.gd
+
+# goal 2: five focus scenes at three suppression levels, plus the invariants
+FOCUS_SHEET_OUT=/tmp/p godot --path editor-godot --script focus_sheet.gd
 ```
 
 `godot` is whatever `git config soundgraph.godot` names.
