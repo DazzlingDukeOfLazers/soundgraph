@@ -484,39 +484,71 @@ accident.
 
 ### On the Noun Project
 
-There is no Noun Project integration in this repository and no key on this machine: no
-client, no environment variable, nothing in `tools/`, nothing in the history. So no search
-was run and nothing was mined, and there is no attribution to record — a reference log for
-searches that did not happen would be worse than no log.
+The client is `TheMutantFactory/noun-project-utils` — a standard-library Python CLI for
+API v2, whose credentials resolve from `NOUN_KEY`/`NOUN_SECRET`, then
+`~/.config/noun/credentials.cfg`, then the Dot-Gobbler game's own Godot store. It was
+already on this machine and already authenticated, which the first pass of this step
+failed to find and wrongly reported as "no integration anywhere". The search below is what
+that pass should have contained.
 
-It costs the step nothing. The brief's own preferred metaphor for two of the three is
-"locally drawn", and the third came down to two candidates that are both schematic
-conventions rather than anybody's artwork. If the API is wired up later, the place to use
-it is the rollout, where fifty types need concepts rather than three.
+**It cost nothing.** `search` and `usage` are free; only `GET /v2/icon/{id}` is metered.
+The metered counter read 2 before this step and 2 after; the free counter went 9 to 24.
+And search results carry `thumbnail_url` on the static CDN, so every candidate below was
+**looked at**, as a contact sheet of PNGs, without a download being charged. That is the
+useful discovery for the rollout: the whole browsing half of this work is free, and the
+spend only begins if a mark is actually taken.
 
-**Where the precedent is.** Not in Raves of Qud — its working tree and every ref carry no
-mention. It is `TheMutantFactory/get-in-loser`, which uses **Noun Project API v2**
-(`GET /v2/icon/{id}`) and commits the *result* rather than a client:
+### What the corpus said about the three concepts
 
 ```
-assets/noun-4398322-source.png   the downloaded original, kept so the derived files
-                                 can be rebuilt instead of being mystery binaries
-assets/icon-licenses.json        id, term, creator, collection, tags, licence, url,
-                                 what it is used for, source file, derived files
-assets/generate_assets.py        rebuilds every derived image, byte-for-byte
-assets/README.md                 the attribution, in prose, with the modifications named
+concept    searched                                   read
+amplifier  "amplifier", "operational amplifier",      1013490, 5944775, 6311101,
+           "gain"                                     1375352/3, 8455775, 8372410
+filter     "low pass filter", "audio filter",         4799932, 4799936, 4799937,
+           "frequency response", "filter cutoff"      6041992, 627910, 5341173
+envelope   "adsr envelope"                            6850395, 385861-385867
 ```
 
-No key is committed anywhere, which is right, and no client either: that fetch was made
-once by hand and its answer was written down. So a key would have to be handed over
-before any mining could happen here, and it should arrive as an environment variable
-rather than in the repository.
+**Nothing was redrawn.** All three marks are the convention the corpus converges on, which
+is the outcome to want from a search like this — it is evidence the marks are readable by
+people who have never seen this program, not a shopping trip.
 
-That layout is the template if SoundGraph ever does source a glyph — a source file, a
-licence record, a generator, and prose attribution, all separate from the normalised
-in-product mark. One thing it would add that SoundGraph does not have yet: CC BY 3.0
-wants visible attribution, so a sourced icon means the application needs somewhere to
-show it. Help is where that would go.
+- **The amplifier.** Every serious result is the schematic triangle. `1013490` is the
+  cleanest of them and is the same drawing as ours. What the corpus adds is a
+  *subtraction*: they nearly all carry `+`/`−` input pins and power rails, and ours must
+  not. Those pins make it an op-amp, and a Gain node is a gain stage, not a part.
+- **"gain" is a financial word.** `8372410`, `8228118`, `7593916`, `6775810` are all
+  arrows, bar charts and dollar coins. Worth knowing beyond this step: it is a term the
+  browser's search should not lean on either.
+- **The response curve.** `4799932` (`lpf`, Slamet Widodo, from a collection called
+  Signal Processors, 158763) is our mark almost exactly — flat, a knee, away down the top
+  end. Two things come with it. Its siblings `4799936` (`hpf`) and `4799937` (`bpf`) are
+  the same drawing mirrored and humped, so **the filter family already has a drawing rule**
+  waiting for the day HighPass and BandPass need marks. And it draws axes, which ours does
+  not; at an 18-pixel header those lines would be a pixel of clutter, so the omission
+  stands, but it is now a decision rather than an oversight.
+- **The two rejected metaphors are both in the corpus, and both are worse.** `627910` is
+  the funnel — a picture of a filter — and `6041992` is a literal resistor and capacitor.
+  Step 9 turned both down on reasoning; the sheet is what that reasoning looks like at
+  150 pixels.
+- **The envelope.** `6850395` is the four-stage contour, same as ours. The better find is
+  `385861`-`385867`: one family that draws the *whole* envelope every time and solids only
+  the segment being named, dashing the rest. That is a real technique for showing which
+  stage is running, and it is written down here because interaction states are step 11's
+  problem and this is the answer arriving early.
+
+### What is owed
+
+Nothing. No artwork was downloaded and none is used: these are conventions read off a
+corpus, and a schematic amplifier triangle is not anybody's copyright. So there is no
+attribution string to ship and the marks remain locally drawn.
+
+If a glyph is ever genuinely sourced, `TheMutantFactory/get-in-loser` is the layout to
+copy — the downloaded original kept so derived files can be rebuilt, a licence record with
+creator and terms, a generator, and the attribution in prose with the modifications named.
+It also names the thing SoundGraph would need and does not have: CC BY wants *visible*
+attribution, so a sourced icon means the application needs somewhere to show it, and that
+somewhere is Help.
 
 ### The marks
 
