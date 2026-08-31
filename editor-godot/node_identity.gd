@@ -49,7 +49,9 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	"SampleHold", "Clock", "Constant", "StepSequencer",
 	# 14D: where signals meet. There is no routing batch to run — see the note in GLYPH
 	# and docs/graph-nodes.md — so this is the combining half of it.
-	"Mixer", "Add", "Multiply", "Level", "StereoLevel"]
+	"Mixer", "Add", "Multiply", "Level", "StereoLevel",
+	# 14E: time and response shapes.
+	"Delay", "Comb", "Allpass", "Formant"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -96,6 +98,10 @@ const COMPACT := {
 	"Multiply": "Multiply",
 	"Level": "Level",
 	"StereoLevel": "Stereo",
+	"Delay": "Delay",
+	"Comb": "Comb",
+	"Allpass": "Allpass",
+	"Formant": "Formant",
 	# And three whose canonical name is already short enough to fit anywhere. They are
 	# written down anyway, because a compact name is part of a migrated type's contract
 	# rather than a repair applied when today's geometry happens to need one. A type
@@ -169,6 +175,18 @@ const GLYPH := {
 	# types sharing one mark is right when they are the same operation and the word beside
 	# it says which — the same reasoning that gives both noise sources one mark.
 	"Level": Icons.Kind.GAIN_TRIANGLE,
+	# 14E. Family follows what the mark means, not what the registry filed it under: the
+	# delay is temporal repetition, the comb and the formant are response shapes, and the
+	# allpass is nothing at all yet.
+	"Delay": Icons.Kind.ECHO_TRAIN,
+	"Comb": Icons.Kind.RESPONSE_COMB,
+	"Formant": Icons.Kind.RESPONSE_FORMANT,
+	# Allpass has no mark. Its magnitude response is flat, which Constant already owns;
+	# its phase response falls monotonically, which is the lowpass; and the Noun Project
+	# has no signal-domain metaphor for phase at all — "phase shift" returns project
+	# milestones and "Phaser" returns a ray gun. An arbitrary swirl would be a decoration
+	# pretending to be an identity. The cell is reserved, as the Phaser's is, and the two
+	# of them are consistent because they are the same unsolved problem.
 	"StereoLevel": Icons.Kind.GAIN_TRIANGLE,
 	# And the Phaser has none. Its family — things that happen over time — has not been
 	# drawn, and the identity cell is reserved whether or not a type has a mark, so a

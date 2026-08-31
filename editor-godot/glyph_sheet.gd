@@ -54,6 +54,12 @@ const TEMPORAL := ["PULSE_TRAIN", "HELD", "STEPS_ORDERED", "SLIDE", "FLAT", "ENV
 const COMBINING := ["ROUTE_MERGE", "ROUTE_SPLIT", "SUM_JUNCTION", "PRODUCT",
 	"GAIN_TRIANGLE", "CROSS"]
 
+## Time and response shapes, each against the mark it is most likely to be confused with.
+## Delay against the clock it is a decaying version of and the staircase it is not; comb
+## against the square and the sequencer; formant against the single bandpass peak.
+const EFFECTS := ["ECHO_TRAIN", "PULSE_TRAIN", "HELD", "RESPONSE_COMB", "SQUARE_WAVE",
+	"STEPS_ORDERED", "RESPONSE_FORMANT", "RESPONSE_BAND", "FLAT"]
+
 ## The contact sheet's own geometry. Every mark is shown at the same drawn size whatever
 ## it was rendered at, which is the only way four sizes can be compared: the 10-pixel cut
 ## and the 96-pixel one differ in how they are drawn, not in how big they are on the page.
@@ -75,8 +81,8 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(folder)
 
 	var names: Array = []
-	for group: Array in [COMBINING, GENERATORS, TEMPORAL, SPECIMENS, FIRST_SYNTH,
-			FILTERS, ROUTING]:
+	for group: Array in [EFFECTS, COMBINING, GENERATORS, TEMPORAL, SPECIMENS,
+			FIRST_SYNTH, FILTERS, ROUTING]:
 		for one: String in group:
 			if not names.has(one):
 				names.append(one)

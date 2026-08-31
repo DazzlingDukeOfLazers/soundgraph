@@ -99,6 +99,9 @@ enum Kind {
 	SLIDE,          ## a glide — the whole mark is the transition
 	SUM_JUNCTION,   ## signals added: the summing junction of every block diagram
 	PRODUCT,        ## signals multiplied: the same ring with a cross in it
+	ECHO_TRAIN,     ## a delay — the same event again, later and smaller
+	RESPONSE_COMB,  ## periodic notches: the notch response, repeated
+	RESPONSE_FORMANT,  ## two or three resonances: the bandpass peak, repeated
 	FLAT,           ## a constant — the value that does not change
 	MODULATION,     ## a slow wave that moves something else
 	ORIGINATE,      ## the patch's edge, signal entering
@@ -340,6 +343,23 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			for run: Array in GlyphGrammar.steps(small):
 				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
 					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.ECHO_TRAIN:
+			# Uprights on a baseline, falling away. The clock's are all one height; a
+			# delay's decay, which is the difference between an event generated over and
+			# over and an event repeated.
+			var heights: Array = GlyphGrammar.ECHO_HEIGHTS_SMALL if small \
+				else GlyphGrammar.ECHO_HEIGHTS
+			var floor_y := middle + reach * 0.85
+			_stroke(image, Vector2(middle - reach * 1.1, floor_y),
+				Vector2(middle + reach * 1.1, floor_y), colour)
+			for i in heights.size():
+				var x: float = middle + reach * lerpf(-0.78, 0.78,
+					float(i) / float(heights.size() - 1))
+				_stroke(image, Vector2(x, floor_y),
+					Vector2(x, floor_y - reach * 1.7 * float(heights[i])), colour)
+		Kind.RESPONSE_COMB, Kind.RESPONSE_FORMANT:
+			_polyline(image, GlyphGrammar.resonances(small,
+				kind == Kind.RESPONSE_FORMANT), middle, reach, colour)
 		Kind.SUM_JUNCTION, Kind.PRODUCT:
 			# The two signal-flow conventions, and they are a family: one ring, one mark
 			# inside it. The ring is drawn at every size and the mark inside it shrinks

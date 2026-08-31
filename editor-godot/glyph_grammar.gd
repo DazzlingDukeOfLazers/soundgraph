@@ -378,6 +378,55 @@ static func steps(small: bool) -> Array:
 	return runs
 
 
+## A comb's response: the notch, repeated. And a formant's: the bandpass peak, repeated.
+##
+## Neither is a new family. A comb filter puts periodic notches in a spectrum and a
+## formant filter puts two or three resonances in it, so both are the response grammar
+## with rule 9a applied — repetition count is silhouette. One dip is a notch and three
+## dips are a comb; one peak is a bandpass and three peaks are a formant.
+##
+## They are also each other's inverse, the way the notch and the bandpass are: dips in a
+## line that is otherwise passing, against peaks rising out of a line that is otherwise
+## not. That is the same pair of shapes the filter family already trades in, which is the
+## point of having a family.
+##
+## Drawn directly rather than through `polyline()`, because the knee rule is about a
+## single transition between two bands and these are a row of narrow features. A shoulder
+## on each side of three dips inside fifteen pixels is a solid bar.
+const RESONANCES := 3
+const RESONANCES_SMALL := 2
+## How much of each feature's slot the feature itself takes. Below about a third the dips
+## close up into hairlines at header size and the mark reads as a plain flat line.
+const FEATURE_WIDTH := 0.46
+
+
+## A row of dips (a comb) or of peaks (a formant), as points in reach units.
+static func resonances(small: bool, peaks: bool) -> Array:
+	var count: int = RESONANCES_SMALL if small else RESONANCES
+	var rest: float = STOP if peaks else PASS
+	var reach_to: float = PASS if peaks else STOP
+	var points: Array = [Vector2(LEFT, rest)]
+	var span := (RIGHT - LEFT) / float(count)
+	for i in count:
+		var middle := LEFT + span * (float(i) + 0.5)
+		var half := span * FEATURE_WIDTH * 0.5
+		points.append(Vector2(middle - half, rest))
+		points.append(Vector2(middle, reach_to))
+		points.append(Vector2(middle + half, rest))
+	points.append(Vector2(RIGHT, rest))
+	return points
+
+
+## A delay: the same event again, later and smaller.
+##
+## Deliberately close to the clock and deliberately not it. Both are uprights on a
+## baseline, because both are events in time; what separates them is that a clock's are
+## all the same height and a delay's fall away. Regular means generated, decaying means
+## repeated — and that is the whole difference between the two nodes.
+const ECHO_HEIGHTS := [1.0, 0.6, 0.32]
+const ECHO_HEIGHTS_SMALL := [1.0, 0.5]
+
+
 # ---- the combining family -------------------------------------------------------------
 #
 # What happens where signals meet. The signal-flow conventions, which are a family already

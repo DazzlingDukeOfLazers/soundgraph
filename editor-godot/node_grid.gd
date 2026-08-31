@@ -218,6 +218,11 @@ const WIDTH_CLASS := {
 	"Level": Width.NARROW,
 	"Mixer": Width.STANDARD,
 	"StereoLevel": Width.STANDARD,
+	# 14E, by the validator. Nothing here needed a class that did not exist either.
+	"Allpass": Width.STANDARD,
+	"Formant": Width.STANDARD,
+	"Delay": Width.WIDE,
+	"Comb": Width.WIDE,
 }
 
 

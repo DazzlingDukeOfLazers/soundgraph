@@ -1260,3 +1260,65 @@ every interface scale.
 
 Twenty migrated types now, and the validator reports every one of them standing at the
 smallest class it is valid at.
+
+## Step 14E — time, and response shapes
+
+Four types, and the interesting thing is that they did not form a family. The registry
+files Delay, Comb and Allpass under Time and Formant under Filters; the marks went the
+other way, because **family membership follows what a mark means and not what the registry
+filed it under.**
+
+```
+Delay      temporal repetition      the clock's uprights, decaying
+Comb       a response shape         the notch, repeated
+Formant    a response shape         the bandpass peak, repeated
+Allpass    nothing yet              the cell is reserved
+```
+
+No effects family was manufactured. There is no wavy line that means "this is an effect",
+and there should not be.
+
+### The comb and the formant are rule 9a again
+
+Neither is new. A comb filter puts periodic notches in a spectrum and a formant filter
+puts two or three resonances in it, so both are the response grammar with **repetition
+count as silhouette**: one dip is a notch and three dips are a comb, one peak is a
+bandpass and three peaks are a formant.
+
+They are also each other's inverse, the way the notch and the bandpass already were —
+dips in a line that is otherwise passing, against peaks rising out of a line that is
+otherwise not. That is the same pair of shapes the family already trades in, which is what
+a family is for.
+
+Drawn directly rather than through the response plan, because the knee rule is about a
+single transition between two bands and these are a row of narrow features. A shoulder on
+each side of three dips inside fifteen pixels is a solid bar.
+
+### The delay is the clock, decaying
+
+Deliberately close to it and deliberately not it. Both are uprights on a baseline, because
+both are events in time. What separates them is that a clock's are all one height and a
+delay's fall away — **regular means generated, decaying means repeated**, and that is
+exactly the difference between the two nodes.
+
+The collision sheet carries the pairs the batch was most likely to fail on, and none of
+them do: delay against clock and against sample-and-hold, comb against square and against
+the sequencer, formant against the single bandpass peak.
+
+### The allpass has no mark, and the corpus agrees
+
+Its magnitude response is flat, which `Constant` already owns. Its phase response falls
+monotonically, which is the lowpass. And the Noun Project has **no signal-domain metaphor
+for phase at all** — "phase shift" returns project milestones and rounded chevrons,
+"Phaser" returns a ray gun. Searched free, nothing downloaded.
+
+So the cell is reserved, as the Phaser's is, and the two of them are consistent because
+they are the same unsolved problem: phase behaviour has no picture yet. An arbitrary swirl
+would be a decoration pretending to be an identity.
+
+### Widths
+
+Allpass and Formant to Standard, Delay and Comb to Wide, all by the forced-width validator
+at every interface scale. Nothing needed a class that did not exist.
+
+Twenty-four migrated types.
