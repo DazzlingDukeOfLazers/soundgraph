@@ -97,6 +97,8 @@ enum Kind {
 	HELD,           ## sample and hold — a joined staircase of unequal treads
 	STEPS_ORDERED,  ## a sequencer — the same treads, separated, because it is a list
 	SLIDE,          ## a glide — the whole mark is the transition
+	SUM_JUNCTION,   ## signals added: the summing junction of every block diagram
+	PRODUCT,        ## signals multiplied: the same ring with a cross in it
 	FLAT,           ## a constant — the value that does not change
 	MODULATION,     ## a slow wave that moves something else
 	ORIGINATE,      ## the patch's edge, signal entering
@@ -338,6 +340,26 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			for run: Array in GlyphGrammar.steps(small):
 				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
 					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.SUM_JUNCTION, Kind.PRODUCT:
+			# The two signal-flow conventions, and they are a family: one ring, one mark
+			# inside it. The ring is drawn at every size and the mark inside it shrinks
+			# instead — a bare cross at header size is the dismiss button stroke for
+			# stroke, and the ring is what says diagram rather than interface.
+			var arm: float = GlyphGrammar.JUNCTION_MARK_SMALL if small \
+				else GlyphGrammar.JUNCTION_MARK
+			_arc(image, Vector2(middle, middle), reach * GlyphGrammar.JUNCTION_RING,
+				0.0, TAU, colour)
+			if kind == Kind.SUM_JUNCTION:
+				_stroke(image, Vector2(middle - reach * arm, middle),
+					Vector2(middle + reach * arm, middle), colour)
+				_stroke(image, Vector2(middle, middle - reach * arm),
+					Vector2(middle, middle + reach * arm), colour)
+			else:
+				var lean := reach * arm * 0.72
+				_stroke(image, Vector2(middle - lean, middle - lean),
+					Vector2(middle + lean, middle + lean), colour)
+				_stroke(image, Vector2(middle + lean, middle - lean),
+					Vector2(middle - lean, middle + lean), colour)
 		Kind.SLIDE:
 			# One diagonal, corner to corner. Not a rise between two flats — that is the
 			# highpass, and a slide is not a response. The whole mark being the

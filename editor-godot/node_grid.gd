@@ -211,6 +211,13 @@ const WIDTH_CLASS := {
 	"OnePoleFilter": Width.EXTRA,
 	"SquareOscillator": Width.EXTRA,
 	"SineOscillator": Width.EXTRA,
+	# 14D, by the forced-width validator: the smallest class each is still valid at, at
+	# its worst interface scale. Every one of them fitted a class that already existed.
+	"Add": Width.NARROW,
+	"Multiply": Width.NARROW,
+	"Level": Width.NARROW,
+	"Mixer": Width.STANDARD,
+	"StereoLevel": Width.STANDARD,
 }
 
 

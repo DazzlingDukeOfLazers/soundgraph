@@ -46,7 +46,10 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	# — the rule the class set grows by wants several independent types agreeing before
 	# a rung is added. Reported in docs/graph-nodes.md and held for the next batch.
 	"SineOscillator", "SquareOscillator", "OnePoleFilter",
-	"SampleHold", "Clock", "Constant", "StepSequencer"]
+	"SampleHold", "Clock", "Constant", "StepSequencer",
+	# 14D: where signals meet. There is no routing batch to run — see the note in GLYPH
+	# and docs/graph-nodes.md — so this is the combining half of it.
+	"Mixer", "Add", "Multiply", "Level", "StereoLevel"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -88,6 +91,11 @@ const COMPACT := {
 	"SampleHold": "S&H",
 	"StepSequencer": "Steps",
 	"Constant": "Value",
+	"Mixer": "Mixer",
+	"Add": "Add",
+	"Multiply": "Multiply",
+	"Level": "Level",
+	"StereoLevel": "Stereo",
 	# And three whose canonical name is already short enough to fit anywhere. They are
 	# written down anyway, because a compact name is part of a migrated type's contract
 	# rather than a repair applied when today's geometry happens to need one. A type
@@ -151,6 +159,17 @@ const GLYPH := {
 	# Drawn, and waiting for its type: see the width note in MIGRATED above.
 	"Slide": Icons.Kind.SLIDE,
 	"Constant": Icons.Kind.FLAT,
+	# Where signals meet. The mixer is many cords arriving at one, which is step 10's
+	# merge finally standing on a type; the sum and the product are the two signal-flow
+	# conventions, one ring with two different marks in it.
+	"Mixer": Icons.Kind.ROUTE_MERGE,
+	"Add": Icons.Kind.SUM_JUNCTION,
+	"Multiply": Icons.Kind.PRODUCT,
+	# Level and its stereo twin are gain stages, so they wear the gain stage's mark. Two
+	# types sharing one mark is right when they are the same operation and the word beside
+	# it says which — the same reasoning that gives both noise sources one mark.
+	"Level": Icons.Kind.GAIN_TRIANGLE,
+	"StereoLevel": Icons.Kind.GAIN_TRIANGLE,
 	# And the Phaser has none. Its family — things that happen over time — has not been
 	# drawn, and the identity cell is reserved whether or not a type has a mark, so a
 	# node with no glyph costs nothing and claims nothing. No glyph beats a misleading

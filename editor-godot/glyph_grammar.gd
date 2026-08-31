@@ -378,6 +378,31 @@ static func steps(small: bool) -> Array:
 	return runs
 
 
+# ---- the combining family -------------------------------------------------------------
+#
+# What happens where signals meet. The signal-flow conventions, which are a family already
+# and have been since somebody first drew a block diagram: a ring with a cross in it is a
+# multiplier and a ring with a plus in it is a summing junction. Same ring, different
+# content, and nothing else in the set is a ring with something inside it.
+#
+# Drawn rather than borrowed from the icon set's existing cross, which is a dismiss
+# button: a node wearing the same mark as a close control is a node somebody will try to
+# close.
+
+## The ring, and how far the mark inside it reaches. The content is kept well clear of the
+## ring so that at header size the two do not weld into a filled disc.
+const JUNCTION_RING := 0.95
+const JUNCTION_MARK := 0.5
+
+## At header size the ring **stays** and the mark inside it shrinks instead.
+##
+## Dropping the ring was tried first and it was wrong for one specific reason: a bare
+## cross at twenty-four pixels is the dismiss button, stroke for stroke, and a node
+## wearing a close control is a node somebody will try to close. The ring is the part
+## that says diagram rather than interface, so the ring is the part that cannot go.
+const JUNCTION_MARK_SMALL := 0.42
+
+
 # ---- the routing family --------------------------------------------------------------
 #
 # Terminals and the cords between them, which is what the reader is already looking at:

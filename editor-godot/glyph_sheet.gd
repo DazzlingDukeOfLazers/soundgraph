@@ -48,6 +48,12 @@ const GENERATORS := ["SINE_WAVE", "SQUARE_WAVE", "SAW_WAVE", "NOISE_WAVE", "MODU
 ## are drawn.
 const TEMPORAL := ["PULSE_TRAIN", "HELD", "STEPS_ORDERED", "SLIDE", "FLAT", "ENVELOPE"]
 
+## Where signals meet, against the routing marks they have to be told apart from — and
+## against the dismiss cross, because a node wearing a close button is a node somebody
+## will try to close.
+const COMBINING := ["ROUTE_MERGE", "ROUTE_SPLIT", "SUM_JUNCTION", "PRODUCT",
+	"GAIN_TRIANGLE", "CROSS"]
+
 ## The contact sheet's own geometry. Every mark is shown at the same drawn size whatever
 ## it was rendered at, which is the only way four sizes can be compared: the 10-pixel cut
 ## and the 96-pixel one differ in how they are drawn, not in how big they are on the page.
@@ -69,7 +75,8 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(folder)
 
 	var names: Array = []
-	for group: Array in [GENERATORS, TEMPORAL, SPECIMENS, FIRST_SYNTH, FILTERS, ROUTING]:
+	for group: Array in [COMBINING, GENERATORS, TEMPORAL, SPECIMENS, FIRST_SYNTH,
+			FILTERS, ROUTING]:
 		for one: String in group:
 			if not names.has(one):
 				names.append(one)

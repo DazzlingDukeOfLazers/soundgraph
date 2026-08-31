@@ -1204,3 +1204,59 @@ scale and reports no node standing over its class.
 
 One number moved in the process: the filter is 40 base units wider than it was, which is
 what a class being wrong looks like when it is corrected.
+
+## Step 14D — where signals meet
+
+The batch as named could not be run, for the same reason 14B's could not, and the reason
+is worth stating plainly.
+
+### There are no routing node types
+
+No Split, no Merge, no Crossfade, no Selector, no Switch. **Splitting is a cable
+operation** in SoundGraph — one output takes as many connections as you draw — and merging
+is what a Mixer or an Add does. There is no Routing category in the registry at all; the
+combining nodes are filed under Amplitude and Maths.
+
+So step 10's routing family is in the position the filter siblings were in before the
+variant mechanism: drawn, proved, and with nothing to attach to. `ROUTE_MERGE` finally has
+a type in the Mixer. `ROUTE_SPLIT` and `ROUTE_SWITCH` still do not, and the switch that
+failed rule 9 has no migration batch to arrive in.
+
+That also answers the question this batch was set: **Mixer against Merge is not a
+collision, because Merge is not a node.** The real version of it is Mixer against Add —
+both many-to-one — and they do not collide at all, because they are in different families.
+A mixer is topology and draws cords converging on a terminal; an add is an operator and
+draws the summing junction. Nothing about those two silhouettes is close.
+
+### The combining family
+
+Two marks, and they were a family before anybody here drew them: **a ring with a cross in
+it is a multiplier and a ring with a plus in it is a summing junction**, which is how block
+diagrams have said it for as long as there have been block diagrams. One ring, two
+contents, and nothing else in the set is a ring with something inside it.
+
+They were drawn with the ring dropped at header size — six pixels of circle around a
+three-pixel cross looked like it would be a smudge. The proof sheet said otherwise, in the
+most direct way available: **a bare cross at twenty-four pixels is the dismiss button,
+stroke for stroke.** A node wearing a close control is a node somebody will try to close.
+So the ring is drawn at every size and the mark inside it shrinks instead — the ring is
+the part that says diagram rather than interface, which makes it the part that cannot go.
+
+### What went in
+
+```
+type          class      mark
+Mixer         Standard   cords converging on one terminal
+Add           Narrow     the summing junction
+Multiply      Narrow     the same ring, crossed
+Level         Narrow     the amplifier triangle
+StereoLevel   Standard   the same
+```
+
+Level and its stereo twin wear the gain stage's mark because that is what they are — the
+same reasoning that gives both noise sources one mark, with the word beside it saying
+which. All five fitted classes that already existed, by the forced-width validator at
+every interface scale.
+
+Twenty migrated types now, and the validator reports every one of them standing at the
+smallest class it is valid at.
