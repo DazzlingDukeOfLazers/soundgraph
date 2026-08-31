@@ -2829,18 +2829,30 @@ class ScreenText extends Control:
 	##
 	## The canonical name whenever it fits, at every size — a compact name is not an
 	## improvement on a name, it is what you fall back to. When it does not fit, the
-	## node's written-down compact name, if it has one. Only when there is neither does
-	## anything get cut, and a cut name is now the mark of a type that has not been
-	## through the pass rather than the normal way of drawing a small node.
+	## node's written-down compact name, if it has one.
+	##
+	## And if that does not fit either, nothing at all — for a type that has one. That is
+	## the whole pass's governing rule applied to its own last case: remove information
+	## before reducing its legibility. "Amp E…" is not an identity, it is five letters
+	## and a fault, and at the zoom where it appears the node is a symbol in a diagram
+	## whose position and cables already say which one it is. A reader who needs the name
+	## can come closer; a reader who does not should not be reading a fragment.
+	##
+	## A type with no compact name still gets cut, because for it a cut is the only thing
+	## on offer and half a name beats none. So an ellipsis in the graph now means exactly
+	## one thing: that type has not been through the pass. `optical_sheet.gd` counts them
+	## and `editor_test.gd` holds the migrated three at zero.
 	static func _name_for(node: GraphNode, font: Font, size: int, room: float) -> String:
 		if font.get_string_size(node.title, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 				size).x <= room:
 			return node.title
 		var compact := str(node.get_meta("compact_name", ""))
-		if compact != "" and font.get_string_size(compact, HORIZONTAL_ALIGNMENT_LEFT,
-				-1.0, size).x <= room:
+		if compact == "":
+			return _elided(font, node.title, size, room)
+		if font.get_string_size(compact, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+				size).x <= room:
 			return compact
-		return _elided(font, node.title, size, room)
+		return ""
 
 	## Text cut to fit, with an ellipsis saying so.
 	##

@@ -674,3 +674,41 @@ exists, is measured, and waits for a data source.
 
 Selection, validity and activity all survive 40%. The bang and the identity glyph do not,
 and nothing was added to keep them.
+
+## Step 12 — the optical contract
+
+Most of the machinery was already right. `NodeOptical` names what it does — FULL,
+REDUCED, MAP, on the four bands that already produced them, with no new thresholds — and
+`optical_sheet.gd` audits it by sweeping every boundary at a hundredth and a
+half-hundredth either side rather than photographing four zooms. `docs/node-optical-
+states.md` is the record.
+
+Two bugs fixed, one table corrected, one disagreement resolved in the renderer's favour.
+
+**The ellipsis was cutting the wrong name.** Below 0.28 the Amp Envelope fell to
+`Amp E…`: the fallback found the type's compact name, decided `Envelope` did not fit
+either, and then cut the *canonical* name — discarding the shorter name it had just
+rejected in order to cut the longer one. The rule now is canonical, then compact, then
+nothing at all, which is this pass's own governing rule applied to its last case. An
+ellipsis in the graph now means exactly one thing: that type has not been through the
+pass. `design_test.gd` holds the migrated three at zero cuts across thirty-six zooms and
+five palettes.
+
+**The identity glyph is not on the band ladder.** It stands down with the title at the
+title's own compensation boundary, near 0.90 at XL — inside FULL, above the FULL/REDUCED
+line at 0.875 — so the bottom slice of FULL has no mark. The behaviour is right and the
+first draft of the survival table was wrong, so the table changed and the code did not.
+
+**REDUCED keeps parameter names and drops their values**, which is the opposite of the
+brief's priority and is correct: a name with no number still says what the node has and a
+number with no name says nothing. At XL and 0.83 a cell is 94 screen pixels and
+"resonance" wants 85 at the legibility floor, so it is one word or none.
+
+**REDUCED is a tenth of a zoom wide at XL and three tenths at Comfortable.** The FULL
+floor is computed from base type sizes and so does not move with the interface scale,
+while the room floors under it do. Reported and not changed — a corrected FULL floor would
+sit below the REDUCED floor at XL and delete the band, and which of the two governs is a
+real question rather than an arithmetic slip.
+
+Empty MAP bodies were audited and left alone. The footprint a node keeps at every zoom is
+what makes the map correspond to the thing it is a map of.

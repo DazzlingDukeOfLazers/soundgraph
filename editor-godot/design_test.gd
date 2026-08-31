@@ -3,6 +3,8 @@ extends SceneTree
 ## The faceplate themes. Their lettering has to be readable for the same reason the
 ## palettes' does — a panel is not decoration, it is a label you operate.
 const ModuleThemes := preload("res://module_themes.gd")
+## The graph, for the one piece of it that is a pure function on a name and a width.
+const PatchGraph := preload("res://patch_graph.gd")
 ## Checks the design system against the rules it claims to follow.
 ##
 ## A palette is a set of assertions about legibility, and assertions that nobody measures
@@ -432,6 +434,37 @@ func _initialize() -> void:
 		var ratio := Design.contrast(ring, jack)
 		check(ratio >= 3.0, "%s: its jack rings read on the socket field (%.1f:1)"
 			% [ModuleThemes.display_name(str(key)), ratio])
+
+	# A type that has been through the pass never has its name cut. Canonical while it
+	# fits, then the written-down compact name, then nothing — the governing rule of the
+	# whole pass applied to its own last case, because five letters and an ellipsis is
+	# not an identity. An ellipsis in the graph now means exactly one thing, and this is
+	# what keeps it meaning that.
+	#
+	# Swept rather than sampled at four zooms: the cut this replaces only appeared below
+	# 0.28, which is under every zoom anybody had photographed.
+	for palette in Design.PALETTES.size():
+		Design.use_palette(palette)
+		for entry: Array in [["Amplifier", "Gain"], ["Lowpass", "StateVariableFilter"],
+				["Amp Envelope", "ADSR"]]:
+			var node := GraphNode.new()
+			node.title = str(entry[0])
+			node.set_meta("compact_name", NodeIdentity.compact_of(str(entry[1])))
+			var width := float(NodeGrid.width_for(str(entry[1])))
+			var font := Design.font(Design.WEIGHT_SEMIBOLD)
+			var pinned := Design.screen_minimum(Design.MIN_SCREEN_NODE_TITLE)
+			var cut := ""
+			for step in 36:
+				var zoom := 1.0 - float(step) * 0.025
+				var drawn := PatchGraph.ScreenText._name_for(node, font, pinned,
+					width * zoom - 12.0)
+				if drawn.ends_with("…"):
+					cut = "%s at %.3f -> %s" % [node.title, zoom, drawn]
+			check(cut == "", "%s: %s is never cut%s" % [
+				Design.PALETTE_NAMES[palette], entry[0],
+				"" if cut == "" else " (" + cut + ")"])
+			node.free()
+	Design.use_palette(Design.Palette.LAB)
 
 	# A node's title has to stay readable on every ground the state vocabulary can put
 	# under it. This is the check that caught the first warning tint: it made a handsome
