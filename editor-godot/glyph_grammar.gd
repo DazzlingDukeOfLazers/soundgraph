@@ -477,6 +477,50 @@ static func sampled(small: bool) -> Array:
 	return points
 
 
+# ---- the dynamics family --------------------------------------------------------------
+#
+# Spatial rather than curved, which is rule 9b doing its work: a compressor drawn as
+# another transfer curve would be one more line across the same square, and there is no
+# room left there. Drawn as a range narrowing, it is a shape nothing else in the set has.
+
+## A compressor: a wide dynamic range arriving and a narrow one leaving. Two bounds, and
+## they narrow without meeting — a pair of lines that close to a point is an arrowhead,
+## and the interface already has several.
+## The narrow end stays genuinely open. At three tenths the two bounds close to within
+## four pixels at header size and the mark is a chevron — which the interface uses for
+## disclosure, and which was the first thing the proof sheet said. Half a reach apart
+## keeps a visible channel between them, and a channel is what a dynamic range is.
+const RANGE_WIDE := 1.0
+const RANGE_NARROW := 0.52
+
+## A crusher: the signal put on coarse levels. A staircase whose treads are all the same,
+## where the sample-and-hold's are all different — regular against irregular, which is the
+## device that already separates a clock from noise and a sequencer from a held signal.
+const CRUSH_STEPS := 4
+const CRUSH_STEPS_SMALL := 3
+
+
+## The compressor's two bounds, as pairs of points to stroke.
+static func narrowing() -> Array:
+	return [
+		[Vector2(-1.1, -RANGE_WIDE), Vector2(1.1, -RANGE_NARROW)],
+		[Vector2(-1.1, RANGE_WIDE), Vector2(1.1, RANGE_NARROW)],
+	]
+
+
+## The crusher's staircase: equal treads, equal risers, descending.
+static func quantised(small: bool) -> Array:
+	var count: int = CRUSH_STEPS_SMALL if small else CRUSH_STEPS
+	var points: Array = []
+	for i in count:
+		var from := lerpf(-1.1, 1.1, float(i) / float(count))
+		var to := lerpf(-1.1, 1.1, float(i + 1) / float(count))
+		var y := lerpf(-0.8, 0.8, float(i) / float(count - 1))
+		points.append(Vector2(from, y))
+		points.append(Vector2(to, y))
+	return points
+
+
 # ---- the maths family -----------------------------------------------------------------
 #
 # Where the corpus rollout stops being able to borrow. These four are transfer functions —

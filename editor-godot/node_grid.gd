@@ -235,6 +235,11 @@ const WIDTH_CLASS := {
 	"Sampler": Width.WIDE,
 	"Speech": Width.WIDE,
 	"PluginEffect": Width.WIDE,
+	# 14H.1, by the validator.
+	"Drive": Width.NARROW,
+	"Crush": Width.STANDARD,
+	"AhdEnvelope": Width.STANDARD,
+	"Compressor": Width.WIDE,
 }
 
 

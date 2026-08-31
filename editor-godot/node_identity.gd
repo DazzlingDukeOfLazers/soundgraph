@@ -58,7 +58,9 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	"Compare", "MinMax", "Clip", "Abs",
 	# 14G: the specialty types. There are no DX7 or OPL2 operator node types to migrate —
 	# those are importers that build graphs out of the ordinary ones.
-	"Sampler", "Speech", "AudioInput", "PluginEffect", "PluginInstrument", "CableTest"]
+	"Sampler", "Speech", "AudioInput", "PluginEffect", "PluginInstrument", "CableTest",
+	# 14H.1: dynamics and signal shaping.
+	"Compressor", "Crush", "Drive", "AhdEnvelope"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -119,6 +121,10 @@ const COMPACT := {
 	"PluginEffect": "Plugin",
 	"PluginInstrument": "Plugin",
 	"CableTest": "Cables",
+	"Compressor": "Comp",
+	"Crush": "Crush",
+	"Drive": "Drive",
+	"AhdEnvelope": "AHD",
 	# And three whose canonical name is already short enough to fit anywhere. They are
 	# written down anyway, because a compact name is part of a migrated type's contract
 	# rather than a repair applied when today's geometry happens to need one. A type
@@ -211,6 +217,23 @@ const GLYPH := {
 	# than a curve, which is where rule 9b sends new concepts now that the open field is
 	# full: two bounds with a piece of signal between them.
 	"Sampler": Icons.Kind.SAMPLE,
+	# 14H.1, the dynamics family: spatial rather than curved, which is the other place
+	# rule 9b sends a new concept. A compressor is a wide range arriving and a narrow one
+	# leaving — two bounds closing without meeting, because a pair of lines that comes to
+	# a point is the disclosure chevron and the first proof sheet said exactly that.
+	"Compressor": Icons.Kind.NARROWING,
+	# And a crusher puts the signal on coarse, equal levels. Regular against irregular is
+	# what separates it from the sample-and-hold, the same device that separates a clock
+	# from noise and a sequencer from a held signal.
+	"Crush": Icons.Kind.QUANTISED,
+	# An AHD envelope is an envelope. One family, one mark, and the name says which
+	# implementation — the same reasoning that gives both noise sources one mark.
+	"AhdEnvelope": Icons.Kind.ENVELOPE,
+	# Drive is reserved. It is saturation, and the honest drawing of saturation is a wave
+	# with its peaks flattened — which is the square oscillator with rounder corners, and
+	# corner radius is a detail rather than a silhouette. It is the same drawing that
+	# failed for Clip in 14F, tried again for the type it actually suits, and it fails for
+	# the same reason.
 	# And an audio input is the patch's edge with signal entering, which is what the note
 	# seam already is. One mark, two types, the word beside it saying which.
 	"AudioInput": Icons.Kind.ORIGINATE,

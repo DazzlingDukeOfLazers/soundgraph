@@ -114,6 +114,10 @@ enum Kind {
 	# Enclosure rather than another curve, which is where the saturation rule sends new
 	# concepts once the open field is full.
 	SAMPLE,         ## a bounded piece of signal
+
+	# The dynamics family: spatial rather than curved, because the open field is full.
+	NARROWING,      ## a compressor — a wide range in, a narrow one out
+	QUANTISED,      ## a crusher — the signal put on coarse, equal levels
 	FLAT,           ## a constant — the value that does not change
 	MODULATION,     ## a slow wave that moves something else
 	ORIGINATE,      ## the patch's edge, signal entering
@@ -355,6 +359,14 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			for run: Array in GlyphGrammar.steps(small):
 				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
 					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.NARROWING:
+			# Two bounds closing, and deliberately not meeting: a pair of lines that come
+			# to a point is an arrowhead and the interface already has several.
+			for run: Array in GlyphGrammar.narrowing():
+				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
+					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.QUANTISED:
+			_polyline(image, GlyphGrammar.quantised(small), middle, reach, colour)
 		Kind.SAMPLE:
 			# Brackets, not a box: a box at header size fills in, which the keyboard proved
 			# three ways. The uprights leave the interior open.

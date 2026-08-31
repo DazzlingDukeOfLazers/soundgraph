@@ -1467,3 +1467,55 @@ What is left is not specialty at all. It is one ordinary family nobody has done 
 dynamics and the remaining modulation types: Drive, Crush, Compressor, AHD Envelope,
 Arpeggio, Retrigger, Euclid, Scale Quantizer, MIDI CC, Note Triggers, Trigger Bus, Level's
 neighbours. They belong in an ordinary batch, not this one.
+
+## Step 14H.1 — dynamics and signal shaping
+
+Four types, three marks, one reserved cell — and the batch found the second answer to the
+saturation problem.
+
+### The compressor establishes spatial territory
+
+Drawn as another transfer curve it would have been one more line across the same square,
+and there is no room there. Drawn as **a range narrowing** — a wide pair of bounds
+arriving and a narrow pair leaving — it is a shape nothing else in the set has.
+
+It took one correction, and the proof sheet said it immediately: at three tenths of a
+reach apart the two bounds close to within four pixels at header size and the mark is the
+disclosure chevron. **A pair of lines that comes to a point is an arrowhead.** Half a
+reach apart keeps a visible channel between them, and a channel is what a dynamic range
+is.
+
+That is the second place rule 9b sends a new concept, after enclosure: **a spatial
+relationship between two marks**. It also leaves room for a limiter or an expander later —
+the same two bounds, closing differently.
+
+### The crusher is regular against irregular
+
+A crusher puts the signal on coarse, equal levels, so it is a staircase whose treads are
+all the same where the sample-and-hold's are all different. That device already separates
+a clock from noise and a sequencer from a held signal; this is its third use and it
+carries cleanly at header size.
+
+### AHD is an envelope
+
+One family, one mark. The name says which implementation, the same way both noise sources
+share a mark. No second envelope glyph was drawn, because there is no reason a reader
+should have to tell an AHD from an ADSR by its header rather than by its name.
+
+### Drive is reserved, and it is the same failure as Clip
+
+Drive is saturation, and the honest drawing of saturation is a wave with its peaks
+flattened — which is the square oscillator with rounder corners. **Corner radius is a
+detail, not a silhouette.** That is the drawing that failed for Clip in 14F; it was tried
+again here for the type it actually suits, and it fails for the same reason.
+
+Worth recording plainly: the clipped-waveform drawing has now been rejected twice, for two
+different types, on the same grounds. Whoever reaches for it a third time should reach for
+an enclosure or a spatial relationship instead.
+
+### Widths
+
+Drive to Narrow, Crush and AHD Envelope to Standard, Compressor to Wide, by the validator
+at every interface scale.
+
+**Thirty-eight migrated types**, ten of them with reserved cells.
