@@ -433,6 +433,26 @@ func _initialize() -> void:
 		check(ratio >= 3.0, "%s: its jack rings read on the socket field (%.1f:1)"
 			% [ModuleThemes.display_name(str(key)), ratio])
 
+	# A node's title has to stay readable on every ground the state vocabulary can put
+	# under it. This is the check that caught the first warning tint: it made a handsome
+	# olive header and dropped the name to 5.3:1, under the program's own floor, on the
+	# one node the reader most needs to read.
+	for palette in Design.PALETTES.size():
+		Design.use_palette(palette)
+		for selected: bool in [false, true]:
+			for health: int in [NodeState.Health.WELL, NodeState.Health.WARNING,
+					NodeState.Health.ERROR]:
+				for hovered: bool in [false, true]:
+					var ground := NodeState.header(selected, hovered, health)
+					var ratio := Design.contrast(Design.INK_BRIGHT, ground)
+					check(ratio >= TEXT_FLOOR,
+						"%s: a node title reads on a %s%s%s header (%.1f:1)" % [
+							Design.PALETTE_NAMES[palette],
+							["well", "warned", "failing"][health],
+							" selected" if selected else "",
+							" hovered" if hovered else "", ratio])
+	Design.use_palette(Design.Palette.LAB)
+
 	# Every icon marks pixels. An icon that silently draws nothing is the tofu box in a
 	# new hat: not an error, just a rectangle of nothing where a mark should be, and
 	# nothing in the build says so. Checked at the two sizes the set is actually used

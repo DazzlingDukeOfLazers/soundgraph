@@ -363,6 +363,11 @@ var keyboard_mode := "full"
 var document_label: RichTextLabel
 var document_name := "untitled"
 var diagnostics_list: VBoxContainer
+## Node id -> NodeState.Health, for the nodes the last validation had something to say
+## about. Absent means well, which is the overwhelmingly normal case and the reason this
+## is a sparse dictionary rather than a field on every node.
+var _node_health := {}
+
 ## Round-robin state for the signal glow; see _update_port_levels().
 var _level_targets: Array = []
 var _level_cursor := 0
@@ -1502,12 +1507,12 @@ func _sync_view_switch() -> void:
 ## its own, the name at the node-title size, and a hairline under it that says where it
 ## stops. The body's padding is the control region, one figure on each axis, so two nodes
 ## with different contents still line their contents up in the same place.
-func _dress_anatomy(widget: GraphNode, lit: bool) -> void:
-	var edge: Color = Design.BORDERS[Design.Surface.ACTIVE] if lit \
-		else Design.BORDERS[Design.Surface.RAISED]
+func _dress_anatomy(widget: GraphNode, lit: bool, health: int) -> void:
+	var edge: Color = NodeState.perimeter(false, lit)
 
 	var head := Design.padded_panel(Design.Surface.RAISED, ANATOMY_GUTTER,
 		Design.SPACE_XS, Design.RADIUS_NODE)
+	head.bg_color = NodeState.header(false, lit, health)
 	head.corner_radius_bottom_left = 0
 	head.corner_radius_bottom_right = 0
 	head.border_color = edge
@@ -1528,22 +1533,31 @@ func _dress_anatomy(widget: GraphNode, lit: bool) -> void:
 	body.corner_radius_top_right = 0
 	body.border_width_top = 0
 	body.border_color = edge
+	body.bg_color = NodeState.body(false, lit)
 	widget.add_theme_stylebox_override("panel", body)
 	# One gap between rows, from the grid rather than from the editor's general spacing.
 	widget.add_theme_constant_override("separation", NodeGrid.row_gap())
 
-	# Selection keeps the accent it has everywhere else, on the same anatomy.
+	# Selection, on the same anatomy: a continuous mint perimeter at twice the weight,
+	# and one step of lift under it. Two cues, one of which is not colour, because the
+	# node is already full of mint — a boundary is continuous and the marks inside it
+	# are not, and that is what the eye is actually separating.
+	#
+	# Health composes rather than replaces. A selected broken node is a lifted amber
+	# header inside a mint perimeter and both facts survive, which is the whole reason
+	# the two live on different parts of the node.
+	var chosen := NodeState.perimeter(true, lit)
 	var head_lit := head.duplicate() as StyleBoxFlat
-	head_lit.bg_color = Design.SURFACES[Design.Surface.ACTIVE]
-	head_lit.set_border_width_all(2)
+	head_lit.bg_color = NodeState.header(true, lit, health)
+	head_lit.set_border_width_all(NodeState.SELECTION_EDGE)
 	head_lit.border_width_bottom = 1
-	head_lit.border_color = Design.ACCENT
+	head_lit.border_color = chosen
 	widget.add_theme_stylebox_override("titlebar_selected", head_lit)
 	var body_lit := body.duplicate() as StyleBoxFlat
-	body_lit.bg_color = Design.SURFACES[Design.Surface.RAISED]
-	body_lit.set_border_width_all(2)
+	body_lit.bg_color = NodeState.body(true, lit)
+	body_lit.set_border_width_all(NodeState.SELECTION_EDGE)
 	body_lit.border_width_top = 0
-	body_lit.border_color = Design.ACCENT
+	body_lit.border_color = chosen
 	widget.add_theme_stylebox_override("panel_selected", body_lit)
 
 	# The header's own height, so a node with a long name and a node with a short one
@@ -1568,8 +1582,35 @@ func _dress_anatomy(widget: GraphNode, lit: bool) -> void:
 			bar.move_child(mark, 0)
 			widget.set_meta("glyph", mark)
 		var kind := NodeIdentity.glyph_of(str(widget.get_meta("type", "")))
-		mark.texture = Icons.get_icon(kind, Design.scale(ANATOMY_GLYPH),
-			Design.INK_SECOND) if kind >= 0 else null
+		# Step 11's activity prototype, on the one node whose activity has stages. The
+		# whole contour stays in the ordinary ink and the live segment is picked out in
+		# the accent — identity first, state on top of it, never state instead of it.
+		var stage := int(widget.get_meta("active_stage", -1))
+		if kind == Icons.Kind.ENVELOPE and stage >= 0:
+			mark.texture = Icons.envelope_stage(Design.scale(ANATOMY_GLYPH),
+				Design.INK_SECOND, Design.ACCENT, stage)
+		else:
+			mark.texture = Icons.get_icon(kind, Design.scale(ANATOMY_GLYPH),
+				Design.INK_SECOND) if kind >= 0 else null
+
+		# The validity mark, at the far end of the header, drawn only when there is
+		# something to say. Its cell is not reserved: an alert that is present on every
+		# node as an empty square is a permanent claim that something might be wrong.
+		#
+		# The tint under it is what carries the fact at a distance; this is the
+		# precision half, and it says which severity where the reader can still read.
+		var alert: TextureRect = widget.get_meta("alert") if widget.has_meta("alert") \
+			else null
+		if alert == null:
+			alert = TextureRect.new()
+			alert.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+			alert.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			bar.add_child(alert)
+			widget.set_meta("alert", alert)
+		alert.visible = health != NodeState.Health.WELL
+		alert.texture = Icons.get_icon(Icons.Kind.ALERT,
+			Design.scale(ANATOMY_GLYPH), NodeState.severity(health)) \
+			if alert.visible else null
 	var title_label := _title_label(widget)
 	if title_label != null:
 		title_label.add_theme_font_override("font", Design.font(Design.WEIGHT_SEMIBOLD))
@@ -1587,6 +1628,9 @@ func _dress_anatomy(widget: GraphNode, lit: bool) -> void:
 		# name.
 		title_label.text = widget.title
 		title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		# The name takes what is left, which puts the validity mark against the far edge
+		# instead of leaving it tucked against the last letter of a short name.
+		title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 
 ## The node's internal gutter, and the height of its identity region. Two figures on the
@@ -1848,10 +1892,11 @@ func _style_widget(widget: GraphNode, node_id: String) -> void:
 		# the graph's own grammar and the physical one arrives with the faceplate.
 		widget.remove_meta("skin")
 		if NodeIdentity.in_proving_ground(str(widget.get_meta("type", ""))):
-			_dress_anatomy(widget, lit)
-			return
-		if NodeIdentity.in_proving_ground(str(widget.get_meta("type", ""))):
-			_dress_anatomy(widget, lit)
+			# The raw hover, not the hover-and-not-selected the flat panels use: the
+			# anatomy builds both the ordinary boxes and the selected ones, and a
+			# selected node under the pointer should still lift. Selection owns the
+			# perimeter either way, so the two cannot collide.
+			_dress_anatomy(widget, hovered, _health_of(node_id))
 			return
 		if lit:
 			var plain := (theme.get_stylebox("panel", "GraphNode")
@@ -10074,7 +10119,7 @@ func _show_diagnostics(diagnostics: Array) -> void:
 		health_label.text = "Graph valid"
 		health_label.add_theme_color_override("font_color", Design.INK_SECOND)
 		diagnostics_heading.visible = false
-		_highlight([])
+		_apply_health({})
 		return
 
 	var errors := 0
@@ -10087,7 +10132,17 @@ func _show_diagnostics(diagnostics: Array) -> void:
 		Design.ERROR if errors > 0 else Design.WARNING)
 	diagnostics_heading.visible = true
 
-	var to_highlight := []
+	# Which nodes are unwell, and how unwell. An error outranks a warning where a node
+	# collects both, because the reader wants the worst thing that is true about it.
+	var unwell := {}
+	for diagnostic in diagnostics:
+		var severity: int = NodeState.Health.ERROR \
+			if str(diagnostic.get("severity", "error")) == "error" \
+			else NodeState.Health.WARNING
+		for node_id: Variant in diagnostic.get("nodes", []):
+			unwell[str(node_id)] = maxi(severity,
+				int(unwell.get(str(node_id), NodeState.Health.WELL)))
+
 	for diagnostic in diagnostics:
 		var card := VBoxContainer.new()
 
@@ -10100,8 +10155,6 @@ func _show_diagnostics(diagnostics: Array) -> void:
 		# Spatial, not just textual: the offending nodes are named and highlighted in the
 		# graph, and clicking the problem frames them.
 		if diagnostic.has("nodes"):
-			for node_id in diagnostic["nodes"]:
-				to_highlight.append(node_id)
 			var where := Label.new()
 			where.text = "  " + " → ".join(diagnostic["nodes"])
 			where.add_theme_font_size_override("font_size", Design.type(Design.SIZE_SECONDARY))
@@ -10120,7 +10173,7 @@ func _show_diagnostics(diagnostics: Array) -> void:
 		card.add_child(rule)
 		diagnostics_list.add_child(card)
 
-	_highlight(to_highlight)
+	_apply_health(unwell)
 
 
 ## Lights the whole signal path a node sits on.
@@ -10349,6 +10402,26 @@ func _set_node_hovered(widget: GraphNode, hovered: bool) -> void:
 	_style_widget(widget, str(widget.get_meta("patch_id")))
 
 
+## What the last validation thought of a node.
+func _health_of(node_id: String) -> int:
+	return int(_node_health.get(node_id, NodeState.Health.WELL))
+
+
+## Records which nodes a validation had something to say about, and redresses the ones
+## whose answer changed.
+##
+## Only the ones that changed: restyling a node rebuilds its styleboxes and relettering
+## it touches every label on it, and doing that to a whole graph every time the document
+## is validated is a lot of work to conclude that nothing is different.
+func _apply_health(found: Dictionary) -> void:
+	var was := _node_health
+	_node_health = found
+	for node_id: String in widgets:
+		if int(was.get(node_id, NodeState.Health.WELL)) \
+				!= int(found.get(node_id, NodeState.Health.WELL)):
+			_style_widget(widgets[node_id], node_id)
+
+
 ## Puts a drawn icon on a control, at the size the ink around it is using.
 ##
 ## Every one of these was a Unicode symbol until it turned out that seven of the twelve
@@ -10446,10 +10519,17 @@ func _note_latency() -> void:
 			% [now, _latency_ms()])
 
 
+## Points at nodes from somewhere else in the interface, using the hover channel.
+##
+## It used to wash them in red, and it was also what the diagnostics list used to say
+## "these are broken" — one treatment for two unrelated facts, which is how a reader
+## learns that red means "something over there mentioned this node". Pointing is what a
+## pointer does, so pointing borrows the pointer's own treatment; being invalid is a
+## property of the node and now lives on the node's header.
 func _highlight(node_ids: Array) -> void:
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
-		widget.modulate = Color(1.0, 0.65, 0.6) if node_ids.has(id) else Color.WHITE
+		_set_node_hovered(widget, node_ids.has(id))
 
 
 ## Kept under its old name because half a dozen places call it after the graph changes.

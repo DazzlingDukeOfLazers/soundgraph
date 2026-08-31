@@ -141,6 +141,22 @@ const RESPONSE_BAND := [[LEFT, STOP], [-0.18, PASS], [0.18, PASS], [RIGHT, STOP]
 const RESPONSE_NOTCH := [[LEFT, PASS], [-0.18, STOP], [0.18, STOP], [RIGHT, PASS]]
 
 
+# ---- the control family ---------------------------------------------------------------
+
+## The ADSR contour, as the four segments it is made of: attack, decay, sustain, release.
+##
+## Five points and four segments, which is the whole reason this is written down rather
+## than drawn inline — the segments are named things, and a mark that wants to say which
+## one is running needs to be able to ask for the third one by number.
+##
+## The peak is left of centre and the sustain is a plateau above the baseline, which is
+## what separates this from the bandpass's symmetric arch. They are the closest pair in
+## the set and the asymmetry is the whole of the difference.
+const ENVELOPE_CONTOUR := [Vector2(-1.1, 0.8), Vector2(-0.45, -0.8), Vector2(0.0, -0.1),
+	Vector2(0.5, -0.1), Vector2(1.1, 0.8)]
+enum Stage { ATTACK, DECAY, SUSTAIN, RELEASE }
+
+
 ## A level plan expanded into the polyline to stroke, in reach units from the centre.
 ##
 ## The small cut is rule 5 doing its work: below the optical size a transition is one

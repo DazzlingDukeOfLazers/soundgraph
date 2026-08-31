@@ -98,6 +98,13 @@ enum Kind {
 	EYE,            ## View
 	SPEAKER,        ## Audio
 	QUESTION,       ## Help
+
+	# Validity, on a node header. Not in a triangle: the triangle is four more strokes
+	# in an eighteen-pixel cell and what survives of it at that size is a smudge with a
+	# line in it. The bang alone is unambiguous, and which severity is carried by the
+	# colour it is drawn in — warning amber, error red, neither of them anywhere near
+	# the signal palette.
+	ALERT,          ## something is wrong with this node
 }
 
 
@@ -190,11 +197,7 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			_stroke(image, Vector2(middle, middle + reach * 0.1),
 				Vector2(middle, middle + reach * 0.9), colour)
 		Kind.ENVELOPE:
-			var stages: Array = [Vector2(-1.1, 0.8), Vector2(-0.45, -0.8),
-				Vector2(0.0, -0.1), Vector2(0.5, -0.1), Vector2(1.1, 0.8)]
-			for i in stages.size() - 1:
-				_stroke(image, Vector2(middle, middle) + (stages[i] as Vector2) * reach,
-					Vector2(middle, middle) + (stages[i + 1] as Vector2) * reach, colour)
+			_polyline(image, GlyphGrammar.ENVELOPE_CONTOUR, middle, reach, colour)
 		Kind.SPLIT:
 			if small:
 				# Nodes and the cords between them, drawn as nodes. The junction reads
@@ -400,6 +403,13 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				Vector2(middle + reach * 0.06, middle + reach * 0.3), colour)
 			_disc(image, Vector2(middle + reach * 0.06, middle + reach * 0.8),
 				reach * 0.19, colour)
+		Kind.ALERT:
+			# The stem and the point, on the same proportions the question mark's are
+			# drawn at, so the two marks are the same height and weight when they sit in
+			# the same size of cell.
+			_stroke(image, Vector2(middle, middle - reach * 0.9),
+				Vector2(middle, middle + reach * 0.3), colour)
+			_disc(image, Vector2(middle, middle + reach * 0.8), reach * 0.19, colour)
 		Kind.SEARCH:
 			var lens := Vector2(middle - reach * 0.22, middle - reach * 0.22)
 			_arc(image, lens, reach * 0.72, 0.0, TAU, colour)
@@ -467,6 +477,42 @@ static func _response_plan(kind: int) -> Array:
 		Kind.RESPONSE_NOTCH:
 			return GlyphGrammar.RESPONSE_NOTCH
 	return GlyphGrammar.RESPONSE_LOW
+
+
+## The envelope contour with one of its four segments picked out.
+##
+## Step 11's activity prototype, and the only node glyph that has a runtime state at all:
+## an envelope's stages are named, discrete and inherent to the node, which is the bar an
+## activity treatment has to clear. The whole contour stays drawn in the ordinary ink so
+## the mark is still the mark — identity first, state on top of it, never state instead
+## of it.
+##
+## Its own function rather than four more kinds, because a staged envelope is one drawing
+## with a parameter and four enum entries would be four drawings that happen to look
+## alike.
+static func envelope_stage(size: int, colour: Color, active: Color,
+		stage: int) -> Texture2D:
+	var key := "env:%d:%s:%s:%d" % [size, colour.to_html(false), active.to_html(false),
+		stage]
+	if _cache.has(key):
+		return _cache[key]
+	var image := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0, 0, 0, 0))
+	var middle := (size - 1) * 0.5
+	var reach := size * 0.28
+	var origin := Vector2(middle, middle)
+	var contour: Array = GlyphGrammar.ENVELOPE_CONTOUR
+	for i in contour.size() - 1:
+		# The live segment is drawn last so its ink lands on top where two segments meet
+		# at a corner.
+		if i == stage:
+			continue
+		_stroke(image, origin + (contour[i] as Vector2) * reach,
+			origin + (contour[i + 1] as Vector2) * reach, colour)
+	if stage >= 0 and stage < contour.size() - 1:
+		_stroke(image, origin + (contour[stage] as Vector2) * reach,
+			origin + (contour[stage + 1] as Vector2) * reach, active)
+	return _finish(image, key)
 
 
 ## Caches a drawn glyph under its key and hands it back.

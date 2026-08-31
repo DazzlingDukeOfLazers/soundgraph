@@ -636,3 +636,41 @@ wearing a mark. The seven new glyphs are attached to nothing.
 `design_test.gd` now checks every icon marks pixels and stays inside its cell — the first
 because an icon that silently draws nothing is the tofu box in a new hat, the second
 because the field is what keeps a mark off the title beside it.
+
+## Step 11 — the state vocabulary
+
+Five channels, one per fact, so that a node can be selected, broken and passing signal at
+once and a reader can still answer each separately. `editor-godot/node_state.gd` holds
+them; `editor-godot/state_sheet.gd` proves them on First Synth; `docs/node-states.md` is
+the record, the measurements and the two verdicts.
+
+The short version:
+
+**Selection** is a continuous mint perimeter at twice the weight, calmed a fifth of the
+way toward the node surface. Two cues, one of them not colour, and continuity is what
+separates it from the mint already inside the node.
+
+**Validity** is the header, tinted 16% toward amber or red, with a bang at the far end.
+Sixteen is not a preference: at 18 the title of a selected broken node falls to 6.95:1,
+under the program's own 7:1 floor, and `design_test.gd` now checks every combination in
+every palette so it cannot drift back. The old treatment washed the whole node in red
+with `modulate`, which recoloured its sockets and the cable ends on them — the signal
+vocabulary spent on an unrelated fact.
+
+**Hover** is six tenths of a surface step, and it was a third until the proof sheet showed
+two specimens nobody could tell apart at 1.08 times the plain header.
+
+**Activity** stays local. The rule the step settled on is that node-level activity is only
+worth drawing when the activity has structure beyond "signal exists" — so Gain and
+StateVariableFilter get nothing, and the sheet's active row shows a lit socket on an
+otherwise ordinary node, which is the finding rather than a gap in it.
+
+**The ADSR stage prototype works and is not switched on.** The whole contour stays drawn
+and the live segment is picked out; identity survives, which was the hard requirement.
+Left against right reads at header size and the two middle segments do not, so what it
+honestly says is "an envelope is running, roughly here" rather than which stage. Nothing
+in the editor sets a stage — that would have to come from dsp-core — so the mechanism
+exists, is measured, and waits for a data source.
+
+Selection, validity and activity all survive 40%. The bang and the identity glyph do not,
+and nothing was added to keep them.
