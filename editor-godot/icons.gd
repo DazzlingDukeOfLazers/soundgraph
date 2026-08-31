@@ -102,6 +102,14 @@ enum Kind {
 	ECHO_TRAIN,     ## a delay — the same event again, later and smaller
 	RESPONSE_COMB,  ## periodic notches: the notch response, repeated
 	RESPONSE_FORMANT,  ## two or three resonances: the bandpass peak, repeated
+
+	# The maths family: transfer functions rather than notation, because a bare
+	# mathematical sign at header size is an application command.
+	CLIP_CURVE,     ## bounded above and below
+	RECTIFIED,      ## the negative half folded up
+	THRESHOLD,      ## a signal climbing through a level
+	EXTREMUM_HIGH,  ## the greater of two signals
+	EXTREMUM_LOW,   ## the lesser
 	FLAT,           ## a constant — the value that does not change
 	MODULATION,     ## a slow wave that moves something else
 	ORIGINATE,      ## the patch's edge, signal entering
@@ -343,6 +351,28 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			for run: Array in GlyphGrammar.steps(small):
 				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
 					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.CLIP_CURVE:
+			_polyline(image, GlyphGrammar.clipped(small), middle, reach, colour)
+		Kind.RECTIFIED:
+			# The baseline is the point. Humps without it are the bandpass and the
+			# formant; humps sitting on a line are a signal whose negative half has been
+			# folded up onto it.
+			_stroke(image, Vector2(middle - reach * 1.1, middle + reach * 0.8),
+				Vector2(middle + reach * 1.1, middle + reach * 0.8), colour)
+			_polyline(image, GlyphGrammar.rectified(small), middle, reach, colour)
+		Kind.THRESHOLD:
+			# The level across the whole field, and the signal climbing through it.
+			# Everything above the line is a one and everything below it is a zero, which
+			# is the entire node.
+			_stroke(image, Vector2(middle - reach * 1.1, middle),
+				Vector2(middle + reach * 1.1, middle), colour)
+			_stroke(image,
+				Vector2(middle - reach * 0.55, middle + reach * GlyphGrammar.COMPARE_RISE),
+				Vector2(middle + reach * 0.55, middle - reach * GlyphGrammar.COMPARE_RISE),
+				colour)
+		Kind.EXTREMUM_HIGH, Kind.EXTREMUM_LOW:
+			_polyline(image, GlyphGrammar.extremum(kind == Kind.EXTREMUM_HIGH),
+				middle, reach, colour)
 		Kind.ECHO_TRAIN:
 			# Uprights on a baseline, falling away. The clock's are all one height; a
 			# delay's decay, which is the difference between an event generated over and

@@ -60,6 +60,13 @@ const COMBINING := ["ROUTE_MERGE", "ROUTE_SPLIT", "SUM_JUNCTION", "PRODUCT",
 const EFFECTS := ["ECHO_TRAIN", "PULSE_TRAIN", "HELD", "RESPONSE_COMB", "SQUARE_WAVE",
 	"STEPS_ORDERED", "RESPONSE_FORMANT", "RESPONSE_BAND", "FLAT"]
 
+## The maths candidates, each against the chrome and the response shape it is most likely
+## to be mistaken for. The chrome rows are the point: a mathematically correct symbol that
+## looks like an application command is not acceptable, whatever it means.
+const MATHS := ["CLIP_CURVE", "RESPONSE_HIGH", "SLIDE", "RECTIFIED", "RESPONSE_NOTCH",
+	"THRESHOLD", "CROSS", "ARROW_RIGHT", "EXTREMUM_HIGH", "EXTREMUM_LOW",
+	"CHEVRON_RIGHT", "TICK"]
+
 ## The contact sheet's own geometry. Every mark is shown at the same drawn size whatever
 ## it was rendered at, which is the only way four sizes can be compared: the 10-pixel cut
 ## and the 96-pixel one differ in how they are drawn, not in how big they are on the page.
@@ -81,7 +88,7 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(folder)
 
 	var names: Array = []
-	for group: Array in [EFFECTS, COMBINING, GENERATORS, TEMPORAL, SPECIMENS,
+	for group: Array in [MATHS, EFFECTS, COMBINING, GENERATORS, TEMPORAL, SPECIMENS,
 			FIRST_SYNTH, FILTERS, ROUTING]:
 		for one: String in group:
 			if not names.has(one):

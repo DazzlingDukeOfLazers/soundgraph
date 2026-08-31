@@ -427,6 +427,84 @@ const ECHO_HEIGHTS := [1.0, 0.6, 0.32]
 const ECHO_HEIGHTS_SMALL := [1.0, 0.5]
 
 
+# ---- the maths family -----------------------------------------------------------------
+#
+# Where the corpus rollout stops being able to borrow. These four are transfer functions —
+# what comes out for what goes in — and a transfer function is a real drawing rather than a
+# symbol, which is what keeps them clear of the chrome. A bare mathematical sign at
+# twenty-four pixels is an application command; a curve is not.
+#
+# The one place notation survives is inside a ring, which Add and Multiply established and
+# which is not extended here: there is no Subtract, Divide or Negate type in the registry
+# to extend it with.
+
+## Clip: the transfer curve of a bounded signal. Flat at the floor, straight through the
+## middle, flat at the ceiling.
+##
+## Corner to corner on purpose. The highpass response is also flat-rise-flat and the
+## difference is where the flats sit: a response moves between two bands a third of the
+## field apart, and a clip runs the whole diagonal of it.
+const CLIP_CURVE := [Vector2(-1.1, 0.85), Vector2(-0.55, 0.85), Vector2(0.55, -0.85),
+	Vector2(1.1, -0.85)]
+
+## And the second attempt: the *output* rather than the transfer function. A wave with its
+## peaks flattened is what clipping looks like on a scope, and it is in the waveform family
+## rather than the response family — which is the collision the transfer curve could not
+## get out of, because flat-ramp-flat is also the highpass.
+const CLIP_FLAT := 0.62
+
+## Abs: the same signal with its negative half folded up. Two humps on a baseline, which
+## is what full-wave rectification actually looks like on a scope.
+const ABS_HUMPS := 2
+
+## Compare: a signal crossing a threshold. The level runs the width of the field and the
+## signal climbs through it, which is the whole of what the node does — everything above
+## the line is a one and everything below it is a zero.
+const COMPARE_LEVEL := 0.0
+const COMPARE_RISE := 0.9
+
+## MinMax: which of two signals is taken. Two lines crossing, and the mark is the envelope
+## of the one that wins — the upper for maximum, the lower for minimum. A mirror pair, the
+## way the highpass and the lowpass are, and a genuine identity variant because changing
+## the mode changes the operation.
+const MINMAX_REACH := 0.92
+
+
+## The rectified humps, as points in reach units.
+## A clipped wave: a sine with the top and bottom taken off, over two cycles like every
+## other waveform in the generator family.
+static func clipped(small: bool) -> Array:
+	var points: Array = []
+	var cycles := 1.0 if small else GENERATOR_CYCLES
+	var steps := int((10 if small else 18) * cycles)
+	for i in steps + 1:
+		var t := float(i) / float(steps)
+		points.append(Vector2(lerpf(-1.1, 1.1, t),
+			clampf(-sin(t * TAU * cycles) * MODULATION_AMPLITUDE * 1.6,
+				-CLIP_FLAT, CLIP_FLAT)))
+	return points
+
+
+static func rectified(small: bool) -> Array:
+	# Two humps at every size. One hump is an arch, and an arch is the bandpass — the
+	# whole of what says rectification is that the humps *repeat* on one side of a line.
+	var humps: int = ABS_HUMPS
+	var points: Array = []
+	var steps := 10 * humps
+	var base := 0.8
+	for i in steps + 1:
+		var t := float(i) / float(steps)
+		points.append(Vector2(lerpf(-1.1, 1.1, t),
+			base - absf(sin(t * PI * float(humps))) * 1.6))
+	return points
+
+
+## The envelope of two crossing signals: the upper one for maximum, the lower for minimum.
+static func extremum(upper: bool) -> Array:
+	var peak: float = -MINMAX_REACH if upper else MINMAX_REACH
+	return [Vector2(-1.1, -peak), Vector2(0.0, peak), Vector2(1.1, -peak)]
+
+
 # ---- the combining family -------------------------------------------------------------
 #
 # What happens where signals meet. The signal-flow conventions, which are a family already

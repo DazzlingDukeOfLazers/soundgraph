@@ -51,7 +51,11 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	# and docs/graph-nodes.md — so this is the combining half of it.
 	"Mixer", "Add", "Multiply", "Level", "StereoLevel",
 	# 14E: time and response shapes.
-	"Delay", "Comb", "Allpass", "Formant"]
+	"Delay", "Comb", "Allpass", "Formant",
+	# 14F: the maths types that exist. There is no Subtract, Divide, Negate or Modulo in
+	# the registry, so the ring family gained no siblings — it is Add and Multiply and
+	# that is all there is to be consistent with.
+	"Compare", "MinMax", "Clip", "Abs"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -102,6 +106,10 @@ const COMPACT := {
 	"Comb": "Comb",
 	"Allpass": "Allpass",
 	"Formant": "Formant",
+	"Compare": "Compare",
+	"MinMax": "Min/Max",
+	"Clip": "Clip",
+	"Abs": "Abs",
 	# And three whose canonical name is already short enough to fit anywhere. They are
 	# written down anyway, because a compact name is part of a migrated type's contract
 	# rather than a repair applied when today's geometry happens to need one. A type
@@ -178,6 +186,18 @@ const GLYPH := {
 	# 14E. Family follows what the mark means, not what the registry filed it under: the
 	# delay is temporal repetition, the comb and the formant are response shapes, and the
 	# allpass is nothing at all yet.
+	# 14F. Compare is the only one of the four maths types that got a mark, and the other
+	# three are the most interesting result of the batch: their drawings are transfer
+	# functions and waveforms, and the response and generator families already own that
+	# territory. A clipped wave against the square is a matter of how sharp the corners
+	# are; rectified humps against a formant is how narrow the peaks are; a min/max
+	# envelope against the bandpass and the notch is whether the top is a point or a
+	# plateau. Every one of those is a detail rather than a silhouette, which is rule 9,
+	# so three cells are reserved and the marks stay drawn and unassigned as evidence.
+	#
+	# The ring does not rescue them either. It carries a plus and a cross at header size
+	# and nothing larger — its interior is under three pixels there.
+	"Compare": Icons.Kind.THRESHOLD,
 	"Delay": Icons.Kind.ECHO_TRAIN,
 	"Comb": Icons.Kind.RESPONSE_COMB,
 	"Formant": Icons.Kind.RESPONSE_FORMANT,

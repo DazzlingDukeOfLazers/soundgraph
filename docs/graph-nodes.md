@@ -1322,3 +1322,65 @@ Allpass and Formant to Standard, Delay and Comb to Wide, all by the forced-width
 at every interface scale. Nothing needed a class that did not exist.
 
 Twenty-four migrated types.
+
+## Step 14F — maths, and where the visual space ran out
+
+Four types migrated, **one glyph shipped, three cells reserved.** The three that failed are
+the most useful thing this batch produced.
+
+### There was no ring family to extend
+
+`Add` and `Multiply` established that a symbol inside a ring is a mathematical operator.
+There is no Subtract, no Divide, no Negate and no Modulo in the registry, so there were no
+siblings to give it. The family is two marks and that is all there is to be consistent
+with.
+
+### Compare is a threshold, not a comparator
+
+Worth checking before drawing anything: `Compare` has no mode parameter. It emits 1 while
+a is at or above b and 0 below — **a signal turned into a gate**. So it is not a
+`<`/`>`/`=` selector and never needed the identity-variant mechanism, and its mark is not
+notation at all: a level running the width of the field with the signal climbing through
+it. Everything above the line is a one and everything below it is a zero, which is the
+entire node.
+
+It clears the chrome comfortably. The dismiss cross is two diagonals; this has a
+horizontal. The arrow has a head. Nothing else in the set is a line crossed by a level.
+
+### The other three collided with the language, not the chrome
+
+The `×` lesson was that mathematical notation can collide with application commands. This
+batch found the other kind: **transfer functions and waveforms collide with the response
+and generator families, because those families already own that visual territory.**
+
+```
+Clip     a wave with flattened peaks   against Square: how sharp the corners are
+Abs      humps on a baseline           against Formant: how narrow the peaks are
+MinMax   the envelope of two signals   against Bandpass and Notch: point or plateau
+```
+
+Every one of those is a *detail*, not a silhouette. Rule 9 says fail, and two attempts each
+did not rescue them — the clip was drawn as a transfer curve first (flat, ramp, flat, which
+is the highpass) and then as its output; the rectifier was drawn as bare humps first and
+then on a baseline, which helped and not enough.
+
+The ring does not rescue them either. Its interior is under three pixels at header size,
+which carries a plus and a cross and nothing larger.
+
+So three cells are reserved, and the marks stay drawn and unassigned — evidence, and a
+note to whoever tries again that these particular drawings have already been tried. That
+is now four unresolved glyphs, and they are honest ones: Phaser and Allpass because phase
+has no picture, Clip and Abs and MinMax because the picture they want is taken.
+
+### The finding underneath
+
+The identity set is around fifteen marks that are all **a line doing something across a
+field** — responses, waveforms, contours, transfer functions. That space is close to full,
+and the next family that wants to draw a curve will find the same thing. A future batch
+needing marks in this territory should probably reach for an enclosing structure the way
+the operators did, rather than for another curve.
+
+### Widths
+
+Compare and Abs to Narrow, Clip to Standard, MinMax to Wide, by the validator at every
+interface scale. Twenty-eight migrated types.

@@ -223,6 +223,11 @@ const WIDTH_CLASS := {
 	"Formant": Width.STANDARD,
 	"Delay": Width.WIDE,
 	"Comb": Width.WIDE,
+	# 14F, by the validator.
+	"Compare": Width.NARROW,
+	"Abs": Width.NARROW,
+	"Clip": Width.STANDARD,
+	"MinMax": Width.WIDE,
 }
 
 
