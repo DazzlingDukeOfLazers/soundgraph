@@ -1735,3 +1735,60 @@ reason with a proposed fix rather than for being mysteriously large.
     1  held        ScaleQuantizer, on a layout rule
    registry runtime types = migrated + held    yes
 ```
+
+## Step 15A.2 — the spanning rule, and why it is not finished
+
+The rule is right and the implementation is not, and the difference is worth writing down
+because it is the same mistake in two sizes.
+
+### What was asked for
+
+> A parameter whose control's **validated minimum width** exceeds the width available to
+> one standard column spans the full control region for its row.
+
+Keyed to the control's measured requirement — not to a type, a name, a string length or a
+class of Control.
+
+### What was built
+
+`NodeGrid.spans` **predicts** the requirement instead of measuring it: the descriptor's
+widest reading, in the control's font, plus an allowance for the dropdown's chrome. The
+packing loop decides its rows before any cell exists, so there is nothing to measure at
+the moment the question is asked.
+
+The prediction is wrong by a third. A dressed `OptionButton` holding `minor pentatonic` has
+a real minimum of **224**; the estimate says **168**. Godot adds internals to a Button that
+its styleboxes do not describe, and no amount of adding up spacing tokens finds them.
+
+### And the threshold moved twice, for the same reason
+
+**One column.** A dropdown's own chrome is over half a column, so almost any option word
+cleared the bar. Thirty-two of fifty-one types reflowed to one parameter a row, every node
+in the program got narrower and taller, and two shipped example patches ended up with
+overlapping nodes. A fix for one node had become a redesign of all of them, and the
+inventory diff is the only reason it was visible.
+
+**Two columns.** Safe — one type reflowed, by eight units — but now the estimate is under
+the real requirement, so the node the rule was written for does not span.
+
+So the rule is present, correct in principle, tested on its own terms, and inert.
+
+### What it needs
+
+The packing loop has to **build its cells and then group them**, rather than group first
+and build after. Then the criterion is the cell's own `get_combined_minimum_size`, which is
+the number the layout will actually use, and the predictor goes away entirely.
+
+That is a restructure of the row builder — the frozen grid's own code — and it is not
+something to smuggle into the end of a width change. Reported instead.
+
+### Where that leaves the inventory
+
+**Fifty of fifty-one.** Scale Quantizer is held, still for a written reason, and the reason
+is now one step more precise than it was: not "it is wide" and not "the grid lacks a rule",
+but "the grid has the rule and cannot yet measure the thing the rule is about".
+
+`design_test.gd` holds the rule to its own boundary — an option grown a letter at a time
+until the rule flips, in every palette, plus a knob that must never span. That test does not
+depend on `minor pentatonic` staying sixteen characters long, and it will still be true
+when the predictor is replaced by a measurement.

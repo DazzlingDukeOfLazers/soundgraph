@@ -4606,6 +4606,18 @@ func _create_widget(node: Dictionary) -> void:
 		var per_line := PARAMETERS_PER_LINE
 		var line: Array = []
 		for parameter: Dictionary in parameters:
+			# A control that cannot inhabit one standard column takes the row. The
+			# alternative is what the Scale Quantizer was doing: one dropdown two and
+			# a half columns wide sitting beside an ordinary one, and the whole
+			# chassis five hundred units across to hold the pair. The node was never
+			# big. See NodeGrid.spans, which asks the descriptor rather than the
+			# type, the name or the class of Control.
+			if gridded and NodeGrid.spans(parameter):
+				if not line.is_empty():
+					grid.append(line)
+					line = []
+				grid.append([parameter])
+				continue
 			line.append(parameter)
 			if line.size() == per_line:
 				grid.append(line)
