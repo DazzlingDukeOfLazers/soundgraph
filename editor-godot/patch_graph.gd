@@ -2871,6 +2871,32 @@ class ScreenText extends Control:
 				return cut.strip_edges(false, true) + "…"
 		return "…"
 
+	## Whether both halves of a parameter cell reach the reader at this zoom.
+	##
+	## The 15B.1 rule in one function, split out for the same reason `fit_for` is: a check
+	## that works the answer out for itself is a second implementation of the rule, and it
+	## can agree with the stylesheet while the screen disagrees with both.
+	##
+	## > **A parameter cell is the unit of level-of-detail removal. Its name and its value
+	## > appear together or not at all.**
+	##
+	## Note what it does *not* do: it does not rank the halves. Both universal priorities
+	## were tried — keep the value, keep the name — and both were wrong for the same
+	## reason, which is that half a statement is not a smaller statement.
+	static func cell_reaches(row: Control, zoom: float) -> bool:
+		var name_label: Label = row.get_meta("name_label") \
+			if row.has_meta("name_label") else null
+		if name_label == null or not name_label.is_visible_in_tree():
+			return false
+		if fit_for(name_label, zoom) == Fit.NO_ROOM:
+			return false
+		for label in _marked(row):
+			if str(label.get_meta("screen_kind", "")) == "value" \
+					and label.is_visible_in_tree() \
+					and fit_for(label, zoom) == Fit.NO_ROOM:
+				return false
+		return true
+
 	## How a marked label is reaching the reader.
 	##
 	##   IN_PLACE     the node's own label, big enough on its own
@@ -2979,15 +3005,34 @@ class ScreenText extends Control:
 	## too narrow to hold its text at the minimum says nothing rather than saying it over
 	## the top of its neighbour: overlapping words are worse than a band that has run out
 	## of room, and running out is what the next band down is for.
-	## A parameter row is one thing, so it is allocated as one thing.
+	## A parameter cell is one thing, so it is allocated as one thing **and removed as one
+	## thing**.
 	##
 	## Drawn independently, the name and the value competed for the same row: the value's
 	## box expands to fill what the hidden slider left, so the name was pushed back to its
 	## own 96px and "resonance" at its minimum no longer fitted — the label vanished and
-	## its number stayed, which is the orphan this whole exercise is against. Here the row
-	## is split once: name against the left edge, value against the right, both at their
-	## own minimum. If the two genuinely cannot both fit, the *value* goes, because a name
-	## with no number still says what the node has and a number with no name says nothing.
+	## its number stayed. So the row is split once: name against the left edge, value
+	## against the right, both at their own minimum.
+	##
+	## That fixed the allocation and left the removal, which step 15B measured and found
+	## still broken. When the pair genuinely would not fit, this drew whichever half it
+	## could and let the other fall through to the generic pass, which then decided it on
+	## its own — and the reader got `cutoff` with no number, or a bare `4` with no word.
+	## Twenty-eight of ninety-seven cells at Compact and thirteen at Comfortable, in both
+	## directions, across nine node types.
+	##
+	## The old comment here defended a priority — "the value goes, because a name with no
+	## number still says what the node has and a number with no name says nothing" — and
+	## that priority is the mistake. Both universal orders had already been tried and
+	## rejected elsewhere for the same reason. The unit was wrong, not the ranking:
+	##
+	## > **A parameter cell is the unit of level-of-detail removal. Its name and its value
+	## > appear together or not at all.**
+	##
+	## So both halves are marked handled and hidden up front, and nothing is drawn until
+	## the pair is known to fit. `handled` is what keeps the generic pass from resurrecting
+	## a half that this one decided against — a label left unhandled is a label the generic
+	## pass gets an independent opinion about, which is precisely how the orphans arrived.
 	func _draw_pairs(node: GraphNode, handled: Dictionary) -> void:
 		# A line, then the cells on it. This drew one pair per row because a row *was*
 		# one parameter; a row holds two now, and reading the row's own metas would
@@ -3010,19 +3055,58 @@ class ScreenText extends Control:
 		for row in cells:
 			var name_label: Label = row.get_meta("name_label") \
 				if row.has_meta("name_label") else null
-			if name_label == null or not name_label.is_visible_in_tree():
-				continue
 			var value: Label = null
 			for label in _marked(row):
 				if str(label.get_meta("screen_kind", "")) == "value" \
 						and label.is_visible_in_tree():
 					value = label
-			# Only when the row is being compensated at all; at full detail the real
+			# The verdict, recorded on the cell for anything that needs to know what the
+			# reader actually got, and stamped with the zoom it was reached at so a stale
+			# answer cannot be read as a fresh one. Split out for the same reason
+			# `fit_for` was: a test that works out the answer for itself is a second
+			# implementation of this rule, and it can agree with the stylesheet while the
+			# screen disagrees with both.
+			row.set_meta("cell_shown", true)
+			row.set_meta("cell_shown_at", graph.zoom)
+
+			# A cell whose name has already gone has no pair left to keep, and a number on
+			# its own is the worse half. It goes with it.
+			if name_label == null or not name_label.is_visible_in_tree():
+				if value != null:
+					handled[value] = true
+					value.self_modulate.a = 0.0
+				row.set_meta("cell_shown", false)
+				continue
+			# Only when the cell is being compensated at all; at full detail the real
 			# controls are on screen and must not be drawn over.
 			if fit_for(name_label, graph.zoom) == Fit.IN_PLACE \
 					and (value == null or fit_for(value, graph.zoom) == Fit.IN_PLACE):
 				continue
 
+			# The atomicity decision, and it is made **before** any layout is attempted:
+			# can each half be delivered at all, by whichever pass ends up drawing it?
+			# If not, the cell is not delivered — and that is the whole of 15B.1.
+			#
+			# Made here rather than at the exits below, because most compensated cells are
+			# not drawn by this pass at all. The generic pass in `_draw_labels` gives each
+			# label the slot between its neighbours, which is wider than the half-row this
+			# pass allocates, so it succeeds where the row split does not. Claiming every
+			# cell here and refusing the ones this pass could not lay out took ninety-one
+			# of ninety-seven parameters off the screen at 66% — an atomicity correction
+			# that had quietly become a density change, which is exactly what the brief
+			# said not to do.
+			if not cell_reaches(row, graph.zoom):
+				handled[name_label] = true
+				name_label.self_modulate.a = 0.0
+				if value != null:
+					handled[value] = true
+					value.self_modulate.a = 0.0
+				row.set_meta("cell_shown", false)
+				continue
+
+			# Both halves will reach the reader. This pass prefers to lay them out as one
+			# row — name left, value right, both at their own minimum — and hands the cell
+			# back to the generic pass, whole, when that allocation will not hold them.
 			var rect := row.get_global_rect()
 			var pad: float = 6.0 * graph.zoom
 			var span := rect.size.x - pad * 2.0
@@ -3034,7 +3118,44 @@ class ScreenText extends Control:
 			var name_width := name_font.get_string_size(name_label.text,
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, name_size).x
 			if name_width > span:
-				continue    # nothing fits; the generic pass will hide it honestly
+				continue    # the row split will not hold it; the generic pass gets both
+
+			# Everything the pair needs is settled before a single glyph is drawn. The
+			# old order drew the name and then discovered the value would not fit, which
+			# is how a name ended up standing on its own.
+			var shown := ""
+			if value != null:
+				var value_size: int = Design.screen_minimum(int(value.get_meta("screen_min", Design.TYPE_FLOOR)))
+				var value_font := value.get_theme_font("font")
+				var value_width := value_font.get_string_size(value.text,
+					HORIZONTAL_ALIGNMENT_RIGHT, -1.0, value_size).x
+				shown = value.text
+				# A gap the eye can see, so the pair reads as label-then-value rather
+				# than as one run-together word: "frequency110.0 Hz" was the first
+				# attempt.
+				if name_width + value_width + 12.0 > span:
+					# The unit goes before the number does — a redundant unit outranks
+					# nothing and a value outranks it. This is the one ranking that
+					# survives, because it is inside the value rather than across the
+					# pair: "transpose 0" still says both things.
+					var cut := shown.rfind(" ")
+					if cut <= 0:
+						continue
+					shown = shown.substr(0, cut)
+					value_width = value_font.get_string_size(shown,
+						HORIZONTAL_ALIGNMENT_RIGHT, -1.0, value_size).x
+					if name_width + value_width + 12.0 > span:
+						continue
+				# The pair holds. Claimed and hidden now, at the point where drawing it
+				# here is certain — claiming it any earlier is what took ninety-one
+				# parameters off the screen.
+				handled[value] = true
+				value.self_modulate.a = 0.0
+				draw_string(value_font, Vector2(left,
+					top + (rect.size.y + value_font.get_ascent(value_size)
+						- value_font.get_descent(value_size)) * 0.5),
+					shown, HORIZONTAL_ALIGNMENT_RIGHT, span, value_size,
+					value.get_theme_color("font_color"))
 			handled[name_label] = true
 			name_label.self_modulate.a = 0.0
 			draw_string(name_font, Vector2(left,
@@ -3042,36 +3163,6 @@ class ScreenText extends Control:
 					- name_font.get_descent(name_size)) * 0.5),
 				name_label.text, HORIZONTAL_ALIGNMENT_LEFT, span, name_size,
 				name_label.get_theme_color("font_color"))
-
-			if value == null:
-				continue
-			handled[value] = true
-			value.self_modulate.a = 0.0
-			var value_size: int = Design.screen_minimum(int(value.get_meta("screen_min", Design.TYPE_FLOOR)))
-			var value_font := value.get_theme_font("font")
-			var value_width := value_font.get_string_size(value.text,
-				HORIZONTAL_ALIGNMENT_RIGHT, -1.0, value_size).x
-			# A gap the eye can see, so the pair reads as label-then-value rather than
-			# as one run-together word: "frequency110.0 Hz" was the first attempt.
-			var shown := value.text
-			if name_width + value_width + 12.0 > span:
-				# The unit goes before the number does. That is the decluttering order —
-				# a redundant unit outranks nothing, a value outranks it — and it is the
-				# difference between "transpose 0.000" and a label sitting on its own
-				# with its number thrown away, which is the orphan this is against.
-				var cut := shown.rfind(" ")
-				if cut <= 0:
-					continue
-				shown = shown.substr(0, cut)
-				value_width = value_font.get_string_size(shown,
-					HORIZONTAL_ALIGNMENT_RIGHT, -1.0, value_size).x
-				if name_width + value_width + 12.0 > span:
-					continue
-			draw_string(value_font, Vector2(left,
-				top + (rect.size.y + value_font.get_ascent(value_size)
-					- value_font.get_descent(value_size)) * 0.5),
-				shown, HORIZONTAL_ALIGNMENT_RIGHT, span, value_size,
-				value.get_theme_color("font_color"))
 
 	func _draw_labels(node: GraphNode) -> void:
 		var handled := {}

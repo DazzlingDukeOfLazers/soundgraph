@@ -2099,5 +2099,150 @@ no new systemic design defect emerges                       one, unimplemented, 
 the final system is documented and gated                    docs/graph-node-system.md, editor_test.gd
 ```
 
-**The cosmopolitan pass is finished.** Any future node is a consumer of the system unless it
-produces hard evidence that the system lacks a semantic primitive.
+**15B passes**, with one legitimate reason to reopen the frozen grammar and two
+implementation bugs to clean up. That is 15B.1, below.
+
+---
+
+## Step 15B.1 — node system closure
+
+Three findings from 15B, fixed. One of them was allowed to reopen the frozen grammar; the
+other two were bugs against rules that already existed. Nothing else moved: no icon, no
+width, no spacing token, no type size, no state, no threshold, no title behaviour.
+
+### The one rule that was added
+
+> **A parameter cell is the unit of level-of-detail removal. Its name and its value appear
+> together or not at all.**
+
+`ScreenText.cell_reaches()` is the decision, `_draw_pairs` is the only caller, and nothing
+ranks the halves. The old code did rank them — its comment said "the value goes, because a
+name with no number still says what the node has and a number with no name says nothing" —
+and that priority was the mistake. Both universal orders had already been tried and
+rejected elsewhere for the same reason: half a statement is not a smaller statement.
+
+The measurement, before and after, over the dense graph's ninety-seven parameter cells:
+
+```
+                       whole   name only   value only   neither
+Compact     66%  was      69          11           12         5
+                 now      69           0            0        28
+Comfortable 66%  was      84           3            8         2
+                 now      84           0            0        13
+Compact    100%  was      96           1            0         0
+                 now      96           0            0         1
+```
+
+**No cell that was whole became absent.** Every split cell moved from split to absent and
+nothing else moved, which is the strongest evidence available that this was an atomicity
+correction and not a density change.
+
+Checked at a hundredth either side of every band boundary as well as at the four named
+zooms, because atomicity is a per-frame property and four zooms cannot prove it — what
+would break it is a cell whose two halves cross their own thresholds one frame apart.
+Across every zoom, straddle and interface scale: **0 split cells.**
+
+One cost, recorded. At Compact, and in the 86–89% straddle at every scale, the Keyboard's
+`transpose` cell now loses its name as well as its number. Control visibility did not
+change, so the knob is still drawn: the reader gets an unlabelled dial rather than a
+labelled one with no figure. One cell of ninety-seven, at the tightest interface scale.
+
+#### Two false starts, both instructive
+
+The first attempt claimed every compensated cell for the pair pass and refused the ones it
+could not lay out. That took **ninety-one of ninety-seven** parameters off the screen at
+66%. The reason is worth keeping: most compensated cells are not drawn by the pair pass at
+all — the generic pass in `_draw_labels` gives each label the slot between its neighbours,
+which is wider than the half-row the pair pass allocates, so it succeeds where the row
+split does not. The fix was to make the atomicity decision *before* any layout is attempted
+and hand the cell back to the generic pass **whole** when the row split will not hold it.
+
+The second was in the audit rather than the code: `qa_reduced.gd` went on reporting the old
+numbers exactly, because it asked each label `fit_for` and the decision had moved to the
+cell. A probe that measures the thing that used to decide will report that nothing has
+changed, forever. The renderer now records its verdict on the row — stamped with the zoom
+it was reached at, so a stale answer cannot be read as a fresh one — and the audit reads
+that, for the same reason `fit_for` was split out in the first place.
+
+### Two bugs, fixed structurally
+
+**Six controls survived into MAP.** Not fixed with six `hide()` calls:
+
+> **Every interactive body control declares the lowest optical state it may appear in. The
+> default is FULL.**
+
+`NodeOptical.requires()` at the construction site, `floor_of` and `survives` to read it,
+`_apply_body_optics` to enforce it. A widget is for aiming at and there is nothing to aim
+at past FULL, so anything that survives further has to say so and say why. The plugin
+host's three buttons, the CC learn button and the speech words button are Buttons and are
+governed by the default; the sequencer's step lane paints itself and declares FULL
+explicitly. The seventh control somebody adds tomorrow is governed the day it exists.
+
+The sweep skips control zones, which `_apply_cell_detail` already owns — two authorities
+over one control is how a widget ends up flickering between two opinions of itself — and
+it remembers the previous visibility rather than assuming `true` at FULL, because the
+plugin's panel button appears only when the plugin has a face.
+
+**Load-time diagnostics reached nobody.** Two sources, one health state, one channel:
+
+```
+document validation  (validate_patch)
+        +
+build diagnostics    (get_diagnostics_json, after load_patch)
+        ↓
+node health state
+        ↓
+header validity treatment
+```
+
+No new visual state — the validity channel is what this is for, it is designed, gated at
+7:1 and proven. The two sources overlap, so they are deduplicated on code and message
+before presentation; without that a clamped parameter would be reported and counted twice.
+And the step 11 rule is intact: health never recolours a signal port or a cable.
+
+The QA patch shows the result. It was flagging `drive` alone; it now flags
+`["drive", "plug"]`, and the Problems panel carries both messages once each.
+
+### The reruns
+
+```
+qa_reduced   0 split cells across every zoom, straddle and interface scale
+             no control aimable at REDUCED or MAP, at any scale
+qa_sheet     80 frames checked, 26 shots written, no complaints
+             the validator is unhappy with: ["drive", "plug"]
+inventory    51 runtime types: 39 migrated, 12 with a reserved glyph, 0 held
+             registry runtime types = migrated + held: yes
+width_sheet  48 placeable types, every verdict "ok" — no class moved
+editor_test  no title cut, every node inside its class, nothing clipped,
+             the title column holds, 0 controls past FULL, 0 half pairs
+```
+
+`editor_test.gd` now gates both new rules on the dense graph, headlessly: no control
+survives past FULL, and `cell_reaches` never says a cell reaches the reader while one of
+its halves does not. The pictures stay in `qa_reduced.gd`, which needs a rendering server
+for the same reason `state_sheet` and `optical_sheet` do.
+
+### What is deliberately not fixed here
+
+**Cable signal type is hue-only between its endpoints.** The grayscale render showed it and
+it is real, but it is not a graph-node defect: the sockets carry shape redundancy at both
+ends, so a reader can always recover a cable's type by looking at either one. What is lost
+is tracing a wire through a crossing region without looking at its ends.
+
+Filed as the next cable-system problem rather than patched here. A dash, an inline mark or
+any other secondary cue applied across thirty-five intersecting wires changes the whole
+graph, and cables deserve the proof-sheet process the nodes just had rather than a change
+made in passing during node completion.
+
+---
+
+**The Cosmopolitan Graph Node Pass is complete.**
+
+Fifty-one of fifty-one types migrated. Twelve identity cells deliberately empty and
+documented as a terminal state. Six width classes derived from the corpus. One packing rule
+measured rather than predicted. One atomicity rule, added on evidence, after the freeze and
+under protest of the freeze. Everything specified in `docs/graph-node-system.md` and gated
+in `editor_test.gd`.
+
+Any future node is a consumer of the system unless it produces hard evidence that the
+system lacks a semantic primitive.

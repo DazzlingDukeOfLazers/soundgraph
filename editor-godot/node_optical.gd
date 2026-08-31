@@ -70,6 +70,41 @@ static func name_of(state: int) -> String:
 	return ["FULL", "REDUCED", "MAP"][state]
 
 
+## Where a body control says how far out it may still be drawn.
+##
+## The registration 15B found missing. `_apply_detail` walks parameter rows and the cells
+## on them, because that is the machinery the pass was built around — and six controls in
+## the library are not on a parameter row at all. The plugin host's three buttons, the CC
+## learn button, the speech words button and the sequencer's step lane are each added
+## straight to the node, so nothing ever asked them what distance they were for, and they
+## were still being drawn at 28% where the contract says a node draws no control.
+##
+## Six `hide()` calls would have fixed those six. This is the structural version: every
+## interactive body control declares the lowest optical state it may still appear in, and
+## `_apply_detail` enforces the declaration. A seventh arrives already governed.
+##
+## > **The default is FULL.** A widget is for aiming at, and there is nothing to aim at
+## > past FULL. Anything that survives further has to say so and say why.
+const REQUIRES := "optical_min"
+
+
+## The furthest-out state this control may still be drawn in.
+static func floor_of(control: Control) -> int:
+	return int(control.get_meta(REQUIRES, State.FULL))
+
+
+## Whether it is still drawn at this state. FULL is 0 and MAP is 2, so a control survives
+## while the state has not gone past its floor.
+static func survives(control: Control, state: int) -> bool:
+	return state <= floor_of(control)
+
+
+## Declares one. Called at the control's own construction site, so the claim sits beside
+## the thing making it rather than in a table somebody has to remember to update.
+static func requires(control: Control, state: int) -> void:
+	control.set_meta(REQUIRES, state)
+
+
 ## What survives into each state, as the table rather than as an impression.
 ##
 ## `true` is a promise, `false` is a promise too, and "optional" means the renderer may
@@ -105,25 +140,33 @@ static func name_of(state: int) -> String:
 ## stopped reading should go — and moving either threshold to make a table look tidy is
 ## what the brief said not to do.
 ##
-## ## Two departures the dense-graph QA found, at 15B
+## ## Two departures the dense-graph QA found, and what 15B.1 did about them
 ##
-## Written down for the same reason, and neither of them corrected here.
+## Both were written down before they were fixed, which is why the reasoning survives.
 ##
-## **Six controls survive into MAP.** The plugin host's three buttons, the MIDI CC learn
-## button, the Speech words button and the Step Sequencer's step grid are still drawn at
-## 40% and 28%, at every interface scale, and the table above says a MAP node draws no
-## control. Every one of them is a control the row system never owned, so `_apply_detail`
-## was never asked about it: the rule is right and is not reaching them. `editor_test.gd`
-## holds the count at the known figure so a sixth cannot arrive unnoticed.
+## **Six controls survived into MAP** — the plugin host's three buttons, the MIDI CC learn
+## button, the Speech words button and the Step Sequencer's step lane — because every one
+## of them is a control the row system never owned, so `_apply_detail` was never asked
+## about it. Fixed at 15B.1 by `REQUIRES` above: a body control declares the lowest state
+## it may appear in, defaulting to FULL, and the detail pass enforces the declaration. The
+## rule was right; it simply had no way to reach a control that was not on a row.
 ##
-## **At REDUCED a parameter can arrive as half a pair.** The table says values survive "as
-## words", and what a reader gets at 66% is sometimes a name with no number and sometimes
-## a bare number with no name — 13% of cells at Comfortable and 29% at Compact, measured
-## by `qa_reduced.gd` through the renderer's own `ScreenText.fit_for`. The cause is that
-## `Fit.NO_ROOM` decides **per label** while a parameter is **a pair**, and nothing states
-## what the unit of removal is. That is a gap in the rule rather than a slip against it,
-## which is why it is the one finding of 15B entitled to reopen the frozen system. See
-## docs/graph-nodes.md.
+## **At REDUCED a parameter could arrive as half a pair.** The table says values survive
+## "as words", and what a reader got at 66% was sometimes a name with no number and
+## sometimes a bare number with no name — 13% of cells at Comfortable and 29% at Compact,
+## measured by `qa_reduced.gd` through the renderer's own `ScreenText.fit_for`. The cause
+## was that `Fit.NO_ROOM` decides **per label** while a parameter is **a pair**, and
+## nothing said what the unit of removal was.
+##
+## That was a gap in the rule rather than a slip against it, so it was the one finding of
+## 15B entitled to reopen the frozen system, and it was reopened for exactly this:
+##
+## > **A parameter cell is the unit of level-of-detail removal. Its name and its value
+## > appear together or not at all.**
+##
+## Implemented in `ScreenText._draw_pairs`. No font size, threshold, width, row geometry,
+## control visibility, title or port-label behaviour moved with it — an atomicity
+## correction, not a density change.
 const SURVIVAL := {
 	"selection": [true, true, true],
 	"validity": [true, true, true],

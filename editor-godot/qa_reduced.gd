@@ -20,6 +20,15 @@ const PatchGraph := preload("res://patch_graph.gd")
 const PATCH := "res://qa/dense-graph.json"
 const ZOOMS := [1.0, 0.66, 0.40, 0.28]
 
+## How far either side of a band boundary the straddle looks. A hundredth: close enough
+## that nothing else has changed, far enough that the band certainly has.
+##
+## Atomicity is a per-frame property, so four zooms cannot prove it. What would break it is
+## a cell whose two halves cross their own thresholds one frame apart — the name reaching
+## at 0.876 and the value not until 0.874 — and the only place to catch that is either side
+## of the edge.
+const STRADDLE := 0.01
+
 var main: Node
 var graph: GraphEdit
 
@@ -142,12 +151,26 @@ func _initialize() -> void:
 	main._choose_detail_mode(PatchGraph.DetailMode.ADAPTIVE)
 	await settle(10)
 
+	var split := 0
 	for scale in Design.SCALE_FACTORS.size():
 		main._use_ui_scale(scale)
 		await settle(8)
 		print("")
 		print("=== %s ===" % Design.SCALE_NAMES[scale])
+		# The four the brief names, plus a hundredth either side of every band boundary at
+		# this interface scale. The boundaries are where a level of detail goes wrong, and
+		# atomicity is a per-frame property that four zooms cannot prove.
+		var stops := {}
 		for zoom: float in ZOOMS:
+			stops[snappedf(zoom, 0.001)] = true
+		for edge: float in [PatchGraph._full_floor(), PatchGraph.compact_floor(),
+				PatchGraph.summary_floor()]:
+			for offset: float in [-STRADDLE, 0.0, STRADDLE]:
+				stops[snappedf(edge + offset, 0.001)] = true
+		var ladder: Array = stops.keys()
+		ladder.sort()
+		ladder.reverse()
+		for zoom: float in ladder:
 			graph.zoom = zoom
 			graph._update_detail()
 			main._apply_detail(graph.detail)
@@ -172,9 +195,21 @@ func _initialize() -> void:
 						continue
 					var name_label: Label = cell.get_meta("name_label") \
 						if cell.has_meta("name_label") else null
+					# What the renderer decided about the cell, when it has decided.
+					# `ScreenText._draw_pairs` records its verdict on the row because the
+					# decision is no longer a property of either label — 15B.1 made the
+					# cell the unit, so asking the labels one at a time is asking the
+					# wrong question and would report the old answer forever.
+					var fresh: bool = cell.has_meta("cell_shown_at") \
+						and is_equal_approx(float(cell.get_meta("cell_shown_at")), zoom)
+					var verdict: Variant = cell.get_meta("cell_shown") if fresh else null
 					var has_name := reaches(name_label, zoom)
 					var has_value := reaches(value_label(cell), zoom) \
 						or value_in_control(cell)
+					if verdict != null:
+						has_name = bool(verdict)
+						has_value = bool(verdict) \
+							and (value_label(cell) != null or value_in_control(cell))
 					if has_name and has_value:
 						whole += 1
 					elif has_name:
@@ -189,10 +224,14 @@ func _initialize() -> void:
 								% [widget.title, value_label(cell).text])
 					else:
 						gone += 1
-			print("  %5.0f%%  %-8s  whole %3d   name only %3d   value only %3d   neither %3d"
-				% [zoom * 100.0, band, whole, orphan_name, orphan_value, gone])
+			split += orphan_name + orphan_value
+			print("  %6.1f%%  %-8s  whole %3d   name only %3d   value only %3d   neither %3d%s"
+				% [zoom * 100.0, band, whole, orphan_name, orphan_value, gone,
+					"   SPLIT" if orphan_name + orphan_value > 0 else ""])
 			for one: String in examples:
 				print("           %s" % one)
 			if not ghosts.is_empty():
 				print("           still aimable at %s: %s" % [band, ", ".join(ghosts)])
+	print("")
+	print("%d split cells across every zoom, straddle and interface scale" % split)
 	quit()

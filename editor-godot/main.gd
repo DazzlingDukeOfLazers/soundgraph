@@ -4863,6 +4863,10 @@ func _create_widget(node: Dictionary) -> void:
 		lane_line.set_meta("has_slot", false)
 		var lane := StepGrid.new()
 		lane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# It paints steps, so it is a control and it is for FULL. Declared rather than
+		# inferred: it is not a Button or a Range, so nothing else about it says so, and
+		# for two zoom bands it was the only thing drawn on a node that draws no controls.
+		NodeOptical.requires(lane, NodeOptical.State.FULL)
 		var lane_id := str(node["id"])
 		lane.read = func() -> Dictionary:
 			for entry: Dictionary in patch.get("nodes", []):
@@ -10146,7 +10150,11 @@ func _apply(same_sound_as: String = "") -> void:
 		var now: String = engine.flatten_patch(text)
 		if now != "" and now == same_sound_as:
 			var quiet: Variant = JSON.parse_string(engine.validate_patch(text))
-			_show_diagnostics(quiet["diagnostics"] if typeof(quiet) == TYPE_DICTIONARY else [])
+			var quiet_found: Array = quiet["diagnostics"] \
+				if typeof(quiet) == TYPE_DICTIONARY else []
+			# The graph was not rebuilt, so the engine's last build still describes it.
+			quiet_found.append_array(_build_diagnostics())
+			_show_diagnostics(quiet_found)
 			_rebuild_level_targets()
 			_show_info()
 			_refresh_status()
@@ -10154,7 +10162,6 @@ func _apply(same_sound_as: String = "") -> void:
 
 	var report: Variant = JSON.parse_string(engine.validate_patch(text))
 	var diagnostics: Array = report["diagnostics"] if typeof(report) == TYPE_DICTIONARY else []
-	_show_diagnostics(diagnostics)
 
 	if typeof(report) == TYPE_DICTIONARY and report["ok"]:
 		# The plugins are asked what they are *before* the graph that owns them is
@@ -10164,6 +10171,19 @@ func _apply(same_sound_as: String = "") -> void:
 		_capture_plugin_states()
 		_close_plugin_face(true)
 		engine.load_patch(_patch_text_with_plugin_states(), 48000.0)
+		# What building the graph turned up, added to what reading the document turned
+		# up, and only then presented. Two sources, one health state, one channel.
+		#
+		# 15B found the second source reaching nobody. `validate_patch` parses and
+		# validates a *document*; a plugin that is not installed, an implausible latency
+		# and a buffer that will not resolve are all discovered later, when `load_patch`
+		# actually builds the nodes — and nothing in the editor had ever read that list.
+		# So a node hosting a missing plugin was silent in a program with a validity
+		# channel designed, proven and sitting right there on its header.
+		#
+		# After the load rather than before it, because before it the engine's answer is
+		# about the previous graph.
+		diagnostics.append_array(_build_diagnostics())
 		_note_latency()
 		# Loading puts the stored level back, so a mute has to be re-asserted or it lifts
 		# the first time anybody moves a node.
@@ -10173,14 +10193,41 @@ func _apply(same_sound_as: String = "") -> void:
 				engine.set_parameter(muted_output, "level", 0.0)
 		# The sweep list names ports by node and index, so it has to be rebuilt whenever
 		# the graph is — otherwise the glow keeps lighting ports that no longer exist.
+		_show_diagnostics(diagnostics)
 		_rebuild_level_targets()
 		_show_info()
 		_refresh_status()
 	else:
+		# A document that will not validate was never handed to the engine, so there is
+		# no build to ask about.
+		_show_diagnostics(diagnostics)
 		_refresh_status()
 
 
-func _show_diagnostics(diagnostics: Array) -> void:
+## What the engine said while it was building the graph, as diagnostics.
+##
+## The second of the two sources `_show_diagnostics` is fed from. Kept separate from the
+## call so both paths through `_apply` can add it without either of them knowing how the
+## engine spells its answer.
+func _build_diagnostics() -> Array:
+	var built: Variant = JSON.parse_string(str(engine.get_diagnostics_json()))
+	return built if typeof(built) == TYPE_ARRAY else []
+
+
+func _show_diagnostics(unmerged: Array) -> void:
+	# Two sources, and they overlap: everything `validate_patch` finds in the document is
+	# found again while the graph is built, so a clamped parameter would otherwise be
+	# reported twice and counted twice. Keyed on the code and the words, because the same
+	# code about two different nodes is two problems and the message is what says which.
+	var diagnostics: Array = []
+	var already := {}
+	for entry: Dictionary in unmerged:
+		var key := "%s / %s" % [str(entry.get("code", "")), str(entry.get("message", ""))]
+		if already.has(key):
+			continue
+		already[key] = true
+		diagnostics.append(entry)
+
 	for child in diagnostics_list.get_children():
 		child.queue_free()
 
@@ -10321,6 +10368,44 @@ func _reachable_from(node_id: String, downstream: bool) -> Array:
 ## stay. An enum cell hands its chosen option to a label as the dropdown goes, so it
 ## never shows a name with nothing beside it — "shape" and "safety_limit" floating alone
 ## was the same failure as an unlabelled slider, seen from the other end.
+## Enforces what a body control said about the distance it is for.
+##
+## The counterpart to `_apply_cell_detail`, for everything that is not on a parameter row.
+## Six controls in the library are added straight to the node — the plugin host's buttons,
+## the CC learn button, the speech words button, the sequencer's step lane — so the cell
+## machinery never saw them and they were still drawn at 28%, where the contract says a
+## node draws no control at all.
+##
+## Governed by declaration rather than by a list of six names. A control says the lowest
+## optical state it may appear in and `NodeOptical` defaults that to FULL, so the seventh
+## one somebody adds is governed the day it exists.
+##
+## The previous visibility is remembered rather than assumed, because "visible at FULL" is
+## not true of all of them: the plugin's panel button appears only when the plugin has a
+## face, and putting it back unconditionally would offer a window that is not there.
+func _apply_body_optics(control: Control, state: int) -> void:
+	# A control zone belongs to `_apply_cell_detail`, which already owns the knob inside
+	# it. Two authorities over one control is how a widget ends up flickering between two
+	# opinions of itself.
+	if bool(control.get_meta("control_zone", false)):
+		return
+	if control is BaseButton or control is Range \
+			or control.has_meta(NodeOptical.REQUIRES):
+		if NodeOptical.survives(control, state):
+			if control.has_meta("optical_was"):
+				control.visible = bool(control.get_meta("optical_was"))
+				control.remove_meta("optical_was")
+		else:
+			if not control.has_meta("optical_was"):
+				control.set_meta("optical_was", control.visible)
+			control.visible = false
+			return
+	for child in control.get_children():
+		var kid := child as Control
+		if kid != null:
+			_apply_body_optics(kid, state)
+
+
 func _apply_cell_detail(cell: Control, full: bool) -> void:
 	var value_field: Control = cell.get_meta("value_field") 		if cell.has_meta("value_field") else null
 	if value_field != null:
@@ -10365,8 +10450,20 @@ func _apply_detail(level: int) -> void:
 	# whatever the zoom left. A summary node is exactly "what is this and what plugs
 	# into it", so the names are most of the point of that band.
 	var show_port_names: bool = level != PatchGraph.Detail.TOPOLOGY
+	# What the bands are, rather than which band this is. Everything below asks the state
+	# so that a control's declaration reads as "FULL only" rather than as a comparison
+	# against a detail constant.
+	var optical := NodeOptical.of(level)
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
+		# Everything in the body that is not on a parameter row, by its own declaration.
+		# The titlebar is GraphNode's own furniture and carries identity rather than
+		# controls, so it is not swept.
+		var titlebar := widget.get_titlebar_hbox()
+		for child in widget.get_children():
+			var part := child as Control
+			if part != null and part != titlebar:
+				_apply_body_optics(part, optical)
 		# The node gives back the height its controls were using.
 		#
 		# GraphNode keeps whatever size it was last given, so a compact node used to be a

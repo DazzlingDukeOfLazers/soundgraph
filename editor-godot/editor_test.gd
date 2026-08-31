@@ -11072,23 +11072,20 @@ func _initialize() -> void:
 			"the dense QA graph opens whole (%d nodes)" % main.widgets.size())
 
 		# What the contract says a MAP node contains: a silhouette, an identity, sockets,
-		# cables, selection and validity. Not a control. Six survive it today — the plugin
-		# host's three buttons, the CC learn button, the speech words button and the
-		# sequencer's step grid — and every one of them is a control the row system never
-		# owned, so the level of detail was never asked about them. Five are buttons and
-		# are counted here; the step grid draws itself and is caught by `qa_reduced.gd`,
-		# which looks for a leaf that paints rather than for a class.
+		# cables, selection and validity. Not a control.
 		#
-		# Asserted at the known figure rather than at zero. Zero is where this belongs and
-		# is not where it is; a check that cannot fail until somebody fixes it would let a
-		# sixth arrive unnoticed in the meantime. Twelve is the frames it is counted over:
-		# four interface scales by the three zooms that are not FULL.
-		const KNOWN_GHOSTS := 5
+		# Six survived it when 15B looked — the plugin host's three buttons, the CC learn
+		# button, the speech words button and the sequencer's step lane — because every one
+		# of them is a control the row system never owned, so the detail pass was never
+		# asked about it. 15B.1 gave every body control a declared minimum optical state
+		# defaulting to FULL, and `_apply_body_optics` enforces it, so the figure is zero
+		# and stays zero: a seventh control added tomorrow is governed the day it exists.
 		var elided := 0
 		var over_class := 0
 		var misfit := 0
 		var ghosts := 0
 		var columns_split := 0
+		var half_cells := 0
 		for scale in Design.SCALE_FACTORS.size():
 			Design.ui_scale = scale
 			main._use_ui_scale(scale)
@@ -11123,6 +11120,32 @@ func _initialize() -> void:
 					var dense_declared := NodeGrid.width_for(dense_key)
 					if dense_declared > 0 and node.size.x > float(dense_declared) + 0.5:
 						over_class += 1
+					# 15B.1: a parameter cell is the unit of removal, so the decision
+					# function may never say a cell reaches the reader while one of its
+					# halves does not. The pictures are `qa_reduced.gd`'s job — this pass
+					# has no rendering server — but the rule the renderer asks is a pure
+					# function of built cells, and it is asked here on real ones so that a
+					# priority cannot quietly come back into it.
+					var stack: Array = [node]
+					while not stack.is_empty():
+						var here: Node = stack.pop_front()
+						for kid in here.get_children():
+							var maybe := kid as Control
+							if maybe == null:
+								continue
+							stack.append(maybe)
+							if str(maybe.get_meta("cell", "")) != "parameter" 									or not maybe.is_visible_in_tree():
+								continue
+							if not PatchGraphScript.ScreenText.cell_reaches(maybe, zoom):
+								continue
+							var halves: Array = [maybe.get_meta("name_label")] 								if maybe.has_meta("name_label") else []
+							for marked in PatchGraphScript.ScreenText._marked(maybe):
+								if str(marked.get_meta("screen_kind", "")) == "value":
+									halves.append(marked)
+							for half: Variant in halves:
+								var piece := half as Label
+								if piece != null and piece.is_visible_in_tree() 										and PatchGraphScript.ScreenText.fit_for(piece, zoom) 											== PatchGraphScript.ScreenText.Fit.NO_ROOM:
+									half_cells += 1
 					if dense_full:
 						misfit += LayoutFit.complaints(node, node.size.x, 0.0).size()
 						# The title column, which is the whole reason an identity cell is
@@ -11163,9 +11186,10 @@ func _initialize() -> void:
 		check(columns_split == 0,
 			"the title column holds across the dense graph, reserved cells and all (%d)"
 				% columns_split)
-		check(ghosts <= KNOWN_GHOSTS * 12,
-			"no new control survives past FULL in the dense graph (%d aimable, %d known)"
-				% [ghosts, KNOWN_GHOSTS * 12])
+		check(ghosts == 0,
+			"no control survives past FULL in the dense graph (%d aimable)" % ghosts)
+		check(half_cells == 0,
+			"no parameter cell reaches the reader as half a pair (%d)" % half_cells)
 
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with

@@ -1,7 +1,8 @@
 # The graph node system
 
 The specification for what a node in the patch graph is. Frozen at step 15A.3 of the
-cosmopolitan pass and validated at 15B.
+cosmopolitan pass, validated at 15B, and closed at 15B.1 — which reopened it once, for the
+one systemic defect the dense-graph QA found, and closed it again.
 
 `docs/graph-nodes.md` is the running record — every step, what was tried, what failed and
 why. This is the settled result, written so that node fifty-two can be added without
@@ -81,8 +82,8 @@ Type sizes come from `Design`. Three rules govern them:
    only at XL.
 3. **Screen minimums.** A label whose on-screen size falls under its floor is hidden and
    redrawn by the `ScreenText` overlay at the floor, pinned. If the pinned text will not
-   fit its slot, it is not drawn at all (`Fit.NO_ROOM`). See §11 for the defect this
-   produces at REDUCED.
+   fit its slot, it is not drawn at all (`Fit.NO_ROOM`) — **per parameter cell, not per
+   label**. See §11.
 
 ## 4. Control grammar
 
@@ -322,17 +323,41 @@ MAP       Detail.SUMMARY, TOPOLOGY     a symbol in a signal-flow diagram
 what it was: between "frequency" and a nameless groove, the word carries the meaning and
 the groove is recoverable by zooming in.
 
-Two known departures from this table, both found at 15B and both recorded rather than
-quietly fixed:
+### The unit of removal
 
-- **Six controls survive into MAP** — the plugin host's three buttons, the CC learn button,
-  the speech words button and the sequencer's step grid. Every one is a control the row
-  system never owned, so the level of detail was never asked about it. Gated at the known
-  figure in `editor_test.gd` so a seventh cannot arrive unnoticed.
-- **At REDUCED a parameter can arrive as half a pair** — a name with no number, or a bare
-  number with no name — because `Fit.NO_ROOM` is decided per *label* and a parameter is a
-  *cell*. 13% of cells at Comfortable, 29% at Compact. See `docs/graph-nodes.md` for the
-  measurement and the open decision.
+> **A parameter cell is the unit of level-of-detail removal. Its name and its value appear
+> together or not at all.**
+
+`ScreenText.cell_reaches()` is the decision and `_draw_pairs` is the only caller. Nothing
+ranks the halves: both universal priorities were tried — keep the value, keep the name —
+and both were wrong for the same reason. `cutoff` alone is incomplete but interpretable;
+`900 Hz` alone is considerably worse; neither is a smaller version of the statement.
+
+This was 15B's one systemic finding and the only rule added after the freeze. Before it,
+`Fit.NO_ROOM` decided per *label* while a parameter is a *cell*, and 29% of cells at
+Compact and 13% at Comfortable arrived as half a pair, in both directions, across nine node
+types. After it: zero, at every zoom, at every interface scale, and a hundredth either side
+of every band boundary — and **no cell that was whole became absent.** The split cells moved
+from split to absent and nothing else moved.
+
+One cost, recorded: at Compact and at the 86–89% straddle, the Keyboard's `transpose` cell
+loses its name as well as its number. The knob is still drawn — control visibility did not
+change — so what the reader sees is an unlabelled dial rather than a labelled one with no
+figure. One cell of ninety-seven, at the tightest interface scale.
+
+### Body controls declare their own distance
+
+> **Every interactive body control declares the lowest optical state it may appear in.
+> The default is FULL.**
+
+`NodeOptical.requires(control, state)` at the control's construction site; `floor_of` and
+`survives` read it; `_apply_body_optics` enforces it. A widget is for aiming at and there is
+nothing to aim at past FULL, so anything that survives further has to say so.
+
+This replaced six `hide()` calls. The plugin host's three buttons, the CC learn button, the
+speech words button and the sequencer's step lane were all being drawn at 28%, because each
+is added straight to the node and the parameter-row machinery never saw them. They are
+governed now because the grammar says so, and so is the seventh.
 
 ## 12. Value formatting
 
@@ -404,5 +429,5 @@ pass from becoming a redesign loop.
 | `optical_sheet.gd` | does the detail ladder hold across every band boundary |
 | `reserved_sheet.gd` | do twelve empty identity cells look intentional |
 | `qa_sheet.gd` | the dense graph: eighty frames of machine checks, twenty-six pictures |
-| `qa_reduced.gd` | what a parameter actually says to the reader at each distance |
+| `qa_reduced.gd` | what a parameter actually says to the reader at each distance, and whether any control outlives FULL |
 | `graph_baseline.gd` | the step 1 measurements, so nothing has silently moved |

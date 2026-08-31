@@ -66,6 +66,17 @@ Open problems, ordered by how much they threaten the Knobcon demo.
 - **Cable routing gives up gracefully in a dense patch.** When no clear route exists it
   picks the least-blocked one rather than searching exhaustively, because routing runs per
   cable per frame.
+- **A cable's signal type is hue-only between its endpoints.** Found by 15B's grayscale
+  render of the dense QA graph: socket shape carries audio against control at both ends and
+  survives a monochrome display, and the cable between them does not. Bounded — a reader
+  can always recover a cable's type by looking at either end — but tracing one wire through
+  a crossing region without looking at its ends needs colour.
+
+  Deliberately not patched during the node pass. Investigate a non-colour secondary cue for
+  cable type that stays legible without making dense patches noisy: line treatment, sparse
+  inline marks, or something else equally restrained. A "small" dash change applied across
+  thirty-five intersecting wires alters the whole graph, so cables want the proof-sheet
+  process the nodes have just had rather than a change made in passing.
 
 ## Resolved
 
