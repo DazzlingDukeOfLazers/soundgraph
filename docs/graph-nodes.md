@@ -1154,3 +1154,53 @@ The suite's check was corrected in the meantime and is honest about its reach: i
 at zoom 1.0 rather than in whatever reduced state the patch opened in, which is the same
 trap in a smaller costume, and it asserts the floor — a migrated node is never *narrower*
 than its class — while printing any overflow with its figure. It reports none today.
+
+## Step 14C.2 — what a width class actually claims
+
+The `411 preferred / 376 live` disagreement is resolved, and the resolution is that
+**both numbers were wrong as class selectors.**
+
+They were answers to different questions. 411 is how wide the node makes itself when
+nothing constrains it — a container asking for its most comfortable arrangement. 376 is
+"Godot did not push it back out", which is not the same as being laid out correctly. The
+question a width class actually asks is neither:
+
+> What is the narrowest class at which this node is still **valid** in FULL detail, at its
+> worst interface scale?
+
+`width_sheet.gd` answers it by forcing a node to each class in turn and asking whether
+anything broke: a refused width, a label given less room than it asked for, a child
+reaching outside its node, two controls overlapping on a row, a body that reflowed and
+grew taller. The first class that survives is the class. Preferred width is still
+reported, as diagnosis.
+
+For the state-variable filter the answer is **416** — neither 411 nor 376. It is Extra now,
+not Wide, and it was assigned from an XL measurement where it stands at 368.
+
+### Two bugs the validator found on the way
+
+**A width class was shrinking below base scale.** At Compact the interface factor is 0.875,
+so a Wide node was handed 329 real pixels instead of 376 — while the text inside it barely
+shrank at all, because `Design.type` floors every size at `TYPE_FLOOR`. The words were
+relatively *larger* than the box around them. Five types fitted no class at all at Compact
+and fitted perfectly at every other scale, which is not five awkward types; it is a box
+being shrunk out from under its contents.
+
+Classes now scale up and never down, which is the rule `Design.screen_minimum` has always
+used and for the same reason. A reader who asks for smaller interface text is not asking
+for narrower nodes.
+
+**And then the spacing disagreed with the widths.** `_graph_scale` was still shrinking
+document positions at Compact while node widths had stopped, so First Synth's nodes
+overlapped — `layout_test` caught it immediately. Spacing and the things it spaces are one
+system or they are a bug waiting for somebody to change their interface size. Both use the
+same rule now.
+
+### Where it stands
+
+Fifteen migrated types, four interface scales, every one of them assigned to the smallest
+class it is valid at, and every declared class correct. `editor_test` agrees at its own
+scale and reports no node standing over its class.
+
+One number moved in the process: the filter is 40 base units wider than it was, which is
+what a class being wrong looks like when it is corrected.

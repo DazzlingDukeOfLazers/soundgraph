@@ -4483,8 +4483,15 @@ func _engine_signal_source(node_id: String, port: String) -> Array:
 ##
 ## So world = document x this, converted at the three places the two spaces meet: making
 ## a widget, reading a widget back, and dropping a new node where the pointer is.
+##
+## Up with the interface scale and never down, which is the rule node widths follow and
+## has to be the same rule. A width class stopped shrinking below base because the text
+## inside it does not shrink either — and the moment positions kept shrinking while widths
+## did not, the two disagreed and First Synth's nodes overlapped at Compact. Spacing and
+## the things it spaces are one system or they are a bug waiting for somebody to change
+## their interface size.
 func _graph_scale() -> float:
-	return Design.SCALE_FACTORS[Design.ui_scale]
+	return maxf(1.0, Design.SCALE_FACTORS[Design.ui_scale])
 
 
 func _create_widget(node: Dictionary) -> void:

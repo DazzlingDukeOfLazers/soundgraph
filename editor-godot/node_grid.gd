@@ -164,13 +164,36 @@ const WIDTHS := [176, 296, 376, 416]
 ## > Classes are discovered from clusters of actual requirement across the corpus, not
 ## > chosen in advance and not stretched to fit one awkward node.
 ##
+## ## And how a type is assigned to one
+##
+## > Assign the smallest class at which the node is still **valid** in FULL detail, at its
+## > worst interface scale.
+##
+## Valid, not preferred. `width_sheet.gd` forces a node to each class in turn and asks
+## whether anything actually broke — a refused width, a clipped label, a child reaching
+## outside its node, two controls overlapping on a row, a body that reflowed and grew
+## taller. The first class that survives is the class.
+##
+## The distinction is not academic and it cost a day. The old harness measured how wide a
+## node makes itself when nothing constrains it and reported the state-variable filter
+## wanting 411 against a Wide class of 376; the live editor showed the same node sitting
+## at 376 and looking correct. Both numbers were real and **neither was the answer**. 411
+## was a preference — a container asking for its most comfortable arrangement. 376 was
+## only "Godot did not push it back out", which is not the same as laid out correctly. The
+## forced-width validator says the requirement is 416, which is what it now has.
+##
+## Natural width is still reported, as diagnosis. It is not the selector.
+##
 ## Sending three types to a class 130 units wider than they need, to preserve a set
 ## inferred from three initial specimens, would be the tail wagging the dog.
 const WIDTH_CLASS := {
 	"Gain": Width.NARROW,
 	"ADSR": Width.STANDARD,
 	"SawOscillator": Width.STANDARD,
-	"StateVariableFilter": Width.WIDE,
+	# Extra rather than Wide. It was assigned from an XL measurement, where it stands at
+	# 368; at Comfortable its contents need 416 and the forced-width harness refuses 376.
+	# XL is the most forgiving scale and every early assignment was made there.
+	"StateVariableFilter": Width.EXTRA,
 	"seam:Output/stereo": Width.WIDE,
 	"LFO": Width.WIDE,
 	"seam:Input/note": Width.WIDE,
@@ -204,10 +227,27 @@ static var measuring := false
 
 
 ## The width a type stands at, scaled, or 0 for a type with no class yet.
+##
+## Scaled up and never down, which is the same rule `Design.screen_minimum` already uses
+## and for the same reason. A class figure multiplied by 0.875 hands a Wide node 329 real
+## pixels instead of 376, while the text inside it barely shrinks at all — `Design.type`
+## floors every size at `TYPE_FLOOR`, so at the Compact interface scale the words are
+## relatively *larger* than the box around them. The forced-width harness found five types
+## that fit no class at all at Compact and fit perfectly at every other scale, which is
+## not five awkward types; it is a box being shrunk out from under its own contents.
+##
+## A class is a width in base units. A reader who asks for smaller interface text is not
+## asking for narrower nodes.
 static func width_for(type_name: String) -> int:
 	if measuring or not WIDTH_CLASS.has(type_name):
 		return 0
-	return Design.scale(WIDTHS[int(WIDTH_CLASS[type_name])])
+	return scaled(int(WIDTHS[int(WIDTH_CLASS[type_name])]))
+
+
+## A class figure in real pixels: up with the interface scale, never down. Shared with
+## `width_sheet.gd` so the harness tests the widths the editor actually uses.
+static func scaled(base: int) -> int:
+	return int(roundf(float(base) * maxf(1.0, Design.SCALE_FACTORS[Design.ui_scale])))
 
 
 ## What a class is called, for the record and for anything that reports on it.
