@@ -10194,6 +10194,10 @@ func _apply(same_sound_as: String = "") -> void:
 		# The sweep list names ports by node and index, so it has to be rebuilt whenever
 		# the graph is — otherwise the glow keeps lighting ports that no longer exist.
 		_show_diagnostics(diagnostics)
+		# A lock is an identity, so it survives zoom and pan for free — what it does not
+		# survive is the cable being disconnected underneath it, and a stale reference
+		# would leave the field quieted around nothing at all.
+		graph_edit.prune_focus_lock()
 		_rebuild_level_targets()
 		_show_info()
 		_refresh_status()
@@ -11098,6 +11102,8 @@ func _load_text(text: String) -> void:
 	if not patch.has("connections"):
 		patch["connections"] = []
 	_modernize_stereo_outputs()
+	if graph_edit != null:
+		graph_edit.clear_focus_lock()
 	inspecting = {}
 	# A fresh document starts on no page of anyone's bank, with deck B unpicked.
 	preset_pages.clear()
@@ -11239,6 +11245,15 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	# Panic, on the key everybody already tries. A stop control you can only reach
 	# with the mouse is one you cannot use while holding a chord down.
+	#
+	# A pinned cable focus goes first and on its own: Escape is the key for "never mind",
+	# and letting go of a focus is a smaller never-mind than silencing the instrument. A
+	# reader who has locked a route and wants out of it should not have to stop the sound
+	# to get there.
+	if key.pressed and key.keycode == KEY_ESCAPE and graph_edit != null 			and (not graph_edit.locked_cable.is_empty() or graph_edit.locked_port != ""):
+		graph_edit.clear_focus_lock()
+		accept_event()
+		return
 	if key.pressed and key.keycode == KEY_ESCAPE:
 		_all_notes_off()
 		accept_event()

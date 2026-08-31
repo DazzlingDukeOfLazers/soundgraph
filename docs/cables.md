@@ -414,9 +414,32 @@ anybody is looking at.
 Against the brutal criterion — *if a candidate cannot distinguish every real cable class at
 100% grayscale without explanation, it does not solve goal 3* — only the ribs pass.
 
-**One caveat, kept rather than buried:** the identification was done by somebody holding the
-answer key. The shuffled human test on `cue-midspans.png` is still worth doing, and the
-default is one line to revert.
+### The blind test
+
+`blind_cues.gd` exports endpoint-free grayscale crops under shuffled names, seeded from the
+clock so the order is not a property of the file, writes the key to `answers.json`, and
+prints nothing that would give it away. Fourteen crops from four cables, taken at four
+fractions along each so the mark is not always near the middle, including two that sit at a
+crossing.
+
+**Fourteen of fourteen**, on an eight-audio, six-control split. Chance is a coin.
+
+Every call was made from the mark being *present or absent*, not from hunting: a control
+crop shows one or two small ticks and an audio crop shows a clean span, and at 2× on a
+300-pixel crop that is a glance rather than a search. Which is the bar — substantially
+better than chance and unambiguous once noticed, for a redundant channel rather than the
+primary classifier.
+
+One crop was called with low confidence and it is the honest residual: **crop-10 sat inside
+a crossing, where the exclusion refuses a rib, so an unmarked span there means either
+audio or a control cable whose cue was suppressed.** It happened to be audio. The
+neighbouring crop-12 is also at a crossing and does show its rib just clear of the
+knockout, so the exclusion is local enough that it rarely blinds a whole crop — but a crop
+taken exactly on a junction cannot be classified, and that is a property of the design
+rather than a defect in it. The precedence is deliberate: crossing geometry outranks the
+type cue.
+
+**Goal 3 is frozen.**
 
 ### What holds
 
@@ -427,6 +450,73 @@ routes       point-identical with and without a cue
 crossings    same count, same positions
 focus        the focused cable byte-equivalent, cue included
 ```
+
+## The resting cable grammar, frozen
+
+```
+continuous unmarked span      audio
+sparse transverse rib         control
+a gap                         two paths cross and do not join
+a continuous meeting          a connection
+suppression                   focus prominence, and nothing else
+```
+
+Five statements. Everything else a cable does — its mass, shell, glint, shadow, plug, hang
+and departure splay — was settled by the ten goals in `docs/cable-design.md` and is not part
+of this vocabulary.
+
+## Goal 4 — persistent focus
+
+**Behavioural, not visual.** The invariant, and it is the whole of the goal:
+
+> **Transient and persistent focus render identically. Persistence changes lifetime, never
+> appearance.**
+
+There is no locked colour, border, glow or width. A sixth cable channel for "this focus is
+pinned" would undo the discipline the previous three goals established, and if a reader
+needs to know the focus is locked, that belongs somewhere outside the wire.
+
+### The grammar
+
+```
+hover a cable         transiently focus that connection
+hover a port          transiently focus every cable on that port
+click a cable         pin it; clicking it again lets go
+click a port          pin its family; clicking it again lets go
+Escape                let go
+click empty canvas    let go
+```
+
+**Model B: the lock is home and hover previews.** Hovering another route while one is pinned
+shows the other; taking the pointer away comes home to the pinned one. The alternative — a
+lock that ignores hover — is more predictable and makes comparing two routes a matter of
+unlocking and relocking, which is the gesture the lock existed to save.
+
+A lock is an **identity**, not a position, so it survives zoom and pan for free. What it
+does not survive is the route being disconnected underneath it: `prune_focus_lock()` runs on
+every rebuild, because a stale reference would leave the field quieted around nothing at
+all. Opening a document clears it outright.
+
+Escape lets go of a pinned focus *before* it panics the instrument. Escape is the key for
+"never mind", and letting go of a focus is a smaller never-mind than silencing everything.
+
+### What is gated, and the one thing that is not
+
+```
+a locked route focuses exactly what hovering it focuses
+hovering another route while one is locked previews the other
+taking the pointer away comes home to the locked one
+a locked port focuses exactly what hovering it focuses
+letting go leaves the field undisturbed
+a route that no longer exists takes its lock with it
+```
+
+**The click gestures themselves are not verified by the suite.** Headless Godot has no input
+routing, so what the suite holds is that the lock functions focus the right sets; that a
+press-and-release on a cable or a socket reaches them is a claim about input plumbing and
+wants a windowed check by hand. The socket case is the less certain of the two, because
+GraphEdit owns port presses for connection dragging and this only notices a press that went
+nowhere.
 
 ### What not to start with
 

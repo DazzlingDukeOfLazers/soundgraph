@@ -21,6 +21,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `dense-graph-qa.json` | `qa_sheet.gd` | the eighty-frame matrix: health, identity variants, title columns, and every complaint (none) |
 | `crossing-separation.json` | `crossing_sheet.gd` | goal 1: the same-colour crossings, and the ink each of the four constructions introduces at them |
 | `focus-suppression.json` | `focus_sheet.gd` | goal 2: the three suppression levels, what each keeps of its resting luminance, and the achieved ratio |
+| `blind-cue-answers.json` | `blind_cues.gd` | the key to the blind test that froze goal 3: fourteen shuffled endpoint-free crops, named 14 of 14 |
 | `cable-baseline.json` | `cable_baseline.gd` | the cable pass's step 1: every route's length and detour, every crossing's position, angle and colour pair, every bundle, every trespass, and the cable share of the patch at four zooms |
 
 ## The sheets, on demand
@@ -61,6 +62,12 @@ CROSSING_SHEET_OUT=/tmp/p godot --path editor-godot --script crossing_sheet.gd
 
 # goal 2: five focus scenes at three suppression levels, plus the invariants
 FOCUS_SHEET_OUT=/tmp/p godot --path editor-godot --script focus_sheet.gd
+
+# every port on every runtime type, and which signal classes actually exist
+SIGNAL_AUDIT_OUT=/tmp/p godot --headless --path editor-godot --script signal_audit.gd
+
+# the blind test: shuffled endpoint-free crops, and a key not to open first
+BLIND_CUES_OUT=/tmp/p godot --path editor-godot --script blind_cues.gd
 ```
 
 `godot` is whatever `git config soundgraph.godot` names.

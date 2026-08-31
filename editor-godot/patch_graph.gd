@@ -695,12 +695,20 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 			return
 		if button.pressed:
+			# Where a press on a socket began. GraphEdit owns port presses — it starts a
+			# connection drag from them — so the only thing left to notice here is a press
+			# that went nowhere, which is a click.
+			_port_press_at = button.position if focus_port != "" else Vector2.INF
 			var point := _to_graph(button.position)
 			var connection := _connection_at(point)
 			if not connection.is_empty():
 				var fields := _connection_fields(connection)
 				_dragging_key = connection_key(fields[0], fields[1], fields[2], fields[3])
 				_drag_connection = connection
+				# Goal 4: a press that never travels is a click, and a click on a cable
+				# locks the focus on it. The same distinction the case band already makes
+				# between being dragged and being chosen.
+				_cable_press_at = button.position
 				cable_drag_started.emit()
 				accept_event()
 				return
@@ -715,12 +723,28 @@ func _gui_input(event: InputEvent) -> void:
 				_canvas_press_at = button.position
 		elif _dragging_key != "":
 			var fields := _connection_fields(_drag_connection)
-			waypoint_changed.emit(fields[0], fields[1], fields[2], fields[3],
-				waypoints.get(_dragging_key))
+			if _cable_press_at.x != INF 					and button.position.distance_to(_cable_press_at) < 4.0:
+				# A click. Locking is a toggle, so the same gesture that pinned a route
+				# lets it go — a lock you can only clear by finding empty canvas is a
+				# mode, and this is not meant to be one.
+				var already: Array = _connection_fields(locked_cable) 					if not locked_cable.is_empty() else []
+				locked_port = ""
+				locked_cable = {} if already == fields else _drag_connection.duplicate()
+				queue_redraw()
+			else:
+				waypoint_changed.emit(fields[0], fields[1], fields[2], fields[3],
+					waypoints.get(_dragging_key))
+			_cable_press_at = Vector2.INF
 			_dragging_key = ""
 			_drag_connection = {}
 			accept_event()
 			return
+		elif _port_press_at.x != INF and focus_port != "" 				and button.position.distance_to(_port_press_at) < 4.0:
+			# A click on a socket pins the family plugged into it, which for an output is
+			# the fan-out. GraphEdit will have started and cancelled its own connection
+			# drag on the way past, which is harmless.
+			lock_focus_on_port(focus_port)
+			_port_press_at = Vector2.INF
 		elif _canvas_press_at.x != INF:
 			# A click on the room you are standing in chooses the room: the canvas is
 			# the inside of the container, so clicking its empty floor lands where
@@ -729,6 +753,9 @@ func _gui_input(event: InputEvent) -> void:
 			# rubber band still ends however it ends.
 			if button.position.distance_to(_canvas_press_at) < 4.0:
 				case_selected.emit()
+				# The floor is where a focus is let go, which is the gesture everybody
+				# already has for "never mind".
+				clear_focus_lock()
 			_canvas_press_at = Vector2.INF
 
 	# Right-clicking a cable straightens it again — an escape hatch from a bad drag that
@@ -930,6 +957,8 @@ func _view_fingerprint() -> String:
 	# later — which is the whole of the treatment failing to appear.
 	parts.append(focus_port)
 	parts.append(str(hovered_cable.hash()))
+	parts.append(locked_port)
+	parts.append(str(locked_cable.hash()))
 	for child in get_children():
 		if child is GraphNode:
 			parts.append("%s:%.0f,%.0f,%.0f,%.0f" % [child.name,
@@ -960,6 +989,41 @@ var hovered_port: Dictionary = {}
 ## that is the only thing anybody wanted to know, which is why following one by eye is
 ## the gesture this view asks for most and supports least.
 var hovered_cable: Dictionary = {}
+
+## Where a cable press began, so a release can tell a click from a waypoint drag.
+var _cable_press_at := Vector2.INF
+
+## And where a socket press began, for the same distinction.
+##
+## **Not verified by mouse simulation.** Headless Godot has no input routing, so this
+## gesture is checked by hand in a window rather than by the suite: what the suite holds is
+## that `lock_focus_on_port` focuses exactly the set a port hover focuses. See
+## docs/cables.md.
+var _port_press_at := Vector2.INF
+
+## The focus the reader has committed to, which outlives the pointer.
+##
+## Cable pass, goal 4, and it is a **behavioural** state and not a visual one. There is no
+## locked appearance: a locked route is drawn exactly as a hovered one, because the
+## invariant the whole pass rests on is
+##
+## > **Transient and persistent focus render identically. Persistence changes lifetime,
+## > never appearance.**
+##
+## A sixth cable channel for "this focus is pinned" would undo the discipline the last three
+## goals established. If a reader needs to know the focus is locked, that belongs somewhere
+## outside the wire.
+##
+## Model B, deliberately: **the lock is the home state and hovering previews.** Hover another
+## cable and the field re-quiets around it; take the pointer away and the locked route comes
+## back. The alternative — a lock that ignores hover — is more predictable and makes
+## comparing two routes a matter of unlocking and relocking, which is the gesture you were
+## trying to avoid.
+##
+## Cleared by Escape, by a click on empty canvas, and by the route ceasing to exist. Held
+## across zoom and pan, because it is an identity and not a position.
+var locked_cable: Dictionary = {}
+var locked_port := ""
 
 ## The port the pointer is asking about, as "widget:side:index", or empty.
 ##
@@ -2516,6 +2580,38 @@ func fit_to(bounds: Rect2) -> void:
 	centre_on(bounds)
 
 
+## Lets go of a pinned focus. One place, so Escape, the empty canvas and a rebuild cannot
+## disagree about what letting go means.
+func clear_focus_lock() -> void:
+	if locked_cable.is_empty() and locked_port == "":
+		return
+	locked_cable = {}
+	locked_port = ""
+	queue_redraw()
+
+
+## Pins the family plugged into one port. Called on a click that landed on a socket and
+## went nowhere, which GraphEdit has meanwhile treated as a connection drag it cancelled.
+func lock_focus_on_port(port: String) -> void:
+	locked_cable = {}
+	locked_port = "" if port == locked_port else port
+	queue_redraw()
+
+
+## Whether a locked route still exists. A lock is an identity rather than a position, so it
+## survives zoom and pan by construction — what it does not survive is the cable being
+## disconnected underneath it, and a stale reference would leave the field quieted around
+## nothing at all.
+func prune_focus_lock() -> void:
+	if locked_cable.is_empty():
+		return
+	var fields := _connection_fields(locked_cable)
+	for wire in get_connection_list():
+		if str(wire["from_node"]) == str(fields[0]) 				and int(wire["from_port"]) == int(fields[1]) 				and str(wire["to_node"]) == str(fields[2]) 				and int(wire["to_port"]) == int(fields[3]):
+			return
+	clear_focus_lock()
+
+
 ## Tracks which cable the pointer is over, using the same reach as picking one up, so
 ## that hovering and dragging agree about which cable is meant.
 func _update_cable_hover(local_point: Vector2) -> void:
@@ -2750,8 +2846,15 @@ class CordLayer extends Control:
 	## unconnected socket suppresses nothing rather than suppressing everything.
 	func _focus_of(cords: Array) -> Dictionary:
 		var wanted := {}
-		if graph.focus_port != "":
-			var parts: PackedStringArray = graph.focus_port.split(":")
+		# Transient first, locked underneath: hovering previews and the lock is home.
+		var port: String = graph.focus_port if graph.focus_port != "" else graph.locked_port
+		var cable: Dictionary = graph.hovered_cable
+		if cable.is_empty():
+			cable = graph.locked_cable
+		if graph.focus_port == "" and not graph.hovered_cable.is_empty():
+			port = ""
+		if port != "":
+			var parts: PackedStringArray = port.split(":")
 			if parts.size() == 3:
 				# An output is index 2 of a cord's key pair, an input is index 3.
 				var at := "%s:%s" % [parts[0], parts[2]]
@@ -2759,8 +2862,8 @@ class CordLayer extends Control:
 				for entry in cords:
 					if entry[slot] == at:
 						wanted[entry[4]] = true
-		elif not graph.hovered_cable.is_empty():
-			var fields: Array = graph._connection_fields(graph.hovered_cable)
+		elif not cable.is_empty():
+			var fields: Array = graph._connection_fields(cable)
 			var key := "%s:%d>%s:%d" % [str(fields[0]), int(fields[1]),
 				str(fields[2]), int(fields[3])]
 			for entry in cords:

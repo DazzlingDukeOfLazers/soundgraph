@@ -11366,6 +11366,81 @@ func _initialize() -> void:
 			% [blocked, laid_out.size()])
 	CableArtScript.type_cue = was_cue
 
+	# ---- cable pass, goal 4: persistent focus -----------------------------------------
+	# Behaviour, not appearance. The whole of goal 4 rests on one invariant and it is the
+	# first thing checked: a locked route is drawn exactly as a hovered one, because a
+	# sixth cable channel for "this focus is pinned" would undo the discipline the last
+	# three goals established.
+	if cord_layer != null:
+		var goal4_cords: Array = cord_layer._lay()
+		var pinned: Array = goal4_cords[0]
+		var pinned_ends: PackedStringArray = str(pinned[4]).split(">")
+		var pinned_from: PackedStringArray = pinned_ends[0].split(":")
+		var pinned_to: PackedStringArray = pinned_ends[1].split(":")
+		var as_connection := {"from_node": pinned_from[0],
+			"from_port": int(pinned_from[1]), "to_node": pinned_to[0],
+			"to_port": int(pinned_to[1])}
+
+		main.graph_edit.locked_cable = {}
+		main.graph_edit.locked_port = ""
+		main.graph_edit.hovered_cable = as_connection
+		var while_hovered: Dictionary = cord_layer._focus_of(goal4_cords)
+		main.graph_edit.hovered_cable = {}
+		main.graph_edit.locked_cable = as_connection
+		var while_locked: Dictionary = cord_layer._focus_of(goal4_cords)
+		check(while_hovered.keys() == while_locked.keys() and while_locked.size() == 1,
+			"a locked route focuses exactly what hovering it focuses")
+
+		# Model B: the lock is home and hover previews. Hovering something else while a
+		# route is pinned shows the other one, so two routes can be compared without
+		# unlocking and relocking — the gesture the lock existed to save.
+		var rival: Array = goal4_cords[1]
+		var rival_ends: PackedStringArray = str(rival[4]).split(">")
+		var rival_from: PackedStringArray = rival_ends[0].split(":")
+		var rival_to: PackedStringArray = rival_ends[1].split(":")
+		main.graph_edit.hovered_cable = {"from_node": rival_from[0],
+			"from_port": int(rival_from[1]), "to_node": rival_to[0],
+			"to_port": int(rival_to[1])}
+		var previewing: Dictionary = cord_layer._focus_of(goal4_cords)
+		check(previewing.has(str(rival[4])) and not previewing.has(str(pinned[4])),
+			"and hovering another route while one is locked previews the other")
+		main.graph_edit.hovered_cable = {}
+		check((cord_layer._focus_of(goal4_cords) as Dictionary).has(str(pinned[4])),
+			"and taking the pointer away comes home to the locked one")
+
+		# A port lock is the family plugged into it, the same set a port hover gives.
+		main.graph_edit.locked_cable = {}
+		var busiest_lock := ""
+		var lock_fan := {}
+		for one: Array in goal4_cords:
+			lock_fan[one[2]] = int(lock_fan.get(one[2], 0)) + 1
+			if busiest_lock == "" 					or int(lock_fan[one[2]]) > int(lock_fan.get(busiest_lock, 0)):
+				busiest_lock = str(one[2])
+		var lock_parts: PackedStringArray = busiest_lock.split(":")
+		main.graph_edit.lock_focus_on_port("%s:right:%s" % [lock_parts[0], lock_parts[1]])
+		main.graph_edit.focus_port = "%s:right:%s" % [lock_parts[0], lock_parts[1]]
+		var by_hover: Dictionary = cord_layer._focus_of(goal4_cords)
+		main.graph_edit.focus_port = ""
+		var by_lock: Dictionary = cord_layer._focus_of(goal4_cords)
+		check(by_hover.keys() == by_lock.keys() and by_lock.size() > 1,
+			"a locked port focuses exactly what hovering it focuses (%d)" % by_lock.size())
+
+		# Escape lets go, and so does the empty canvas.
+		main.graph_edit.clear_focus_lock()
+		check(main.graph_edit.locked_cable.is_empty()
+				and main.graph_edit.locked_port == ""
+				and (cord_layer._focus_of(goal4_cords) as Dictionary).is_empty(),
+			"letting go of the lock leaves the field undisturbed again")
+
+		# And a lock cannot outlive its cable. It is an identity rather than a position,
+		# so zoom and pan cost nothing; what would strand it is the route being
+		# disconnected underneath, leaving the field quieted around nothing at all.
+		main.graph_edit.locked_cable = {"from_node": "gone", "from_port": 0,
+			"to_node": "also_gone", "to_port": 0}
+		main.graph_edit.prune_focus_lock()
+		check(main.graph_edit.locked_cable.is_empty(),
+			"and a route that no longer exists takes its lock with it")
+
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with
 	# frames to spare rather than destroyed underneath it. Order matters and was
