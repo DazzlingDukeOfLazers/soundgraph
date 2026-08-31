@@ -4602,17 +4602,45 @@ func _create_widget(node: Dictionary) -> void:
 				grid.append([parameters[0]])
 				break
 
+	# The cells are built before the rows are decided, measured, and only then
+	# grouped. That order is the grid contract:
+	#
+	#   build the controls, measure what they need, group them into rows,
+	#   place the rows
+	#
+	# rather than predicting a width, grouping on the prediction and building
+	# afterwards. The predictor this replaces was wrong by a third — a dressed
+	# dropdown holding "minor pentatonic" measures 224 where adding up the
+	# spacing tokens said 168 — and no arithmetic over styleboxes finds the
+	# difference, because Godot puts it inside the Button.
+	#
+	# They are parented to a hidden box on the widget while they are measured, so
+	# that a Control which only knows its size once it has a theme gets one, and
+	# so that nothing about the measuring pass reaches the node: an invisible
+	# child adds nothing to a container's minimum, and the node never sees a
+	# width it would then refuse to come back down from.
+	var measured := {}
+	if gridded and grid.is_empty():
+		var bench := VBoxContainer.new()
+		bench.visible = false
+		widget.add_child(bench)
+		for parameter: Dictionary in parameters:
+			var cell := _build_parameter_row(node, parameter)
+			bench.add_child(cell)
+			measured[str(parameter.get("name", ""))] = cell
+		widget.set_meta("bench", bench)
 	if grid.is_empty():
 		var per_line := PARAMETERS_PER_LINE
 		var line: Array = []
 		for parameter: Dictionary in parameters:
-			# A control that cannot inhabit one standard column takes the row. The
+			# A control that cannot inhabit the normal allocation takes the row. The
 			# alternative is what the Scale Quantizer was doing: one dropdown two and
-			# a half columns wide sitting beside an ordinary one, and the whole
-			# chassis five hundred units across to hold the pair. The node was never
-			# big. See NodeGrid.spans, which asks the descriptor rather than the
-			# type, the name or the class of Control.
-			if gridded and NodeGrid.spans(parameter):
+			# a half columns wide beside an ordinary one, and the whole chassis five
+			# hundred units across to hold the pair. The node was never big.
+			#
+			# Asked of the built cell, which is the point of the pass above.
+			if gridded and NodeGrid.spans(measured.get(
+				str(parameter.get("name", ""))), measured.values()):
 				if not line.is_empty():
 					grid.append(line)
 					line = []
@@ -4673,7 +4701,14 @@ func _create_widget(node: Dictionary) -> void:
 		cells.set_meta("cells", true)
 		if row < grid.size():
 			for parameter: Dictionary in grid[row]:
-				var cell := _build_parameter_row(node, parameter)
+				# Already built, if this node went through the measuring pass: taken off
+				# the bench rather than made a second time.
+				var made: Control = measured.get(str(parameter.get("name", "")))
+				var cell: Control = made
+				if cell == null:
+					cell = _build_parameter_row(node, parameter)
+				if made != null and made.get_parent() != null:
+					made.get_parent().remove_child(made)
 				# One column width for every cell, so the control on the second row
 				# lands under the control on the first. Without it each row centres its
 				# own contents and two rows of two read as four separate islands, which

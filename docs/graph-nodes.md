@@ -1792,3 +1792,77 @@ but "the grid has the rule and cannot yet measure the thing the rule is about".
 until the rule flips, in every palette, plus a knob that must never span. That test does not
 depend on `minor pentatonic` staying sixteen characters long, and it will still be true
 when the predictor is replaced by a measurement.
+
+## Step 15A.3 — measured row packing
+
+**Fifty-one of fifty-one.** The grid measures its controls now instead of guessing at them,
+and the guess is gone.
+
+### The order is the contract
+
+```
+build the controls  ->  measure what they need  ->  group them into rows  ->  place the rows
+```
+
+rather than predicting a width, grouping on the prediction, and building afterwards. The
+cells are constructed onto a hidden bench parented to the widget — so a Control that only
+knows its size once it has a theme gets one, and so nothing about the measuring pass
+reaches the node, an invisible child adding nothing to a container's minimum. They are
+taken off the bench and into their rows rather than built twice.
+
+That distinction is worth keeping beyond dropdowns:
+
+> Layout may use a semantic descriptor to decide what a control **is**. Physical packing
+> uses what the rendered control **measures**.
+
+### The criterion had to become relative, and that was the real bug
+
+Cells on a row take the same width — step 4's whole point, so the control on the second row
+lands under the control on the first. Which means **a row of two costs twice its wider
+cell.** Pairing a 224 dropdown with a 113 knob does not cost 337; it costs 448, and the node
+pays a hundred and ten units for a column its narrow cell will never use.
+
+So the question was never "is this cell bigger than some figure". No absolute threshold
+could express it, and both attempts proved it from opposite sides:
+
+```
+one column    every knob cleared it — a knob cell is a dial and a name, already
+              wider than the bare column figure. 32 of 51 types reflowed.
+two columns   the Scale Quantizer's dropdown missed by two pixels. 224 against 226.
+```
+
+The rule asks instead whether a cell is **out of scale with what it would sit beside**:
+wider than its widest rowmate by half again. Below that the pairing wastes less than a
+third of a column and the extra row costs more than it saves; above it the narrow cell is
+being handed a column it has no use for.
+
+Scale Quantizer's two parameters sit at 224 against 113 — just under twice — and they are
+the only such pair in fifty-one types.
+
+### The regression gate
+
+**One of fifty-one reflowed**, and it is the one the rule was written for: 536 to 424,
+which validates at Broad. Every other type's narrowest valid width is unchanged to the
+unit. No example patch gained an overlap, no node moved, no declared class changed.
+
+`editor_test.gd` holds the rule on cells built for the purpose — an option grown a letter
+at a time until the rule flips, at the two extreme interface scales, plus an ordinary knob
+that must never span. It does not depend on `minor pentatonic` staying sixteen characters
+long, and it measures the same way the packing loop does because it calls the same
+function.
+
+### The final equation
+
+```
+51 runtime types
+   39  migrated
+   12  migrated, glyph intentionally reserved
+    0  held
+   registry runtime types = migrated + held    yes
+```
+
+Twelve reserved cells: Phaser, Allpass, Clip, Abs, MinMax, Drive, Speech, Note Triggers,
+the two plugin hosts, Cable Test and Scale Quantizer. Every one of them for a written
+reason, and none of them looking unfinished.
+
+**The node grammar is frozen.**

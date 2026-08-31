@@ -73,7 +73,11 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	# never came up because no example patch uses one. Same nodes, same marks.
 	"NoteInput", "StereoOutput", "seam:Input/audio",
 	# And the two that were only ever waiting on a width rung, now that 448 exists.
-	"Arpeggio", "Slide"]
+	"Arpeggio", "Slide",
+	# 15A.3. Held until the grid could measure a control rather than predict it. Its glyph
+	# stays reserved: snapping a pitch to a scale is quantisation, and Crush already owns
+	# the coarse-levels staircase.
+	"ScaleQuantizer"]
 
 ## Type name -> what to call it when the room runs out.
 ##

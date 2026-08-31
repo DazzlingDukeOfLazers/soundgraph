@@ -2604,6 +2604,56 @@ func _initialize() -> void:
 		check(cut == "", "%s is never cut%s" % [shown_name, cut])
 		probe.free()
 
+	# ---- the spanning rule, on controls built for the purpose -----------------------
+	# A parameter whose control cannot inhabit the normal multi-column allocation takes
+	# the whole row; one that can, shares. Asked of real built cells, because that is what
+	# the rule is now about — the predecessor predicted the width from the descriptor and
+	# was wrong by a third.
+	#
+	# The pair is found by growing an option a letter at a time until the rule itself
+	# flips, so the test straddles the real threshold rather than a second opinion about
+	# where it is, and it does not depend on "minor pentatonic" staying sixteen characters.
+	for scale: int in [Design.Scale.COMPACT, Design.Scale.XL]:
+		Design.ui_scale = scale
+		var bench := VBoxContainer.new()
+		bench.visible = false
+		main.add_child(bench)
+		var host := {"id": "probe", "type": "Gain"}
+		# The neighbour the candidate would share a row with. The rule is relative — a
+		# row of two costs twice its wider cell — so there has to be something to be
+		# out of scale with.
+		var ordinary: Control = main._build_parameter_row(host, {"name": "ordinary",
+			"unit": "", "min": 0.0, "max": 1.0, "default": 0.0})
+		bench.add_child(ordinary)
+		var narrow_cell: Control = null
+		var wide_cell: Control = null
+		var word := "m"
+		while word.length() < 60:
+			var cell: Control = main._build_parameter_row(host,
+				{"name": "probe", "unit": "", "min": 0.0, "max": 1.0, "default": 0.0,
+					"enum": [word]})
+			bench.add_child(cell)
+			if NodeGrid.spans(cell, [ordinary]):
+				wide_cell = cell
+				break
+			narrow_cell = cell
+			word += "m"
+		check(narrow_cell != null and not NodeGrid.spans(narrow_cell, [ordinary]),
+			"%s: an option that fits shares its row" % ["Compact", "Comfortable", "Large",
+				"XL"][scale])
+		check(wide_cell != null and NodeGrid.spans(wide_cell, [ordinary]),
+			"%s: and one letter more takes the row (%d characters)" % [["Compact",
+				"Comfortable", "Large", "XL"][scale], word.length()])
+		# And an ordinary knob never spans, whatever its numbers say.
+		var knob: Control = main._build_parameter_row(host, {"name": "probe",
+			"unit": "octaves/s", "min": -20000.0, "max": 20000.0, "default": 0.0})
+		bench.add_child(knob)
+		check(not NodeGrid.spans(knob, [ordinary]), "%s: a knob never takes a row to itself"
+			% ["Compact", "Comfortable", "Large", "XL"][scale])
+		bench.queue_free()
+		await process_frame
+	Design.ui_scale = Design.Scale.COMFORTABLE
+
 	# ---- a class is a width, not a suggestion --------------------------------------
 	# Measured at zoom 1.0, because a node in REDUCED or MAP has hidden its rows and its
 	# minimum has collapsed — it then sits at its class trivially and the check passes by

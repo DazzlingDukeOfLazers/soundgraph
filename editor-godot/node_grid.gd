@@ -280,6 +280,9 @@ const WIDTH_CLASS := {
 	# And the two that were only ever waiting on the rung above Extra.
 	"Arpeggio": Width.BROAD,
 	"Slide": Width.BROAD,
+	# 15A.3: 536 before the measured spanning rule, 424 after it, and Broad holds it. The
+	# only type in the fifty-one that reflowed.
+	"ScaleQuantizer": Width.BROAD,
 }
 
 
@@ -326,72 +329,49 @@ static func width_class_name(type_name: String) -> String:
 	return CLASS_NAMES[int(WIDTH_CLASS[type_name])]
 
 
-## What a control puts around its own text: the padded panel `_dress_option` gives it on
-## both sides, plus the caret and the gap before it. Measured against the tokens those are
-## actually built from rather than guessed, so the two cannot drift.
-static func control_chrome() -> float:
-	return float(Design.scale(Design.SPACE_M) * 2 + Design.scale(14)
-		+ Design.scale(Design.SPACE_S))
+## Whether a built cell is too far out of scale with its neighbours to share a row.
+##
+## The rule, and the one thing the packing loop asks:
+##
+## > A parameter spans the full control region when its validated control minimum cannot
+## > fit in the normal multi-column allocation.
+##
+## **Relative, because the allocation is relative.** Cells on a row take the same width —
+## that is step 4's whole point, so the control on the second row lands under the control
+## on the first — which means a row of two costs twice its *wider* cell. Pairing a 224
+## dropdown with a 113 knob does not cost 337, it costs 448, and the node pays a hundred
+## and ten units for a column its narrow cell will never use.
+##
+## So the question is not "is this cell bigger than some figure" but "is this cell so much
+## bigger than what it would sit beside that pairing them is waste". An absolute threshold
+## cannot express that: at one column every knob cleared it, because a knob cell is a dial
+## and a name and is already wider than the bare column figure; at two columns the Scale
+## Quantizer's dropdown missed by two pixels.
+##
+## Takes the **built cells**, not descriptors. Layout may use a descriptor to decide what a
+## control is; physical packing uses what the rendered control measures.
+static func spans(cell: Control, siblings: Array) -> bool:
+	if cell == null:
+		return false
+	var mine := cell.get_combined_minimum_size().x
+	var widest_other := 0.0
+	for other: Variant in siblings:
+		var control := other as Control
+		if control == null or control == cell:
+			continue
+		widest_other = maxf(widest_other, control.get_combined_minimum_size().x)
+	if widest_other <= 0.0:
+		return false
+	return mine > widest_other * SPAN_OVER
 
 
-## Whether a parameter's control needs more room than one standard column can give it.
+## How far out of scale a cell has to be before it stops sharing.
 ##
-## The general rule, and the one thing the packing loop asks:
-##
-## > A parameter whose control cannot validly inhabit one standard column spans the full
-## > control region for its row.
-##
-## Not keyed to a type, a node, a parameter name or a class of Control. It asks the
-## descriptor how wide the widest thing the control will ever show is — which for an
-## enumeration is its longest option and for everything else is a number — and measures
-## that string in the font the control draws it in.
-##
-## The Scale Quantizer is what found it. Its scale parameter is an enumeration whose
-## longest option is "minor pentatonic", so its dropdown wants 224 where a column is 84;
-## the root note beside it wants 90; and the two of them on one line made the node 530
-## wide. The node was never big. It had one control two and a half columns across, and
-## the chassis was paying for it.
-static func spans(descriptor: Dictionary) -> bool:
-	# Only a control whose width is driven by its *content* can exceed a column, and
-	# today that means an enumeration. A knob is a dial of a fixed diameter and a value
-	# written under it; it fits a column by construction and always did.
-	#
-	# The first version of this asked the question of every parameter and charged all of
-	# them the dropdown's chrome — two paddings, a caret and its gap, which is well over
-	# half a column on its own. Thirty-two of the fifty-one types reflowed to one
-	# parameter a row, every node in the program got narrower and taller, and the fix for
-	# one node had quietly become a redesign of all of them.
-	if not descriptor.has("enum"):
-		return false
-	var widest := ValueText.widest(descriptor, false)
-	if widest == "":
-		return false
-	# Predicted, and the prediction is the weak part of this. A dressed OptionButton's
-	# real minimum for "minor pentatonic" is 224; the estimate below says 168. Godot adds
-	# internals to a Button that the styleboxes do not describe, and the gap is a third.
-	#
-	# The criterion is supposed to be the control's *measured* requirement, which means
-	# the packing loop has to build its cells before it groups them into rows rather than
-	# deciding the rows first. That is a restructure of the row builder and it is not
-	# smuggled in at the end of a width change. Until then the threshold is set where the
-	# estimate is safe rather than where it is right, and Scale Quantizer stays held.
-	var face := Design.font(Design.WEIGHT_MEDIUM)
-	var wanted := face.get_string_size(widest, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
-		Design.type(Design.SIZE_CONTROL)).x + control_chrome()
-	# Two columns, not one, and the second attempt at this figure.
-	#
-	# A column is the *minimum* a cell may be, not what one gets: on a real node the two
-	# cells share the control region and are far wider than 84. Measured against a bare
-	# column the threshold landed absurdly low — a dropdown's own chrome is over half a
-	# column, so almost any option word cleared it, six types reflowed and two shipped
-	# example patches ended up with overlapping nodes because their nodes had each gained
-	# a row.
-	#
-	# What the rule is actually for is a control that cannot share a row with anything,
-	# and that is one wanting more than the whole of a two-cell region's fair half. Under
-	# it, "minor pentatonic" at 224 spans and "lowpass" at about a hundred does not —
-	# which is the distinction the Scale Quantizer showed and the one worth drawing.
-	return wanted > float(Design.scale(COLUMN)) * 2.0
+## Half again. Below it the pairing wastes less than a third of a column and the extra row
+## costs more than it saves; above it the narrow cell is being handed a column it has no
+## use for. The Scale Quantizer's two parameters sit at 224 against 113, which is just
+## under twice, and they are the only pair in fifty-one types that does.
+const SPAN_OVER := 1.5
 
 
 ## The gap between rows, scaled. Godot wants these as ints in theme constants.

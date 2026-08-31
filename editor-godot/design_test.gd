@@ -435,33 +435,6 @@ func _initialize() -> void:
 		check(ratio >= 3.0, "%s: its jack rings read on the socket field (%.1f:1)"
 			% [ModuleThemes.display_name(str(key)), ratio])
 
-	# The spanning rule, on controls built for the purpose rather than on whichever node
-	# happens to have a long enumeration today. A parameter whose control cannot inhabit
-	# one standard column takes the whole row; one that can, shares.
-	#
-	# The pair is found by growing an option a letter at a time until the rule itself
-	# flips, so the test straddles the real threshold rather than a second opinion about
-	# where it is. The first version computed the boundary itself and disagreed with the
-	# rule the moment the rule's own figure moved.
-	for palette in Design.PALETTES.size():
-		Design.use_palette(palette)
-		var narrow := ""
-		var wide := "m"
-		while not NodeGrid.spans({"enum": [wide]}) and wide.length() < 200:
-			narrow = wide
-			wide += "m"
-		check(narrow != "" and not NodeGrid.spans({"enum": [narrow]}),
-			"%s: an option that fits shares its row (%d characters)"
-				% [Design.PALETTE_NAMES[palette], narrow.length()])
-		check(NodeGrid.spans({"enum": [wide]}),
-			"%s: and one letter more takes the row (%d characters)"
-				% [Design.PALETTE_NAMES[palette], wide.length()])
-		# And a parameter with no enumeration never spans, whatever its numbers say: a
-		# knob is a dial of a fixed diameter and fits a column by construction.
-		check(not NodeGrid.spans({"unit": "octaves/s", "min": -20000.0, "max": 20000.0}),
-			"%s: a knob never takes a row to itself" % Design.PALETTE_NAMES[palette])
-	Design.use_palette(Design.Palette.LAB)
-
 	# Every migrated type says what it is called when there is no room. Part of the
 	# contract rather than a repair applied when today's geometry happens to need one:
 	# an ellipsis in the graph means exactly one thing, a type that has not been through
