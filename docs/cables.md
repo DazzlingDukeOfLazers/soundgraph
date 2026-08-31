@@ -306,79 +306,127 @@ frames.**
 All three are now measured from one before/after pair captured back to back, with the view
 centred on the cables being asked about.
 
-## Goal 3 — grayscale cable type — **not finished, and not shipped**
+## Goal 3.0 — the signal taxonomy audit
 
-The requirement, narrow:
+Goal 3 stalled because the hostile patch produced two classes where the cue design assumed
+three. Before drawing a third grammar: is there a third semantic class?
 
-> Given a mid-span crop with the endpoints unavailable and the hue removed, identify the
-> cable's signal class — without mistaking the cue for a junction, a crossing, a direction
-> arrow or activity.
-
-### What is built and gated
-
-All three candidates, none of them shipped. `CableArt.type_cue` is `NONE`, so nothing about
-the resting cable has changed for anybody.
+`signal_audit.gd` enumerates every port on every runtime type.
 
 ```
-NONE       the reference
-HIGHLIGHT  the existing bright pass, interrupted into sparse strokes
-RIBS       short transverse marks laid across the cord
-STAMPS     the socket shapes, repeated beside the route
+182 ports across 51 runtime types
+
+declared      count      shape       colour   transport
+audio            78     circle       57e3b4   stream
+control         104    diamond       8fb8ff   stream
+
+0 of those declare no type at all and fall back to control
+types carrying a message port at all: none
+cables in the hostile patch, by class: { control: 17, audio: 18 }
 ```
 
-**No candidate breaks the cable body.** A dashed wire is a different object; all three leave
-the cord solid and spend only the highlight pass or a mark laid on top of it.
+### The answer is B, and it is unambiguous
 
-The placement rule is `CableArt.cue_sites()` — one pure function, shared by the renderer and
-the sheet for the same reason `fit_for` and `cell_reaches` are:
+`dsp-core/include/soundgraph/types.h` has four types and the distinction is real:
+
+> audio and control are both sample streams and interconvert freely. **event and note carry
+> discrete messages and require an exact type match.**
+
+`signal_types_compatible` enforces exactly that. And **no node uses it.** In all of
+`dsp-core/src`, `SignalType::Event` and `SignalType::Note` appear only in the two functions
+that turn them into strings and back. Not one of 182 ports declares either, and not one
+falls back to a default — every declaration is explicit.
+
+So this is not a handful of misdeclared ports, which is what a data bug looks like. It is a
+policy, applied without exception: **gates and triggers are transported as float streams**,
+which is what lets an LFO be a clock and an audio signal be a trigger.
+
+The consequence for the cables is simple, and it makes goal 3 easier rather than harder:
+
+> **SoundGraph has two cable classes. Continuous is audio; a sparse cadence is control.
+> There is no paired event cadence, because there is no event.**
+
+The invariant that follows:
+
+> **Cable type is derived from signal semantics in the graph model, never inferred from
+> socket shape or colour.**
+
+If a node ever declares an event or note port, goal 3 reopens — deliberately, at the
+derivation, rather than a cable quietly inventing a third grammar off a socket shape.
+
+### The mismatch worth recording
+
+The socket grammar advertises **four shapes for two realities**. Square and ring are drawn
+by the editor, mapped by `_slot_type`, and unreachable: no port produces them. Likewise the
+trigger colour never reaches a cable.
+
+That is dead vocabulary, not an inadequate rule, so it does not reopen the frozen node
+grammar. It belongs in `docs/known-issues.md` as a taxonomy question for whenever the signal
+model is next opened.
+
+## Goal 3 — grayscale cable type
+
+### The proving ground
+
+`editor-godot/qa/cable-types.json`, and it does **not** replace the hostile graph. Two long
+cables of each real class across empty canvas, endpoints far enough apart that a mid-span
+crop holds cable and nothing else, plus one crossing pair. The same split that worked for
+the nodes:
 
 ```
-cadence      160 screen pixels, measured on the glass and not in graph units
-audio        unmarked; the additional ink belongs to the classes that are not the default
-control      a single stroke per cadence
-event        a paired stroke per cadence
-exclusions   sockets, both cable ends, every crossing on this cord, and any bend over 35°
-precedence   connection and crossing geometry > type cue > focus prominence
+type specimen   can the vocabulary be read at all?
+dense graph     does it stay calm in a real patch?
 ```
 
-Measured on the hostile graph: **76 cues placed, 4 refused by the exclusions, an achieved
-cadence of 165 screen pixels** against a 160 target. Routes point-identical, crossing count
-and positions identical, the focused cable byte-equivalent with its cue included.
+### The test is 100% only, and that is a finding
 
-### Why it is not finished
+At 40% a 340-pixel crop of a patch four thousand units wide contains nodes wherever it is
+centred — four of the first sheet's six crops answered a different question. And at MAP
+scale a cable exists to say topology *in context*; an isolated crop of one is not what
+anybody is looking at.
 
-**The specimen has no event-class cable.** Thirty-five cables: eighteen audio, seventeen
-control, **zero event**. So a third of the vocabulary — the paired cadence, the one that has
-to be told apart from the single one — is drawn and gated but never exercised by the graph
-it is supposed to be judged in. Choosing a candidate on a two-class proof would be choosing
-it on the easy half of the question.
+```
+100%            endpoint-free grayscale identification
+66 / 40 / 28%   whole-graph integration
+```
 
-This is worth a look on its own account. The registry's port types in this patch resolve to
-audio and control only, while the socket grammar has four shapes and the palette has a
-trigger colour. Either the hostile patch happens to contain no event-typed output, or the
-port types and the socket shapes disagree about what a gate is — and the second would be a
-defect in the node data, not in the cables.
+### The result
 
-**And the endpoint-free crop is not achievable below 100%.** At 40% and 28% a 340-pixel crop
-of a patch four thousand units wide contains nodes whatever it is centred on, so the sheet
-comes back with labels in it and the endpoints are not hidden at all. The mid-span test is a
-100% test; the lower zooms want the whole-graph frames instead, and the sheet should say so
-rather than producing six crops of which four answer a different question.
+| | cues | refused | cadence px | ink /1000px |
+|---|---|---|---|---|
+| none | 0 | 0 | — | 0 |
+| highlight | 31 | 1 | 162 | **−876** |
+| **ribs** | 31 | 1 | 162 | **+61** |
+| stamps | 31 | 1 | 162 | +92 |
 
-The crop selection also needs to choose spans that are genuinely clear of nodes rather than
-the middle of the longest cable, which in this patch lands under one.
+**The ribs win, and neither prior survived.**
 
-### What would finish it
+- **none** — the two classes are the same picture. The defect, confirmed.
+- **highlight** — the preferred first specimen, and it fails. Spending the existing sheen is
+  elegant and costs *negative* ink, and the interruption it produces cannot be found without
+  knowing where to look. Elegant is not the criterion.
+- **stamps** — legible, and fails the other half: a diamond beside a cable reads as a
+  connector or a very small node, exactly as predicted.
+- **ribs** — small, quiet, plainly visible, and read as marks *on* the cable rather than
+  objects beside it. At 100% in the hostile graph they are barely noticeable and nothing
+  about the patch reads as decorated.
 
-1. A specimen carrying all three classes — either the hostile patch gains an event cable, or
-   the event class is proved on a second patch that has one, named in the sheet.
-2. Mid-span crops at 100% only, chosen from spans measurably clear of any node.
-3. The three candidates side by side on one control cable and one event cable, shuffled, and
-   named without the ends.
+Against the brutal criterion — *if a candidate cannot distinguish every real cable class at
+100% grayscale without explanation, it does not solve goal 3* — only the ribs pass.
 
-Until then the default stays `NONE`. A cue chosen on an unfinished sheet is the "45% felt
-good" failure this programme keeps avoiding, and goal 2 has just finished demonstrating how
-easily an instrument can be confidently wrong.
+**One caveat, kept rather than buried:** the identification was done by somebody holding the
+answer key. The shuffled human test on `cue-midspans.png` is still worth doing, and the
+default is one line to revert.
+
+### What holds
+
+```
+cadence      162 screen px achieved against a 160 target
+placement    31 cues, 1 refused by the exclusions
+routes       point-identical with and without a cue
+crossings    same count, same positions
+focus        the focused cable byte-equivalent, cue included
+```
 
 ### What not to start with
 

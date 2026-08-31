@@ -559,12 +559,8 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 		# event. Nothing is added: this cue costs *less* ink than the cable it is on, which
 		# is why it was the preferred first specimen.
 		for mark: Dictionary in marks:
-			var strokes := 1 if style.signal_class == SignalClass.CONTROL else 2
-			for k in strokes:
-				var middle: float = float(mark["arc"]) + (float(k) - float(strokes - 1)
-					* 0.5) * (CUE_STROKE + CUE_PAIR_GAP)
-				_draw_arc_run(canvas, lifted, points, middle, CUE_STROKE, sheen,
-					style.highlight_width)
+			_draw_arc_run(canvas, lifted, points, float(mark["arc"]), CUE_STROKE, sheen,
+				style.highlight_width)
 
 	if not marks.is_empty() and type_cue == TypeCue.RIBS:
 		# Candidate B. Short transverse marks laid across the cord, in the sheen's own ink
@@ -572,13 +568,10 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 		for mark: Dictionary in marks:
 			var across := Vector2(-(mark["along"] as Vector2).y,
 				(mark["along"] as Vector2).x)
-			var ribs := 1 if style.signal_class == SignalClass.CONTROL else 2
-			for k in ribs:
-				var slide: Vector2 = (mark["along"] as Vector2) 					* ((float(k) - float(ribs - 1) * 0.5) * CUE_PAIR_GAP)
-				var centre: Vector2 = (mark["at"] as Vector2) + slide
-				canvas.draw_line(centre - across * style.thickness * 0.62,
-					centre + across * style.thickness * 0.62, sheen,
-					maxf(style.highlight_width, 1.0), true)
+			var centre: Vector2 = mark["at"]
+			canvas.draw_line(centre - across * style.thickness * 0.62,
+				centre + across * style.thickness * 0.62, sheen,
+				maxf(style.highlight_width, 1.0), true)
 
 	if not marks.is_empty() and type_cue == TypeCue.STAMPS:
 		# Candidate C, expected to lose and proved rather than assumed. The socket shapes
@@ -589,13 +582,12 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 				(mark["along"] as Vector2).x)
 			var centre: Vector2 = (mark["at"] as Vector2) + across * style.thickness * 1.1
 			var radius: float = style.thickness * 0.34
-			if style.signal_class == SignalClass.CONTROL:
-				canvas.draw_colored_polygon(PackedVector2Array([
-					centre + Vector2(0.0, -radius), centre + Vector2(radius, 0.0),
-					centre + Vector2(0.0, radius), centre + Vector2(-radius, 0.0)]), sheen)
-			else:
-				canvas.draw_rect(Rect2(centre - Vector2(radius, radius) * 0.86,
-					Vector2(radius, radius) * 1.72), sheen)
+			# The control socket's own diamond, repeated. Which is the reason this
+			# candidate is expected to lose: the shape works at an endpoint because an
+			# endpoint is where a socket is.
+			canvas.draw_colored_polygon(PackedVector2Array([
+				centre + Vector2(0.0, -radius), centre + Vector2(radius, 0.0),
+				centre + Vector2(0.0, radius), centre + Vector2(-radius, 0.0)]), sheen)
 
 
 ## Where one cable crosses another, as points on the upper cable's path.
@@ -700,20 +692,43 @@ enum TypeCue { NONE, HIGHLIGHT, RIBS, STAMPS }
 
 ## What a cable carries, as far as its own middle is concerned.
 ##
-## Three, not four. The registry has a fourth socket — note, drawn as a ring — and it shares
-## the trigger colour with event, so it shares the cadence: a fourth cadence is a fourth
-## thing to learn for a distinction the sockets already make at both ends.
+## **Two, because SoundGraph has two.** Goal 3.0 enumerated all 182 ports on all 51 runtime
+## types: 78 audio, 104 control, and **not one** declaring event or note — none falling back
+## to a default either, every declaration explicit. `SignalType::Event` and `SignalType::Note`
+## exist in dsp-core, `signal_types_compatible` enforces them as message types that do not
+## interconvert with streams, and no node in the library emits one. In dsp-core they appear
+## only in the two functions that turn them into strings and back.
+##
+## So a paired event cadence would be a visually elegant grammar for a class this program
+## does not have. The socket vocabulary already advertises four shapes for two realities;
+## the cables are not going to make that worse.
 ##
 ## **Audio is unmarked.** It is the commonest cable in every patch and the strongest thing
-## in the resting language, so the additional ink belongs to the classes that are not the
-## default. Continuous is audio; a sparse cadence is control; a paired cadence is event.
-enum SignalClass { AUDIO, CONTROL, EVENT }
+## in the resting language, so the additional ink belongs to the class that is not the
+## default. Continuous is audio; a sparse cadence is control.
+##
+## If a node ever declares an event or note port, this reopens — and it reopens *here*,
+## because the cue is derived from the graph model and not from the socket shape. See
+## docs/cables.md, goal 3.0.
+enum SignalClass { AUDIO, CONTROL }
 
-## NONE until goal 3 is decided. All three candidates are implemented, placed and gated;
-## none of them ships, because the proof that would choose between them is not finished —
-## see docs/cables.md. A default chosen on an unfinished sheet is exactly the "45% felt
-## good" failure this programme keeps avoiding.
-static var type_cue := TypeCue.NONE
+## RIBS, and it was not the expected winner either.
+##
+## The endpoint-free grayscale sheet was brutal about it. With nothing at all, the two
+## classes are the same picture — the defect, confirmed. The **highlight cadence**, the
+## preferred first specimen, produces an interruption so slight that it cannot be found
+## without knowing where to look: spending the sheen was elegant and it does not carry.
+## The **stamps** are legible and fail the other half of the requirement — a diamond beside
+## a cable reads as a connector or a very small node, exactly as predicted. The **ribs** are
+## small, quiet, plainly visible, and read as marks on the cable rather than as objects
+## beside it.
+##
+## And the integration frame agrees: at 100% in the hostile graph the ribs are barely
+## noticeable, and nothing about the patch reads as decorated.
+##
+## Caveat worth keeping: the identification was done by somebody holding the answer key.
+## The shuffled test is still worth a human doing.
+static var type_cue := TypeCue.RIBS
 
 ## Screen pixels between one type cue and the next.
 ##
@@ -722,9 +737,8 @@ static var type_cue := TypeCue.NONE
 ## measured on the glass it stays about the same however far away the patch is.
 const CUE_CADENCE := 160.0
 
-## How much of the cable one cue occupies, and how far apart the two strokes of a pair sit.
+## How much of the cable one cue occupies.
 const CUE_STROKE := 20.0
-const CUE_PAIR_GAP := 14.0
 
 ## How far a cue keeps away from anything that already means something.
 ##

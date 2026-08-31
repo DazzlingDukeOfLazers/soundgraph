@@ -1,0 +1,1652 @@
+{
+  "assumed": 0,
+  "by_declared": {
+    "audio": 78,
+    "control": 104
+  },
+  "dense_graph_cables": {
+    "audio": 18,
+    "control": 17
+  },
+  "message_ports": {},
+  "ports": [
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteInput",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteInput",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteInput",
+      "port": "velocity",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteInput",
+      "port": "trigger",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "bus",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "t1",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "t2",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "t3",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "t4",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "t5",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "t6",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "t7",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "t8",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoteTriggers",
+      "port": "bus",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "bus",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "t1",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "t2",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "t3",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "t4",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "t5",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "t6",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "t7",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "TriggerBus",
+      "port": "t8",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "AudioInput",
+      "port": "left",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "AudioInput",
+      "port": "right",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SineOscillator",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SineOscillator",
+      "port": "fm",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "SineOscillator",
+      "port": "pm",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SineOscillator",
+      "port": "feedback",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "SineOscillator",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SawOscillator",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SawOscillator",
+      "port": "fm",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "SawOscillator",
+      "port": "pm",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "SawOscillator",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SquareOscillator",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SquareOscillator",
+      "port": "fm",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "SquareOscillator",
+      "port": "pm",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "SquareOscillator",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Noise",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoiseOscillator",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "NoiseOscillator",
+      "port": "fm",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "NoiseOscillator",
+      "port": "pm",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "NoiseOscillator",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Sampler",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Sampler",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Sampler",
+      "port": "slice",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Sampler",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Speech",
+      "port": "trigger",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Speech",
+      "port": "note",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Speech",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StateVariableFilter",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "StateVariableFilter",
+      "port": "cutoff",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "StateVariableFilter",
+      "port": "cutoff_mod",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "StateVariableFilter",
+      "port": "resonance",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StateVariableFilter",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "OnePoleFilter",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "OnePoleFilter",
+      "port": "cutoff",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "OnePoleFilter",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Formant",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Formant",
+      "port": "morph",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Formant",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Delay",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Delay",
+      "port": "time",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Delay",
+      "port": "feedback",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Delay",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Comb",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Comb",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Comb",
+      "port": "feedback",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Comb",
+      "port": "damp",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Comb",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Allpass",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Allpass",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Phaser",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Phaser",
+      "port": "offset",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Phaser",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Gain",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Gain",
+      "port": "gain",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Gain",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Level",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Level",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StereoLevel",
+      "port": "left",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StereoLevel",
+      "port": "right",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StereoLevel",
+      "port": "left",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StereoLevel",
+      "port": "right",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Mixer",
+      "port": "in1",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Mixer",
+      "port": "in2",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Mixer",
+      "port": "in3",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Mixer",
+      "port": "in4",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Mixer",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "ADSR",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "ADSR",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "AhdEnvelope",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "AhdEnvelope",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Slide",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Slide",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Slide",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Arpeggio",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Arpeggio",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Arpeggio",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Retrigger",
+      "port": "rate",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Retrigger",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Clock",
+      "port": "bpm",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Clock",
+      "port": "run",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Clock",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Clock",
+      "port": "bar",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "ScaleQuantizer",
+      "port": "in",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "ScaleQuantizer",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "StepSequencer",
+      "port": "clock",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "StepSequencer",
+      "port": "reset",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "StepSequencer",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Euclid",
+      "port": "clock",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Euclid",
+      "port": "reset",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Euclid",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Euclid",
+      "port": "rest",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "LFO",
+      "port": "rate",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "LFO",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Constant",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "MidiCC",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "PluginEffect",
+      "port": "left",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "PluginEffect",
+      "port": "right",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "PluginEffect",
+      "port": "left",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "PluginEffect",
+      "port": "right",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "PluginInstrument",
+      "port": "left",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "PluginInstrument",
+      "port": "right",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Add",
+      "port": "a",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Add",
+      "port": "b",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Add",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Multiply",
+      "port": "a",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Multiply",
+      "port": "b",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Multiply",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Clip",
+      "port": "in",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Clip",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Abs",
+      "port": "in",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Abs",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "MinMax",
+      "port": "a",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "MinMax",
+      "port": "b",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "MinMax",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Compare",
+      "port": "a",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Compare",
+      "port": "b",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Compare",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SampleHold",
+      "port": "in",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SampleHold",
+      "port": "trigger",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "SampleHold",
+      "port": "out",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Drive",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "Drive",
+      "port": "drive",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Drive",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Crush",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Crush",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Compressor",
+      "port": "in",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Compressor",
+      "port": "sidechain",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "Compressor",
+      "port": "out",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StereoOutput",
+      "port": "left",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StereoOutput",
+      "port": "right",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StereoOutput",
+      "port": "left",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "StereoOutput",
+      "port": "right",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "in1",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "in2",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "in3",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "in4",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "in5",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "in6",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "in7",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "in8",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "out1",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "out2",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "out3",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "out4",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "out5",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "out6",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "out7",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "CableTest",
+      "port": "out8",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "seam:Input/note",
+      "port": "host",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "seam:Input/note",
+      "port": "frequency",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "seam:Input/note",
+      "port": "gate",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "seam:Input/note",
+      "port": "velocity",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "seam:Input/note",
+      "port": "trigger",
+      "shape": "diamond",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "8fb8ff",
+      "declared": "control",
+      "node": "seam:Input/audio",
+      "port": "host",
+      "shape": "diamond",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "seam:Input/audio",
+      "port": "left",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "seam:Input/audio",
+      "port": "right",
+      "shape": "circle",
+      "side": "out"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "seam:Output/stereo",
+      "port": "left",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "seam:Output/stereo",
+      "port": "right",
+      "shape": "circle",
+      "side": "in"
+    },
+    {
+      "assumed": false,
+      "colour": "57e3b4",
+      "declared": "audio",
+      "node": "seam:Output/stereo",
+      "port": "host",
+      "shape": "circle",
+      "side": "out"
+    }
+  ]
+}

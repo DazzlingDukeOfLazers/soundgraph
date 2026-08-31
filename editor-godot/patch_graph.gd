@@ -2640,10 +2640,14 @@ class CordLayer extends Control:
 			# What it carries, for the goal 3 type cue. Taken from the output slot, which
 			# is where the socket takes its own shape from, so the cue in the middle of a
 			# cable and the shapes at its ends cannot disagree.
+			# Two classes, because goal 3.0 found the program has two: no runtime type
+			# declares an event or note port. A slot that ever reports one is mapped to
+			# control here and the cue would be wrong — which is the point at which goal 3
+			# reopens, deliberately, rather than the cable quietly inventing a third
+			# grammar off a socket shape.
 			var carried := CableArt.SignalClass.AUDIO
-			match from_widget.get_output_port_type(int(connection["from_port"])):
-				1: carried = CableArt.SignalClass.CONTROL
-				2, 3: carried = CableArt.SignalClass.EVENT
+			if from_widget.get_output_port_type(int(connection["from_port"])) != 0:
+				carried = CableArt.SignalClass.CONTROL
 			cords.append([local, cord_ink,
 				"%s:%d" % [str(connection["from_node"]), int(connection["from_port"])],
 				"%s:%d" % [str(connection["to_node"]), int(connection["to_port"])],

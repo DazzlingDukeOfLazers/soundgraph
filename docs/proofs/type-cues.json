@@ -1,0 +1,33 @@
+{
+  "candidates": {
+    "highlight": {
+      "cadence": 161.7,
+      "ink_per_1000px": -876.3,
+      "marked_cable": 5013.0,
+      "placed": 31,
+      "skipped": 1
+    },
+    "none": {
+      "cadence": 5013.0,
+      "ink_per_1000px": 0.0,
+      "marked_cable": 5013.0,
+      "placed": 0,
+      "skipped": 0
+    },
+    "ribs": {
+      "cadence": 161.7,
+      "ink_per_1000px": 61.3,
+      "marked_cable": 5013.0,
+      "placed": 31,
+      "skipped": 1
+    },
+    "stamps": {
+      "cadence": 161.7,
+      "ink_per_1000px": 91.5,
+      "marked_cable": 5013.0,
+      "placed": 31,
+      "skipped": 1
+    }
+  },
+  "complaints": []
+}

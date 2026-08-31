@@ -176,14 +176,9 @@ func _initialize() -> void:
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
 	await settle(16)
-	var file := FileAccess.open(PATCH, FileAccess.READ)
-	await main._load_text(file.get_as_text())
-	await settle(20)
 	main._set_roll_open(false)
 	graph = main.graph_edit
 	main._choose_detail_mode(PatchGraph.DetailMode.ADAPTIVE)
-	graph.zoom = 1.0
-	await settle(12)
 	for child in graph.get_children():
 		if child.has_method("crossing_sites"):
 			cords = child
@@ -193,137 +188,116 @@ func _initialize() -> void:
 		return
 	var folder := out_dir()
 	DirAccess.make_dir_recursive_absolute(folder)
-	await centre()
-
-	# One specimen of each class, the longest of each so there is a middle to crop.
-	var pick := {}
-	for entry in lay():
-		var klass := int(entry[5])
-		var run := arc_length(entry[0])
-		if not pick.has(klass) or run > float(pick[klass]["run"]):
-			# The midpoint in graph space, now, while the scroll it was measured at is
-			# still the scroll we are at.
-			var middle: Vector2 = midpoint(entry[0])["at"]
-			pick[klass] = {"entry": entry, "run": run,
-				"middle": (middle + graph.scroll_offset) / graph.zoom}
-	var classes := ["audio", "control", "event"]
-	var spread := {}
-	for entry in lay():
-		spread[int(entry[5])] = int(spread.get(int(entry[5]), 0)) + 1
-	print("cables by class: %s  (0 audio, 1 control, 2 event)" % str(spread))
-	for entry in lay():
-		if int(entry[5]) == 0:
-			continue
-		print("   %s -> class %d" % [str(entry[4]), int(entry[5])])
-
-	# The invariants, taken before any cue exists.
-	CableArt.type_cue = CableArt.TypeCue.NONE
-	await redraw()
-	var resting := {}
-	for entry in lay():
-		resting[entry[4]] = in_graph(entry[0])
-	var resting_sites: Array = []
-	for site: Dictionary in cords.crossing_sites():
-		resting_sites.append((site["at"] as Vector2 + graph.scroll_offset) / graph.zoom)
 
 	var candidates := [CableArt.TypeCue.NONE, CableArt.TypeCue.HIGHLIGHT,
 		CableArt.TypeCue.RIBS, CableArt.TypeCue.STAMPS]
 	var names := ["none", "highlight", "ribs", "stamps"]
 	var record := {"candidates": {}}
 
+	# ---- the identification test: the specimen, at 100%, grayscale, ends cropped out ---
+	#
+	# 100% only, and that is a finding rather than a convenience. At 40% a 340-pixel crop
+	# of a patch four thousand units wide contains nodes wherever it is centred, so four of
+	# the first sheet's six crops answered a different question from the one asked. At MAP
+	# scale a cable exists to say topology in context and an isolated crop of one is not
+	# what anybody is looking at. So: 100% identifies the vocabulary, and the whole-graph
+	# frames below decide whether it stays calm.
+	await open_patch("res://qa/cable-types.json")
+	graph.zoom = 1.0
+	graph._update_detail()
+	main._apply_detail(graph.detail)
+	await settle(10)
+
+	# One clean specimen per class: the longest cable of each whose middle is clear of
+	# every node, since a crop with a node in it is not endpoint-free either.
+	var pick := {}
+	for entry in lay():
+		var klass := int(entry[5])
+		var middle: Vector2 = midpoint(entry[0])["at"]
+		if not clear_of_nodes(middle):
+			continue
+		var run := arc_length(entry[0])
+		if not pick.has(klass) or run > float(pick[klass]["run"]):
+			pick[klass] = {"run": run,
+				"middle": (middle + graph.scroll_offset) / graph.zoom}
+	print("clean specimens by class: %s  (0 audio, 1 control)" % str(pick.keys()))
+
+	var resting := {}
+	CableArt.type_cue = CableArt.TypeCue.NONE
+	await redraw()
+	for entry in lay():
+		resting[entry[4]] = in_graph(entry[0])
+	var resting_sites: Array = []
+	for site: Dictionary in cords.crossing_sites():
+		resting_sites.append((site["at"] as Vector2 + graph.scroll_offset) / graph.zoom)
+
+	var rows: Array = []
 	for i in candidates.size():
 		CableArt.type_cue = candidates[i]
 		await redraw()
+		var row: Array = []
+		for klass in 2:
+			if pick.has(klass):
+				row.append(await mid_span(pick[klass]["middle"]))
+		rows.append(row)
+		await _audit(resting, resting_sites, names[i])
+	tile(rows, folder.path_join("cue-midspans.png"), MAGNIFY)
 
-		# ---- the endpoint-free sheet, one row per class per zoom -------------------
-		var rows: Array = []
-		for zoom: float in ZOOMS:
-			graph.zoom = zoom
-			graph._update_detail()
-			main._apply_detail(graph.detail)
-			await settle(6)
-			var row: Array = []
-			for klass in 3:
-				if pick.has(klass):
-					row.append(await mid_span(pick[klass]["middle"]))
-			rows.append(row)
-		tile(rows, folder.path_join("cue-%s-midspans.png" % names[i]), MAGNIFY)
-
-		# ---- the whole graph, for the cases the crops cannot show ------------------
-		graph.zoom = 1.0
-		graph._update_detail()
-		main._apply_detail(graph.detail)
-		await settle(6)
-		await centre()
-		await redraw()
-		frame().save_png(folder.path_join("cue-%s-graph-100.png" % names[i]))
-		graph.zoom = 0.40
-		graph._update_detail()
-		main._apply_detail(graph.detail)
-		await settle(6)
-		await centre()
-		await redraw()
-		frame().save_png(folder.path_join("cue-%s-graph-40.png" % names[i]))
-
-		# ---- what it cost, and what it moved ---------------------------------------
-		graph.zoom = 1.0
-		await settle(4)
-		await centre()
-		await redraw()
-		var measured := {"placed": 0, "skipped": 0, "cable": 0.0, "cadence": 0.0}
+	# What each candidate costs, on the specimen where the classes are clean.
+	graph.zoom = 1.0
+	await settle(4)
+	for i in candidates.size():
+		CableArt.type_cue = candidates[i]
 		var style: CableArt.Style = cords._style()
+		var placed := 0
+		var skipped := 0
+		var marked := 0.0
 		for entry in lay():
 			style.signal_class = int(entry[5])
 			style.cue_avoid = PackedVector2Array()
 			var sites: Dictionary = CableArt.cue_sites(entry[0], style)
-			measured["placed"] = int(measured["placed"]) + (sites["placed"] as Array).size()
-			measured["skipped"] = int(measured["skipped"]) + int(sites["skipped"])
+			placed += (sites["placed"] as Array).size()
+			skipped += int(sites["skipped"])
 			if int(entry[5]) != CableArt.SignalClass.AUDIO:
-				measured["cable"] = float(measured["cable"]) + float(sites["length"])
-		measured["cadence"] = float(measured["cable"]) \
-			/ maxf(float(measured["placed"]), 1.0)
-		record["candidates"][names[i]] = measured
-		await _audit(resting, resting_sites, names[i])
+				marked += float(sites["length"])
+		# Ink, as the highlight length a marked cable ends up carrying against the length
+		# it carried before. Negative for the highlight candidate, which spends the sheen
+		# it already had rather than adding anything — the reason it was the preferred
+		# first specimen.
+		var ink := 0.0
+		if names[i] == "highlight":
+			ink = (float(placed) * CableArt.CUE_STROKE - marked) / maxf(marked, 1.0) * 1000.0
+		elif names[i] == "ribs":
+			ink = float(placed) * style.thickness * 1.24 / maxf(marked, 1.0) * 1000.0
+		elif names[i] == "stamps":
+			ink = float(placed) * pow(style.thickness * 0.68, 2.0) * 0.5 				/ maxf(marked, 1.0) * 1000.0
+		record["candidates"][names[i]] = {"placed": placed, "skipped": skipped,
+			"marked_cable": snappedf(marked, 0.1),
+			"cadence": snappedf(marked / maxf(float(placed), 1.0), 0.1),
+			"ink_per_1000px": snappedf(ink, 0.1)}
 
-	# The suppression interaction: a quieted cable's cue is quieted with it, and a focused
-	# cable is exactly what it was.
-	CableArt.type_cue = CableArt.TypeCue.HIGHLIGHT
-	graph.zoom = 1.0
-	await settle(4)
-	await centre()
-	await redraw()
-	var before := frame()
-	var control_cable: Array = pick[CableArt.SignalClass.CONTROL]["entry"]
-	var ends: PackedStringArray = str(control_cable[4]).split(">")
-	var from_end: PackedStringArray = ends[0].split(":")
-	var to_end: PackedStringArray = ends[1].split(":")
-	graph.hovered_cable = {"from_node": from_end[0], "from_port": int(from_end[1]),
-		"to_node": to_end[0], "to_port": int(to_end[1])}
-	await redraw()
-	var after := frame()
-	# The focused cable, along its own route: byte-equivalent to baseline, cue included.
-	var moved := 0
-	for point: Vector2 in (control_cable[0] as PackedVector2Array):
-		var at := point + Vector2(cords.global_position)
-		if at.x < 1.0 or at.y < 1.0 or at.x >= before.get_width() - 1 \
-				or at.y >= before.get_height() - 1:
-			continue
-		var was := before.get_pixel(int(at.x), int(at.y))
-		var now := after.get_pixel(int(at.x), int(at.y))
-		if absf(was.r - now.r) > 0.01 or absf(was.g - now.g) > 0.01:
-			moved += 1
-	if moved > 0:
-		note("the focused cable changed at %d of its own points" % moved)
-	graph.hovered_cable = {}
-	await redraw()
+	# ---- the integration test: the hostile graph, at the zooms a reader uses ----------
+	await open_patch("res://qa/dense-graph.json")
+	for i in candidates.size():
+		CableArt.type_cue = candidates[i]
+		for zoom: float in [1.0, 0.66, 0.40, 0.28]:
+			graph.zoom = zoom
+			graph._update_detail()
+			main._apply_detail(graph.detail)
+			await settle(6)
+			await centre()
+			await redraw()
+			frame().save_png(folder.path_join("cue-%s-graph-%d.png"
+				% [names[i], int(roundf(zoom * 100.0))]))
 
 	print("")
-	print("%-12s %8s %9s %12s %14s" % ["candidate", "cues", "refused", "cadence px",
+	print("%-12s %7s %9s %12s %16s" % ["candidate", "cues", "refused", "cadence px",
 		"ink /1000px"])
 	for name: String in record["candidates"]:
 		var entry: Dictionary = record["candidates"][name]
-		print("%-12s %8d %9d %12.0f %14s" % [name, int(entry["placed"]),
-			int(entry["skipped"]), float(entry["cadence"]), "-"])
+		print("%-12s %7d %9d %12.0f %16.1f" % [name, int(entry["placed"]),
+			int(entry["skipped"]), float(entry["cadence"]),
+			float(entry["ink_per_1000px"])])
 	print("")
 	if complaints.is_empty():
 		print("no complaints")
@@ -334,9 +308,32 @@ func _initialize() -> void:
 	var out := FileAccess.open(folder.path_join("type-cues.json"), FileAccess.WRITE)
 	out.store_string(JSON.stringify(record, "  "))
 	out.close()
-	CableArt.type_cue = CableArt.TypeCue.HIGHLIGHT
+	CableArt.type_cue = CableArt.TypeCue.NONE
 	print("-> %s" % folder)
 	quit()
+
+
+func open_patch(path: String) -> void:
+	var file := FileAccess.open(path, FileAccess.READ)
+	await main._load_text(file.get_as_text())
+	await settle(20)
+	main._set_roll_open(false)
+	graph.zoom = 1.0
+	await settle(8)
+	await centre()
+
+
+## Whether a point in the layer's own space has no node under or beside it. A crop with a
+## node in it is not endpoint-free either: the node's ports are endpoints.
+func clear_of_nodes(at: Vector2) -> bool:
+	var here: Vector2 = (at + graph.scroll_offset) / graph.zoom
+	for child in graph.get_children():
+		var widget := child as GraphNode
+		if widget == null or not widget.visible:
+			continue
+		if Rect2(widget.position_offset, widget.size).grow(200.0).has_point(here):
+			return false
+	return true
 
 
 ## Nothing a type cue may move.

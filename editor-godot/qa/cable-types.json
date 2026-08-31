@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "name": "Cable types",
+    "description": "Goal 3's proving ground, and not a replacement for the hostile graph. Two long cables of each real signal class, laid across empty canvas with their endpoints far enough apart that a mid-span crop contains cable and nothing else, plus one crossing pair so the type cue can be seen keeping clear of a knockout. The dense graph answers whether the vocabulary stays calm in a real patch; this answers whether the vocabulary can be read at all."
+  },
+  "nodes": [
+    {"id": "saw", "type": "SawOscillator", "position": {"x": 0, "y": 0},
+      "parameters": {"frequency": 110}},
+    {"id": "svfA", "type": "StateVariableFilter", "position": {"x": 2800, "y": 0},
+      "parameters": {"cutoff": 1200, "resonance": 0.3, "mode": 0}},
+
+    {"id": "lfo", "type": "LFO", "position": {"x": 0, "y": 640},
+      "parameters": {"rate": 0.5, "shape": 0, "amount": 0.8}},
+    {"id": "noiseB", "type": "Noise", "position": {"x": 2200, "y": 940}},
+    {"id": "svfB", "type": "StateVariableFilter", "position": {"x": 2800, "y": 640},
+      "parameters": {"cutoff": 800, "resonance": 0.2, "mode": 0}},
+
+    {"id": "saw2", "type": "SawOscillator", "position": {"x": 0, "y": 1400},
+      "parameters": {"frequency": 220}},
+    {"id": "svfC", "type": "StateVariableFilter", "position": {"x": 2800, "y": 1900},
+      "parameters": {"cutoff": 1500, "resonance": 0.25, "mode": 0}},
+
+    {"id": "lfo2", "type": "LFO", "position": {"x": 0, "y": 1900},
+      "parameters": {"rate": 0.25, "shape": 0, "amount": 0.6}},
+    {"id": "noiseD", "type": "Noise", "position": {"x": 2200, "y": 2200}},
+    {"id": "svfD", "type": "StateVariableFilter", "position": {"x": 2800, "y": 1400},
+      "parameters": {"cutoff": 600, "resonance": 0.2, "mode": 0}},
+
+    {"id": "out", "type": "Output", "host": "stereo", "position": {"x": 3500, "y": 0},
+      "parameters": {"level": 0.8, "safety_limit": 1}}
+  ],
+  "connections": [
+    {"from": {"node": "saw", "port": "out"}, "to": {"node": "svfA", "port": "in"}},
+    {"from": {"node": "lfo", "port": "out"}, "to": {"node": "svfB", "port": "cutoff_mod"}},
+    {"from": {"node": "noiseB", "port": "out"}, "to": {"node": "svfB", "port": "in"}},
+
+    {"from": {"node": "saw2", "port": "out"}, "to": {"node": "svfC", "port": "in"}},
+    {"from": {"node": "lfo2", "port": "out"}, "to": {"node": "svfD", "port": "cutoff_mod"}},
+    {"from": {"node": "noiseD", "port": "out"}, "to": {"node": "svfD", "port": "in"}},
+
+    {"from": {"node": "svfA", "port": "out"}, "to": {"node": "out", "port": "left"}},
+    {"from": {"node": "svfA", "port": "out"}, "to": {"node": "out", "port": "right"}}
+  ]
+}

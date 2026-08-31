@@ -66,17 +66,25 @@ Open problems, ordered by how much they threaten the Knobcon demo.
 - **Cable routing gives up gracefully in a dense patch.** When no clear route exists it
   picks the least-blocked one rather than searching exhaustively, because routing runs per
   cable per frame.
+- **The socket grammar advertises four shapes for two realities.** Goal 3.0 enumerated all
+  182 ports on all 51 runtime types: 78 audio, 104 control, and none at all declaring event
+  or note. `SignalType::Event` and `SignalType::Note` are real in dsp-core — they are
+  message types that do not interconvert with streams, and `signal_types_compatible`
+  enforces it — and in `dsp-core/src` they appear only in the functions that turn them into
+  strings and back. So the square and ring sockets, and the trigger colour, are unreachable.
+
+  Not a bug in any one port: it is a policy applied without exception, and gates as float
+  streams is what lets an LFO be a clock. Recorded as a taxonomy question for whenever the
+  signal model is next opened, and as the reason the cables have two classes and not three.
+
 - **A cable's signal type is hue-only between its endpoints.** Found by 15B's grayscale
   render of the dense QA graph: socket shape carries audio against control at both ends and
   survives a monochrome display, and the cable between them does not. Bounded — a reader
   can always recover a cable's type by looking at either end — but tracing one wire through
   a crossing region without looking at its ends needs colour.
 
-  Deliberately not patched during the node pass. Investigate a non-colour secondary cue for
-  cable type that stays legible without making dense patches noisy: line treatment, sparse
-  inline marks, or something else equally restrained. A "small" dash change applied across
-  thirty-five intersecting wires alters the whole graph, so cables want the proof-sheet
-  process the nodes have just had rather than a change made in passing.
+  **Closed by the cable pass's goal 3**: a sparse transverse rib every 160 screen pixels on
+  control cables, audio left unmarked. See docs/cables.md.
 
 ## Resolved
 

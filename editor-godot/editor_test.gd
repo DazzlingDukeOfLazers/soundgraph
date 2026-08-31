@@ -11321,8 +11321,12 @@ func _initialize() -> void:
 	# ---- cable pass, goal 3: type cues, placed but not shipped -----------------------
 	# The three candidates are drawn and their placement rule is gated; none is the
 	# default, because the sheet that would choose between them is not finished.
-	check(CableArtScript.type_cue == CableArtScript.TypeCue.NONE,
-		"no type cue ships until the proof chooses one")
+	check(CableArtScript.type_cue == CableArtScript.TypeCue.RIBS,
+		"the shipped type cue is the transverse rib")
+	# Two classes, because goal 3.0 found the program has two. A third enum member would be
+	# a grammar maintained for a semantic class SoundGraph does not have.
+	check(CableArtScript.SignalClass.size() == 2,
+		"and there are two cable classes, because there are two signal classes")
 
 	# The geometry rule: cadence in screen pixels, so it stays about constant as the graph
 	# zoom changes rather than going sparse when you lean in and plaid when you lean out.
