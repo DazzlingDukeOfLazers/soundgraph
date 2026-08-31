@@ -1,0 +1,803 @@
+{
+  "ADSR": {
+    "category": "Modulation",
+    "compact": "Envelope",
+    "display_name": "Envelope",
+    "glyph": 18,
+    "narrowest": [
+      264,
+      296,
+      296,
+      296
+    ],
+    "needs": 296,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "Abs": {
+    "category": "Maths",
+    "compact": "Abs",
+    "display_name": "Abs",
+    "glyph": -1,
+    "narrowest": [
+      128,
+      128,
+      128,
+      128
+    ],
+    "needs": 128,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "Add": {
+    "category": "Maths",
+    "compact": "Add",
+    "display_name": "Add",
+    "glyph": 44,
+    "narrowest": [
+      152,
+      176,
+      176,
+      176
+    ],
+    "needs": 176,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "AhdEnvelope": {
+    "category": "Modulation",
+    "compact": "AHD",
+    "display_name": "AHD Envelope",
+    "glyph": 18,
+    "narrowest": [
+      264,
+      296,
+      296,
+      296
+    ],
+    "needs": 296,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "Allpass": {
+    "category": "Time",
+    "compact": "Allpass",
+    "display_name": "Allpass",
+    "glyph": -1,
+    "narrowest": [
+      248,
+      280,
+      280,
+      280
+    ],
+    "needs": 280,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "Arpeggio": {
+    "category": "Modulation",
+    "compact": "Arp",
+    "display_name": "Arpeggio",
+    "glyph": 57,
+    "narrowest": [
+      384,
+      424,
+      416,
+      424
+    ],
+    "needs": 424,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Broad"
+  },
+  "AudioInput": {
+    "category": "Terminals",
+    "compact": "Audio in",
+    "display_name": "Audio Input",
+    "glyph": 61,
+    "narrowest": [
+      152,
+      168,
+      168,
+      168
+    ],
+    "needs": 168,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "CableTest": {
+    "category": "Utilities",
+    "compact": "Cables",
+    "display_name": "Cable Test",
+    "glyph": -1,
+    "narrowest": [
+      128,
+      136,
+      136,
+      136
+    ],
+    "needs": 136,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "Clip": {
+    "category": "Maths",
+    "compact": "Clip",
+    "display_name": "Clip",
+    "glyph": -1,
+    "narrowest": [
+      248,
+      280,
+      280,
+      280
+    ],
+    "needs": 280,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "Clock": {
+    "category": "Modulation",
+    "compact": "Clock",
+    "display_name": "Clock",
+    "glyph": 40,
+    "narrowest": [
+      376,
+      392,
+      376,
+      360
+    ],
+    "needs": 392,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Extra"
+  },
+  "Comb": {
+    "category": "Time",
+    "compact": "Comb",
+    "display_name": "Comb",
+    "glyph": 47,
+    "narrowest": [
+      320,
+      360,
+      352,
+      360
+    ],
+    "needs": 360,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "Compare": {
+    "category": "Maths",
+    "compact": "Compare",
+    "display_name": "Compare",
+    "glyph": 51,
+    "narrowest": [
+      152,
+      176,
+      176,
+      176
+    ],
+    "needs": 176,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "Compressor": {
+    "category": "Amplitude",
+    "compact": "Comp",
+    "display_name": "Compressor",
+    "glyph": 55,
+    "narrowest": [
+      296,
+      336,
+      336,
+      336
+    ],
+    "needs": 336,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "Constant": {
+    "category": "Modulation",
+    "compact": "Value",
+    "display_name": "Constant",
+    "glyph": 59,
+    "narrowest": [
+      144,
+      168,
+      168,
+      168
+    ],
+    "needs": 168,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "Crush": {
+    "category": "Amplitude",
+    "compact": "Crush",
+    "display_name": "Crush",
+    "glyph": 56,
+    "narrowest": [
+      248,
+      280,
+      280,
+      280
+    ],
+    "needs": 280,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "Delay": {
+    "category": "Time",
+    "compact": "Delay",
+    "display_name": "Delay",
+    "glyph": 46,
+    "narrowest": [
+      272,
+      312,
+      304,
+      312
+    ],
+    "needs": 312,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "Drive": {
+    "category": "Amplitude",
+    "compact": "Drive",
+    "display_name": "Drive",
+    "glyph": -1,
+    "narrowest": [
+      160,
+      176,
+      176,
+      176
+    ],
+    "needs": 176,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "Euclid": {
+    "category": "Modulation",
+    "compact": "Euclid",
+    "display_name": "Euclid",
+    "glyph": 58,
+    "narrowest": [
+      272,
+      312,
+      312,
+      312
+    ],
+    "needs": 312,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "Formant": {
+    "category": "Filters",
+    "compact": "Formant",
+    "display_name": "Formant",
+    "glyph": 48,
+    "narrowest": [
+      248,
+      280,
+      280,
+      280
+    ],
+    "needs": 280,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "Gain": {
+    "category": "Amplitude",
+    "compact": "Amp",
+    "display_name": "Gain",
+    "glyph": 29,
+    "narrowest": [
+      152,
+      176,
+      176,
+      176
+    ],
+    "needs": 176,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "LFO": {
+    "category": "Modulation",
+    "compact": "Sweep",
+    "display_name": "LFO",
+    "glyph": 60,
+    "narrowest": [
+      344,
+      368,
+      344,
+      328
+    ],
+    "needs": 368,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "Level": {
+    "category": "Amplitude",
+    "compact": "Level",
+    "display_name": "Level",
+    "glyph": 29,
+    "narrowest": [
+      160,
+      176,
+      176,
+      176
+    ],
+    "needs": 176,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "MidiCC": {
+    "category": "Modulation",
+    "compact": "MIDI CC",
+    "display_name": "MIDI CC",
+    "glyph": 61,
+    "narrowest": [
+      232,
+      264,
+      264,
+      264
+    ],
+    "needs": 264,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "MinMax": {
+    "category": "Maths",
+    "compact": "Min/Max",
+    "display_name": "Min/Max",
+    "glyph": -1,
+    "narrowest": [
+      328,
+      344,
+      328,
+      304
+    ],
+    "needs": 344,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "Mixer": {
+    "category": "Amplitude",
+    "compact": "Mixer",
+    "display_name": "Mixer",
+    "glyph": 34,
+    "narrowest": [
+      256,
+      288,
+      288,
+      288
+    ],
+    "needs": 288,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "Multiply": {
+    "category": "Maths",
+    "compact": "Multiply",
+    "display_name": "Multiply",
+    "glyph": 45,
+    "narrowest": [
+      152,
+      176,
+      176,
+      176
+    ],
+    "needs": 176,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Narrow"
+  },
+  "Noise": {
+    "category": "Sources",
+    "compact": "Noise",
+    "display_name": "Noise",
+    "glyph": 39,
+    "narrowest": [
+      272,
+      296,
+      280,
+      264
+    ],
+    "needs": 296,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "NoiseOscillator": {
+    "category": "Sources",
+    "compact": "Noise osc",
+    "display_name": "Noise Oscillator",
+    "glyph": 39,
+    "narrowest": [
+      320,
+      360,
+      352,
+      360
+    ],
+    "needs": 360,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "NoteInput": {
+    "category": "Terminals",
+    "compact": "Notes",
+    "display_name": "Note Input",
+    "glyph": 61,
+    "narrowest": [
+      304,
+      336,
+      328,
+      336
+    ],
+    "needs": 336,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "NoteTriggers": {
+    "category": "Modulation",
+    "compact": "Triggers",
+    "display_name": "Note Triggers",
+    "glyph": -1,
+    "narrowest": [
+      248,
+      280,
+      280,
+      280
+    ],
+    "needs": 280,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "OnePoleFilter": {
+    "category": "Filters",
+    "compact": "One-pole",
+    "display_name": "One-pole Filter",
+    "glyph": -1,
+    "narrowest": [
+      392,
+      408,
+      384,
+      368
+    ],
+    "needs": 408,
+    "status": "MIGRATED",
+    "variant": "mode",
+    "width_class": "Extra"
+  },
+  "Phaser": {
+    "category": "Time",
+    "compact": "Phaser",
+    "display_name": "Phaser",
+    "glyph": -1,
+    "narrowest": [
+      296,
+      328,
+      328,
+      328
+    ],
+    "needs": 328,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "PluginEffect": {
+    "category": "Effects",
+    "compact": "Plugin",
+    "display_name": "Plugin Effect",
+    "glyph": -1,
+    "narrowest": [
+      272,
+      312,
+      304,
+      312
+    ],
+    "needs": 312,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "PluginInstrument": {
+    "category": "Sources",
+    "compact": "Plugin",
+    "display_name": "Plugin Instrument",
+    "glyph": -1,
+    "narrowest": [
+      248,
+      280,
+      272,
+      280
+    ],
+    "needs": 280,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "Retrigger": {
+    "category": "Modulation",
+    "compact": "Retrig",
+    "display_name": "Retrigger",
+    "glyph": 40,
+    "narrowest": [
+      288,
+      320,
+      320,
+      320
+    ],
+    "needs": 320,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "SampleHold": {
+    "category": "Modulation",
+    "compact": "S&H",
+    "display_name": "Sample & Hold",
+    "glyph": 41,
+    "narrowest": [
+      176,
+      200,
+      200,
+      200
+    ],
+    "needs": 200,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Snug"
+  },
+  "Sampler": {
+    "category": "Sources",
+    "compact": "Sampler",
+    "display_name": "Sampler",
+    "glyph": 54,
+    "narrowest": [
+      344,
+      376,
+      360,
+      360
+    ],
+    "needs": 376,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "SawOscillator": {
+    "category": "Sources",
+    "compact": "Saw",
+    "display_name": "Saw Oscillator",
+    "glyph": 36,
+    "narrowest": [
+      232,
+      256,
+      256,
+      256
+    ],
+    "needs": 256,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "ScaleQuantizer": {
+    "category": "Modulation",
+    "compact": "Scale",
+    "display_name": "Scale Quantizer",
+    "glyph": -1,
+    "narrowest": [
+      416,
+      424,
+      392,
+      360
+    ],
+    "needs": 424,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Broad"
+  },
+  "SineOscillator": {
+    "category": "Sources",
+    "compact": "Sine",
+    "display_name": "Sine Oscillator",
+    "glyph": 37,
+    "narrowest": [
+      384,
+      416,
+      392,
+      376
+    ],
+    "needs": 416,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Extra"
+  },
+  "Slide": {
+    "category": "Modulation",
+    "compact": "Slide",
+    "display_name": "Slide",
+    "glyph": 43,
+    "narrowest": [
+      400,
+      440,
+      432,
+      432
+    ],
+    "needs": 440,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Broad"
+  },
+  "Speech": {
+    "category": "Sources",
+    "compact": "Speak",
+    "display_name": "Speak",
+    "glyph": -1,
+    "narrowest": [
+      288,
+      320,
+      320,
+      320
+    ],
+    "needs": 320,
+    "status": "MIGRATED / RESERVED GLYPH",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "SquareOscillator": {
+    "category": "Sources",
+    "compact": "Square",
+    "display_name": "Square Oscillator",
+    "glyph": 38,
+    "narrowest": [
+      376,
+      416,
+      408,
+      408
+    ],
+    "needs": 416,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Extra"
+  },
+  "StateVariableFilter": {
+    "category": "Filters",
+    "compact": "Filter",
+    "display_name": "Filter",
+    "glyph": 28,
+    "narrowest": [
+      400,
+      416,
+      392,
+      368
+    ],
+    "needs": 416,
+    "status": "MIGRATED",
+    "variant": "mode",
+    "width_class": "Extra"
+  },
+  "StepSequencer": {
+    "category": "Modulation",
+    "compact": "Steps",
+    "display_name": "Step Sequencer",
+    "glyph": 42,
+    "narrowest": [
+      312,
+      360,
+      360,
+      360
+    ],
+    "needs": 360,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "StereoLevel": {
+    "category": "Amplitude",
+    "compact": "Stereo",
+    "display_name": "Stereo Level",
+    "glyph": 29,
+    "narrowest": [
+      168,
+      192,
+      192,
+      192
+    ],
+    "needs": 192,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Snug"
+  },
+  "StereoOutput": {
+    "category": "Terminals",
+    "compact": "Output",
+    "display_name": "Stereo Output",
+    "glyph": 62,
+    "narrowest": [
+      272,
+      296,
+      288,
+      296
+    ],
+    "needs": 296,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Standard"
+  },
+  "TriggerBus": {
+    "category": "Modulation",
+    "compact": "Bus",
+    "display_name": "Trigger Bus",
+    "glyph": 33,
+    "narrowest": [
+      160,
+      184,
+      184,
+      184
+    ],
+    "needs": 184,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Snug"
+  },
+  "seam:Input/audio": {
+    "category": "Terminals",
+    "compact": "Audio in",
+    "display_name": "Input port · audio",
+    "glyph": 61,
+    "narrowest": [],
+    "needs": 0,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Snug"
+  },
+  "seam:Input/note": {
+    "category": "Terminals",
+    "compact": "Input",
+    "display_name": "Input port · note",
+    "glyph": 61,
+    "narrowest": [],
+    "needs": 0,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  },
+  "seam:Output/stereo": {
+    "category": "Terminals",
+    "compact": "Output",
+    "display_name": "Output port · stereo",
+    "glyph": 62,
+    "narrowest": [],
+    "needs": 0,
+    "status": "MIGRATED",
+    "variant": "",
+    "width_class": "Wide"
+  }
+}

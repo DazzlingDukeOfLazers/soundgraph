@@ -15,6 +15,37 @@ primitive — bring the evidence, not a special case.
 
 ---
 
+## 0. The freeze
+
+**Cosmopolitan Graph Nodes 1.0. This document is authoritative and the design is closed.**
+
+```
+51 of 51 runtime types migrated
+ 0 split parameter cells, every zoom, every straddle, every interface scale
+ 0 controls surviving past FULL
+ 0 titles cut to an ellipsis, in eighty frames
+48 of 48 placeable types validating at their declared width class
+ 1 title column, unvarying to the pixel across thirty nodes and twenty frames
+ 2 diagnostic sources reaching one health channel
+```
+
+Node fifty-two proves itself against §14's checklist. It does not reopen the design.
+
+Reopening requires what 15B's one systemic finding had: **several independent types or
+contexts demonstrating that a rule is inadequate**, measured rather than observed. One
+awkward node is not evidence; it is a node that has not been measured yet. A screenshot
+that could be made prettier is not evidence at all.
+
+Three things were refused during this pass for exactly that reason and stay refused: a
+target for glyph coverage, a universal priority between a parameter's name and its value,
+and a spacing token added for one node.
+
+The living record of how each rule was arrived at — including the wrong turns, which are
+the useful part — is `docs/graph-nodes.md`. The proof sheets and the machine-readable
+records are in `docs/proofs/`.
+
+---
+
 ## 1. Anatomy
 
 A node is four regions, top to bottom:
