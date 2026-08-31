@@ -928,3 +928,68 @@ header size a zigzag is the sine's ripple; the two were indistinguishable on the
 sheet. Drawn as unequal bars standing off a centre line it says the thing that actually
 separates noise from every other waveform — that no two excursions are alike and none
 follows from the last — and it is unlike anything else in the set at every size.
+
+## Step 14B.1 — identity variants, and a fourth width class
+
+### The header does not hard-code Lowpass
+
+Checked before writing any code, because if it did, fixing only the glyph would have left
+a second lie. It does not. The registry already calls the type **Filter**
+(`kStateVariableFilter`'s display name), which is option A and was in force all along;
+`Lowpass` is the name the First Synth example's author gave that instance, the same way
+the oscillator in it is called `Main Oscillator`.
+
+So nothing about the identity needed changing. What did need changing is that the mark
+ignored the mode.
+
+### One declared parameter may drive identity
+
+`NodeIdentity.VARIANT`. A type may declare **one** discrete parameter whose values change
+the operation it performs, and choose a mark for each:
+
+```
+StateVariableFilter   mode   lowpass / highpass / bandpass / notch
+OnePoleFilter         mode   lowpass / highpass
+```
+
+Everything else stays keyed by type alone. The narrowness is the point — the general rule
+"a glyph may depend on a parameter" would let any moving value drive identity, and
+identity would stop being identity. Rule 7a in `glyph_grammar.gd`, and `design_test.gd`
+checks the mechanism has not spread: every declared type names its parameter, has marks
+for more than one mode, draws a different mark for each, and falls back to its type mark
+for a mode it has not got.
+
+**The name never varies.** A node keeps what its author called it while the glyph says
+which response is running and the dropdown says it in words. A node that renamed itself
+when you turned one control would look like it had become a different type, which it has
+not. That does mean First Synth's filter, called `Lowpass` by its author, will wear a
+notch curve if somebody sets it to notch — which is what every author-given name in the
+program does when the thing under it changes, and is theirs to update.
+
+Step 10's four response curves are finally doing something.
+
+### Width.EXTRA, at 416
+
+Added on the evidence rather than in advance: three independent types — OnePoleFilter at
+405, SquareOscillator at 410, SineOscillator at 413, all measured at Comfortable — inside
+eight units of each other and all just past Wide at 376. Rounded onto the eight, 416.
+
+Named plainly, because the useful thing is the metric and the assignment rather than a
+taxonomy. And it establishes how the class set grows from here:
+
+> Classes are discovered from clusters of actual requirement across the corpus, not chosen
+> in advance and not stretched to fit one awkward node.
+
+Sending three types to a class 130 units wider than they need, to preserve a set inferred
+from three initial specimens, would have been the tail wagging the dog.
+
+No types were migrated into it in this commit. The three that earned it are still held out
+of `MIGRATED`, and they are the front of the 14C queue.
+
+### One more rule out of the batch
+
+Rule 9a: **repetition count is silhouette.** How many times a shape repeats inside the
+field is part of its outline rather than a detail on it — two cycles of a sine and one
+cycle of a sine are told apart instantly and neither is wearing a badge. It should
+generalise to the temporal family, where a clock, a pulse train and a delay are the same
+idea at different densities.

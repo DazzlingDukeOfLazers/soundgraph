@@ -41,9 +41,22 @@ extends RefCounted
 ## 7. The mark yields to the name. When the title falls to the compensation overlay, the
 ##    glyph goes with it. Legibility of the name outranks the presence of the mark,
 ##    always, and no mark may push a title into its compact form.
+## 7a. Identity is what the node *is*, and a very few types have more than one. A type may
+##    declare **one** discrete parameter whose values change the operation it performs,
+##    and choose a mark for each — a state-variable filter set to notch is not doing what
+##    a lowpass does. `NodeIdentity.VARIANT` is the whole mechanism and it is deliberately
+##    narrow: the general rule "a glyph may depend on a parameter" would let any moving
+##    value drive identity, and identity would stop being identity. The name never
+##    varies; only the mark and the control that sets it.
 ## 8. Behaviour, not hardware. A response curve rather than a filter; an amplifier symbol
 ##    rather than an amplifier. A drawing of equipment belongs in the rack, and this pass
 ##    has already had to walk back out of one.
+## 9a. Repetition count is silhouette. How many times a shape repeats inside the field is
+##    part of its outline, not a detail on it — two cycles of a sine and one cycle of a
+##    sine are told apart instantly and neither is wearing a badge. This is what separates
+##    an oscillator from an LFO, and it is true as well as convenient: one runs at audio
+##    rate and the other does not. It should generalise to the temporal family, where a
+##    clock, a pulse train and a delay are all the same idea at different densities.
 ## 9. Siblings differ in silhouette, not in a detail. A family is only useful if its
 ##    members are told apart as fast as the family is recognised, and at 24 pixels the
 ##    only thing that separates two marks is their outline. Mirroring is a silhouette;

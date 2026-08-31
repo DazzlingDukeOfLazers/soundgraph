@@ -1581,7 +1581,8 @@ func _dress_anatomy(widget: GraphNode, lit: bool, health: int) -> void:
 			bar.add_child(mark)
 			bar.move_child(mark, 0)
 			widget.set_meta("glyph", mark)
-		var kind := NodeIdentity.glyph_of(str(widget.get_meta("type", "")))
+		var kind := NodeIdentity.glyph_of(str(widget.get_meta("type", "")),
+			_identity_variant(widget))
 		# Step 11's activity prototype, on the one node whose activity has stages. The
 		# whole contour stays in the ordinary ink and the live segment is picked out in
 		# the accent — identity first, state on top of it, never state instead of it.
@@ -5878,11 +5879,23 @@ func _set_parameter(node_id: String, parameter: String, value: float) -> void:
 	# gesture rebuilds instead.
 	if parameter == "voices":
 		_voices_touched = true
+	# And a handful of parameters are identity rather than state: turning a filter from
+	# lowpass to notch changes what operation the node performs, so its mark has to
+	# follow. Noted here and acted on after the document has the new value, because the
+	# mark is read from the document.
+	var identity := false
+	var moved: GraphNode = widgets.get(node_id)
+	if moved != null:
+		identity = parameter == NodeIdentity.variant_parameter(
+			str(moved.get_meta("type", "")))
 	# The engine runs the flattened graph, so an instance's exported knob reaches it
 	# by its inner name; the document records the value on the instance, because the
 	# facade is what the file says.
 	var target := _engine_parameter_target(node_id, parameter)
 	engine.set_parameter(target[0], target[1], value)
+	if identity:
+		# Deferred: the document is written a few lines below and the mark reads it.
+		(func() -> void: _style_widget(moved, node_id)).call_deferred()
 	for node in patch.get("nodes", []):
 		if node["id"] == node_id:
 			if not node.has("parameters"):
@@ -10420,6 +10433,22 @@ func _on_port_hovered(widget_name: String, side: String, index: int) -> void:
 func _set_node_hovered(widget: GraphNode, hovered: bool) -> void:
 	widget.set_meta("hovered", hovered)
 	_style_widget(widget, str(widget.get_meta("patch_id")))
+
+
+## Which identity variant a node is currently in, or -1 for a type that declares none.
+##
+## A state-variable filter set to notch is not doing the operation a lowpass does, so its
+## mark is not the lowpass mark. Only a type that has declared one identity parameter can
+## do this — see `NodeIdentity.VARIANT` for why it is that narrow.
+func _identity_variant(widget: GraphNode) -> int:
+	var driver := NodeIdentity.variant_parameter(str(widget.get_meta("type", "")))
+	if driver == "":
+		return -1
+	var node_id := str(widget.get_meta("patch_id", ""))
+	for node: Dictionary in patch.get("nodes", []):
+		if str(node["id"]) == node_id:
+			return int(round(float(node.get("parameters", {}).get(driver, 0.0))))
+	return -1
 
 
 ## What the last validation thought of a node.

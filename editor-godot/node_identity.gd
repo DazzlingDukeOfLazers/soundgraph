@@ -109,10 +109,54 @@ const GLYPH := {
 }
 
 
+## A type may declare **one** parameter whose discrete values change what operation the
+## node represents, and choose a mark for each of them.
+##
+## Narrow on purpose. The general rule "a glyph may depend on a parameter" would let any
+## changing value drive identity, and identity would stop being identity — the whole point
+## of the mark is that it says what this thing *is* while its knobs move. This says
+## something smaller and true: a state-variable filter set to notch is not doing the
+## operation a lowpass does, and drawing a falling curve on it is a lie the reader has no
+## way to catch. It was one, until this: First Synth's filter happens to be in lowpass
+## mode, which is why nobody saw it.
+##
+## The parameter has to be an enumeration and its options are indexes into the list. Every
+## other type stays keyed by type alone unless it declares one of these.
+##
+## The **name** is not variant. A node stays what its author called it and what its type
+## is called — `Filter` in the registry — while the glyph says which response is running
+## and the dropdown says it in words. A node that renamed itself when you turned one
+## control would look like it had become a different type, which it has not.
+const VARIANT := {
+	"StateVariableFilter": {
+		"parameter": "mode",
+		"glyphs": [Icons.Kind.RESPONSE_LOW, Icons.Kind.RESPONSE_HIGH,
+			Icons.Kind.RESPONSE_BAND, Icons.Kind.RESPONSE_NOTCH],
+	},
+	"OnePoleFilter": {
+		"parameter": "mode",
+		"glyphs": [Icons.Kind.RESPONSE_LOW, Icons.Kind.RESPONSE_HIGH],
+	},
+}
+
+
+## The parameter that drives this type's identity, or "" for the types that have none —
+## which is nearly all of them.
+static func variant_parameter(type_name: String) -> String:
+	return str((VARIANT.get(type_name, {}) as Dictionary).get("parameter", ""))
+
+
 ## The glyph for a type, or -1 for one that has none yet. The cell is reserved either
 ## way: a header whose title starts in a different place depending on whether its type
 ## has been drawn yet is a graph that jitters as it is rolled out.
-static func glyph_of(type_name: String) -> int:
+##
+## `variant` is the value of the type's identity parameter, where it declares one, and is
+## ignored otherwise.
+static func glyph_of(type_name: String, variant: int = -1) -> int:
+	if VARIANT.has(type_name) and variant >= 0:
+		var marks: Array = VARIANT[type_name]["glyphs"]
+		if variant < marks.size():
+			return int(marks[variant])
 	return int(GLYPH.get(type_name, -1))
 
 

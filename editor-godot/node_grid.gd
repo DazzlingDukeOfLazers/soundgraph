@@ -106,8 +106,8 @@ const PORT_GUTTER_MAX := 96
 ## If a node's contents genuinely will not fit its class, Godot pushes it back out and
 ## `editor_test.gd` reports the node and the overflow. That is evidence for another class
 ## or another layout policy — a design question, raised rather than absorbed.
-enum Width { NARROW, STANDARD, WIDE }
-const WIDTHS := [176, 296, 376]
+enum Width { NARROW, STANDARD, WIDE, EXTRA }
+const WIDTHS := [176, 296, 376, 416]
 
 ## Which class a type belongs to. Metadata, decided here — a width that emerges from
 ## whatever minimum sizes the controls happened to ask for is not a class, it is an
@@ -156,9 +156,16 @@ const WIDTHS := [176, 296, 376]
 ##
 ## Three independent types inside eight units of each other, all just past Wide. That is
 ## the cluster that earns a class rather than one node being awkward, and rounded up onto
-## the eight the figure would be **416**. It is not added here, because a new class is a
-## design decision and a migration does not get to make one — the three types are held out
-## of `NodeIdentity.MIGRATED` until it is taken.
+## the eight it is **416** — `Width.EXTRA`, added on that evidence and named plainly,
+## because the useful thing is the metric and the assignment rather than a taxonomy.
+##
+## Which is the rule the class set is grown by, now that it has been grown once:
+##
+## > Classes are discovered from clusters of actual requirement across the corpus, not
+## > chosen in advance and not stretched to fit one awkward node.
+##
+## Sending three types to a class 130 units wider than they need, to preserve a set
+## inferred from three initial specimens, would be the tail wagging the dog.
 const WIDTH_CLASS := {
 	"Gain": Width.NARROW,
 	"ADSR": Width.STANDARD,

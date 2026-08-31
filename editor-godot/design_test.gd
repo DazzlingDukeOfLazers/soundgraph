@@ -435,6 +435,30 @@ func _initialize() -> void:
 		check(ratio >= 3.0, "%s: its jack rings read on the socket field (%.1f:1)"
 			% [ModuleThemes.display_name(str(key)), ratio])
 
+	# Identity variants stay narrow. A type may declare one discrete parameter that
+	# changes what operation it performs; every other type is keyed by type alone. This
+	# is the check that the exception has not quietly become the rule — the general
+	# version, where any moving value can drive a glyph, is how identity stops meaning
+	# identity.
+	for type: String in NodeIdentity.VARIANT:
+		var declared: Dictionary = NodeIdentity.VARIANT[type]
+		check(str(declared.get("parameter", "")) != "",
+			"%s names the parameter that drives its identity" % type)
+		check((declared.get("glyphs", []) as Array).size() >= 2,
+			"%s has a mark for more than one of its modes" % type)
+		# And the variants are all different, or the mechanism is drawing one glyph
+		# under several names and saying nothing.
+		var distinct := {}
+		for mark: int in declared["glyphs"]:
+			distinct[mark] = true
+		check(distinct.size() == (declared["glyphs"] as Array).size(),
+			"%s draws a different mark for each of them" % type)
+		# Asking for a mode the type does not have falls back rather than failing.
+		check(NodeIdentity.glyph_of(type, 99) == NodeIdentity.glyph_of(type),
+			"%s falls back to its type mark for a mode it has not got" % type)
+	check(NodeIdentity.variant_parameter("Gain") == "",
+		"and a type that declares none has none")
+
 	# Values are written the way somebody would say them. A table rather than a rule
 	# restated in a second place: these are the readings the three proving-ground nodes
 	# actually show, plus the boundaries a formatter goes wrong at — a value that is not
