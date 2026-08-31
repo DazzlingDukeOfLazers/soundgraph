@@ -1663,3 +1663,75 @@ hundred units of slack inside Standard. That gap is a hundred and twenty units, 
 any other.
 
 Nothing was changed. This step reads.
+
+## Step 15A.1 — two rungs, three sweeps, and one honest hold
+
+**Fifty of fifty-one runtime types are migrated.** One is held, for a reason that is now
+understood precisely rather than guessed at.
+
+### Two rungs, both from the corpus
+
+```
+176   Narrow
+208   Snug       new
+296   Standard
+376   Wide
+416   Extra
+448   Broad      new
+```
+
+**Snug** came from the widest hole in the ladder: Trigger Bus at 184, Stereo Level at 192
+and Sample & Hold at 200, each paying about a hundred units of slack to sit in Standard. A
+fourth member turned up while measuring the last seam — the audio input seam at 195 — so
+the cluster is four types inside sixteen units.
+
+**Broad** came from Arpeggio at 432 and Slide at 440. Two types is thinner evidence than
+the three that earned Extra, and these two agree to within one grid unit and were blocked
+by nothing else. Both validate at 448 and are migrated.
+
+Narrow, Standard, Wide and Extra were left alone. The histogram shows the lower two on
+real peaks and the upper two cutting a flat continuum, but a class does not have to be a
+statistical mode — its job is a few repeatable footprints with tolerable slack, and those
+two are doing it.
+
+### The three clerical holds are swept
+
+`NoteInput` and `StereoOutput` are the bare registry keys for terminals whose seam forms
+were already migrated — the same nodes by another name, so the same marks. `seam:Input/audio`
+is the third seam kind, which never came up because no example patch uses one; it was
+measured through `_add_node` rather than a document, because a seam cannot be spelt into a
+type field.
+
+### Scale Quantizer: it can fit, and the fix is a rule rather than a squeeze
+
+It stands at 530, and **one dropdown wants 224 of that.** The scale parameter is an
+enumeration whose longest option is `minor pentatonic`, and an `OptionButton` is sized by
+its longest option. Its neighbour, the root note, wants 90. Both sit on one row, because
+the grid puts two parameters on a line.
+
+So the node is not big. It has one control that is two and a half columns wide, and
+another control beside it.
+
+That is not a Scale Quantizer problem. It is a general one: **a control sized by its
+longest enumeration can be far wider than a column, and two of those on a line is what
+makes a node five hundred wide.** The rule that would fix it is general too —
+
+> A parameter whose control needs more than one column takes a line to itself.
+
+— and it would apply to any future type with a long enumeration. Putting the two on
+separate rows would leave the node needing roughly the width of one dropdown and its
+gutters, which is inside Wide.
+
+**Not implemented.** `PARAMETERS_PER_LINE` is part of the frozen grid and changing it is a
+layout rule, not a migration. Scale Quantizer stays held, and it is now held for a written
+reason with a proposed fix rather than for being mysteriously large.
+
+### The equation
+
+```
+51 runtime types
+   39  migrated
+   11  migrated, glyph intentionally reserved
+    1  held        ScaleQuantizer, on a layout rule
+   registry runtime types = migrated + held    yes
+```

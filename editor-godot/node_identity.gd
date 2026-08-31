@@ -66,7 +66,14 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	# and Scale Quantizer about 587, against an Extra class of 416. They are a hundred
 	# and fifty apart, so they are two outliers and not a cluster, and one outlier does
 	# not earn a rung. Their marks are drawn and waiting. See docs/graph-nodes.md.
-	"Retrigger", "Euclid", "MidiCC", "NoteTriggers", "TriggerBus"]
+	"Retrigger", "Euclid", "MidiCC", "NoteTriggers", "TriggerBus",
+	# 15A.1. The inventory found three types held for bookkeeping rather than design:
+	# NoteInput and StereoOutput are the bare registry keys for terminals whose seam
+	# forms were already migrated, and seam:Input/audio is the third seam kind that
+	# never came up because no example patch uses one. Same nodes, same marks.
+	"NoteInput", "StereoOutput", "seam:Input/audio",
+	# And the two that were only ever waiting on a width rung, now that 448 exists.
+	"Arpeggio", "Slide"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -138,6 +145,10 @@ const COMPACT := {
 	"MidiCC": "MIDI CC",
 	"NoteTriggers": "Triggers",
 	"TriggerBus": "Bus",
+	"NoteInput": "Notes",
+	"seam:Input/audio": "Audio in",
+	"StereoOutput": "Output",
+	"Slide": "Slide",
 	# And three whose canonical name is already short enough to fit anywhere. They are
 	# written down anyway, because a compact name is part of a migrated type's contract
 	# rather than a repair applied when today's geometry happens to need one. A type
@@ -185,6 +196,11 @@ const GLYPH := {
 	# identity is many parallel elements and the glyph field is seven stroke widths
 	# across. See `docs/node-glyph-grammar.md`.
 	"seam:Input/note": Icons.Kind.ORIGINATE,
+	# The same edge by its other keys. A terminal reached through a seam and the same
+	# terminal reached by its own registry key are one node, so they are one mark.
+	"NoteInput": Icons.Kind.ORIGINATE,
+	"seam:Input/audio": Icons.Kind.ORIGINATE,
+	"StereoOutput": Icons.Kind.TERMINATE,
 	"seam:Output/stereo": Icons.Kind.TERMINATE,
 	# The generator family again, keyed by the waveform each one makes. Noise is the
 	# waveform with no period, and both noise sources wear it: they are the same

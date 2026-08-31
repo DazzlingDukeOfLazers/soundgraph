@@ -38,7 +38,8 @@ extends SceneTree
 ## this pass has been judged at — is the most forgiving one there is.
 
 const SCALE_NAMES := ["Compact", "Comfortable", "Large", "XL"]
-const CLASS_NAMES := ["Narrow", "Standard", "Wide", "Extra"]
+## From NodeGrid, so this cannot drift from the ladder it reports on.
+const CLASS_NAMES := NodeGrid.CLASS_NAMES
 
 ## Frames to let a forced width propagate. Generous on purpose: the detail level is polled
 ## in `_process` and the rows are put back in a deferred pass after it, so a node read too

@@ -18,7 +18,8 @@ extends SceneTree
 ##
 ## Nothing is migrated or redesigned here. It reads.
 
-const CLASS_NAMES := ["Narrow", "Standard", "Wide", "Extra"]
+## From NodeGrid, so this cannot drift from the ladder it reports on.
+const CLASS_NAMES := NodeGrid.CLASS_NAMES
 const SCALE_NAMES := ["Compact", "Comfortable", "Large", "XL"]
 
 ## The search window for a minimum valid width, in base units, and how fine it goes. Eight

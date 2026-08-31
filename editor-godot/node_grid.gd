@@ -106,8 +106,31 @@ const PORT_GUTTER_MAX := 96
 ## If a node's contents genuinely will not fit its class, Godot pushes it back out and
 ## `editor_test.gd` reports the node and the overflow. That is evidence for another class
 ## or another layout policy — a design question, raised rather than absorbed.
-enum Width { NARROW, STANDARD, WIDE, EXTRA }
-const WIDTHS := [176, 296, 376, 416]
+## ## Two rungs added from the inventory
+##
+## The class set was three specimens, then four types, and is now answerable from fifty.
+## `inventory.gd` measured the narrowest valid width of every runtime type and two gaps
+## in the ladder turned out to be real.
+##
+## **208**, from a three-type cluster in the widest hole there was: Trigger Bus at 184,
+## Stereo Level at 192 and Sample & Hold at 200, every one of them paying about a hundred
+## units of slack to sit in Standard. A hundred and twenty units between Narrow and
+## Standard was the largest gap in the ladder and three types were sitting in it.
+##
+## **448**, from Arpeggio at 432 and Slide at 440 — eight units apart, both blocked by the
+## same upper edge of Extra and by nothing else. Two types is thinner evidence than the
+## three that earned Extra, and these two agree to within one grid unit and are otherwise
+## finished, which is the difference between a cluster and a coincidence.
+##
+## Narrow, Standard, Wide and Extra were left alone. The histogram shows the lower two
+## sitting on real peaks and the upper two cutting a flat continuum from 320 to 439 — but
+## a class does not have to be a statistical mode. Its job is to give the graph a few
+## repeatable footprints with tolerable slack, and those two are doing it.
+enum Width { NARROW, SNUG, STANDARD, WIDE, EXTRA, BROAD }
+const WIDTHS := [176, 208, 296, 376, 416, 448]
+
+## Written once so the harnesses cannot drift from the ladder they are reporting on.
+const CLASS_NAMES := ["Narrow", "Snug", "Standard", "Wide", "Extra", "Broad"]
 
 ## Which class a type belongs to. Metadata, decided here — a width that emerges from
 ## whatever minimum sizes the controls happened to ask for is not a class, it is an
@@ -205,7 +228,6 @@ const WIDTH_CLASS := {
 	# batch's evidence created, which is the first sign it was the right rung: Clock at
 	# 388, OnePoleFilter at 405, SquareOscillator at 410 and SineOscillator at 413.
 	"Constant": Width.NARROW,
-	"SampleHold": Width.STANDARD,
 	"StepSequencer": Width.WIDE,
 	"Clock": Width.EXTRA,
 	"OnePoleFilter": Width.EXTRA,
@@ -217,7 +239,6 @@ const WIDTH_CLASS := {
 	"Multiply": Width.NARROW,
 	"Level": Width.NARROW,
 	"Mixer": Width.STANDARD,
-	"StereoLevel": Width.STANDARD,
 	# 14E, by the validator. Nothing here needed a class that did not exist either.
 	"Allpass": Width.STANDARD,
 	"Formant": Width.STANDARD,
@@ -245,9 +266,20 @@ const WIDTH_CLASS := {
 	# not a cluster.
 	"MidiCC": Width.STANDARD,
 	"NoteTriggers": Width.STANDARD,
-	"TriggerBus": Width.STANDARD,
 	"Retrigger": Width.WIDE,
 	"Euclid": Width.WIDE,
+	# 15A.1. The Snug cluster the inventory found, and a fourth member measured after it:
+	# Trigger Bus 184, Stereo Level 192, Sample & Hold 200, the audio input seam 195.
+	"TriggerBus": Width.SNUG,
+	"StereoLevel": Width.SNUG,
+	"SampleHold": Width.SNUG,
+	"seam:Input/audio": Width.SNUG,
+	# The bare registry keys for terminals whose seam forms were already migrated.
+	"StereoOutput": Width.STANDARD,
+	"NoteInput": Width.WIDE,
+	# And the two that were only ever waiting on the rung above Extra.
+	"Arpeggio": Width.BROAD,
+	"Slide": Width.BROAD,
 }
 
 
@@ -291,7 +323,7 @@ static func scaled(base: int) -> int:
 static func width_class_name(type_name: String) -> String:
 	if not WIDTH_CLASS.has(type_name):
 		return ""
-	return ["Narrow", "Standard", "Wide", "Extra"][int(WIDTH_CLASS[type_name])]
+	return CLASS_NAMES[int(WIDTH_CLASS[type_name])]
 
 
 ## The gap between rows, scaled. Godot wants these as ints in theme constants.
