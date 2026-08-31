@@ -824,3 +824,38 @@ Four suite checks were rewritten rather than deleted. They asserted the old unmi
 hover mechanism — "a node at rest has no stylebox override" — on `osc`, which is now
 migrated and therefore always carries its anatomy. They ask `NodeState` now, which is what
 the fact actually is.
+
+### The 401, and what a width class actually is
+
+Neither of the two candidate explanations. The class *was* authoritative — the Output
+seam's own combined minimum agreed with its class at every moment — and the node stood at
+401 anyway, because a `custom_minimum_size` only ever pushes a Control wider and nothing
+pulls one back down. A child asked for one extra pixel while the rows were being built,
+the node grew, the child settled, and the pixel stayed. A high-water mark, not a
+disagreement.
+
+So the width is now **set as well as floored**, in the same post-layout pass that already
+measures node heights for the same reason. And two things are written down in
+`node_grid.gd` that were not:
+
+**What the figure measures.** The outer footprint in graph space at base scale — the whole
+box a reader sees and a cable lands on, border and content margins included, before
+`Design.scale()` multiplies it.
+
+**A class is decided at a type's worst interface scale.** This one the gate found. Chasing
+the 401 turned up that the Output seam fits Standard at XL and does not at Comfortable:
+the class figure scales linearly and the content does not, because type sizes stop
+shrinking at `TYPE_FLOOR`, so at smaller scales the words inside a node are relatively
+larger than the box around them. XL — the scale every acceptance in this pass has been
+judged at — is the *most forgiving* one, which is worth knowing before fifty types are
+assigned by looking at it.
+
+The Output seam is therefore Wide, not Standard. And the other thing that finding says:
+**Standard has almost no headroom.** It was derived from one specimen, the ADSR at 294,
+and rounded to 296; the very next type to arrive wanted 299. A batch that puts several
+types between 296 and 330 is evidence to re-derive the class rather than to keep sending
+them all to Wide.
+
+`editor_test.gd` now holds every migrated node at exactly its declared class, and reports
+the overflow when one will not fit — which is a design question raised rather than
+absorbed.

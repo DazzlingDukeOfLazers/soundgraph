@@ -4723,9 +4723,21 @@ func _create_widget(node: Dictionary) -> void:
 		# And the node stands at its class. A width that emerges from whatever minimum
 		# sizes the controls asked for is not a class; this is the one place a node's
 		# width is decided, and the specimens were measured to arrive at the figures.
+		#
+		# Set, not floored. A minimum only ever pushes a Control wider — nothing pulls
+		# one back down — so a node that stood at 401 while its gutters were being
+		# measured kept that pixel after the class said 400, and its own combined
+		# minimum agreed with the class the whole time. One stray pixel does not
+		# matter and the invariant does: a migrated node has one declared class and
+		# its footprint comes from that class, or fifty more types will quietly
+		# reintroduce emergent widths one pixel at a time.
+		#
+		# If content genuinely cannot fit, that is evidence for another class rather
+		# than a reason to let this one drift, and `editor_test` reports it.
 		var class_width := NodeGrid.width_for(_type_key(node))
 		if class_width > 0:
 			widget.custom_minimum_size.x = class_width
+			widget.size.x = class_width
 
 	if str(node.get("type", "")) in ["PluginEffect", "PluginInstrument"]:
 		var plugin_line := HBoxContainer.new()
@@ -10346,6 +10358,18 @@ func _apply_detail(level: int) -> void:
 			widget.set_meta("authored_size", widget.size)
 		var authored: Vector2 = widget.get_meta("authored_size")
 		widget.size.y = authored.y if full else widget.get_combined_minimum_size().y
+		# And the width is put back on its class, for the same reason the height
+		# is measured here rather than while the rows are being built. A minimum
+		# only pushes a Control wider and nothing pulls one back, so a child that
+		# asked for an extra pixel during construction and then settled left the
+		# node standing a pixel over its class for good — the Output seam at 401
+		# against a class of 400, while its own combined minimum agreed with the
+		# class the whole time. One pixel does not matter; a class that is only a
+		# floor does, because fifty more types would reintroduce emergent widths
+		# one pixel at a time.
+		var declared := NodeGrid.width_for(str(widget.get_meta("type", "")))
+		if declared > 0:
+			widget.size.x = float(declared)
 
 ## Says what a port is, in words, while the pointer is on it.
 ##

@@ -2578,6 +2578,28 @@ func _initialize() -> void:
 	main.graph_edit.fit_graph()
 	await process_frame
 
+	# ---- a class is a width, not a suggestion --------------------------------------
+	# Every migrated node stands exactly at its declared class. Not within a pixel of it:
+	# a minimum only pushes a Control wider and nothing pulls one back, so a child that
+	# briefly wanted an extra pixel during construction used to leave the node standing
+	# over its class for good. With fifty more types to migrate, "approximately its
+	# class" is how emergent widths come back one pixel at a time.
+	#
+	# A node that genuinely cannot fit is reported with its overflow rather than
+	# silently clipped, because that is evidence for another class and a design
+	# question rather than something to absorb.
+	for id in main.widgets:
+		var sized: GraphNode = main.widgets[id]
+		var declared := NodeGrid.width_for(str(sized.get_meta("type", "")))
+		if declared <= 0:
+			continue
+		var overflow := sized.get_combined_minimum_size().x - float(declared)
+		check(is_equal_approx(sized.size.x, float(declared)),
+			"%s stands at its %s class (%.0f of %d%s)" % [sized.title,
+				NodeGrid.width_class_name(str(sized.get_meta("type", ""))),
+				sized.size.x, declared,
+				"" if overflow <= 0.0 else ", contents want %.0f more" % overflow])
+
 	# ---- three node states, told apart at a glance ---------------------------------
 	# GraphNode ships with normal and selected and nothing between them, so a node under
 	# the pointer looked exactly like one three columns away — and in a patch dense enough

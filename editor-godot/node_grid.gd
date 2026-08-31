@@ -82,6 +82,30 @@ const PORT_GUTTER_MAX := 96
 ## graph a rhythm of a few repeated widths, not to make a table of round numbers.
 ##
 ## There is no fourth class yet. One arrives when a node earns it, measured the same way.
+##
+## ## What the figure measures
+##
+## The **outer footprint** of the node in graph space, at base interface scale: the whole
+## box a reader sees and a cable lands on, border and content margins included, before
+## `Design.scale()` multiplies it by the interface scale. So a Standard node at XL stands
+## at 400 real pixels and there is nothing else to add or subtract.
+##
+## ## And it is a width, not a minimum
+##
+## A declared class is the width the node is drawn at, full stop. That has to be said
+## because Godot cannot say it: a `custom_minimum_size` only ever pushes a Control wider
+## and nothing pulls one back down, so a node whose child asked for an extra pixel during
+## construction and then settled stood a pixel over its class for good — the Output seam
+## at 401 against a class of 400, while its own combined minimum agreed with the class the
+## whole time. The width is therefore set as well as floored, once the tree has settled.
+##
+## One pixel does not matter. The invariant does: fifty more types would reintroduce
+## emergent widths one pixel at a time, and a class system whose members are approximately
+## their class is a set of suggestions.
+##
+## If a node's contents genuinely will not fit its class, Godot pushes it back out and
+## `editor_test.gd` reports the node and the overflow. That is evidence for another class
+## or another layout policy — a design question, raised rather than absorbed.
 enum Width { NARROW, STANDARD, WIDE }
 const WIDTHS := [176, 296, 376]
 
@@ -94,18 +118,34 @@ const WIDTHS := [176, 296, 376]
 ## new class is not a class system.
 ##
 ## [codeblock]
-## type                  natural   class      as drawn
-## SawOscillator           253     Standard      296
-## seam:Output/stereo      286     Standard      296
-## LFO                     326     Wide          376
-## seam:Input/note         350     Wide          376
+## type                  natural   class
+## SawOscillator           253     Standard
+## LFO                     326     Wide
+## seam:Input/note         350     Wide
+## seam:Output/stereo      286     Wide      -- and this one is the interesting case
 ## [/codeblock]
+##
+## The Output seam measures 286 at XL, which is comfortably inside Standard, and it is
+## Wide anyway. At the Comfortable interface scale its contents want 299 against a class
+## of 296 — it fits at one scale and not at another, and the gate caught it.
+##
+## **A class has to be decided at a type's worst interface scale, not at whichever one
+## somebody measured at.** The class figure scales linearly and the content does not: type
+## sizes stop shrinking at `Design.TYPE_FLOOR`, so at the smaller scales the words inside
+## a node are relatively larger than the box around them. Comfortable and Small are
+## usually the binding cases, and XL — the scale every acceptance in this pass has been
+## judged at — is usually the most forgiving.
+##
+## The other thing that says: **Standard has almost no headroom.** It was derived from one
+## specimen, the ADSR at 294, and rounded to 296. The very next type to arrive wanted 299.
+## A batch that puts several types in the 296-to-330 range is evidence to re-derive it
+## rather than to keep sending them all to Wide.
 const WIDTH_CLASS := {
 	"Gain": Width.NARROW,
 	"ADSR": Width.STANDARD,
 	"SawOscillator": Width.STANDARD,
-	"seam:Output/stereo": Width.STANDARD,
 	"StateVariableFilter": Width.WIDE,
+	"seam:Output/stereo": Width.WIDE,
 	"LFO": Width.WIDE,
 	"seam:Input/note": Width.WIDE,
 }
