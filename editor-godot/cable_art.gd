@@ -307,6 +307,13 @@ class Style extends RefCounted:
 	## canvas, which is what prominence means.
 	var ground := Color(0.0, 0.0, 0.0, 0.0)
 
+	## What this cable carries, for the goal 3 type cue. Audio is unmarked.
+	var signal_class := 0
+
+	## Points a type cue must keep clear of, in the same space as the route: the crossings
+	## on this cord and its two ends.
+	var cue_avoid := PackedVector2Array()
+
 	func scaled(zoom: float) -> Style:
 		var out := Style.new()
 		for property in get_property_list():
@@ -536,9 +543,59 @@ static func draw_cable(canvas: CanvasItem, points: PackedVector2Array, colour: C
 	var body: Color = quiet.call(colour)
 	canvas.draw_polyline(points, body, body_width, true)
 	_round_joins(canvas, points, Vector2.ZERO, body, body_width)
-	canvas.draw_polyline(shifted(points, style.highlight_offset),
-		Color(quiet.call(lighten(colour, style.highlight_lighten)),
-			style.highlight_alpha * loud), style.highlight_width, true)
+	# The highlight, and with it the goal 3 type cue. Every branch leaves the body and the
+	# shell exactly as they were: the cue is spent out of the bright pass or laid on top of
+	# it, and never out of the cord itself.
+	var sheen := Color(quiet.call(lighten(colour, style.highlight_lighten)),
+		style.highlight_alpha * loud)
+	var lifted := shifted(points, style.highlight_offset)
+	var cues: Dictionary = cue_sites(points, style)
+	var marks: Array = cues["placed"]
+
+	if marks.is_empty() or type_cue != TypeCue.HIGHLIGHT:
+		canvas.draw_polyline(lifted, sheen, style.highlight_width, true)
+	else:
+		# Candidate A. The sheen becomes sparse strokes, single for control and paired for
+		# event. Nothing is added: this cue costs *less* ink than the cable it is on, which
+		# is why it was the preferred first specimen.
+		for mark: Dictionary in marks:
+			var strokes := 1 if style.signal_class == SignalClass.CONTROL else 2
+			for k in strokes:
+				var middle: float = float(mark["arc"]) + (float(k) - float(strokes - 1)
+					* 0.5) * (CUE_STROKE + CUE_PAIR_GAP)
+				_draw_arc_run(canvas, lifted, points, middle, CUE_STROKE, sheen,
+					style.highlight_width)
+
+	if not marks.is_empty() and type_cue == TypeCue.RIBS:
+		# Candidate B. Short transverse marks laid across the cord, in the sheen's own ink
+		# so they belong to the same material.
+		for mark: Dictionary in marks:
+			var across := Vector2(-(mark["along"] as Vector2).y,
+				(mark["along"] as Vector2).x)
+			var ribs := 1 if style.signal_class == SignalClass.CONTROL else 2
+			for k in ribs:
+				var slide: Vector2 = (mark["along"] as Vector2) 					* ((float(k) - float(ribs - 1) * 0.5) * CUE_PAIR_GAP)
+				var centre: Vector2 = (mark["at"] as Vector2) + slide
+				canvas.draw_line(centre - across * style.thickness * 0.62,
+					centre + across * style.thickness * 0.62, sheen,
+					maxf(style.highlight_width, 1.0), true)
+
+	if not marks.is_empty() and type_cue == TypeCue.STAMPS:
+		# Candidate C, expected to lose and proved rather than assumed. The socket shapes
+		# work because they live at the ends; a diamond in the middle of a cable is a
+		# connector, a junction or a very small node.
+		for mark: Dictionary in marks:
+			var across := Vector2(-(mark["along"] as Vector2).y,
+				(mark["along"] as Vector2).x)
+			var centre: Vector2 = (mark["at"] as Vector2) + across * style.thickness * 1.1
+			var radius: float = style.thickness * 0.34
+			if style.signal_class == SignalClass.CONTROL:
+				canvas.draw_colored_polygon(PackedVector2Array([
+					centre + Vector2(0.0, -radius), centre + Vector2(radius, 0.0),
+					centre + Vector2(0.0, radius), centre + Vector2(-radius, 0.0)]), sheen)
+			else:
+				canvas.draw_rect(Rect2(centre - Vector2(radius, radius) * 0.86,
+					Vector2(radius, radius) * 1.72), sheen)
 
 
 ## Where one cable crosses another, as points on the upper cable's path.
@@ -618,6 +675,141 @@ static var crossing_style := Crossing.KNOCKOUT
 ##
 ## > **A gap means a crossing. A continuous meeting means a connection.**
 static var crossing_same_colour_only := false
+
+## How a cable says what it carries, other than by being that colour.
+##
+## Cable pass, goal 3, and it closes the accessibility defect the node QA found: socket
+## shape carries the signal type at both ends and survives a grayscale render, and the
+## cable between them carries hue and nothing else. The requirement is narrow —
+##
+## > Given a mid-span crop with the endpoints unavailable and the hue removed, identify the
+## > cable's signal class, without mistaking the cue for a junction, a crossing, a direction
+## > arrow or activity.
+##
+## — and the body of the cable is not redesigned to meet it. **No candidate breaks the
+## body.** A dashed wire is a different object; every one of these leaves the cord solid and
+## spends only what it has to.
+##
+## [codeblock]
+## NONE       no cue at all; the reference
+## HIGHLIGHT  the existing bright pass, interrupted into sparse strokes
+## RIBS       short transverse marks laid across the cord at intervals
+## STAMPS     the socket shapes, repeated beside the route
+## [/codeblock]
+enum TypeCue { NONE, HIGHLIGHT, RIBS, STAMPS }
+
+## What a cable carries, as far as its own middle is concerned.
+##
+## Three, not four. The registry has a fourth socket — note, drawn as a ring — and it shares
+## the trigger colour with event, so it shares the cadence: a fourth cadence is a fourth
+## thing to learn for a distinction the sockets already make at both ends.
+##
+## **Audio is unmarked.** It is the commonest cable in every patch and the strongest thing
+## in the resting language, so the additional ink belongs to the classes that are not the
+## default. Continuous is audio; a sparse cadence is control; a paired cadence is event.
+enum SignalClass { AUDIO, CONTROL, EVENT }
+
+## NONE until goal 3 is decided. All three candidates are implemented, placed and gated;
+## none of them ships, because the proof that would choose between them is not finished —
+## see docs/cables.md. A default chosen on an unfinished sheet is exactly the "45% felt
+## good" failure this programme keeps avoiding.
+static var type_cue := TypeCue.NONE
+
+## Screen pixels between one type cue and the next.
+##
+## **Screen space, not graph space**, and that is the whole of the geometry rule. A cadence
+## measured in graph units is absurdly sparse when you zoom in and plaid when you zoom out;
+## measured on the glass it stays about the same however far away the patch is.
+const CUE_CADENCE := 160.0
+
+## How much of the cable one cue occupies, and how far apart the two strokes of a pair sit.
+const CUE_STROKE := 20.0
+const CUE_PAIR_GAP := 14.0
+
+## How far a cue keeps away from anything that already means something.
+##
+## The precedence, which is not negotiable:
+##
+## > **connection and crossing geometry > type cue > focus prominence**
+##
+## A knockout says two paths cross and do not join. If a periodic cadence were allowed to
+## put a mark inside one, the cadence would be deciding that a crossing has a dash in it,
+## and the crossing grammar goal 1 just finished would be the thing that gave way.
+const CUE_CLEARANCE := 26.0
+
+## And a turn sharper than this is no place for a mark: a transverse rib on a bend is not
+## transverse to anything, and a highlight stroke across a corner reads as a kink.
+const CUE_BEND := 35.0
+
+
+## Where the type cues fall along a route, and how many were refused.
+##
+## Split out and pure for the reason `fit_for` and `cell_reaches` are: the proof sheet has
+## to be able to ask where the marks are and how many the exclusions ate, and a sheet that
+## works that out for itself is a second implementation of the placement rule that can
+## agree with the geometry while disagreeing with the picture.
+##
+## `avoid` is in the same space as `points` — the crossings on this cord and its two ends.
+static func cue_sites(points: PackedVector2Array, style: Style) -> Dictionary:
+	var placed: Array = []
+	var skipped := 0
+	if points.size() < 2 or style.signal_class == SignalClass.AUDIO 			or type_cue == TypeCue.NONE:
+		return {"placed": placed, "skipped": 0, "length": _arc_length(points)}
+	var total := _arc_length(points)
+	# Half a cadence in from each end, so a route carries whole cues rather than starting
+	# with a fragment of one.
+	var at := CUE_CADENCE * 0.5
+	while at < total:
+		var found := _at_arc(points, at)
+		var here: Vector2 = found["at"]
+		var refused := false
+		# The ends of the cable belong to the sockets and the plugs.
+		if at < CUE_CLEARANCE or total - at < CUE_CLEARANCE:
+			refused = true
+		for other: Vector2 in style.cue_avoid:
+			if here.distance_to(other) < CUE_CLEARANCE:
+				refused = true
+				break
+		if not refused and float(found["bend"]) > CUE_BEND:
+			refused = true
+		if refused:
+			skipped += 1
+		else:
+			placed.append({"at": here, "along": found["along"], "arc": at})
+		at += CUE_CADENCE
+	return {"placed": placed, "skipped": skipped, "length": total}
+
+
+static func _arc_length(points: PackedVector2Array) -> float:
+	var total := 0.0
+	for i in range(points.size() - 1):
+		total += points[i].distance_to(points[i + 1])
+	return total
+
+
+## Position, heading and local bend at a distance along a path.
+static func _at_arc(points: PackedVector2Array, distance: float) -> Dictionary:
+	var walked := 0.0
+	for i in range(points.size() - 1):
+		var span := points[i].distance_to(points[i + 1])
+		if span <= 0.0001:
+			continue
+		if walked + span >= distance:
+			var t := (distance - walked) / span
+			var along := (points[i + 1] - points[i]) / span
+			# How much the path turns across this cue's own footprint, which is what
+			# decides whether there is a straight enough place to put a mark.
+			var before := along
+			var after := along
+			if i > 0:
+				before = (points[i] - points[i - 1]).normalized()
+			if i + 2 < points.size():
+				after = (points[i + 2] - points[i + 1]).normalized()
+			var bend := rad_to_deg(acos(clampf(before.dot(after), -1.0, 1.0)))
+			return {"at": points[i].lerp(points[i + 1], t), "along": along, "bend": bend}
+		walked += span
+	return {"at": points[points.size() - 1], "along": Vector2.RIGHT, "bend": 0.0}
+
 
 ## The suppression levels goal 2 proofs, and the one it shipped.
 ##
@@ -811,6 +1003,39 @@ static func draw_crossing_shadow(canvas: CanvasItem, upper: PackedVector2Array,
 	canvas.draw_polyline(shifted(local, style.shadow_offset * 1.2),
 		Color(0.0, 0.0, 0.0, style.shadow_alpha * 2.4),
 		style.shadow_width + style.thickness, true)
+
+
+## A short run of a path, drawn from the path itself rather than from a chord.
+##
+## The stroke has to follow the cable: a straight segment laid across a curve is a chord,
+## and at cable width the difference reads as the mark sitting beside the cord instead of
+## on it.
+static func _draw_arc_run(canvas: CanvasItem, lifted: PackedVector2Array,
+		points: PackedVector2Array, middle: float, run: float, ink: Color,
+		width: float) -> void:
+	var total := _arc_length(points)
+	var from := clampf(middle - run * 0.5, 0.0, total)
+	var to := clampf(middle + run * 0.5, 0.0, total)
+	if to - from < 1.0:
+		return
+	var piece := PackedVector2Array()
+	var walked := 0.0
+	var offset: Vector2 = lifted[0] - points[0]
+	for i in range(points.size() - 1):
+		var span := points[i].distance_to(points[i + 1])
+		if span <= 0.0001:
+			continue
+		var start := walked
+		var finish := walked + span
+		if finish >= from and start <= to:
+			var a := clampf((from - start) / span, 0.0, 1.0)
+			var b := clampf((to - start) / span, 0.0, 1.0)
+			if piece.is_empty():
+				piece.append(points[i].lerp(points[i + 1], a) + offset)
+			piece.append(points[i].lerp(points[i + 1], b) + offset)
+		walked = finish
+	if piece.size() >= 2:
+		canvas.draw_polyline(piece, ink, width, true)
 
 
 static func _bounds(points: PackedVector2Array) -> Rect2:

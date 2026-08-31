@@ -11318,6 +11318,50 @@ func _initialize() -> void:
 			"and no route moves because something is focused (%d)" % routes_moved)
 		main.graph_edit.focus_port = ""
 
+	# ---- cable pass, goal 3: type cues, placed but not shipped -----------------------
+	# The three candidates are drawn and their placement rule is gated; none is the
+	# default, because the sheet that would choose between them is not finished.
+	check(CableArtScript.type_cue == CableArtScript.TypeCue.NONE,
+		"no type cue ships until the proof chooses one")
+
+	# The geometry rule: cadence in screen pixels, so it stays about constant as the graph
+	# zoom changes rather than going sparse when you lean in and plaid when you lean out.
+	var cue_style := CableArtScript.Style.new()
+	cue_style.thickness = 8.0
+	cue_style.signal_class = CableArtScript.SignalClass.CONTROL
+	var was_cue: int = CableArtScript.type_cue
+	CableArtScript.type_cue = CableArtScript.TypeCue.HIGHLIGHT
+	var runway := PackedVector2Array([Vector2(0, 0), Vector2(1600, 0)])
+	var spaced: Dictionary = CableArtScript.cue_sites(runway, cue_style)
+	var spacing := 0.0
+	var laid_out: Array = spaced["placed"]
+	if laid_out.size() >= 2:
+		spacing = float(laid_out[1]["arc"]) - float(laid_out[0]["arc"])
+	check(absf(spacing - CableArtScript.CUE_CADENCE) < 0.5,
+		"type cues fall every %d screen pixels (%.0f)"
+			% [int(CableArtScript.CUE_CADENCE), spacing])
+
+	# Audio is unmarked, and that is a decision rather than an omission: it is the
+	# commonest cable in every patch and the additional ink belongs to the classes that
+	# are not the default.
+	cue_style.signal_class = CableArtScript.SignalClass.AUDIO
+	check((CableArtScript.cue_sites(runway, cue_style)["placed"] as Array).is_empty(),
+		"and an audio cable carries none of them")
+
+	# Precedence: connection and crossing geometry outrank the cadence. A mark inside a
+	# knockout would be the cadence deciding that a crossing has a dash in it.
+	cue_style.signal_class = CableArtScript.SignalClass.CONTROL
+	var blocked := 0
+	for site: Dictionary in laid_out:
+		cue_style.cue_avoid = PackedVector2Array([site["at"]])
+		var fewer: Dictionary = CableArtScript.cue_sites(runway, cue_style)
+		if (fewer["placed"] as Array).size() == laid_out.size() - 1 				and int(fewer["skipped"]) == 1:
+			blocked += 1
+	check(blocked == laid_out.size(),
+		"and a crossing refuses the cue that would land on it (%d of %d)"
+			% [blocked, laid_out.size()])
+	CableArtScript.type_cue = was_cue
+
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with
 	# frames to spare rather than destroyed underneath it. Order matters and was

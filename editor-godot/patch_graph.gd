@@ -2637,12 +2637,19 @@ class CordLayer extends Control:
 			# crossing treatment may never say. GraphEdit's own thin-line crossing pass
 			# had this exclusion; the cord layer that replaced it never did, so the
 			# clock's three-way fan-out was being marked as three crossings.
+			# What it carries, for the goal 3 type cue. Taken from the output slot, which
+			# is where the socket takes its own shape from, so the cue in the middle of a
+			# cable and the shapes at its ends cannot disagree.
+			var carried := CableArt.SignalClass.AUDIO
+			match from_widget.get_output_port_type(int(connection["from_port"])):
+				1: carried = CableArt.SignalClass.CONTROL
+				2, 3: carried = CableArt.SignalClass.EVENT
 			cords.append([local, cord_ink,
 				"%s:%d" % [str(connection["from_node"]), int(connection["from_port"])],
 				"%s:%d" % [str(connection["to_node"]), int(connection["to_port"])],
 				"%s:%d>%s:%d" % [str(connection["from_node"]),
 					int(connection["from_port"]), str(connection["to_node"]),
-					int(connection["to_port"])]])
+					int(connection["to_port"])], carried])
 		return cords
 
 
@@ -2675,8 +2682,24 @@ class CordLayer extends Control:
 		# The canvas a suppressed cord is mixed toward. The same colour a knockout is cut
 		# in, because they are the same fact: this is what is behind a cable.
 		style.ground = ground
+		# Every crossing on every cord, before any of them is drawn. A type cue has to keep
+		# clear of a knockout, and a cord meets cables both above and below it — gathering
+		# these inside the drawing loop would only ever find half of them, so the last
+		# cable in the file would dodge nothing.
+		var near_crossings := {}
+		for i in cords.size():
+			for j in range(i + 1, cords.size()):
+				if _joined(cords[i], cords[j]):
+					continue
+				for at: Vector2 in CableArt.crossings(cords[j][0], cords[i][0]):
+					for who in [i, j]:
+						if not near_crossings.has(who):
+							near_crossings[who] = PackedVector2Array()
+						near_crossings[who].append(at)
+
 		var laid: Array = []
-		for entry in cords:
+		for index in cords.size():
+			var entry: Array = cords[index]
 			var meetings: Array = []
 			for earlier in laid:
 				if _joined(entry, earlier):
@@ -2702,8 +2725,19 @@ class CordLayer extends Control:
 			# because the noise leaves, not because the chosen route shouts.
 			var lit: bool = focused.is_empty() or focused.has(entry[4])
 			style.prominence = 1.0 if lit else CableArt.suppression
+			# Goal 3. The class decides the cadence; the exclusions decide where it may
+			# fall. Both ends go in the avoid list along with the crossings: the ends
+			# belong to the sockets and the plugs, which say the same thing better.
+			style.signal_class = int(entry[5])
+			var avoid: PackedVector2Array = near_crossings.get(index,
+				PackedVector2Array()).duplicate()
+			var route: PackedVector2Array = entry[0]
+			avoid.append(route[0])
+			avoid.append(route[route.size() - 1])
+			style.cue_avoid = avoid
 			CableArt.draw_cable(self, drawn, entry[1], style)
 			style.prominence = 1.0
+			style.cue_avoid = PackedVector2Array()
 			laid.append(entry)
 
 

@@ -306,6 +306,80 @@ frames.**
 All three are now measured from one before/after pair captured back to back, with the view
 centred on the cables being asked about.
 
+## Goal 3 — grayscale cable type — **not finished, and not shipped**
+
+The requirement, narrow:
+
+> Given a mid-span crop with the endpoints unavailable and the hue removed, identify the
+> cable's signal class — without mistaking the cue for a junction, a crossing, a direction
+> arrow or activity.
+
+### What is built and gated
+
+All three candidates, none of them shipped. `CableArt.type_cue` is `NONE`, so nothing about
+the resting cable has changed for anybody.
+
+```
+NONE       the reference
+HIGHLIGHT  the existing bright pass, interrupted into sparse strokes
+RIBS       short transverse marks laid across the cord
+STAMPS     the socket shapes, repeated beside the route
+```
+
+**No candidate breaks the cable body.** A dashed wire is a different object; all three leave
+the cord solid and spend only the highlight pass or a mark laid on top of it.
+
+The placement rule is `CableArt.cue_sites()` — one pure function, shared by the renderer and
+the sheet for the same reason `fit_for` and `cell_reaches` are:
+
+```
+cadence      160 screen pixels, measured on the glass and not in graph units
+audio        unmarked; the additional ink belongs to the classes that are not the default
+control      a single stroke per cadence
+event        a paired stroke per cadence
+exclusions   sockets, both cable ends, every crossing on this cord, and any bend over 35°
+precedence   connection and crossing geometry > type cue > focus prominence
+```
+
+Measured on the hostile graph: **76 cues placed, 4 refused by the exclusions, an achieved
+cadence of 165 screen pixels** against a 160 target. Routes point-identical, crossing count
+and positions identical, the focused cable byte-equivalent with its cue included.
+
+### Why it is not finished
+
+**The specimen has no event-class cable.** Thirty-five cables: eighteen audio, seventeen
+control, **zero event**. So a third of the vocabulary — the paired cadence, the one that has
+to be told apart from the single one — is drawn and gated but never exercised by the graph
+it is supposed to be judged in. Choosing a candidate on a two-class proof would be choosing
+it on the easy half of the question.
+
+This is worth a look on its own account. The registry's port types in this patch resolve to
+audio and control only, while the socket grammar has four shapes and the palette has a
+trigger colour. Either the hostile patch happens to contain no event-typed output, or the
+port types and the socket shapes disagree about what a gate is — and the second would be a
+defect in the node data, not in the cables.
+
+**And the endpoint-free crop is not achievable below 100%.** At 40% and 28% a 340-pixel crop
+of a patch four thousand units wide contains nodes whatever it is centred on, so the sheet
+comes back with labels in it and the endpoints are not hidden at all. The mid-span test is a
+100% test; the lower zooms want the whole-graph frames instead, and the sheet should say so
+rather than producing six crops of which four answer a different question.
+
+The crop selection also needs to choose spans that are genuinely clear of nodes rather than
+the middle of the longest cable, which in this patch lands under one.
+
+### What would finish it
+
+1. A specimen carrying all three classes — either the hostile patch gains an event cable, or
+   the event class is proved on a second patch that has one, named in the sheet.
+2. Mid-span crops at 100% only, chosen from spans measurably clear of any node.
+3. The three candidates side by side on one control cable and one event cable, shuffled, and
+   named without the ends.
+
+Until then the default stays `NONE`. A cue chosen on an unfinished sheet is the "45% felt
+good" failure this programme keeps avoiding, and goal 2 has just finished demonstrating how
+easily an instrument can be confidently wrong.
+
 ### What not to start with
 
 Dashed control cables, or any repeating pattern. With thirty-five intersecting cables, a
