@@ -1136,7 +1136,7 @@ func _build_ui() -> void:
 	# The row's order, said once and here rather than implied by the order the widgets
 	# happened to be built in. Left to right it answers the questions in the order they
 	# are asked: what am I looking at, is it safe, and how close am I standing.
-	var crumb_order: Array = [climb_button.get_parent(), document_label, save_dot,
+	var crumb_order: Array = [climb_button, document_label, save_dot,
 		save_word, crumb_rule, view_zoom_out, view_zoom_readout, view_zoom_in,
 		view_fit_button]
 	for index in crumb_order.size():
