@@ -240,6 +240,14 @@ const WIDTH_CLASS := {
 	"Crush": Width.STANDARD,
 	"AhdEnvelope": Width.STANDARD,
 	"Compressor": Width.WIDE,
+	# 14H.2, by the validator. Arpeggio and Scale Quantizer are absent on purpose: no
+	# class holds them, they are a hundred and fifty units apart, and two outliers are
+	# not a cluster.
+	"MidiCC": Width.STANDARD,
+	"NoteTriggers": Width.STANDARD,
+	"TriggerBus": Width.STANDARD,
+	"Retrigger": Width.WIDE,
+	"Euclid": Width.WIDE,
 }
 
 

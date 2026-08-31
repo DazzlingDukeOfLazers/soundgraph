@@ -1519,3 +1519,62 @@ Drive to Narrow, Crush and AHD Envelope to Standard, Compressor to Wide, by the 
 at every interface scale.
 
 **Thirty-eight migrated types**, ten of them with reserved cells.
+
+## Step 14H.2 — musical and event control
+
+Seven types looked at, five migrated, two held. Verifying what each node actually does
+before drawing anything changed four of the seven answers.
+
+### What verification changed
+
+**Arpeggio is not an arpeggiator.** It "steps the frequency once, part-way through" — two
+levels and one riser, not an ordered pitch traversal. The mark drawn for it is that step,
+and it separates cleanly from the square's alternation and the sample-and-hold's
+down-and-up.
+
+**Retrigger is a clock.** It "fires a pulse on a timer", so it wears the clock's mark.
+Inventing an initiating-event-plus-repeats distinction would have drawn a behaviour this
+node does not have.
+
+**MIDI CC is a boundary.** A hardware knob arriving from outside the patch is what the
+input seam already means, so it takes the seam's mark. Not a five-pin plug: the connector
+is equipment, and what matters is that control enters here.
+
+**Trigger Bus really is one-to-many** — "one wire in, eight pads out" — and **the split
+finally has a production owner.** Step 10 drew it, step 10's proof sheet showed it works,
+and it has been attached to nothing for eleven steps.
+
+Note Triggers is *also* one in and eight out, and deliberately does not get the split. What
+it does is turn eight chromatic notes into eight triggers — a transformation that happens
+to have that port shape. The split would say distribution, which is the other node.
+
+### The two held
+
+For the first time it is a **width** rather than a glyph.
+
+```
+Arpeggio         needs about 433
+ScaleQuantizer   needs about 587
+Extra class                   416
+```
+
+A hundred and fifty units apart, so they are two outliers and not a cluster, and one
+outlier does not earn a rung. Both marks are drawn — the arpeggio's step passed its
+collision sheet — and both are waiting on a class decision rather than on a drawing.
+
+Scale Quantizer would have been reserved anyway: snapping a pitch to the nearest note of a
+scale is quantisation, and Crush already owns the coarse-levels staircase. The only thing
+that would separate them is a small badge saying "pitch", which is a detail.
+
+### Euclid survived
+
+It draws the hits where the algorithm puts them — three in eight, which its own
+documentation names — as equal uprights unevenly placed, against the clock's even
+placement and the delay's decay. Three marks in the pulse family now, told apart by
+spacing and by height, and none of them is a badge on another.
+
+### Widths
+
+MIDI CC, Note Triggers and Trigger Bus to Standard, Retrigger and Euclid to Wide.
+
+**Forty-three migrated types**, twelve with reserved cells, two held on width.

@@ -477,6 +477,16 @@ static func sampled(small: bool) -> Array:
 	return points
 
 
+## An arpeggio, as this program means it: the frequency steps once, part-way through. Not
+## a traditional arpeggiator and not a sequence — two levels and one riser between them.
+const ARPEGGIO_STEP := [Vector2(-1.1, 0.62), Vector2(-0.1, 0.62), Vector2(-0.1, -0.62),
+	Vector2(1.1, -0.62)]
+
+## Euclid: hits spread as evenly as they will go across a cycle. Three in eight, which is
+## the rhythm the node's own documentation names, at the positions Bjorklund gives them.
+const EUCLID_HITS := [0.0, 0.375, 0.625]
+
+
 # ---- the dynamics family --------------------------------------------------------------
 #
 # Spatial rather than curved, which is rule 9b doing its work: a compressor drawn as

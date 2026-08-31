@@ -77,6 +77,10 @@ const SPECIALTY := ["SAMPLE", "PAUSE", "SINE_WAVE", "ORIGINATE"]
 const DYNAMICS := ["NARROWING", "CHEVRON_RIGHT", "FUNNEL", "QUANTISED", "HELD",
 	"STEPS_ORDERED", "CLIP_CURVE", "SQUARE_WAVE", "ENVELOPE"]
 
+## The two doubtful candidates from the event batch, each against the mark it is nearest.
+const EVENTS := ["ONE_STEP", "SQUARE_WAVE", "HELD", "SPREAD", "PULSE_TRAIN",
+	"ECHO_TRAIN"]
+
 ## The contact sheet's own geometry. Every mark is shown at the same drawn size whatever
 ## it was rendered at, which is the only way four sizes can be compared: the 10-pixel cut
 ## and the 96-pixel one differ in how they are drawn, not in how big they are on the page.
@@ -98,7 +102,7 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(folder)
 
 	var names: Array = []
-	for group: Array in [DYNAMICS, SPECIALTY, MATHS, EFFECTS, COMBINING, GENERATORS, TEMPORAL, SPECIMENS,
+	for group: Array in [EVENTS, DYNAMICS, SPECIALTY, MATHS, EFFECTS, COMBINING, GENERATORS, TEMPORAL, SPECIMENS,
 			FIRST_SYNTH, FILTERS, ROUTING]:
 		for one: String in group:
 			if not names.has(one):

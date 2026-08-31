@@ -60,7 +60,13 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	# those are importers that build graphs out of the ordinary ones.
 	"Sampler", "Speech", "AudioInput", "PluginEffect", "PluginInstrument", "CableTest",
 	# 14H.1: dynamics and signal shaping.
-	"Compressor", "Crush", "Drive", "AhdEnvelope"]
+	"Compressor", "Crush", "Drive", "AhdEnvelope",
+	# 14H.2: musical and event control. Two of the seven are held rather than migrated,
+	# and for the first time it is a width rather than a glyph: Arpeggio needs about 433
+	# and Scale Quantizer about 587, against an Extra class of 416. They are a hundred
+	# and fifty apart, so they are two outliers and not a cluster, and one outlier does
+	# not earn a rung. Their marks are drawn and waiting. See docs/graph-nodes.md.
+	"Retrigger", "Euclid", "MidiCC", "NoteTriggers", "TriggerBus"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -125,6 +131,13 @@ const COMPACT := {
 	"Crush": "Crush",
 	"Drive": "Drive",
 	"AhdEnvelope": "AHD",
+	"Arpeggio": "Arp",
+	"Retrigger": "Retrig",
+	"Euclid": "Euclid",
+	"ScaleQuantizer": "Scale",
+	"MidiCC": "MIDI CC",
+	"NoteTriggers": "Triggers",
+	"TriggerBus": "Bus",
 	# And three whose canonical name is already short enough to fit anywhere. They are
 	# written down anyway, because a compact name is part of a migrated type's contract
 	# rather than a repair applied when today's geometry happens to need one. A type
@@ -222,6 +235,37 @@ const GLYPH := {
 	# leaving — two bounds closing without meeting, because a pair of lines that comes to
 	# a point is the disclosure chevron and the first proof sheet said exactly that.
 	"Compressor": Icons.Kind.NARROWING,
+	# 14H.2. Verified against what each node actually does before anything was drawn, and
+	# three of the seven turned out to belong to marks that already existed.
+	#
+	# An arpeggio here is not an arpeggiator: it "steps the frequency once, part-way
+	# through". Two levels and one riser, which is a different shape from the square's
+	# alternation and the sample-and-hold's down-and-up.
+	"Arpeggio": Icons.Kind.ONE_STEP,
+	# Euclid spreads hits as evenly as they will go across a cycle, so the mark is those
+	# hits at those positions — three in eight, which its own documentation names. Equal
+	# heights unevenly placed, against the clock's even placement and the delay's decay.
+	"Euclid": Icons.Kind.SPREAD,
+	# Retrigger "fires a pulse on a timer". That is a clock, and it wears the clock's
+	# mark. Inventing an initiating-event-plus-repeats distinction would have drawn a
+	# behaviour this node does not have.
+	"Retrigger": Icons.Kind.PULSE_TRAIN,
+	# A MIDI CC is a hardware knob arriving from outside the patch, which is what the
+	# input seam already means. Not a five-pin plug: the connector is equipment, and what
+	# matters is that control enters here.
+	"MidiCC": Icons.Kind.ORIGINATE,
+	# And the split finally has a production owner. Trigger Bus "splits a trigger bus back
+	# into its eight lanes: one wire in, eight pads out" — one to many, drawn since step 10
+	# and attached to nothing until now.
+	"TriggerBus": Icons.Kind.ROUTE_SPLIT,
+	# Note Triggers is reserved, and deliberately not given the split. It is also one in
+	# and eight out, but what it does is turn eight chromatic notes into eight triggers —
+	# a transformation that happens to have that port shape. The split would say
+	# distribution, which is the other node.
+	#
+	# Scale Quantizer is reserved too. Snapping a pitch to the nearest note of a scale is
+	# quantisation, and Crush already owns the coarse-levels staircase; the only thing
+	# that would separate them is a small badge saying "pitch", which is a detail.
 	# And a crusher puts the signal on coarse, equal levels. Regular against irregular is
 	# what separates it from the sample-and-hold, the same device that separates a clock
 	# from noise and a sequencer from a held signal.

@@ -118,6 +118,8 @@ enum Kind {
 	# The dynamics family: spatial rather than curved, because the open field is full.
 	NARROWING,      ## a compressor — a wide range in, a narrow one out
 	QUANTISED,      ## a crusher — the signal put on coarse, equal levels
+	ONE_STEP,       ## an arpeggio — the frequency steps once, part-way through
+	SPREAD,         ## euclid — hits spread as evenly as they will go across a cycle
 	FLAT,           ## a constant — the value that does not change
 	MODULATION,     ## a slow wave that moves something else
 	ORIGINATE,      ## the patch's edge, signal entering
@@ -365,6 +367,16 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 			for run: Array in GlyphGrammar.narrowing():
 				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
 					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.ONE_STEP:
+			_polyline(image, GlyphGrammar.ARPEGGIO_STEP, middle, reach, colour)
+		Kind.SPREAD:
+			var floor_y := middle + reach * 0.85
+			_stroke(image, Vector2(middle - reach * 1.1, floor_y),
+				Vector2(middle + reach * 1.1, floor_y), colour)
+			for at: float in GlyphGrammar.EUCLID_HITS:
+				var x := middle + reach * lerpf(-1.0, 1.0, at)
+				_stroke(image, Vector2(x, floor_y),
+					Vector2(x, floor_y - reach * 1.5), colour)
 		Kind.QUANTISED:
 			_polyline(image, GlyphGrammar.quantised(small), middle, reach, colour)
 		Kind.SAMPLE:
