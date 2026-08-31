@@ -287,6 +287,97 @@ const NOISE_BARS := [0.55, 0.92, 0.30, 0.72, 0.44, 0.85]
 const NOISE_BARS_SMALL := [0.5, 0.92, 0.34, 0.75]
 
 
+# ---- the temporal family --------------------------------------------------------------
+#
+# Everything here is a value over time, which is also what the envelope and the modulation
+# wave are. What separates the members is **density and regularity**, not decoration:
+#
+#   repeated smooth cycles     a generator, running at audio rate
+#   one broad cycle            a modulator, running under it
+#   repeated equal pulses      a clock: regular, discrete, and it only says when
+#   unequal bars               noise: no two alike and none following from the last
+#   a joined staircase         sample and hold: a continuous signal held between samples
+#   separated blocks           a sequencer: a list of discrete values, not a signal
+#   one diagonal               a slide: the whole mark is the transition
+#   one flat line              a constant: the value that does not change
+#
+# Two devices do most of the work and both are honest. **Regular against irregular** tells
+# a clock from noise and a sequencer from a sample-and-hold. **Joined against separated**
+# tells a held signal from a list of values, which is exactly the difference between them.
+
+## A clock: equal pulses on a baseline, evenly spaced. Regularity is the whole message,
+## which is why the heights are all the same where the noise mark's are not.
+const CLOCK_PULSES := 3
+const CLOCK_PULSES_SMALL := 2
+const CLOCK_WIDTH := 0.16
+
+## And at header size a pulse is one upright rather than a narrow box. Sixteen hundredths
+## of a reach is two pixels there, which is the stroke weight — so the pulse's two edges
+## and its top filled into a block, and three blocks on a line read as a square wave. A
+## baseline with uprights standing on it is what a clock reduces to, and it keeps the one
+## thing that separates it from every other rectangular mark in the set: the baseline.
+const CLOCK_WIDTH_SMALL := 0.0
+
+## Sample and hold: a staircase of unequal treads, joined, because the signal is
+## continuous and merely held. Written down rather than generated — a glyph that is
+## different every time it is drawn is not a glyph.
+const HELD_STEPS := [-0.30, 0.62, -0.72, 0.20]
+const HELD_STEPS_SMALL := [-0.35, 0.65, -0.70]
+
+## A sequencer: the same idea separated. A list of discrete values is not a signal, and
+## drawing the risers would say it was.
+const STEP_VALUES := [0.55, -0.25, 0.80, -0.60, 0.15]
+const STEP_VALUES_SMALL := [0.55, -0.30, 0.75]
+
+
+## The clock's pulses, as pairs of points to stroke: the baseline, then up, along, down.
+static func clock(small: bool) -> Array:
+	var runs: Array = []
+	var count: int = CLOCK_PULSES_SMALL if small else CLOCK_PULSES
+	var width: float = CLOCK_WIDTH_SMALL if small else CLOCK_WIDTH
+	var base := MODULATION_AMPLITUDE * 0.85
+	var top := -base
+	runs.append([Vector2(-MODULATION_SPAN, base), Vector2(MODULATION_SPAN, base)])
+	for i in count:
+		var centre := lerpf(-0.72, 0.72,
+			0.5 if count == 1 else float(i) / float(count - 1))
+		runs.append([Vector2(centre - width, base),
+			Vector2(centre - width, top)])
+		runs.append([Vector2(centre - width, top),
+			Vector2(centre + width, top)])
+		runs.append([Vector2(centre + width, top),
+			Vector2(centre + width, base)])
+	return runs
+
+
+## The held staircase: treads joined by risers.
+static func held(small: bool) -> Array:
+	var treads: Array = HELD_STEPS_SMALL if small else HELD_STEPS
+	var points: Array = []
+	for i in treads.size():
+		var from := lerpf(-MODULATION_SPAN, MODULATION_SPAN,
+			float(i) / float(treads.size()))
+		var to := lerpf(-MODULATION_SPAN, MODULATION_SPAN,
+			float(i + 1) / float(treads.size()))
+		var y: float = float(treads[i]) * MODULATION_AMPLITUDE
+		points.append(Vector2(from, y))
+		points.append(Vector2(to, y))
+	return points
+
+
+## The sequencer's steps: the same treads with the risers taken away.
+static func steps(small: bool) -> Array:
+	var values: Array = STEP_VALUES_SMALL if small else STEP_VALUES
+	var runs: Array = []
+	var width := MODULATION_SPAN * 2.0 / float(values.size())
+	for i in values.size():
+		var from := -MODULATION_SPAN + width * float(i) + width * 0.16
+		var to := -MODULATION_SPAN + width * float(i + 1) - width * 0.16
+		var y: float = float(values[i]) * MODULATION_AMPLITUDE
+		runs.append([Vector2(from, y), Vector2(to, y)])
+	return runs
+
+
 # ---- the routing family --------------------------------------------------------------
 #
 # Terminals and the cords between them, which is what the reader is already looking at:

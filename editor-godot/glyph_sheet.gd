@@ -42,6 +42,12 @@ const FIRST_SYNTH := ["SAW_WAVE", "MODULATION", "ORIGINATE", "TERMINATE"]
 ## modulation wave are both a sine, and the only thing between them is that one repeats.
 const GENERATORS := ["SINE_WAVE", "SQUARE_WAVE", "SAW_WAVE", "NOISE_WAVE", "MODULATION"]
 
+## The temporal family, which is the same question asked of control rather than of audio.
+## The pairs to look at: the clock against the noise bars, which differ by regularity, and
+## the held staircase against the sequencer's steps, which differ by whether the risers
+## are drawn.
+const TEMPORAL := ["PULSE_TRAIN", "HELD", "STEPS_ORDERED", "SLIDE", "FLAT", "ENVELOPE"]
+
 ## The contact sheet's own geometry. Every mark is shown at the same drawn size whatever
 ## it was rendered at, which is the only way four sizes can be compared: the 10-pixel cut
 ## and the 96-pixel one differ in how they are drawn, not in how big they are on the page.
@@ -63,7 +69,7 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(folder)
 
 	var names: Array = []
-	for group: Array in [GENERATORS, SPECIMENS, FIRST_SYNTH, FILTERS, ROUTING]:
+	for group: Array in [GENERATORS, TEMPORAL, SPECIMENS, FIRST_SYNTH, FILTERS, ROUTING]:
 		for one: String in group:
 			if not names.has(one):
 				names.append(one)

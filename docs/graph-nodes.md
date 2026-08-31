@@ -993,3 +993,100 @@ field is part of its outline rather than a detail on it — two cycles of a sine
 cycle of a sine are told apart instantly and neither is wearing a badge. It should
 generalise to the temporal family, where a clock, a pulse train and a delay are the same
 idea at different densities.
+
+## Step 14C — the control family
+
+Seven types in, one held, one new gate, and one thing to decide.
+
+### The temporal family
+
+Everything in it is a value over time, which is also what the envelope and the modulation
+wave already were. What separates the members is **density and regularity**:
+
+```
+repeated smooth cycles     a generator, at audio rate
+one broad cycle            a modulator, under it
+repeated equal pulses      a clock: regular, discrete, and it only says when
+unequal bars               noise: no two alike and none following from the last
+a joined staircase         sample and hold: a continuous signal held between samples
+separated blocks           a sequencer: a list of discrete values, not a signal
+one diagonal               a slide: the whole mark is the transition
+one flat line              a constant: the value that does not change
+```
+
+Two devices do the work and both are honest. **Regular against irregular** tells a clock
+from noise and a sequencer from a sample-and-hold. **Joined against separated** tells a
+held signal from a list of values, which is exactly the difference between them.
+
+The clock needed an optical cut. At sixteen hundredths of a reach a pulse is two pixels
+wide — the stroke weight — so its two edges and its top filled into a block, and three
+blocks on a line read as a square wave. At header size a pulse is one upright standing on
+the baseline instead, and the baseline is what keeps it apart from every other rectangular
+mark in the set.
+
+### The variant mechanism carried to a second type
+
+`OnePoleFilter` uses the same four-curve filter family as `StateVariableFilter`, with two
+of them. Type implementation and filter mode stay separate facts: what a one-pole filter
+is, is a filter; which response it is running is the curve on its header.
+
+### Widths: the 416 class was the right rung
+
+Measured at Comfortable, which is the binding scale:
+
+```
+Constant          163    Narrow
+SampleHold        194    Standard
+StepSequencer     354    Wide
+Clock             388    Extra
+OnePoleFilter     405    Extra
+SquareOscillator  410    Extra
+SineOscillator    413    Extra
+Slide             433    -- held, 17 past the top of the set
+```
+
+Four of seven landed in the class the previous batch's evidence created, which is the
+first sign it was a real rung rather than an accommodation. **Slide is held**: one type 17
+units past Extra is an outlier, not a cluster, and the rule wants several independent
+types agreeing before a rung is added. Its glyph is drawn and waiting.
+
+A measurement note that cost an hour: a node built while the graph is already at a reduced
+zoom never reaches its full width, because its rows are hidden from the start and the size
+high-water mark is the reduced one. The first run of this batch reported a one-pole filter
+at 194 when it stands at 405 everywhere a person would see it. **Widths are measured at
+zoom 1.0, at full detail, or they are not measured.**
+
+### The gate found nine missing compact names
+
+`editor_test.gd` now sweeps **every migrated type**, not the ones that happen to be in the
+example patch — the rollout adds types faster than any one patch can hold them. It uses
+the registry's display name and the type's own width class, and it immediately failed on
+nine of seventeen.
+
+The batches before this one had assigned compact names by eye, judging at 28% and stopping
+there. A compact name is not a judgement about whether the canonical will fit; it is what
+a type is called when there is no room, and a type without one falls back to cutting.
+
+It does not have to fit either, which is the part that makes this tractable. A Narrow node
+at a quarter zoom has room for about three characters and no real word is three
+characters, so a compact name will sometimes not fit and the renderer draws nothing at
+all. That is the step 12 rule working — remove information rather than reduce its
+legibility — and `Co…` is not an identity.
+
+```
+seam:Input/note    Input        SineOscillator     Sine
+seam:Output/stereo Output       SquareOscillator   Square
+NoiseOscillator    Noise osc    OnePoleFilter      One-pole
+SampleHold         S&H          StepSequencer      Steps
+Constant           Value
+```
+
+### One decision, not taken
+
+`SawOscillator`'s compact name is `Oscillator`, agreed in 14A when it was the only
+oscillator in the language. There are three now, and `Oscillator` for the saw one is the
+odd entry in a set that otherwise reads `Sine`, `Square`, `Saw`. At map size First Synth
+says `Oscillator` where a sine oscillator beside it would say `Sine`.
+
+Changing it is one line and it changes what an approved picture says, so it is reported
+rather than done.

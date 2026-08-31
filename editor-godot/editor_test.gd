@@ -2578,6 +2578,32 @@ func _initialize() -> void:
 	main.graph_edit.fit_graph()
 	await process_frame
 
+	# ---- no migrated type manufactures an abbreviation -----------------------------
+	# Every type that has been through the pass, not just the ones that happen to be in
+	# this patch. A cut name is now the mark of a type that has not been migrated, and
+	# that only stays true if the claim is checked against the whole migrated set — the
+	# rollout adds types faster than any one example patch can hold them.
+	#
+	# The title is the registry's display name, which is what a node is called until an
+	# author renames it, and the room is the type's own width class.
+	for type: String in NodeGrid.WIDTH_CLASS:
+		var shown_name := str((main.registry.get(type, {}) as Dictionary).get(
+			"display_name", type))
+		var probe := GraphNode.new()
+		probe.title = shown_name
+		probe.set_meta("compact_name", NodeIdentity.compact_of(type))
+		var face := Design.font(Design.WEIGHT_SEMIBOLD)
+		var pinned := Design.screen_minimum(Design.MIN_SCREEN_NODE_TITLE)
+		var cut := ""
+		for step in 30:
+			var zoom := 1.0 - float(step) * 0.025
+			var drawn := PatchGraphScript.ScreenText._name_for(probe, face, pinned,
+				float(NodeGrid.width_for(type)) * zoom - 12.0)
+			if drawn.ends_with("…"):
+				cut = " (%s at %.2f)" % [drawn, zoom]
+		check(cut == "", "%s is never cut%s" % [shown_name, cut])
+		probe.free()
+
 	# ---- a class is a width, not a suggestion --------------------------------------
 	# Every migrated node stands exactly at its declared class. Not within a pixel of it:
 	# a minimum only pushes a Control wider and nothing pulls one back, so a child that

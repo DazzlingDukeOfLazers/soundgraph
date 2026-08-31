@@ -39,7 +39,14 @@ const MIGRATED := ["Gain", "StateVariableFilter", "ADSR",
 	# independent types inside eight units of each other is evidence for a fourth class
 	# rather than for stretching a third, and a new class is a design decision and not
 	# something a migration gets to make. See docs/graph-nodes.md.
-	"NoiseOscillator", "Noise", "Phaser"]
+	"NoiseOscillator", "Noise", "Phaser",
+	# 14C: the three that were waiting on the 416 class, and the control family.
+	# Slide is not here. It measures 433 at Comfortable against an Extra class of 416,
+	# and one type 17 units past the top of the set is an outlier rather than a cluster
+	# — the rule the class set grows by wants several independent types agreeing before
+	# a rung is added. Reported in docs/graph-nodes.md and held for the next batch.
+	"SineOscillator", "SquareOscillator", "OnePoleFilter",
+	"SampleHold", "Clock", "Constant", "StepSequencer"]
 
 ## Type name -> what to call it when the room runs out.
 ##
@@ -56,6 +63,27 @@ const COMPACT := {
 	# stops fitting, and then draws nothing — which is the step 12 rule and is right.
 	"SawOscillator": "Oscillator",
 	"LFO": "Sweep",
+	# The seams. Their registry names are "Input port · note" and "Output port · stereo",
+	# which say the binding as well as the direction; at map size the direction is the
+	# part worth keeping and the socket says the rest.
+	"seam:Input/note": "Input",
+	"seam:Output/stereo": "Output",
+	# The rollout's own names. Every migrated type needs one of these, and it is not a
+	# judgement about whether the canonical will fit — a compact name is what a type is
+	# called when there is no room, and a type without one falls back to cutting.
+	#
+	# It does not have to fit either. A narrow node at a quarter zoom has room for about
+	# three characters and no real word is three characters, so the compact name will
+	# sometimes not fit and the renderer will draw nothing at all. That is the step 12
+	# rule working: remove information rather than reduce its legibility, and "Co…" is
+	# not an identity.
+	"SineOscillator": "Sine",
+	"SquareOscillator": "Square",
+	"NoiseOscillator": "Noise osc",
+	"OnePoleFilter": "One-pole",
+	"SampleHold": "S&H",
+	"StepSequencer": "Steps",
+	"Constant": "Value",
 }
 
 
@@ -102,6 +130,16 @@ const GLYPH := {
 	# operation and the word beside the mark is what says which.
 	"NoiseOscillator": Icons.Kind.NOISE_WAVE,
 	"Noise": Icons.Kind.NOISE_WAVE,
+	"SineOscillator": Icons.Kind.SINE_WAVE,
+	"SquareOscillator": Icons.Kind.SQUARE_WAVE,
+	# The temporal family: value over time, told apart by density and regularity rather
+	# than by decoration. See `GlyphGrammar` for the table.
+	"Clock": Icons.Kind.PULSE_TRAIN,
+	"SampleHold": Icons.Kind.HELD,
+	"StepSequencer": Icons.Kind.STEPS_ORDERED,
+	# Drawn, and waiting for its type: see the width note in MIGRATED above.
+	"Slide": Icons.Kind.SLIDE,
+	"Constant": Icons.Kind.FLAT,
 	# And the Phaser has none. Its family — things that happen over time — has not been
 	# drawn, and the identity cell is reserved whether or not a type has a mark, so a
 	# node with no glyph costs nothing and claims nothing. No glyph beats a misleading

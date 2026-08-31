@@ -91,6 +91,13 @@ enum Kind {
 	SINE_WAVE,      ## and a sine one
 	SQUARE_WAVE,    ## and a square one
 	NOISE_WAVE,     ## and the one with no period at all
+
+	# The temporal family: value over time, told apart by density and regularity.
+	PULSE_TRAIN,    ## a clock — equal pulses, evenly spaced
+	HELD,           ## sample and hold — a joined staircase of unequal treads
+	STEPS_ORDERED,  ## a sequencer — the same treads, separated, because it is a list
+	SLIDE,          ## a glide — the whole mark is the transition
+	FLAT,           ## a constant — the value that does not change
 	MODULATION,     ## a slow wave that moves something else
 	ORIGINATE,      ## the patch's edge, signal entering
 	TERMINATE,      ## the patch's edge, signal leaving
@@ -321,6 +328,27 @@ static func get_icon(kind: int, size: int, colour: Color) -> Texture2D:
 				var height: float = reach * float(bars[i])
 				_stroke(image, Vector2(x, middle - height), Vector2(x, middle + height),
 					colour)
+		Kind.PULSE_TRAIN:
+			for run: Array in GlyphGrammar.clock(small):
+				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
+					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.HELD:
+			_polyline(image, GlyphGrammar.held(small), middle, reach, colour)
+		Kind.STEPS_ORDERED:
+			for run: Array in GlyphGrammar.steps(small):
+				_stroke(image, Vector2(middle, middle) + (run[0] as Vector2) * reach,
+					Vector2(middle, middle) + (run[1] as Vector2) * reach, colour)
+		Kind.SLIDE:
+			# One diagonal, corner to corner. Not a rise between two flats — that is the
+			# highpass, and a slide is not a response. The whole mark being the
+			# transition is the point: nothing is held at either end.
+			_stroke(image, Vector2(middle - reach * 1.05, middle + reach * 0.85),
+				Vector2(middle + reach * 1.05, middle - reach * 0.85), colour)
+		Kind.FLAT:
+			# A value that does not change, drawn as exactly that. It looks like the least
+			# a glyph can be and it is precisely what a constant is.
+			_stroke(image, Vector2(middle - reach * 1.1, middle),
+				Vector2(middle + reach * 1.1, middle), colour)
 		Kind.MODULATION:
 			# One cycle against the generators' two. A sine oscillator and an LFO are
 			# both a sine and the difference is that one repeats: the shape's own

@@ -178,6 +178,16 @@ const WIDTH_CLASS := {
 	"Noise": Width.STANDARD,
 	"Phaser": Width.WIDE,
 	"NoiseOscillator": Width.WIDE,
+	# 14C, measured at Comfortable. Four of the seven landed in the class the previous
+	# batch's evidence created, which is the first sign it was the right rung: Clock at
+	# 388, OnePoleFilter at 405, SquareOscillator at 410 and SineOscillator at 413.
+	"Constant": Width.NARROW,
+	"SampleHold": Width.STANDARD,
+	"StepSequencer": Width.WIDE,
+	"Clock": Width.EXTRA,
+	"OnePoleFilter": Width.EXTRA,
+	"SquareOscillator": Width.EXTRA,
+	"SineOscillator": Width.EXTRA,
 }
 
 
@@ -192,7 +202,7 @@ static func width_for(type_name: String) -> int:
 static func width_class_name(type_name: String) -> String:
 	if not WIDTH_CLASS.has(type_name):
 		return ""
-	return ["Narrow", "Standard", "Wide"][int(WIDTH_CLASS[type_name])]
+	return ["Narrow", "Standard", "Wide", "Extra"][int(WIDTH_CLASS[type_name])]
 
 
 ## The gap between rows, scaled. Godot wants these as ints in theme constants.
