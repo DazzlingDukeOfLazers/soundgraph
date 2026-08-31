@@ -191,9 +191,21 @@ const WIDTH_CLASS := {
 }
 
 
+## Set by `width_sheet.gd` while it measures, and by nothing else.
+##
+## A classed node cannot be measured: its width is pinned to its class, so reading it back
+## reports the class. And the other obvious reading — emptying the minimum and asking for
+## the combined minimum — measures how far the contents can be *squeezed*, which is a
+## different and useless number. What a type actually wants is the width it settles at
+## when no class is imposed, so the harness suppresses the classes and rebuilds.
+##
+## A measurement hook rather than a feature. Nothing in the editor sets it.
+static var measuring := false
+
+
 ## The width a type stands at, scaled, or 0 for a type with no class yet.
 static func width_for(type_name: String) -> int:
-	if not WIDTH_CLASS.has(type_name):
+	if measuring or not WIDTH_CLASS.has(type_name):
 		return 0
 	return Design.scale(WIDTHS[int(WIDTH_CLASS[type_name])])
 

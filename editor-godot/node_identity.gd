@@ -61,7 +61,11 @@ const COMPACT := {
 	# names those things have, and inventing "Keys" and "Out" would be shortening for
 	# its own sake. A type with no compact name simply keeps its canonical one until it
 	# stops fitting, and then draws nothing — which is the step 12 rule and is right.
-	"SawOscillator": "Oscillator",
+	# Saw, not Oscillator. It was the only oscillator in the language when that was
+	# chosen and it is one of three now, so `Oscillator` had become the odd member of a
+	# set that otherwise reads Sine, Square, Saw — and at map size First Synth said
+	# "Oscillator" where a sine beside it would have said "Sine".
+	"SawOscillator": "Saw",
 	"LFO": "Sweep",
 	# The seams. Their registry names are "Input port · note" and "Output port · stereo",
 	# which say the binding as well as the direction; at map size the direction is the
@@ -84,6 +88,13 @@ const COMPACT := {
 	"SampleHold": "S&H",
 	"StepSequencer": "Steps",
 	"Constant": "Value",
+	# And three whose canonical name is already short enough to fit anywhere. They are
+	# written down anyway, because a compact name is part of a migrated type's contract
+	# rather than a repair applied when today's geometry happens to need one. A type
+	# whose two names are the same has said so on purpose.
+	"Noise": "Noise",
+	"Phaser": "Phaser",
+	"Clock": "Clock",
 }
 
 
@@ -201,6 +212,16 @@ static func glyph_of(type_name: String, variant: int = -1) -> int:
 ## Whether this type speaks the new language yet.
 static func migrated(type_name: String) -> bool:
 	return MIGRATED.has(type_name)
+
+
+## Whether a type has said what it is called when there is no room.
+##
+## Part of a migrated type's contract, not a repair. The rule the whole thing rests on is
+## that an ellipsis in the graph means exactly one thing — a type that has not been
+## through the pass — and that only holds if every type that *has* been through it can
+## fall back to a written-down name instead of a cut.
+static func has_compact(type_name: String) -> bool:
+	return COMPACT.has(type_name)
 
 
 ## The compact name for a type, or "" when it has none yet.

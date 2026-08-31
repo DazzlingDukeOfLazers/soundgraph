@@ -435,6 +435,16 @@ func _initialize() -> void:
 		check(ratio >= 3.0, "%s: its jack rings read on the socket field (%.1f:1)"
 			% [ModuleThemes.display_name(str(key)), ratio])
 
+	# Every migrated type says what it is called when there is no room. Part of the
+	# contract rather than a repair applied when today's geometry happens to need one:
+	# an ellipsis in the graph means exactly one thing, a type that has not been through
+	# the pass, and that only holds if every type that has been through it can fall back
+	# to a written-down name instead of a cut. A type whose two names are the same says
+	# so explicitly.
+	for type: String in NodeIdentity.MIGRATED:
+		check(NodeIdentity.has_compact(type),
+			"%s has declared a compact name" % type)
+
 	# Identity variants stay narrow. A type may declare one discrete parameter that
 	# changes what operation it performs; every other type is keyed by type alone. This
 	# is the check that the exception has not quietly become the rule — the general

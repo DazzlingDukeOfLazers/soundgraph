@@ -1090,3 +1090,67 @@ says `Oscillator` where a sine oscillator beside it would say `Sine`.
 
 Changing it is one line and it changes what an approved picture says, so it is reported
 rather than done.
+
+## Step 14C.1 — the migration contract, and an unresolved measurement
+
+Housekeeping, plus one thing the housekeeping turned up that is not resolved.
+
+### Saw, not Oscillator
+
+`SawOscillator`'s compact name was chosen when it was the only oscillator in the language.
+There are three now, and `Oscillator` had become the odd member of a set that otherwise
+reads `Sine`, `Square`, `Saw` — at map size First Synth said "Oscillator" where a sine
+beside it would have said "Sine".
+
+### A compact name is part of the contract
+
+Every migrated type declares one, including the three whose canonical name already fits
+anywhere. `Noise`, `Phaser` and `Clock` say their two names are the same, on purpose,
+rather than by omission. `design_test.gd` holds the whole of `MIGRATED` to it.
+
+The reasoning is the rule that everything else rests on: an ellipsis in the graph means
+exactly one thing, a type that has not been through the pass, and that only stays true if
+every type that *has* been through it can fall back to a written-down name instead of a
+cut. Whether the compact name fits at some particular zoom is a separate question, and the
+answer when it does not is silence.
+
+### The width harness
+
+`editor-godot/width_sheet.gd`. Hand it types, or nothing to re-measure everything already
+migrated, and it reports what each one's contents want at every interface scale with the
+smallest class that holds the worst of them.
+
+Two rules are enforced in the code rather than remembered:
+
+**A specimen is measured at zoom 1.0 in FULL detail.** A node built while the graph is
+already reduced never reaches its full width — its rows are hidden from the start and a
+minimum only pushes a Control wider. A node constructed directly in REDUCED or MAP is not
+a valid width specimen.
+
+**And with the classes suppressed.** `NodeGrid.measuring` exists for this and nothing else.
+A classed node cannot be measured, because its width is pinned to its class and reading it
+back reports the class; and the other obvious reading — emptying the minimum and asking
+for the combined minimum — measures how far the contents can be *squeezed*, which is a
+different and useless number.
+
+### The open question
+
+The harness says several migrated types want more room than their class gives them at the
+smaller interface scales, and that `StateVariableFilter` wants 411 at Comfortable against
+a Wide class of 376. It says the same headless and windowed.
+
+`editor_test.gd`, measuring the live First Synth patch at the same scale and the same
+zoom, says that node stands at 376.
+
+**These disagree and I do not know why.** The obvious candidates have been eliminated: it
+is not headless against windowed, not the alert mark a scratch patch's unconnected inputs
+add, not the difference between a lone node and a patch, and not too few frames after the
+zoom change. It is reported here rather than acted on, because the conclusion it points at
+— that the class table was derived at XL and XL is the most forgiving scale — would mean
+re-deriving every class, and that is not a thing to do on a measurement two instruments
+disagree about.
+
+The suite's check was corrected in the meantime and is honest about its reach: it measures
+at zoom 1.0 rather than in whatever reduced state the patch opened in, which is the same
+trap in a smaller costume, and it asserts the floor — a migrated node is never *narrower*
+than its class — while printing any overflow with its figure. It reports none today.
