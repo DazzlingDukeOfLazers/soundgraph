@@ -369,16 +369,111 @@ Both worth recording, because one of them was me being wrong about the instrumen
   on the strength of it. The harness nudges four ways. A probe that tries one is not
   checking the same claim.
 
+## Goal 2.1 — the pointer and the picture
+
+> **A cable's interactive locus is the centreline actually displayed by the active cable
+> style.**
+
+Not a routing goal. `_route` is untouched; so are the cable pixels, the crossing counts, the
+layout scoring, legalization and the stability behaviour. The only thing that changes is
+which curve the pointer is asked about.
+
+### Two geometries, finally named
+
+`_routes()` said "routes" and meant the obstacle-avoiding polyline whatever the style, so
+hit testing reasonably asked for the routes and got a cable nobody could see. The names now
+make that mistake harder to make:
+
+```
+display_path(connection)    what is on screen. CATENARY hangs, ROUTED routes.
+routing_path(connection)    the obstacle-avoiding path, whatever is on screen.
+```
+
+Drawing, crossing analysis and picking all take `display_path`, and take it through
+`_get_connection_line` — the function Godot calls to draw with — so the picked curve is the
+drawn curve by construction rather than by agreement. The cord layer had been spelling its
+endpoints out a second time; that seam is gone.
+
+`routing_path` keeps its consumers: trespass and cable cost. It is a hypothesis about where
+a cable could go, and goal 2.2 will ask each consumer whether that is what it meant.
+
+### The upper strand rule
+
+At a crossing both cables are the same distance from the pointer, so distance alone cannot
+choose and the tie has to come from somewhere. It comes from the same place the knockout
+does — draw order:
+
+> **Where two cables are equally near the pointer, the one drawn last wins: the strand the
+> picture puts on top.**
+
+`PICK_TIE` is three units, well inside one cord width, so cables merely running alongside
+each other are still separated by distance.
+
+### What the probe demands
+
+`hit_geometry.gd`, on all four fixtures, both cable styles, and the zoom bands the editor
+presents — 1,373 sample points:
+
+```
+                     catenary 100 / 66 / 40      routed 100 / 66 / 40
+first-synth               29 / 31 / 33                27 / 27 / 28
+plucked-string            26 / 30 / 30                27 / 30 / 30
+babble-tidied             79 / 94 / 97                72 / 78 / 76
+dense-graph-tidied      105 / 138 / 149             120 / 148 / 149
+```
+
+All correct, against 0 of 26 on babble before. Plus 26 crossings that must select the upper
+strand, and 177 points on the hidden routing path — far from anything drawn — that must
+select **nothing**. That last assertion is what stops the contract being satisfied by simply
+casting a wider net.
+
+Two rules the probe had to learn rather than assume, both caught by its own failures:
+
+- **The stub.** `_connection_at` refuses any point within `STUB` of a port; those belong to
+  the socket. The first run sampled inside them and reported twenty-five failures on babble,
+  every one a short cable whose 20% mark is inside its own stub. A probe that samples where
+  the product declines to answer is measuring its own arithmetic.
+- **Coincidence.** "Did it return the cable I sampled" is the wrong assertion wherever two
+  cables occupy the same place, and they do constantly by design — a fan-out leaves one
+  output as two coincident cords, two cables between the same pair of nodes run parallel,
+  and routed cables share channels for long stretches. What can be demanded is that
+  something is picked, that nothing farther away wins, and that among equals the upper
+  strand does. The contested count is reported rather than hidden: 10 of babble's 78 routed
+  samples at 66%.
+
+### And the gesture probe, corrected
+
+`cable_gestures.gd` took its points from `graph._routes()`, on the reasoning that this is
+what `_connection_at` picks against so the hover test would agree. Sound reasoning, wrong
+conclusion: agreeing with the picker was not the same as landing on the cable. It now takes
+them from `display_path`, which makes it meaningfully harder to satisfy — a point off the
+drawn curve is a failure rather than an adjustment.
+
+Sixteen checks, through `Input.parse_input_event` in a real window: hover, click to lock,
+click again to let go, pointer-off does not let go, lock survives zoom and pan, Escape,
+empty-canvas click, waypoint drag is not a click, **right-click straightens a dragged
+cable**, socket hover, port-family lock, and a drag from a socket that lands on nothing.
+
+Right-click-straighten is new to the probe. It is one of the four gestures that reach a
+cable through `_connection_at`, so it had been picking against the invisible path along with
+the other three, and nothing tested it.
+
+So the earlier proof is corrected precisely: **the mechanism was valid, and the visible
+object now reaches it.**
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
 something else found on the way is.
 
-1. **Hit testing picks against the wrong geometry.** Not a routing problem at all — the
-   click target should be the cable that is drawn. It is the only item here a person
-   experiences today, and it silently undermines the cable pass's focus work.
-2. **The layout objective is split across two geometries.** Crossings from the drawing,
-   length and trespass from the router. Worth settling before either is optimised further.
+1. ~~Hit testing picks against the wrong geometry.~~ **Done, goal 2.1.**
+2. **The remaining hidden-route consumers, as a geometry contract.** Goal 2.2. Crossings
+   come from the drawing; cable length and trespass come from the router. Now that
+   interaction is repaired that split is no longer accidental breakage — it is a product
+   decision nobody has made. For each consumer, ask whether it intentionally cares about an
+   obstacle-avoiding hypothetical route or should describe the cable the user sees. Some of
+   them may simply stop asking `_route` in CATENARY, which would shrink how much router
+   behaviour actually needs fixing.
 3. **Corridor stability.** A cable's corridor is a greedy pick from a globally ranked
    channel list with no memory of where it already was. This is the "route hysteresis"
    subproblem, and it now has a mechanism rather than a symptom.
@@ -391,8 +486,9 @@ The principle stands, with the geometry named:
 > **A local document edit should cause local change in every geometry the product presents
 > or depends upon, unless the previous geometry became invalid.**
 
-The drawn geometry already satisfies it. The routed geometry does not, and the reason it
-matters is not that cables jump on screen — it is that hit testing, trespass and cable cost
-are all measured there.
+The drawn geometry already satisfies it. The routed geometry does not, and after goal 2.1
+the reason it matters has narrowed usefully: not that cables jump on screen, and no longer
+that the pointer misses them, but that trespass and cable cost are still measured on a path
+that can move a thousand units away from the edit that caused it.
 
 No route has been changed, and no crossing has been called a router defect.

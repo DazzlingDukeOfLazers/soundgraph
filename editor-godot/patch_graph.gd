@@ -40,6 +40,13 @@ const STUB := 30.0
 const CHAMFER := 14.0
 ## How close a click must be to a cable to grab it.
 const GRAB_DISTANCE := 12.0
+
+## How close two cables have to be to the pointer before draw order decides between them.
+##
+## Goal 2.1. Only meant to catch an actual crossing, where both strands pass through the
+## same point and their distances differ by rounding. Three units is well inside one cord
+## width, so two cables merely running alongside each other are still separated by distance.
+const PICK_TIE := 3.0
 ## Ceiling on how many detours are scored when none of them is clear. Routing runs per
 ## cable per frame, so an unbounded search in a dense patch would cost frame rate to
 ## improve a cable that is going to look crowded regardless.
@@ -270,6 +277,60 @@ func _endpoints(connection: Dictionary) -> Array:
 		from_node.position_offset + from_node.get_output_port_position(fields[1]),
 		to_node.position_offset + to_node.get_input_port_position(fields[3]),
 	]
+
+
+# ---------------------------------------------------------------------------------
+# The two geometries, named
+# ---------------------------------------------------------------------------------
+#
+# Routing goal 2.1. There are two different cable shapes in this file and for a long time
+# only one of them had a name. `_routes()` said "routes" and meant the obstacle-avoiding
+# polyline whatever the cable style, while the editor opens in CATENARY and draws hanging
+# curves — so hit testing, which reasonably asked for "the routes", ended up picking against
+# a cable nobody could see. On babble that is zero of twenty-six cables clickable at the
+# point they are drawn.
+#
+# The contract that replaces it:
+#
+# > **A cable's interactive locus is the centreline actually displayed by the active cable
+# > style.**
+#
+# Two functions, deliberately awkward to confuse:
+#
+#   display_path   what is on screen. CATENARY hangs, ROUTED routes. Drawing, crossing
+#                  analysis and picking all take this one, so they cannot disagree.
+#   routing_path   the obstacle-avoiding path, whatever is on screen. Trespass and cable
+#                  cost still want it; it is a hypothesis about where a cable could go.
+#
+# No second approximation for picking. A hit test with its own idea of the curve is how
+# this happened in the first place.
+
+## The centreline this cable is drawn with, in graph space, in the active cable style.
+func display_path(connection: Dictionary) -> PackedVector2Array:
+	var ends := _endpoints(connection)
+	if ends.is_empty():
+		return PackedVector2Array()
+	# Through `_get_connection_line`, which is the function Godot calls to draw with, so
+	# this is the drawn curve by construction rather than by agreement. It works in
+	# zoom-scaled space at both ends; the scaling is undone here so every caller can stay
+	# in graph space.
+	var scale := zoom if zoom > 0.0 else 1.0
+	var drawn := _get_connection_line(ends[0] * scale, ends[1] * scale)
+	var out := PackedVector2Array()
+	for point: Vector2 in drawn:
+		out.append(point / scale)
+	return out
+
+
+## The obstacle-avoiding path for this cable, in graph space, whatever style is on screen.
+func routing_path(connection: Dictionary) -> PackedVector2Array:
+	var ends := _endpoints(connection)
+	if ends.is_empty():
+		return PackedVector2Array()
+	var fields := _connection_fields(connection)
+	var stored = waypoints.get(connection_key(fields[0], fields[1], fields[2], fields[3]))
+	return _route_through(ends[0], ends[1], stored) if stored != null \
+		else _route(ends[0], ends[1])
 
 
 # ---------------------------------------------------------------------------------
@@ -642,8 +703,11 @@ func _connection_at(point: Vector2) -> Dictionary:
 	var scale := zoom if zoom > 0.0 else 1.0
 	var reach := GRAB_DISTANCE / scale
 	var best := {}
-	var best_distance := reach
+	var best_distance := INF
 
+	# In draw order, because draw order is the crossing priority: where a cord crosses one
+	# already down, this one is over and the knockout is cut in the lower. Iterating the
+	# same way lets the tie below mean "the upper strand".
 	for connection in connections:
 		var ends := _endpoints(connection)
 		if ends.is_empty():
@@ -652,17 +716,22 @@ func _connection_at(point: Vector2) -> Dictionary:
 		# the click there would make disconnecting impossible.
 		if point.distance_to(ends[0]) < STUB or point.distance_to(ends[1]) < STUB:
 			continue
-		var fields := _connection_fields(connection)
-		var key := connection_key(fields[0], fields[1], fields[2], fields[3])
-		var stored = waypoints.get(key)
-		var route := _route_through(ends[0], ends[1], stored) if stored != null \
-			else _route(ends[0], ends[1])
+		var route := display_path(connection)
+		var nearest := INF
 		for i in range(route.size() - 1):
 			var closest := Geometry2D.get_closest_point_to_segment(point, route[i], route[i + 1])
-			var distance := point.distance_to(closest)
-			if distance < best_distance:
-				best_distance = distance
-				best = connection
+			nearest = minf(nearest, point.distance_to(closest))
+		if nearest > reach:
+			continue
+		# Clearly nearer wins outright. Within a hair of the incumbent the two cables are
+		# passing through the same place — a crossing — and there the pointer has to agree
+		# with the picture, which says the later-drawn strand is on top.
+		if best.is_empty() or nearest < best_distance - PICK_TIE:
+			best_distance = nearest
+			best = connection
+		elif nearest < best_distance + PICK_TIE:
+			best_distance = minf(nearest, best_distance)
+			best = connection
 	return best
 
 
@@ -1533,9 +1602,7 @@ func _routes() -> Array:
 		if ends.is_empty():
 			continue
 		var fields := _connection_fields(connection)
-		var stored = waypoints.get(connection_key(fields[0], fields[1], fields[2], fields[3]))
-		var points := _route_through(ends[0], ends[1], stored) if stored != null \
-			else _route(ends[0], ends[1])
+		var points := routing_path(connection)
 
 		var colour := Color.WHITE
 		var from_node := get_node_or_null(NodePath(fields[0])) as GraphNode
@@ -2713,15 +2780,12 @@ class CordLayer extends Control:
 			if from_widget == null or to_widget == null \
 					or not from_widget.visible or not to_widget.visible:
 				continue
-			var from_line: Vector2 = from_widget.position_offset * z \
-				+ from_widget.get_output_port_position(int(connection["from_port"])) * z
-			var to_line: Vector2 = to_widget.position_offset * z \
-				+ to_widget.get_input_port_position(int(connection["to_port"])) * z
-			var route: PackedVector2Array = graph._get_connection_line(
-				from_line, to_line)
+			# Goal 2.1: through the named provider, the same one the pointer asks. The
+			# endpoints were spelt out here as well as in `_endpoints`, which is two places
+			# for one fact and exactly the seam picking fell through.
 			var local := PackedVector2Array()
-			for point in route:
-				local.append(point - graph.scroll_offset)
+			for point: Vector2 in graph.display_path(connection):
+				local.append(point * z - graph.scroll_offset)
 			var cord_ink: Color = from_widget.get_output_port_color(
 				int(connection["from_port"]))
 			var cord_override := Rack.cable_override(

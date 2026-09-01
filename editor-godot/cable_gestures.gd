@@ -65,6 +65,20 @@ func click_at(at: Vector2) -> void:
 	await settle(4)
 
 
+## The other button, which straightens a cable that has been dragged out of shape.
+func right_click_at(at: Vector2) -> void:
+	await move_to(at)
+	for pressed in [true, false]:
+		var button := InputEventMouseButton.new()
+		button.button_index = MOUSE_BUTTON_RIGHT
+		button.pressed = pressed
+		button.position = at
+		button.global_position = at
+		Input.parse_input_event(button)
+		await settle(3)
+	await settle(4)
+
+
 ## A press, a travel and a release — the gesture that makes a cable, and the one a click
 ## must not be confused with.
 func drag_from(at: Vector2, to: Vector2) -> void:
@@ -121,16 +135,24 @@ func pointable(at: Vector2) -> bool:
 
 ## A point on a cable, in window coordinates, that the pointer can actually reach.
 ##
-## Taken from `graph._routes()` rather than from the cord layer's own `_lay()`. They are the
-## same geometry, but they are in different spaces and — more to the point — `_routes()` is
-## what `_connection_at` picks against, so a point derived from it is a point the hover test
-## will agree about. Deriving it from the drawing and testing it against the picker is two
-## implementations of one route, which is the mistake this repository keeps catching.
+## Taken from `display_path` — the centreline on screen in the active cable style.
+##
+## It used to be taken from `graph._routes()`, on the reasoning that `_routes()` is what
+## `_connection_at` picks against, so a point derived from it is a point the hover test will
+## agree about. That reasoning was sound and the conclusion was wrong. The editor opens in
+## CATENARY and draws hanging curves; agreeing with the picker was not the same as landing
+## on the cable, and routing goal 2 measured the consequence — on babble, not one of
+## twenty-six cables could be clicked where it is drawn.
+##
+## So this probe proved the focus mechanism fires when you click the right place, and never
+## asked whether the right place is where the cable is. It does now, and the harness is
+## meaningfully harder to satisfy: a point off the drawn curve is a failure rather than an
+## adjustment.
 func on_cable(fields: Array) -> Vector2:
 	var points := PackedVector2Array()
-	for route: Dictionary in graph._routes():
-		if route["fields"] == fields:
-			points = route["points"]
+	for connection: Dictionary in graph.connections:
+		if graph._connection_fields(connection) == fields:
+			points = graph.display_path(connection)
 	if points.size() < 2:
 		return Vector2.INF
 	var total := 0.0
@@ -185,9 +207,10 @@ func lay() -> Array:
 
 ## A cable whose midsection is inside the window, so a synthetic pointer can land on it.
 func reachable_cable() -> Array:
-	for route: Dictionary in graph._routes():
-		if on_cable(route["fields"]).x != INF:
-			return route["fields"]
+	for connection: Dictionary in graph.connections:
+		var fields: Array = graph._connection_fields(connection)
+		if on_cable(fields).x != INF:
+			return fields
 	return []
 
 
@@ -277,6 +300,20 @@ func _initialize() -> void:
 	await drag_from(start, start + Vector2(0.0, 70.0))
 	check(graph.locked_cable.is_empty(),
 		"dragging a cable's waypoint does not lock it")
+
+	# ---- right-click straightens it again --------------------------------------------
+	# Goal 2.1 brought this onto the probe: it is one of the four gestures that reach a
+	# cable through `_connection_at`, so it was picking against the invisible routed path
+	# along with the other three, and nothing tested it.
+	var bent: int = graph.waypoints.size()
+	# Where the cable is *now*, after the drag — straightening has to be asked for at the
+	# cable's new shape, which is the whole point of picking against what is displayed.
+	var moved_to := on_cable(subject)
+	if moved_to.x != INF:
+		await right_click_at(moved_to)
+	check(bent > 0 and graph.waypoints.size() < bent,
+		"right-clicking a dragged cable straightens it (%d waypoints, then %d)"
+			% [bent, graph.waypoints.size()])
 
 	# ---- the port case, which GraphEdit owns -----------------------------------------
 	graph.clear_focus_lock()

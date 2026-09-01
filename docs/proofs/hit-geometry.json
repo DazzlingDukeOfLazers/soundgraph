@@ -1,0 +1,210 @@
+{
+  "babble-tidied": {
+    "catenary@100": {
+      "contested": 0,
+      "correct": 79,
+      "in a stub": 26,
+      "sampled": 79,
+      "wrong": []
+    },
+    "catenary@40": {
+      "contested": 2,
+      "correct": 97,
+      "in a stub": 27,
+      "sampled": 97,
+      "wrong": []
+    },
+    "catenary@66": {
+      "contested": 0,
+      "correct": 94,
+      "in a stub": 27,
+      "sampled": 94,
+      "wrong": []
+    },
+    "crossings": {
+      "sampled": 6,
+      "upper": 6
+    },
+    "ghosts": {
+      "refused": 53,
+      "sampled": 53
+    },
+    "routed@100": {
+      "contested": 0,
+      "correct": 72,
+      "in a stub": 50,
+      "sampled": 72,
+      "wrong": []
+    },
+    "routed@40": {
+      "contested": 8,
+      "correct": 76,
+      "in a stub": 54,
+      "sampled": 76,
+      "wrong": []
+    },
+    "routed@66": {
+      "contested": 10,
+      "correct": 78,
+      "in a stub": 50,
+      "sampled": 78,
+      "wrong": []
+    }
+  },
+  "dense-graph-tidied": {
+    "catenary@100": {
+      "contested": 0,
+      "correct": 105,
+      "in a stub": 6,
+      "sampled": 105,
+      "wrong": []
+    },
+    "catenary@40": {
+      "contested": 2,
+      "correct": 149,
+      "in a stub": 8,
+      "sampled": 149,
+      "wrong": []
+    },
+    "catenary@66": {
+      "contested": 0,
+      "correct": 138,
+      "in a stub": 8,
+      "sampled": 138,
+      "wrong": []
+    },
+    "crossings": {
+      "sampled": 19,
+      "upper": 19
+    },
+    "ghosts": {
+      "refused": 92,
+      "sampled": 92
+    },
+    "routed@100": {
+      "contested": 3,
+      "correct": 120,
+      "in a stub": 15,
+      "sampled": 120,
+      "wrong": []
+    },
+    "routed@40": {
+      "contested": 10,
+      "correct": 149,
+      "in a stub": 15,
+      "sampled": 149,
+      "wrong": []
+    },
+    "routed@66": {
+      "contested": 9,
+      "correct": 148,
+      "in a stub": 15,
+      "sampled": 148,
+      "wrong": []
+    }
+  },
+  "first-synth": {
+    "catenary@100": {
+      "contested": 0,
+      "correct": 29,
+      "in a stub": 5,
+      "sampled": 29,
+      "wrong": []
+    },
+    "catenary@40": {
+      "contested": 0,
+      "correct": 33,
+      "in a stub": 2,
+      "sampled": 33,
+      "wrong": []
+    },
+    "catenary@66": {
+      "contested": 0,
+      "correct": 31,
+      "in a stub": 4,
+      "sampled": 31,
+      "wrong": []
+    },
+    "crossings": {
+      "sampled": 0,
+      "upper": 0
+    },
+    "ghosts": {
+      "refused": 12,
+      "sampled": 12
+    },
+    "routed@100": {
+      "contested": 0,
+      "correct": 27,
+      "in a stub": 7,
+      "sampled": 27,
+      "wrong": []
+    },
+    "routed@40": {
+      "contested": 0,
+      "correct": 28,
+      "in a stub": 7,
+      "sampled": 28,
+      "wrong": []
+    },
+    "routed@66": {
+      "contested": 0,
+      "correct": 27,
+      "in a stub": 7,
+      "sampled": 27,
+      "wrong": []
+    }
+  },
+  "plucked-string": {
+    "catenary@100": {
+      "contested": 0,
+      "correct": 26,
+      "in a stub": 0,
+      "sampled": 26,
+      "wrong": []
+    },
+    "catenary@40": {
+      "contested": 1,
+      "correct": 30,
+      "in a stub": 0,
+      "sampled": 30,
+      "wrong": []
+    },
+    "catenary@66": {
+      "contested": 0,
+      "correct": 30,
+      "in a stub": 0,
+      "sampled": 30,
+      "wrong": []
+    },
+    "crossings": {
+      "sampled": 1,
+      "upper": 1
+    },
+    "ghosts": {
+      "refused": 20,
+      "sampled": 20
+    },
+    "routed@100": {
+      "contested": 0,
+      "correct": 27,
+      "in a stub": 0,
+      "sampled": 27,
+      "wrong": []
+    },
+    "routed@40": {
+      "contested": 2,
+      "correct": 30,
+      "in a stub": 0,
+      "sampled": 30,
+      "wrong": []
+    },
+    "routed@66": {
+      "contested": 0,
+      "correct": 30,
+      "in a stub": 0,
+      "sampled": 30,
+      "wrong": []
+    }
+  }
+}

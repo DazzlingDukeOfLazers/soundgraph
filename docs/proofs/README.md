@@ -29,6 +29,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `route-baseline.json` | `route_baseline.gd` | the routing pass's step 1: every route's length, stretch, excess, bends, reversals, clearance and trespasses, taken from the same points the cord layer draws, plus determinism over two reads and the response to a forty-unit nudge |
 | `crossing-semantics.json` | `crossing_semantics.gd` | routing goal 1.1: every intersection on both geometries, with the reason it is or is not drawn as a crossing, and the proof that sharing the classifier moved no count |
 | `route-stability.json` | `route_stability.gd` | routing goal 2: which product pathway reads which geometry, how far a forty-unit nudge travels in each of them, every changed cable attributed, and whether connection order matters |
+| `hit-geometry.json` | `hit_geometry.gd` | routing goal 2.1: 1,373 points on the displayed centreline of every cable, in both styles at three zooms, each of which must select its own cable; plus the upper strand at every crossing and a refusal on the hidden path |
 
 ## The sheets, on demand
 
@@ -95,6 +96,9 @@ CROSSING_SEMANTICS_OUT=/tmp/p godot --headless --path editor-godot --script cros
 
 # where a 40-unit edit lands, in both the drawn and the routed geometry
 ROUTE_STABILITY_OUT=/tmp/p godot --headless --path editor-godot --script route_stability.gd
+
+# is the cable you can see the cable you can touch?
+HIT_GEOMETRY_OUT=/tmp/p godot --headless --path editor-godot --script hit_geometry.gd
 ```
 
 `crossing_semantics.gd` is on the push gate as well, and writes its record only when the
