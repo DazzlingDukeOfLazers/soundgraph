@@ -746,6 +746,18 @@ const CUE_STROKE := 20.0
 ##
 ## > **connection and crossing geometry > type cue > focus prominence**
 ##
+## And the corollary, written down so that nobody later "fixes" this by plastering ribs onto
+## every short segment:
+##
+## > **Cable type cues are sparse and redundant, not locally guaranteed. A cue may be
+## > omitted wherever connection, crossing or bend geometry has the higher priority.**
+##
+## The blind test is what earns that. Fourteen endpoint-free crops named fourteen times —
+## and the one crop that could not be classified was taken inside a crossing, where the
+## exclusion had refused a rib. That is the hierarchy working. A cable has to offer enough
+## sparse evidence along its route to identify its class; no arbitrary twenty pixels of it
+## has to.
+##
 ## A knockout says two paths cross and do not join. If a periodic cadence were allowed to
 ## put a mark inside one, the cadence would be deciding that a crossing has a dash in it,
 ## and the crossing grammar goal 1 just finished would be the thing that gave way.

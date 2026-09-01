@@ -22,6 +22,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `crossing-separation.json` | `crossing_sheet.gd` | goal 1: the same-colour crossings, and the ink each of the four constructions introduces at them |
 | `focus-suppression.json` | `focus_sheet.gd` | goal 2: the three suppression levels, what each keeps of its resting luminance, and the achieved ratio |
 | `blind-cue-answers.json` | `blind_cues.gd` | the key to the blind test that froze goal 3: fourteen shuffled endpoint-free crops, named 14 of 14 |
+| `cable-closure.json` | `cable_closure.gd` | the cable pass's closure matrix: 278 invariants over both specimens, four zooms and two palettes |
 | `cable-baseline.json` | `cable_baseline.gd` | the cable pass's step 1: every route's length and detour, every crossing's position, angle and colour pair, every bundle, every trespass, and the cable share of the patch at four zooms |
 
 ## The sheets, on demand
@@ -68,6 +69,12 @@ SIGNAL_AUDIT_OUT=/tmp/p godot --headless --path editor-godot --script signal_aud
 
 # the blind test: shuffled endpoint-free crops, and a key not to open first
 BLIND_CUES_OUT=/tmp/p godot --path editor-godot --script blind_cues.gd
+
+# the gestures, through real input routing in a real window
+godot --path editor-godot --script cable_gestures.gd
+
+# the cable closure matrix: 278 invariants over both specimens
+CABLE_CLOSURE_OUT=/tmp/p godot --path editor-godot --script cable_closure.gd
 ```
 
 `godot` is whatever `git config soundgraph.godot` names.

@@ -518,6 +518,62 @@ wants a windowed check by hand. The socket case is the less certain of the two, 
 GraphEdit owns port presses for connection dragging and this only notices a press that went
 nowhere.
 
+## Closure
+
+The windowed gesture probe first, because goal 4 shipped with its gestures ungated.
+`cable_gestures.gd` pushes real events through `Input.parse_input_event` in a real window —
+headless has no input routing at all, and a check that passed there would be a check of an
+empty room.
+
+**Fourteen of fourteen**, including the case that was least certain: **the port click works.**
+GraphEdit owns port presses for making cables, and noticing only a press that went nowhere
+turns out to be enough — clicking a socket pins its family, clicking again lets go, and
+dragging from one neither pins anything nor leaves a stray cable behind.
+
+Three of the probe's own first four failures were the probe: a point on a cable that passes
+behind a node never reaches GraphEdit at all, because a GraphNode consumes its own motion.
+And the cable point has to be derived from `graph._routes()`, which is what `_connection_at`
+picks against — deriving it from the drawing and testing it against the picker is two
+implementations of one route.
+
+### The closure matrix
+
+`cable_closure.gd`, over both specimens, four zooms and two palettes: **278 invariants, no
+complaints.**
+
+```
+route points unchanged by focus, by a lock, or by a type cue
+crossing count and locations unchanged by any of them
+no crossing sits on a shared port
+every rib gap exactly the cadence, at every zoom
+no rib inside an exclusion zone
+the focused cable, ribs included, identical to its resting self
+persistent and transient focus render identically
+no node pixel changes because of cable focus
+
+dense-graph prominence   1.81
+cable-types prominence   1.27
+```
+
+Two findings from the matrix, both about measurement rather than design.
+
+**The prominence ratio is a property of the scene, not a constant.** 1.64 was measured
+across five focus scenes on the hostile graph; one scene on it gives 1.81, and the sparse
+type specimen gives 1.27 because most of its suppressed set is short. Asserting a single
+number across specimens was the wrong assertion. What holds everywhere is a floor, and the
+matrix holds it at 1.2.
+
+**And ten node pixels at 66% were three node corners.** The check inset the node rectangle
+by fourteen pixels — the cord's outer extent — and reported ten sampled pixels across Scale
+Quantizer, Drive and Comb at one band and nowhere else. A node's *rectangle* is not a node's
+*drawn body*: the panel is rounded and inset inside its frame, so a cable passing under a
+corner is visible within the rect while being nowhere near anything a reader would call the
+node. At twenty-two the figure is zero. Five instruments have now been wrong in this pass
+and every one of them the same way — the measurement standing for the thing rather than
+being it.
+
+**The cable pass is complete.** `docs/graph-cable-system.md` is the specification.
+
 ### What not to start with
 
 Dashed control cables, or any repeating pattern. With thirty-five intersecting cables, a

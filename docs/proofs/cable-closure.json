@@ -1,0 +1,10 @@
+{
+  "checks": 278,
+  "complaints": [],
+  "prominence": {
+    "cable-types prominence hover": 1.27,
+    "cable-types prominence lock": 1.27,
+    "dense-graph prominence hover": 1.81,
+    "dense-graph prominence lock": 1.81
+  }
+}
