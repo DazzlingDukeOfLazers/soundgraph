@@ -1,0 +1,331 @@
+{
+  "babble-tidied": {
+    "dependency": {
+      "crossing marks": {
+        "catenary": 7.0,
+        "pcb": 11.0,
+        "reads": "drawn"
+      },
+      "hit test": {
+        "grab distance": 12.0,
+        "median offset": 44.6,
+        "missed": 22,
+        "named another cable": 4,
+        "sampled": 26,
+        "worst offset": 452.3
+      },
+      "layout cable, longest": {
+        "catenary": 4025.0,
+        "pcb": 4025.0,
+        "reads": "routed"
+      },
+      "layout cable, total": {
+        "catenary": 16289.0,
+        "pcb": 16289.0,
+        "reads": "routed"
+      },
+      "layout crossings": {
+        "catenary": 7.0,
+        "pcb": 11.0,
+        "reads": "drawn"
+      },
+      "legalize trespasses": {
+        "catenary": 0.0,
+        "pcb": 0.0,
+        "reads": "routed"
+      }
+    },
+    "order": {
+      "cables": 26,
+      "differ": 0
+    },
+    "perturbation": {
+      "corridor_changed": 104,
+      "dependent": 1,
+      "direct": 200,
+      "drawn_changed": 210,
+      "drawn_strangers": 2,
+      "drawn_worst": 1.4,
+      "marks_delta": 48,
+      "obstacle_local": 38,
+      "probes": 92,
+      "routed_changed": 251,
+      "routed_worst": 18.5,
+      "stranger": 12,
+      "stranger_reach_median": 974.0,
+      "stranger_reach_worst": 2894.0,
+      "strangers": [
+        {
+          "by": 5.0,
+          "cable": "n7:0>n17:1",
+          "corridor now": "n7E/n21N/n16N/n17W",
+          "corridor was": "n7E/n21N/n16N/n17W",
+          "distance to the moved node": 651.0,
+          "moved": "n0",
+          "nudged": "(0.0, 40.0)"
+        },
+        {
+          "by": 195.0,
+          "cable": "n22:0>n19:0",
+          "corridor now": "n22E/n16N/n16E/n18W/n19W",
+          "corridor was": "n22E/n17N/n17E/n18W/n19W",
+          "distance to the moved node": 654.0,
+          "moved": "n0",
+          "nudged": "(0.0, 40.0)"
+        },
+        {
+          "by": 101.0,
+          "cable": "n19:0>n20:1",
+          "corridor now": "n19E/n18E/n20W",
+          "corridor was": "n19E/n18S/n18E/n20W",
+          "distance to the moved node": 478.0,
+          "moved": "n4",
+          "nudged": "(40.0, 0.0)"
+        },
+        {
+          "by": 8.0,
+          "cable": "n0:1>n22:1",
+          "corridor now": "n0E/n1W/n1E/n22W",
+          "corridor was": "n0E/n1E/n22W",
+          "distance to the moved node": 974.0,
+          "moved": "n6",
+          "nudged": "(0.0, -40.0)"
+        },
+        {
+          "by": 8.0,
+          "cable": "n0:1>n22:1",
+          "corridor now": "n0E/n1W/n1E/n22W",
+          "corridor was": "n0E/n1E/n22W",
+          "distance to the moved node": 1214.0,
+          "moved": "n7",
+          "nudged": "(0.0, -40.0)"
+        },
+        {
+          "by": 8.0,
+          "cable": "n0:1>n22:1",
+          "corridor now": "n0E/n1W/n1E/n22W",
+          "corridor was": "n0E/n1E/n22W",
+          "distance to the moved node": 2174.0,
+          "moved": "n9",
+          "nudged": "(0.0, -40.0)"
+        },
+        {
+          "by": 8.0,
+          "cable": "n0:1>n22:1",
+          "corridor now": "n0E/n1W/n1E/n22W",
+          "corridor was": "n0E/n1E/n22W",
+          "distance to the moved node": 2894.0,
+          "moved": "n10",
+          "nudged": "(0.0, -40.0)"
+        },
+        {
+          "by": 160.0,
+          "cable": "n22:0>n19:0",
+          "corridor now": "n22E/n16E/n18W/n19W",
+          "corridor was": "n22E/n17N/n17E/n18W/n19W",
+          "distance to the moved node": 404.0,
+          "moved": "n12",
+          "nudged": "(0.0, 40.0)"
+        },
+        {
+          "by": 5.0,
+          "cable": "n19:0>n20:1",
+          "corridor now": "n19E/n18S/n18E/n20W",
+          "corridor was": "n19E/n18S/n18E/n20W",
+          "distance to the moved node": 1174.0,
+          "moved": "n15",
+          "nudged": "(0.0, 40.0)"
+        },
+        {
+          "by": 5.0,
+          "cable": "n19:0>n20:1",
+          "corridor now": "n19E/n18S/n18E/n20W",
+          "corridor was": "n19E/n18S/n18E/n20W",
+          "distance to the moved node": 1174.0,
+          "moved": "n15",
+          "nudged": "(0.0, -40.0)"
+        },
+        {
+          "by": 160.0,
+          "cable": "n22:0>n19:0",
+          "corridor now": "n22E/n16E/n18W/n19W",
+          "corridor was": "n22E/n17N/n17E/n18W/n19W",
+          "distance to the moved node": 484.0,
+          "moved": "n20",
+          "nudged": "(0.0, 40.0)"
+        },
+        {
+          "by": 160.0,
+          "cable": "n22:0>n19:0",
+          "corridor now": "n22E/n16E/n18W/n19W",
+          "corridor was": "n22E/n17N/n17E/n18W/n19W",
+          "distance to the moved node": 724.0,
+          "moved": "n21",
+          "nudged": "(0.0, 40.0)"
+        }
+      ]
+    }
+  },
+  "dense-graph-tidied": {
+    "dependency": {
+      "crossing marks": {
+        "catenary": 26.0,
+        "pcb": 45.0,
+        "reads": "drawn"
+      },
+      "hit test": {
+        "grab distance": 12.0,
+        "median offset": 49.9,
+        "missed": 26,
+        "named another cable": 2,
+        "sampled": 35,
+        "worst offset": 550.3
+      },
+      "layout cable, longest": {
+        "catenary": 2955.0,
+        "pcb": 2955.0,
+        "reads": "routed"
+      },
+      "layout cable, total": {
+        "catenary": 30648.0,
+        "pcb": 30648.0,
+        "reads": "routed"
+      },
+      "layout crossings": {
+        "catenary": 26.0,
+        "pcb": 45.0,
+        "reads": "drawn"
+      },
+      "legalize trespasses": {
+        "catenary": 0.0,
+        "pcb": 0.0,
+        "reads": "routed"
+      }
+    },
+    "order": {
+      "cables": 35,
+      "differ": 0
+    },
+    "perturbation": {
+      "corridor_changed": 93,
+      "dependent": 0,
+      "direct": 266,
+      "drawn_changed": 305,
+      "drawn_strangers": 25,
+      "drawn_worst": 1.5,
+      "marks_delta": 45,
+      "obstacle_local": 42,
+      "probes": 120,
+      "routed_changed": 313,
+      "routed_worst": 15.7,
+      "stranger": 5,
+      "stranger_reach_median": 472.0,
+      "stranger_reach_worst": 1044.0,
+      "strangers": [
+        {
+          "by": 7.0,
+          "cable": "n13:0>n21:1",
+          "corridor now": "n13E/n13S/n22W/n21W",
+          "corridor was": "n13E/n13S/n22W/n21W",
+          "distance to the moved node": 374.0,
+          "moved": "n7",
+          "nudged": "(0.0, -40.0)"
+        },
+        {
+          "by": 6.0,
+          "cable": "n8:0>n17:1",
+          "corridor now": "n8E/n14W/n5E/n17W",
+          "corridor was": "n8E/n14W/n5E/n17W",
+          "distance to the moved node": 472.0,
+          "moved": "n10",
+          "nudged": "(-40.0, 0.0)"
+        },
+        {
+          "by": 6.0,
+          "cable": "n1:1>n13:0",
+          "corridor now": "n1E/n13W",
+          "corridor was": "n1E/n13W",
+          "distance to the moved node": 302.0,
+          "moved": "n12",
+          "nudged": "(0.0, 40.0)"
+        },
+        {
+          "by": 3.5,
+          "cable": "n13:0>n21:1",
+          "corridor now": "n13E/n13S/n22W/n21W",
+          "corridor was": "n13E/n13S/n22W/n21W",
+          "distance to the moved node": 1044.0,
+          "moved": "n28",
+          "nudged": "(0.0, 40.0)"
+        },
+        {
+          "by": 3.5,
+          "cable": "n13:0>n21:1",
+          "corridor now": "n13E/n13S/n22W/n21W",
+          "corridor was": "n13E/n13S/n22W/n21W",
+          "distance to the moved node": 1044.0,
+          "moved": "n28",
+          "nudged": "(0.0, -40.0)"
+        }
+      ]
+    }
+  },
+  "plucked-string": {
+    "dependency": {
+      "crossing marks": {
+        "catenary": 1.0,
+        "pcb": 1.0,
+        "reads": "indeterminate here"
+      },
+      "hit test": {
+        "grab distance": 12.0,
+        "median offset": 33.3,
+        "missed": 4,
+        "named another cable": 1,
+        "sampled": 6,
+        "worst offset": 106.7
+      },
+      "layout cable, longest": {
+        "catenary": 464.0,
+        "pcb": 464.0,
+        "reads": "routed"
+      },
+      "layout cable, total": {
+        "catenary": 2248.0,
+        "pcb": 2248.0,
+        "reads": "routed"
+      },
+      "layout crossings": {
+        "catenary": 1.0,
+        "pcb": 1.0,
+        "reads": "indeterminate here"
+      },
+      "legalize trespasses": {
+        "catenary": 0.0,
+        "pcb": 0.0,
+        "reads": "routed"
+      }
+    },
+    "order": {
+      "cables": 6,
+      "differ": 0
+    },
+    "perturbation": {
+      "corridor_changed": 4,
+      "dependent": 0,
+      "direct": 48,
+      "drawn_changed": 48,
+      "drawn_strangers": 0,
+      "drawn_worst": 1.0,
+      "marks_delta": 0,
+      "obstacle_local": 0,
+      "probes": 20,
+      "routed_changed": 48,
+      "routed_worst": 1.0,
+      "stranger": 0,
+      "stranger_reach_median": 0.0,
+      "stranger_reach_worst": 0.0,
+      "strangers": []
+    }
+  }
+}

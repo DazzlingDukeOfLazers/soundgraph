@@ -11,6 +11,13 @@ the node, cable and layout passes used.
 That is what stops the router "winning" by quietly borrowing from layout. `docs/layout.md`
 and `docs/graph-cable-system.md` are both closed, and nothing in this pass may reopen either.
 
+### And a naming rule, from goal 1.1
+
+> **Never write "crossings" in this pass without naming the geometry and the concept.**
+
+`catenary marks`, `catenary meetings`, `routed marks`, `routed meetings`. The bare number
+cost this pass a whole goal's worth of wrong conclusions and it is now treated as an error.
+
 ## The specimens
 
 Derived by `tidy_fixtures.gd`, not edited in place:
@@ -229,28 +236,163 @@ shows and carry 44 and 10 meetings in the router's own geometry.
 Recorded, not fixed. Layout is frozen, and this is a question about which drawing an
 operation optimises rather than about how it searches.
 
+## Goal 2 — where a local edit actually lands
+
+> **A local document edit should cause local change in every geometry the product presents
+> or depends upon, unless the previous geometry became invalid.**
+
+Goal 1 said a forty-unit nudge moves a cable 21.3x the nudge and called it an editor
+defect. Goal 1.1 then found that every one of those figures came from `_routes()` while the
+editor draws catenaries. So the claim had an unexamined step: **nobody had established that
+the user sees any of it.** `route_stability.gd` asks three questions in the order that stops
+the later ones being wasted.
+
+### A. Visibility — the drawing does not jump
+
+```
+                     routed worst    drawn worst
+plucked-string            1.0x           1.0x
+babble-tidied            18.5x           1.4x
+dense-graph-tidied       15.7x           1.5x
+```
+
+The routed geometry lurches. The drawn geometry does not: 1.4x and 1.5x is a cable adjusting
+itself, which is what the principle asks for. **Goal 1's headline is withdrawn** — no user
+watching this editor sees an 850-unit cable jump, because a hanging cable is a function of
+its own two endpoints and cannot be rerouted by a distant node at all.
+
+The 25 drawn cables on the dense fixture that change with both endpoints still are the
+departure splay from the cable pass's goal 7, which alternates down each column of occupied
+anchors. Moving a node reorders that column and flips a neighbour's lean. Small, local,
+and by design.
+
+### But the routed geometry is not latent, and that is the real finding
+
+Asked by switching `cable_style` and watching which answers move — a grep finds call sites,
+and `_get_connection_line` calls `_route` at a line CATENARY never reaches, so the source
+says the drawing depends on the router and the product says otherwise.
+
+```
+layout crossings          drawn      7 catenary / 11 routed
+crossing marks            drawn      7 / 11
+layout cable, total       routed     16289 either way
+layout cable, longest     routed     4025 either way
+legalize trespasses       routed     0 either way
+hit testing               routed
+```
+
+Two consequences, and the second one is serious.
+
+**The layout objective is split across two geometries.** Crossings are counted in the
+picture the editor draws; cable length and trespass are measured in the router's. One
+objective, two drawings.
+
+**Hit testing targets a geometry the user cannot see.** `_connection_at` picks against
+`_route`, and it is on the live path for cable hover, click-to-lock focus, waypoint drag
+and right-click-to-straighten — none of them gated on cable style. Sampling each cable at
+the midpoint of the curve *as drawn*:
+
+```
+                  sampled   hit nothing   named another cable   correct
+plucked-string          6             4                     1         1
+babble-tidied          26            22                     4         0
+dense-graph-tidied     35            26                     2         7
+```
+
+The gap between the drawn cable and its own click target is a median 33 to 50 units and a
+worst of 550, against a `GRAB_DISTANCE` of 12. **On babble you cannot click a single one of
+the twenty-six cables where it is drawn.**
+
+That also corrects the scope of an earlier proof rather than its result. The cable pass's
+gesture harness was made to work by taking its probe points from `graph._routes()`, because
+that is what `_connection_at` picks against. It proved the focus mechanism fires when you
+click the right place. It never asked whether the right place is where the cable is drawn —
+the eighth instrument in this programme to stand for the thing instead of being it.
+
+### B. Attribution — and a prediction that failed usefully
+
+```
+                    changed   direct   obstacle-local   dependent   unexplained
+plucked-string           48       48                0           0             0
+babble-tidied           251      200               38           1            12
+dense-graph-tidied      313      266               42           0             5
+```
+
+The prediction written into the harness before it ran: obstacles are node rectangles and
+nothing else, so a cable can only reroute if a box it cares about moved, and the unexplained
+population should be empty. **It was not**, so by the harness's own rule the influence
+region was suspect rather than the router mysterious. Measuring the distance settles it:
+
+```
+babble-tidied        the unexplained run  974 to 2894 units from the node that moved
+dense-graph-tidied                        472 to 1044
+```
+
+No influence region covers 2894 units. The prediction was wrong for an instructive reason:
+obstacles are the only input, but they are a **global** input to candidate generation rather
+than a local input to collision. Being in the obstacle list is not the same as being in the
+way.
+
+`_orthogonal_candidates` builds its channel positions from *every* obstacle in the graph,
+sorts them by distance from this cable's own midpoint, and `_route` takes the first clear
+one. Move any node and its two channel coordinates shift by the nudge, reordering that
+ranking for every cable whose span contains them. So:
+
+> **A cable's corridor is a greedy pick from a list ranked by the position of every node in
+> the patch. There is no path memory, so nothing prefers the corridor it was already in.**
+
+That is the mechanism behind the strangers, and it is a different repair from anything to do
+with obstacles being in the way.
+
+### C. Order sensitivity — no
+
+```
+plucked-string        0 of 6 routes differ when the connection order is reversed
+babble-tidied         0 of 26
+dense-graph-tidied    0 of 35
+```
+
+`_route(a, b)` is a function of two points and a set of boxes. Routing is per-cable pure, so
+the strangers are not path-allocation order dependence in the connection sense. They are
+obstacle-ranking dependence, which the previous section names exactly.
+
+### Two instrument corrections made during this goal
+
+Both worth recording, because one of them was me being wrong about the instrument:
+
+- I suspected the harness compared every probe against a baseline captured once at the top
+  of the run, and rebuilt it to re-read before each probe. **The numbers were identical.**
+  The drift hypothesis was wrong and the instrument had been right; the fresh baseline is
+  kept because it is strictly more correct and costs nothing.
+- The focused probe that chased the unexplained cables tried one of the four nudge
+  directions, found the routes byte-identical, and I nearly reported the harness as broken
+  on the strength of it. The harness nudges four ways. A probe that tries one is not
+  checking the same claim.
+
 ## What the pass looks like from here
 
-Not "reduce crossings". The baseline suggests three separable questions, and they are not
-equally urgent:
+Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
+something else found on the way is.
 
-1. **Route stability.** A grid step should cost a grid step. Twenty-one times is an
-   interaction defect, and it is the one a person would notice first.
-2. **The detour tail.** A handful of cables carry all the excess. Finding out *why* those
-   specific routes cost seven hundred units is a smaller question than reducing cable in
-   general.
-3. **Crossings**, split by kind: the converging-on-a-terminal population and the open-field
-   conflicts. The counters agree now, so this is unblocked — but it is still third.
+1. **Hit testing picks against the wrong geometry.** Not a routing problem at all — the
+   click target should be the cable that is drawn. It is the only item here a person
+   experiences today, and it silently undermines the cable pass's focus work.
+2. **The layout objective is split across two geometries.** Crossings from the drawing,
+   length and trespass from the router. Worth settling before either is optimised further.
+3. **Corridor stability.** A cable's corridor is a greedy pick from a globally ranked
+   channel list with no memory of where it already was. This is the "route hysteresis"
+   subproblem, and it now has a mechanism rather than a symptom.
+4. **The detour tail.** A handful of cables carry all the excess.
+5. **Routed meetings**, split into the converging-on-a-terminal population and the
+   open-field conflicts.
 
-Stability comes first, and the reason is worth stating as a principle rather than a
-preference. Suppose an alternate-path search removes three crossings, and then a filter
-nudged forty units sends fifty cables into other corridors. There would be no way to tell
-whether the search improved the router or found one fragile equilibrium.
+The principle stands, with the geometry named:
 
-> **A local document edit should cause local route change, unless the old corridor has
-> become invalid.**
+> **A local document edit should cause local change in every geometry the product presents
+> or depends upon, unless the previous geometry became invalid.**
 
-Not zero change, and not continuity at any cost. Route hysteresis as an explicit concern,
-which the router does not currently have.
+The drawn geometry already satisfies it. The routed geometry does not, and the reason it
+matters is not that cables jump on screen — it is that hit testing, trespass and cable cost
+are all measured there.
 
-No route has been changed. This is what the router is doing, measured.
+No route has been changed, and no crossing has been called a router defect.
