@@ -57,11 +57,16 @@ func length_of(points: PackedVector2Array) -> float:
 	return total
 
 
-## Everything measurable about one arrangement, in document units so two arrangements of
-## the same patch are comparable.
-func measure() -> Dictionary:
+## Everything the objective contract asks about one arrangement, in document units so two
+## arrangements of the same patch are comparable.
+##
+## `was` maps node id to its previous top-left corner, for the disturbance tier. Empty for
+## an arrangement measured on its own.
+func measure(was: Dictionary = {}) -> Dictionary:
 	var boxes := {}
 	var box := Rect2()
+	var covered := 0.0
+	var widths: Array = []
 	var first := true
 	for child in graph.get_children():
 		var widget := child as GraphNode
@@ -69,41 +74,73 @@ func measure() -> Dictionary:
 			continue
 		var own := Rect2(widget.position_offset, widget.size)
 		boxes[str(widget.name)] = own
+		widths.append(own.size.x)
+		covered += own.size.x * own.size.y
 		box = own if first else box.merge(own)
 		first = false
+	widths.sort()
+	var median_width: float = widths[widths.size() / 2] if not widths.is_empty() else 240.0
 
-	# ---- how much cable the arrangement costs --------------------------------------
+	# ---- tiers 2 and 3: what the arrangement makes the cables do --------------------
 	var lengths: Array = []
 	var backward := 0
-	var backward_span := 0.0
 	var routes: Array = graph._routes()
+	var edges: Array = []
+	var fan := {}
 	for route: Dictionary in routes:
 		var points: PackedVector2Array = route["points"]
 		if points.size() < 2:
 			continue
 		lengths.append(length_of(points))
-		# Flow. A patch reads left to right, so a cable that ends left of where it began
-		# is asking the eye to go backwards — which is the thing a long modulation route
-		# across a graph actually costs.
+		edges.append([str(route["fields"][0]), str(route["fields"][2])])
 		var from: Vector2 = points[0]
 		var to: Vector2 = points[points.size() - 1]
 		if to.x < from.x:
 			backward += 1
-			backward_span += from.x - to.x
+		var port := "%s:%d" % [str(route["fields"][0]), int(route["fields"][1])]
+		if not fan.has(port):
+			fan[port] = []
+		(fan[port] as Array).append(str(route["fields"][2]))
 	lengths.sort()
 
-	# ---- how much the arrangement makes the cables do ------------------------------
-	var crossings: int = (cords.crossing_sites() as Array).size()
+	# A fan-out is one source feeding several places and should read as a family. How far
+	# apart its destinations sit is what decides whether it does.
+	var fan_spread := 0.0
+	var fan_groups := 0
+	for port: String in fan:
+		var destinations: Array = fan[port]
+		if destinations.size() < 2:
+			continue
+		var low := INF
+		var high := -INF
+		for id: String in destinations:
+			if not boxes.has(id):
+				continue
+			var centre: float = (boxes[id] as Rect2).get_center().y
+			low = minf(low, centre)
+			high = maxf(high, centre)
+		if low < INF:
+			fan_spread += high - low
+			fan_groups += 1
+	fan_spread = fan_spread / maxf(float(fan_groups), 1.0)
 
-	# ---- nodes standing on each other ----------------------------------------------
+	# ---- tier 1: is the drawing even valid ------------------------------------------
 	var overlaps := 0
 	var names: Array = boxes.keys()
 	for i in names.size():
 		for j in range(i + 1, names.size()):
 			if (boxes[names[i]] as Rect2).intersects(boxes[names[j]] as Rect2):
 				overlaps += 1
+	# Clearance is the same test with room to breathe around it, so a drawing that is
+	# technically legal and visually welded reports as the second thing rather than as
+	# nothing at all.
+	var clearance := 0
+	for i in names.size():
+		for j in range(i + 1, names.size()):
+			if (boxes[names[i]] as Rect2).grow(24.0).intersects(boxes[names[j]] as Rect2):
+				clearance += 1
+	clearance -= overlaps
 
-	# ---- and cables through territory they have no business in ----------------------
 	var trespass := 0
 	for route: Dictionary in routes:
 		var points: PackedVector2Array = route["points"]
@@ -125,35 +162,101 @@ func measure() -> Dictionary:
 			if inside:
 				trespass += 1
 
-	# ---- columns -------------------------------------------------------------------
-	# How far the arrangement is from being a set of columns at all, which is what a
-	# reader means by "the signal goes this way". Measured as the number of distinct left
-	# edges once they are snapped to a tolerance, against the number of nodes.
-	var columns := {}
-	for id: String in boxes:
-		columns[int(roundf((boxes[id] as Rect2).position.x / 80.0))] = true
+	# ---- tier 2: stages, from the topology rather than from the grid ----------------
+	var component := LayoutObjective.components(names, edges)
+	var depth := LayoutObjective.depths(names, edges, component)
+	var centres: Array = []
+	for id: String in names:
+		centres.append((boxes[id] as Rect2).get_center().x)
+	var tolerance := median_width * LayoutObjective.BAND_FRACTION
+	var column_count: int = LayoutObjective.bands(centres, tolerance).size()
+
+	# A later stage standing left of an earlier one. Counted over pairs, because the
+	# question is how much of the drawing disagrees with the computation rather than
+	# whether any of it does.
+	var violations := 0
+	var stages := {}
+	for id: String in names:
+		var at: int = depth[id]
+		if not stages.has(at):
+			stages[at] = []
+		(stages[at] as Array).append((boxes[id] as Rect2).get_center().x)
+	for i in names.size():
+		for j in names.size():
+			if i == j:
+				continue
+			if int(depth[names[i]]) < int(depth[names[j]]) \
+					and (boxes[names[j]] as Rect2).get_center().x \
+						< (boxes[names[i]] as Rect2).get_center().x:
+				violations += 1
+
+	# How scattered one logical stage is across the drawing. A stage occupying three bands
+	# is three things a reader has to recognise as one.
+	var spread := 0
+	for at: int in stages:
+		spread += LayoutObjective.bands(stages[at], tolerance).size() - 1
+	# And how many bands the drawing spends beyond what the graph's own depth requires.
+	var surplus: int = maxi(0, column_count - stages.size())
+
+	# ---- tier 5: how much of the author's arrangement survived ----------------------
+	var moved := 0
+	var displacements: Array = []
+	var travelled := 0.0
+	for id: String in names:
+		if not was.has(id):
+			continue
+		var distance: float = (was[id] as Vector2).distance_to(
+			(boxes[id] as Rect2).position)
+		if distance > 0.5:
+			moved += 1
+			displacements.append(distance)
+			travelled += distance
+	displacements.sort()
 
 	var total := 0.0
 	for one: float in lengths:
 		total += one
+	var decile: float = lengths[int(float(lengths.size() - 1)
+		* LayoutObjective.OUTLIER_DECILE)] if not lengths.is_empty() else 0.0
+	var corners := {}
+	for id: String in names:
+		corners[id] = (boxes[id] as Rect2).position
+
 	return {
-		"nodes": boxes.size(),
+		"nodes": boxes.size(), "cables": lengths.size(),
 		"extent": [snappedf(box.size.x, 0.1), snappedf(box.size.y, 0.1)],
-		"area": snappedf(box.size.x * box.size.y / 1000000.0, 0.001),
-		"cables": lengths.size(),
+		"corners": corners,
+		# Tier 0. Nothing here arranges, so topology cannot change and there are no
+		# anchors to respect; both are reported anyway, so the contract is measured whole
+		# rather than in the parts that happen to be interesting today.
+		"topology_changed": 0, "anchors_moved": 0,
+		# Tier 1.
+		"overlaps": overlaps, "trespass": trespass, "clearance_faults": clearance,
+		# Tier 2.
+		"stage_violations": violations,
+		"crossings": (cords.crossing_sites() as Array).size(),
+		"backward": backward, "stage_spread": spread, "surplus_columns": surplus,
+		"fanout_spread": snappedf(fan_spread, 0.1),
+		"stages": stages.size(), "columns": column_count,
+		# Tier 3.
+		"cable_longest": snappedf(lengths[lengths.size() - 1] if not lengths.is_empty()
+			else 0.0, 0.1),
+		"cable_p90": snappedf(decile, 0.1),
 		"cable_total": snappedf(total, 0.1),
 		"cable_median": snappedf(lengths[lengths.size() / 2] if not lengths.is_empty()
 			else 0.0, 0.1),
-		"cable_longest": snappedf(lengths[lengths.size() - 1] if not lengths.is_empty()
-			else 0.0, 0.1),
-		"crossings": crossings,
-		"backward": backward,
-		"backward_span": snappedf(backward_span, 0.1),
-		"forward_fraction": snappedf(1.0 - float(backward)
-			/ maxf(float(lengths.size()), 1.0), 0.001),
-		"overlaps": overlaps,
-		"trespass": trespass,
-		"columns": columns.size(),
+		# Tier 4.
+		"area": snappedf(box.size.x * box.size.y / 1000000.0, 0.001),
+		"aspect": snappedf(maxf(box.size.x / maxf(box.size.y, 1.0),
+			box.size.y / maxf(box.size.x, 1.0)), 0.01),
+		"whitespace": snappedf(1.0 - covered / maxf(box.size.x * box.size.y, 1.0), 0.001),
+		# Tier 5.
+		"moved": moved,
+		"displacement_total": snappedf(travelled, 0.1),
+		"displacement_median": snappedf(displacements[displacements.size() / 2]
+			if not displacements.is_empty() else 0.0, 0.1),
+		"displacement_max": snappedf(displacements[displacements.size() - 1]
+			if not displacements.is_empty() else 0.0, 0.1),
 	}
 
 
@@ -188,49 +291,35 @@ func _initialize() -> void:
 			continue
 		var short := path.get_file().get_basename()
 		var by_hand := measure()
-		var before := {}
-		for node: Dictionary in main.patch.get("nodes", []):
-			before[str(node["id"])] = Vector2(
-				float(node.get("position", {}).get("x", 0.0)),
-				float(node.get("position", {}).get("y", 0.0)))
 		# The same patch as the layout engine would have it. Deterministic — the same
 		# graph always lands the same way — so this is a property of the patch and not of
 		# where anything happened to be first.
 		await main._auto_place()
 		await settle(24)
-		var by_engine := measure()
-		# How many nodes the engine actually moved. A patch where the answer is zero is
-		# either already at the engine's fixed point or was never arranged at all, and
-		# those are very different findings to report as "+0% on everything".
-		var moved := 0
-		for node: Dictionary in main.patch.get("nodes", []):
-			var was: Vector2 = before.get(str(node["id"]), Vector2.ZERO)
-			var now := Vector2(float(node.get("position", {}).get("x", 0.0)),
-				float(node.get("position", {}).get("y", 0.0)))
-			if was.distance_to(now) > 0.5:
-				moved += 1
-		by_engine["moved"] = moved
-		by_hand["moved"] = 0
-		record[short] = {"hand": by_hand, "auto": by_engine}
+		var by_engine := measure(by_hand["corners"])
+		by_hand.erase("corners")
+		by_engine.erase("corners")
+		record[short] = {"hand": by_hand, "auto": by_engine,
+			"verdict": LayoutObjective.compare(by_engine, by_hand),
+			"differs_at": LayoutObjective.differs_at(by_engine, by_hand),
+			"admissible": LayoutObjective.admissible(by_engine, by_hand)}
 
 	print("")
-	var columns := ["nodes", "cables", "cable_total", "cable_median", "cable_longest",
-		"crossings", "backward", "forward_fraction", "overlaps", "trespass", "columns",
-		"area", "moved"]
 	for short: String in record:
-		print("%s" % short)
-		print("  %-18s %14s %14s %10s" % ["", "by hand", "auto-place", "change"])
-		for key: String in columns:
-			var hand: float = float(record[short]["hand"][key])
-			var auto: float = float(record[short]["auto"][key])
-			var change := ""
-			if hand != 0.0:
-				change = "%+.0f%%" % ((auto / hand - 1.0) * 100.0)
-			elif auto != 0.0:
-				change = "new"
-			print("  %-18s %14.3f %14.3f %10s" % [key, hand, auto, change])
-		print("  %-18s %14s %14s" % ["extent",
-			str(record[short]["hand"]["extent"]), str(record[short]["auto"]["extent"])])
+		var hand: Dictionary = record[short]["hand"]
+		var auto: Dictionary = record[short]["auto"]
+		print("%s — %d nodes, %d cables, %d graph stages"
+			% [short, int(hand["nodes"]), int(hand["cables"]), int(hand["stages"])])
+		for tier: Dictionary in LayoutObjective.TIERS:
+			var line := ""
+			for metric: String in tier["metrics"]:
+				line += "%s %s>%s  " % [metric, str(hand.get(metric, 0)),
+					str(auto.get(metric, 0))]
+			print("  %-14s %s" % [str(tier["name"]), line])
+		var verdict: int = record[short]["verdict"]
+		print("  %-14s auto-place is %s; first difference at %s"
+			% ["verdict", "better" if verdict > 0 else ("worse" if verdict < 0
+				else "indistinguishable"), str(record[short]["differs_at"])])
 		print("")
 
 	var folder := out_dir()

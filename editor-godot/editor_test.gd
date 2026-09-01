@@ -11441,6 +11441,61 @@ func _initialize() -> void:
 		check(main.graph_edit.locked_cable.is_empty(),
 			"and a route that no longer exists takes its lock with it")
 
+	# ---- layout pass, goal 1: the arrangement objective contract ----------------------
+	# The contract is pure arithmetic on a graph and a set of rectangles, so it is checked
+	# on graphs written here rather than on whatever a patch happens to contain.
+
+	# A feedback loop is one unit. A delay feeding its own input is not later than itself,
+	# and a depth function that tried to say so would either loop or pick a member to be
+	# first by accident.
+	var cyclic := ["a", "b", "c", "d"]
+	var cyclic_edges := [["a", "b"], ["b", "c"], ["c", "b"], ["c", "d"]]
+	var grouped: Dictionary = LayoutObjective.components(cyclic, cyclic_edges)
+	check(grouped["b"] == grouped["c"], "a feedback loop collapses to one component")
+	check(grouped["a"] != grouped["b"] and grouped["d"] != grouped["b"],
+		"and the nodes either side of it do not join it")
+	var deep: Dictionary = LayoutObjective.depths(cyclic, cyclic_edges, grouped)
+	check(int(deep["a"]) == 0 and int(deep["b"]) == 1 and int(deep["c"]) == 1
+			and int(deep["d"]) == 2,
+		"stage depth counts the loop once (%d, %d, %d, %d)"
+			% [int(deep["a"]), int(deep["b"]), int(deep["c"]), int(deep["d"])])
+
+	# Depth is the longest path from a source, not the shortest: a node's stage is decided
+	# by the deepest thing that reaches it, so an oscillator feeding both a filter and the
+	# output does not make the output stage one.
+	var forked := ["s", "m", "e"]
+	var forked_edges := [["s", "m"], ["m", "e"], ["s", "e"]]
+	var forked_depth: Dictionary = LayoutObjective.depths(forked, forked_edges,
+		LayoutObjective.components(forked, forked_edges))
+	check(int(forked_depth["e"]) == 2,
+		"and takes the longest path to a node, not the shortest (%d)"
+			% int(forked_depth["e"]))
+
+	# A band is a cluster of centres, not a grid cell, so the same rule reads a patch of
+	# narrow nodes and a patch of wide ones.
+	check((LayoutObjective.bands([0.0, 10.0, 400.0, 405.0, 800.0], 100.0) as Array).size() == 3,
+		"horizontal bands come from the gaps between centres")
+
+	# And the comparison is lexicographic. A tier-one fault is not purchasable with any
+	# amount of tier-three improvement, which is the whole reason this is not a weighted
+	# score.
+	var legal := {"overlaps": 0, "cable_total": 90000.0}
+	var illegal := {"overlaps": 1, "cable_total": 1.0}
+	check(LayoutObjective.compare(legal, illegal) == 1,
+		"a legal arrangement beats an illegal one however much cable it costs")
+	check(LayoutObjective.differs_at(legal, illegal) == "legalization / overlaps",
+		"and the report names the tier the two first differ in")
+	check(LayoutObjective.compare(legal, legal) == 0,
+		"an arrangement is indistinguishable from itself")
+
+	# The monotonicity rule a future arranger is held to.
+	check(not LayoutObjective.admissible({"crossings": 9, "area": 1.0},
+			{"crossings": 4, "area": 9.0}),
+		"a move that buys area with crossings is refused")
+	check(LayoutObjective.admissible({"crossings": 4, "area": 9.0},
+			{"crossings": 9, "area": 1.0}),
+		"and the same move in the other direction is allowed")
+
 	# Same teardown as roundtrip.gd, for the same reason: AudioServer mixes on its own
 	# thread and holds the generator playback, so the engine has to be let go with
 	# frames to spare rather than destroyed underneath it. Order matters and was
