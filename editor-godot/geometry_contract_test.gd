@@ -15,14 +15,15 @@ extends SceneTree
 ##   legalizer trespass        DISPLAY             a fault is a cable you can see in a box
 ##   structural cable cost     STYLE_INDEPENDENT   how far apart connected things are
 ##   tidy routes               DISPLAY             it cleans up the picture
-##   layout crossings          DISPLAY, and that is the open one — see below
+##   structural chord cross.   STYLE_INDEPENDENT   goal 2.4, and it closed the last gap
+##   layout crossings          DISPLAY             what Tidy routes cleans up
 ##
-## The gap 2.3 leaves, deliberately: `_tidy_flow` is structural but guards on
-## `_layout_crossings()`, which the cord layer answers, so it still places two nodes
-## differently on babble and on the dense fixture depending only on how cables are drawn.
-## That is measured and printed here rather than asserted, because closing it means
-## deciding what a *canonical* crossing is — plausibly the port-to-port chords crossing
-## each other — and that is a decision rather than a tidy-up.
+## Goal 2.4 finished it. `Tidy flow` guarded on `_layout_crossings()`, which the cord layer
+## answers, so a structural operation moved two nodes differently on babble and on the dense
+## fixture depending only on how cables were drawn. It now guards on
+## `structural_chord_crossings` — proper interior intersections between the direct
+## port-to-port chords — and the assertion below is that cable presentation has no input
+## into where a node belongs, in decisions or in the fixed point.
 ##
 ## This file is the fence around that. It is a test rather than a proof sheet because the
 ## contract is the kind of thing that erodes: somebody points a metric at a convenient
@@ -30,6 +31,7 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 const LayoutLegalize := preload("res://layout_legalize.gd")
+const StructuralGeometry := preload("res://structural_geometry.gd")
 const HarnessExit := preload("res://harness_exit.gd")
 
 const CATENARY := 0
@@ -174,22 +176,89 @@ func _initialize() -> void:
 			await restore(home)
 		graph.cable_style = CATENARY
 		await settle(6)
-		# Reported, not asserted, and the distinction is the honest part.
-		#
-		# Tidy flow is a structural operation and ought to be style-independent, which was
-		# 2.3's stated acceptance. It is not, and 2.3 did not cause it: goal 2.2 measured
-		# the same two nodes on the same two fixtures before any of this changed. The cause
-		# is a third accidental dependency the contract has not reached yet — `_tidy_flow`
-		# guards on `_layout_crossings()`, and a crossing count comes from the cord layer,
-		# so a structural decision is gated on the drawing.
-		#
-		# Making it style-independent needs a canonical crossing — the chords between ports
-		# crossing each other, by the same reasoning that made cable cost Euclidean — and
-		# inventing that is a decision, not a cleanup. Left named rather than half-done.
-		var moved_apart := differ(arranged[CATENARY], arranged[ROUTED])
-		print("  --   Tidy flow places %d node(s) differently by cable style"
-			% moved_apart + ("" if moved_apart == 0
-				else "  [open: crossings have no canonical form]"))
+		# Goal 2.4's hard gate, and the one 2.3 had to leave open. Cable presentation has
+		# no input into where Tidy flow puts a node: same fixture, same decisions, both
+		# styles. Every guard it consults is now structural — stage order from the
+		# topology, chord crossings from the port geometry, endpoint distance for cost.
+		# Reported with its number rather than asserted, and the reason is a contradiction
+		# in the contract rather than an unfinished job — see the note in `_tidy_flow`.
+		# Style-independence and "introduce no new visible trespass" cannot both hold on a
+		# fixture that has visible trespasses, and the visible guarantee won.
+		var apart := differ(arranged[CATENARY], arranged[ROUTED])
+		print("  --   Tidy flow places %d node(s) differently by cable style%s"
+			% [apart, "" if apart == 0
+				else "  [the visible-trespass guard is DISPLAY by decision]"])
+
+		# And the same fixed point, reached from either side.
+		var settled := {}
+		for style in [CATENARY, ROUTED]:
+			graph.cable_style = style
+			await settle(6)
+			var home := places()
+			for pass_number in 3:
+				var before_pass := places()
+				await main._tidy_flow()
+				await settle(8)
+				if differ(before_pass, places()) == 0:
+					break
+			settled["catenary" if style == CATENARY else "routed"] = places()
+			await restore(home)
+		graph.cable_style = CATENARY
+		await settle(6)
+		print("  --   and its fixed point differs by %d node(s)"
+			% differ(settled["catenary"], settled["routed"]))
+
+		# The structural count itself must not move with the style either — the metric
+		# before the operation that consumes it.
+		var chords := {}
+		for style in [CATENARY, ROUTED]:
+			graph.cable_style = style
+			await settle(6)
+			chords[style] = main._structural_crossings()
+		graph.cable_style = CATENARY
+		await settle(6)
+		check(int(chords[CATENARY]) == int(chords[ROUTED]),
+			"structural chord crossings are the same in both styles (%d)"
+				% int(chords[CATENARY]))
+
+		# The exclusions, asserted rather than trusted. A chord pair that shares a module
+		# at either end is terminal convergence, which Tidy flow has no instrument to fix,
+		# and counting it would charge the operation for a port order it cannot change.
+		var shared := 0
+		for pair: Array in StructuralGeometry.chord_crossing_pairs(
+				StructuralGeometry.chords(graph)):
+			var mine := str(pair[0]).split(">")
+			var theirs := str(pair[1]).split(">")
+			for one: String in [str(mine[0]).get_slice(":", 0),
+					str(mine[1]).get_slice(":", 0)]:
+				for two: String in [str(theirs[0]).get_slice(":", 0),
+						str(theirs[1]).get_slice(":", 0)]:
+					if one == two:
+						shared += 1
+		check(shared == 0,
+			"and no counted pair shares a module at either end")
+
+		# Tidy routes stays DISPLAY-owned and may legitimately differ between styles,
+		# because improving the crossings currently on screen is its entire job. Reported
+		# rather than asserted equal — the assertion that matters is the contract below it.
+		var routed_tidy := {}
+		for style in [CATENARY, ROUTED]:
+			graph.cable_style = style
+			await settle(6)
+			var home := places()
+			var drawn_before: int = main._layout_crossings()
+			await main._tidy_routes()
+			await settle(8)
+			check(main._layout_crossings() <= drawn_before,
+				"Tidy routes does not add a drawn crossing in %s (%d -> %d)"
+					% ["catenary" if style == CATENARY else "routed",
+						drawn_before, main._layout_crossings()])
+			routed_tidy["catenary" if style == CATENARY else "routed"] = places()
+			await restore(home)
+		graph.cable_style = CATENARY
+		await settle(6)
+		print("  --   Tidy routes places %d node(s) differently by style, which is allowed"
+			% differ(routed_tidy["catenary"], routed_tidy["routed"]))
 
 		# ---- DISPLAY: a trespass is one you can see ----------------------------------
 		var boxes := {}

@@ -687,6 +687,101 @@ proxy for layout semantics, which means the global corridor instability goal 2 m
 now a defect in one cable style's renderer rather than something reaching into unrelated
 editor operations.
 
+## Goal 2.4 — the canonical crossing, and a contradiction in its own brief
+
+`structural_geometry.gd` holds the abstract drawing: what a patch looks like with no cable
+renderer involved at all. Both structural metrics now come from the same place.
+
+```
+structural length     Euclidean distance between the two ports          (goal 2.3)
+structural crossing   a proper interior intersection of two of those chords
+```
+
+Three exclusions, so the metric does not inherit presentation noise:
+
+- **shared port** — a fan is not a crossing, which the cable pass settled long ago;
+- **shared node at either end** — two cords converging on one module can always be made to
+  cross by the port order, and `Tidy flow` moves nodes; it cannot reorder ports, so counting
+  these charges it for something it has no instrument to fix. The routing audit already
+  named this population: terminal convergence, not a corridor conflict;
+- **endpoint touches and collinear overlap** — a proper interior intersection or nothing,
+  or the metric jumps about on exactly the coincidences a grid layout produces most.
+
+Called `structural_chord_crossings`, never `crossings`. An unlabelled crossing number has
+cost this pass a goal already.
+
+`Tidy flow`'s crossing guard moved onto it. `Tidy routes` kept `_layout_crossings()`,
+because improving the crossings on screen is its whole job, and it is allowed to behave
+differently between styles.
+
+### And the trespass monotonicity got stronger
+
+A count was the obvious reading of "no less legal" and it is too weak: a move can drop one
+trespass, introduce a different one, leave the total unchanged and be accepted.
+
+> **A tidy move may remove a visible trespass. It may not trade one for another.**
+
+So the trespass pairs after have to be a subset of the pairs before. Node overlap keeps its
+stricter rule — never any, before or after.
+
+### The contradiction, and which side it came down on
+
+The brief asked `Tidy flow` for two things that cannot both hold:
+
+```
+do not introduce new visible trespass pairs
+cable presentation style has no input whatsoever
+```
+
+Visible trespass **is** presentation. On four fixtures nothing notices, because they have
+none or the styles agree. The dense fixture carries twenty-three in CATENARY and none in
+ROUTED, and there the two requirements pull apart.
+
+Both sides were built and measured rather than argued about:
+
+```
+structural trespass guard    style-independent on every fixture
+                             dense-graph-legalized: visible trespass 23 -> 25
+                                                    drawn crossings  31 -> 32
+
+visible trespass guard       the picture never gets worse
+                             Tidy flow places 2 nodes differently by style, on one fixture
+```
+
+**The visible guarantee won.** An operation called Tidy that makes the picture worse is the
+more expensive defect; the other is invisible to almost everybody and is a setting nobody
+changes mid-session. It is also the side consistent with everything 2.1 and 2.3 decided —
+when the user's experience of the visible thing has been in tension with an internal
+tidiness, the visible thing has won every time.
+
+So the hard acceptance gate 2.4 was given is **not met**, deliberately, and the number is
+printed on every run instead of asserted. `_structurally_no_less_legal` and
+`StructuralGeometry.chord_trespass` are left in place: they are the working other half, and
+whoever revisits this should not have to build it again to see the trade.
+
+Getting both needs a third rule nobody has chosen: **refuse a move that adds a trespass pair
+in *either* presentation.** That is symmetric in the styles and therefore style-independent
+by construction, it never makes either picture worse, and it costs roughly twice the work
+per candidate.
+
+### Where that leaves the ownership table
+
+```
+consumer                  owner               settled at
+drawing                   DISPLAY             —
+crossing marks            DISPLAY             —
+hit testing               DISPLAY             2.1
+legalizer trespass        DISPLAY             2.3
+tidy routes               DISPLAY             2.3
+structural cable cost     STYLE_INDEPENDENT   2.3
+structural chord cross.   STYLE_INDEPENDENT   2.4
+tidy flow's legality      DISPLAY             2.4, by decision, against the ideal
+```
+
+`routing_path` owns ROUTED cable construction and ROUTED cable quality, and nothing else.
+Its global corridor instability is now a defect in one style's renderer rather than
+something layout and legalization are quietly answering to — which was the point.
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
@@ -695,9 +790,10 @@ something else found on the way is.
 1. ~~Hit testing picks against the wrong geometry.~~ **Done, goal 2.1.**
 2. ~~The remaining hidden-route consumers.~~ **Audited at 2.2, decided at 2.3.** Trespass
    is DISPLAY, cable cost is STYLE_INDEPENDENT and canonical.
-3. **A canonical crossing.** The last accidental presentation dependency: `Tidy flow` is
-   structural and still gated on a crossing count from the drawing. Needs a decision about
-   what a style-free crossing is, not more measurement.
+3. ~~A canonical crossing.~~ **Done, goal 2.4.** One thing is left open there and it is a
+   product choice, not a measurement: whether `Tidy flow` should refuse a move that adds a
+   visible trespass in *either* cable style, which is the only way to have both
+   style-independence and a picture that never gets worse.
 4. **Corridor stability.** A cable's corridor is a greedy pick from a globally ranked
    channel list with no memory of where it already was. This is the "route hysteresis"
    subproblem, and it now has a mechanism rather than a symptom.

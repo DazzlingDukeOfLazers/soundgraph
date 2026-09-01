@@ -55,6 +55,7 @@ const PANEL_PADDING := 15
 ## of the same cells fixes that.
 const PARAMETERS_PER_LINE := 2
 const Layout := preload("res://layout.gd")
+const StructuralGeometry := preload("res://structural_geometry.gd")
 
 ## Layout grid. Everything auto-place produces lands on this, so a hand-aligned patch and
 ## a generated one look like they came from the same hand.
@@ -8804,7 +8805,28 @@ func _tidy_flow() -> void:
 	if (at_rest["overlaps"] as Array).size() > 0:
 		_say("resolve the overlaps first — tidying an invalid drawing would hide them")
 		return
-	var allowed_faults: int = int(at_rest["total"])
+	# Goal 2.4 found a contradiction here and this is the side it came down on.
+	#
+	# Tidy flow was asked both to introduce no new *visible* trespass and to take no input
+	# whatsoever from cable presentation. Those cannot both hold, because visible trespass
+	# *is* presentation. The dense fixture carries twenty-three in CATENARY and none in
+	# ROUTED, so the two requirements pull apart on it and something has to give.
+	#
+	# Both sides were built and measured. Guarding on the structural trespass instead — the
+	# chord through a node body, `_structurally_no_less_legal` below, which is still here —
+	# makes the operation style-independent on every fixture, and costs this: on
+	# dense-graph-legalized it takes the visible trespasses from 23 to 25 and the drawn
+	# crossings from 31 to 32. An operation called Tidy that makes the picture worse is the
+	# more expensive of the two defects, and the cheaper one is invisible to almost
+	# everybody — two nodes placed differently on one fixture depending on a setting.
+	#
+	# So the visible guarantee is kept and the style-independence is reported instead of
+	# asserted, with the exact number, in geometry_contract_test.gd. Getting both means a
+	# third rule nobody has chosen yet: refuse a move that adds a trespass pair in *either*
+	# presentation, which is symmetric in the styles and therefore style-independent by
+	# construction — and roughly twice the work per candidate.
+	var kept_trespass := _trespass_pairs()
+	var kept_clearance: int = (at_rest["clearance"] as Array).size()
 
 	var movable := {}
 	var chosen := _selected_ids()
@@ -8846,7 +8868,9 @@ func _tidy_flow() -> void:
 		var boxes := _layout_boxes()
 		var tolerance := _layout_tolerance(boxes)
 		var before := LayoutTidy.vector(boxes, depth, edges, tolerance)
-		var before_crossings := _layout_crossings()
+		# Goal 2.4: the structural count, not the drawn one. `Tidy flow` decides where
+		# nodes belong, and where nodes belong may not depend on how cables are painted.
+		var before_crossings := _structural_crossings()
 		var taken := false
 		# Two passes. The first refuses any move that adds a crossing; the second allows
 		# it only when nothing else improved the same stage vector. Assuming from the
@@ -8892,10 +8916,10 @@ func _tidy_flow() -> void:
 							was[other] = widget.position_offset
 							widget.position_offset = (group[other] as Vector2).snappedf(GRID)
 						await get_tree().process_frame
-						var legal: bool = int(_layout_faults()["total"]) <= allowed_faults
+						var legal: bool = _no_less_legal(kept_trespass, kept_clearance)
 						var now := LayoutTidy.vector(_layout_boxes(), depth, edges,
 							tolerance)
-						var fine: bool = legal and LayoutTidy.better(now, before) 							and (allow_crossings or _layout_crossings() <= before_crossings)
+						var fine: bool = legal and LayoutTidy.better(now, before) 							and (allow_crossings or _structural_crossings() <= before_crossings)
 						if fine:
 							taken = true
 							break
@@ -8986,7 +9010,8 @@ func _tidy_routes() -> void:
 	if (at_rest["overlaps"] as Array).size() > 0:
 		_say("resolve the overlaps first — a crossing is not the problem yet")
 		return
-	var allowed_faults: int = int(at_rest["total"])
+	var kept_trespass := _trespass_pairs()
+	var kept_clearance: int = (at_rest["clearance"] as Array).size()
 
 	var chosen := _selected_ids()
 	var by_document: Array = []
@@ -9030,7 +9055,7 @@ func _tidy_routes() -> void:
 					widget.position_offset = Vector2(was.x,
 						snappedf(was.y + float(direction * radius) * GRID, GRID))
 					await get_tree().process_frame
-					var legal: bool = int(_layout_faults()["total"]) <= allowed_faults
+					var legal: bool = _no_less_legal(kept_trespass, kept_clearance)
 					var now_boxes := _layout_boxes()
 					var now_stage := LayoutTidy.vector(now_boxes, depth, edges, tolerance)
 					var now_crossings := _layout_crossings()
@@ -9121,6 +9146,83 @@ func _layout_heights() -> Dictionary:
 ##
 ## Named `structural_` so nobody later reaches for `path.length()` because a field happened
 ## to be called `cable`.
+func _structural_crossings() -> int:
+	return StructuralGeometry.chord_crossings(StructuralGeometry.chords(graph_edit))
+
+
+## The visible trespasses as a set, so a tidy operation can be held to more than a count.
+func _trespass_pairs() -> Dictionary:
+	var out := {}
+	for row: Array in _layout_faults()["trespass"]:
+		out["%s|%s|%s" % [str(row[0]), str(row[1]), str(row[2])]] = true
+	return out
+
+
+## The structural faults: node overlap, clearance, and a chord through a node body.
+##
+## Everything here comes from node rectangles and port positions, so it is the same abstract
+## drawing `_structural_cable` and `_structural_crossings` describe. No cable renderer is
+## consulted, which is what makes it safe for an operation that must not move when the
+## presentation does.
+func _structural_faults() -> Dictionary:
+	var boxes := _layout_boxes()
+	var overlaps := 0
+	var clearance := 0
+	var ids: Array = boxes.keys()
+	for i in ids.size():
+		for j in range(i + 1, ids.size()):
+			var a: Rect2 = boxes[ids[i]]
+			var b: Rect2 = boxes[ids[j]]
+			if a.intersects(b):
+				overlaps += 1
+			elif a.grow(LayoutLegalize.CLEARANCE).intersects(b):
+				clearance += 1
+	return {"overlaps": overlaps, "clearance": clearance,
+		"trespass": StructuralGeometry.chord_trespass(
+			StructuralGeometry.chords(graph_edit), boxes,
+			LayoutLegalize.TRESPASS_MARGIN)}
+
+
+## Whether the abstract drawing is no less legal than a structural operation found it.
+##
+## The same monotonicity rule as its display twin — a move may remove a trespass and may not
+## trade one for another — asked of chords rather than of cords.
+func _structurally_no_less_legal(was: Dictionary, was_clearance: int) -> bool:
+	var now := _structural_faults()
+	if int(now["overlaps"]) > 0:
+		return false
+	if int(now["clearance"]) > was_clearance:
+		return false
+	for key: String in now["trespass"]:
+		if not was.has(key):
+			return false
+	return true
+
+
+## Whether the drawing is no less legal than the state a tidy operation started from.
+##
+## Routing goal 2.4 strengthens what 2.3 settled for. A count was the obvious reading of
+## "no less legal" and it is too weak: a move can drop one trespass and introduce a
+## different one, leave the total unchanged, and be accepted — the drawing is not less
+## legal by the number and is plainly different by the eye.
+##
+## > **A tidy move may remove a visible trespass. It may not trade one for another.**
+##
+## So the trespasses after have to be a subset of the trespasses before, pair by pair.
+## Node overlap keeps the stricter rule it always had — never any, before or after — since
+## tidying around a genuine collision would hide it, and clearance may not get worse.
+func _no_less_legal(was: Dictionary, was_clearance: int) -> bool:
+	var now := _layout_faults()
+	if (now["overlaps"] as Array).size() > 0:
+		return false
+	if (now["clearance"] as Array).size() > was_clearance:
+		return false
+	for row: Array in now["trespass"]:
+		if not was.has("%s|%s|%s" % [str(row[0]), str(row[1]), str(row[2])]):
+			return false
+	return true
+
+
 func _structural_cable() -> Array:
 	var total := 0.0
 	var longest := 0.0
