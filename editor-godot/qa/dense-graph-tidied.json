@@ -1,0 +1,757 @@
+{
+  "connections": [
+    {
+      "from": {
+        "node": "clk",
+        "port": "gate"
+      },
+      "to": {
+        "node": "euc",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "clk",
+        "port": "gate"
+      },
+      "to": {
+        "node": "seq",
+        "port": "clock"
+      }
+    },
+    {
+      "from": {
+        "node": "clk",
+        "port": "gate"
+      },
+      "to": {
+        "node": "snh",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "keys",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "saw",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "keys",
+        "port": "gate"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "keys",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "speech",
+        "port": "note"
+      }
+    },
+    {
+      "from": {
+        "node": "euc",
+        "port": "gate"
+      },
+      "to": {
+        "node": "speech",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "noise",
+        "port": "out"
+      },
+      "to": {
+        "node": "snh",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "noise",
+        "port": "out"
+      },
+      "to": {
+        "node": "comp",
+        "port": "sidechain"
+      }
+    },
+    {
+      "from": {
+        "node": "snh",
+        "port": "out"
+      },
+      "to": {
+        "node": "quant",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "quant",
+        "port": "out"
+      },
+      "to": {
+        "node": "sine",
+        "port": "frequency"
+      }
+    },
+    {
+      "from": {
+        "node": "seq",
+        "port": "out"
+      },
+      "to": {
+        "node": "add",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "cc",
+        "port": "out"
+      },
+      "to": {
+        "node": "add",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "add",
+        "port": "out"
+      },
+      "to": {
+        "node": "mul",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "mul",
+        "port": "out"
+      },
+      "to": {
+        "node": "svf",
+        "port": "cutoff_mod"
+      }
+    },
+    {
+      "from": {
+        "node": "saw",
+        "port": "out"
+      },
+      "to": {
+        "node": "svf",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "svf",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "drive",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "drive",
+        "port": "out"
+      },
+      "to": {
+        "node": "comb",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "comb",
+        "port": "out"
+      },
+      "to": {
+        "node": "delay",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "delay",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "sine",
+        "port": "out"
+      },
+      "to": {
+        "node": "plug",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "plug",
+        "port": "left"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "audin",
+        "port": "left"
+      },
+      "to": {
+        "node": "comp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "comp",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in3"
+      }
+    },
+    {
+      "from": {
+        "node": "ntrig",
+        "port": "bus"
+      },
+      "to": {
+        "node": "bus",
+        "port": "bus"
+      }
+    },
+    {
+      "from": {
+        "node": "bus",
+        "port": "t1"
+      },
+      "to": {
+        "node": "samp",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "samp",
+        "port": "out"
+      },
+      "to": {
+        "node": "formant",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "lfo",
+        "port": "out"
+      },
+      "to": {
+        "node": "formant",
+        "port": "morph"
+      }
+    },
+    {
+      "from": {
+        "node": "formant",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "speech",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix2",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "mix2",
+        "port": "out"
+      },
+      "to": {
+        "node": "mix",
+        "port": "in4"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "mix",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "metadata": {
+    "description": "The legalized hostile patch after flow tidy and route tidy. Derived by editor-godot/tidy_fixtures.gd. Kept beside the legalized witness rather than replacing it, so the cost of each operation stays separable.",
+    "name": "Dense QA, tidied"
+  },
+  "nodes": [
+    {
+      "id": "clk",
+      "name": "Master Clock",
+      "parameters": {
+        "beats_per_bar": 4.0,
+        "bpm": 128.0,
+        "division": 3.0,
+        "swing": 0.12,
+        "width": 5.0
+      },
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "type": "Clock"
+    },
+    {
+      "host": "note",
+      "id": "keys",
+      "name": "Keyboard",
+      "parameters": {
+        "glide": 0.04,
+        "transpose": 0.0,
+        "voices": 1.0
+      },
+      "position": {
+        "x": 0.0,
+        "y": 640.0
+      },
+      "type": "Input"
+    },
+    {
+      "host": "audio",
+      "id": "audin",
+      "name": "Q",
+      "parameters": {
+        "gain": 1.0
+      },
+      "position": {
+        "x": 0.0,
+        "y": 1040.0
+      },
+      "type": "Input"
+    },
+    {
+      "id": "cc",
+      "parameters": {
+        "cc": 74.0,
+        "glide": 0.05,
+        "high": 1.0,
+        "low": 0.0,
+        "resting": 0.35
+      },
+      "position": {
+        "x": 0.0,
+        "y": 1320.0
+      },
+      "type": "MidiCC"
+    },
+    {
+      "id": "ntrig",
+      "parameters": {
+        "base": 60.0,
+        "shift": 0.0
+      },
+      "position": {
+        "x": 0.0,
+        "y": 1840.0
+      },
+      "type": "NoteTriggers"
+    },
+    {
+      "id": "euc",
+      "parameters": {
+        "fill": 7.0,
+        "rotate": 2.0,
+        "steps": 16.0
+      },
+      "position": {
+        "x": 520.0,
+        "y": 0.0
+      },
+      "type": "Euclid"
+    },
+    {
+      "id": "seq",
+      "parameters": {
+        "length": 8.0,
+        "step1": 0.0,
+        "step2": 0.7,
+        "step3": 0.3,
+        "step4": 1.2,
+        "step5": -0.5,
+        "step6": 0.0,
+        "step7": 1.0,
+        "step8": 0.2
+      },
+      "position": {
+        "x": 520.0,
+        "y": 360.0
+      },
+      "type": "StepSequencer"
+    },
+    {
+      "id": "saw",
+      "name": "Main Oscillator",
+      "parameters": {
+        "frequency": 110.0
+      },
+      "position": {
+        "x": 640.0,
+        "y": 880.0
+      },
+      "type": "SawOscillator"
+    },
+    {
+      "id": "noise",
+      "parameters": {
+        "colour": 1.0
+      },
+      "position": {
+        "x": 520.0,
+        "y": 1200.0
+      },
+      "type": "Noise"
+    },
+    {
+      "id": "lfo",
+      "parameters": {
+        "amount": 0.8,
+        "offset": 0.0,
+        "rate": 0.25,
+        "shape": 0.0
+      },
+      "position": {
+        "x": 400.0,
+        "y": 1440.0
+      },
+      "type": "LFO"
+    },
+    {
+      "id": "bus",
+      "parameters": {
+        "shift": 0.0
+      },
+      "position": {
+        "x": 800.0,
+        "y": 1800.0
+      },
+      "type": "TriggerBus"
+    },
+    {
+      "id": "add",
+      "parameters": {
+        "offset": 0.25
+      },
+      "position": {
+        "x": 1120.0,
+        "y": 280.0
+      },
+      "type": "Add"
+    },
+    {
+      "id": "mul",
+      "parameters": {
+        "factor": 1500.0
+      },
+      "position": {
+        "x": 1360.0,
+        "y": 560.0
+      },
+      "type": "Multiply"
+    },
+    {
+      "id": "env",
+      "name": "Amp Envelope",
+      "parameters": {
+        "attack": 0.008,
+        "decay": 0.24,
+        "release": 0.6,
+        "sustain": 0.55
+      },
+      "position": {
+        "x": 1040.0,
+        "y": 760.0
+      },
+      "type": "ADSR"
+    },
+    {
+      "id": "snh",
+      "position": {
+        "x": 1040.0,
+        "y": 1200.0
+      },
+      "type": "SampleHold"
+    },
+    {
+      "id": "quant",
+      "parameters": {
+        "root": 2.0,
+        "scale": 7.0
+      },
+      "position": {
+        "x": 1040.0,
+        "y": 1360.0
+      },
+      "type": "ScaleQuantizer"
+    },
+    {
+      "id": "samp",
+      "parameters": {
+        "level": 0.9,
+        "loop": 0.0,
+        "slices": 1.0
+      },
+      "position": {
+        "x": 1040.0,
+        "y": 1800.0
+      },
+      "type": "Sampler"
+    },
+    {
+      "id": "comp",
+      "name": "Sidechain Bus Compressor",
+      "parameters": {
+        "attack": 0.006,
+        "makeup": 3.0,
+        "ratio": 4.0,
+        "release": 0.18,
+        "threshold": 0.25
+      },
+      "position": {
+        "x": 1360.0,
+        "y": -80.0
+      },
+      "type": "Compressor"
+    },
+    {
+      "id": "svf",
+      "parameters": {
+        "cutoff": 1200.0,
+        "mode": 2.0,
+        "resonance": 0.42
+      },
+      "position": {
+        "x": 1560.0,
+        "y": 720.0
+      },
+      "type": "StateVariableFilter"
+    },
+    {
+      "id": "sine",
+      "parameters": {
+        "feedback": 0.0,
+        "frequency": 220.0
+      },
+      "position": {
+        "x": 1560.0,
+        "y": 1360.0
+      },
+      "type": "SineOscillator"
+    },
+    {
+      "id": "formant",
+      "parameters": {
+        "emphasis": 0.6,
+        "morph": 0.4
+      },
+      "position": {
+        "x": 1560.0,
+        "y": 1800.0
+      },
+      "type": "Formant"
+    },
+    {
+      "id": "amp",
+      "parameters": {
+        "gain": 0.8
+      },
+      "position": {
+        "x": 2080.0,
+        "y": 720.0
+      },
+      "type": "Gain"
+    },
+    {
+      "id": "drive",
+      "parameters": {
+        "drive": 0.55
+      },
+      "position": {
+        "x": 2080.0,
+        "y": 960.0
+      },
+      "type": "Drive"
+    },
+    {
+      "id": "plug",
+      "plugin": "hall",
+      "position": {
+        "x": 2080.0,
+        "y": 2400.0
+      },
+      "type": "PluginEffect"
+    },
+    {
+      "id": "speech",
+      "parameters": {
+        "level": 0.8,
+        "loop": 0.0,
+        "pitch": 1.0,
+        "speed": 1.0
+      },
+      "position": {
+        "x": 2080.0,
+        "y": 1800.0
+      },
+      "type": "Speech"
+    },
+    {
+      "id": "delay",
+      "parameters": {
+        "feedback": 0.35,
+        "mix": 0.3,
+        "time": 0.25
+      },
+      "position": {
+        "x": 2600.0,
+        "y": 640.0
+      },
+      "type": "Delay"
+    },
+    {
+      "id": "comb",
+      "parameters": {
+        "damp": 0.3,
+        "feedback": 0.7,
+        "time": 0.004
+      },
+      "position": {
+        "x": 2600.0,
+        "y": 1040.0
+      },
+      "type": "Comb"
+    },
+    {
+      "id": "mix2",
+      "name": "Voices",
+      "parameters": {
+        "level1": 0.8,
+        "level2": 0.5,
+        "level3": 0.0,
+        "level4": 0.0
+      },
+      "position": {
+        "x": 2680.0,
+        "y": 1800.0
+      },
+      "type": "Mixer"
+    },
+    {
+      "id": "mix",
+      "name": "Master",
+      "parameters": {
+        "level1": 0.7,
+        "level2": 0.5,
+        "level3": 0.6,
+        "level4": 0.4
+      },
+      "position": {
+        "x": 3120.0,
+        "y": 1160.0
+      },
+      "type": "Mixer"
+    },
+    {
+      "host": "stereo",
+      "id": "out",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1.0
+      },
+      "position": {
+        "x": 3640.0,
+        "y": 1120.0
+      },
+      "type": "Output"
+    }
+  ],
+  "plugins": {
+    "hall": {
+      "format": "CLAP",
+      "identity": "com.soundgraph.qa.absent-reverb",
+      "name": "Absent Hall",
+      "vendor": "Nobody"
+    }
+  },
+  "schema_version": 3.0
+}

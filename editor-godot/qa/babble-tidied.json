@@ -1,0 +1,924 @@
+{
+  "connections": [
+    {
+      "from": {
+        "node": "vowel_rand",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_rand",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_hold",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_scale",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "vowel_centre",
+        "port": "out"
+      },
+      "to": {
+        "node": "mouth",
+        "port": "morph"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_hold",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_scale",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_scale",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_sum",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "contour",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_sum",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "cords",
+        "port": "out"
+      },
+      "to": {
+        "node": "throat",
+        "port": "in1"
+      }
+    },
+    {
+      "from": {
+        "node": "breath",
+        "port": "out"
+      },
+      "to": {
+        "node": "breath_amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "consonant",
+        "port": "out"
+      },
+      "to": {
+        "node": "breath_amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "breath_amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "throat",
+        "port": "in2"
+      }
+    },
+    {
+      "from": {
+        "node": "throat",
+        "port": "out"
+      },
+      "to": {
+        "node": "mouth",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "mouth",
+        "port": "out"
+      },
+      "to": {
+        "node": "lips",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "lips",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "env",
+        "port": "out"
+      },
+      "to": {
+        "node": "amp",
+        "port": "gain"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "amp",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    },
+    {
+      "from": {
+        "node": "syl",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "gate"
+      },
+      "to": {
+        "node": "talking",
+        "port": "b"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "env",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "consonant",
+        "port": "gate"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "vowel_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "talking",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_hold",
+        "port": "trigger"
+      }
+    },
+    {
+      "from": {
+        "node": "pitch_sum",
+        "port": "out"
+      },
+      "to": {
+        "node": "pitch_centre",
+        "port": "a"
+      }
+    },
+    {
+      "from": {
+        "node": "kb",
+        "port": "frequency"
+      },
+      "to": {
+        "node": "pitch_centre",
+        "port": "b"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "binding": {
+        "midi_cc": 74.0,
+        "midi_channel": 1.0
+      },
+      "default": 7.5,
+      "id": "rate",
+      "kind": "knob",
+      "label": "Syllables",
+      "max": 16.0,
+      "min": 2.0,
+      "scaling": "exponential",
+      "target": {
+        "node": "syl",
+        "parameter": "rate"
+      }
+    },
+    {
+      "binding": {
+        "midi_cc": 71.0,
+        "midi_channel": 1.0
+      },
+      "default": 0.0,
+      "id": "pitch",
+      "kind": "knob",
+      "label": "Voice",
+      "max": 24.0,
+      "min": -24.0,
+      "scaling": "linear",
+      "target": {
+        "node": "kb",
+        "parameter": "transpose"
+      }
+    },
+    {
+      "binding": {
+        "midi_cc": 76.0,
+        "midi_channel": 1.0
+      },
+      "default": 55.0,
+      "id": "spread",
+      "kind": "knob",
+      "label": "Wander",
+      "max": 160.0,
+      "min": 0.0,
+      "scaling": "linear",
+      "target": {
+        "node": "pitch_scale",
+        "parameter": "factor"
+      }
+    },
+    {
+      "binding": {
+        "midi_cc": 77.0,
+        "midi_channel": 1.0
+      },
+      "default": 0.85,
+      "id": "colour",
+      "kind": "knob",
+      "label": "Vowel Edge",
+      "max": 1.0,
+      "min": 0.0,
+      "scaling": "linear",
+      "target": {
+        "node": "mouth",
+        "parameter": "emphasis"
+      }
+    },
+    {
+      "binding": {
+        "midi_cc": 93.0,
+        "midi_channel": 1.0
+      },
+      "default": 3200.0,
+      "id": "brightness",
+      "kind": "knob",
+      "label": "Mouth",
+      "max": 9000.0,
+      "min": 700.0,
+      "scaling": "exponential",
+      "target": {
+        "node": "lips",
+        "parameter": "cutoff"
+      }
+    },
+    {
+      "binding": {
+        "midi_cc": 18.0,
+        "midi_channel": 1.0
+      },
+      "default": 0.07,
+      "id": "length",
+      "kind": "knob",
+      "label": "Syllable Length",
+      "max": 0.3,
+      "min": 0.02,
+      "scaling": "exponential",
+      "target": {
+        "node": "env",
+        "parameter": "decay"
+      }
+    },
+    {
+      "binding": {
+        "midi_cc": 7.0,
+        "midi_channel": 1.0
+      },
+      "default": 0.85,
+      "id": "level",
+      "kind": "knob",
+      "label": "Level",
+      "max": 1.0,
+      "min": 0.0,
+      "scaling": "linear",
+      "target": {
+        "node": "out",
+        "parameter": "level"
+      }
+    }
+  ],
+  "metadata": {
+    "description": "babble after the whole layout pass has been applied and has stopped: the legalizer correctly moves nothing, flow tidy finds one node, and route tidy takes it from nine crossings to seven and then declines. Derived by editor-godot/tidy_fixtures.gd. What remains is what placement cannot reach, which is what makes it the routing pass's hostile specimen.",
+    "name": "Babble, tidied"
+  },
+  "nodes": [
+    {
+      "id": "kb",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "type": "NoteInput"
+    },
+    {
+      "id": "syl",
+      "parameters": {
+        "rate": 7.5,
+        "width": 2.0
+      },
+      "position": {
+        "x": 440.0,
+        "y": 0.0
+      },
+      "type": "Retrigger"
+    },
+    {
+      "id": "vowel_rand",
+      "parameters": {
+        "amount": 1.0,
+        "rate": 31.0,
+        "shape": 4.0
+      },
+      "position": {
+        "x": 1160.0,
+        "y": 0.0
+      },
+      "type": "LFO"
+    },
+    {
+      "id": "pitch_rand",
+      "parameters": {
+        "amount": 1.0,
+        "rate": 23.0,
+        "shape": 4.0
+      },
+      "position": {
+        "x": 2360.0,
+        "y": -40.0
+      },
+      "type": "LFO"
+    },
+    {
+      "id": "vowel_hold",
+      "position": {
+        "x": 1600.0,
+        "y": 0.0
+      },
+      "type": "SampleHold"
+    },
+    {
+      "id": "pitch_hold",
+      "position": {
+        "x": 2800.0,
+        "y": 0.0
+      },
+      "type": "SampleHold"
+    },
+    {
+      "id": "vowel_scale",
+      "parameters": {
+        "factor": 2.0
+      },
+      "position": {
+        "x": 1880.0,
+        "y": 0.0
+      },
+      "type": "Multiply"
+    },
+    {
+      "id": "vowel_centre",
+      "parameters": {
+        "offset": 2.0
+      },
+      "position": {
+        "x": 2120.0,
+        "y": 0.0
+      },
+      "type": "Add"
+    },
+    {
+      "id": "contour",
+      "parameters": {
+        "amount": 45.0,
+        "rate": 0.31,
+        "shape": 0.0
+      },
+      "position": {
+        "x": 3360.0,
+        "y": 0.0
+      },
+      "type": "LFO"
+    },
+    {
+      "id": "pitch_scale",
+      "parameters": {
+        "factor": 55.0
+      },
+      "position": {
+        "x": 3080.0,
+        "y": 0.0
+      },
+      "type": "Multiply"
+    },
+    {
+      "id": "pitch_sum",
+      "position": {
+        "x": 3800.0,
+        "y": 0.0
+      },
+      "type": "Add"
+    },
+    {
+      "id": "pitch_centre",
+      "parameters": {
+        "offset": 0.0
+      },
+      "position": {
+        "x": 4040.0,
+        "y": 0.0
+      },
+      "type": "Add"
+    },
+    {
+      "id": "cords",
+      "position": {
+        "x": 360.0,
+        "y": 480.0
+      },
+      "type": "SawOscillator"
+    },
+    {
+      "id": "breath",
+      "parameters": {
+        "colour": 0.0
+      },
+      "position": {
+        "x": 0.0,
+        "y": 880.0
+      },
+      "type": "Noise"
+    },
+    {
+      "id": "consonant",
+      "parameters": {
+        "attack": 0.0,
+        "decay": 0.022,
+        "hold": 0.004
+      },
+      "position": {
+        "x": 0.0,
+        "y": 1080.0
+      },
+      "type": "AhdEnvelope"
+    },
+    {
+      "id": "breath_amp",
+      "position": {
+        "x": 360.0,
+        "y": 920.0
+      },
+      "type": "Gain"
+    },
+    {
+      "id": "throat",
+      "parameters": {
+        "level1": 1.0,
+        "level2": 0.5
+      },
+      "position": {
+        "x": 720.0,
+        "y": 480.0
+      },
+      "type": "Mixer"
+    },
+    {
+      "id": "mouth",
+      "parameters": {
+        "emphasis": 0.85
+      },
+      "position": {
+        "x": 1080.0,
+        "y": 680.0
+      },
+      "type": "Formant"
+    },
+    {
+      "id": "lips",
+      "parameters": {
+        "cutoff": 3200.0,
+        "mode": 0.0,
+        "resonance": 0.1
+      },
+      "position": {
+        "x": 1440.0,
+        "y": 480.0
+      },
+      "type": "StateVariableFilter"
+    },
+    {
+      "id": "env",
+      "parameters": {
+        "attack": 0.008,
+        "decay": 0.07,
+        "hold": 0.035
+      },
+      "position": {
+        "x": 1440.0,
+        "y": 880.0
+      },
+      "type": "AhdEnvelope"
+    },
+    {
+      "id": "amp",
+      "position": {
+        "x": 1920.0,
+        "y": 480.0
+      },
+      "type": "Gain"
+    },
+    {
+      "id": "out",
+      "parameters": {
+        "level": 0.9
+      },
+      "position": {
+        "x": 2160.0,
+        "y": 480.0
+      },
+      "type": "StereoOutput"
+    },
+    {
+      "id": "talking",
+      "position": {
+        "x": 880.0,
+        "y": 0.0
+      },
+      "type": "Multiply"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Villager",
+      "tags": [
+        "default"
+      ],
+      "values": {
+        "brightness": 3200.0,
+        "colour": 0.85,
+        "length": 0.07,
+        "level": 0.9,
+        "pitch": 0.0,
+        "rate": 7.5,
+        "spread": 55.0
+      }
+    },
+    {
+      "name": "Small Creature",
+      "tags": [
+        "high"
+      ],
+      "values": {
+        "brightness": 6200.0,
+        "colour": 0.95,
+        "length": 0.04,
+        "level": 0.78,
+        "pitch": 14.0,
+        "rate": 11.0,
+        "spread": 90.0
+      }
+    },
+    {
+      "name": "Big Oaf",
+      "tags": [
+        "low"
+      ],
+      "values": {
+        "brightness": 1500.0,
+        "colour": 0.7,
+        "length": 0.16,
+        "level": 0.9,
+        "pitch": -14.0,
+        "rate": 4.2,
+        "spread": 30.0
+      }
+    },
+    {
+      "name": "Nervous",
+      "tags": [
+        "fast"
+      ],
+      "values": {
+        "brightness": 4200.0,
+        "colour": 0.9,
+        "length": 0.03,
+        "level": 0.66,
+        "pitch": 5.0,
+        "rate": 13.5,
+        "spread": 120.0
+      }
+    },
+    {
+      "name": "Sleepy",
+      "tags": [
+        "slow"
+      ],
+      "values": {
+        "brightness": 1900.0,
+        "colour": 0.55,
+        "length": 0.24,
+        "level": 0.95,
+        "pitch": -5.0,
+        "rate": 2.6,
+        "spread": 18.0
+      }
+    },
+    {
+      "name": "Robot",
+      "tags": [
+        "flat"
+      ],
+      "values": {
+        "brightness": 5000.0,
+        "colour": 1.0,
+        "length": 0.05,
+        "level": 0.85,
+        "pitch": 0.0,
+        "rate": 8.0,
+        "spread": 0.0
+      }
+    }
+  ],
+  "schema_version": 1.0,
+  "sequence": {
+    "division": 16.0,
+    "notes": [
+      {
+        "length": 1.0,
+        "note": 81.0,
+        "step": 0.0
+      },
+      {
+        "length": 1.0,
+        "note": 74.0,
+        "step": 3.0
+      },
+      {
+        "length": 1.0,
+        "note": 67.0,
+        "step": 6.0
+      },
+      {
+        "length": 1.0,
+        "note": 67.0,
+        "step": 9.0
+      },
+      {
+        "length": 1.0,
+        "note": 74.0,
+        "step": 12.0
+      },
+      {
+        "length": 1.0,
+        "note": 77.0,
+        "step": 30.0
+      },
+      {
+        "length": 1.0,
+        "note": 70.0,
+        "step": 33.0
+      },
+      {
+        "length": 1.0,
+        "note": 66.0,
+        "step": 36.0
+      },
+      {
+        "length": 1.0,
+        "note": 61.0,
+        "step": 42.0
+      },
+      {
+        "length": 1.0,
+        "note": 79.0,
+        "step": 45.0
+      },
+      {
+        "length": 1.0,
+        "note": 72.0,
+        "step": 48.0
+      },
+      {
+        "length": 1.0,
+        "note": 72.0,
+        "step": 54.0
+      },
+      {
+        "length": 1.0,
+        "note": 73.0,
+        "step": 57.0
+      },
+      {
+        "length": 1.0,
+        "note": 63.0,
+        "step": 60.0
+      },
+      {
+        "length": 1.0,
+        "note": 85.0,
+        "step": 66.0
+      },
+      {
+        "length": 1.0,
+        "note": 74.0,
+        "step": 69.0
+      },
+      {
+        "length": 1.0,
+        "note": 71.0,
+        "step": 72.0
+      },
+      {
+        "length": 1.0,
+        "note": 65.0,
+        "step": 75.0
+      },
+      {
+        "length": 1.0,
+        "note": 75.0,
+        "step": 78.0
+      },
+      {
+        "length": 1.0,
+        "note": 79.0,
+        "step": 96.0
+      },
+      {
+        "length": 1.0,
+        "note": 60.0,
+        "step": 102.0
+      },
+      {
+        "length": 1.0,
+        "note": 64.0,
+        "step": 105.0
+      },
+      {
+        "length": 1.0,
+        "note": 62.0,
+        "step": 111.0
+      },
+      {
+        "length": 1.0,
+        "note": 69.0,
+        "step": 114.0
+      },
+      {
+        "length": 1.0,
+        "note": 76.0,
+        "step": 117.0
+      },
+      {
+        "length": 1.0,
+        "note": 68.0,
+        "step": 120.0
+      },
+      {
+        "length": 1.0,
+        "note": 63.0,
+        "step": 126.0
+      },
+      {
+        "length": 1.0,
+        "note": 68.0,
+        "step": 129.0
+      },
+      {
+        "length": 1.0,
+        "note": 60.0,
+        "step": 132.0
+      },
+      {
+        "length": 1.0,
+        "note": 60.0,
+        "step": 135.0
+      },
+      {
+        "length": 1.0,
+        "note": 79.0,
+        "step": 148.0
+      },
+      {
+        "length": 1.0,
+        "note": 74.0,
+        "step": 151.0
+      },
+      {
+        "length": 1.0,
+        "note": 56.0,
+        "step": 154.0
+      },
+      {
+        "length": 1.0,
+        "note": 63.0,
+        "step": 157.0
+      },
+      {
+        "length": 1.0,
+        "note": 56.0,
+        "step": 160.0
+      },
+      {
+        "length": 1.0,
+        "note": 66.0,
+        "step": 166.0
+      },
+      {
+        "length": 1.0,
+        "note": 65.0,
+        "step": 169.0
+      },
+      {
+        "length": 1.0,
+        "note": 55.0,
+        "step": 172.0
+      }
+    ],
+    "steps": 191.0,
+    "tempo": 120.0
+  }
+}

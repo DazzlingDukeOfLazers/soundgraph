@@ -26,6 +26,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `layout-baseline.json` | `layout_baseline.gd` | the layout pass's step 1: every patch measured by hand and as auto-place arranges it |
 | `cable-closure.json` | `cable_closure.gd` | the cable pass's closure matrix: 278 invariants over both specimens, four zooms and two palettes |
 | `cable-baseline.json` | `cable_baseline.gd` | the cable pass's step 1: every route's length and detour, every crossing's position, angle and colour pair, every bundle, every trespass, and the cable share of the patch at four zooms |
+| `route-baseline.json` | `route_baseline.gd` | the routing pass's step 1: every route's length, stretch, excess, bends, reversals, clearance and trespasses, taken from the same points the cord layer draws, plus determinism over two reads and the response to a forty-unit nudge |
 
 ## The sheets, on demand
 
@@ -83,6 +84,17 @@ LAYOUT_BASELINE_OUT=/tmp/p godot --path editor-godot --script layout_baseline.gd
 
 # the crossing-cost frontier: what removing a crossing costs, by placement alone
 CROSSING_FRONTIER_OUT=/tmp/p godot --headless --path editor-godot --script crossing_frontier.gd
+
+# the routing baseline, on the fixtures the layout pass leaves behind
+ROUTE_BASELINE_OUT=/tmp/p godot --headless --path editor-godot --script route_baseline.gd
+```
+
+`route_baseline.gd` reads `qa/babble-tidied.json` and `qa/dense-graph-tidied.json`, which are
+themselves derived rather than hand-edited. Regenerate those first if the layout operations
+change underneath them:
+
+```bash
+godot --headless --path editor-godot --script tidy_fixtures.gd
 ```
 
 `godot` is whatever `git config soundgraph.godot` names.
