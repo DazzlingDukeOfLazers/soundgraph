@@ -267,11 +267,17 @@ func _build() -> void:
 	# median move of forty units, against auto-place moving twenty-nine nodes a median of
 	# thirteen hundred. One button should not do both, so there are two.
 	arrange_popup.add_item("Resolve overlaps", 3)
+	# And the third intention, which is neither repairing nor regenerating: make the
+	# drawing agree with the signal flow, and change nothing else.
+	arrange_popup.add_item("Tidy flow", 4)
 	arrange_popup.set_item_tooltip(0, "Lay the whole graph out left to right. The same "
 		+ "patch always lands the same way, wherever things were before.")
 	arrange_popup.set_item_tooltip(3, "Move as little as possible to make the drawing "
 		+ "valid: no nodes overlapping, no cable through a node it does not belong to. "
 		+ "Your arrangement is otherwise left alone.")
+	arrange_popup.set_item_tooltip(4, "Move nodes toward the stage of the signal path "
+		+ "they belong to, so the drawing reads left to right. Select nodes first to "
+		+ "tidy only those. Heights are left alone.")
 	arrange_popup.set_item_tooltip(2, "The selected nodes become a module: one node "
 		+ "wearing their boundary as ports and their settings as knobs. Undo undoes it.")
 	arrange_popup.set_item_disabled(1, true)

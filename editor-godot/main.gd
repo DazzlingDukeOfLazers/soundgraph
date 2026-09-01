@@ -773,7 +773,9 @@ func _build_ui() -> void:
 		elif id == 2:
 			_collapse_selection()
 		elif id == 3:
-			_legalize_layout())
+			_legalize_layout()
+		elif id == 4:
+			_tidy_flow())
 	toolbar.make_module_requested.connect(func() -> void: _begin_module_region())
 	toolbar.mute_toggled.connect(func() -> void:
 		if master_mute != null:
@@ -8761,6 +8763,173 @@ func _legalize_layout() -> void:
 			% [repaired, "" if repaired == 1 else "s", moved, "" if moved == 1 else "s",
 				escapes.size()])
 
+
+
+## Improves how well the drawing agrees with the computation, without rearranging it.
+##
+## Layout goal 4. Narrower than "make the graph better" on purpose: it moves nodes toward
+## their own topology-derived stage band, keeps them legal, and stops. Crossings and cable
+## length are watched and not pursued.
+##
+## Selection-aware. With nodes selected only those may move, and everything else is a fixed
+## obstacle that still counts in the scoring — so "tidy this area" is a real operation rather
+## than auto-place with a smaller radius. **Stage depth always comes from the whole
+## topology**, because a selection's induced subgraph would report three middle nodes as
+## sources and then destroy their relationship to the rest of the patch.
+func _tidy_flow() -> void:
+	if patch.get("nodes", []).is_empty():
+		return
+	if int(_layout_faults()["total"]) > 0:
+		_say("resolve the overlaps first — tidying an invalid drawing would hide them")
+		return
+
+	var movable := {}
+	var chosen := _selected_ids()
+	# In document order, and that is not a tidiness. First improvement makes the outcome
+	# depend on which node is tried first, and a widget is named n0..n29 by the order it
+	# was built rather than by anything in the document — so the same patch reopened could
+	# offer a different first improvement and find four more moves at what had been a
+	# fixed point. Sorting by the node identity the document actually carries makes the
+	# operation reach the same answer from the same drawing, whenever it is asked.
+	var by_document: Array = []
+	for id in widgets:
+		if chosen.is_empty() or chosen.has(str(id)):
+			by_document.append(str(id))
+	by_document.sort()
+	for id: String in by_document:
+		movable[str((widgets[id] as GraphNode).name)] = true
+	var home := _layout_positions()
+
+	# The whole topology, once. Depth does not change as nodes move — only the drawing's
+	# agreement with it does — so this is computed before the loop and never again.
+	var ids: Array = []
+	var edges: Array = []
+	for id in widgets:
+		ids.append(str((widgets[id] as GraphNode).name))
+	for wire in graph_edit.get_connection_list():
+		edges.append([str(wire["from_node"]), str(wire["to_node"])])
+	var depth := LayoutTidy.stages(ids, edges)
+	var component := LayoutObjective.components(ids, edges)
+	var cohorts := {}
+	for name: String in ids:
+		var at: int = depth[name]
+		if not cohorts.has(at):
+			cohorts[at] = []
+		(cohorts[at] as Array).append(name)
+
+	_begin_edit()
+	var rounds := 0
+	while rounds < 120:
+		var boxes := _layout_boxes()
+		var tolerance := _layout_tolerance(boxes)
+		var before := LayoutTidy.vector(boxes, depth, edges, tolerance)
+		var before_crossings := _layout_crossings()
+		var taken := false
+		# Two passes. The first refuses any move that adds a crossing; the second allows
+		# it only when nothing else improved the same stage vector. Assuming from the
+		# start that stage order must be bought with crossings would be assuming the
+		# answer.
+		#
+		# First improvement rather than best, and the difference is not a nicety: scanning
+		# every node against every offset against every vertical repair is six hundred
+		# routed trials per round, and this ran for twenty minutes on one fixture without
+		# finishing. Taking the first admissible move is the same operation with the
+		# search order doing the work the ranking was doing.
+		# One pass, and no escape hatch. The rule began as "refuse a move that adds a
+		# crossing unless no non-worsening move exists", and the fixtures said the
+		# opposite of what that anticipated: on babble every stage improvement costs
+		# crossings, so the hatch was taken every time and the operation bought seventeen
+		# stage violations with seven crossings and ten thousand units of cable — the
+		# auto-place pathology in miniature, from an operation built to avoid it.
+		#
+		# So: if no move improves the stage vector without adding a crossing, move
+		# nothing. Tidy is allowed to say the author already did better than it can prove.
+		for allow_crossings in [false]:
+			for id: String in by_document:
+				var name := str((widgets[id] as GraphNode).name)
+				var target := LayoutTidy.band_of(boxes, cohorts[int(depth[name])], name)
+				for shift: float in LayoutTidy.toward(
+						(boxes[name] as Rect2).get_center().x, target, GRID):
+					for lift: int in LayoutTidy.Y_REPAIR:
+						# A component moves as one. Forcing an internal order onto a
+						# feedback loop is correcting it into nonsense.
+						var group := {}
+						var standing := _layout_positions()
+						for other: String in ids:
+							if component[other] == component[name] and movable.has(other):
+								group[other] = (standing[other] as Vector2) 									+ Vector2(shift, float(lift) * GRID)
+						if group.is_empty():
+							continue
+						var was := {}
+						for other: String in group:
+							var widget: GraphNode = graph_edit.get_node_or_null(
+								NodePath(other))
+							if widget == null:
+								continue
+							was[other] = widget.position_offset
+							widget.position_offset = (group[other] as Vector2).snappedf(GRID)
+						await get_tree().process_frame
+						var legal: bool = int(_layout_faults()["total"]) == 0
+						var now := LayoutTidy.vector(_layout_boxes(), depth, edges,
+							tolerance)
+						var fine: bool = legal and LayoutTidy.better(now, before) 							and (allow_crossings or _layout_crossings() <= before_crossings)
+						if fine:
+							taken = true
+							break
+						for other: String in was:
+							(graph_edit.get_node(NodePath(other)) as GraphNode) 								.position_offset = was[other]
+						await get_tree().process_frame
+					if taken:
+						break
+				if taken:
+					break
+			if taken:
+				break
+		if not taken:
+			break
+		rounds += 1
+
+	var moved := 0
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		var at: Vector2 = widget.position_offset
+		if (home.get(str(widget.name), at) as Vector2).distance_to(at) <= 0.5:
+			continue
+		moved += 1
+		for node: Dictionary in patch["nodes"]:
+			if str(node["id"]) == str(id):
+				node["position"] = {"x": at.x, "y": at.y}
+	_commit_edit("tidy flow")
+
+	var after := LayoutTidy.vector(_layout_boxes(), depth, edges,
+		_layout_tolerance(_layout_boxes()))
+	if moved == 0:
+		# The operation is allowed to say the author already did better than it can prove.
+		_say("nothing to tidy — the layout already agrees with the signal flow")
+	else:
+		_say("tidied the flow: moved %d node%s" % [moved, "" if moved == 1 else "s"])
+
+
+## Every node's rectangle, by widget name.
+func _layout_boxes() -> Dictionary:
+	var boxes := {}
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		if widget.visible:
+			boxes[str(widget.name)] = Rect2(widget.position_offset, widget.size)
+	return boxes
+
+
+## The width a band is measured at: half the median node width, so the same rule reads a
+## patch of narrow nodes and a patch of wide ones.
+func _layout_tolerance(boxes: Dictionary) -> float:
+	var widths: Array = []
+	for id: String in boxes:
+		widths.append((boxes[id] as Rect2).size.x)
+	if widths.is_empty():
+		return 120.0
+	widths.sort()
+	return float(widths[widths.size() / 2]) * LayoutObjective.BAND_FRACTION
 
 ## Where every node currently stands, by widget name.
 func _layout_positions() -> Dictionary:

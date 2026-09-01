@@ -458,18 +458,113 @@ Auto-place everything   I am explicitly permitting structural change
 The third — *tidy this area* — is goal 4's, and it is the one that will need the stage
 structure goal 1 defined.
 
+
+## Goal 4 — stage and flow tidy
+
+**Arrange → Tidy flow.** The third intention, and the boundary is the point of having three:
+
+```
+Resolve overlaps    owns tier 1
+Tidy flow           owns a restricted part of tier 2
+Auto-place          keeps permission to regenerate structure
+```
+
+It optimises four topology-derived properties as an ordered vector — stage violations,
+backward edges, stage spread, surplus columns — and **watches** crossings and cable without
+optimising them.
+
+### The two rules that shape it
+
+> **Stage tidy owns X strongly and Y reluctantly.**
+
+Horizontal position is what topology has an opinion about. Vertical position encodes things
+topology cannot know: oscillators grouped, modulation under audio, voices stacked. A node
+moves toward its stage band in X, keeps its Y, and is nudged vertically only to stay legal.
+Vertical *order* is never reshuffled.
+
+> **A component moves as one.**
+
+Stages come from the condensation, so a strongly connected component is one stage unit.
+Forcing an internal left-to-right order onto a feedback loop is correcting it into nonsense.
+
+Depth always comes from the **whole** topology, even when only a selection may move — a
+selection's induced subgraph would report three middle nodes as sources and destroy their
+relationship to the rest of the patch.
+
+### The result
+
+```
+                        dense-graph-legalized        babble
+stage violations               26 -> 16            73 -> 71
+backward                        4 -> 4              2 -> 2
+stage spread                    7 -> 7             11 -> 11
+surplus columns                 0 -> 0              4 -> 3
+crossings                      31 -> 31             9 -> 9
+cable total                 30708 -> 30708      16208 -> 16677
+longest cable                2955 -> 2955       3993 -> 3993
+nodes moved                     6 of 30             1 of 23
+total displacement              1129                 320
+median displacement              200                 320
+yield          1.7 violations per node, 8.9 per 1000 units
+```
+
+**dense-graph-legalized is the good case**: ten stage violations removed for six small
+moves, a median of two hundred units, and not one crossing, cable unit or vertical position
+bought to do it. Auto-place moved twenty-nine nodes a median of 1330 to make that number
+*worse*.
+
+### babble is the honest one
+
+**73 → 71.** Not material, and it is the evidence rather than a failure to hide.
+
+The first implementation had the escape hatch the brief allowed — refuse a crossing-adding
+move *unless no non-worsening move exists* — and on babble every stage improvement costs
+crossings, so the hatch was taken every time. The result was **73 → 56 at the cost of seven
+crossings, ten thousand units of cable and a median move of 2720 units**: the auto-place
+pathology in miniature, produced by the operation built to avoid it.
+
+So the hatch is gone. If no move improves the stage vector without adding a crossing, move
+nothing.
+
+> **Tidy is allowed to say the author already did better than it can prove.**
+
+Which leaves a real finding for the next goal: **babble's disorder is not reachable by
+horizontal moves alone.** Its 73 violations live in vertical arrangement and in routing, and
+a stage tidy that respects Y and refuses crossings can only find one node worth moving. That
+is goal 5's territory, and it is now measured rather than assumed.
+
+### Also learned, twice
+
+A **first-improvement search is order-dependent**, so the traversal is in document order
+rather than in widget-creation order. A widget is named by the order it was built, and the
+same patch reopened offered a different first improvement and found four more moves at what
+had been a fixed point.
+
+And a **reload has to reopen the way the editor opens**. Without restoring zoom and the
+detail band, the graph comes back with its nodes a different height, their centres somewhere
+else, and three more moves apparently available — the operation looked like it was not
+converging when what had changed was the size of everything it was measuring. Sixth
+instrument in this programme to be wrong in that family.
+
+### Gated
+
+`tidy_test.gd`, headless, in `pre-push.sh`. Legal before and after, violations never worse,
+crossings never worse, at most half the nodes moved, a fixed point on the second press and
+across a reopen, one selected node moves nothing else, and plucked-string moves nothing at
+all.
+
 ## What the pass looks like from here
 
 Not "write an arrangement algorithm" — there is one. The measured shape:
 
 1. ~~A derived fixture.~~ **Done — goal 2.**
 2. ~~A local legalizer in the product.~~ **Done — goal 3.**
-3. **Stage and flow tidy**, which the fixtures now support: improve the left-to-right
-   ordering without changing legality. The hostile patch keeps 26 stage violations and 31
-   crossings after legalization, and babble carries 73 while being perfectly legal — that
-   is where the next operation lives, and it is the one that needs the stage structure goal
-   1 defined.
-4. **Crossing and route reduction**, within an already legal and staged layout, locally.
+3. ~~Stage and flow tidy.~~ **Done — goal 4.**
+4. **Crossing and route reduction**, within an already legal and staged layout, locally —
+   and goal 4 measured exactly why it is needed. babble's 73 stage violations barely move
+   under horizontal tidying because its disorder lives in vertical arrangement and routing,
+   and the crossing guard correctly refuses to trade one for the other. That trade is what
+   goal 5 has to make deliberately rather than accidentally.
 
 The hostile specimen stays exactly as it is. It is now a historical baseline for nodes,
 cables and layout, and its six overlaps are part of the evidence rather than a defect to be
