@@ -346,18 +346,130 @@ moves. The other fifteen are the editor snapping the authored positions to its o
 grid on load — the hostile patch was written by hand at 520-unit spacing and not every
 figure in it was a multiple of forty. The fixture records what the editor actually shows.
 
+## Goal 3 — the local legalizer
+
+A product operation, not a harness: **Arrange → Resolve overlaps**. One undo step, one
+sentence of feedback, and it answers exactly one question.
+
+> **Legalization repairs invalid geometry and preserves intent. It is not permission to
+> regenerate the arrangement.**
+
+`LayoutLegalize` holds the search rules; `main._legalize_layout()` is the operation.
+
+### What it may change
+
+Tier 1 and nothing else: node overlaps, clearance faults, cable trespasses. It does not
+optimise crossings, stage order, cable length, columns, area or anything else — a legalizer
+that improved them would be Auto-place wearing a smaller name.
+
+**Local by construction rather than by hope.** Only nodes in a fault may move. A trespass
+implicates the node being crossed; the endpoints of the offending cable are admitted only
+when moving the crossed node cannot clear it. Nothing else is ever unlocked, so "local" is a
+property of the candidate set and not an outcome somebody hopes stayed small enough.
+
+### Escalating rings
+
+```
+A  near    1, 2, 3 grid steps        a nudge
+B  local   4, 6, 8, 11, 15           a search
+C  escape  20, 26, 33, 42, 54, 70    a trapped node, and reported as one
+```
+
+The candidate set widens only when the narrower one has no answer, and a phase C move is
+attributed rather than absorbed: "moved 9 nodes, 1 of them trapped" is a different sentence
+from "moved 9 nodes".
+
+### The scoring, and the one guard
+
+```
+1  tier-1 faults remaining
+2  gratuitous new crossings      the guard
+3  nodes moved
+4  total displacement
+5  worst displacement
+```
+
+Readability is reported, not pursued — with one exception. If two candidates both clear the
+same fault and one adds a dozen crossings, taking the other costs nothing and needs no global
+objective to justify it. So the guard is a **step**, not a count: adding one crossing and
+adding none score the same, and only a gratuitous addition is separated out. That is
+deliberately not a crossing minimiser.
+
+### Apply, redraw, re-measure
+
+```
+candidate move → apply to the real graph → let the real router rebuild → measure → keep or revert
+```
+
+Slow, and correct. Goal 2 established why: the router avoids obstacles, so a trial judged
+against a straight port-to-port line reported twenty-six trespasses where the drawing had
+three. A cheap duplicate router would be a second implementation of the thing being measured,
+and this repository has spent five instruments learning what that costs.
+
+### Anchors
+
+`_layout_anchored()` is the tier-0 seam and today always returns false, because the product
+has no pin. It exists now rather than later so that the loops already refuse to move what it
+names and the operation already reports the case it cannot repair without one. Adding the
+constraint afterwards would mean finding every loop that had assumed it away.
+
+### The acceptance test
+
+`legalize_test.gd`, and it runs **headless** — the router is pure geometry against the
+obstacle list, so a fault is measurable without a rendering server. It is in `pre-push.sh`
+with the other four suites.
+
+```
+the hostile patch starts invalid (10 faults)
+and is repaired to zero faults
+moving 9 nodes against the witness's 9
+and 1600 units in total against the witness's 1520
+which is less than auto-place's 29 nodes and 50742 units
+running it again moves nothing
+and still moves nothing after a reload
+dense-graph-legalized is legal, so nothing moves
+plucked-string is legal, so nothing moves
+babble is legal, so nothing moves
+first-synth's 1 fault is repaired
+by moving 1 of its seven nodes, not rearranging them
+```
+
+**babble is the defining case.** It carries 73 stage violations, 9 crossings and a 3993-unit
+cable, and it is legal — so the legalizer must not touch it. An operation that improved it
+would have decided that "this could read better" is permission to move something, which is
+the exact confusion this feature exists to end.
+
+**Idempotence is the cleanest guarantee it can offer**, and it holds across a save and a
+reload as well as a second press.
+
+**And the hostile patch costs nine nudges and 1600 units**, against the witness's nine and
+1520 and auto-place's twenty-nine and fifty thousand. The product operation lands where the
+evidence said it could.
+
+### What this changes about the product
+
+There is now a menu item for each of two different intentions, where there was one:
+
+```
+Resolve overlaps        make the drawing valid; leave my arrangement alone
+Auto-place everything   I am explicitly permitting structural change
+```
+
+The third — *tidy this area* — is goal 4's, and it is the one that will need the stage
+structure goal 1 defined.
+
 ## What the pass looks like from here
 
 Not "write an arrangement algorithm" — there is one. The measured shape:
 
 1. ~~A derived fixture.~~ **Done — goal 2.**
-2. **A local legalizer in the product**, since goal 2 proved one is possible and cheap: nine
-   nudges against twenty-nine relocations. Today the only thing a user can press is the one
-   that regenerates the arrangement.
-3. **A three-stage arranger**, which the fixtures now support: legalize locally, establish
-   the stage structure, then reduce crossings and cable without destroying intent — rather
-   than one monolithic pass. Goal 2 measured the first stage; the second and third are
-   where the remaining 26 stage violations and 31 crossings live.
+2. ~~A local legalizer in the product.~~ **Done — goal 3.**
+3. **Stage and flow tidy**, which the fixtures now support: improve the left-to-right
+   ordering without changing legality. The hostile patch keeps 26 stage violations and 31
+   crossings after legalization, and babble carries 73 while being perfectly legal — that
+   is where the next operation lives, and it is the one that needs the stage structure goal
+   1 defined.
+4. **Crossing and route reduction**, within an already legal and staged layout, locally.
 
 The hostile specimen stays exactly as it is. It is now a historical baseline for nodes,
 cables and layout, and its six overlaps are part of the evidence rather than a defect to be

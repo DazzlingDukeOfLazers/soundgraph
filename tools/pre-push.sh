@@ -119,7 +119,10 @@ suite_logs="$build/editor-suites"
 mkdir -p "$suite_logs" 2>/dev/null || suite_logs=$(mktemp -d)
 
 if [ -n "$godot" ] && [ -x "$godot" ]; then
-    for suite in editor_test design_test layout_test panel_style_test; do
+    # legalize_test joins them because it turned out to run headless: the router is pure
+    # geometry against the obstacle list, so a fault can be measured without a rendering
+    # server. Every other harness in the layout and cable passes needs pixels and stays out.
+    for suite in editor_test design_test layout_test panel_style_test legalize_test; do
         say "godot: $suite"
         log="$suite_logs/$suite.log"
         ( cd editor-godot && "$godot" --headless --path . --script "$suite.gd" )             > "$log" 2>&1 || true

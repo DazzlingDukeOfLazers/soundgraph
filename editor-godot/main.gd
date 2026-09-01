@@ -771,7 +771,9 @@ func _build_ui() -> void:
 		elif id == 1:
 			_arrange_selection()
 		elif id == 2:
-			_collapse_selection())
+			_collapse_selection()
+		elif id == 3:
+			_legalize_layout())
 	toolbar.make_module_requested.connect(func() -> void: _begin_module_region())
 	toolbar.mute_toggled.connect(func() -> void:
 		if master_mute != null:
@@ -8643,6 +8645,159 @@ func _auto_place() -> void:
 		everything.append(node["id"])
 	await _arrange(everything)
 
+
+
+## Repairs the arrangement without redesigning it.
+##
+## Layout goal 3. The measurement that earned this its own menu item: legalizing the hostile
+## QA patch costs nine nudges and a median move of forty units, while auto-placing it moves
+## twenty-nine nodes a median of thirteen hundred and takes its stage violations from
+## twenty-four to a hundred and thirty-three. Those are not the same operation, and one
+## button should not do both.
+##
+## > **Legalization repairs invalid geometry and preserves intent. It is not permission to
+## > regenerate the arrangement.**
+##
+## Everything it does is one undo step. A repair that has to be undone nine times is a repair
+## nobody will risk pressing.
+func _legalize_layout() -> void:
+	if patch.get("nodes", []).is_empty():
+		return
+
+	var home := {}
+	for id in widgets:
+		home[str((widgets[id] as GraphNode).name)] = (widgets[id] as GraphNode).position_offset
+
+	var start := _layout_faults()
+	if int(start["total"]) == 0:
+		_say("the layout is already legal")
+		return
+
+	_begin_edit()
+	var reasons := {}
+	var escapes := {}
+	var rounds := 0
+	# Bounded. A legalizer that could run for ever on a patch it cannot repair is worse
+	# than one that stops and says so.
+	while rounds < 200:
+		var found := _layout_faults()
+		if int(found["total"]) == 0:
+			break
+		rounds += 1
+		var before_crossings: int = _layout_crossings()
+		var took := false
+		# Phase A nudges, phase B searches locally, phase C escapes a trapped node. The
+		# candidate set widens only when the narrower one has no answer.
+		for phase in 3:
+			var movable := LayoutLegalize.implicated(found, phase > 0)
+			var best: Array = []
+			var best_id := ""
+			var best_at := Vector2.ZERO
+			for radius: int in LayoutLegalize.rings(phase):
+				for offset: Vector2 in LayoutLegalize.offsets(radius, GRID):
+					for id: String in movable:
+						# An anchored node is the author saying this stays here, and
+						# tier 0 outranks legality: a legalizer that moved one would be
+						# repairing the drawing by overruling the drawing's author.
+						if _layout_anchored(id):
+							continue
+						var widget: GraphNode = graph_edit.get_node_or_null(NodePath(id))
+						if widget == null:
+							continue
+						var was: Vector2 = widget.position_offset
+						widget.position_offset = (was + offset).snappedf(GRID)
+						await get_tree().process_frame
+						var after := _layout_faults()
+						var spent := LayoutLegalize.disturbance(_layout_positions(), home)
+						var candidate := LayoutLegalize.score(int(after["total"]),
+							_layout_crossings() - before_crossings, spent)
+						widget.position_offset = was
+						if int(after["total"]) >= int(found["total"]):
+							continue
+						if best.is_empty() or LayoutLegalize.prefer(candidate, best):
+							best = candidate
+							best_id = id
+							best_at = (was + offset).snappedf(GRID)
+				if not best.is_empty():
+					break
+			if best_id != "":
+				var widget: GraphNode = graph_edit.get_node_or_null(NodePath(best_id))
+				if widget != null:
+					widget.position_offset = best_at
+					await get_tree().process_frame
+				if not reasons.has(best_id):
+					reasons[best_id] = str(movable[best_id])
+				if phase == 2:
+					escapes[best_id] = true
+				took = true
+				break
+		if not took:
+			break
+
+	# Positions back into the document, keyed by what each widget actually draws.
+	var moved := 0
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		var at: Vector2 = widget.position_offset
+		if (home.get(str(widget.name), at) as Vector2).distance_to(at) <= 0.5:
+			continue
+		moved += 1
+		for node: Dictionary in patch["nodes"]:
+			if str(node["id"]) == str(id):
+				node["position"] = {"x": at.x, "y": at.y}
+	_commit_edit("legalize layout")
+
+	var left := _layout_faults()
+	var repaired: int = int(start["total"]) - int(left["total"])
+	if int(left["total"]) > 0:
+		_say("resolved %d of %d layout conflicts; %d could not be repaired without moving "
+			% [repaired, int(start["total"]), int(left["total"])]
+			+ "an anchored node")
+	elif escapes.is_empty():
+		_say("resolved %d layout conflict%s; moved %d node%s"
+			% [repaired, "" if repaired == 1 else "s", moved, "" if moved == 1 else "s"])
+	else:
+		_say("resolved %d layout conflict%s; moved %d node%s, %d of them trapped"
+			% [repaired, "" if repaired == 1 else "s", moved, "" if moved == 1 else "s",
+				escapes.size()])
+
+
+## Where every node currently stands, by widget name.
+func _layout_positions() -> Dictionary:
+	var at := {}
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		at[str(widget.name)] = widget.position_offset
+	return at
+
+
+## Whether the author has pinned this node in place.
+##
+## There is no pin in the product today, so this is always false and is here as the tier-0
+## seam rather than as a feature: when one arrives, the legalizer already refuses to move
+## what it names, and `_legalize_layout` already reports the case it cannot repair. Adding
+## the constraint afterwards would mean finding every loop that had assumed it away.
+func _layout_anchored(_widget_name: String) -> bool:
+	return false
+
+
+## Tier-1 faults in the arrangement as it currently stands, measured against the router's
+## own routes rather than a straight line between two ports.
+func _layout_faults() -> Dictionary:
+	var boxes := {}
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		if widget.visible:
+			boxes[str(widget.name)] = Rect2(widget.position_offset, widget.size)
+	return LayoutLegalize.faults(boxes, graph_edit._routes())
+
+
+## How many crossings the drawing currently has, for the gratuitous-damage guard.
+func _layout_crossings() -> int:
+	for child in graph_edit.get_children():
+		if child.has_method("crossing_sites"):
+			return (child.crossing_sites() as Array).size()
+	return 0
 
 ## Arranges just the selected nodes, treating the rest as fixed anchors. Kept as its own
 ## action rather than something Auto-place decides for you: an arrangement that silently
