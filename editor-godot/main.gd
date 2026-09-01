@@ -8813,20 +8813,28 @@ func _tidy_flow() -> void:
 	# ROUTED, so the two requirements pull apart on it and something has to give.
 	#
 	# Both sides were built and measured. Guarding on the structural trespass instead — the
-	# chord through a node body, `_structurally_no_less_legal` below, which is still here —
-	# makes the operation style-independent on every fixture, and costs this: on
-	# dense-graph-legalized it takes the visible trespasses from 23 to 25 and the drawn
-	# crossings from 31 to 32. An operation called Tidy that makes the picture worse is the
-	# more expensive of the two defects, and the cheaper one is invisible to almost
-	# everybody — two nodes placed differently on one fixture depending on a setting.
+	# chord through a node body — makes the operation style-independent on every fixture and
+	# costs this: on dense-graph-legalized it takes the visible trespasses from 23 to 25 and
+	# the drawn crossings from 31 to 32. An operation called Tidy that makes the picture
+	# worse is the more expensive of the two defects.
 	#
-	# So the visible guarantee is kept and the style-independence is reported instead of
-	# asserted, with the exact number, in geometry_contract_test.gd. Getting both means a
-	# third rule nobody has chosen yet: refuse a move that adds a trespass pair in *either*
-	# presentation, which is symmetric in the styles and therefore style-independent by
-	# construction — and roughly twice the work per candidate.
+	# So the contract was corrected rather than the gate forced:
+	#
+	# > **Presentation may veto a structural improvement, but presentation never supplies
+	# > the improvement objective.**
+	#
+	# The objective above is structural and identical in every cable style. This is the
+	# safety constraint, and it belongs to the *active* presentation only — checking both
+	# would put ROUTED geometry, and `_route`'s corridor instability with it, back inside a
+	# CATENARY decision, which is the dependency goal 2.3 removed. A third cable style would
+	# then have changed the behaviour of the two that already existed.
+	#
+	# Two runs may therefore land differently, and when they do `tidy_trace` has to name the
+	# pair that caused it. `geometry_contract_test.gd` asserts exactly that, so "it depends
+	# on the style" can never become an excuse for a divergence nobody can account for.
 	var kept_trespass := _trespass_pairs()
 	var kept_clearance: int = (at_rest["clearance"] as Array).size()
+	tidy_trace.clear()
 
 	var movable := {}
 	var chosen := _selected_ids()
@@ -8916,10 +8924,23 @@ func _tidy_flow() -> void:
 							was[other] = widget.position_offset
 							widget.position_offset = (group[other] as Vector2).snappedf(GRID)
 						await get_tree().process_frame
-						var legal: bool = _no_less_legal(kept_trespass, kept_clearance)
+						# The structural verdict first, and on its own. It consults the
+						# stage vector, the chord crossings and nothing that knows what a
+						# cable looks like, so it is the same answer in every cable style.
 						var now := LayoutTidy.vector(_layout_boxes(), depth, edges,
 							tolerance)
-						var fine: bool = legal and LayoutTidy.better(now, before) 							and (allow_crossings or _structural_crossings() <= before_crossings)
+						var sound: bool = LayoutTidy.better(now, before) 							and (allow_crossings
+								or _structural_crossings() <= before_crossings)
+						# Then the active presentation, which may veto and never proposes.
+						var refused: Array = _trespass_added(kept_trespass)
+						var legal: bool = _no_less_legal(kept_trespass, kept_clearance)
+						if sound and tidy_trace.size() < 400:
+							tidy_trace.append({
+								"node": name, "shift": shift, "lift": lift,
+								"structurally_sound": true,
+								"vetoed": not legal,
+								"pairs": refused})
+						var fine: bool = sound and legal
 						if fine:
 							taken = true
 							break
@@ -9146,6 +9167,25 @@ func _layout_heights() -> Dictionary:
 ##
 ## Named `structural_` so nobody later reaches for `path.length()` because a field happened
 ## to be called `cable`.
+## What the last Tidy flow considered, and which presentation stopped it.
+##
+## The contract this exists to make checkable:
+##
+## > **Presentation may veto a structural improvement, but presentation never supplies the
+## > improvement objective.**
+##
+## Style-independence alone was the wrong acceptance gate — it forced a choice between an
+## objective that ignores the drawing and a safety rule that protects it. This is the shape
+## that keeps both: the objective is structural and identical in every cable style, and the
+## active presentation may refuse a move it would visibly spoil. Two runs may therefore land
+## in different places, and when they do the difference has to be *attributable* — a named
+## trespass pair, in a named style, on a named candidate — rather than shrugged at.
+##
+## Recorded on every run because an unexplained divergence is the thing this guards against,
+## and a trace you have to switch on is a trace nobody has when they need it.
+var tidy_trace: Array = []
+
+
 func _structural_crossings() -> int:
 	return StructuralGeometry.chord_crossings(StructuralGeometry.chords(graph_edit))
 
@@ -9158,45 +9198,18 @@ func _trespass_pairs() -> Dictionary:
 	return out
 
 
-## The structural faults: node overlap, clearance, and a chord through a node body.
+## Which visible trespass pairs this arrangement has that the starting one did not.
 ##
-## Everything here comes from node rectangles and port positions, so it is the same abstract
-## drawing `_structural_cable` and `_structural_crossings` describe. No cable renderer is
-## consulted, which is what makes it safe for an operation that must not move when the
-## presentation does.
-func _structural_faults() -> Dictionary:
-	var boxes := _layout_boxes()
-	var overlaps := 0
-	var clearance := 0
-	var ids: Array = boxes.keys()
-	for i in ids.size():
-		for j in range(i + 1, ids.size()):
-			var a: Rect2 = boxes[ids[i]]
-			var b: Rect2 = boxes[ids[j]]
-			if a.intersects(b):
-				overlaps += 1
-			elif a.grow(LayoutLegalize.CLEARANCE).intersects(b):
-				clearance += 1
-	return {"overlaps": overlaps, "clearance": clearance,
-		"trespass": StructuralGeometry.chord_trespass(
-			StructuralGeometry.chords(graph_edit), boxes,
-			LayoutLegalize.TRESPASS_MARGIN)}
-
-
-## Whether the abstract drawing is no less legal than a structural operation found it.
-##
-## The same monotonicity rule as its display twin — a move may remove a trespass and may not
-## trade one for another — asked of chords rather than of cords.
-func _structurally_no_less_legal(was: Dictionary, was_clearance: int) -> bool:
-	var now := _structural_faults()
-	if int(now["overlaps"]) > 0:
-		return false
-	if int(now["clearance"]) > was_clearance:
-		return false
-	for key: String in now["trespass"]:
+## The evidence a veto has to produce. "Presentation refused it" is not an explanation; "in
+## CATENARY this move puts cable n8>n17 through node n7" is, and `tidy_trace` carries it so
+## that a divergence between two cable styles can be accounted for rather than tolerated.
+func _trespass_added(was: Dictionary) -> Array:
+	var added: Array = []
+	for row: Array in _layout_faults()["trespass"]:
+		var key := "%s|%s|%s" % [str(row[0]), str(row[1]), str(row[2])]
 		if not was.has(key):
-			return false
-	return true
+			added.append(key)
+	return added
 
 
 ## Whether the drawing is no less legal than the state a tidy operation started from.

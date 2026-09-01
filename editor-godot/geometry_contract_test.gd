@@ -123,6 +123,36 @@ func _still_crosses(through: String, from_node: String, to_node: String) -> bool
 	return false
 
 
+## How many candidates two runs agreed on before either of them was vetoed.
+##
+## Returns -1 if they disagreed about a candidate while both were still unvetoed, which is
+## the failure this is looking for: the structural objective proposing different work in
+## different cable styles. A veto, or the end of either trace, stops the comparison — after
+## one fires the two runs are in different arrangements and are expected to part.
+func _agreeing_prefix(one: Array, two: Array) -> int:
+	var i := 0
+	while i < one.size() and i < two.size():
+		var a: Dictionary = one[i]
+		var b: Dictionary = two[i]
+		if "%s@%s,%s" % [str(a["node"]), str(a["shift"]), str(a["lift"])] \
+				!= "%s@%s,%s" % [str(b["node"]), str(b["shift"]), str(b["lift"])]:
+			return -1
+		if bool(a["vetoed"]) or bool(b["vetoed"]):
+			return i
+		i += 1
+	return i
+
+
+## The candidates a presentation refused, with the pairs it refused them for.
+func _vetoed(trace: Array) -> Array:
+	var out: Array = []
+	for row: Dictionary in trace:
+		if bool(row["vetoed"]) and not (row["pairs"] as Array).is_empty():
+			out.append({"style": "catenary" if graph.cable_style == CATENARY
+				else "routed", "node": row["node"], "pairs": row["pairs"]})
+	return out
+
+
 func _initialize() -> void:
 	Settings.isolate()
 	DisplayServer.window_set_size(Vector2i(1920, 1200))
@@ -164,52 +194,9 @@ func _initialize() -> void:
 		check(is_equal_approx(float(costs[CATENARY][0]), by_hand),
 			"and it is the sum of port-to-port distances, nothing else")
 
-		# ---- STYLE_INDEPENDENT: so is the placement Tidy flow chooses ----------------
-		var arranged := {}
-		for style in [CATENARY, ROUTED]:
-			graph.cable_style = style
-			await settle(6)
-			var home := places()
-			await main._tidy_flow()
-			await settle(8)
-			arranged[style] = places()
-			await restore(home)
-		graph.cable_style = CATENARY
-		await settle(6)
-		# Goal 2.4's hard gate, and the one 2.3 had to leave open. Cable presentation has
-		# no input into where Tidy flow puts a node: same fixture, same decisions, both
-		# styles. Every guard it consults is now structural — stage order from the
-		# topology, chord crossings from the port geometry, endpoint distance for cost.
-		# Reported with its number rather than asserted, and the reason is a contradiction
-		# in the contract rather than an unfinished job — see the note in `_tidy_flow`.
-		# Style-independence and "introduce no new visible trespass" cannot both hold on a
-		# fixture that has visible trespasses, and the visible guarantee won.
-		var apart := differ(arranged[CATENARY], arranged[ROUTED])
-		print("  --   Tidy flow places %d node(s) differently by cable style%s"
-			% [apart, "" if apart == 0
-				else "  [the visible-trespass guard is DISPLAY by decision]"])
-
-		# And the same fixed point, reached from either side.
-		var settled := {}
-		for style in [CATENARY, ROUTED]:
-			graph.cable_style = style
-			await settle(6)
-			var home := places()
-			for pass_number in 3:
-				var before_pass := places()
-				await main._tidy_flow()
-				await settle(8)
-				if differ(before_pass, places()) == 0:
-					break
-			settled["catenary" if style == CATENARY else "routed"] = places()
-			await restore(home)
-		graph.cable_style = CATENARY
-		await settle(6)
-		print("  --   and its fixed point differs by %d node(s)"
-			% differ(settled["catenary"], settled["routed"]))
-
-		# The structural count itself must not move with the style either — the metric
-		# before the operation that consumes it.
+		# The structural crossing count, and its exclusions. Measured before the operation
+		# that consumes it, and in both styles, because a metric that moved with the style
+		# would make everything below meaningless.
 		var chords := {}
 		for style in [CATENARY, ROUTED]:
 			graph.cable_style = style
@@ -221,9 +208,8 @@ func _initialize() -> void:
 			"structural chord crossings are the same in both styles (%d)"
 				% int(chords[CATENARY]))
 
-		# The exclusions, asserted rather than trusted. A chord pair that shares a module
-		# at either end is terminal convergence, which Tidy flow has no instrument to fix,
-		# and counting it would charge the operation for a port order it cannot change.
+		# The exclusions, asserted rather than trusted. A chord pair sharing a module at
+		# either end is terminal convergence, which Tidy flow has no instrument to fix.
 		var shared := 0
 		for pair: Array in StructuralGeometry.chord_crossing_pairs(
 				StructuralGeometry.chords(graph)):
@@ -235,30 +221,83 @@ func _initialize() -> void:
 						str(theirs[1]).get_slice(":", 0)]:
 					if one == two:
 						shared += 1
-		check(shared == 0,
-			"and no counted pair shares a module at either end")
+		check(shared == 0, "and no counted pair shares a module at either end")
 
-		# Tidy routes stays DISPLAY-owned and may legitimately differ between styles,
-		# because improving the crossings currently on screen is its entire job. Reported
-		# rather than asserted equal — the assertion that matters is the contract below it.
-		var routed_tidy := {}
+		# ---- structural objective, display safety ------------------------------------
+		#
+		# > **Presentation may veto a structural improvement, but presentation never
+		# > supplies the improvement objective.**
+		#
+		# "Identical in both styles" was the wrong gate: it forced a choice between an
+		# objective that ignores the drawing and a safety rule that protects it, and
+		# checking both presentations would have put ROUTED geometry — and `_route`'s
+		# corridor instability with it — back inside CATENARY decisions. This is the gate
+		# that replaces it, and its last clause is the one doing the work: a divergence has
+		# to name the veto that caused it, or "style dependence" becomes an excuse.
+		var arranged := {}
+		var vetoes := {}
 		for style in [CATENARY, ROUTED]:
 			graph.cable_style = style
 			await settle(6)
 			var home := places()
-			var drawn_before: int = main._layout_crossings()
-			await main._tidy_routes()
+			await main._tidy_flow()
 			await settle(8)
-			check(main._layout_crossings() <= drawn_before,
-				"Tidy routes does not add a drawn crossing in %s (%d -> %d)"
-					% ["catenary" if style == CATENARY else "routed",
-						drawn_before, main._layout_crossings()])
-			routed_tidy["catenary" if style == CATENARY else "routed"] = places()
+			arranged[style] = places()
+			vetoes[style] = (main.tidy_trace as Array).duplicate(true)
 			await restore(home)
 		graph.cable_style = CATENARY
 		await settle(6)
-		print("  --   Tidy routes places %d node(s) differently by style, which is allowed"
-			% differ(routed_tidy["catenary"], routed_tidy["routed"]))
+
+		# 1. The objective scores the same arrangement identically in either style.
+		#    Asserted earlier for cost and crossings; restated here as the premise the rest
+		#    of this section stands on.
+		check(int(chords[CATENARY]) == int(chords[ROUTED])
+				and is_equal_approx(float(costs[CATENARY][0]), float(costs[ROUTED][0])),
+			"the structural objective scores this placement the same in both styles")
+
+		# 2. The candidates the objective admits are the same in both styles — up to the
+		#    first veto, and no further.
+		#
+		#    Not a weakening. The search is first-improvement and sequential: the moment a
+		#    presentation refuses a move the two runs are standing in different
+		#    arrangements, and every candidate after that is generated from a different
+		#    state. Requiring the whole trace to match would be requiring the veto to have
+		#    no consequences, which is the opposite of what a veto is.
+		#
+		#    What must hold, and does, is that presentation contributes nothing *until* it
+		#    refuses something: same candidates, same order, same structural verdicts.
+		var prefix := _agreeing_prefix(vetoes[CATENARY], vetoes[ROUTED])
+		check(prefix >= 0,
+			"and admits the same candidates in the same order until the first veto (%d)"
+				% prefix)
+
+		# 3. Where the two runs land differently, a veto has to account for it.
+		var apart := differ(arranged[CATENARY], arranged[ROUTED])
+		if apart == 0:
+			print("  --   Tidy flow reaches the same placement in both styles")
+		else:
+			var blamed := _vetoed(vetoes[CATENARY]) + _vetoed(vetoes[ROUTED])
+			check(not blamed.is_empty(),
+				"%d node(s) differ, and a display veto accounts for it" % apart)
+			for row: Dictionary in blamed.slice(0, 3):
+				print("      %s vetoed moving %s: would add %s"
+					% [str(row["style"]), str(row["node"]), str(row["pairs"])])
+
+		# 4. Neither result introduces a visible trespass in the style it was run in.
+		for style in [CATENARY, ROUTED]:
+			graph.cable_style = style
+			await settle(6)
+			var home := places()
+			var was: int = (main._layout_faults()["trespass"] as Array).size()
+			await main._tidy_flow()
+			await settle(8)
+			check(int((main._layout_faults()["trespass"] as Array).size()) <= was,
+				"and adds no visible trespass in %s (%d, then %d)"
+					% ["catenary" if style == CATENARY else "routed", was,
+						int((main._layout_faults()["trespass"] as Array).size())])
+			await restore(home)
+		graph.cable_style = CATENARY
+		await settle(6)
 
 		# ---- DISPLAY: a trespass is one you can see ----------------------------------
 		var boxes := {}

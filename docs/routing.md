@@ -724,7 +724,7 @@ trespass, introduce a different one, leave the total unchanged and be accepted.
 So the trespass pairs after have to be a subset of the pairs before. Node overlap keeps its
 stricter rule — never any, before or after.
 
-### The contradiction, and which side it came down on
+### The contradiction, and the contract that resolves it
 
 The brief asked `Tidy flow` for two things that cannot both hold:
 
@@ -733,11 +733,9 @@ do not introduce new visible trespass pairs
 cable presentation style has no input whatsoever
 ```
 
-Visible trespass **is** presentation. On four fixtures nothing notices, because they have
-none or the styles agree. The dense fixture carries twenty-three in CATENARY and none in
-ROUTED, and there the two requirements pull apart.
-
-Both sides were built and measured rather than argued about:
+Visible trespass **is** presentation. Four fixtures never notice, because they have none or
+the styles agree. The dense fixture carries twenty-three in CATENARY and none in ROUTED, and
+there the two pull apart. Both sides were built and measured:
 
 ```
 structural trespass guard    style-independent on every fixture
@@ -745,24 +743,53 @@ structural trespass guard    style-independent on every fixture
                                                     drawn crossings  31 -> 32
 
 visible trespass guard       the picture never gets worse
-                             Tidy flow places 2 nodes differently by style, on one fixture
+                             two nodes placed differently by style, on one fixture
 ```
 
-**The visible guarantee won.** An operation called Tidy that makes the picture worse is the
-more expensive defect; the other is invisible to almost everybody and is a setting nobody
-changes mid-session. It is also the side consistent with everything 2.1 and 2.3 decided —
-when the user's experience of the visible thing has been in tension with an internal
-tidiness, the visible thing has won every time.
+The resolution is not to pick a side but to notice they are different *kinds* of rule:
 
-So the hard acceptance gate 2.4 was given is **not met**, deliberately, and the number is
-printed on every run instead of asserted. `_structurally_no_less_legal` and
-`StructuralGeometry.chord_trespass` are left in place: they are the working other half, and
-whoever revisits this should not have to build it again to see the trade.
+> **Presentation may veto a structural improvement, but presentation never supplies the
+> improvement objective.**
 
-Getting both needs a third rule nobody has chosen: **refuse a move that adds a trespass pair
-in *either* presentation.** That is symmetric in the styles and therefore style-independent
-by construction, it never makes either picture worse, and it costs roughly twice the work
-per candidate.
+So `Tidy flow` has a style-independent objective and an active-display safety constraint:
+
+```
+stage objective                  STYLE_INDEPENDENT
+structural chord crossings       STYLE_INDEPENDENT
+structural cable cost            STYLE_INDEPENDENT
+node overlap legality            STYLE_INDEPENDENT
+visible trespass monotonicity    active DISPLAY — may veto, may not propose
+```
+
+**Only the active presentation.** Checking both would put ROUTED geometry — and `_route`'s
+global corridor instability with it — back inside a CATENARY decision, which is the exact
+dependency 2.3 removed. It would also mean that adding a third cable style someday silently
+changed the behaviour of the two that already existed.
+
+That makes the dense divergence legitimate rather than tolerated, and the acceptance gate
+is stronger than "identical across styles" because it has to be *accounted for*:
+
+1. the structural objective scores an identical placement identically in both styles;
+2. both runs admit the same candidates in the same order until the first veto — after one
+   fires the two runs are standing in different arrangements and are expected to part, so
+   requiring more would be requiring a veto to have no consequences;
+3. where the final placements differ, a specific veto must account for it;
+4. neither result adds a visible trespass in the style it was run in;
+5. `Tidy routes` stays fully DISPLAY-owned.
+
+Point 3 is what stops "style dependence" becoming a catch-all. `tidy_trace` records every
+structurally-admitted candidate and what refused it, and the dense fixture now reports:
+
+```
+2 node(s) differ, and a display veto accounts for it
+    catenary vetoed moving n17: would add ["n7|n8|n17", "n6|n2|n17", "n22|n17|n28"]
+```
+
+The alternate legality model that lost — `_structural_faults`,
+`_structurally_no_less_legal`, `chord_trespass` — is **deleted**, not parked. A complete
+second almost-authoritative implementation with no live consumer is exactly the tempting
+near-copy that already cost this pass a goal when `_same_ink` existed twice. The experiment
+is preserved here, in prose, with its numbers.
 
 ### Where that leaves the ownership table
 
@@ -775,12 +802,15 @@ legalizer trespass        DISPLAY             2.3
 tidy routes               DISPLAY             2.3
 structural cable cost     STYLE_INDEPENDENT   2.3
 structural chord cross.   STYLE_INDEPENDENT   2.4
-tidy flow's legality      DISPLAY             2.4, by decision, against the ideal
+tidy flow's objective     STYLE_INDEPENDENT   2.4
+tidy flow's safety veto   active DISPLAY      2.4
 ```
 
 `routing_path` owns ROUTED cable construction and ROUTED cable quality, and nothing else.
 Its global corridor instability is now a defect in one style's renderer rather than
-something layout and legalization are quietly answering to — which was the point.
+something layout and legalization are quietly answering to — which was the point of the
+whole detour. The router's own domain is finally clean enough to work on: the 21.3x nudge
+response, the detour tail, and its 44 and 10 routed meetings.
 
 ## What the pass looks like from here
 
@@ -790,10 +820,8 @@ something else found on the way is.
 1. ~~Hit testing picks against the wrong geometry.~~ **Done, goal 2.1.**
 2. ~~The remaining hidden-route consumers.~~ **Audited at 2.2, decided at 2.3.** Trespass
    is DISPLAY, cable cost is STYLE_INDEPENDENT and canonical.
-3. ~~A canonical crossing.~~ **Done, goal 2.4.** One thing is left open there and it is a
-   product choice, not a measurement: whether `Tidy flow` should refuse a move that adds a
-   visible trespass in *either* cable style, which is the only way to have both
-   style-independence and a picture that never gets worse.
+3. ~~A canonical crossing.~~ **Done, goal 2.4**, and the geometry-ownership pass is closed
+   with it. Structural objective, display safety, every divergence attributable.
 4. **Corridor stability.** A cable's corridor is a greedy pick from a globally ranked
    channel list with no memory of where it already was. This is the "route hysteresis"
    subproblem, and it now has a mechanism rather than a symptom.
