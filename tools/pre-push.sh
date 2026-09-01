@@ -118,7 +118,13 @@ fi
 suite_logs="$build/editor-suites"
 mkdir -p "$suite_logs" 2>/dev/null || suite_logs=$(mktemp -d)
 
-crashes=0
+# SIGSEGV as bash reports it. The one late death that is tolerated, and only in the
+# company of both markers — see docs/current-phase.md for what is known about it.
+teardown_signal=139
+
+passed=0
+crashed=0
+crashers=""
 
 if [ -n "$godot" ] && [ -x "$godot" ]; then
     # legalize_test joins them because it turned out to run headless: the router is pure
@@ -130,42 +136,57 @@ if [ -n "$godot" ] && [ -x "$godot" ]; then
         status=0
         ( cd editor-godot && "$godot" --headless --path . --script "$suite.gd" )             > "$log" 2>&1 || status=$?
         grep -E "FAIL|checks passed|checks failed" "$log" || true
-        # Tested for the word "passed" rather than for "failed": a script error inside
-        # _initialize skips quit() entirely, so a broken suite can print no verdict at
-        # all, and requiring the conclusion is the only reading that treats silence as
-        # bad news.
+        # The contract, in the order that makes each case mean one thing.
+        #
+        # Two markers have to line up. "checks passed" says every assertion ran and
+        # agreed. HARNESS_SCRIPT_COMPLETE, printed by harness_exit.gd after quit() has
+        # returned, says every scripted teardown statement ran too. A verdict on its own
+        # is not enough to excuse a dead process: a suite can print its conclusion and
+        # then die *in its own teardown*, which is a defect we own and want refused.
+        #
+        #   no verdict                              refused
+        #   verdict, no marker, and a bad status    refused — it died in our code
+        #   both markers, exit 0                    passed
+        #   both markers, then the one signal we
+        #     have actually observed                unstable pass, named and counted
+        #   anything else non-zero                  refused
+        #
+        # A script error inside _initialize skips quit() entirely, so a broken suite can
+        # print no verdict at all. Requiring the conclusion is the only reading that
+        # treats silence as bad news.
         if ! grep -q "checks passed" "$log"; then
             echo "$suite did not report success — fix it before pushing" >&2
             echo "  the whole run is in $log" >&2
             exit 1
         fi
-        # And then the status, which this used to discard entirely.
-        #
-        # The reason it discarded it was true when written: a clean run exited non-zero,
-        # because the editor leaked its audio playback at teardown. That much is fixed —
-        # every harness now leaves through HarnessExit, which stops the audio, gives the
-        # mixer a gap and frees the editor, and the leak is gone.
-        #
-        # What is *not* fixed is the 0xC0000005 exit crash docs/current-phase.md has been
-        # tracking for months. It is out of script's reach: with HARNESS_EXIT_TRACE=1 the
-        # crashing runs still print "[exit] quit returned", so every GDScript statement
-        # completes and Godot dies afterwards in its own shutdown.
-        #
-        # So this reports rather than refuses, and the distinction is deliberate:
-        #
-        #   no verdict     the suite died before it could tell us anything, or never
-        #                  reached quit(). Refused above, and that is the case that
-        #                  actually endangers a push.
-        #   verdict, then
-        #   a signal       the suite finished, said so, and the engine fell over on the
-        #                  way out. The result is complete. Printed loudly and counted,
-        #                  because a crash nobody names is a crash nobody fixes — the
-        #                  bare bash "Segmentation fault" line this replaces was easy to
-        #                  read as noise from the shell.
-        if [ "$status" -ge 128 ]; then
-            crashes=$((crashes + 1))
-            echo "  $suite reported success and then died at engine shutdown (status $status)" >&2
+
+        if [ "$status" -eq 0 ]; then
+            passed=$((passed + 1))
+            continue
         fi
+
+        # Past here the process did not exit cleanly, and the marker decides whether that
+        # happened before or after our last statement.
+        if ! grep -q "HARNESS_SCRIPT_COMPLETE" "$log"; then
+            echo "$suite reported success but did not finish its teardown (status $status)" >&2
+            echo "  no HARNESS_SCRIPT_COMPLETE: it died inside the suite, not after it" >&2
+            echo "  the whole run is in $log" >&2
+            exit 1
+        fi
+
+        # Only the signal actually observed. A SIGABRT, a timeout, an out-of-memory kill
+        # or anything else arriving late has not earned this exemption just by being
+        # late, and inheriting it would be how the next real defect gets waved through.
+        if [ "$status" -ne "$teardown_signal" ]; then
+            echo "$suite finished its script and then exited $status" >&2
+            echo "  that is not the known teardown crash ($teardown_signal); look at it" >&2
+            echo "  the whole run is in $log" >&2
+            exit 1
+        fi
+
+        crashed=$((crashed + 1))
+        crashers="$crashers $suite"
+        echo "  $suite: script complete, then Godot died in engine shutdown" >&2
     done
 else
     echo "" >&2
@@ -173,11 +194,23 @@ else
     echo "  git config soundgraph.godot /path/to/godot_console" >&2
 fi
 
-if [ "$crashes" -gt 0 ]; then
+if [ -n "$godot" ] && [ -x "$godot" ]; then
     echo "" >&2
-    echo "$crashes suite(s) crashed at engine shutdown after passing." >&2
-    echo "  Known, unfixed, and not a reason to hold the push: see the exit-crash entry" >&2
-    echo "  in docs/current-phase.md. Every verdict above is complete." >&2
+    echo "PASS: $passed" >&2
+    if [ "$crashed" -gt 0 ]; then
+        echo "POST-VERDICT TEARDOWN CRASH: $crashed —$crashers" >&2
+    else
+        echo "POST-VERDICT TEARDOWN CRASH: 0" >&2
+    fi
+    # Zero by construction: a failure exits above rather than reaching here. Printed so
+    # the three numbers can be read as one shape, and so a run that ends without them is
+    # obviously a run that stopped early.
+    echo "FAIL: 0" >&2
+    if [ "$crashed" -gt 0 ]; then
+        echo "  Known and unfixed; every verdict above is complete. The exit-crash entry" >&2
+        echo "  in docs/current-phase.md has the measurements. Watch this number: it is" >&2
+        echo "  how a sudden change in the crash rate becomes visible." >&2
+    fi
 fi
 
 say "all checks passed"

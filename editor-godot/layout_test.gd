@@ -8,6 +8,7 @@ extends SceneTree
 ## nothing about whether the result is actually good.
 
 const Layout := preload("res://layout.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 var failures := 0
 
@@ -236,7 +237,7 @@ func _initialize() -> void:
 	print("")
 	if failures == 0:
 		print("all layout checks passed")
-		quit(0)
+		await HarnessExit.finish(self, null, 0)
 	else:
 		print("%d layout check(s) failed" % failures)
-		quit(1)
+		await HarnessExit.finish(self, null, 1)

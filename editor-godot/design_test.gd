@@ -5,6 +5,7 @@ extends SceneTree
 const ModuleThemes := preload("res://module_themes.gd")
 ## The graph, for the one piece of it that is a pure function on a name and a width.
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 ## Checks the design system against the rules it claims to follow.
 ##
 ## A palette is a set of assertions about legibility, and assertions that nobody measures
@@ -646,4 +647,4 @@ func _initialize() -> void:
 		print("all design checks passed")
 	else:
 		print("%d design check(s) failed" % failures)
-	quit(1 if failures > 0 else 0)
+	await HarnessExit.finish(self, null, 1 if failures > 0 else 0)

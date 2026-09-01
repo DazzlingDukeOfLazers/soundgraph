@@ -59,4 +59,15 @@ static func finish(tree: SceneTree, main: Node, code: int = 0) -> void:
 		await tree.process_frame
 	if _trace: print("[exit] quit")
 	tree.quit(code)
-	if _trace: print("[exit] quit returned")
+	# The last thing any harness says, and the whole of what it means:
+	#
+	# > **Every assertion ran, and every scripted teardown statement after them ran too,
+	# > including `quit()`.**
+	#
+	# `quit()` only *requests* the tree to stop at the end of the frame, so this line is
+	# reached on every run — including the ones that then segfault inside Godot's own
+	# shutdown. That is exactly why it is worth printing: it is the difference between
+	# "the engine fell over on the way out" and "the suite died and we are reading a
+	# verdict it printed before it got into trouble". The gate excuses the first and
+	# refuses the second, and without this marker it cannot tell them apart.
+	print("HARNESS_SCRIPT_COMPLETE")

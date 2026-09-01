@@ -451,9 +451,20 @@ somewhere other than the cause.
   never called `shutdown_audio()` at all.** They instantiated `main.tscn`, did their work
   and called `quit()` straight into the race. Only `roundtrip.gd`, `editor_test.gd` and
   `quit_test.gd` had the teardown, each written out by hand. There is now one
-  `harness_exit.gd` and every harness leaves through it, and the
-  `AudioStreamGeneratorPlayback` leak this file has been recording is gone — twenty-four
-  consecutive runs with no "instance was leaked at exit" line.
+  `harness_exit.gd` and every harness leaves through it.
+
+  **A correction, made the same day.** The first write-up of this said the
+  `AudioStreamGeneratorPlayback` leak was *gone*, on the strength of twenty-four
+  consecutive runs with no "instance was leaked at exit" line. Every one of those runs was
+  `editor_test`. Asked more widely, the leak is still there: `legalize_test` and
+  `tidy_test` report it, `crossing_semantics`, `routes_test` and `editor_test` do not. So
+  it is no longer universal, where before it was every run — the same shape as the crash,
+  reduced and not cured. Twenty runs of one suite is not a claim about the suite next to
+  it, which is a lesson this repository keeps buying.
+
+  That weakens but does not remove the decoupling argument: `editor_test` shows no leak in
+  eight runs and still crashes in three or four of them, so for that suite the crash is
+  not the leak.
 
   What is not fixed is the crash, and the useful new fact is **where it is not**. With
   `HARNESS_EXIT_TRACE=1` the teardown prints each step, and the runs that segfault still
@@ -472,12 +483,35 @@ somewhere other than the cause.
   engine inside `shutdown_audio()` changed nothing either. That second one is kept anyway:
   a probe holding a reference to a shut-down engine is wrong regardless of this crash.
 
-  The gate now reads the exit status instead of discarding it, and separates the two cases
-  that matter. **No verdict** still refuses the push — that is the dangerous one, and the
-  existing check already covered it. **Verdict, then a signal** is printed by name and
-  counted, and does not hold the push, because the suite's result is complete and the
-  cause is out of script's reach. The point of the change is that the crash now has a
-  sentence attached to it instead of being a line from bash that reads like shell noise.
+  The gate now reads the exit status instead of discarding it, and the tolerated case is
+  drawn as narrowly as the evidence allows. `harness_exit.gd` prints
+  `HARNESS_SCRIPT_COMPLETE` after `quit()` returns, so there are two markers rather than
+  one, and a verdict on its own no longer excuses a dead process:
+
+  ```
+  no verdict                                    refused
+  verdict, no marker, and a bad status          refused — it died inside the suite
+  both markers, exit 0                          passed
+  both markers, then signal 139                 unstable pass, named and counted
+  anything else non-zero                        refused
+  ```
+
+  The last two lines are the point. What is excused is exactly *every assertion passed and
+  every scripted teardown statement completed, and then Godot fell over in its own
+  shutdown* — not "the log contains a happy string". And only signal 139, the one actually
+  observed: a SIGABRT, a timeout or an out-of-memory kill has not earned the exemption
+  just by arriving late, and letting it inherit one is how the next real defect would get
+  waved through.
+
+  Every run ends with
+
+  ```
+  PASS: 7
+  POST-VERDICT TEARDOWN CRASH: 2 — editor_test routes_test
+  FAIL: 0
+  ```
+
+  so a sudden change in the crash rate is visible without blocking unrelated work.
 
 - **The 0xC0000005 exit crash is rarer, not gone.** shutdown_audio() plus two frames took
   it from ~1 in 5 to the point where 36 consecutive clean runs looked like zero — and on
