@@ -22,6 +22,7 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 const CableArt := preload("res://cable_art.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 const PATCH := "res://qa/cable-types.json"
 
 ## Big enough to hold a cadence and a bit, small enough that a crop is a crop.
@@ -117,7 +118,7 @@ func _initialize() -> void:
 			cords = child
 	if cords == null:
 		printerr("no cord layer")
-		quit(1)
+		await HarnessExit.finish(self, main, 1)
 		return
 
 	# Every clear span on every long cable, as [graph position, class].
@@ -159,4 +160,4 @@ func _initialize() -> void:
 	# Nothing about which is which, on purpose.
 	print("%d crops -> %s" % [wanted.size(), folder])
 	print("the key is in answers.json; do not open it first")
-	quit()
+	await HarnessExit.finish(self, main)

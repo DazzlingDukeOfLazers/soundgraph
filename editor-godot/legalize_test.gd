@@ -25,6 +25,7 @@ extends SceneTree
 ## between two ports is not what gets drawn.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 ## The hostile patch's own minimal legalization, from `legalize.gd`. Not a target to
 ## reproduce — the fixture is evidence of an achievable cost rather than the one true
@@ -179,4 +180,4 @@ func _initialize() -> void:
 		print("all legalizer checks passed")
 	else:
 		print("%d legalizer check(s) failed" % failures)
-	quit(0 if failures == 0 else 1)
+	await HarnessExit.finish(self, main, 0 if failures == 0 else 1)

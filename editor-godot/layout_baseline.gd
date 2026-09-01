@@ -27,6 +27,7 @@ extends SceneTree
 ## nobody could disagree with, and the last two both changed the plan they were made for.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 const PATCHES := [
 	"res://qa/dense-graph.json",
@@ -365,4 +366,4 @@ func _initialize() -> void:
 	out.store_string(JSON.stringify(record, "  "))
 	out.close()
 	print("-> %s" % folder.path_join("layout-baseline.json"))
-	quit()
+	await HarnessExit.finish(self, main)

@@ -22,6 +22,7 @@ extends SceneTree
 ## reliably tell apart.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 const PATCH := "res://qa/dense-graph.json"
 
 var main: Node
@@ -237,7 +238,7 @@ func _initialize() -> void:
 	var subject: Array = reachable_cable()
 	if subject.is_empty():
 		printerr("no cable landed inside the window; nothing to click")
-		quit(1)
+		await HarnessExit.finish(self, main, 1)
 		return
 	var where := on_cable(subject)
 	print("")
@@ -359,4 +360,4 @@ func _initialize() -> void:
 		print("all gesture checks passed")
 	else:
 		print("%d gesture check(s) failed" % failures)
-	quit(0 if failures == 0 else 1)
+	await HarnessExit.finish(self, main, 0 if failures == 0 else 1)

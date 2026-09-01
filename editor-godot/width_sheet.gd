@@ -37,6 +37,7 @@ extends SceneTree
 ## node are relatively larger at Compact than at XL, so XL — the scale every acceptance in
 ## this pass has been judged at — is the most forgiving one there is.
 
+const HarnessExit := preload("res://harness_exit.gd")
 const SCALE_NAMES := ["Compact", "Comfortable", "Large", "XL"]
 ## From NodeGrid, so this cannot drift from the ladder it reports on.
 const CLASS_NAMES := NodeGrid.CLASS_NAMES
@@ -177,4 +178,4 @@ func _initialize() -> void:
 		var file := FileAccess.open(folder.path_join("widths.json"), FileAccess.WRITE)
 		file.store_string(JSON.stringify(record, "  "))
 		file.close()
-	quit()
+	await HarnessExit.finish(self, main)

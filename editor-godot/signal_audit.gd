@@ -39,6 +39,7 @@ extends SceneTree
 ##   C  event is real and deliberately transported as control            document it
 
 ## From main.gd, so the audit reports the shapes the editor actually cuts.
+const HarnessExit := preload("res://harness_exit.gd")
 const SHAPES := ["circle", "diamond", "square", "ring"]
 const CLASSES := ["audio", "control", "event", "note"]
 
@@ -157,4 +158,4 @@ func _initialize() -> void:
 	out.close()
 	print("")
 	print("-> %s" % folder.path_join("signal-taxonomy.json"))
-	quit()
+	await HarnessExit.finish(self, main)

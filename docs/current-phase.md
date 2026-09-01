@@ -442,6 +442,43 @@ somewhere other than the cause.
   `sg-host` for 1141x711 and the Godot extension for 2282x1422 on one screen. Neither is
   wrong: Godot's process is per-monitor DPI aware and sg-host's is not, so the plugin is
   answering a different question about the same display. Never hard-code either.
+- **2026-09-01, the exit crash again: the leak is fixed, the crash is not, and the gate
+  now says so.** Chased because the push gate had started printing a bare
+  `Segmentation fault` line from bash roughly one suite in ten, always after that suite
+  had printed its verdict, and passing anyway.
+
+  What was actually wrong and is now fixed: **thirty-eight of forty-one headless harnesses
+  never called `shutdown_audio()` at all.** They instantiated `main.tscn`, did their work
+  and called `quit()` straight into the race. Only `roundtrip.gd`, `editor_test.gd` and
+  `quit_test.gd` had the teardown, each written out by hand. There is now one
+  `harness_exit.gd` and every harness leaves through it, and the
+  `AudioStreamGeneratorPlayback` leak this file has been recording is gone — twenty-four
+  consecutive runs with no "instance was leaked at exit" line.
+
+  What is not fixed is the crash, and the useful new fact is **where it is not**. With
+  `HARNESS_EXIT_TRACE=1` the teardown prints each step, and the runs that segfault still
+  print `[exit] quit returned`. Every GDScript statement completes, including `quit()`.
+  Whatever remains is in Godot 4.7's own shutdown after the tree is done, exactly as this
+  file already suspected — now measured rather than inferred.
+
+  Rates, on this machine: `editor_test` 4 of 8 and 3 of 8 — far above the "few percent"
+  recorded above, and it is the largest suite by a wide margin. `legalize_test` 1 of 11.
+  `crossing_semantics` caught once. It is not one suite's defect; it scales with how much
+  the suite does.
+
+  Two hypotheses tested and **rejected**, so nobody spends the afternoon again:
+  `queue_free()` → `remove_child()` + `free()` in `editor_test`'s teardown changed nothing
+  (4 of 8 before, 3 of 8 after), and releasing `scope_probe`'s second reference to the
+  engine inside `shutdown_audio()` changed nothing either. That second one is kept anyway:
+  a probe holding a reference to a shut-down engine is wrong regardless of this crash.
+
+  The gate now reads the exit status instead of discarding it, and separates the two cases
+  that matter. **No verdict** still refuses the push — that is the dangerous one, and the
+  existing check already covered it. **Verdict, then a signal** is printed by name and
+  counted, and does not hold the push, because the suite's result is complete and the
+  cause is out of script's reach. The point of the change is that the crash now has a
+  sentence attached to it instead of being a line from bash that reads like shell noise.
+
 - **The 0xC0000005 exit crash is rarer, not gone.** shutdown_audio() plus two frames took
   it from ~1 in 5 to the point where 36 consecutive clean runs looked like zero — and on
   2026-08-09 it fired twice in 11 runs, then 0 in the next 32. A residual few-percent

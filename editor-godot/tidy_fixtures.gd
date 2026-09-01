@@ -15,6 +15,7 @@ extends SceneTree
 ## would destroy the evidence they carry. These are new files that say where they came from.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 const SOURCES := [
 	["res://../examples/patches/babble.json", "qa/babble-tidied.json",
@@ -136,4 +137,4 @@ func _initialize() -> void:
 		out.close()
 		print("%s: %d -> %d crossings, %d nodes differ from the source -> %s"
 			% [str(entry[0]).get_file(), before, best_crossings, moved, str(entry[1])])
-	quit()
+	await HarnessExit.finish(self, main)

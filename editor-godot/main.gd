@@ -3685,6 +3685,12 @@ func shutdown_audio() -> void:
 		player.free()
 		player = null
 	playback = null
+	# The probe keeps its own reference to the engine, handed to it when the panel was
+	# built. Nulling ours does not release the extension object — the *last* reference
+	# would instead die inside `free()`, which is after the frames this teardown exists to
+	# provide, so the gap was being given to the wrong moment.
+	if scope_probe != null:
+		scope_probe.engine = null
 	engine = null
 
 

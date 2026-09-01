@@ -118,6 +118,8 @@ fi
 suite_logs="$build/editor-suites"
 mkdir -p "$suite_logs" 2>/dev/null || suite_logs=$(mktemp -d)
 
+crashes=0
+
 if [ -n "$godot" ] && [ -x "$godot" ]; then
     # legalize_test joins them because it turned out to run headless: the router is pure
     # geometry against the obstacle list, so a fault can be measured without a rendering
@@ -125,23 +127,57 @@ if [ -n "$godot" ] && [ -x "$godot" ]; then
     for suite in editor_test design_test layout_test panel_style_test legalize_test tidy_test routes_test crossing_semantics hit_geometry; do
         say "godot: $suite"
         log="$suite_logs/$suite.log"
-        ( cd editor-godot && "$godot" --headless --path . --script "$suite.gd" )             > "$log" 2>&1 || true
+        status=0
+        ( cd editor-godot && "$godot" --headless --path . --script "$suite.gd" )             > "$log" 2>&1 || status=$?
         grep -E "FAIL|checks passed|checks failed" "$log" || true
-        # Tested for the word "passed" rather than for "failed", and its exit status is
-        # not consulted at all: Godot exits non-zero on a clean run here (leaked
-        # ObjectDB instances at teardown), and a script error inside _initialize skips
-        # quit() entirely, so a broken suite can print no verdict at all. Requiring the
-        # conclusion is the only reading that treats silence as bad news.
+        # Tested for the word "passed" rather than for "failed": a script error inside
+        # _initialize skips quit() entirely, so a broken suite can print no verdict at
+        # all, and requiring the conclusion is the only reading that treats silence as
+        # bad news.
         if ! grep -q "checks passed" "$log"; then
             echo "$suite did not report success — fix it before pushing" >&2
             echo "  the whole run is in $log" >&2
             exit 1
+        fi
+        # And then the status, which this used to discard entirely.
+        #
+        # The reason it discarded it was true when written: a clean run exited non-zero,
+        # because the editor leaked its audio playback at teardown. That much is fixed —
+        # every harness now leaves through HarnessExit, which stops the audio, gives the
+        # mixer a gap and frees the editor, and the leak is gone.
+        #
+        # What is *not* fixed is the 0xC0000005 exit crash docs/current-phase.md has been
+        # tracking for months. It is out of script's reach: with HARNESS_EXIT_TRACE=1 the
+        # crashing runs still print "[exit] quit returned", so every GDScript statement
+        # completes and Godot dies afterwards in its own shutdown.
+        #
+        # So this reports rather than refuses, and the distinction is deliberate:
+        #
+        #   no verdict     the suite died before it could tell us anything, or never
+        #                  reached quit(). Refused above, and that is the case that
+        #                  actually endangers a push.
+        #   verdict, then
+        #   a signal       the suite finished, said so, and the engine fell over on the
+        #                  way out. The result is complete. Printed loudly and counted,
+        #                  because a crash nobody names is a crash nobody fixes — the
+        #                  bare bash "Segmentation fault" line this replaces was easy to
+        #                  read as noise from the shell.
+        if [ "$status" -ge 128 ]; then
+            crashes=$((crashes + 1))
+            echo "  $suite reported success and then died at engine shutdown (status $status)" >&2
         fi
     done
 else
     echo "" >&2
     echo "godot not configured; the editor suites did not run." >&2
     echo "  git config soundgraph.godot /path/to/godot_console" >&2
+fi
+
+if [ "$crashes" -gt 0 ]; then
+    echo "" >&2
+    echo "$crashes suite(s) crashed at engine shutdown after passing." >&2
+    echo "  Known, unfixed, and not a reason to hold the push: see the exit-crash entry" >&2
+    echo "  in docs/current-phase.md. Every verdict above is complete." >&2
 fi
 
 say "all checks passed"

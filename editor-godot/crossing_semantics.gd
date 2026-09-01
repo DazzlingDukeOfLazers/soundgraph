@@ -29,6 +29,7 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 const CableCrossings := preload("res://cable_crossings.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 ## The renderer's counts before any of this goal's refactoring, from the goal 1 baseline.
 ## The refactor is only trustworthy if it moved none of them.
@@ -170,7 +171,7 @@ func _initialize() -> void:
 		print("all crossing semantics checks passed")
 	else:
 		print("%d checks failed" % failures.size())
-	quit(0 if failures.is_empty() else 1)
+	await HarnessExit.finish(self, main, 0 if failures.is_empty() else 1)
 
 
 func _verts(cords: Array) -> int:

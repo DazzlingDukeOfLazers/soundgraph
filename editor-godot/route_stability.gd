@@ -32,6 +32,7 @@ extends SceneTree
 const PatchGraph := preload("res://patch_graph.gd")
 const CableCrossings := preload("res://cable_crossings.gd")
 const LayoutLegalize := preload("res://layout_legalize.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 const NUDGE := 40.0
 
@@ -332,7 +333,7 @@ func _initialize() -> void:
 		out.close()
 		print("")
 		print("-> %s" % folder.path_join("route-stability.json"))
-	quit()
+	await HarnessExit.finish(self, main)
 
 
 # ---- part C: does the same geometry route differently in a different order? -----------

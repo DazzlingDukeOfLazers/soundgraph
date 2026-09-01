@@ -24,6 +24,7 @@ extends SceneTree
 ## with OPTICAL_SHEET_OUT naming a directory. Not headless: it captures pixels.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 ## Every node in First Synth, as they are named in it. All seven now: step 14 finished
 ## the patch, so there is no longer an unmigrated node to hold one up against — which is
@@ -288,4 +289,4 @@ func _initialize() -> void:
 					% [title, at["zoom"], at["nodes"][title]["shown"]])
 	print("%d zooms swept, %d band changes, %d elided titles on migrated types -> %s"
 		% [record["sweep"].size(), transitions, cuts, folder])
-	quit()
+	await HarnessExit.finish(self, main)

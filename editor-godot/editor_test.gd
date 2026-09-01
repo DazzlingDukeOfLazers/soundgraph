@@ -28,6 +28,7 @@ const CableArtScript := preload("res://cable_art.gd")
 const NodeBrowserScript := preload("res://node_browser.gd")
 ## The third way of looking at a patch.
 const Schematic := preload("res://schematic.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 ## Headless checks on the editor itself.
 ##
 ##   godot --headless --script res://editor_test.gd
@@ -11503,22 +11504,29 @@ func _initialize() -> void:
 	# for deletion before shutdown_audio was asked of it — a teardown improvised in
 	# exactly the way that segfaulted roughly one run in five, always after the
 	# last check had already passed.
+	# The probe player has been playing since the audio checks, so it goes first, stopped
+	# under the lock like every other player in this file. Then the editor, through the
+	# shared exit.
+	#
+	# It used to `queue_free()` both and give them a single frame. Deletion from that queue
+	# happens when the tree gets round to it, and `quit()` was the next statement — so the
+	# gap this teardown exists to create was not reliably there. `free()` is immediate, and
+	# it is what `roundtrip.gd` had been doing all along in the version this was copied
+	# from. This suite was the one still segfaulting after every other harness was fixed,
+	# which is how the difference was found.
 	AudioServer.lock()
 	player.stop()
 	player.stream = null
 	AudioServer.unlock()
-	if main.has_method("shutdown_audio"):
-		main.shutdown_audio()
 	await process_frame
-	await process_frame
-	player.queue_free()
-	main.queue_free()
+	if player.get_parent() != null:
+		player.get_parent().remove_child(player)
+	player.free()
 	await process_frame
 
 	print("")
 	if failures == 0:
 		print("all editor checks passed")
-		quit(0)
 	else:
 		print("%d editor check(s) failed" % failures)
-		quit(1)
+	await HarnessExit.finish(self, main, 0 if failures == 0 else 1)

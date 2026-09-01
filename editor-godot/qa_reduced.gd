@@ -17,6 +17,7 @@ extends SceneTree
 ## Prints one line per parameter that arrives incomplete, and a count per band.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 const PATCH := "res://qa/dense-graph.json"
 const ZOOMS := [1.0, 0.66, 0.40, 0.28]
 
@@ -234,4 +235,4 @@ func _initialize() -> void:
 				print("           still aimable at %s: %s" % [band, ", ".join(ghosts)])
 	print("")
 	print("%d split cells across every zoom, straddle and interface scale" % split)
-	quit()
+	await HarnessExit.finish(self, main)

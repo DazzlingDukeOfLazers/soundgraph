@@ -19,6 +19,7 @@ extends SceneTree
 ## Nothing is migrated or redesigned here. It reads.
 
 ## From NodeGrid, so this cannot drift from the ladder it reports on.
+const HarnessExit := preload("res://harness_exit.gd")
 const CLASS_NAMES := NodeGrid.CLASS_NAMES
 const SCALE_NAMES := ["Compact", "Comfortable", "Large", "XL"]
 
@@ -183,4 +184,4 @@ func _initialize() -> void:
 		var file := FileAccess.open(folder.path_join("inventory.json"), FileAccess.WRITE)
 		file.store_string(JSON.stringify(record, "  "))
 		file.close()
-	quit()
+	await HarnessExit.finish(self, main)

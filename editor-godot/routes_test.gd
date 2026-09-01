@@ -17,6 +17,7 @@ extends SceneTree
 ## cheap win left is untouched.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 var main: Node
 var graph: GraphEdit
@@ -218,4 +219,4 @@ func _initialize() -> void:
 		print("all route checks passed")
 	else:
 		print("%d route check(s) failed" % failures)
-	quit(0 if failures == 0 else 1)
+	await HarnessExit.finish(self, main, 0 if failures == 0 else 1)

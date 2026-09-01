@@ -31,6 +31,7 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 const CableCrossings := preload("res://cable_crossings.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 const PATCHES := [
 	"res://../examples/patches/first-synth.json",
@@ -419,4 +420,4 @@ func _initialize() -> void:
 	out.close()
 	print("")
 	print("-> %s" % folder.path_join("route-baseline.json"))
-	quit()
+	await HarnessExit.finish(self, main)

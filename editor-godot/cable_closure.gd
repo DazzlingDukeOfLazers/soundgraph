@@ -23,6 +23,7 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 const CableArt := preload("res://cable_art.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 const PATCHES := ["res://qa/dense-graph.json", "res://qa/cable-types.json"]
 const ZOOMS := [1.0, 0.66, 0.40, 0.28]
@@ -423,4 +424,4 @@ func _initialize() -> void:
 		"complaints": complaints}, "  "))
 	out.close()
 	print("-> %s" % folder)
-	quit()
+	await HarnessExit.finish(self, main)

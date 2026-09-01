@@ -29,6 +29,7 @@ extends SceneTree
 const PatchGraph := preload("res://patch_graph.gd")
 const LayoutLegalize := preload("res://layout_legalize.gd")
 const CableCrossings := preload("res://cable_crossings.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 const CATENARY := 0
 const ROUTED := 1
@@ -339,4 +340,4 @@ func _initialize() -> void:
 		out.close()
 		print("")
 		print("-> %s" % folder.path_join("geometry-owners.json"))
-	quit()
+	await HarnessExit.finish(self, main)

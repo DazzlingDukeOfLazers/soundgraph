@@ -9,6 +9,7 @@ const PatchGraph := preload("res://patch_graph.gd")
 const Faceplate := preload("res://faceplate.gd")
 ## The cable renderer, for the crossing contract below.
 const CableArt := preload("res://cable_art.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 ## Every node wearing a different panel style, through every way of changing one.
 ##
 ##   godot --headless --path editor-godot --script res://panel_style_test.gd
@@ -249,7 +250,8 @@ func _initialize() -> void:
 	await process_frame
 	if not main.has_method("_set_module_theme") or main.graph_edit == null:
 		print("  FAIL the editor did not build; look for a parse error above")
-		quit(1)
+		await HarnessExit.finish(self, main, 1)
+		return
 		return
 
 	print("panel styles")
@@ -481,4 +483,4 @@ func _initialize() -> void:
 		print("all panel style checks passed")
 	else:
 		print("%d panel style check(s) failed" % failures)
-	quit(1 if failures > 0 else 0)
+	await HarnessExit.finish(self, main, 1 if failures > 0 else 0)

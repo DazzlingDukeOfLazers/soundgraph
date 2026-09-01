@@ -34,6 +34,7 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 const CableArt := preload("res://cable_art.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 const PATCH := "res://qa/dense-graph.json"
 
 ## Actual size, and the magnification the crop is also shown at. A crossing judged at 4x is
@@ -161,7 +162,7 @@ func _initialize() -> void:
 			cords = child
 	if cords == null:
 		printerr("no cord layer; nothing to photograph")
-		quit(1)
+		await HarnessExit.finish(self, main, 1)
 		return
 
 	var folder := out_dir()
@@ -306,4 +307,4 @@ func _initialize() -> void:
 	out.close()
 	print("")
 	print("-> %s" % folder)
-	quit()
+	await HarnessExit.finish(self, main)

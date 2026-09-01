@@ -25,6 +25,7 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 const CableCrossings := preload("res://cable_crossings.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 ## Where along each cable to try, as a fraction of its arc length.
 ##
@@ -246,7 +247,7 @@ func _initialize() -> void:
 		print("all hit geometry checks passed")
 	else:
 		print("%d checks failed" % failures.size())
-	quit(0 if failures.is_empty() else 1)
+	await HarnessExit.finish(self, main, 0 if failures.is_empty() else 1)
 
 
 func _within(point: Vector2, path: PackedVector2Array, reach: float) -> bool:

@@ -51,6 +51,7 @@ extends SceneTree
 ## distinct from the gratuitous cost of an arrangement strategy.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 const SOURCE := "res://qa/dense-graph.json"
 const TARGET := "qa/dense-graph-legalized.json"
 
@@ -326,4 +327,4 @@ func _initialize() -> void:
 	out.store_string(JSON.stringify(document, "  "))
 	out.close()
 	print("-> %s" % TARGET)
-	quit()
+	await HarnessExit.finish(self, main)

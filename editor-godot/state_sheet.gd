@@ -20,6 +20,7 @@ extends SceneTree
 ##
 ## with STATE_SHEET_OUT naming a directory. Not headless: this one has to see pixels.
 
+const HarnessExit := preload("res://harness_exit.gd")
 const SPECIMEN := "Lowpass"
 const ENVELOPE := "Amp Envelope"
 const GAIN := "Amplifier"
@@ -235,4 +236,4 @@ func _initialize() -> void:
 
 	print("eight states, %d bands, four stages, one mixed patch -> %s"
 		% [bands.size(), folder])
-	quit()
+	await HarnessExit.finish(self, main)

@@ -38,6 +38,7 @@ extends SceneTree
 
 const PatchGraph := preload("res://patch_graph.gd")
 const Seams := preload("res://seams.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 const PATCH := "res://qa/dense-graph.json"
 
@@ -266,7 +267,7 @@ func _initialize() -> void:
 	var file := FileAccess.open(PATCH, FileAccess.READ)
 	if file == null:
 		printerr("could not read %s" % PATCH)
-		quit(1)
+		await HarnessExit.finish(self, main, 1)
 		return
 	await main._load_text(file.get_as_text())
 	await settle(20)
@@ -396,4 +397,4 @@ func _initialize() -> void:
 		print("%d complaints:" % complaints.size())
 		for one: String in complaints:
 			print("  %s" % one)
-	quit()
+	await HarnessExit.finish(self, main)

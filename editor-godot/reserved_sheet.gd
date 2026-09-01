@@ -20,6 +20,7 @@ extends SceneTree
 ## type with no glyph and no identity variant, so the sheet cannot fall behind the day one
 ## of them is finally drawn — it will simply have eleven rows.
 
+const HarnessExit := preload("res://harness_exit.gd")
 const AIR := 14
 ## Three headers that do wear a mark, so the blank cells are judged against the thing they
 ## are the absence of rather than against each other.
@@ -139,4 +140,4 @@ func _initialize() -> void:
 		for entry: Dictionary in report.get("diagnostics", []):
 			print("  %s: %s" % [str(entry.get("severity", "")),
 				str(entry.get("message", ""))])
-	quit()
+	await HarnessExit.finish(self, main)

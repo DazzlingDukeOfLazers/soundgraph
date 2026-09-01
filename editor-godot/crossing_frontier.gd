@@ -39,6 +39,7 @@ extends SceneTree
 ## reorder and four thousand units of cable, and only the sheet can say.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 
 const PATCHES := ["res://../examples/patches/babble.json",
 	"res://qa/dense-graph-legalized.json"]
@@ -313,4 +314,4 @@ func _initialize() -> void:
 	out.close()
 	print("")
 	print("-> %s" % folder.path_join("crossing-frontier.json"))
-	quit()
+	await HarnessExit.finish(self, main)

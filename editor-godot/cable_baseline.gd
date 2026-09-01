@@ -33,6 +33,7 @@ extends SceneTree
 ## not in scope.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const HarnessExit := preload("res://harness_exit.gd")
 const PATCH := "res://qa/dense-graph.json"
 
 ## The zooms the node pass judges at, so the two baselines can be read side by side.
@@ -159,7 +160,7 @@ func _initialize() -> void:
 	var file := FileAccess.open(PATCH, FileAccess.READ)
 	if file == null:
 		printerr("could not read %s" % PATCH)
-		quit(1)
+		await HarnessExit.finish(self, main, 1)
 		return
 	await main._load_text(file.get_as_text())
 	await settle(20)
@@ -364,4 +365,4 @@ func _initialize() -> void:
 	out.close()
 	print("")
 	print("-> %s" % folder.path_join("cable-baseline.json"))
-	quit()
+	await HarnessExit.finish(self, main)
