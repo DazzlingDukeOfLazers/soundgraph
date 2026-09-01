@@ -553,6 +553,114 @@ crossings never worse, at most half the nodes moved, a fixed point on the second
 across a reopen, one selected node moves nothing else, and plucked-string moves nothing at
 all.
 
+
+## Goal 5A — the crossing-cost frontier
+
+A harness, not an operation. Goal 4 ended with a hypothesis and a warning: babble's remaining
+disorder might live in Y, and a lexicographic search given permission to trade will spend
+freely in whichever direction it is pointed. So the question is not whether crossings can be
+reduced.
+
+> **What does removing a crossing cost in authored arrangement, cable and space?**
+
+Held fixed: tier 0, tier 1 legality, the goal 4 stage vector — goal 5 may not buy a crossing
+by undoing goal 4 — X, and **the router**. Moving a node and letting the existing router
+respond is layout; changing where the same two endpoints route is a different project that
+would alter every cable in every existing patch.
+
+### A new cost metric
+
+**Vertical order inversions.** Displacement alone is the wrong cost: moving a node five
+hundred units through empty space can leave every relationship intact, while swapping two
+neighbours by a hundred changes which is above the other — and vertical order is where a
+patch keeps what its topology cannot say. Counted as pairs whose relative order a move
+reversed.
+
+### babble — placement has run out
+
+```
+9 crossings, 73 stage violations, 16088 cable, 3993 longest
+
+13 single-node moves remove a crossing; 3 on the frontier
+ 0 adjacent vertical swaps remove one
+
+node   -cross   moved   cable   longest   area   inversions
+n15         1      40     -14         0   0.00            6
+n10         1      80     -48        32   0.34            5
+n8          1      80    -204         0   0.00            6
+```
+
+**Not one move removes two.** The whole graph offers thirteen single-crossing improvements
+and no two-node swap helps at all. And each of the three cheapest costs five or six
+inversions — it reorders neighbours.
+
+So goal 4's hypothesis is answered, and answered against itself:
+
+> **On babble the remaining disorder is not reachable by placement at all.** Not
+> horizontally, which goal 4 established, and not vertically either. Nine crossings, best
+> case eight, paid for by rearranging the author's vertical grouping.
+
+That is the most useful thing this harness could have found. For a patch like babble the next
+thing to investigate is **the router**, not the layout engine.
+
+### dense-graph-legalized — a healthy frontier with a knee
+
+```
+31 crossings, 26 stage violations, 30708 cable, 2955 longest
+58 single-node moves remove a crossing; 14 on the frontier
+
+node   -cross   moved   cable   longest   area   inversions
+n17         8    3640    4056       980   1.78           28
+n17         6    2320      96        12   0.00           27
+n24         6    2320     284      -232   2.09           27
+n17         5    2200    -264        12   0.00           27
+n2          4    1280    -800         0   0.96           13
+n24         3    1600     -45      -144   0.00           23
+n18         2    1120    1607         0   1.61            9
+n24         1      40     385       -40   0.00            2
+n26         1      40      41         0   0.00            0
+n3          1      40     -40         0   0.00            1
+n24         1     120     149      -120   0.00            3
+n24         1     160      37      -148   0.00            4
+n18         1     240    -299         0   0.00            4
+n27         1     360    -135         0   0.00            1
+```
+
+**The curve has a knee and it is sharp.** At the bottom: several forty-unit moves, each worth
+one crossing, at zero or one inversion and near-zero cable — n26 removes a crossing for forty
+units, forty-one units of cable and **no vertical reordering at all**. Then a cliff: the
+four-and-above candidates cost one to four *thousand* units and thirteen to twenty-eight
+inversions.
+
+n17 at minus eight for 3640 units, 4056 more cable and 28 inversions is the auto-place
+pathology arrived at from the other direction. It is exactly what would sit at the top of any
+search that ranked crossings first.
+
+### What this settles, and what it does not
+
+**No budget is chosen here**, on purpose — "a crossing is worth five hundred units" is the
+weighted score in another costume. But the frontier describes the cheap end without anybody
+inventing a figure: the knee is where inversions leave zero.
+
+```
+0-1 inversions, a grid step or two       ordinary
+13-28 inversions, thousands of units     a different operation
+```
+
+**Tidy routes is coherent as a product operation** for a patch with a knee, restricted to the
+bottom of it. It is **not** the answer for a patch like babble, where placement offers
+nine-to-eight at the price of the author's vertical grouping.
+
+Which forks the next step rather than continuing it:
+
+1. **Goal 5B — Tidy routes**, restricted to the knee: single-node vertical moves at zero or
+   one inversion and a bounded displacement, refusing anything the frontier shows on the
+   cliff. Provable on dense-graph-legalized, and it will correctly do almost nothing on
+   babble.
+2. **The router**, as its own project with its own baseline, for the crossings placement
+   cannot reach — which on babble is all of them.
+
+
 ## What the pass looks like from here
 
 Not "write an arrangement algorithm" — there is one. The measured shape:
@@ -560,11 +668,12 @@ Not "write an arrangement algorithm" — there is one. The measured shape:
 1. ~~A derived fixture.~~ **Done — goal 2.**
 2. ~~A local legalizer in the product.~~ **Done — goal 3.**
 3. ~~Stage and flow tidy.~~ **Done — goal 4.**
-4. **Crossing and route reduction**, within an already legal and staged layout, locally —
-   and goal 4 measured exactly why it is needed. babble's 73 stage violations barely move
-   under horizontal tidying because its disorder lives in vertical arrangement and routing,
-   and the crossing guard correctly refuses to trade one for the other. That trade is what
-   goal 5 has to make deliberately rather than accidentally.
+4. ~~Measure what a crossing costs.~~ **Done — goal 5A**, and it forked the answer.
+5. **Tidy routes**, restricted to the knee the frontier found: single-node vertical moves at
+   zero or one inversion and a bounded displacement. Coherent for dense-graph-legalized;
+   will correctly do almost nothing for babble.
+6. **The router**, as its own project with its own baseline, for the crossings placement
+   cannot reach — which on babble is all of them.
 
 The hostile specimen stays exactly as it is. It is now a historical baseline for nodes,
 cables and layout, and its six overlaps are part of the evidence rather than a defect to be

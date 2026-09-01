@@ -1,0 +1,243 @@
+{
+  "babble": {
+    "candidates": 13,
+    "frontier": [
+      {
+        "area": 0.0,
+        "cable": -13.6912567615509,
+        "displacement": 40.0,
+        "inversions": 6,
+        "longest": 0.0,
+        "node": "n15",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 880.0
+      },
+      {
+        "area": 0.33728,
+        "cable": -48.0000364780426,
+        "displacement": 80.0,
+        "inversions": 5,
+        "longest": 31.9999389648438,
+        "node": "n10",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": -80.0
+      },
+      {
+        "area": 0.0,
+        "cable": -204.403784751892,
+        "displacement": 80.0,
+        "inversions": 6,
+        "longest": 0.0,
+        "node": "n8",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 80.0
+      }
+    ],
+    "resting": {
+      "cable": 16087.7,
+      "crossings": 9,
+      "longest": 3993.2,
+      "stage": [
+        73,
+        2,
+        11,
+        4
+      ]
+    }
+  },
+  "dense-graph-legalized": {
+    "candidates": 63,
+    "frontier": [
+      {
+        "area": 1.783104,
+        "cable": 4056.40201950073,
+        "displacement": 3640.0,
+        "inversions": 28,
+        "longest": 980.402019500732,
+        "node": "n17",
+        "removed": 8,
+        "stage_delta": 0,
+        "y": 3640.0
+      },
+      {
+        "area": 0.0,
+        "cable": 96.4020195007324,
+        "displacement": 2320.0,
+        "inversions": 27,
+        "longest": 12.4020195007324,
+        "node": "n17",
+        "removed": 6,
+        "stage_delta": 0,
+        "y": 2320.0
+      },
+      {
+        "area": 2.08832,
+        "cable": 283.536522865295,
+        "displacement": 2320.0,
+        "inversions": 27,
+        "longest": -231.597980499268,
+        "node": "n24",
+        "removed": 6,
+        "stage_delta": 0,
+        "y": -520.0
+      },
+      {
+        "area": 0.0,
+        "cable": -263.597980499268,
+        "displacement": 2200.0,
+        "inversions": 27,
+        "longest": 12.4020195007324,
+        "node": "n17",
+        "removed": 5,
+        "stage_delta": 0,
+        "y": 2200.0
+      },
+      {
+        "area": 0.963840000000001,
+        "cable": -800.0,
+        "displacement": 1280.0,
+        "inversions": 13,
+        "longest": 0.0,
+        "node": "n2",
+        "removed": 4,
+        "stage_delta": 0,
+        "y": -240.0
+      },
+      {
+        "area": 0.0,
+        "cable": -45.2275876998901,
+        "displacement": 1600.0,
+        "inversions": 23,
+        "longest": -144.0,
+        "node": "n24",
+        "removed": 3,
+        "stage_delta": 0,
+        "y": 200.0
+      },
+      {
+        "area": 1.6064,
+        "cable": 1607.44025468826,
+        "displacement": 1120.0,
+        "inversions": 9,
+        "longest": 0.0,
+        "node": "n18",
+        "removed": 2,
+        "stage_delta": 0,
+        "y": -400.0
+      },
+      {
+        "area": 0.0,
+        "cable": 938.700103282928,
+        "displacement": 1680.0,
+        "inversions": 23,
+        "longest": -463.597980499268,
+        "node": "n22+n24",
+        "removed": 2,
+        "stage_delta": 0,
+        "y": 0.0
+      },
+      {
+        "area": 0.0,
+        "cable": 385.472086906433,
+        "displacement": 40.0,
+        "inversions": 2,
+        "longest": -40.0,
+        "node": "n24",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 1760.0
+      },
+      {
+        "area": 0.0,
+        "cable": 40.8249015808105,
+        "displacement": 40.0,
+        "inversions": 0,
+        "longest": 0.0,
+        "node": "n26",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 1040.0
+      },
+      {
+        "area": 0.0,
+        "cable": -40.0,
+        "displacement": 40.0,
+        "inversions": 1,
+        "longest": 0.0,
+        "node": "n3",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 1280.0
+      },
+      {
+        "area": 0.0,
+        "cable": 148.750835418701,
+        "displacement": 120.0,
+        "inversions": 3,
+        "longest": -120.0,
+        "node": "n24",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 1680.0
+      },
+      {
+        "area": 0.0,
+        "cable": 37.4773893356323,
+        "displacement": 160.0,
+        "inversions": 4,
+        "longest": -147.597980499268,
+        "node": "n24",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 1640.0
+      },
+      {
+        "area": 0.0,
+        "cable": -298.660816669464,
+        "displacement": 240.0,
+        "inversions": 4,
+        "longest": 0.0,
+        "node": "n18",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 480.0
+      },
+      {
+        "area": 0.0,
+        "cable": -134.725985527039,
+        "displacement": 360.0,
+        "inversions": 1,
+        "longest": 0.0,
+        "node": "n27",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 1440.0
+      },
+      {
+        "area": 0.0,
+        "cable": -1345.46596336365,
+        "displacement": 1440.0,
+        "inversions": 15,
+        "longest": 0.0,
+        "node": "n17+n18",
+        "removed": 1,
+        "stage_delta": 0,
+        "y": 0.0
+      }
+    ],
+    "resting": {
+      "cable": 30708.1,
+      "crossings": 31,
+      "longest": 2955.2,
+      "stage": [
+        26,
+        0,
+        7,
+        0
+      ]
+    }
+  }
+}
