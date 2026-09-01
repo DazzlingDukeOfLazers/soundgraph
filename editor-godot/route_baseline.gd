@@ -30,6 +30,7 @@ extends SceneTree
 ## eighth.
 
 const PatchGraph := preload("res://patch_graph.gd")
+const CableCrossings := preload("res://cable_crossings.gd")
 
 const PATCHES := [
 	"res://../examples/patches/first-synth.json",
@@ -243,45 +244,40 @@ func _initialize() -> void:
 		# ---- and where they meet -----------------------------------------------------
 		# Crossing concentration matters as much as the count: seven unrelated pairs and
 		# one cable crossing seven others are very different router problems.
+		#
+		# Goal 1.1. This used to be a third enumeration of "two cables cross", with its own
+		# port exclusion and its own dedup on a coarse grid, and it disagreed with the two in
+		# the renderer. It now asks `CableCrossings` the same question the cord layer asks,
+		# with the router's geometry handed in — which is the arrangement the goal settled on:
+		# the rules are shared, the geometry is named.
+		#
+		# The dedup that lived here merged by position across every pair, so two different
+		# pairs meeting at one spot were counted once. Per-pair is right, and it is why these
+		# numbers are a little higher than goal 1 first reported.
 		var meetings: Array = []
 		var per_cable := {}
 		for key: String in each:
 			per_cable[key] = 0
-		for i in routes.size():
-			for j in range(i + 1, routes.size()):
-				var a: Dictionary = routes[i]
-				var b: Dictionary = routes[j]
-				var fa: Array = a["fields"]
-				var fb: Array = b["fields"]
-				# Cables sharing a port meet by design, exactly as the cord layer holds.
-				if "%s:%d" % [str(fa[0]), int(fa[1])] == "%s:%d" % [str(fb[0]), int(fb[1])]:
-					continue
-				if "%s:%d" % [str(fa[2]), int(fa[3])] == "%s:%d" % [str(fb[2]), int(fb[3])]:
-					continue
-				# One entry per meeting, not one per segment. `CableArt.crossings` stops
-				# after the first hit on each segment of the upper route, so a crossing
-				# that lands near a vertex is reported twice from the two segments either
-				# side of it — which is why the first run of this listed a pair twice at
-				# identical coordinates and counted twelve where the cord layer counts
-				# seven.
-				var seen_here := {}
-				for at: Vector2 in CableArt.crossings(a["points"], b["points"]):
-					var spot := "%d,%d" % [int(at.x / 24.0), int(at.y / 24.0)]
-					if seen_here.has(spot):
-						continue
-					seen_here[spot] = true
-					var pa: PackedVector2Array = a["points"]
-					var pb: PackedVector2Array = b["points"]
-					meetings.append({"a": key_of(a), "b": key_of(b),
-						"at": [snappedf(at.x, 0.1), snappedf(at.y, 0.1)],
-						# How far from the nearer end of each cable, which separates
-						# congestion at a socket from a genuine mid-route conflict.
-						"from_end_a": snappedf(minf(at.distance_to(pa[0]),
-							at.distance_to(pa[pa.size() - 1])), 0.1),
-						"from_end_b": snappedf(minf(at.distance_to(pb[0]),
-							at.distance_to(pb[pb.size() - 1])), 0.1)})
-					per_cable[key_of(a)] = int(per_cable[key_of(a)]) + 1
-					per_cable[key_of(b)] = int(per_cable[key_of(b)]) + 1
+		var cords: Array = []
+		for route: Dictionary in routes:
+			var fields: Array = route["fields"]
+			cords.append([route["points"], route["colour"],
+				"%s:%d" % [str(fields[0]), int(fields[1])],
+				"%s:%d" % [str(fields[2]), int(fields[3])],
+				key_of(route), 0])
+		for hit: Dictionary in CableCrossings.classify(cords):
+			if not bool(hit["rendered"]) or bool(hit["coincident_with_earlier"]):
+				continue
+			var at: Vector2 = hit["at"]
+			meetings.append({"a": str(hit["over"]), "b": str(hit["under"]),
+				"at": [snappedf(at.x, 0.1), snappedf(at.y, 0.1)],
+				"angle": hit["angle"],
+				# How far from the nearer end of each cable, which separates a meeting on
+				# the approach to a node from a genuine mid-route conflict.
+				"from_end_a": hit["from_over_end"], "from_end_b": hit["from_under_end"],
+				"traits": hit["traits"]})
+			per_cable[str(hit["over"])] = int(per_cable.get(hit["over"], 0)) + 1
+			per_cable[str(hit["under"])] = int(per_cable.get(hit["under"], 0)) + 1
 
 		# ---- is the same document the same drawing? ----------------------------------
 		var first_pass := routes_now()
@@ -361,15 +357,15 @@ func _initialize() -> void:
 			jumpiest = maxf(jumpiest, one)
 			jump_total += one
 
-		# The count comes from the cord layer, which is the thing that draws them. The
-		# listing below is this file's own enumeration and is for the geometry; where the
-		# two disagree the layer is right, and the difference is printed rather than
-		# reconciled quietly.
-		var counted: int = main._layout_crossings()
+		# Two counts, and goal 1.1 established that they are about two different
+		# drawings rather than about one of them being wrong. `_layout_crossings()` reads
+		# the cord layer, which draws the editor's opening CATENARY style; the meetings
+		# below are the PCB router's own polylines, which is what this file is about.
+		# Reported side by side and never conflated.
+		var drawn: int = main._layout_crossings()
 		print("")
-		print("%s — %d cables, %d crossings%s" % [short, each.size(), counted,
-			"" if counted == meetings.size()
-				else " (this file enumerates %d)" % meetings.size()])
+		print("%s — %d cables, %d routed crossings (%d as the editor draws them)"
+			% [short, each.size(), meetings.size(), drawn])
 		print("  cable        total %.0f, longest %.0f" % [total, longest])
 		print("  stretch      median %.2f, worst %.2f"
 			% [float(stretches[stretches.size() / 2]),
@@ -393,12 +389,22 @@ func _initialize() -> void:
 			for meeting: Dictionary in meetings:
 				var a: Dictionary = each[str(meeting["a"])]
 				var b: Dictionary = each[str(meeting["b"])]
-				print("    %-22s x %-22s  at %.0f/%.0f from their ends; "
+				# The position is in the line because the distances are not enough to
+				# tell two crossings apart: "from the nearer end" is symmetric about the
+				# middle, so one cable crossing another twice — once on the way out and
+				# once on the way back — printed the same numbers twice and read as a
+				# duplicated row. It was not one; the count was right and the line was
+				# ambiguous.
+				var at: Array = meeting["at"]
+				print("    %-22s x %-22s  at (%.0f, %.0f), %.0f/%.0f from their ends; "
 					% [str(meeting["a"]), str(meeting["b"]),
+						float(at[0]), float(at[1]),
 						float(meeting["from_end_a"]), float(meeting["from_end_b"])]
-					+ "%.0f/%.0f long, stretch %.2f/%.2f"
+					+ "%.0f/%.0f long, stretch %.2f/%.2f%s"
 					% [float(a["routed"]), float(b["routed"]),
-						float(a["stretch"]), float(b["stretch"])])
+						float(a["stretch"]), float(b["stretch"]),
+						"" if (meeting["traits"] as Array).is_empty()
+							else "  [%s]" % ", ".join(meeting["traits"])])
 
 		record[short] = {"cables": each, "crossings": meetings,
 			"per_cable": per_cable, "drifted": drifted,

@@ -27,6 +27,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `cable-closure.json` | `cable_closure.gd` | the cable pass's closure matrix: 278 invariants over both specimens, four zooms and two palettes |
 | `cable-baseline.json` | `cable_baseline.gd` | the cable pass's step 1: every route's length and detour, every crossing's position, angle and colour pair, every bundle, every trespass, and the cable share of the patch at four zooms |
 | `route-baseline.json` | `route_baseline.gd` | the routing pass's step 1: every route's length, stretch, excess, bends, reversals, clearance and trespasses, taken from the same points the cord layer draws, plus determinism over two reads and the response to a forty-unit nudge |
+| `crossing-semantics.json` | `crossing_semantics.gd` | routing goal 1.1: every intersection on both geometries, with the reason it is or is not drawn as a crossing, and the proof that sharing the classifier moved no count |
 
 ## The sheets, on demand
 
@@ -87,7 +88,14 @@ CROSSING_FRONTIER_OUT=/tmp/p godot --headless --path editor-godot --script cross
 
 # the routing baseline, on the fixtures the layout pass leaves behind
 ROUTE_BASELINE_OUT=/tmp/p godot --headless --path editor-godot --script route_baseline.gd
+
+# why the crossing counters disagree, and the proof that they no longer can
+CROSSING_SEMANTICS_OUT=/tmp/p godot --headless --path editor-godot --script crossing_semantics.gd
 ```
+
+`crossing_semantics.gd` is on the push gate as well, and writes its record only when the
+variable is set — a gate that leaves an untracked file behind every run is a gate people
+start ignoring.
 
 `route_baseline.gd` reads `qa/babble-tidied.json` and `qa/dense-graph-tidied.json`, which are
 themselves derived rather than hand-edited. Regenerate those first if the layout operations

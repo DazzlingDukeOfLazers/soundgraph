@@ -2,6 +2,7 @@ extends GraphEdit
 ## The rack's plug renderer, so a plug in the graph and a plug in the rack are one
 ## object drawn twice.
 const CableArt := preload("res://cable_art.gd")
+const CableCrossings := preload("res://cable_crossings.gd")
 ## The graph canvas: PCB-style cable routing and draggable wires.
 ##
 ## A curved cable that passes straight through a node is unreadable — you cannot tell
@@ -2754,8 +2755,23 @@ class CordLayer extends Control:
 
 
 	## Whether two cords meet because they share a port rather than because they cross.
+	##
+	## Routing goal 1.1: the rule itself now lives in `CableCrossings`, which is what the
+	## harness asks too. Kept as a name here because it reads at the call sites, but it is
+	## no longer a second copy of the decision.
 	func _joined(a: Array, b: Array) -> bool:
-		return a[2] == b[2] or a[3] == b[3]
+		return CableCrossings._shares_port(a, b)
+
+
+	## Every meeting in this frame, classified once.
+	##
+	## The single place the renderer and the harness now agree, and the reason goal 1.1
+	## exists: `_draw`, `crossing_sites` and `route_baseline.gd` were three enumerations of
+	## the same idea, and enumerations drift. This one is handed the geometry rather than
+	## fetching it, so a caller cannot quietly classify a different drawing than the one it
+	## is about to paint.
+	func _classified(cords: Array) -> Array:
+		return CableCrossings.classify(cords)
 
 
 	func _draw() -> void:
@@ -2786,38 +2802,48 @@ class CordLayer extends Control:
 		# clear of a knockout, and a cord meets cables both above and below it — gathering
 		# these inside the drawing loop would only ever find half of them, so the last
 		# cable in the file would dodge nothing.
+		#
+		# One classification for the frame, and it is the same call the harness makes.
+		# What the two lists below want out of it differs, and that difference used to be
+		# spelt out twice in slightly different code: the type cue dodges every meeting the
+		# port rule does not excuse, while the crossing treatment also honours the
+		# same-colour rule, and only one of those two facts was visible at the call site.
+		var classified := _classified(cords)
 		var near_crossings := {}
-		for i in cords.size():
-			for j in range(i + 1, cords.size()):
-				if _joined(cords[i], cords[j]):
-					continue
-				for at: Vector2 in CableArt.crossings(cords[j][0], cords[i][0]):
-					for who in [i, j]:
-						if not near_crossings.has(who):
-							near_crossings[who] = PackedVector2Array()
-						near_crossings[who].append(at)
+		for meeting: Dictionary in classified:
+			if str(meeting["reason"]) == "shared_port" \
+					or not bool(meeting["seen_by_cable_art"]):
+				continue
+			for who: int in [int(meeting["over_index"]), int(meeting["under_index"])]:
+				if not near_crossings.has(who):
+					near_crossings[who] = PackedVector2Array()
+				near_crossings[who].append(meeting["at"])
 
-		var laid: Array = []
+		# The meetings that get a mark, gathered by the cord that is over. Same colour only,
+		# when that is the rule: the measured defect is two identical strands, and a
+		# treatment on a mint-over-blue crossing is ink spent on a case the colours already
+		# answer. That rule lives in the classifier now; what arrives here has had it applied.
+		var marked := {}
+		for meeting: Dictionary in classified:
+			if not bool(meeting["rendered"]) or not bool(meeting["seen_by_cable_art"]):
+				continue
+			var who := int(meeting["over_index"])
+			if not marked.has(who):
+				marked[who] = []
+			(marked[who] as Array).append(meeting)
+
 		for index in cords.size():
 			var entry: Array = cords[index]
 			var meetings: Array = []
-			for earlier in laid:
-				if _joined(entry, earlier):
-					continue
-				# Same colour only, when that is the rule: the measured defect is two
-				# identical strands, and a treatment on a mint-over-blue crossing is ink
-				# spent on a case the colours already answer.
-				if CableArt.crossing_same_colour_only \
-						and not _same_ink(entry[1], earlier[1]):
-					continue
-				for at: Vector2 in CableArt.crossings(entry[0], earlier[0]):
-					meetings.append(at)
-					match CableArt.crossing_style:
-						CableArt.Crossing.HALO:
-							CableArt.draw_crossing_shadow(self, entry[0], at, style)
-						CableArt.Crossing.KNOCKOUT:
-							CableArt.draw_crossing_knockout(self, earlier[0], at, style,
-								ground)
+			for meeting: Dictionary in marked.get(index, []):
+				var at: Vector2 = meeting["at"]
+				meetings.append(at)
+				match CableArt.crossing_style:
+					CableArt.Crossing.HALO:
+						CableArt.draw_crossing_shadow(self, entry[0], at, style)
+					CableArt.Crossing.KNOCKOUT:
+						CableArt.draw_crossing_knockout(self,
+							cords[int(meeting["under_index"])][0], at, style, ground)
 			var drawn: PackedVector2Array = entry[0]
 			if CableArt.crossing_style == CableArt.Crossing.BUMP:
 				drawn = CableArt.bumped(drawn, meetings, style)
@@ -2838,7 +2864,6 @@ class CordLayer extends Control:
 			CableArt.draw_cable(self, drawn, entry[1], style)
 			style.prominence = 1.0
 			style.cue_avoid = PackedVector2Array()
-			laid.append(entry)
 
 
 	## Which cords the pointer is asking about, by their own keys. Empty means nothing is
@@ -2874,8 +2899,7 @@ class CordLayer extends Control:
 	## Whether two cords are drawn in the same ink, which is what makes a crossing
 	## ambiguous in the first place.
 	func _same_ink(a: Color, b: Color) -> bool:
-		return absf(a.r - b.r) < 0.02 and absf(a.g - b.g) < 0.02 \
-			and absf(a.b - b.b) < 0.02
+		return CableCrossings._same_ink(a, b)
 
 
 	## Every crossing in this frame, in this layer's own coordinates.
@@ -2887,20 +2911,34 @@ class CordLayer extends Control:
 	## disagreeing with what was drawn.
 	##
 	## Order is draw order, so `over` and `under` are the priority as painted.
+	##
+	## Routing goal 1.1: this reports what the layer *marks*, which is the same filter
+	## `_draw` applies with one deliberate exception. The same-colour rule is not applied
+	## here, because `crossing_sheet.gd` turns that rule on precisely to photograph the
+	## crossings it suppresses, and a sheet that could not see them would have nothing to
+	## compare. The exception is stated rather than inherited: it was previously the
+	## accidental result of two loops being written months apart.
 	func crossing_sites() -> Array:
 		var sites: Array = []
 		if graph == null or graph.face_up:
 			return sites
 		var cords := _lay()
-		var laid: Array = []
-		for entry in cords:
-			for earlier in laid:
-				if _joined(entry, earlier):
-					continue
-				for at: Vector2 in CableArt.crossings(entry[0], earlier[0]):
-					sites.append({"at": at, "same_colour": _same_ink(entry[1],
-						earlier[1]), "over": entry[1], "under": earlier[1]})
-			laid.append(entry)
+		for meeting: Dictionary in _classified(cords):
+			if str(meeting["reason"]) == "shared_port" \
+					or not bool(meeting["seen_by_cable_art"]):
+				continue
+			var over: Array = cords[int(meeting["over_index"])]
+			var under: Array = cords[int(meeting["under_index"])]
+			sites.append({"at": meeting["at"],
+				"same_colour": _same_ink(over[1], under[1]),
+				"over": over[1], "under": under[1],
+				# Goal 1.1. Carried through so a harness never has to work any of it out
+				# a second time, which is the whole failure this file is repairing.
+				"angle": meeting["angle"],
+				"from_over_end": meeting["from_over_end"],
+				"from_under_end": meeting["from_under_end"],
+				"traits": meeting["traits"],
+				"coincident_with_earlier": meeting["coincident_with_earlier"]})
 		return sites
 
 
