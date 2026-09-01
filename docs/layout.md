@@ -225,18 +225,139 @@ stage violations across 30 nodes; babble's *engine* arrangement has 73 across 23
 laying out a patch they were deliberately making unpleasant still ordered it three times
 better than the engine orders one of its own.
 
+## Goal 2 — the minimally legalized fixture
+
+`editor-godot/legalize.gd` derives `qa/dense-graph-legalized.json` from the hostile patch. A
+**legalization witness**, not a layout algorithm: the only objective is zero tier-1 faults,
+disturbance breaks ties, and nothing else is improved. No column tidying, no crossing
+reduction, no stage correction, no cable shortening, no area tightening.
+
+It clears **all** tier-1 faults, not only the overlaps. Three cable trespasses would have
+left the fixture tier-1 invalid, and a comparison against an invalid arrangement stops
+before readability — which is the whole reason the fixture exists.
+
+```
+hostile patch    6 overlaps, 1 clearance fault, 3 trespasses
+legalized        0, 0, 0 — in 9 moves, 9 nodes, 1520 units, 1040 at worst
+```
+
+### The table
+
+```
+                             hand   minimal legal      auto
+overlaps                        6               0         0
+trespass                        3               0         0
+clearance_faults                1               0         0
+stage_violations               24              26       133
+crossings                      27              31        42
+backward                        4               4         6
+stage_spread                    7               7        17
+surplus_columns                 0               0         2
+fanout_spread               789.4           799.4     825.3
+cable_longest              2955.2          2955.2    4465.2
+cable_p90                  2145.2          1803.6    3427.2
+cable_total               29276.6         30708.1   44107.3
+area                       10.361          14.538    13.484
+columns                         8               8        13
+moved                           0               9        29
+displacement_median           0.0            40.0    1329.7
+displacement_max              0.0          1040.0    3736.3
+displacement_total            0.0          1520.0   50741.8
+
+minimal legal against auto: better, first difference at readability / stage_violations
+```
+
+### What it separates
+
+**The unavoidable cost of legality is almost nothing.**
+
+```
+stage_violations   24 -> 26     two
+crossings          27 -> 31     four
+cable_total        +1431        five per cent
+columns             8 ->  8     unchanged
+stage_spread        7 ->  7     unchanged
+cable_longest    2955 -> 2955   unchanged
+backward            4 ->  4     unchanged
+```
+
+**The cost the current arranger adds beyond it is enormous.**
+
+```
+stage_violations   26 -> 133    a hundred and seven more
+crossings          31 ->  42    eleven more
+stage_spread        7 ->  17    ten more
+surplus_columns     0 ->   2
+cable_longest    2955 -> 4465   fifty-one per cent longer
+cable_total     30708 -> 44107  forty-four per cent more
+columns             8 ->  13
+```
+
+And the disturbance, which is the sentence the whole goal was written to be able to say:
+
+```
+                 nodes moved   median   worst    total
+minimal legal              9       40    1040     1520
+auto-place                29     1330    3736    50742
+```
+
+**Three times the nodes, thirty-three times the distance, and a median move of 1330 units
+against 40.** Legality costs nine nudges. Auto-place relocates the patch.
+
+> **Legalization should be local and minimally disruptive. It is not permission to
+> regenerate the arrangement.**
+
+That is now a measured claim rather than an intuition, and it is the rule the next goal is
+built to satisfy.
+
+### The comparison finally reaches tier 2
+
+`minimal legal against auto: better, first difference at readability / stage_violations`.
+
+Goal 1 could not produce that sentence about anything. Every comparison it made stopped at
+legalization. With two legal arrangements of the same patch, the objective contract does the
+work it was written for — and it says the arranger is worse, and says which tier it is worse
+in.
+
+### Two things worth recording
+
+**The router avoids obstacles, and that broke the first search.** Evaluating a trial against
+a straight line between two ports reported twenty-six trespasses where the drawing has
+three, because `_route` routes around node bodies and `_get_connection_line` at zoom one
+does not tell you what was drawn. Reimplementing the router to make the search cheap would
+have been a second implementation of the thing being measured, so a trial is applied, drawn
+and asked instead — slower, and the only version that is about the program.
+
+**One node is an outlier and it is the whole of the area regression.** Eight of the nine
+moves are 40 to 120 units. The ninth is `plug`, wedged between two tall neighbours, which no
+move of up to six hundred units in four directions could free: it took a plateau step and a
+much longer reach, and it moved 1040 units. That single move is why the legalized fixture is
+*larger* than auto-place — area 14.5 against 13.5 — while beating it on everything above
+tier 4.
+
+A local repair that has to move one node a thousand units is a signal about the authored
+arrangement, not about the repair. It is what the hostile patch's tallest nodes at 520-unit
+spacing were always going to cost.
+
+### A note on the fixture's diff
+
+Twenty-four of the thirty nodes differ from `dense-graph.json`, and only nine of those are
+moves. The other fifteen are the editor snapping the authored positions to its own 40-unit
+grid on load — the hostile patch was written by hand at 520-unit spacing and not every
+figure in it was a multiple of forty. The fixture records what the editor actually shows.
+
 ## What the pass looks like from here
 
 Not "write an arrangement algorithm" — there is one. The measured shape:
 
-1. **A derived fixture.** `dense-graph-legalized.json`: the hostile graph with only the
-   minimum moves needed to remove its six overlaps, so legalization can be separated from
-   optimisation. Then four arrangements can be compared where three of them are equally
-   legal and the comparison reaches tier 2.
-2. **Bounded legalization.** Some rule that says what legalizing may cost.
-3. **A three-stage arranger**, if the fixtures support it: legalize locally, establish the
-   stage structure, then reduce crossings and cable without destroying intent — rather than
-   one monolithic pass.
+1. ~~A derived fixture.~~ **Done — goal 2.**
+2. **A local legalizer in the product**, since goal 2 proved one is possible and cheap: nine
+   nudges against twenty-nine relocations. Today the only thing a user can press is the one
+   that regenerates the arrangement.
+3. **A three-stage arranger**, which the fixtures now support: legalize locally, establish
+   the stage structure, then reduce crossings and cable without destroying intent — rather
+   than one monolithic pass. Goal 2 measured the first stage; the second and third are
+   where the remaining 26 stage violations and 31 crossings live.
 
 The hostile specimen stays exactly as it is. It is now a historical baseline for nodes,
 cables and layout, and its six overlaps are part of the evidence rather than a defect to be

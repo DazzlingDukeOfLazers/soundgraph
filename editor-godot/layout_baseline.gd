@@ -304,8 +304,44 @@ func _initialize() -> void:
 			"differs_at": LayoutObjective.differs_at(by_engine, by_hand),
 			"admissible": LayoutObjective.admissible(by_engine, by_hand)}
 
+	# ---- the three-way comparison the legalized fixture exists for -------------------
+	# Hand, minimally legal, and auto-place, all scored against the hand arrangement so the
+	# disturbance figures are comparable. Two of the three are legal, so this is the first
+	# comparison in the pass that reaches the readability tier at all.
+	await open_patch("res://qa/dense-graph.json")
+	var hand_only := measure()
+	var hand_corners: Dictionary = hand_only["corners"]
+	await open_patch("res://qa/dense-graph-legalized.json")
+	var legal_only := measure(hand_corners)
+	await open_patch("res://qa/dense-graph.json")
+	await main._auto_place()
+	await settle(24)
+	var auto_only := measure(hand_corners)
+	for one: Dictionary in [hand_only, legal_only, auto_only]:
+		one.erase("corners")
+	record["three-way"] = {"hand": hand_only, "legalized": legal_only,
+		"auto": auto_only,
+		"legal_vs_auto": LayoutObjective.compare(legal_only, auto_only),
+		"differs_at": LayoutObjective.differs_at(legal_only, auto_only)}
+
+	print("")
+	print("the hostile graph, three ways")
+	print("  %-22s %10s %14s %10s" % ["", "hand", "minimal legal", "auto"])
+	for tier: Dictionary in LayoutObjective.TIERS:
+		for metric: String in tier["metrics"]:
+			print("  %-22s %10s %14s %10s" % [metric, str(hand_only.get(metric, 0)),
+				str(legal_only.get(metric, 0)), str(auto_only.get(metric, 0))])
+	for metric: String in ["columns", "stages", "cable_median"]:
+		print("  %-22s %10s %14s %10s" % [metric, str(hand_only.get(metric, 0)),
+			str(legal_only.get(metric, 0)), str(auto_only.get(metric, 0))])
+	print("  minimal legal against auto: %s, first difference at %s"
+		% ["better" if int(record["three-way"]["legal_vs_auto"]) > 0 else "worse",
+			str(record["three-way"]["differs_at"])])
+
 	print("")
 	for short: String in record:
+		if short == "three-way":
+			continue
 		var hand: Dictionary = record[short]["hand"]
 		var auto: Dictionary = record[short]["auto"]
 		print("%s — %d nodes, %d cables, %d graph stages"
