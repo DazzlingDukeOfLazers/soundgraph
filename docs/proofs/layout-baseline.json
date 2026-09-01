@@ -1,0 +1,170 @@
+{
+  "babble": {
+    "auto": {
+      "area": 5.818,
+      "backward": 2,
+      "backward_span": 2272.0,
+      "cable_longest": 3993.2,
+      "cable_median": 183.1,
+      "cable_total": 16207.7,
+      "cables": 26,
+      "columns": 17,
+      "crossings": 9,
+      "extent": [
+        4216.0,
+        1380.0
+      ],
+      "forward_fraction": 0.923,
+      "moved": 0,
+      "nodes": 23,
+      "overlaps": 0,
+      "trespass": 0
+    },
+    "hand": {
+      "area": 5.818,
+      "backward": 2,
+      "backward_span": 2272.0,
+      "cable_longest": 3993.2,
+      "cable_median": 183.1,
+      "cable_total": 16207.7,
+      "cables": 26,
+      "columns": 17,
+      "crossings": 9,
+      "extent": [
+        4216.0,
+        1380.0
+      ],
+      "forward_fraction": 0.923,
+      "moved": 0,
+      "nodes": 23,
+      "overlaps": 0,
+      "trespass": 0
+    }
+  },
+  "dense-graph": {
+    "auto": {
+      "area": 13.484,
+      "backward": 6,
+      "backward_span": 9256.0,
+      "cable_longest": 4465.2,
+      "cable_median": 406.1,
+      "cable_total": 44107.3,
+      "cables": 35,
+      "columns": 22,
+      "crossings": 42,
+      "extent": [
+        5896.0,
+        2287.0
+      ],
+      "forward_fraction": 0.829,
+      "moved": 29,
+      "nodes": 30,
+      "overlaps": 0,
+      "trespass": 0
+    },
+    "hand": {
+      "area": 10.361,
+      "backward": 4,
+      "backward_span": 936.0,
+      "cable_longest": 2955.2,
+      "cable_median": 356.7,
+      "cable_total": 29276.6,
+      "cables": 35,
+      "columns": 8,
+      "crossings": 27,
+      "extent": [
+        4016.0,
+        2580.0
+      ],
+      "forward_fraction": 0.886,
+      "moved": 0,
+      "nodes": 30,
+      "overlaps": 6,
+      "trespass": 3
+    }
+  },
+  "first-synth": {
+    "auto": {
+      "area": 2.482,
+      "backward": 0,
+      "backward_span": 0.0,
+      "cable_longest": 1451.6,
+      "cable_median": 233.1,
+      "cable_total": 2948.6,
+      "cables": 7,
+      "columns": 5,
+      "crossings": 0,
+      "extent": [
+        2256.0,
+        1100.0
+      ],
+      "forward_fraction": 1.0,
+      "moved": 7,
+      "nodes": 7,
+      "overlaps": 0,
+      "trespass": 0
+    },
+    "hand": {
+      "area": 2.35,
+      "backward": 0,
+      "backward_span": 0.0,
+      "cable_longest": 1017.3,
+      "cable_median": 269.1,
+      "cable_total": 2405.5,
+      "cables": 7,
+      "columns": 5,
+      "crossings": 0,
+      "extent": [
+        2136.0,
+        1100.0
+      ],
+      "forward_fraction": 1.0,
+      "moved": 0,
+      "nodes": 7,
+      "overlaps": 0,
+      "trespass": 1
+    }
+  },
+  "plucked-string": {
+    "auto": {
+      "area": 0.799,
+      "backward": 0,
+      "backward_span": 0.0,
+      "cable_longest": 272.1,
+      "cable_median": 230.0,
+      "cable_total": 1140.3,
+      "cables": 6,
+      "columns": 5,
+      "crossings": 1,
+      "extent": [
+        2176.0,
+        367.0
+      ],
+      "forward_fraction": 1.0,
+      "moved": 4,
+      "nodes": 5,
+      "overlaps": 0,
+      "trespass": 0
+    },
+    "hand": {
+      "area": 1.81,
+      "backward": 0,
+      "backward_span": 0.0,
+      "cable_longest": 464.1,
+      "cable_median": 410.7,
+      "cable_total": 2247.5,
+      "cables": 6,
+      "columns": 5,
+      "crossings": 1,
+      "extent": [
+        2616.0,
+        692.0
+      ],
+      "forward_fraction": 1.0,
+      "moved": 0,
+      "nodes": 5,
+      "overlaps": 0,
+      "trespass": 0
+    }
+  }
+}
