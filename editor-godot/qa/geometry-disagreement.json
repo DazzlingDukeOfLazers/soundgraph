@@ -1,0 +1,125 @@
+{
+  "schema_version": 2,
+  "metadata": {
+    "name": "Geometry Disagreement",
+    "description": "A proving case for routing goal 2.2. One long cable, and a node sitting under the middle of it. The drawn CATENARY cable sags straight through that node; the router's own path, which is nearly the chord, clears it comfortably. The legalizer measures trespass on the router's path, so the editor calls this arrangement legal while the picture plainly shows a cable through a box. Built to make the ambiguity in the word 'legal' reproducible in five nodes rather than thirty.",
+    "tags": [
+      "qa",
+      "geometry",
+      "trespass"
+    ]
+  },
+  "modules": {},
+  "nodes": [
+    {
+      "id": "src",
+      "type": "Noise",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "parameters": {}
+    },
+    {
+      "id": "far",
+      "type": "Gain",
+      "position": {
+        "x": 1100,
+        "y": 0
+      },
+      "parameters": {
+        "gain": 0.8
+      }
+    },
+    {
+      "id": "under",
+      "type": "Delay",
+      "position": {
+        "x": 480,
+        "y": 210
+      },
+      "parameters": {
+        "time": 0.25,
+        "feedback": 0.3,
+        "mix": 0.4
+      }
+    },
+    {
+      "id": "tap",
+      "type": "Gain",
+      "position": {
+        "x": 480,
+        "y": 620
+      },
+      "parameters": {
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "out",
+      "type": "Output",
+      "position": {
+        "x": 1500,
+        "y": 300
+      },
+      "host": "stereo",
+      "parameters": {
+        "level": 0.8,
+        "safety_limit": 1.0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "node": "src",
+        "port": "out"
+      },
+      "to": {
+        "node": "far",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "src",
+        "port": "out"
+      },
+      "to": {
+        "node": "under",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "src",
+        "port": "out"
+      },
+      "to": {
+        "node": "tap",
+        "port": "in"
+      }
+    },
+    {
+      "from": {
+        "node": "far",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "left"
+      }
+    },
+    {
+      "from": {
+        "node": "tap",
+        "port": "out"
+      },
+      "to": {
+        "node": "out",
+        "port": "right"
+      }
+    }
+  ],
+  "controls": []
+}

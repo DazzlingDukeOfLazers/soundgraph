@@ -461,19 +461,147 @@ the other three, and nothing tested it.
 So the earlier proof is corrected precisely: **the mechanism was valid, and the visible
 object now reaches it.**
 
+## Goal 2.2 — who owns which geometry
+
+An audit. No consumer changed. The question for each:
+
+> **What semantic property is this consumer trying to measure, and which geometry actually
+> owns that property?**
+
+After 2.1 only two product consumers still read `routing_path`: the arrangement's cable
+cost, and the legalizer's trespass test. Both were exercised through the real operation with
+only the geometry swapped, on all four fixtures plus a five-node case built to make the two
+disagree.
+
+### The ownership table
+
+```
+consumer                current    disagree?   affects decisions?   intended owner
+drawing                 display    —           —                    DISPLAY
+crossing marks          display    —           —                    DISPLAY
+hit testing             display    —           —                    DISPLAY  (goal 2.1)
+layout crossings        display    —           —                    ?
+layout cable total      routing    yes         yes                  ?
+layout longest          routing    yes         yes                  ?
+legalizer trespass      routing    yes         yes                  ?
+```
+
+The last column is deliberately empty. The evidence below says the split is not harmless;
+it does not say which way to resolve it, and 2.2 was not authorised to choose.
+
+### A. The four cells
+
+In ROUTED style the two geometries are the same object, so the interesting column is
+CATENARY — the style the editor opens in.
+
+```
+                     drawn      routed        drawn      routed
+                     cable      cable         trespass   trespass
+first-synth           2518       2406            1          1
+plucked-string        2365       2248            0          0
+babble-tidied        14545      16289           14          0
+dense-graph-tidied   25740      30648           23          0
+disagreement case     3378       3102            1          0
+```
+
+Cable cost differs by up to 16%, and in both directions: the catenary is *shorter* than the
+route on the hostile fixtures and longer on the simple ones. That is metric disagreement, and
+on its own it might be harmless.
+
+### B. Trespass — "legal" currently means the invisible path is clear
+
+Of the four possible states, one dominates and one never appears:
+
+```
+display clear / routing clear        common
+display trespass / routing clear     14 on babble, 23 on dense, 1 on the built case
+display clear / routing trespass     never observed
+display trespass / routing trespass  1 on first-synth
+```
+
+So the blunt question has a blunt answer. **Yes: the editor reports a layout as legal while
+the cable the user is looking at passes through a node** — fourteen times on babble,
+twenty-three on the dense fixture. `Resolve overlaps` declines to act on any of them.
+
+`qa/geometry-disagreement.json` reduces that to five nodes: one long cable, one node under
+the middle of it. The drawn cable sags straight through the box; the router's path is close
+to the chord and clears it; the editor calls the arrangement legal.
+
+The inverse state was never produced, including by deliberate attempt. There is a structural
+reason to expect it to be rare — `_route` trespasses only when no candidate is clear, which
+means boxed in, and a box tight enough to trap the orthogonal candidates also traps the sag.
+Recorded as **not observed** rather than impossible.
+
+### C. Decision disagreement — and it is on the simplest shipped patch
+
+Metric disagreement may be harmless. This is not:
+
+```
+first-synth, Resolve overlaps, one node moved
+
+  routed trespass    1 -> 0        the fault it was asked to clear
+  drawn  trespass    1 -> 1        n3, crossed by n4>n5. The same one. Still there.
+  routed cable    2406 -> 2676     +270 spent
+  routed longest  1017 -> 1315     +298
+  drawn  cable    2518 -> 2495     -23
+```
+
+**The operation moves a node, reports the trespass cleared, and the cable the user is
+looking at still runs through exactly the same box** — while spending two hundred and
+seventy units of cable nobody can see to achieve it. Not a hostile fixture: `first-synth` is
+a shipped example.
+
+That is the finding the goal exists to produce. The product is not merely measuring
+invisible geometry, it is *acting* on it, and its success criterion is invisible too.
+
+On the other fixtures all three operations declined to move at any node, so no further
+decision disagreements were available to observe — the tidied fixtures are already at their
+fixed point, which is what makes them fixtures.
+
+### D. Style invariance — already broken, quietly
+
+```
+first-synth           tidy flow places every node the same in both cable styles
+plucked-string        the same
+babble-tidied         2 nodes differently
+dense-graph-tidied    2 nodes differently
+disagreement case     the same
+```
+
+Changing how cables are *drawn* changes where `Tidy flow` decides nodes belong. That is not
+a bug against a stated rule, because no rule was ever stated. There are two coherent
+positions and SoundGraph is accidentally between them:
+
+> **Style-independent layout.** Cable style is presentation. Arrangement semantics should not
+> change when I change how cables are drawn — which means layout needs a canonical geometry
+> that is neither of the two we have.
+>
+> **WYSIWYG layout.** Arrangement optimises what I am looking at. Then crossings, length and
+> trespass all belong to `display_path`, and switching styles legitimately changes what tidy
+> means.
+
+2.2 does not choose. It establishes that the choice exists, that it is currently being made
+by accident, and that it has consequences on shipped patches.
+
+A third contract may be needed and should not be faked with either existing geometry:
+
+```
+DISPLAY             the cable on screen
+ROUTING             the obstacle-avoiding construction
+STYLE_INDEPENDENT   a canonical cost that must not move when the style does
+```
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
 something else found on the way is.
 
 1. ~~Hit testing picks against the wrong geometry.~~ **Done, goal 2.1.**
-2. **The remaining hidden-route consumers, as a geometry contract.** Goal 2.2. Crossings
-   come from the drawing; cable length and trespass come from the router. Now that
-   interaction is repaired that split is no longer accidental breakage — it is a product
-   decision nobody has made. For each consumer, ask whether it intentionally cares about an
-   obstacle-avoiding hypothetical route or should describe the cable the user sees. Some of
-   them may simply stop asking `_route` in CATENARY, which would shrink how much router
-   behaviour actually needs fixing.
+2. ~~The remaining hidden-route consumers, as a geometry contract.~~ **Audited, goal 2.2.**
+   What it found needs a decision rather than more measurement: `Resolve overlaps` can
+   report a trespass cleared while the drawn cable still crosses the same node, and
+   `Tidy flow` already places nodes differently depending on cable style. The open question
+   is DISPLAY versus STYLE_INDEPENDENT ownership, and it is a product choice.
 3. **Corridor stability.** A cable's corridor is a greedy pick from a globally ranked
    channel list with no memory of where it already was. This is the "route hysteresis"
    subproblem, and it now has a mechanism rather than a symptom.
@@ -486,9 +614,16 @@ The principle stands, with the geometry named:
 > **A local document edit should cause local change in every geometry the product presents
 > or depends upon, unless the previous geometry became invalid.**
 
-The drawn geometry already satisfies it. The routed geometry does not, and after goal 2.1
-the reason it matters has narrowed usefully: not that cables jump on screen, and no longer
-that the pointer misses them, but that trespass and cable cost are still measured on a path
-that can move a thousand units away from the edit that caused it.
+The drawn geometry already satisfies it. The routed geometry does not, and after 2.1 and
+2.2 the reason it matters is precise: not that cables jump on screen, and no longer that the
+pointer misses them, but that **trespass and cable cost are decided on a path that can move
+a thousand units away from the edit that caused it** — and goal 2.2 showed the product
+acting on that path on a shipped example patch.
+
+Which also means the severity of the stability defect now depends on a decision rather than
+on more measurement. If trespass and cable cost move to the displayed geometry, `_route`
+becomes primarily the ROUTED-style path generator, and corridor hysteresis becomes an honest
+router problem rather than an invisible dependency reaching into unrelated editor
+operations.
 
 No route has been changed, and no crossing has been called a router defect.
