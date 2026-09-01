@@ -270,6 +270,10 @@ func _build() -> void:
 	# And the third intention, which is neither repairing nor regenerating: make the
 	# drawing agree with the signal flow, and change nothing else.
 	arrange_popup.add_item("Tidy flow", 4)
+	# And the fourth, which takes only the cheap crossing wins placement can still offer.
+	# Measured rather than guessed: the crossing-cost curve has a sharp knee, and this
+	# operation lives entirely below it.
+	arrange_popup.add_item("Tidy routes", 5)
 	arrange_popup.set_item_tooltip(0, "Lay the whole graph out left to right. The same "
 		+ "patch always lands the same way, wherever things were before.")
 	arrange_popup.set_item_tooltip(3, "Move as little as possible to make the drawing "
@@ -278,6 +282,8 @@ func _build() -> void:
 	arrange_popup.set_item_tooltip(4, "Move nodes toward the stage of the signal path "
 		+ "they belong to, so the drawing reads left to right. Select nodes first to "
 		+ "tidy only those. Heights are left alone.")
+	arrange_popup.set_item_tooltip(5, "Remove cable crossings that cost only a small "
+		+ "vertical nudge. Anything that would mean rearranging the patch is left alone.")
 	arrange_popup.set_item_tooltip(2, "The selected nodes become a module: one node "
 		+ "wearing their boundary as ports and their settings as knobs. Undo undoes it.")
 	arrange_popup.set_item_disabled(1, true)

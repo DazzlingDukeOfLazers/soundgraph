@@ -111,25 +111,9 @@ func snapshot(depth: Dictionary, wires: Array) -> Dictionary:
 		"faults": int(main._layout_faults()["total"]), "ys": ys}
 
 
-## How much of the author's vertical organisation a candidate has rearranged.
-##
-## The metric goal 5A adds, and the reason is that displacement alone is the wrong cost.
-## Moving a node five hundred units through empty space can leave every relationship
-## intact; swapping two neighbours by a hundred changes which one is above the other, and
-## vertical order is where a patch keeps the things its topology cannot say — oscillators
-## together, modulation under audio, voices stacked.
-##
-## Counted as inversions: pairs whose relative vertical order the move reversed.
+## Shared with the operation that uses it, rather than reimplemented here.
 func inversions(before: Dictionary, after: Dictionary) -> int:
-	var ids: Array = before.keys()
-	var count := 0
-	for i in ids.size():
-		for j in range(i + 1, ids.size()):
-			var was: bool = float(before[ids[i]]) < float(before[ids[j]])
-			var now: bool = float(after[ids[i]]) < float(after[ids[j]])
-			if was != now:
-				count += 1
-	return count
+	return LayoutTidy.inversions(before, after)
 
 
 ## Vertical positions worth trying for one node.

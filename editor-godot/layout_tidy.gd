@@ -174,3 +174,36 @@ static func toward(from_centre: float, target: float, grid: float) -> Array:
 		if not out.has(step):
 			out.append(step)
 	return out
+
+
+## How much of the author's vertical organisation a candidate has rearranged.
+##
+## Goal 5A's metric, and it earned its place immediately: displacement alone is the wrong
+## cost. Moving a node five hundred units through empty space can leave every relationship
+## intact, while swapping two neighbours by a hundred changes which one is above the other —
+## and vertical order is where a patch keeps what its topology cannot say.
+##
+## Counted as inversions: pairs whose relative vertical order the move reversed. On the
+## legalized hostile patch one candidate removes a crossing for forty units and **zero**
+## inversions while another removes eight for 3640 units and twenty-eight, and displacement
+## alone cannot tell those two apart.
+static func inversions(before: Dictionary, after: Dictionary) -> int:
+	var ids: Array = before.keys()
+	var count := 0
+	for i in ids.size():
+		for j in range(i + 1, ids.size()):
+			if not after.has(ids[i]) or not after.has(ids[j]):
+				continue
+			var was: bool = float(before[ids[i]]) < float(before[ids[j]])
+			var now: bool = float(after[ids[i]]) < float(after[ids[j]])
+			if was != now:
+				count += 1
+	return count
+
+
+## The most vertical order a cheap crossing win may rearrange.
+##
+## One, from the frontier rather than from taste. The cheap end of the curve sits at zero or
+## one inversion and forty to a hundred and twenty units; past that it jumps to thirteen and
+## twenty-eight, which is a different operation wearing this one's name.
+const ORDER_BUDGET := 1

@@ -596,9 +596,14 @@ inversions — it reorders neighbours.
 
 So goal 4's hypothesis is answered, and answered against itself:
 
-> **On babble the remaining disorder is not reachable by placement at all.** Not
-> horizontally, which goal 4 established, and not vertically either. Nine crossings, best
-> case eight, paid for by rearranging the author's vertical grouping.
+> **On babble no single vertical move is worth making.** Not horizontally, which goal 4
+> established, and not by any one vertical move either: nine crossings, best case eight, paid
+> for by rearranging the author's vertical grouping.
+
+**This was overstated when first written, and goal 5B corrected it.** The claim was that
+placement had run out on babble entirely. A *sequence* of cheap moves takes it from nine
+crossings to seven for eighty units and one inversion — a frontier of single moves cannot see
+that, because the second move only exists once the first has been made. See goal 5B.
 
 That is the most useful thing this harness could have found. For a patch like babble the next
 thing to investigate is **the router**, not the layout engine.
@@ -661,20 +666,120 @@ Which forks the next step rather than continuing it:
    cannot reach — which on babble is all of them.
 
 
-## What the pass looks like from here
 
-Not "write an arrangement algorithm" — there is one. The measured shape:
+## Goal 5B — Tidy routes
 
-1. ~~A derived fixture.~~ **Done — goal 2.**
-2. ~~A local legalizer in the product.~~ **Done — goal 3.**
-3. ~~Stage and flow tidy.~~ **Done — goal 4.**
-4. ~~Measure what a crossing costs.~~ **Done — goal 5A**, and it forked the answer.
-5. **Tidy routes**, restricted to the knee the frontier found: single-node vertical moves at
-   zero or one inversion and a bounded displacement. Coherent for dense-graph-legalized;
-   will correctly do almost nothing for babble.
-6. **The router**, as its own project with its own baseline, for the crossings placement
-   cannot reach — which on babble is all of them.
+**Arrange → Tidy routes.** The fourth operation, and deliberately the smallest.
 
-The hostile specimen stays exactly as it is. It is now a historical baseline for nodes,
-cables and layout, and its six overlaps are part of the evidence rather than a defect to be
-tidied away.
+> **Tidy routes may take only cheap local placement wins. If removing a crossing requires
+> reorganising the patch, it declines.**
+
+### The knee as a feasibility boundary, not a score
+
+There is no exchange rate here and no budget in units. A candidate is eligible or it is not:
+
+```
+tier 0 unchanged
+tier 1 legal
+the goal 4 stage vector does not worsen
+exactly one node moves
+vertically only
+inside the legalizer's own nudge ring, not its search or escape radii
+at most one vertical order inversion
+crossings strictly decrease
+```
+
+Among eligible candidates: most crossings removed, then fewest inversions, then least
+displacement, then least cable growth, then least growth in the longest route.
+
+The frontier's eight-crossing candidate — 3640 units, 4056 more cable, twenty-eight
+reorderings — never enters the competition. It is not a worse candidate; it is not a Tidy
+routes candidate at all.
+
+**The ring is the boundary rather than a distance**, because that is what the evidence
+established: cheap wins live in the local nudge neighbourhood and the expensive ones require
+leaving it. Naming a cutoff in units would be inventing a figure the frontier never produced.
+
+### The results, and a correction
+
+```
+                        crossings   nodes   units   inversions   sideways
+dense-graph-legalized      31 -> 27      4     200            2          0
+babble                      9 ->  7      2      80            1          0
+plucked-string                    —      0       0            0          0
+first-synth                       —      0       0            0          0
+```
+
+**babble corrected goal 5A, and the correction matters.**
+
+5A concluded that placement had run out on babble: thirteen single-node moves each removing
+one crossing at five or six inversions, and no adjacent swap helping at all. This test was
+written expecting the operation to move nothing.
+
+It takes babble from **nine crossings to seven, for two forty-unit nudges and one
+inversion** — better than any candidate the frontier printed, and comfortably inside the
+knee.
+
+> **A Pareto frontier of single moves understates what a sequence of cheap moves can reach.**
+
+The frontier measured single moves from the resting arrangement. The operation is iterative:
+it takes one cheap move, the drawing changes, and a second cheap move exists that did not
+before. That is a property of the instrument, not of babble — the seventh time in this
+programme that a measurement has stood for the thing rather than being it, and the first
+time the error was in the *optimistic* direction.
+
+So the earlier claim is withdrawn. Placement has not run out on babble; it has run out of
+*single* moves worth making. What remains after 9 → 7 is still not reachable, and that part
+of the finding stands.
+
+### What is gated
+
+`routes_test.gd`, headless, in `pre-push.sh`. The gates are about the knee rather than about
+a fixture doing nothing:
+
+```
+a cheap crossing removal is found
+the graph is still legal
+the stage vector did not regress
+nothing moved sideways
+inversions within one per move
+a second press moves nothing
+and so does a press after a reload
+a patch with no cheap win left is untouched
+one selected node moves nothing else
+```
+
+## Cosmopolitan Layout, complete
+
+Four operations, four intentions, where there was one button:
+
+```
+Resolve overlaps        make this valid
+Tidy flow               improve topology-to-X alignment, creating no crossings
+Tidy routes             take only cheap topology-to-Y crossing wins
+Auto-place everything   you may reconstruct this layout
+```
+
+Each was measured before it was built, and two of them exist only because the measurement
+contradicted the plan: the objective contract found that comparisons of differently-legal
+arrangements never reach readability at all, and the legalization witness found that legality
+costs nine nudges where auto-place spends twenty-nine relocations.
+
+### Where the router stands now
+
+babble remains the hostile fixture for whatever comes next, and its provenance is unusually
+strong:
+
+```
+the legalizer            correctly does nothing
+flow tidy                finds one node
+the crossing frontier    offers one move at five or six reorderings
+adjacent swaps           offer nothing
+tidy routes              takes it from 9 crossings to 7, and then declines
+```
+
+Seven crossings and a 3993-unit route remain, and every placement operation this pass built
+has now been asked and has answered. **When the router is investigated, it will not be being
+asked to compensate for a layout problem** — and that is a thing worth knowing before opening
+`_route`, because it is the difference between fixing a router and papering over an
+arrangement.

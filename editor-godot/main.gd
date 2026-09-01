@@ -775,7 +775,9 @@ func _build_ui() -> void:
 		elif id == 3:
 			_legalize_layout()
 		elif id == 4:
-			_tidy_flow())
+			_tidy_flow()
+		elif id == 5:
+			_tidy_routes())
 	toolbar.make_module_requested.connect(func() -> void: _begin_module_region())
 	toolbar.mute_toggled.connect(func() -> void:
 		if master_mute != null:
@@ -8909,6 +8911,170 @@ func _tidy_flow() -> void:
 	else:
 		_say("tidied the flow: moved %d node%s" % [moved, "" if moved == 1 else "s"])
 
+
+
+## Takes the cheap crossing wins that placement can still offer, and declines the rest.
+##
+## Layout goal 5B, and it is deliberately tiny. The crossing-cost frontier measured what a
+## crossing actually costs to remove by moving a node, and the curve has a sharp knee: on
+## the legalized hostile patch several forty-unit moves each remove one crossing at zero or
+## one inversion, and then it jumps to candidates costing thousands of units and dozens of
+## inversions. The best of those — eight crossings for 3640 units, 4056 more cable and
+## twenty-eight reorderings — is the auto-place pathology arrived at from the other
+## direction.
+##
+## > **Tidy routes may take only cheap local placement wins. If removing a crossing requires
+## > reorganising the patch, it declines.**
+##
+## So the knee is a **feasibility boundary and not a score**. There is no exchange rate here
+## and no budget in units: a candidate is either eligible or it is not, and the eight-crossing
+## move is not a worse candidate — it is not a Tidy routes candidate at all.
+##
+## [codeblock]
+## tier 0 unchanged
+## tier 1 legal
+## the goal 4 stage vector does not worsen
+## exactly one node moves
+## vertically only
+## within the legalizer's own nudge ring, not its search or escape radii
+## at most ORDER_BUDGET vertical order inversions
+## crossings strictly decrease
+## [/codeblock]
+##
+## The ring is the boundary rather than a distance, because that is what the evidence
+## actually established: cheap wins live in the local nudge neighbourhood and the expensive
+## ones require leaving it. Naming a cutoff in units would be inventing a figure the frontier
+## never produced.
+func _tidy_routes() -> void:
+	if patch.get("nodes", []).is_empty():
+		return
+	if int(_layout_faults()["total"]) > 0:
+		_say("resolve the overlaps first — a crossing is not the problem yet")
+		return
+
+	var chosen := _selected_ids()
+	var by_document: Array = []
+	for id in widgets:
+		if chosen.is_empty() or chosen.has(str(id)):
+			by_document.append(str(id))
+	by_document.sort()
+
+	var ids: Array = []
+	var edges: Array = []
+	for id in widgets:
+		ids.append(str((widgets[id] as GraphNode).name))
+	for wire in graph_edit.get_connection_list():
+		edges.append([str(wire["from_node"]), str(wire["to_node"])])
+	var depth := LayoutTidy.stages(ids, edges)
+
+	_begin_edit()
+	var moved := 0
+	var removed := 0
+	var rounds := 0
+	while rounds < 60:
+		rounds += 1
+		var boxes := _layout_boxes()
+		var tolerance := _layout_tolerance(boxes)
+		var before_stage := LayoutTidy.vector(boxes, depth, edges, tolerance)
+		var before_crossings := _layout_crossings()
+		var before_ys := _layout_heights()
+		var before_cable := _layout_cable()
+
+		var best: Array = []
+		var best_id := ""
+		var best_at := Vector2.ZERO
+		for id: String in by_document:
+			var name := str((widgets[id] as GraphNode).name)
+			var widget: GraphNode = graph_edit.get_node_or_null(NodePath(name))
+			if widget == null:
+				continue
+			var was: Vector2 = widget.position_offset
+			for radius: int in LayoutLegalize.NEAR:
+				for direction in [1, -1]:
+					widget.position_offset = Vector2(was.x,
+						snappedf(was.y + float(direction * radius) * GRID, GRID))
+					await get_tree().process_frame
+					var legal: bool = int(_layout_faults()["total"]) == 0
+					var now_boxes := _layout_boxes()
+					var now_stage := LayoutTidy.vector(now_boxes, depth, edges, tolerance)
+					var now_crossings := _layout_crossings()
+					var turned := LayoutTidy.inversions(before_ys, _layout_heights())
+					var now_cable := _layout_cable()
+					var here: Vector2 = widget.position_offset
+					widget.position_offset = was
+					if not legal:
+						continue
+					# Goal 5 may not buy a crossing by undoing goal 4.
+					if LayoutTidy.better(before_stage, now_stage):
+						continue
+					if turned > LayoutTidy.ORDER_BUDGET:
+						continue
+					if now_crossings >= before_crossings:
+						continue
+					var candidate: Array = [before_crossings - now_crossings, turned,
+						absf(here.y - was.y), float(now_cable[0]) - float(before_cable[0]),
+						float(now_cable[1]) - float(before_cable[1])]
+					# Most crossings removed first, and the rest as tie-breaks.
+					candidate[0] = -candidate[0]
+					if best.is_empty() or LayoutLegalize.prefer(candidate, best):
+						best = candidate
+						best_id = name
+						best_at = here
+		if best_id == "":
+			break
+		(graph_edit.get_node(NodePath(best_id)) as GraphNode).position_offset = best_at
+		await get_tree().process_frame
+		removed += int(-float(best[0]))
+		moved += 1
+
+	var touched := 0
+	var home := {}
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		for node: Dictionary in patch["nodes"]:
+			if str(node["id"]) != str(id):
+				continue
+			var was := Vector2(float(node.get("position", {}).get("x", 0.0)),
+				float(node.get("position", {}).get("y", 0.0)))
+			if was.distance_to(widget.position_offset) > 0.5:
+				touched += 1
+				node["position"] = {"x": widget.position_offset.x,
+					"y": widget.position_offset.y}
+	_commit_edit("tidy routes")
+
+	if touched == 0:
+		# The declining case, and it is the signature of the operation rather than a
+		# failure of it. On babble every crossing costs the author's vertical grouping, so
+		# there is nothing here to take.
+		_say("no cheap crossing to remove — the rest would mean rearranging the patch")
+	else:
+		_say("removed %d crossing%s by moving %d node%s"
+			% [removed, "" if removed == 1 else "s", touched,
+				"" if touched == 1 else "s"])
+
+
+## Every node's vertical centre, for the order-inversion metric.
+func _layout_heights() -> Dictionary:
+	var out := {}
+	for id in widgets:
+		var widget: GraphNode = widgets[id]
+		if widget.visible:
+			out[str(widget.name)] = widget.position_offset.y + widget.size.y * 0.5
+	return out
+
+
+## Total and longest cable, as the router has them.
+func _layout_cable() -> Array:
+	var total := 0.0
+	var longest := 0.0
+	for route: Dictionary in graph_edit._routes():
+		var points: PackedVector2Array = route["points"]
+		var run := 0.0
+		for i in range(points.size() - 1):
+			run += points[i].distance_to(points[i + 1])
+		total += run
+		longest = maxf(longest, run)
+	return [total, longest]
 
 ## Every node's rectangle, by widget name.
 func _layout_boxes() -> Dictionary:
