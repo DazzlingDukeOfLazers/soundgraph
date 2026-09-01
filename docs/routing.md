@@ -591,18 +591,114 @@ ROUTING             the obstacle-avoiding construction
 STYLE_INDEPENDENT   a canonical cost that must not move when the style does
 ```
 
+## Goal 2.3 — the boundary, chosen
+
+The audit's table has an intended-owner column now, and it is deliberately mixed, because
+the two consumers were asking different questions:
+
+```
+consumer                current    intended            why
+drawing                 display    DISPLAY
+crossing marks          display    DISPLAY
+hit testing             display    DISPLAY             goal 2.1
+legalizer trespass      DISPLAY    DISPLAY             a fault is a cable you can see
+structural cable cost   canonical  STYLE_INDEPENDENT   how far apart connected things are
+tidy routes             display    DISPLAY             it cleans up the picture
+layout crossings        display    ?                   the one still open
+```
+
+> **Structural placement metrics describe the graph, independent of presentation. Visual
+> repair and visual cleanup describe the active presentation.**
+
+### Trespass is WYSIWYG
+
+`_layout_faults` reads `_display_routes()`. In ROUTED style that *is* the routed polyline,
+so nothing changes there; in CATENARY it is the hanging curve, which is the point.
+
+The defect goal 2.2 caught is gone. On `first-synth` the fault now goes **1 → 0** where it
+used to go 1 → 0 in the router's geometry and 1 → 1 in the drawing. The constructed case in
+`qa/geometry-disagreement.json` is recognised and repaired. And the claim is checked against
+the drawing rather than against the function that made it: for every pair the legalizer stops
+listing, `geometry_contract_test.gd` walks the cable as drawn and confirms it misses that
+node's body — 34 pairs across the fixtures, none of them lying.
+
+```
+                     visible trespass, before -> after Resolve overlaps
+first-synth                     1 -> 0     (1 node moved)
+babble-tidied                  14 -> 0     (10 nodes)
+dense-graph-tidied             23 -> 5     (14 nodes)
+geometry-disagreement           1 -> 0     (1 node)
+```
+
+Five left on the dense fixture is within the contract — clear it, or decline because no
+admissible local repair exists — and "declined" is proved rather than asserted: running the
+operation again moves nothing.
+
+### Cable cost is canonical, and boring on purpose
+
+`_layout_cable` is gone. `_structural_cable` is the sum and the maximum of the straight-line
+distance between the two ports. No obstacle avoidance, no sag, no cord shape, no waypoint,
+no corridor.
+
+Euclidean rather than Manhattan deliberately: Manhattan would bake the ROUTED style's
+orthogonal grammar back into a metric that exists precisely to be free of any style's
+grammar. It would look canonical and would not be.
+
+Named `structural_` so nobody later reaches for `path.length()` because a field happened to
+be called `cable`. The test asserts it against an independently computed sum, not against
+itself.
+
+### What that cost, and it is not small
+
+Changing what a fault *is* moved three suites' expectations, and one product behaviour:
+
+- **The legalizer has several times the work.** The hostile patch goes from 33 faults to 2,
+  moving 17 nodes and 7989 units where the pre-2.3 witness against a smaller fault set spent
+  9 and 1520. It is not worse; it was handed more. The one bound that is not calibration
+  still holds: far cheaper than auto-place's 29 nodes and 50742 units.
+- **`legalize_test` no longer demands zero**, because the contract does not. It demands most
+  of them, and idempotence as the proof of "declined".
+- **`tidy_test`'s "starts legal" is gone.** `dense-graph-legalized` and `babble` were legal
+  when a trespass meant the hidden path; they carry 23 and 14 visible ones now. The fixtures
+  did not change and tidy did not change — the word did.
+- **Both tidy operations were briefly dead.** They refused to run on a graph with any fault,
+  which was reasonable when most patches had none, and became a refusal on nearly every real
+  patch. `routes_test` caught it doing exactly nothing: 31 → 31, 9 → 9. The precondition is
+  now the weaker and more honest one — **a tidy operation may not make the drawing less
+  legal than it found it** — with overlapping *nodes* still a hard stop, since tidying
+  around a genuine collision would hide it and node overlap does not depend on cable style.
+
+### The one still open
+
+`Tidy flow` is structural and should be style-independent. It is not: two nodes on babble
+and two on the dense fixture still move differently depending only on how cables are drawn.
+
+2.3 did not cause it — goal 2.2 measured the same two nodes before any of this — and 2.3
+cannot close it. `_tidy_flow` guards on `_layout_crossings()`, which the cord layer answers,
+so a structural decision is gated on the drawing. Closing it needs a **canonical crossing**:
+plausibly the port-to-port chords crossing each other, by exactly the reasoning that made
+cable cost Euclidean. That is a decision rather than a cleanup, so it is measured and
+printed by `geometry_contract_test.gd` and left named.
+
+### And `routing_path` finally has a small job
+
+It owns ROUTED cable construction and ROUTED cable quality. It is no longer an invisible
+proxy for layout semantics, which means the global corridor instability goal 2 measured is
+now a defect in one cable style's renderer rather than something reaching into unrelated
+editor operations.
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
 something else found on the way is.
 
 1. ~~Hit testing picks against the wrong geometry.~~ **Done, goal 2.1.**
-2. ~~The remaining hidden-route consumers, as a geometry contract.~~ **Audited, goal 2.2.**
-   What it found needs a decision rather than more measurement: `Resolve overlaps` can
-   report a trespass cleared while the drawn cable still crosses the same node, and
-   `Tidy flow` already places nodes differently depending on cable style. The open question
-   is DISPLAY versus STYLE_INDEPENDENT ownership, and it is a product choice.
-3. **Corridor stability.** A cable's corridor is a greedy pick from a globally ranked
+2. ~~The remaining hidden-route consumers.~~ **Audited at 2.2, decided at 2.3.** Trespass
+   is DISPLAY, cable cost is STYLE_INDEPENDENT and canonical.
+3. **A canonical crossing.** The last accidental presentation dependency: `Tidy flow` is
+   structural and still gated on a crossing count from the drawing. Needs a decision about
+   what a style-free crossing is, not more measurement.
+4. **Corridor stability.** A cable's corridor is a greedy pick from a globally ranked
    channel list with no memory of where it already was. This is the "route hysteresis"
    subproblem, and it now has a mechanism rather than a symptom.
 4. **The detour tail.** A handful of cables carry all the excess.

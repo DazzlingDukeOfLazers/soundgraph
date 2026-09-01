@@ -182,8 +182,8 @@ func dependency_map() -> Dictionary:
 		var faults: Dictionary = main._layout_faults()
 		return {
 			"layout crossings": float(main._layout_crossings()),
-			"layout cable, total": snappedf(float((main._layout_cable() as Array)[0]), 1.0),
-			"layout cable, longest": snappedf(float((main._layout_cable() as Array)[1]), 1.0),
+			"structural cable, total": snappedf(float((main._structural_cable() as Array)[0]), 1.0),
+			"structural cable, longest": snappedf(float((main._structural_cable() as Array)[1]), 1.0),
 			"legalize trespasses": float((faults.get("trespass", []) as Array).size()),
 			"crossing marks": float((layer.crossing_sites() as Array).size()),
 		}

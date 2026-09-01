@@ -100,6 +100,7 @@ func _initialize() -> void:
 	await open_patch("res://qa/dense-graph-legalized.json")
 	var was := positions()
 	var before_crossings: int = main._layout_crossings()
+	var faults_before: int = int(main._layout_faults()["total"])
 	var before_stage := stage_vector()
 	var before_heights: Dictionary = main._layout_heights()
 	await main._tidy_routes()
@@ -112,7 +113,13 @@ func _initialize() -> void:
 	check(after_crossings < before_crossings,
 		"a cheap crossing removal is found (%d -> %d)"
 			% [before_crossings, after_crossings])
-	check(int(main._layout_faults()["total"]) == 0, "and the graph is still legal")
+	# Routing goal 2.3: a trespass is now the cable on screen, so the dense fixture starts
+	# with faults rather than none, and "is legal" is the wrong question to ask of an
+	# operation that never promised to repair anything. What tidy routes owes is that it
+	# does not make the drawing less legal than it found it.
+	check(int(main._layout_faults()["total"]) <= faults_before,
+		"and the graph is no less legal (%d faults, then %d)"
+			% [faults_before, int(main._layout_faults()["total"])])
 	check(not LayoutTidy.better(before_stage, stage_vector()),
 		"and the stage vector did not regress")
 	check(float(cost[2]) < 0.5, "and nothing moved sideways (%.0f)" % float(cost[2]))
@@ -158,6 +165,7 @@ func _initialize() -> void:
 	await open_patch("res://../examples/patches/babble.json")
 	var babble_was := positions()
 	var babble_crossings: int = main._layout_crossings()
+	var babble_faults_before: int = int(main._layout_faults()["total"])
 	var babble_heights: Dictionary = main._layout_heights()
 	await main._tidy_routes()
 	await settle(16)
@@ -176,7 +184,9 @@ func _initialize() -> void:
 		"and %d inversion%s for %d move%s, which is inside the knee"
 			% [babble_turned, "" if babble_turned == 1 else "s",
 				int(babble_cost[0]), "" if int(babble_cost[0]) == 1 else "s"])
-	check(int(main._layout_faults()["total"]) == 0, "and it is still legal")
+	check(int(main._layout_faults()["total"]) <= babble_faults_before,
+		"and it is no less legal (%d faults, then %d)"
+			% [babble_faults_before, int(main._layout_faults()["total"])])
 
 	# ---- no general cleanup ------------------------------------------------------------
 	for path: String in ["res://../examples/patches/plucked-string.json",

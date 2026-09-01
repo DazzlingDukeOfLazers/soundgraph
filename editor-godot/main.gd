@@ -8787,9 +8787,24 @@ func _legalize_layout() -> void:
 func _tidy_flow() -> void:
 	if patch.get("nodes", []).is_empty():
 		return
-	if int(_layout_faults()["total"]) > 0:
+	# Routing goal 2.3. This refused to run at all on a graph with any fault, which was a
+	# reasonable precondition while a trespass meant the router's hidden path and most
+	# patches had none. Now that it means the cable on screen, babble has fourteen and the
+	# dense fixture twenty-three — so the refusal made this operation a no-op on nearly
+	# every real patch, and routes_test caught it doing exactly nothing.
+	#
+	# The precondition it actually needs is the weaker and more honest one, applied to
+	# every candidate below rather than to the starting state:
+	#
+	# > **A tidy operation may not make the drawing less legal than it found it.**
+	#
+	# Overlapping *nodes* are still a hard stop, because tidying around a genuine collision
+	# really would hide it, and node overlap does not depend on how cables are drawn.
+	var at_rest := _layout_faults()
+	if (at_rest["overlaps"] as Array).size() > 0:
 		_say("resolve the overlaps first — tidying an invalid drawing would hide them")
 		return
+	var allowed_faults: int = int(at_rest["total"])
 
 	var movable := {}
 	var chosen := _selected_ids()
@@ -8877,7 +8892,7 @@ func _tidy_flow() -> void:
 							was[other] = widget.position_offset
 							widget.position_offset = (group[other] as Vector2).snappedf(GRID)
 						await get_tree().process_frame
-						var legal: bool = int(_layout_faults()["total"]) == 0
+						var legal: bool = int(_layout_faults()["total"]) <= allowed_faults
 						var now := LayoutTidy.vector(_layout_boxes(), depth, edges,
 							tolerance)
 						var fine: bool = legal and LayoutTidy.better(now, before) 							and (allow_crossings or _layout_crossings() <= before_crossings)
@@ -8954,9 +8969,24 @@ func _tidy_flow() -> void:
 func _tidy_routes() -> void:
 	if patch.get("nodes", []).is_empty():
 		return
-	if int(_layout_faults()["total"]) > 0:
+	# Routing goal 2.3. This refused to run at all on a graph with any fault, which was a
+	# reasonable precondition while a trespass meant the router's hidden path and most
+	# patches had none. Now that it means the cable on screen, babble has fourteen and the
+	# dense fixture twenty-three — so the refusal made this operation a no-op on nearly
+	# every real patch, and routes_test caught it doing exactly nothing.
+	#
+	# The precondition it actually needs is the weaker and more honest one, applied to
+	# every candidate below rather than to the starting state:
+	#
+	# > **A tidy operation may not make the drawing less legal than it found it.**
+	#
+	# Overlapping *nodes* are still a hard stop, because tidying around a genuine collision
+	# really would hide it, and node overlap does not depend on how cables are drawn.
+	var at_rest := _layout_faults()
+	if (at_rest["overlaps"] as Array).size() > 0:
 		_say("resolve the overlaps first — a crossing is not the problem yet")
 		return
+	var allowed_faults: int = int(at_rest["total"])
 
 	var chosen := _selected_ids()
 	var by_document: Array = []
@@ -8984,7 +9014,7 @@ func _tidy_routes() -> void:
 		var before_stage := LayoutTidy.vector(boxes, depth, edges, tolerance)
 		var before_crossings := _layout_crossings()
 		var before_ys := _layout_heights()
-		var before_cable := _layout_cable()
+		var before_cable := _structural_cable()
 
 		var best: Array = []
 		var best_id := ""
@@ -9000,12 +9030,12 @@ func _tidy_routes() -> void:
 					widget.position_offset = Vector2(was.x,
 						snappedf(was.y + float(direction * radius) * GRID, GRID))
 					await get_tree().process_frame
-					var legal: bool = int(_layout_faults()["total"]) == 0
+					var legal: bool = int(_layout_faults()["total"]) <= allowed_faults
 					var now_boxes := _layout_boxes()
 					var now_stage := LayoutTidy.vector(now_boxes, depth, edges, tolerance)
 					var now_crossings := _layout_crossings()
 					var turned := LayoutTidy.inversions(before_ys, _layout_heights())
-					var now_cable := _layout_cable()
+					var now_cable := _structural_cable()
 					var here: Vector2 = widget.position_offset
 					widget.position_offset = was
 					if not legal:
@@ -9069,17 +9099,38 @@ func _layout_heights() -> Dictionary:
 	return out
 
 
-## Total and longest cable, as the router has them.
-func _layout_cable() -> Array:
+## How far apart connected things are. **Not** how long any drawn cable is.
+##
+## Routing goal 2.3, and the name is part of the contract: this used to be `_layout_cable`
+## reading `_routes()`, so a structural placement metric was a measurement of the router's
+## polyline — a construction the CATENARY user never sees, which goal 2 found could move a
+## thousand units in response to an edit on the far side of the patch.
+##
+## The fix is not to point it at the drawing instead. That would make arrangement change
+## when somebody changes how cables are *rendered*, which is the WYSIWYG bargain and the
+## wrong one for this tier:
+##
+## > **Structural placement metrics describe the graph, independent of presentation.**
+##
+## So it is deliberately boring. Straight-line distance between the two ports, summed and
+## maximised. No obstacle avoidance, no sag, no cord shape, no waypoint, no corridor.
+##
+## Euclidean rather than Manhattan on purpose. Manhattan would quietly bake the ROUTED
+## style's orthogonal grammar back into a metric that exists precisely to be free of any
+## style's grammar — it would look canonical and would not be.
+##
+## Named `structural_` so nobody later reaches for `path.length()` because a field happened
+## to be called `cable`.
+func _structural_cable() -> Array:
 	var total := 0.0
 	var longest := 0.0
-	for route: Dictionary in graph_edit._routes():
-		var points: PackedVector2Array = route["points"]
-		var run := 0.0
-		for i in range(points.size() - 1):
-			run += points[i].distance_to(points[i + 1])
-		total += run
-		longest = maxf(longest, run)
+	for connection: Dictionary in graph_edit.connections:
+		var ends: Array = graph_edit._endpoints(connection)
+		if ends.is_empty():
+			continue
+		var span: float = (ends[0] as Vector2).distance_to(ends[1] as Vector2)
+		total += span
+		longest = maxf(longest, span)
 	return [total, longest]
 
 ## Every node's rectangle, by widget name.
@@ -9122,15 +9173,47 @@ func _layout_anchored(_widget_name: String) -> bool:
 	return false
 
 
-## Tier-1 faults in the arrangement as it currently stands, measured against the router's
-## own routes rather than a straight line between two ports.
+## Tier-1 faults in the arrangement as it currently stands, measured against the cables
+## the user is actually looking at.
+##
+## Routing goal 2.3. This read `_routes()`, and goal 2.2 measured what that cost: on babble
+## fourteen cables visibly pass through a node while the editor calls the arrangement legal,
+## and on `first-synth` Resolve overlaps moves a node, reports the trespass cleared, and
+## leaves the drawn cable running through exactly the same box. The word "legal" meant "the
+## invisible path is clear".
+##
+## Trespass is a WYSIWYG question and takes the WYSIWYG contract:
+##
+## > **A trespass is a fault when the cable the user is looking at passes through the
+## > visible body of a node.**
+##
+## In ROUTED style `display_path` *is* the routed polyline, so nothing changes there. In
+## CATENARY it is the hanging curve, which is the whole point.
 func _layout_faults() -> Dictionary:
 	var boxes := {}
 	for id in widgets:
 		var widget: GraphNode = widgets[id]
 		if widget.visible:
 			boxes[str(widget.name)] = Rect2(widget.position_offset, widget.size)
-	return LayoutLegalize.faults(boxes, graph_edit._routes())
+	return LayoutLegalize.faults(boxes, _display_routes())
+
+
+## Every cable as it is drawn, in the shape the legalizer wants.
+##
+## The same list `_routes()` returns, built from `display_path` instead of `routing_path`.
+## Kept beside it rather than replacing it: `routing_path` still owns ROUTED cable
+## construction and ROUTED cable quality, which is a real job — it is just no longer an
+## invisible proxy for layout semantics.
+func _display_routes() -> Array:
+	var out: Array = []
+	for connection: Dictionary in graph_edit.connections:
+		var points: PackedVector2Array = graph_edit.display_path(connection)
+		if points.size() < 2:
+			continue
+		out.append({"points": points,
+			"fields": graph_edit._connection_fields(connection),
+			"colour": Color.WHITE})
+	return out
 
 
 ## How many crossings the drawing currently has, for the gratuitous-damage guard.
