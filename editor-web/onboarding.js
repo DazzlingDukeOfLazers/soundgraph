@@ -362,6 +362,7 @@ export class Onboarding {
 
     dismissAll() {
         this.stopWatching();
+        this.stopGoldenWatch();
         this.card.hidden = true;
         this.modal.hidden = true;
         this.ring.hidden = true;
@@ -700,6 +701,7 @@ export class Onboarding {
             this.host.onGoldenMoment?.();
         }
         this.showingOriginal = false;
+        this.stopGoldenWatch();
 
         this.showCard(this.host.controlElement('cutoff'), () => {
             const panel = make('div', 'tour-panel');
@@ -711,8 +713,25 @@ export class Onboarding {
             const state = make('p', 'compare-state', COPY.golden.yours);
             panel.append(state);
 
+            // The card is not modal and the control stays live, so the visitor usually
+            // keeps dragging after it appears. Two consequences, both handled here:
+            // switching to the original captures wherever the knob actually is — not the
+            // value that happened to cross the threshold, which is where the drag was,
+            // not where it ended — and a hand-move while the original is showing makes
+            // what is heard "your version" again. Programmatic sets do not fire 'input'
+            // (see the control surface in app.js), so the listener only ever sees hands.
+            const slider = this.host.controlElement('cutoff');
+            this.onGoldenInput = () => {
+                this.showingOriginal = false;
+                state.textContent = COPY.golden.yours;
+            };
+            slider?.addEventListener('input', this.onGoldenInput);
+
             const actions = make('div', 'tour-actions');
             const compare = button(COPY.golden.compare, 'quiet', () => {
+                if (!this.showingOriginal) {
+                    this.changedCutoff = this.host.controlValue('cutoff');
+                }
                 this.showingOriginal = !this.showingOriginal;
                 this.host.setControlValue(
                     'cutoff',
@@ -725,12 +744,21 @@ export class Onboarding {
                 button(COPY.golden.keep, 'primary', () => {
                     // Whatever is on screen when they say "keep" is what they keep — if the
                     // toggle is showing the original and they prefer it, that is a choice.
+                    this.stopGoldenWatch();
                     this.showAgency();
                 }),
             );
             panel.append(actions);
             return panel;
         });
+    }
+
+    stopGoldenWatch() {
+        const slider = this.host.controlElement('cutoff');
+        if (slider && this.onGoldenInput) {
+            slider.removeEventListener('input', this.onGoldenInput);
+        }
+        this.onGoldenInput = null;
     }
 
     // -------------------------------------------------------------------------------
