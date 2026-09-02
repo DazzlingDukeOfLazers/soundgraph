@@ -1155,6 +1155,74 @@ clear route says so; a router that quietly returns a blocked one leaves the edit
 cables through modules while somebody drags a node, and no amount of continuity work
 addresses it.
 
+## Goal 4A — what a blocked route actually means
+
+3E's control found the thing this pass had been walking past, and it is more fundamental
+than anything the stability work was chasing:
+
+> **`_route_among` keeps its least-blocked candidate when nothing is clear, and returns it
+> looking exactly like a success.** The router says "route" when what it has is "best
+> failure I found".
+
+The contract, and the seam that now exists for it:
+
+> **A route has a validity result separate from its geometry. A least-blocked fallback must
+> never be reported as legal merely because it is the best candidate found.**
+
+`route_blocked_count(a, b)` and `route_is_clear(a, b)` publish it, and `_routes()` carries
+`blocked` beside `points`. Nothing about what the router returns has changed; what changed
+is that the answer now says whether it is one.
+
+### Is a clear route available when it gives up?
+
+Every blocked result, classified by the cheapest question that says yes. The last class needs
+an oracle the router does not share — a breadth-first walk over a grid of free space, owing
+nothing to the router's candidate shapes — or it would only ever confirm the router's own
+opinion.
+
+```
+                       babble   dense
+blocked results          6      249      of 2392 and 4200 routed states
+  ranking or cap         2      113      the clear candidate was already in its own list
+  wider channels         0        0      goal 3's locality is not the cause
+  local splice           0      124      clear if only the damaged run is replaced
+  family too narrow      4       12      no orthogonal candidate clear, but a path exists
+  boxed in               0        0
+```
+
+**A clear route was demonstrably available in 249 of 249, and 6 of 6.** Not one sampled
+state on either fixture is genuinely impossible.
+
+So goal 4 is a completeness problem, not a geometry problem, and 4C — honest reporting of
+transiently impossible routes — has nothing to report on these fixtures. It is still worth
+having as a contract, and it is not urgent.
+
+### What that says about 4B
+
+Two populations, and both have a named mechanism:
+
+- **45% ranking or cap.** `_route_among` counts every blocked candidate toward
+  `MAX_CANDIDATES` and stops at a hundred and ninety-two, so a clear candidate sitting
+  beyond that point in the ordering is never reached. The list already contains the answer.
+- **50% local splice.** No whole candidate is clear, but replacing the damaged run of the
+  existing route is. That is 3E's technique — reverted as a *continuity* mechanism for
+  breaking determinism, and reappearing here as a *legality* one, which is a different job
+  with a different acceptance test.
+
+That last point is worth stating plainly, because it explains why 3E's measurements were so
+hard to read: **it was solving two problems at once.** Legality completion and continuity
+preservation pull in the same direction often enough to look like one idea, and their
+metrics disagree. Separated, each has a clean test — a splice used for legality has to
+produce a clear route, and nothing else; a splice used for continuity has to preserve the
+old path, and nothing else.
+
+### And a number that moved
+
+Goal 3E reported 313 of 4200 blocked on the dense fixture; this reports 249. Different
+sampling — 3E counted every after-state including cables whose own endpoints had moved, this
+one routes each nudged arrangement once and asks every cable. Both are around six or seven
+per cent, and the classification is what matters rather than the third digit.
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
@@ -1168,10 +1236,12 @@ something else found on the way is.
 4. ~~Corridor stability, the coupling half.~~ **Done at goal 3**, diagnosed at 3C, and the
    unnecessary half removed at 3D. **3E was built and reverted** — it broke determinism and
    barely moved preservation.
-5. **Blocked routes during a drag.** Found by 3E's control and larger than 3E: the router
-   returns its least-blocked candidate when nothing is clear, leaving 7.5% of cables through
-   nodes while a node is being moved. Invisible to every resting measurement in this pass.
-   This is the next thing to look at.
+5. ~~Blocked routes during a drag.~~ **Attributed at 4A**, and the answer is unambiguous:
+   a clear route was available in every single blocked state on both fixtures. Next is
+   **4B, clear-route completion** — lift the candidate cap that hides an answer already in
+   the list (45%), and add local splicing as a search tier for legality rather than for
+   continuity (50%). **4C**, honest reporting of impossible routes, has nothing to report
+   on these fixtures and can wait.
 6. **The 34.9x direct-cable response** — a cable whose own port moved forty units. Its own
    problem, and a cleaner one now.
 7. **The remaining locally-repairable population**, if a repair can be made deterministic.

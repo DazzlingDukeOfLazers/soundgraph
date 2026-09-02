@@ -33,6 +33,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `geometry-owners.json` | `geometry_owners.gd` | routing goal 2.2: every metric under both cable styles and both geometries, the four trespass states, and whether each layout operation would have decided differently on the other one |
 | `route-locality.json` | `route_locality.gd` | routing goal 3: where every candidate channel comes from, and whether an obstacle the router never consulted can still move a cable |
 | `route-repair.json` | `route_repair.gd` | routing goal 3C: every reroute after a nudge, classified by whether the old route was still legal, broken in one place, or genuinely impossible to keep |
+| `route-legality.json` | `route_legality.gd` | routing goal 4A: every blocked route the router returns, and whether a clear one was demonstrably available — by its own candidate list, by a splice, or by a grid walk that owes it nothing |
 
 ## The sheets, on demand
 
@@ -111,6 +112,9 @@ ROUTE_LOCALITY_OUT=/tmp/p godot --headless --path editor-godot --script route_lo
 
 # when a cable had to move, did the edit require it to move that much?
 ROUTE_REPAIR_OUT=/tmp/p godot --headless --path editor-godot --script route_repair.gd
+
+# when the router returns a blocked route, was a clear one available?
+ROUTE_LEGALITY_OUT=/tmp/p godot --headless --path editor-godot --script route_legality.gd
 ```
 
 `crossing_semantics.gd` is on the push gate as well, and writes its record only when the

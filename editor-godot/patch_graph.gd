@@ -247,6 +247,9 @@ var _obstacles_frame := -1
 ## Which obstacles each routed pair was permitted to consider. See `consulted_for`.
 var _route_consulted := {}
 
+## How blocked each routed pair came out. See `route_blocked_count`.
+var _route_clear := {}
+
 ## Routes kept from earlier frames because they are still legal. See `_route`.
 ##
 ## **Session-only, and never written to a document.** Cleared by `forget_routes()` on every
@@ -665,6 +668,7 @@ func _route(a: Vector2, b: Vector2) -> PackedVector2Array:
 		if kept.size() > 1 and _blocked_count(kept, own) == 0:
 			routes_retained += 1
 			_route_cache[key] = kept
+			_route_clear[key] = 0
 			return kept
 		elif kept.size() > 1:
 			routes_refused += 1
@@ -713,6 +717,18 @@ func _route(a: Vector2, b: Vector2) -> PackedVector2Array:
 	_route_consulted[key] = say
 	_route_cache[key] = result
 	_route_kept[key] = result
+	# Routing goal 4A, the semantic seam:
+	#
+	# > **A route has a validity result separate from its geometry. A least-blocked
+	# > fallback must never be reported as legal merely because it is the best candidate
+	# > found.**
+	#
+	# `_route_among` keeps its least-blocked candidate when nothing is clear, and hands it
+	# back looking exactly like a success. During a drag that happens for 7.5% of cables on
+	# the hostile fixture, and no resting measurement can see it — trespass reads zero on
+	# every fixture at rest. Nothing changes about what is returned yet; what changes is
+	# that the answer now carries whether it is one.
+	_route_clear[key] = _blocked_count(result, own)
 	return result
 
 
@@ -1830,7 +1846,8 @@ func _routes() -> Array:
 		var from_node := get_node_or_null(NodePath(fields[0])) as GraphNode
 		if from_node != null and fields[1] < from_node.get_output_port_count():
 			colour = from_node.get_output_port_color(fields[1])
-		routes.append({"points": points, "colour": colour, "fields": fields})
+		routes.append({"points": points, "colour": colour, "fields": fields,
+			"blocked": route_blocked_count(ends[0], ends[1])})
 	return routes
 
 
@@ -1952,6 +1969,23 @@ func retained_state(a: Vector2, b: Vector2, points: PackedVector2Array) -> Strin
 	return "same"
 
 
+## How many obstacles the route between these two points runs through.
+##
+## Zero is a clear route. Anything else is the router reporting the best failure it found,
+## which is a different thing from a route and is now sayable as such.
+func route_blocked_count(a: Vector2, b: Vector2) -> int:
+	_current_obstacles()
+	var key := "%.1f,%.1f>%.1f,%.1f" % [a.x, a.y, b.x, b.y]
+	if not _route_clear.has(key):
+		_route(a, b)
+	return int(_route_clear.get(key, 0))
+
+
+## Whether the route between these two points is actually clear.
+func route_is_clear(a: Vector2, b: Vector2) -> bool:
+	return route_blocked_count(a, b) == 0
+
+
 ## Drops every route kept from an earlier frame.
 ##
 ## Called whenever a document is loaded or rebuilt, which is what keeps goal 3D's retention
@@ -1962,6 +1996,7 @@ func forget_routes() -> void:
 	_route_kept.clear()
 	_route_cache.clear()
 	_route_consulted.clear()
+	_route_clear.clear()
 
 
 ## Polled rather than driven by a signal, because GraphEdit does not emit one for

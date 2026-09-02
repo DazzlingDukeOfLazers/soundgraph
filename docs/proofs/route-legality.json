@@ -1,0 +1,304 @@
+{
+  "babble-tidied": {
+    "blocked": 6,
+    "examples": [
+      {
+        "cable": "n0:1>n22:1",
+        "moved": "n1",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n22:0>n14:0",
+        "moved": "n14",
+        "through": 1,
+        "why": "family too narrow"
+      },
+      {
+        "cable": "n22:0>n19:0",
+        "moved": "n18",
+        "through": 1,
+        "why": "family too narrow"
+      },
+      {
+        "cable": "n22:0>n19:0",
+        "moved": "n19",
+        "through": 1,
+        "why": "family too narrow"
+      },
+      {
+        "cable": "n22:0>n19:0",
+        "moved": "n19",
+        "through": 1,
+        "why": "family too narrow"
+      },
+      {
+        "cable": "n0:1>n22:1",
+        "moved": "n22",
+        "through": 1,
+        "why": "ranking or cap"
+      }
+    ],
+    "sampled": 2392,
+    "why": {
+      "boxed in": 0,
+      "family too narrow": 4,
+      "local splice": 0,
+      "ranking or cap": 2,
+      "wider channels": 0
+    }
+  },
+  "dense-graph-tidied": {
+    "blocked": 249,
+    "examples": [
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n0",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n0",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n0",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n0",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n0",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n0",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n0",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n0",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n1",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n1",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n1",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n1",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n1",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n1",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n1",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n1",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n2",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n2",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n2",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n2",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n2",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n2",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n2",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n2",
+        "through": 2,
+        "why": "family too narrow"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n3",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n3",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n3",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n3",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n3",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n3",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n3",
+        "through": 2,
+        "why": "family too narrow"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n3",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n4",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n4",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n4",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n4",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n4",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n4",
+        "through": 1,
+        "why": "ranking or cap"
+      },
+      {
+        "cable": "n3:0>n11:1",
+        "moved": "n4",
+        "through": 1,
+        "why": "local splice"
+      },
+      {
+        "cable": "n2:0>n17:0",
+        "moved": "n4",
+        "through": 1,
+        "why": "ranking or cap"
+      }
+    ],
+    "sampled": 4200,
+    "why": {
+      "boxed in": 0,
+      "family too narrow": 12,
+      "local splice": 124,
+      "ranking or cap": 113,
+      "wider channels": 0
+    }
+  }
+}
