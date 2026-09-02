@@ -1004,6 +1004,92 @@ appearance; "preserve the valid part of what is on screen while the user drags" 
 Status: **goal 3 locality frozen; the 34.9x response is an unresolved ROUTED interaction
 defect with a diagnosis and no fix yet.**
 
+## Goal 3D — valid-route retention
+
+Narrower than a ranking preference, and narrow on purpose:
+
+> **If a cable's endpoints did not move and its existing ROUTED path is still legal against
+> the obstacles as they now stand, that path is kept exactly. Ranking is not re-run at all.**
+
+The route key is built from the two endpoints, so "endpoints did not move" is not a test the
+router performs — a cable whose ports moved asks a different question and gets a fresh
+answer. Legality is judged against **every** obstacle, the same rule `_blocked_count` has
+always followed. A route that has become blocked falls straight through to the router
+exactly as before.
+
+The boundaries, all of them load-bearing:
+
+```
+session-only state, never serialized
+cleared by forget_routes() on every load and rebuild
+a reopened document routes identically — asserted on the push gate
+```
+
+That last one is the whole safety of the idea. Retention makes an editing session stable; it
+must never make two openings of one file disagree, or route state has quietly become part of
+the document without anyone writing it there.
+
+### What it removed
+
+```
+                     reroutes with still endpoints
+                     before   after
+babble-tidied           42      16
+  still legal           26  ->   0
+  locally repairable    16      16      unchanged
+  corridor-invalid       0       0      unchanged
+
+dense-graph-tidied      44      31
+  still legal           13  ->   0
+  locally repairable    25      25      unchanged
+  corridor-invalid       6       6      unchanged
+```
+
+**All thirty-nine still-legal reroutes are gone, and neither other population moved.** The
+loudest sympathetic response on babble fell from 18.5x to 8.1x — that specimen *was* one of
+the still-legal ones, the cable rewritten end to end to come out forty units shorter.
+
+Guards: routed meetings 10 and 44 unchanged, trespass unchanged, worst excess 713 and 822
+unchanged, determinism exact, catenary untouched.
+
+### Two harnesses, two populations — worth stating before the numbers are misread
+
+`route_baseline.gd` still reports 11.5x and 34.9x worst deviation, and that is not a failure
+of this goal. Its deviation statistic covers cables **whose own endpoint moved**; retention
+does not apply to those by construction, because their key changed. What it counts
+separately — cables rerouted with still endpoints — fell from 42 to 16 and from 44 to 31.
+
+`route_repair.gd` measures the other population, the sympathetic one, and that is where
+8.1x and 21.6x come from.
+
+So there are two distinct magnitudes still open, and they are different problems:
+
+```
+sympathetic, dense    21.6x   a cable rebuilt when three of its ten segments broke
+direct, dense         34.9x   a cable whose own port moved forty units
+```
+
+Only the first is 3E's business.
+
+### Three wrong probes, and what they have in common
+
+Retention makes a route session state, and every measurement of "what does one edit do" had
+to learn that:
+
+- **Forgetting once per fixture** was not enough; each probe inherited the last one's
+  retained routes.
+- **Forgetting once per node** was not enough either — the four nudge directions each
+  inherited the previous direction. This read the dense fixture at *fifty-three* reroutes
+  against forty-four, from a change that can only ever remove them.
+- **Inspecting the retained route after the fact** answers nothing, because the after-pass
+  has already overwritten it.
+
+And one dead instrument: a disagreement counter whose increment was eaten by a shell
+heredoc, which reported a confident zero while never running. It was believed for one
+reading. The lesson is the programme's oldest one in a new costume — *a measurement that
+stands for the thing instead of being it is wrong* — with the twist that introducing state
+into the thing being measured silently invalidates every probe that assumed there was none.
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
@@ -1014,10 +1100,12 @@ something else found on the way is.
    is DISPLAY, cable cost is STYLE_INDEPENDENT and canonical.
 3. ~~A canonical crossing.~~ **Done, goal 2.4**, and the geometry-ownership pass is closed
    with it. Structural objective, display safety, every divergence attributable.
-4. ~~Corridor stability, the coupling half.~~ **Done, goal 3**, and diagnosed at 3C. What
-   remains is magnitude, and it is not one problem: continuity preference for the reroutes
-   that were never necessary, and local segment repair for the ones that broke in one place.
-   Neither needs route memory outside the edit that causes it. A cable's corridor is a greedy pick from a globally ranked
+4. ~~Corridor stability, the coupling half.~~ **Done at goal 3**, diagnosed at 3C, and the
+   unnecessary half removed at 3D. What remains is **3E, local segment repair**: the 25 and
+   16 reroutes where the old route broke in one contiguous run and the router replaced all
+   of it — including the 21.6x specimen that lost 84% of a path over three damaged segments
+   and paid 472 units for it. Separately, the 34.9x direct-cable response is its own
+   question and not 3E's. A cable's corridor is a greedy pick from a globally ranked
    channel list with no memory of where it already was. This is the "route hysteresis"
    subproblem, and it now has a mechanism rather than a symptom.
 4. **The detour tail.** A handful of cables carry all the excess.

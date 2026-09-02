@@ -483,7 +483,7 @@
     "stability": {
       "mean": 1.35,
       "probes": 92,
-      "strangers": 42,
+      "strangers": 16,
       "worst": 11.5
     }
   },
@@ -1507,7 +1507,7 @@
     "stability": {
       "mean": 1.55,
       "probes": 120,
-      "strangers": 44,
+      "strangers": 31,
       "worst": 34.87
     }
   },

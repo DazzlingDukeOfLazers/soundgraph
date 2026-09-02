@@ -10797,6 +10797,9 @@ func _on_waypoint_changed(from_node: StringName, from_port: int, to_node: String
 ## Pushes stored waypoints into the canvas after a load or rebuild.
 func _restore_waypoints() -> void:
 	graph_edit.clear_waypoints()
+	# Goal 3D: a load starts from nothing. Routes kept across frames make an editing
+	# session stable and must never survive into a fresh opening of the same file.
+	graph_edit.forget_routes()
 	for connection in patch.get("connections", []):
 		if not connection.has("waypoint"):
 			continue

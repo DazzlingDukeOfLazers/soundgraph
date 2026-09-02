@@ -304,17 +304,24 @@ func _initialize() -> void:
 			var was: Vector2 = widget.position_offset
 			for step: Vector2 in [Vector2(NUDGE, 0.0), Vector2(-NUDGE, 0.0),
 					Vector2(0.0, NUDGE), Vector2(0.0, -NUDGE)]:
+				# Goal 3D made a route session state, so the reference has to be taken per
+				# edit rather than once for the run. Compared against a snapshot from the
+				# top, this would report the accumulated effect of a hundred and twenty
+				# nudges and call it the effect of one.
+				graph.forget_routes()
+				await process_frame
+				var resting := routes_now()
 				widget.position_offset = was + step
 				await process_frame
 				var after := routes_now()
 				widget.position_offset = was
 				probed += 1
-				for key: String in first_pass:
+				for key: String in resting:
 					if not after.has(key):
 						continue
 					var touches: bool = key.begins_with(str(widget.name) + ":") \
 						or key.contains(">" + str(widget.name) + ":")
-					var moved := apart(first_pass[key], after[key])
+					var moved := apart(resting[key], after[key])
 					if float(moved[0]) < 0.01:
 						continue
 					if touches:

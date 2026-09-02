@@ -409,6 +409,12 @@ func perturb() -> Dictionary:
 			# named turned out to be byte-identical routes measured against a stale
 			# reference. The same mistake the focus sheet made in the cable pass — a
 			# resting frame from earlier is not the resting frame for this comparison.
+			#
+			# And since goal 3D routes are session state, the session is reset here too.
+			# Otherwise this measures a short history of edits rather than one edit, which
+			# is not what "a forty-unit nudge moves a cable N times the nudge" means.
+			graph.forget_routes()
+			await settle(2)
 			var routed_before := routed()
 			var drawn_before := drawn()
 			var boxes_before := boxes_now()

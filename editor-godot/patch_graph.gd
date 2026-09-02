@@ -246,6 +246,19 @@ var _obstacles: Array[Rect2] = []
 var _obstacles_frame := -1
 ## Which obstacles each routed pair was permitted to consider. See `consulted_for`.
 var _route_consulted := {}
+
+## Routes kept from earlier frames because they are still legal. See `_route`.
+##
+## **Session-only, and never written to a document.** Cleared by `forget_routes()` on every
+## load, so opening a patch derives its routes from nothing and two people opening the same
+## file see the same cables. What this holds is the answer to "what is on screen right now",
+## which is a fact about an editing session and not about a patch.
+var _route_kept := {}
+
+## How often retention fired, and how often the kept route had become illegal. Session
+## counters for the harness; nothing in the product reads them.
+var routes_retained := 0
+var routes_refused := 0
 var _route_cache := {}
 var _dragging_key := ""
 var _drag_connection: Dictionary = {}
@@ -626,6 +639,36 @@ func _route(a: Vector2, b: Vector2) -> PackedVector2Array:
 		return _route_cache[key]
 
 	var own := _own_rects(a, b)
+
+	# Routing goal 3D: a legal route is not re-decided.
+	#
+	# > **If a cable's endpoints did not move and its existing path is still legal against
+	# > the obstacles as they now stand, that path is kept exactly.**
+	#
+	# The key is built from the two endpoints, so "endpoints did not move" is not a test
+	# this has to perform — a cable whose ports moved asks a different question and gets a
+	# fresh answer.
+	#
+	# Goal 3C measured why this is worth doing. Twenty-six of babble's forty-two reroutes
+	# and thirteen of the dense fixture's forty-four left the old route completely valid;
+	# the router simply preferred another one. The loudest case in the whole programme was
+	# one of them: a cable rewritten end to end, keeping three per cent of its old path, to
+	# come out forty units shorter. There is no optimisation worth having in that, and the
+	# cheapest way to stop doing it is not to rank at all when nothing is wrong.
+	#
+	# Legality is judged against **every** obstacle, not the relevant set — the same rule
+	# `_blocked_count` has always followed, and the reason a kept route cannot be stale in
+	# any way that matters. A route that has become blocked falls straight through to the
+	# router below and is computed exactly as it would have been today.
+	if _route_kept.has(key):
+		var kept: PackedVector2Array = _route_kept[key]
+		if kept.size() > 1 and _blocked_count(kept, own) == 0:
+			routes_retained += 1
+			_route_cache[key] = kept
+			return kept
+		elif kept.size() > 1:
+			routes_refused += 1
+
 	var nearby := _relevant_obstacles(a, b)
 	var rejected: Array[Rect2] = []
 	var result := _route_among(a, b, own, nearby, rejected)
@@ -669,6 +712,7 @@ func _route(a: Vector2, b: Vector2) -> PackedVector2Array:
 			say.append(rect)
 	_route_consulted[key] = say
 	_route_cache[key] = result
+	_route_kept[key] = result
 	return result
 
 
@@ -1889,6 +1933,35 @@ func refresh_cables() -> void:
 
 func clear_waypoints() -> void:
 	waypoints.clear()
+
+
+## Whether a route is being held for this pair of endpoints, and if so how it compares.
+##
+## For the harness only. "absent" means nothing was retained under this key at all, which is
+## the interesting answer when a route changed that the router agrees was still legal.
+func retained_state(a: Vector2, b: Vector2, points: PackedVector2Array) -> String:
+	var key := "%.1f,%.1f>%.1f,%.1f" % [a.x, a.y, b.x, b.y]
+	if not _route_kept.has(key):
+		return "absent"
+	var held: PackedVector2Array = _route_kept[key]
+	if held.size() != points.size():
+		return "different"
+	for i in held.size():
+		if held[i].distance_to(points[i]) > 0.5:
+			return "different"
+	return "same"
+
+
+## Drops every route kept from an earlier frame.
+##
+## Called whenever a document is loaded or rebuilt, which is what keeps goal 3D's retention
+## honest: it makes an editing session's cables stable, and it must never make two openings
+## of the same file disagree. Retention is a fact about a session; a patch file has no
+## opinion about corridors and is not going to acquire one.
+func forget_routes() -> void:
+	_route_kept.clear()
+	_route_cache.clear()
+	_route_consulted.clear()
 
 
 ## Polled rather than driven by a signal, because GraphEdit does not emit one for

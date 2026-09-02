@@ -224,6 +224,44 @@ func _initialize() -> void:
 			strangers += 1
 	check(strangers == 0, "with one node selected, no other node moves (%d did)" % strangers)
 
+	# ---- goal 3D: retention is a session, not a document ------------------------------
+	#
+	# Routes are kept across frames now, which is what stops a legal cable being rewritten
+	# because something moved elsewhere. The boundary that makes it safe is that a load
+	# starts from nothing: two openings of one file must produce the same cables, or route
+	# state has quietly become part of the document without anyone writing it there.
+	await open_patch("res://qa/dense-graph-tidied.json")
+	var first := {}
+	for route: Dictionary in main.graph_edit._routes():
+		var f: Array = route["fields"]
+		first["%s:%d>%s:%d" % [str(f[0]), int(f[1]), str(f[2]), int(f[3])]] = route["points"]
+	# Move something, so the session has retained routes worth carrying, then reopen.
+	for id in main.widgets:
+		(main.widgets[id] as GraphNode).position_offset += Vector2(40.0, 0.0)
+		break
+	await settle(8)
+	await open_patch("res://qa/dense-graph-tidied.json")
+	var again := 0
+	var checked := 0
+	for route: Dictionary in main.graph_edit._routes():
+		var f: Array = route["fields"]
+		var key := "%s:%d>%s:%d" % [str(f[0]), int(f[1]), str(f[2]), int(f[3])]
+		if not first.has(key):
+			continue
+		checked += 1
+		var opened: PackedVector2Array = first[key]
+		var reopened: PackedVector2Array = route["points"]
+		if opened.size() != reopened.size():
+			again += 1
+			continue
+		for i in opened.size():
+			if opened[i].distance_to(reopened[i]) > 0.5:
+				again += 1
+				break
+	check(checked > 0 and again == 0,
+		"a reopened document routes identically (%d of %d cables differ)"
+			% [again, checked])
+
 	print("")
 	if failures == 0:
 		print("all route checks passed")

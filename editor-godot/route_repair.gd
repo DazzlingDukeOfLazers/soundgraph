@@ -181,6 +181,7 @@ func _initialize() -> void:
 		print("")
 		print("%s" % short)
 
+		var held_state := {}
 		var classes := {"still legal": [], "locally repairable": [],
 			"corridor-invalid": []}
 		var loudest := {}
@@ -191,10 +192,23 @@ func _initialize() -> void:
 			if not widget.visible:
 				continue
 			var home: Vector2 = widget.position_offset
-			var before := routes_now()
-			var ends := ends_now()
 			for step: Vector2 in [Vector2(NUDGE, 0.0), Vector2(-NUDGE, 0.0),
 					Vector2(0.0, NUDGE), Vector2(0.0, -NUDGE)]:
+				# Goal 3D made routes session state, so a probe has to say which session
+				# it is in — and it has to say so **per edit**, not per node.
+				#
+				# Forgetting once per node was not enough: the second, third and fourth
+				# nudges each inherited whatever the previous nudge left retained, so what
+				# was measured was not one edit but a short history of them. That read the
+				# dense fixture at fifty-three reroutes against forty-four, from a change
+				# that can only ever remove them, and it took three wrong probes to see it.
+				#
+				# Forgetting here means `before` is the arrangement routed from nothing and
+				# `after` is that arrangement plus exactly one edit, which is the claim.
+				graph.forget_routes()
+				await settle(2)
+				var before := routes_now()
+				var ends := ends_now()
 				widget.position_offset = home + step
 				await settle(2)
 				var after := routes_now()
@@ -219,6 +233,9 @@ func _initialize() -> void:
 					var pair: Array = ends[key]
 					var skip: Array = graph._own_rects(pair[0], pair[1])
 					var kind := classify(was, skip, moved)
+					if kind == "still legal":
+						var held := str(graph.retained_state(pair[0], pair[1], was))
+						held_state[held] = int(held_state.get(held, 0)) + 1
 					var kept := preserved(was, now)
 					var row := {
 						"cable": key, "moved": str(widget.name),
@@ -238,6 +255,9 @@ func _initialize() -> void:
 				widget.position_offset = home
 				await settle(2)
 
+		print("  retention           fired %d time(s), refused %d as no longer legal"
+			% [graph.routes_retained, graph.routes_refused])
+		print("  retention held      %s for the 'still legal' reroutes" % str(held_state))
 		var total := 0
 		for kind: String in classes:
 			total += (classes[kind] as Array).size()
