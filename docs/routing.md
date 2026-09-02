@@ -928,6 +928,82 @@ opening a document produce the routes the session that saved it had?
 So the number is recorded rather than explained away. Whether 34.9x on a legitimate
 obstacle response is acceptable is a judgement about the product, not a measurement.
 
+### 3C — did the edit require that much?
+
+Goal 3's locality contract is **frozen**:
+
+> **A route may change only because an obstacle participated in its routing decision before
+> or after the edit.**
+
+`consulted_for` is the behavioural truth, and the remaining 26–29% of channels that look
+remote by envelope are not worth chasing for a percentage. The open question is no longer
+who was allowed to affect the cable. It is whether the edit required throwing away that much
+of the route, so the old route is classified against the *new* obstacle state.
+
+```
+babble-tidied         42 reroutes
+  still legal              26    worst 18.5x, median 1.4x, kept 29% of the old path
+  locally repairable       16    worst  8.1x, median 1.0x, kept 39%
+  corridor-invalid          0
+
+dense-graph-tidied    44 reroutes
+  still legal              13    worst 15.0x, median 1.0x, kept 49%
+  locally repairable       25    worst 21.6x, median 3.6x, kept 36%
+  corridor-invalid          6    worst  8.9x, median 6.7x, kept  3%
+```
+
+**Almost none of it was necessary.** Sixty-two per cent of babble's reroutes and thirty per
+cent of the dense fixture's left the old route completely valid — the router simply
+preferred a different one. Another thirty-eight and fifty-seven per cent broke only where
+the moved obstacle touched them, in a single contiguous run of segments, with the rest of
+the path still good.
+
+Genuinely unavoidable corridor changes are **none on babble and six of forty-four on dense**
+— and they are the *mildest* of the three classes, at 8.9x worst against 18.5x and 21.6x.
+The cases where the router has no choice are not the cases that lurch.
+
+The two loudest specimens say it plainly.
+
+```
+babble   n22:0>n14:0 moved 18.5x when n16 was nudged 40 left       still legal
+         old segments blocked afterwards: none
+         kept 3% of the old path, and the cable came out 40 units SHORTER
+```
+
+The old route stayed perfectly legal. A forty-unit nudge somewhere else rewrote the cable
+end to end to save forty units of length. That is a ranking problem and nothing else.
+
+```
+dense    n1:0>n24:1 moved 21.6x when n22 was nudged 40 left        locally repairable
+         old segments blocked afterwards: 4, 5, 6 — all by the mover, contiguous
+         kept 16% of the old path, and the cable came out 472 units LONGER
+```
+
+Three segments of ten were damaged, in one run, by one obstacle. The router replaced the
+whole path and spent four hundred and seventy-two units doing it.
+
+### What that points at, and what it does not
+
+Two different fixes, in that order of value:
+
+1. **Continuity preference in candidate ranking.** When the old route is still legal, prefer
+   it. This is the larger population on babble and the cheapest thing to get right.
+2. **Local segment repair.** Recompute the damaged run and keep the rest. This is the larger
+   population on the dense fixture and would have saved 472 units on the worst specimen.
+
+And a third thing the evidence does *not* support: **candidate richness is not the problem.**
+That would have been the answer if the giant jumps were corridor-invalid, and they are the
+class that barely jumps at all.
+
+Generic route memory is still the wrong shape. Both fixes above need the previous route, but
+only for the duration of an edit — reopening a document still routes from nothing, so "same
+document, same routes" survives and no corridor state has to reach the file format. "Prefer
+where this cable used to be" as a standing bias would put session history into a document's
+appearance; "preserve the valid part of what is on screen while the user drags" does not.
+
+Status: **goal 3 locality frozen; the 34.9x response is an unresolved ROUTED interaction
+defect with a diagnosis and no fix yet.**
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
@@ -938,9 +1014,10 @@ something else found on the way is.
    is DISPLAY, cable cost is STYLE_INDEPENDENT and canonical.
 3. ~~A canonical crossing.~~ **Done, goal 2.4**, and the geometry-ownership pass is closed
    with it. Structural objective, display safety, every divergence attributable.
-4. ~~Corridor stability, the coupling half.~~ **Done, goal 3.** No cable is rerouted by an
-   obstacle the router did not consult. The open question it leaves is magnitude rather than
-   cause: the worst legitimate response on the dense fixture is now 34.9x a nudge. A cable's corridor is a greedy pick from a globally ranked
+4. ~~Corridor stability, the coupling half.~~ **Done, goal 3**, and diagnosed at 3C. What
+   remains is magnitude, and it is not one problem: continuity preference for the reroutes
+   that were never necessary, and local segment repair for the ones that broke in one place.
+   Neither needs route memory outside the edit that causes it. A cable's corridor is a greedy pick from a globally ranked
    channel list with no memory of where it already was. This is the "route hysteresis"
    subproblem, and it now has a mechanism rather than a symptom.
 4. **The detour tail.** A handful of cables carry all the excess.

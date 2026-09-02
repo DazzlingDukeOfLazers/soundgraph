@@ -32,6 +32,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `hit-geometry.json` | `hit_geometry.gd` | routing goal 2.1: 1,373 points on the displayed centreline of every cable, in both styles at three zooms, each of which must select its own cable; plus the upper strand at every crossing and a refusal on the hidden path |
 | `geometry-owners.json` | `geometry_owners.gd` | routing goal 2.2: every metric under both cable styles and both geometries, the four trespass states, and whether each layout operation would have decided differently on the other one |
 | `route-locality.json` | `route_locality.gd` | routing goal 3: where every candidate channel comes from, and whether an obstacle the router never consulted can still move a cable |
+| `route-repair.json` | `route_repair.gd` | routing goal 3C: every reroute after a nudge, classified by whether the old route was still legal, broken in one place, or genuinely impossible to keep |
 
 ## The sheets, on demand
 
@@ -107,6 +108,9 @@ GEOMETRY_OWNERS_OUT=/tmp/p godot --headless --path editor-godot --script geometr
 
 # which obstacles are allowed an opinion about a cable, and whether that holds
 ROUTE_LOCALITY_OUT=/tmp/p godot --headless --path editor-godot --script route_locality.gd
+
+# when a cable had to move, did the edit require it to move that much?
+ROUTE_REPAIR_OUT=/tmp/p godot --headless --path editor-godot --script route_repair.gd
 ```
 
 `crossing_semantics.gd` is on the push gate as well, and writes its record only when the

@@ -1,0 +1,751 @@
+{
+  "babble-tidied": {
+    "classes": {
+      "corridor-invalid": [],
+      "locally repairable": [
+        {
+          "cable": "n0:1>n22:1",
+          "deviation": 0.5,
+          "kept": 14.0,
+          "length": 36.0,
+          "moved": "n1",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n0:0>n11:1",
+          "deviation": 6.0,
+          "kept": 1.0,
+          "length": 48.0,
+          "moved": "n2",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n4:1",
+          "deviation": 0.3,
+          "kept": 39.0,
+          "length": 80.0,
+          "moved": "n2",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n5:1",
+          "deviation": 0.3,
+          "kept": 19.0,
+          "length": 80.0,
+          "moved": "n3",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n0:0>n11:1",
+          "deviation": 6.0,
+          "kept": 1.0,
+          "length": 48.0,
+          "moved": "n8",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n9:0>n10:0",
+          "deviation": 0.3,
+          "kept": 40.0,
+          "length": 80.0,
+          "moved": "n8",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n14:0",
+          "deviation": 0.9,
+          "kept": 49.0,
+          "length": 0.0,
+          "moved": "n12",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n14:0",
+          "deviation": 8.1,
+          "kept": 52.0,
+          "length": -60.0,
+          "moved": "n13",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n14:0",
+          "deviation": 0.9,
+          "kept": 49.0,
+          "length": 0.0,
+          "moved": "n16",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n19:0",
+          "deviation": 7.2,
+          "kept": 51.0,
+          "length": 0.0,
+          "moved": "n17",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n19:0",
+          "deviation": 1.0,
+          "kept": 71.0,
+          "length": 0.0,
+          "moved": "n17",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n19:0",
+          "deviation": 7.2,
+          "kept": 5.0,
+          "length": 16.0,
+          "moved": "n18",
+          "vertices": "10 -> 6"
+        },
+        {
+          "cable": "n19:0>n20:1",
+          "deviation": 1.0,
+          "kept": 69.0,
+          "length": 0.0,
+          "moved": "n18",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n7:0>n17:1",
+          "deviation": 1.0,
+          "kept": 36.0,
+          "length": 0.0,
+          "moved": "n18",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n7:0>n17:1",
+          "deviation": 1.0,
+          "kept": 36.0,
+          "length": 0.0,
+          "moved": "n20",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n7:0>n17:1",
+          "deviation": 1.0,
+          "kept": 36.0,
+          "length": 0.0,
+          "moved": "n21",
+          "vertices": "10 -> 10"
+        }
+      ],
+      "still legal": [
+        {
+          "cable": "n22:0>n14:0",
+          "deviation": 0.1,
+          "kept": 100.0,
+          "length": 0.0,
+          "moved": "n0",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n0:1>n22:1",
+          "deviation": 0.8,
+          "kept": 31.0,
+          "length": -18.0,
+          "moved": "n1",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n0:1>n22:1",
+          "deviation": 0.5,
+          "kept": 14.0,
+          "length": 6.0,
+          "moved": "n1",
+          "vertices": "10 -> 6"
+        },
+        {
+          "cable": "n0:1>n22:1",
+          "deviation": 0.8,
+          "kept": 31.0,
+          "length": -18.0,
+          "moved": "n1",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n22:0>n4:1",
+          "deviation": 3.5,
+          "kept": 7.0,
+          "length": -241.0,
+          "moved": "n2",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n22:0>n4:1",
+          "deviation": 1.0,
+          "kept": 29.0,
+          "length": -80.0,
+          "moved": "n2",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n5:1",
+          "deviation": 1.0,
+          "kept": 15.0,
+          "length": -80.0,
+          "moved": "n3",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n5:1",
+          "deviation": 1.0,
+          "kept": 15.0,
+          "length": -80.0,
+          "moved": "n3",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n0:0>n11:1",
+          "deviation": 6.0,
+          "kept": 1.0,
+          "length": -32.0,
+          "moved": "n3",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n9:0>n10:0",
+          "deviation": 3.5,
+          "kept": 7.0,
+          "length": -249.0,
+          "moved": "n8",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n9:0>n10:0",
+          "deviation": 1.0,
+          "kept": 29.0,
+          "length": -80.0,
+          "moved": "n8",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n15:0>n16:1",
+          "deviation": 1.4,
+          "kept": 25.0,
+          "length": -76.0,
+          "moved": "n12",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n15:0>n16:1",
+          "deviation": 1.4,
+          "kept": 25.0,
+          "length": -76.0,
+          "moved": "n12",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n15:0>n16:1",
+          "deviation": 1.4,
+          "kept": 25.0,
+          "length": -76.0,
+          "moved": "n12",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n15:0>n16:1",
+          "deviation": 1.0,
+          "kept": 62.0,
+          "length": 0.0,
+          "moved": "n13",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n15:0>n16:1",
+          "deviation": 1.0,
+          "kept": 62.0,
+          "length": 0.0,
+          "moved": "n13",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n15:0>n16:1",
+          "deviation": 1.0,
+          "kept": 62.0,
+          "length": 0.0,
+          "moved": "n13",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n14:0",
+          "deviation": 18.5,
+          "kept": 3.0,
+          "length": -40.0,
+          "moved": "n16",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n19:0",
+          "deviation": 4.0,
+          "kept": 61.0,
+          "length": 0.0,
+          "moved": "n16",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n14:0",
+          "deviation": 18.5,
+          "kept": 3.0,
+          "length": -40.0,
+          "moved": "n17",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n19:0",
+          "deviation": 5.0,
+          "kept": 58.0,
+          "length": 0.0,
+          "moved": "n17",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n19:0>n20:1",
+          "deviation": 2.0,
+          "kept": 20.0,
+          "length": -87.0,
+          "moved": "n18",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n19:0>n20:1",
+          "deviation": 2.0,
+          "kept": 12.0,
+          "length": 16.0,
+          "moved": "n18",
+          "vertices": "10 -> 6"
+        },
+        {
+          "cable": "n22:0>n19:0",
+          "deviation": 4.0,
+          "kept": 61.0,
+          "length": 0.0,
+          "moved": "n18",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n19:0>n20:1",
+          "deviation": 1.1,
+          "kept": 69.0,
+          "length": 0.0,
+          "moved": "n18",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n22:0>n19:0",
+          "deviation": 4.0,
+          "kept": 61.0,
+          "length": 0.0,
+          "moved": "n20",
+          "vertices": "10 -> 10"
+        }
+      ]
+    },
+    "loudest": {
+      "damage": {
+        "contiguous": true,
+        "only_the_mover": true,
+        "segments": []
+      },
+      "kind": "still legal",
+      "new": "(1056,102) (1072,102) (1072,102) (1029,102) (1015,116) ... (-16,1182) (-16,1182) (0,1182)",
+      "obstacle": "n16 at (720.0, 480.0), nudged (-40.0, 0.0)",
+      "old": "(1056,102) (1072,102) (1086,116) (1086,427) (1072,441) ... (-30,1168) (-16,1182) (0,1182)",
+      "row": {
+        "cable": "n22:0>n14:0",
+        "deviation": 18.5,
+        "kept": 3.0,
+        "length": -40.0,
+        "moved": "n16",
+        "vertices": "10 -> 10"
+      }
+    }
+  },
+  "dense-graph-tidied": {
+    "classes": {
+      "corridor-invalid": [
+        {
+          "cable": "n3:0>n11:1",
+          "deviation": 6.7,
+          "kept": 3.0,
+          "length": -16.0,
+          "moved": "n7",
+          "vertices": "6 -> 10"
+        },
+        {
+          "cable": "n3:0>n11:1",
+          "deviation": 1.0,
+          "kept": 44.0,
+          "length": 0.0,
+          "moved": "n7",
+          "vertices": "6 -> 6"
+        },
+        {
+          "cable": "n3:0>n11:1",
+          "deviation": 6.7,
+          "kept": 3.0,
+          "length": -16.0,
+          "moved": "n13",
+          "vertices": "6 -> 10"
+        },
+        {
+          "cable": "n2:0>n17:0",
+          "deviation": 8.9,
+          "kept": 2.0,
+          "length": 17.0,
+          "moved": "n13",
+          "vertices": "6 -> 10"
+        },
+        {
+          "cable": "n3:0>n11:1",
+          "deviation": 6.7,
+          "kept": 3.0,
+          "length": -16.0,
+          "moved": "n14",
+          "vertices": "6 -> 10"
+        },
+        {
+          "cable": "n3:0>n11:1",
+          "deviation": 6.7,
+          "kept": 3.0,
+          "length": -16.0,
+          "moved": "n15",
+          "vertices": "6 -> 10"
+        }
+      ],
+      "locally repairable": [
+        {
+          "cable": "n0:0>n6:0",
+          "deviation": 0.6,
+          "kept": 41.0,
+          "length": 45.0,
+          "moved": "n5",
+          "vertices": "25 -> 10"
+        },
+        {
+          "cable": "n5:0>n24:0",
+          "deviation": 10.6,
+          "kept": 48.0,
+          "length": 442.0,
+          "moved": "n6",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n0:0>n14:1",
+          "deviation": 1.0,
+          "kept": 66.0,
+          "length": 0.0,
+          "moved": "n6",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n2:0>n17:0",
+          "deviation": 1.0,
+          "kept": 49.0,
+          "length": 0.0,
+          "moved": "n7",
+          "vertices": "6 -> 6"
+        },
+        {
+          "cable": "n1:1>n13:0",
+          "deviation": 0.3,
+          "kept": 14.0,
+          "length": 62.0,
+          "moved": "n7",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n3:0>n11:1",
+          "deviation": 6.7,
+          "kept": 3.0,
+          "length": -16.0,
+          "moved": "n8",
+          "vertices": "6 -> 10"
+        },
+        {
+          "cable": "n9:0>n20:1",
+          "deviation": 1.0,
+          "kept": 36.0,
+          "length": 0.0,
+          "moved": "n10",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n5:0>n24:0",
+          "deviation": 10.6,
+          "kept": 48.0,
+          "length": 442.0,
+          "moved": "n11",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n5:0>n24:0",
+          "deviation": 10.6,
+          "kept": 48.0,
+          "length": 442.0,
+          "moved": "n12",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n0:0>n14:1",
+          "deviation": 9.9,
+          "kept": 47.0,
+          "length": 0.0,
+          "moved": "n13",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n8:0>n17:1",
+          "deviation": 8.2,
+          "kept": 4.0,
+          "length": -16.0,
+          "moved": "n13",
+          "vertices": "6 -> 10"
+        },
+        {
+          "cable": "n7:0>n18:0",
+          "deviation": 0.3,
+          "kept": 44.0,
+          "length": 80.0,
+          "moved": "n13",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n8:0>n17:1",
+          "deviation": 1.0,
+          "kept": 29.0,
+          "length": 0.0,
+          "moved": "n14",
+          "vertices": "6 -> 6"
+        },
+        {
+          "cable": "n1:0>n24:1",
+          "deviation": 4.0,
+          "kept": 39.0,
+          "length": 0.0,
+          "moved": "n14",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n9:0>n20:1",
+          "deviation": 1.0,
+          "kept": 36.0,
+          "length": 0.0,
+          "moved": "n16",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n13:0>n21:1",
+          "deviation": 0.3,
+          "kept": 46.0,
+          "length": 70.0,
+          "moved": "n18",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n20:0>n27:0",
+          "deviation": 3.6,
+          "kept": 5.0,
+          "length": 544.0,
+          "moved": "n19",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n5:0>n24:0",
+          "deviation": 15.7,
+          "kept": 41.0,
+          "length": 0.0,
+          "moved": "n21",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n1:0>n24:1",
+          "deviation": 21.6,
+          "kept": 16.0,
+          "length": 472.0,
+          "moved": "n22",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n13:0>n21:1",
+          "deviation": 6.7,
+          "kept": 4.0,
+          "length": -498.0,
+          "moved": "n22",
+          "vertices": "10 -> 6"
+        },
+        {
+          "cable": "n19:0>n23:0",
+          "deviation": 0.9,
+          "kept": 26.0,
+          "length": 59.0,
+          "moved": "n24",
+          "vertices": "25 -> 10"
+        },
+        {
+          "cable": "n20:0>n27:0",
+          "deviation": 3.6,
+          "kept": 5.0,
+          "length": 464.0,
+          "moved": "n24",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n23:0>n28:1",
+          "deviation": 1.0,
+          "kept": 35.0,
+          "length": 0.0,
+          "moved": "n26",
+          "vertices": "6 -> 6"
+        },
+        {
+          "cable": "n17:0>n28:2",
+          "deviation": 14.7,
+          "kept": 28.0,
+          "length": 0.0,
+          "moved": "n26",
+          "vertices": "6 -> 6"
+        },
+        {
+          "cable": "n23:0>n28:1",
+          "deviation": 1.0,
+          "kept": 35.0,
+          "length": 0.0,
+          "moved": "n27",
+          "vertices": "6 -> 6"
+        }
+      ],
+      "still legal": [
+        {
+          "cable": "n0:0>n14:1",
+          "deviation": 1.0,
+          "kept": 66.0,
+          "length": 0.0,
+          "moved": "n6",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n5:0>n24:0",
+          "deviation": 15.0,
+          "kept": 42.0,
+          "length": 0.0,
+          "moved": "n7",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n2:0>n17:0",
+          "deviation": 1.0,
+          "kept": 49.0,
+          "length": 0.0,
+          "moved": "n7",
+          "vertices": "6 -> 6"
+        },
+        {
+          "cable": "n1:1>n13:0",
+          "deviation": 0.6,
+          "kept": 9.0,
+          "length": -19.0,
+          "moved": "n7",
+          "vertices": "10 -> 25"
+        },
+        {
+          "cable": "n5:0>n24:0",
+          "deviation": 0.1,
+          "kept": 100.0,
+          "length": 0.0,
+          "moved": "n11",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n1:1>n13:0",
+          "deviation": 0.1,
+          "kept": 100.0,
+          "length": -5.0,
+          "moved": "n12",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n5:0>n24:0",
+          "deviation": 0.9,
+          "kept": 61.0,
+          "length": 0.0,
+          "moved": "n12",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n7:0>n18:0",
+          "deviation": 7.0,
+          "kept": 5.0,
+          "length": -32.0,
+          "moved": "n12",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n7:0>n18:0",
+          "deviation": 1.0,
+          "kept": 35.0,
+          "length": -80.0,
+          "moved": "n13",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n13:0>n21:1",
+          "deviation": 0.1,
+          "kept": 100.0,
+          "length": -10.0,
+          "moved": "n14",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n1:0>n24:1",
+          "deviation": 0.1,
+          "kept": 100.0,
+          "length": 0.0,
+          "moved": "n18",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n13:0>n21:1",
+          "deviation": 1.0,
+          "kept": 39.0,
+          "length": -80.0,
+          "moved": "n18",
+          "vertices": "10 -> 10"
+        },
+        {
+          "cable": "n20:0>n27:0",
+          "deviation": 1.0,
+          "kept": 22.0,
+          "length": -80.0,
+          "moved": "n24",
+          "vertices": "10 -> 10"
+        }
+      ]
+    },
+    "loudest": {
+      "damage": {
+        "contiguous": true,
+        "only_the_mover": true,
+        "segments": [
+          4,
+          5,
+          6
+        ]
+      },
+      "kind": "locally repairable",
+      "new": "(376,742) (392,742) (406,756) (406,2248) (420,2262) ... (2050,2040) (2064,2026) (2080,2026)",
+      "obstacle": "n22 at (2080.0, 960.0), nudged (-40.0, 0.0)",
+      "old": "(376,742) (392,742) (406,756) (406,1147) (420,1161) ... (2050,2012) (2064,2026) (2080,2026)",
+      "row": {
+        "cable": "n1:0>n24:1",
+        "deviation": 21.6,
+        "kept": 16.0,
+        "length": 472.0,
+        "moved": "n22",
+        "vertices": "10 -> 10"
+      }
+    }
+  }
+}
