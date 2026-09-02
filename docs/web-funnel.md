@@ -110,6 +110,9 @@ the capture itself is honest.
    `node tools/export-web.mjs --out editor-web/editor` has not run — the export is a build
    output and stays out of git on purpose. Run it once and the surface link, the "Open in
    the full editor" button and the whole-instrument affordance all become real.
+   Production hosting exists now: `node tools/deploy-web.mjs` puts the export in R2 and
+   the page in a Worker on `mutantfactory.com/soundgraph` — see `tools/cloudflare/` and
+   the Hosting section of `editor-web/README.md`.
 4. **The font ships as 112 KB of TTF.** A woff2 subset would roughly halve it; needs
    fontTools or equivalent.
 5. **`verify-onboarding.mjs` knows nothing about the new sections.** The gallery images

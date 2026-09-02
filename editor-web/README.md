@@ -11,10 +11,15 @@ with what SoundGraph is and keeps the JSON source collapsed underneath.
 Declared in `surfaces.js`, which is the only place their URLs live:
 
 ```text
-/soundgraph            this page — ~650 KB, nothing to install
-/soundgraph/editor     the Godot editor exported to WebAssembly — ~10 MB gzipped
-/soundgraph/desktop    the desktop application
+/soundgraph              this page — ~650 KB, nothing to install
+/soundgraph/editor-web   the Godot editor exported to WebAssembly — ~10 MB gzipped
+/soundgraph/desktop      the desktop application
 ```
+
+The page itself says `./editor/` — relative, so localhost (where the export sits at
+`editor-web/editor/`) needs no rewrite — and in production a 301 in
+`tools/cloudflare/worker.js` carries that to `/soundgraph/editor-web/`, the editor's
+canonical home. See **Hosting** below.
 
 A surface whose `url` is null is announced but not linked: it says what it is and that it
 is not ready, rather than offering a link that 404s. Nothing here invents a deployment.
@@ -135,6 +140,35 @@ typeof window.soundgraph.startOnce   // "function" once the single-flight start 
 
 A plain `file://` open will not work: the module is fetched, and AudioWorklet modules need
 an http origin.
+
+## Hosting
+
+Production is one Cloudflare Worker on the route `mutantfactory.com/soundgraph*`, defined
+in `tools/cloudflare/`:
+
+- **This page rides inside the Worker** as static assets (`.assetsignore` keeps the
+  editor export out of the bundle).
+- **The full editor is served from R2** at `/soundgraph/editor-web/`, because
+  `index.side.wasm` (44 MB) is past Cloudflare's 25 MiB static-asset limit. R2 egress is
+  free, and `application/wasm` is on Cloudflare's compressible list, so it travels brotli.
+- **One origin for both, non-negotiable**: the handoff is localStorage, and the editor
+  sits below the page so its service-worker scope cannot capture it.
+- **The example patches ride in the same bucket** under `patches/`, served at
+  `/examples/patches/` — the page fetches them one directory up from itself, mirroring
+  the repository. Only the patches `app.js` actually names are uploaded; naming one that
+  does not exist stops the deploy.
+
+Deploy (needs `npx wrangler login` once per machine, and a fresh export):
+
+```bash
+node tools/export-web.mjs --out editor-web/editor
+```
+
+```bash
+node tools/deploy-web.mjs
+```
+
+`--skip-upload` redeploys just the Worker and page when the editor export is unchanged.
 
 ## Verifying it against the native build
 
