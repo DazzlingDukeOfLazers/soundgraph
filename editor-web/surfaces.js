@@ -22,9 +22,9 @@
 //
 // Relative URLs, so the same build works on localhost, on a staging host and in
 // production without a rebuild. Locally the export sits at ./editor/; in production
-// (tools/cloudflare/worker.js) that same relative link 301s to /soundgraph/editor-web/,
-// the editor's canonical home in R2. Same origin either way — the handoff is
-// localStorage, and localStorage does not cross origins.
+// (the mutant-factory-website repository's routes) that same relative link 301s to
+// /soundgraph/editor-web/, the editor's canonical home in R2. Same origin either way —
+// the handoff is localStorage, and localStorage does not cross origins.
 
 export const SURFACES = [
     {

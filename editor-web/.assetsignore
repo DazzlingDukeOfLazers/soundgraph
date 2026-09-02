@@ -1,6 +1,0 @@
-## What stays OUT of the Worker's static-asset bundle.
-##
-## The full editor export is 53 MB and one of its files (index.side.wasm, 44 MB) is past
-## Cloudflare's 25 MiB per-asset limit — it deploys to R2 instead, via
-## tools/deploy-web.mjs. Everything else in this directory rides inside the Worker.
-editor/

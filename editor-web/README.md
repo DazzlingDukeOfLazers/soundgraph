@@ -17,9 +17,9 @@ Declared in `surfaces.js`, which is the only place their URLs live:
 ```
 
 The page itself says `./editor/` — relative, so localhost (where the export sits at
-`editor-web/editor/`) needs no rewrite — and in production a 301 in
-`tools/cloudflare/worker.js` carries that to `/soundgraph/editor-web/`, the editor's
-canonical home. See **Hosting** below.
+`editor-web/editor/`) needs no rewrite — and in production a 301 declared in the
+website repository carries that to `/soundgraph/editor-web/`, the editor's canonical
+home. See **Hosting** below.
 
 A surface whose `url` is null is announced but not linked: it says what it is and that it
 is not ready, rather than offering a link that 404s. Nothing here invents a deployment.
@@ -143,32 +143,24 @@ an http origin.
 
 ## Hosting
 
-Production is one Cloudflare Worker on the route `mutantfactory.com/soundgraph*`, defined
-in `tools/cloudflare/`:
+Production hosting lives in the `TheMutantFactory/mutant-factory-website` repository: a
+Cloudflare Pages project on `mutantfactory.net`, serving this funnel at
+`mutantfactory.net/soundgraph`. This repository builds the funnel; that one serves it:
 
-- **This page rides inside the Worker** as static assets (`.assetsignore` keeps the
-  editor export out of the bundle).
-- **The full editor is served from R2** at `/soundgraph/editor-web/`, because
-  `index.side.wasm` (44 MB) is past Cloudflare's 25 MiB static-asset limit. R2 egress is
-  free, and `application/wasm` is on Cloudflare's compressible list, so it travels brotli.
+- **This page** is a committed copy under that repo's `public/soundgraph/`, pulled from
+  here by its `scripts/sync-soundgraph.mjs` — run after pulling soundgraph, review the
+  diff, commit. `soundgraph.wasm` must be built here first, or the sync would publish a
+  silent page.
+- **The full editor is served from R2** (bucket `soundgraph-editor`) at
+  `/soundgraph/editor-web/`, because `index.side.wasm` (44 MB) is past Cloudflare's
+  25 MiB static-asset limit. Export it here (`node tools/export-web.mjs --out
+  editor-web/editor`), then upload with that repo's `scripts/upload-soundgraph-editor.mjs`.
 - **One origin for both, non-negotiable**: the handoff is localStorage, and the editor
-  sits below the page so its service-worker scope cannot capture it.
-- **The example patches ride in the same bucket** under `patches/`, served at
+  sits below the page so its service-worker scope cannot capture it. The `./editor/` 301
+  and the editor routes are declared in that repo's `scripts/write-routes.mjs`.
+- **The example patches** ride under that repo's `public/examples/patches/`, served at
   `/examples/patches/` — the page fetches them one directory up from itself, mirroring
-  the repository. Only the patches `app.js` actually names are uploaded; naming one that
-  does not exist stops the deploy.
-
-Deploy (needs `npx wrangler login` once per machine, and a fresh export):
-
-```bash
-node tools/export-web.mjs --out editor-web/editor
-```
-
-```bash
-node tools/deploy-web.mjs
-```
-
-`--skip-upload` redeploys just the Worker and page when the editor export is unchanged.
+  this repository. Only the patches `app.js` actually names are synced.
 
 ## Verifying it against the native build
 
