@@ -132,6 +132,28 @@ func _stage(main, shot: Dictionary) -> void:
 		for i in 6:
 			await process_frame
 
+	# `probe` points the scope at an output port, "<node>:<port>", through the panel's own
+	# picker — the same path a hand takes, so the labels and the frozen state behave. Pair
+	# it with `play` in the same shot: the scope draws the engine's own ring, and a silent
+	# engine is a flat trace wearing the caption of a waveform.
+	if str(shot.get("probe", "")) != "":
+		var half := str(shot["probe"]).split(":")
+		var found := false
+		for index in main.scope_probe._sources.size():
+			var entry: Dictionary = main.scope_probe._sources[index]
+			if str(entry["node"]) == half[0] and str(entry["port"]) == half[1]:
+				main.scope_probe.source_pick.selected = index + 1
+				main.scope_probe._on_source_picked(index + 1)
+				found = true
+				break
+		if not found:
+			printerr("no probe wire called '%s'" % str(shot["probe"]))
+		for i in 4:
+			await process_frame
+	else:
+		main.scope_probe.source_pick.selected = 0
+		main.scope_probe._on_source_picked(0)
+
 	if bool(shot.get("play", false)):
 		main._hold_note(57)
 		for i in 40:
