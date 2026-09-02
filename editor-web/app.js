@@ -647,6 +647,12 @@ async function startAudio() {
         buildControls(currentPatch ?? JSON.parse(ui.patch.value));
         ui.start.textContent = 'Audio running';
         milestone(MILESTONES.AUDIO_STARTED);
+        // Start pulling the full editor's files now, while the visitor plays. Pressing
+        // Start is the intent gesture: the tour that follows runs a minute or two, which
+        // is exactly the window a background prefetch needs, so by the time the tour's
+        // last step points at the editor it opens warm. The metered-connection guards
+        // inside warmFullEditor still apply.
+        warmFullEditor();
         connectMidi();
     } catch (error) {
         ui.status.textContent = String(error.message ?? error);
@@ -800,12 +806,19 @@ function openFullEditor() {
 /**
  * Warm the full editor's big files once somebody has shown they want it.
  *
- * Only after the golden moment, and never against a metered connection: ten megabytes
+ * Only after a deliberate gesture — starting audio, or the golden moment for a visitor
+ * who came in another way — and never against a metered connection: ten megabytes
  * fetched speculatively onto somebody's phone data is a cost they did not agree to. The
  * file list is empty until it is configured — see surfaces.js for why guessing the names
  * would produce a prefetch that fetches nothing while looking like it worked.
+ *
+ * `prefetch` is the browser's lowest fetch priority, so the pull rides in the idle time
+ * behind the page's own traffic rather than competing with it.
  */
+let fullEditorWarmed = false;
+
 function warmFullEditor() {
+    if (fullEditorWarmed) return true;
     const full = surface('full');
     if (!isReachable('full') || !full.preload?.length) return false;
 
@@ -819,6 +832,7 @@ function warmFullEditor() {
         link.href = new URL(file, new URL(full.url, window.location.href)).href;
         document.head.append(link);
     }
+    fullEditorWarmed = true;
     return true;
 }
 
@@ -849,8 +863,11 @@ const tour = new Onboarding({
     savePatchLocally: saveLocally,
     setBypass,
     fullEditor: () => (isReachable('full') ? surface('full') : null),
+    fullEditorButton: () => ui.openFull,
+    fullEditorWarmed: () => fullEditorWarmed,
     openFullEditor,
-    // The moment intent is proven. Nothing before it justifies ten megabytes.
+    // The backstop for a visitor who reached the golden moment without ever pressing
+    // Start (audio started elsewhere, or a restart mid-session). Idempotent.
     onGoldenMoment: warmFullEditor,
 });
 
