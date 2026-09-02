@@ -10,7 +10,7 @@
 // — a recipe that lives in somebody's shell history is a recipe that goes stale.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -80,6 +80,7 @@ if (godot === null) {
 }
 
 const out = resolve(argument('--out', join(root, 'build-godot-web')), 'index.html');
+mkdirSync(out, { recursive: true });
 
 execFileSync(process.execPath, [join(root, 'tools', 'stamp-build.mjs'),
   '--target', 'web'], { stdio: 'inherit' });

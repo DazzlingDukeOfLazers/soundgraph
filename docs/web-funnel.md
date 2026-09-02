@@ -106,8 +106,10 @@ the capture itself is honest.
 2. **No crossing knockout on the web graph.** The demo patch keeps its crossings shallow,
    so nothing currently misreads — but the desktop grammar is only half present and a
    denser demo patch would expose it.
-3. **The full editor is announced but not exported here.** `./editor/` 404s until
-   `node tools/export-web.mjs --out editor-web/editor` has run against a deployment.
+3. **The full editor export is per-machine, per-deployment.** `./editor/` 404s anywhere
+   `node tools/export-web.mjs --out editor-web/editor` has not run — the export is a build
+   output and stays out of git on purpose. Run it once and the surface link, the "Open in
+   the full editor" button and the whole-instrument affordance all become real.
 4. **The font ships as 112 KB of TTF.** A woff2 subset would roughly halve it; needs
    fontTools or equivalent.
 5. **`verify-onboarding.mjs` knows nothing about the new sections.** The gallery images
