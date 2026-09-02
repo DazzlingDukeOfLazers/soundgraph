@@ -31,6 +31,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `route-stability.json` | `route_stability.gd` | routing goal 2: which product pathway reads which geometry, how far a forty-unit nudge travels in each of them, every changed cable attributed, and whether connection order matters |
 | `hit-geometry.json` | `hit_geometry.gd` | routing goal 2.1: 1,373 points on the displayed centreline of every cable, in both styles at three zooms, each of which must select its own cable; plus the upper strand at every crossing and a refusal on the hidden path |
 | `geometry-owners.json` | `geometry_owners.gd` | routing goal 2.2: every metric under both cable styles and both geometries, the four trespass states, and whether each layout operation would have decided differently on the other one |
+| `route-locality.json` | `route_locality.gd` | routing goal 3: where every candidate channel comes from, and whether an obstacle the router never consulted can still move a cable |
 
 ## The sheets, on demand
 
@@ -103,6 +104,9 @@ HIT_GEOMETRY_OUT=/tmp/p godot --headless --path editor-godot --script hit_geomet
 
 # which geometry each consumer means, and whether the split changes a decision
 GEOMETRY_OWNERS_OUT=/tmp/p godot --headless --path editor-godot --script geometry_owners.gd
+
+# which obstacles are allowed an opinion about a cable, and whether that holds
+ROUTE_LOCALITY_OUT=/tmp/p godot --headless --path editor-godot --script route_locality.gd
 ```
 
 `crossing_semantics.gd` is on the push gate as well, and writes its record only when the

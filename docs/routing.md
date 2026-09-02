@@ -812,6 +812,122 @@ something layout and legalization are quietly answering to — which was the poi
 whole detour. The router's own domain is finally clean enough to work on: the 21.3x nudge
 response, the detour tail, and its 44 and 10 routed meetings.
 
+## Goal 3 — corridor locality
+
+The first change to `_route` since the pass began, and it attacks the cause goal 2 named
+rather than masking it with route memory.
+
+> **An obstacle may influence a cable's routing candidates only if that obstacle is
+> geometrically relevant to reaching that cable's endpoints.**
+
+### 3A — how much of the candidate set was irrelevant
+
+`_orthogonal_candidates` took its channels from every obstacle in the graph: two vertical
+per node, filtered only to the span between the two stubs, and two horizontal **filtered by
+nothing at all**. Every node's top and bottom edge was a candidate corridor for every cable
+in the patch.
+
+```
+                     candidate channels offered by
+                     blocking   near-corridor   remote
+plucked-string           50%           0%         50%
+first-synth              44%           0%         56%
+babble-tidied            20%           1%         80%
+dense-graph-tidied       19%           1%         80%
+```
+
+Classified against geometry the connection supplies — the box spanning its two ports, grown
+by the router's own `CLEARANCE` — so no radius was invented to get these numbers.
+
+**The probe was wrong first, and the way it was wrong is worth keeping.** It nudged one
+obstacle per cable, the furthest remote one, and reported zero reroutes across 148 probes —
+which reads like the coupling had gone away, against a measurement that said otherwise. The
+furthest obstacle is the *least* likely to matter, because remote channels sort last and the
+router takes the first clear candidate. Rewritten to nudge every node in four directions and
+classify the mover afterwards, it gave the real answer:
+
+```
+babble-tidied        51 cables rerouted with still endpoints: 36 blocking, 2 near, 13 remote
+dense-graph-tidied   47                                       37 blocking, 2 near,  8 remote
+```
+
+Which also corrects goal 2's framing. Goal 2 called all ~50 of those "sympathetic reroutes";
+three quarters of them are an obstacle that genuinely sits in the cable's corridor moving,
+which is a router doing its job. The defect was the remaining 13 and 8.
+
+### 3B — local by construction
+
+Relevance is derived from the connection and widens only for cause. An obstacle meeting the
+envelope is in; an obstacle that is actually *in the way* merges its own box into the
+envelope, because getting around it is now part of the problem. That repeats to a fixed
+point — local corridor, wider corridor, escape, which is the legalizer's shape.
+
+**What is offered narrowed; what is checked did not.** `_blocked_count` still tests every
+candidate against every obstacle in the graph. A route can never be called clear because the
+router looked away from something; the worst a mistake in relevance can do is offer poorer
+corners, which shows up as more cable rather than as a cable through a node.
+
+Two more things had to be admitted before the invariant held, and both are real:
+
+- **A route is not obliged to stay in its envelope.** The horizontal family takes its
+  channel from an obstacle's edge and can leave the box entirely, so an obstacle beside the
+  detour is relevant after the route exists even though it was not before. `_route` now
+  makes one extra pass when the finished route runs beside something unconsulted.
+- **An obstacle that turns a candidate down had a say.** It never offered a corner, but it
+  removed one, and moving it can hand the cable a corridor it was denied. That is
+  obstruction rather than spookiness, and `consulted_for` reports it.
+
+The router publishes what it consulted, and the invariant is checked against that rather
+than against the harness's own opinion of relevance — testing against the opening set
+reported two violations that were the harness reading the wrong list.
+
+### What it bought, and what it cost
+
+```
+                            before      after
+candidate channels from
+  irrelevant obstacles         80%        26%   babble
+                               80%        29%   dense
+
+reroutes by an obstacle
+  the router never consulted    13          0   babble
+                                 8          0   dense
+
+cables rerouted, endpoints
+  unmoved                       51         42   babble
+                                47         44   dense
+
+routed meetings                 10         10   babble      guard held
+                                44         44   dense       guard held
+trespass                         0          0   both        guard held
+worst excess                   713        713   babble      guard held
+                               822        822   dense       guard held
+determinism                    0/26       0/26  babble      guard held
+                               0/35       0/35  dense       guard held
+catenary marks              7 / 26     7 / 26   unchanged   guard held
+
+worst deviation              11.5x      11.5x   babble
+                             21.3x      34.9x   dense       REGRESSED
+```
+
+**The contract is met and the primary guard is not.** Every guard the goal was given held —
+meetings, trespass, excess, determinism, and every CATENARY behaviour — and no cable is
+moved any more by an obstacle the router did not consult. But the worst single deviation on
+the dense fixture went *up*, from 21.3 to 34.9 times the nudge.
+
+That is not a contradiction, and the shape of it is informative. Locality removed the spooky
+reroutes and left the legitimate ones, and the legitimate ones got bigger: with fewer
+channels on offer, a cable that genuinely has to move now has fewer near alternatives and
+takes a further one. Frequency improved; worst-case magnitude did not.
+
+Which is exactly the thing route memory would address, and route memory is the thing goal 3
+was told not to reach for yet — deliberately, because a router that prefers where a cable
+used to be raises a question with no good answer while corridor state is unserialized: does
+opening a document produce the routes the session that saved it had?
+
+So the number is recorded rather than explained away. Whether 34.9x on a legitimate
+obstacle response is acceptable is a judgement about the product, not a measurement.
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
@@ -822,7 +938,9 @@ something else found on the way is.
    is DISPLAY, cable cost is STYLE_INDEPENDENT and canonical.
 3. ~~A canonical crossing.~~ **Done, goal 2.4**, and the geometry-ownership pass is closed
    with it. Structural objective, display safety, every divergence attributable.
-4. **Corridor stability.** A cable's corridor is a greedy pick from a globally ranked
+4. ~~Corridor stability, the coupling half.~~ **Done, goal 3.** No cable is rerouted by an
+   obstacle the router did not consult. The open question it leaves is magnitude rather than
+   cause: the worst legitimate response on the dense fixture is now 34.9x a nudge. A cable's corridor is a greedy pick from a globally ranked
    channel list with no memory of where it already was. This is the "route hysteresis"
    subproblem, and it now has a mechanism rather than a symptom.
 4. **The detour tail.** A handful of cables carry all the excess.

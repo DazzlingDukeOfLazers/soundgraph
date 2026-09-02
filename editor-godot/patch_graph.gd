@@ -244,6 +244,8 @@ var waypoints: Dictionary = {}
 
 var _obstacles: Array[Rect2] = []
 var _obstacles_frame := -1
+## Which obstacles each routed pair was permitted to consider. See `consulted_for`.
+var _route_consulted := {}
 var _route_cache := {}
 var _dragging_key := ""
 var _drag_connection: Dictionary = {}
@@ -346,6 +348,7 @@ func _current_obstacles() -> Array[Rect2]:
 	_obstacles_frame = frame
 	_obstacles.clear()
 	_route_cache.clear()
+	_route_consulted.clear()
 	for child in get_children():
 		if child is GraphNode and child.visible:
 			_obstacles.append(Rect2(child.position_offset, child.size).grow(CLEARANCE))
@@ -440,9 +443,10 @@ func _chamfer(points: PackedVector2Array) -> PackedVector2Array:
 ## always leaves these between its columns, and they are where a trace should make its
 ## vertical moves — turning at a fixed distance from the port instead lands inside
 ## whatever node happens to occupy the next column.
-func _vertical_channels(reference: float, low: float, high: float) -> Array:
+func _vertical_channels(reference: float, low: float, high: float,
+		nearby: Array[Rect2]) -> Array:
 	var candidates := [reference]
-	for rect in _current_obstacles():
+	for rect in nearby:
 		candidates.append(rect.position.x - CLEARANCE * 0.5)
 		candidates.append(rect.end.x + CLEARANCE * 0.5)
 
@@ -454,8 +458,78 @@ func _vertical_channels(reference: float, low: float, high: float) -> Array:
 	return usable
 
 
+## The obstacles allowed to offer this connection a channel, and why it is not all of them.
+##
+## Routing goal 3. `_orthogonal_candidates` took its channel coordinates from every obstacle
+## in the graph — two vertical channels per node filtered only to the span between the two
+## stubs, and two horizontal ones filtered by nothing at all. Goal 3A measured what that
+## costs: on the hostile fixtures **eighty per cent of every cable's candidate channels are
+## offered by obstacles that cannot possibly be in its way**, and thirteen of babble's
+## fifty-one sympathetic reroutes came from a node the rerouted cable never goes near — one
+## of them three thousand units away.
+##
+## The contract:
+##
+## > **An obstacle may influence a cable's routing candidates only if that obstacle is
+## > geometrically relevant to reaching that cable's endpoints.**
+##
+## Relevance is derived from the connection, never from a radius somebody picked. The
+## envelope is the box spanning the two ports grown by `CLEARANCE`; anything meeting it is
+## in. Then it widens, and only for cause: an obstacle that is actually *in the way* pulls
+## its own box into the envelope, because getting around it is now part of the problem and
+## whatever is beside it has become relevant. That repeats to a fixed point, so the search
+## is local by construction and reaches further exactly as far as it has to —
+##
+##   local corridor -> wider corridor -> escape
+##
+## which is the legalizer's shape, for the same reason it worked there.
+##
+## **This restricts what is offered, never what is checked.** `_blocked_count` still tests
+## every candidate against every obstacle in the graph. A route can therefore never be
+## called clear because this function looked away from something; the worst a mistake here
+## can do is offer a poorer set of corners, which the guards would show as more cable rather
+## than as a cable through a node.
+func _relevant_obstacles(a: Vector2, b: Vector2) -> Array[Rect2]:
+	var all := _current_obstacles()
+	var envelope := Rect2(a, Vector2.ZERO).expand(b).grow(CLEARANCE)
+	var chosen: Array[Rect2] = []
+	var taken := {}
+	# Bounded because each round either takes an obstacle or stops, and there are finitely
+	# many; the cap is a backstop against a pathological patch rather than a tuning knob.
+	for _round in 8:
+		var grew := false
+		for i in all.size():
+			if taken.has(i):
+				continue
+			var rect: Rect2 = all[i]
+			if not envelope.intersects(rect):
+				continue
+			taken[i] = true
+			chosen.append(rect)
+			# Only something genuinely in the way widens the search. Merely standing
+			# beside the corridor does not make its neighbours relevant too, which is
+			# what would let this creep back out to the whole graph.
+			if _blocks_directly(a, b, rect):
+				envelope = envelope.merge(rect.grow(CLEARANCE))
+				grew = true
+		if not grew:
+			break
+	return chosen
+
+
+## Whether this obstacle sits across one of the shapes the router tries before it searches.
+func _blocks_directly(a: Vector2, b: Vector2, rect: Rect2) -> bool:
+	var corner_one := Vector2(b.x, a.y)
+	var corner_two := Vector2(a.x, b.y)
+	return _segment_hits_rect(a, b, rect) \
+		or _segment_hits_rect(a, corner_one, rect) \
+		or _segment_hits_rect(corner_one, b, rect) \
+		or _segment_hits_rect(a, corner_two, rect) \
+		or _segment_hits_rect(corner_two, b, rect)
+
+
 ## Candidate orthogonal routes from a to b, cheapest first.
-func _orthogonal_candidates(a: Vector2, b: Vector2) -> Array:
+func _orthogonal_candidates(a: Vector2, b: Vector2, nearby: Array[Rect2]) -> Array:
 	var start := a + Vector2(STUB, 0.0)
 	var finish := b - Vector2(STUB, 0.0)
 	var candidates := []
@@ -464,7 +538,7 @@ func _orthogonal_candidates(a: Vector2, b: Vector2) -> Array:
 	# natural shape for a cable running left to right.
 	var middle_x := (start.x + finish.x) * 0.5
 	var channel_xs := [middle_x]
-	for rect in _current_obstacles():
+	for rect in nearby:
 		channel_xs.append(rect.position.x - CLEARANCE * 0.5)
 		channel_xs.append(rect.end.x + CLEARANCE * 0.5)
 	# Nearest to the midpoint first: the least surprising detour is the smallest one.
@@ -482,9 +556,11 @@ func _orthogonal_candidates(a: Vector2, b: Vector2) -> Array:
 	# The vertical moves happen in clear gaps between obstacles rather than at a fixed
 	# distance from the port: in a columnar layout a fixed stub lands inside the next
 	# column, which is exactly the case of two same-row nodes with a third between them.
+	# The horizontal family, which had no filter of any kind before this — every node's top
+	# and bottom edge was a candidate channel for every cable in the graph, however far away.
 	var middle_y := (a.y + b.y) * 0.5
 	var channel_ys := []
-	for rect in _current_obstacles():
+	for rect in nearby:
 		channel_ys.append(rect.position.y - CLEARANCE * 0.5)
 		channel_ys.append(rect.end.y + CLEARANCE * 0.5)
 	channel_ys.sort_custom(func(p, q): return absf(p - middle_y) < absf(q - middle_y))
@@ -495,8 +571,8 @@ func _orthogonal_candidates(a: Vector2, b: Vector2) -> Array:
 	# candidates must be examined before the next horizontal channel is even tried — and
 	# the channel matters far more than the exact turn, so spending the budget on rows
 	# rather than on columns finds a clear route much sooner.
-	var leaving := _vertical_channels(start.x, low, high).slice(0, 2)
-	var arriving := _vertical_channels(finish.x, low, high).slice(0, 2)
+	var leaving := _vertical_channels(start.x, low, high, nearby).slice(0, 2)
+	var arriving := _vertical_channels(finish.x, low, high, nearby).slice(0, 2)
 	if leaving.is_empty():
 		leaving = [start.x]
 	if arriving.is_empty():
@@ -514,7 +590,8 @@ func _orthogonal_candidates(a: Vector2, b: Vector2) -> Array:
 
 ## How many obstacles a path crosses. Zero means clear; the count is used to pick the
 ## least bad route when a dense patch leaves no clear one at all.
-func _blocked_count(points: PackedVector2Array, ignore: Array[Rect2]) -> int:
+func _blocked_count(points: PackedVector2Array, ignore: Array[Rect2],
+		seen: Array[Rect2] = []) -> int:
 	var obstacles := _current_obstacles()
 	var blocked := 0
 	for i in range(points.size() - 1):
@@ -523,6 +600,12 @@ func _blocked_count(points: PackedVector2Array, ignore: Array[Rect2]) -> int:
 				continue
 			if _segment_hits_rect(points[i], points[i + 1], rect):
 				blocked += 1
+				# Goal 3: an obstacle that turned a candidate down had a say in the
+				# outcome, so it counts as consulted even though it never offered a
+				# corner. Recorded rather than inferred, because "it cannot have
+				# mattered" is precisely the claim this pass has been wrong about twice.
+				if not seen.has(rect):
+					seen.append(rect)
 	return blocked
 
 
@@ -543,40 +626,135 @@ func _route(a: Vector2, b: Vector2) -> PackedVector2Array:
 		return _route_cache[key]
 
 	var own := _own_rects(a, b)
-	var result: PackedVector2Array
+	var nearby := _relevant_obstacles(a, b)
+	var rejected: Array[Rect2] = []
+	var result := _route_among(a, b, own, nearby, rejected)
 
-	var smooth := _smooth_curve(a, b)
-	if _path_is_clear(smooth, own):
-		result = smooth
-	else:
-		var best: PackedVector2Array
-		var best_blocked := 1 << 30
-		var best_length := INF
-		var examined := 0
+	# Goal 3, the closing step: an obstacle the finished route runs alongside was relevant
+	# after all, whatever the envelope thought before the route existed.
+	#
+	# The envelope is drawn between the two ports, and a route is not obliged to stay in it
+	# — the horizontal family takes its channel from an obstacle's edge and can leave the
+	# box entirely. So locality by envelope alone left a residue: two cables on the dense
+	# fixture still moved when a node they pass within twenty-two and a hundred and eleven
+	# units of was nudged, which is close rather than remote, and the contract does not
+	# have a "close enough to ignore" clause.
+	#
+	# One extra pass, and only when the first result actually ran beside something
+	# unconsulted, so the common case still routes once.
+	var missed := _beside_unconsulted(result, nearby)
+	if not missed.is_empty():
+		for rect: Rect2 in missed:
+			nearby.append(rect)
+		result = _route_among(a, b, own, nearby, rejected)
 
-		# Candidates arrive best-first, so the first clear one wins and the search stops
-		# there. Scoring the rest only matters when a dense patch leaves nothing clear at
-		# all, where the least-blocked route still reads better than a line through three
-		# nodes — and even then the search is capped, because this runs per cable per frame.
-		for candidate in _orthogonal_candidates(a, b):
-			var simplified := _simplify(candidate)
-			var blocked := _blocked_count(simplified, own)
-			if blocked == 0:
-				best = simplified
-				best_blocked = 0
-				break
-			var length := _path_length(simplified)
-			if blocked < best_blocked or (blocked == best_blocked and length < best_length):
-				best_blocked = blocked
-				best_length = length
-				best = simplified
-			examined += 1
-			if examined >= MAX_CANDIDATES:
-				break
-		result = _chamfer(best) if not best.is_empty() else smooth
-
+	# What this route was actually allowed to see, published beside the route itself.
+	#
+	# The invariant goal 3 exists to establish — an obstacle the router did not consult
+	# cannot change what it produces — is only checkable against the set the router really
+	# used, and that is not `_relevant_obstacles` alone once the validation pass above can
+	# add to it. A harness that asked the opening set instead would report violations that
+	# were nothing of the kind, which is exactly what the first version of it did.
+	# Both halves of "had a say": the obstacles that offered a corner, and the ones that
+	# turned a candidate down. The second half is why `_blocked_count` still sees the whole
+	# graph — a route may not be called clear because nobody looked — and it means an
+	# obstacle can legitimately influence a cable it stands well clear of, by blocking a
+	# corridor that cable would otherwise have taken. That is obstruction, not spookiness,
+	# and the invariant has to admit it or it would be asserting something untrue.
+	var say: Array[Rect2] = []
+	for rect: Rect2 in nearby:
+		say.append(rect)
+	for rect: Rect2 in rejected:
+		if not say.has(rect):
+			say.append(rect)
+	_route_consulted[key] = say
 	_route_cache[key] = result
 	return result
+
+
+## The obstacles the last route between these two points was built from.
+##
+## Empty when the pair has not been routed this frame; both this and `_route_cache` are
+## cleared whenever the obstacle list is rebuilt, so neither can outlive its geometry.
+func consulted_for(a: Vector2, b: Vector2) -> Array[Rect2]:
+	_current_obstacles()
+	var key := "%.1f,%.1f>%.1f,%.1f" % [a.x, a.y, b.x, b.y]
+	if not _route_consulted.has(key):
+		_route(a, b)
+	var out: Array[Rect2] = []
+	for rect: Rect2 in _route_consulted.get(key, []):
+		out.append(rect)
+	return out
+
+
+## The route among a given set of obstacles, which is the whole of the old `_route`.
+##
+## Split out so the relevance decision above can be made twice without the body being
+## written twice — the near-copy this repository keeps catching itself making.
+func _route_among(a: Vector2, b: Vector2, own: Array[Rect2],
+		nearby: Array[Rect2], seen: Array[Rect2] = []) -> PackedVector2Array:
+	var smooth := _smooth_curve(a, b)
+	if _path_is_clear(smooth, own):
+		return smooth
+
+	var best: PackedVector2Array
+	var best_blocked := 1 << 30
+	var best_length := INF
+	var examined := 0
+
+	# Candidates arrive best-first, so the first clear one wins and the search stops
+	# there. Scoring the rest only matters when a dense patch leaves nothing clear at
+	# all, where the least-blocked route still reads better than a line through three
+	# nodes — and even then the search is capped, because this runs per cable per frame.
+	#
+	# `_blocked_count` is deliberately still asked about **every** obstacle in the graph.
+	# Goal 3 narrowed which obstacles may *suggest* a corner; narrowing which ones a
+	# candidate is *tested* against would let a route be called clear because nobody
+	# looked, which is a far worse defect than the one being fixed.
+	for candidate in _orthogonal_candidates(a, b, nearby):
+		var simplified := _simplify(candidate)
+		var blocked := _blocked_count(simplified, own, seen)
+		if blocked == 0:
+			return _chamfer(simplified)
+		var length := _path_length(simplified)
+		if blocked < best_blocked or (blocked == best_blocked and length < best_length):
+			best_blocked = blocked
+			best_length = length
+			best = simplified
+		examined += 1
+		if examined >= MAX_CANDIDATES:
+			break
+	return _chamfer(best) if not best.is_empty() else smooth
+
+
+## Obstacles this route passes close to that were not in the set it was built from.
+##
+## "Close" is the router's own `CLEARANCE`, the distance at which it already considers an
+## obstacle to be interfering. Nothing new is chosen.
+func _beside_unconsulted(points: PackedVector2Array,
+		nearby: Array[Rect2]) -> Array[Rect2]:
+	var missed: Array[Rect2] = []
+	if points.size() < 2:
+		return missed
+	var box := Rect2(points[0], Vector2.ZERO)
+	for point: Vector2 in points:
+		box = box.expand(point)
+	for rect: Rect2 in _current_obstacles():
+		if not box.grow(CLEARANCE).intersects(rect):
+			continue
+		var known := false
+		for seen: Rect2 in nearby:
+			if seen.position.is_equal_approx(rect.position) \
+					and seen.size.is_equal_approx(rect.size):
+				known = true
+				break
+		if known:
+			continue
+		for i in range(points.size() - 1):
+			if _segment_hits_rect(points[i], points[i + 1], rect.grow(CLEARANCE)):
+				missed.append(rect)
+				break
+	return missed
 
 
 func _route_through(a: Vector2, b: Vector2, waypoint: Vector2) -> PackedVector2Array:

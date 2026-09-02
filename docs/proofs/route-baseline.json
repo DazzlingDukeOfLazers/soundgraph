@@ -483,7 +483,7 @@
     "stability": {
       "mean": 1.35,
       "probes": 92,
-      "strangers": 51,
+      "strangers": 42,
       "worst": 11.5
     }
   },
@@ -565,11 +565,11 @@
         "bends": 8,
         "clearance": 30.0,
         "direct": 744.0,
-        "excess": 489.2,
+        "excess": 499.2,
         "reversals_x": 0,
         "reversals_y": 1,
-        "routed": 1233.2,
-        "stretch": 1.657,
+        "routed": 1243.2,
+        "stretch": 1.671,
         "trespass": 0,
         "vertices": 10
       },
@@ -1245,11 +1245,11 @@
         "angle": 45.0,
         "at": [
           2050.0,
-          1107.0
+          1112.0
         ],
         "b": "n5:0>n24:0",
-        "from_end_a": 270.8,
-        "from_end_b": 816.8,
+        "from_end_a": 275.8,
+        "from_end_b": 811.8,
         "traits": []
       },
       {
@@ -1505,10 +1505,10 @@
       "n9:0>n20:1": 1
     },
     "stability": {
-      "mean": 1.43,
+      "mean": 1.55,
       "probes": 120,
-      "strangers": 47,
-      "worst": 21.28
+      "strangers": 44,
+      "worst": 34.87
     }
   },
   "first-synth": {

@@ -1,0 +1,444 @@
+{
+  "babble-tidied": {
+    "channels": {
+      "blocking": 258,
+      "near-corridor": 10,
+      "remote": 96
+    },
+    "examples": [],
+    "furthest_unconsulted": 0.0,
+    "per_cable": [
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 32,
+        "near-corridor": 4,
+        "remote": 8
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 9,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 8,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 8,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 8,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 14,
+        "near-corridor": 2,
+        "remote": 8
+      },
+      {
+        "blocking": 27,
+        "near-corridor": 4,
+        "remote": 6
+      },
+      {
+        "blocking": 9,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 25,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 48,
+        "near-corridor": 0,
+        "remote": 0
+      }
+    ],
+    "probes": 92,
+    "reroutes_by_class": {
+      "blocking": 36,
+      "near-corridor": 2,
+      "remote": 4
+    },
+    "unconsulted_reroutes": 0
+  },
+  "dense-graph-tidied": {
+    "channels": {
+      "blocking": 457,
+      "near-corridor": 34,
+      "remote": 196
+    },
+    "examples": [],
+    "furthest_unconsulted": 0.0,
+    "per_cable": [
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 3
+      },
+      {
+        "blocking": 9,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 25,
+        "near-corridor": 2,
+        "remote": 16
+      },
+      {
+        "blocking": 9,
+        "near-corridor": 0,
+        "remote": 8
+      },
+      {
+        "blocking": 10,
+        "near-corridor": 0,
+        "remote": 8
+      },
+      {
+        "blocking": 59,
+        "near-corridor": 4,
+        "remote": 21
+      },
+      {
+        "blocking": 53,
+        "near-corridor": 8,
+        "remote": 4
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 5
+      },
+      {
+        "blocking": 28,
+        "near-corridor": 0,
+        "remote": 9
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 10
+      },
+      {
+        "blocking": 34,
+        "near-corridor": 3,
+        "remote": 26
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 2,
+        "remote": 4
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 10,
+        "near-corridor": 0,
+        "remote": 5
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 5
+      },
+      {
+        "blocking": 10,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 3,
+        "remote": 3
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 9,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 9,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 17,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 29,
+        "near-corridor": 4,
+        "remote": 13
+      },
+      {
+        "blocking": 20,
+        "near-corridor": 8,
+        "remote": 8
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 8
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 20,
+        "near-corridor": 0,
+        "remote": 7
+      },
+      {
+        "blocking": 10,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 3
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      }
+    ],
+    "probes": 120,
+    "reroutes_by_class": {
+      "blocking": 37,
+      "near-corridor": 2,
+      "remote": 5
+    },
+    "unconsulted_reroutes": 0
+  },
+  "first-synth": {
+    "channels": {
+      "blocking": 47,
+      "near-corridor": 0,
+      "remote": 24
+    },
+    "examples": [],
+    "furthest_unconsulted": 0.0,
+    "per_cable": [
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 4
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 6
+      },
+      {
+        "blocking": 4,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 15,
+        "near-corridor": 0,
+        "remote": 2
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 2
+      }
+    ],
+    "probes": 28,
+    "reroutes_by_class": {
+      "blocking": 1,
+      "near-corridor": 0,
+      "remote": 0
+    },
+    "unconsulted_reroutes": 0
+  },
+  "plucked-string": {
+    "channels": {
+      "blocking": 36,
+      "near-corridor": 0,
+      "remote": 0
+    },
+    "examples": [],
+    "furthest_unconsulted": 0.0,
+    "per_cable": [
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      },
+      {
+        "blocking": 6,
+        "near-corridor": 0,
+        "remote": 0
+      }
+    ],
+    "probes": 20,
+    "reroutes_by_class": {
+      "blocking": 0,
+      "near-corridor": 0,
+      "remote": 0
+    },
+    "unconsulted_reroutes": 0
+  }
+}
