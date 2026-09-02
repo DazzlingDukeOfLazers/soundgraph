@@ -1090,6 +1090,71 @@ reading. The lesson is the programme's oldest one in a new costume — *a measur
 stands for the thing instead of being it is wrong* — with the twist that introducing state
 into the thing being measured silently invalidates every probe that assumed there was none.
 
+## Goal 3E — local segment repair, attempted and not shipped
+
+Built, measured against the full reroute as a control, and **reverted**. The contract was:
+
+> If an unchanged-endpoint route is no longer legal, repair the smallest invalid contiguous
+> portion that can be repaired safely and preserve the rest byte for byte; otherwise fall
+> back to the full reroute.
+
+An expanding window — splice anchors immediately outside the damaged run, widening by one
+old segment on each side only when nothing legal can be spliced, abandoning when the window
+reaches the whole route. Multiple separated runs fell back rather than growing a multi-splice
+repair.
+
+### Why it was reverted
+
+**It broke determinism.** Two reads of the same document produced two different routes on
+the dense fixture, 2 of 35. That is the one guard in this pass that has never bent, and no
+result on the other side of the ledger buys it.
+
+And the primary metric barely moved. Preservation is what the goal existed to improve:
+
+```
+                        control (3D)    with repair
+babble, kept                  39%            40%
+dense,  kept                  36%            46%
+babble, worst deviation      8.1x           8.8x
+dense,  worst deviation     21.6x          27.0x
+babble, median               1.0x           0.4x
+dense,  median               3.6x           0.0x
+```
+
+The medians improved sharply and the worst cases got worse. Three attempts at the cause —
+validating before simplifying, simplifying only the spliced middle so the preserved prefix
+and suffix stay point-identical, and refusing the smooth bezier so a repair keeps the route's
+orthogonal grammar — moved the preservation figure by one point on babble and ten on dense,
+and none of them touched the worst case.
+
+Reverted rather than iterated a fourth time. The harness stays.
+
+### What it found on the way, which is worth more than the goal was
+
+The repair reported 243 changed cables against the control's 31, which read like a serious
+regression. It is the opposite, and the measurement that settles it is this:
+
+```
+routes illegal while a node sits nudged, dense fixture
+  without repair    313 of 4200      7.5%
+  with repair        97 of 4200      -69%
+```
+
+**`_route_among` returns its least-blocked candidate when nothing is clear**, so during a
+drag the router leaves cables running through nodes — three hundred and thirteen of four
+thousand two hundred sampled states on the dense fixture. The repair was finding legal
+splices where the global search had given up, and every one of those showed up in a
+change-counter as churn.
+
+This predates 3D and 3E entirely. It is not visible in any resting measurement, which is why
+nothing has caught it: `trespass` reads 0 on every fixture at rest, and the baseline only
+ever looked at rest.
+
+That is a better-shaped problem than the one 3E was chasing. A router that cannot find a
+clear route says so; a router that quietly returns a blocked one leaves the editor drawing
+cables through modules while somebody drags a node, and no amount of continuity work
+addresses it.
+
 ## What the pass looks like from here
 
 Goal 2 reordered this. The stability problem is real but it is not what a user sees, and
@@ -1101,15 +1166,17 @@ something else found on the way is.
 3. ~~A canonical crossing.~~ **Done, goal 2.4**, and the geometry-ownership pass is closed
    with it. Structural objective, display safety, every divergence attributable.
 4. ~~Corridor stability, the coupling half.~~ **Done at goal 3**, diagnosed at 3C, and the
-   unnecessary half removed at 3D. What remains is **3E, local segment repair**: the 25 and
-   16 reroutes where the old route broke in one contiguous run and the router replaced all
-   of it — including the 21.6x specimen that lost 84% of a path over three damaged segments
-   and paid 472 units for it. Separately, the 34.9x direct-cable response is its own
-   question and not 3E's. A cable's corridor is a greedy pick from a globally ranked
-   channel list with no memory of where it already was. This is the "route hysteresis"
-   subproblem, and it now has a mechanism rather than a symptom.
-4. **The detour tail.** A handful of cables carry all the excess.
-5. **Routed meetings**, split into the converging-on-a-terminal population and the
+   unnecessary half removed at 3D. **3E was built and reverted** — it broke determinism and
+   barely moved preservation.
+5. **Blocked routes during a drag.** Found by 3E's control and larger than 3E: the router
+   returns its least-blocked candidate when nothing is clear, leaving 7.5% of cables through
+   nodes while a node is being moved. Invisible to every resting measurement in this pass.
+   This is the next thing to look at.
+6. **The 34.9x direct-cable response** — a cable whose own port moved forty units. Its own
+   problem, and a cleaner one now.
+7. **The remaining locally-repairable population**, if a repair can be made deterministic.
+8. **The detour tail.** A handful of cables carry all the excess.
+9. **Routed meetings**, split into the converging-on-a-terminal population and the
    open-field conflicts.
 
 The principle stands, with the geometry named:

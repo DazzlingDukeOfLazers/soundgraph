@@ -182,6 +182,8 @@ func _initialize() -> void:
 		print("%s" % short)
 
 		var held_state := {}
+		var blocked_after := 0
+		var checked_after := 0
 		var classes := {"still legal": [], "locally repairable": [],
 			"corridor-invalid": []}
 		var loudest := {}
@@ -213,6 +215,22 @@ func _initialize() -> void:
 				await settle(2)
 				var after := routes_now()
 				var moved := Rect2(home + step, widget.size).grow(PatchGraph.CLEARANCE)
+				# How many routes are actually illegal while the node sits nudged.
+				#
+				# The question this settles: repair reports far more changed cables than the
+				# full reroute does, and the only explanation that fits is that the fallback
+				# was returning blocked routes — `_route_among` keeps its least-blocked
+				# candidate when nothing is clear — while repair insists on a clear splice.
+				# If that is true the extra churn is a legality fix wearing the costume of a
+				# regression, and if it is false the inference is wrong and so is the story.
+				for key: String in after:
+					if not ends.has(key):
+						continue
+					var pair2: Array = ends[key]
+					if int(graph._blocked_count(after[key],
+							graph._own_rects(pair2[0], pair2[1]))) > 0:
+						blocked_after += 1
+					checked_after += 1
 
 				for key: String in before:
 					if not after.has(key) or not ends.has(key):
@@ -255,9 +273,10 @@ func _initialize() -> void:
 				widget.position_offset = home
 				await settle(2)
 
-		print("  retention           fired %d time(s), refused %d as no longer legal"
+		print("  retention           fired %d, refused %d as no longer legal"
 			% [graph.routes_retained, graph.routes_refused])
-		print("  retention held      %s for the 'still legal' reroutes" % str(held_state))
+		print("  routes illegal      %d of %d while a node sits nudged"
+			% [blocked_after, checked_after])
 		var total := 0
 		for kind: String in classes:
 			total += (classes[kind] as Array).size()
