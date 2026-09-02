@@ -51,11 +51,16 @@ export const SURFACES = [
         // off the export rather than guessed: `index` is `executable` in export_presets,
         // so renaming that renames all of these. Biggest first, since that is the one whose
         // download decides whether the click feels instant.
+        //
+        // `bytes` is each file's decoded size, measured off the export — the denominator
+        // for the load meter on the "Open in the full editor" button. An export changes
+        // these a little every build; drift only skews the percentage, never correctness,
+        // so refresh them when they stop being roughly true rather than on every export.
         preload: [
-            'index.side.wasm',                              // ~44 MB, the engine
-            'index.pck',                                    // ~4 MB, the editor itself
-            'index.wasm',                                   // ~1.5 MB, the loader
-            'soundgraph_godot.web.wasm32.nothreads.wasm',   // ~1.3 MB, dsp-core
+            { file: 'index.side.wasm', bytes: 44077147 },                            // the engine
+            { file: 'index.pck', bytes: 5006188 },                                   // the editor itself
+            { file: 'index.wasm', bytes: 1508095 },                                  // the loader
+            { file: 'soundgraph_godot.web.wasm32.nothreads.wasm', bytes: 1358047 },  // dsp-core
         ],
     },
     {

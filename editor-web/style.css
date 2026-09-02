@@ -360,6 +360,43 @@ input[type=range] {
 .actions-bar button { min-height: 36px; padding: 0.35rem 0.7rem; font-size: 0.88rem; }
 .actions-bar .spacer { flex: 1; }
 
+/* "Open in the full editor" is also the meter for the ~50 MB pull that starts when audio
+ * does (app.js: warmFullEditor). While files stream, the button fills left to right and
+ * counts; when everything is cached it turns shiny with a slow pulse — the door changing
+ * from "exists" to "ready". It is clickable in every state. */
+#open-full.loading {
+    background: linear-gradient(to right,
+        var(--accent-dim) calc(var(--warmth, 0) * 100%),
+        var(--panel-2) calc(var(--warmth, 0) * 100%));
+    border-color: var(--accent-dim);
+}
+#open-full .load-note {
+    margin-left: 0.45rem;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+}
+#open-full.ready {
+    background: linear-gradient(105deg,
+        var(--accent-dim),
+        color-mix(in srgb, var(--accent) 55%, var(--accent-dim)));
+    border-color: var(--accent);
+    color: #eafff7;
+    font-weight: 600;
+    animation: full-editor-ready 2.4s ease-in-out infinite;
+}
+@keyframes full-editor-ready {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); }
+    50% { box-shadow: 0 0 16px 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+}
+/* The glow holds still for anyone who asked motion to. */
+@media (prefers-reduced-motion: reduce) {
+    #open-full.ready {
+        animation: none;
+        box-shadow: 0 0 10px 2px color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+}
+
 /* On a phone these seven controls wrap into five rows and put 300 pixels of toolbar above
  * the pitch — on the page whose whole job is to lead with the pitch. One scrolling row
  * instead: the same controls, reachable, in the height of one. */

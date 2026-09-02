@@ -812,13 +812,18 @@ function openFullEditor() {
  * file list is empty until it is configured — see surfaces.js for why guessing the names
  * would produce a prefetch that fetches nothing while looking like it worked.
  *
- * `prefetch` is the browser's lowest fetch priority, so the pull rides in the idle time
- * behind the page's own traffic rather than competing with it.
+ * Fetched by hand rather than with <link rel="prefetch"> because a prefetch is mute: the
+ * "Open in the full editor" button doubles as the load meter, and a meter needs bytes to
+ * count. Reading each response to the end is what lands it in the HTTP cache; the files
+ * come one at a time, biggest first, at low priority, so the pull stays behind the
+ * page's own traffic. Progress is decoded bytes against the sizes surfaces.js measured
+ * off the export — approximate denominators, honest needle.
  */
 let fullEditorWarmed = false;
+let fullEditorWarming = false;
 
-function warmFullEditor() {
-    if (fullEditorWarmed) return true;
+async function warmFullEditor() {
+    if (fullEditorWarmed || fullEditorWarming) return true;
     const full = surface('full');
     if (!isReachable('full') || !full.preload?.length) return false;
 
@@ -826,14 +831,85 @@ function warmFullEditor() {
     if (connection?.saveData) return false;
     if (/(^|-)2g$/.test(connection?.effectiveType ?? '')) return false;
 
-    for (const file of full.preload) {
-        const link = document.createElement('link');
-        link.rel = 'prefetch';
-        link.href = new URL(file, new URL(full.url, window.location.href)).href;
-        document.head.append(link);
+    fullEditorWarming = true;
+    const base = new URL(full.url, window.location.href);
+    const total = full.preload.reduce((sum, entry) => sum + entry.bytes, 0);
+    let received = 0;
+    paintEditorWarmth(0);
+    try {
+        for (const entry of full.preload) {
+            const response = await fetch(new URL(entry.file, base), { priority: 'low' });
+            if (!response.ok) throw new Error(`${entry.file}: ${response.status}`);
+            if (response.body) {
+                const reader = response.body.getReader();
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    received += value.length;
+                    paintEditorWarmth(Math.min(received / total, 0.999));
+                }
+            } else {
+                await response.arrayBuffer();
+                received += entry.bytes;
+                paintEditorWarmth(Math.min(received / total, 0.999));
+            }
+        }
+    } catch {
+        // A failed pull is not a failed page: the button goes back to its plain self and
+        // the golden-moment backstop may try again later.
+        fullEditorWarming = false;
+        paintEditorWarmth(null);
+        return false;
     }
     fullEditorWarmed = true;
+    fullEditorWarming = false;
+    paintEditorWarmth(1);
     return true;
+}
+
+// ---------------------------------------------------------------------------------
+// The button is the meter.
+//
+// While the editor's files stream in, "Open in the full editor" fills left to right and
+// counts, and when everything is cached it turns shiny with a slow pulse — the door
+// changing from "exists" to "ready". The button stays clickable throughout: opening
+// mid-pull just streams the remainder the ordinary way.
+// ---------------------------------------------------------------------------------
+
+let editorLoadNote = null;
+let editorLoadShown = -1;
+
+function paintEditorWarmth(fraction) {
+    const trigger = ui.openFull;
+    if (fraction === null) {
+        trigger.classList.remove('loading', 'ready');
+        trigger.style.removeProperty('--warmth');
+        editorLoadNote?.remove();
+        editorLoadNote = null;
+        editorLoadShown = -1;
+        return;
+    }
+    if (fraction >= 1) {
+        trigger.classList.remove('loading');
+        trigger.classList.add('ready');
+        trigger.style.removeProperty('--warmth');
+        editorLoadNote?.remove();
+        editorLoadNote = null;
+        return;
+    }
+    if (!editorLoadNote) {
+        editorLoadNote = document.createElement('span');
+        editorLoadNote.className = 'load-note';
+        trigger.append(editorLoadNote);
+    }
+    trigger.classList.add('loading');
+    trigger.style.setProperty('--warmth', String(fraction));
+    // The text only changes when the integer does; the fill moves every chunk.
+    const percent = Math.floor(fraction * 100);
+    if (percent !== editorLoadShown) {
+        editorLoadShown = percent;
+        editorLoadNote.textContent = `${percent}%`;
+    }
 }
 
 // ---------------------------------------------------------------------------------
