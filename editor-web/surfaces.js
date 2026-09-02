@@ -64,7 +64,7 @@ export const SURFACES = [
         summary: 'The full editor as an application, for when the browser is not the point.',
         detail: 'Opens and saves patch files directly, and talks to hardware over serial.',
         url: null,
-        cost: 'No numbered release yet.',
+        cost: 'First release: Knobcon 2026, September 11–13.',
     },
 ];
 

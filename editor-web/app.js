@@ -921,6 +921,7 @@ document.getElementById('about-join').addEventListener('click', () => {
     tour.openMailingList();
 });
 document.getElementById('project-join').addEventListener('click', () => tour.openMailingList());
+document.getElementById('release-join').addEventListener('click', () => tour.openMailingList());
 document.getElementById('help-restart').addEventListener('click', () => {
     closeSheet(ui.helpSheet);
     tour.restart();

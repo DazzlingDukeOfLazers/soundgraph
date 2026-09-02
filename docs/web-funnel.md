@@ -48,9 +48,11 @@ things:**
   swap`).
 - **"One instrument. Different ways to see it."** — four cards from the canonical proofs,
   36 KB webp each or less, lazy-loaded so the first paint pays nothing.
-- **"An open project"** — source (GitHub), the desktop's honest "no numbered release yet"
-  with updates as the way to hear otherwise, and support said plainly: ears and words.
-  No invented URLs, per `surfaces.js`'s standing rule.
+- **"An open project"** — source (GitHub), the desktop release named plainly (Knobcon
+  2026, September 11–13 — which replaced the earlier honest "no numbered release yet"
+  the day the site announced the date), and support said plainly: ears and words.
+  No invented URLs, per `surfaces.js`'s standing rule. A one-line release strip under
+  the hero carries the same date.
 - **On phones, Join moved into view** (`order: -1` under 700px) — conversion outranks
   "Save locally" on a screen where the bar scrolls sideways.
 - The 400 KB claim was updated to the measured 650.

@@ -402,6 +402,14 @@ button.linkish {
 .affordance { border-top: 1px solid var(--line); padding-top: 0.7rem; margin-top: 0.7rem; }
 .affordance a { color: var(--accent); font-weight: 600; }
 
+/* The release date. One quiet line under the hero — dated news, not a banner. */
+.release-strip {
+    margin: 1.1rem 0 0; padding: 0.55rem 0.8rem;
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 6px; font-size: 0.92rem; color: var(--text);
+}
+.release-strip a { color: var(--accent); font-weight: 600; }
+
 /* About, and the two panels that open over the page from the actions bar. */
 .sheet {
     position: fixed; inset: 0; z-index: 50;
