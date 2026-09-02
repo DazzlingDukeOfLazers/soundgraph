@@ -17,6 +17,18 @@ soundgraph_add_test(test_golden soundgraph::patch_io soundgraph::wav)
 soundgraph_add_test(test_dx7_operator soundgraph::patch_io)
 soundgraph_add_test(test_polyphony soundgraph::dsp)
 
+# The transcriber's timing repairs (gap healing, chord snapping, beat detection,
+# quantization) are pure arithmetic with no model behind them, so they are tested here
+# unconditionally — sg-transcribe itself only builds when ONNX Runtime has been pointed
+# at, and this must not wait for that.
+add_executable(test_transcribe_timing
+    test_transcribe_timing.cpp
+    ${CMAKE_SOURCE_DIR}/tools/sg-transcribe/timing.cpp)
+target_include_directories(test_transcribe_timing PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/tools/sg-transcribe)
+add_test(NAME test_transcribe_timing COMMAND test_transcribe_timing)
+
 # The sfxr oracle. Two tests, both cheap, both guarding something the port will depend on.
 #
 # The comparator judges the port, so it is itself tested first: it must answer "identical"

@@ -63,6 +63,7 @@ function(soundgraph_add_transcriber)
         ${SG_TRANSCRIBE_DIR}/basic_pitch.cpp
         ${SG_TRANSCRIBE_DIR}/midi_write.cpp
         ${SG_TRANSCRIBE_DIR}/resample.cpp
+        ${SG_TRANSCRIBE_DIR}/timing.cpp
     )
     target_include_directories(sg-transcribe PRIVATE
         ${onnx_root}/include

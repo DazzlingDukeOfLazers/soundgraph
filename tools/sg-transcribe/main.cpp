@@ -23,6 +23,7 @@
 #include "basic_pitch.h"
 #include "midi_write.h"
 #include "resample.h"
+#include "timing.h"
 
 namespace {
 
@@ -39,6 +40,11 @@ void usage() {
         "  --model <file>     the ONNX model (default: beside the executable)\n"
         "  --tempo N          beats per minute the roll is laid against (default 120)\n"
         "  --division N       steps per beat: 1, 2, 4, 8 or 16 (default 4)\n"
+        "  --quantize N       0..1: find the beat and pull notes onto it (default 0, off).\n"
+        "                     1 snaps exactly; 0.5 goes halfway. With --tempo, only the\n"
+        "                     grid's placement is searched for; without, the tempo too\n"
+        "  --chord-ms N       note starts within this window are one strike (40; 0 off)\n"
+        "  --merge-ms N       heal same-pitch gaps shorter than this (50; 0 off)\n"
         "  --onset N          0..1, raise it when noise is heard as notes (0.5)\n"
         "  --frame N          0..1, note confidence threshold (0.3)\n"
         "  --min-ms N         drop notes shorter than this (127.7)\n"
@@ -78,7 +84,11 @@ int main(int argc, char** argv) {
 
     std::string midi_path, patch_path, out_path, model_path, dump_path;
     double tempo = 120.0;
+    bool tempo_given = false;
     int division = 4;
+    double quantize = 0.0;
+    double chord_ms = 40.0;
+    double merge_ms = 50.0;
     bool quiet = false;
     transcribe::Options options;
 
@@ -89,8 +99,11 @@ int main(int argc, char** argv) {
         else if (matches(argv[i], "--out") && has_value) out_path = argv[++i];
         else if (matches(argv[i], "--model") && has_value) model_path = argv[++i];
         else if (matches(argv[i], "--dump") && has_value) dump_path = argv[++i];
-        else if (matches(argv[i], "--tempo") && has_value) tempo = std::atof(argv[++i]);
+        else if (matches(argv[i], "--tempo") && has_value) { tempo = std::atof(argv[++i]); tempo_given = true; }
         else if (matches(argv[i], "--division") && has_value) division = std::atoi(argv[++i]);
+        else if (matches(argv[i], "--quantize") && has_value) quantize = std::atof(argv[++i]);
+        else if (matches(argv[i], "--chord-ms") && has_value) chord_ms = std::atof(argv[++i]);
+        else if (matches(argv[i], "--merge-ms") && has_value) merge_ms = std::atof(argv[++i]);
         else if (matches(argv[i], "--onset") && has_value) options.onset_threshold = std::atof(argv[++i]);
         else if (matches(argv[i], "--frame") && has_value) options.frame_threshold = std::atof(argv[++i]);
         else if (matches(argv[i], "--min-ms") && has_value) options.minimum_note_length_ms = std::atof(argv[++i]);
@@ -111,6 +124,10 @@ int main(int argc, char** argv) {
     }
     if (division != 1 && division != 2 && division != 4 && division != 8 && division != 16) {
         std::fprintf(stderr, "division must be 1, 2, 4, 8 or 16\n");
+        return 1;
+    }
+    if (quantize < 0.0 || quantize > 1.0) {
+        std::fprintf(stderr, "quantize must be between 0 and 1\n");
         return 1;
     }
 
@@ -178,8 +195,35 @@ int main(int argc, char** argv) {
         }
     }
 
-    const std::vector<transcribe::Note> notes =
+    std::vector<transcribe::Note> notes =
         transcribe::notes_from_activations(activations, options);
+
+    // ---- timing repairs, in the order the damage happens -------------------------
+    // A lost frame splits a note before anything else can see it; a chord's members
+    // then need one onset before the beat search reads onsets at all.
+    notes = transcribe::merge_gaps(std::move(notes), merge_ms);
+    notes = transcribe::snap_chords(std::move(notes), chord_ms);
+
+    if (quantize > 0.0 && !notes.empty()) {
+        const transcribe::Grid grid =
+            transcribe::detect_grid(notes, division, tempo_given ? tempo : -1.0);
+        // An incredible grid is one these onsets could have scored with no beat at
+        // all; snapping to the best of the bad grids would invent a beat nobody
+        // played to.
+        if (!grid.credible) {
+            if (!quiet) std::printf(
+                "  no steady beat found (alignment %.0f%%) - leaving the timing as heard;\n"
+                "  --tempo N names the beat if you know it\n",
+                grid.confidence * 100.0);
+        } else {
+            notes = transcribe::quantize_to_grid(std::move(notes), grid, quantize);
+            tempo = grid.tempo;
+            if (!quiet) std::printf(
+                "  beat: %.1f bpm%s, grid 1/%d, alignment %.0f%%\n",
+                grid.tempo, tempo_given ? "" : " (detected)", division * 4,
+                grid.confidence * 100.0);
+        }
+    }
 
     // ---- the MIDI file, always ----------------------------------------------------
     if (midi_path.empty()) {

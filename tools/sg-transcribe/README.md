@@ -83,12 +83,45 @@ instead of editing in place.
 | `--min-ms` | Drop notes shorter than this, default 127.7 |
 | `--min-pitch` / `--max-pitch` | Ignore everything outside a register — how a bass line comes out of a mix |
 | `--tempo` / `--division` | How the roll is laid out |
+| `--quantize` | 0..1, default 0: find the beat and pull notes onto it. See below |
+| `--chord-ms` | Note starts within this window are one strike, default 40. `0` turns it off |
+| `--merge-ms` | Heal same-pitch gaps shorter than this, default 50. `0` turns it off |
 | `--no-melodia` | Skip the pass that sweeps up sustained energy with no clear onset |
 | `--dump` | Raw activations, for comparing against the Python reference |
 
 `--tempo` is the one to think about. The model reports when notes happened, not what
 they were played against. Transcribing unmetered playing will look untidy in the roll at
 any tempo, and that is honest: the alternative is inventing a beat nobody played to.
+
+## Timing repairs
+
+Raw transcriptions of real songs get the pitches right and the timing wrong in three
+characteristic ways, and each has a repair (`timing.cpp`, tested without the model in
+`tests/test_transcribe_timing.cpp`):
+
+**Split notes** (`--merge-ms`, on by default). A sustained note the frame head briefly
+loses comes back as two notes with a sliver of silence between them. Same-pitch gaps
+under 50 ms are healed.
+
+**Staggered chords** (`--chord-ms`, on by default). The notes of one struck chord cross
+the detection threshold a few frames apart, and played back exactly that is a hesitant
+arpeggio. Onsets within 40 ms of the first of their cluster get the cluster's
+amplitude-weighted mean onset. The window is anchored to the cluster's first note
+rather than chained, so a genuine fast run cannot smear into one chord.
+
+**Off-grid notes** (`--quantize`, off by default). A song *was* played against a beat,
+and finding that beat is transcription rather than invention — the stance above is
+about unmetered humming. Each onset becomes an angle around a candidate step period;
+the period whose amplitude-weighted resultant is longest is the grid, and the
+resultant's angle is where its lines fall. `--quantize 1` snaps exactly, `0.5` goes
+halfway (tighter but still played). With `--tempo` the search is for placement only;
+without, the detected tempo is printed and written into the MIDI, so the file opens
+on-grid in an editor. When the onsets do not agree on any period (alignment under
+20%), the timing is left as heard and the tool says so — quantizing to the best of
+the bad grids would be worse than honest jitter.
+
+Durations quantize along with onsets — to whole steps, never below one — which is
+what turns ragged decays into phrases.
 
 ## Checking it
 

@@ -77,6 +77,57 @@ if(NOT heard STREQUAL melody)
         "  heard  ${heard}")
 endif()
 
+# The same recording again, quantized. The melody was rendered at exactly one note a
+# second — 60 bpm with four steps a beat — so with --quantize 1 the model's frame
+# jitter must vanish entirely: every onset on a multiple of four steps. The first leg
+# tolerates a frame either way; this one is exact, and it is what goes red if
+# quantization stops quantizing.
+set(quantized_patch "${SCRATCH}/quantized.json")
+execute_process(
+    COMMAND "${TRANSCRIBE}" "${wav}" --midi "${SCRATCH}/quantized.mid"
+        --patch "${PATCH}" --out "${quantized_patch}"
+        --tempo 60 --division 4 --quantize 1 --quiet
+    RESULT_VARIABLE quantized
+)
+if(NOT quantized EQUAL 0)
+    message(FATAL_ERROR "sg-transcribe failed with --quantize on the rendered melody")
+endif()
+
+file(READ "${quantized_patch}" quantized_written)
+string(FIND "${quantized_written}" "\"sequence\"" quantized_at)
+if(quantized_at EQUAL -1)
+    message(FATAL_ERROR "no sequence was written into the quantized patch")
+endif()
+string(SUBSTRING "${quantized_written}" ${quantized_at} -1 quantized_roll)
+
+string(REGEX MATCHALL "\"note\"[ \t]*:[ \t]*[0-9]+" quantized_note_fields "${quantized_roll}")
+set(quantized_heard "")
+foreach(field IN LISTS quantized_note_fields)
+    string(REGEX REPLACE "[^0-9]" "" value "${field}")
+    list(APPEND quantized_heard ${value})
+endforeach()
+if(NOT quantized_heard STREQUAL melody)
+    message(FATAL_ERROR
+        "quantizing changed which notes were heard\n"
+        "  played ${melody}\n"
+        "  heard  ${quantized_heard}")
+endif()
+
+string(REGEX MATCHALL "\"step\"[ \t]*:[ \t]*[0-9]+" step_fields "${quantized_roll}")
+set(steps "")
+foreach(field IN LISTS step_fields)
+    string(REGEX REPLACE "[^0-9]" "" value "${field}")
+    list(APPEND steps ${value})
+endforeach()
+set(expected_steps 0 4 8 12 16 20)
+if(NOT steps STREQUAL expected_steps)
+    message(FATAL_ERROR
+        "the quantized roll is off the grid\n"
+        "  expected steps ${expected_steps}\n"
+        "  written  steps ${steps}")
+endif()
+message(STATUS "quantized to steps ${steps}")
+
 # The same melody as an MP3, when one is supplied. Decoding is miniaudio's job rather
 # than this project's, so what is guarded here is not the decoder but the build: a
 # stray MA_NO_MP3, or a decode-only translation unit going missing, would take MP3
