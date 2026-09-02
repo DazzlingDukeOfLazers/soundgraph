@@ -1,0 +1,46 @@
+{
+  "width": 1700,
+  "height": 1060,
+  "shots": [
+    {
+      "name": "Graph \u2014 the working view",
+      "example": "First Synth",
+      "view": "Graph",
+      "path": "../docs/proofs/canonical/graph.png",
+      "fit": true
+    },
+    {
+      "name": "Graph \u2014 cable focus, the golden moment",
+      "example": "First Synth",
+      "view": "Graph",
+      "lock": "n1:right:0",
+      "path": "../docs/proofs/canonical/graph-cable-focus.png",
+      "fit": true
+    },
+    {
+      "name": "Graph \u2014 a dense patch",
+      "example": "Babble",
+      "view": "Graph",
+      "path": "../docs/proofs/canonical/graph-dense.png",
+      "fit": true
+    },
+    {
+      "name": "Rack \u2014 the instrument",
+      "example": "Babble",
+      "view": "Rack",
+      "path": "../docs/proofs/canonical/rack.png"
+    },
+    {
+      "name": "Schematic \u2014 the signal path",
+      "example": "Babble",
+      "view": "Schematic",
+      "path": "../docs/proofs/canonical/schematic.png"
+    },
+    {
+      "name": "Face \u2014 the panel",
+      "example": "Plucked String",
+      "view": "Face",
+      "path": "../docs/proofs/canonical/face.png"
+    }
+  ]
+}

@@ -130,7 +130,7 @@ if [ -n "$godot" ] && [ -x "$godot" ]; then
     # legalize_test joins them because it turned out to run headless: the router is pure
     # geometry against the obstacle list, so a fault can be measured without a rendering
     # server. Every other harness in the layout and cable passes needs pixels and stays out.
-    for suite in editor_test design_test layout_test panel_style_test legalize_test tidy_test routes_test crossing_semantics hit_geometry geometry_contract_test; do
+    for suite in editor_test design_test layout_test panel_style_test legalize_test tidy_test routes_test crossing_semantics hit_geometry geometry_contract_test design_tokens; do
         say "godot: $suite"
         log="$suite_logs/$suite.log"
         status=0

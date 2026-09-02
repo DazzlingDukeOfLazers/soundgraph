@@ -1,0 +1,252 @@
+{
+  "_": "Exported from the running desktop by editor-godot/design_tokens.gd. The desktop is the reference implementation; do not hand-edit this file.",
+  "cable": {
+    "cue_cadence": 160.0,
+    "cue_clearance": 26.0,
+    "sag_fraction": 0.3,
+    "sag_max": 260.0,
+    "sag_min": 46.0,
+    "suppression": 0.25
+  },
+  "default_palette": "Lab",
+  "node": {
+    "hit_target": 44,
+    "padding_h": 14,
+    "padding_v": 10,
+    "parameter_cell_height": 74,
+    "row_height": 28,
+    "widths": [
+      176,
+      208,
+      296,
+      376,
+      416,
+      448
+    ]
+  },
+  "palettes": {
+    "Lab": {
+      "accent": "#57e3b4",
+      "borders": [
+        "#0f1318",
+        "#3a4351",
+        "#4a5666",
+        "#627384"
+      ],
+      "boundary": "#7a90a5",
+      "focus": "#ffffff",
+      "ink": {
+        "bright": "#f4f7fa",
+        "disabled": "#6e7887",
+        "normal": "#f4f7fa",
+        "second": "#b7c0cc"
+      },
+      "keys": {
+        "black": "#171b23",
+        "black_ink": "#ffffff",
+        "white": "#f4f6fa",
+        "white_ink": "#151922"
+      },
+      "on_accent": "#0f1318",
+      "signal": {
+        "audio": "#57e3b4",
+        "control": "#8fb8ff",
+        "trigger": "#f6c85f"
+      },
+      "state": {
+        "error": "#ff7a7a",
+        "warning": "#f6c85f"
+      },
+      "surfaces": [
+        "#0f1318",
+        "#1b212a",
+        "#252d38",
+        "#333c4a"
+      ]
+    },
+    "Maximum contrast": {
+      "accent": "#63ffd1",
+      "borders": [
+        "#000000",
+        "#6a6a6a",
+        "#8a8a8a",
+        "#b0b0b0"
+      ],
+      "boundary": "#8a8a8a",
+      "focus": "#ffffff",
+      "ink": {
+        "bright": "#ffffff",
+        "disabled": "#8f8f8f",
+        "normal": "#ffffff",
+        "second": "#d1d1d1"
+      },
+      "keys": {
+        "black": "#171b23",
+        "black_ink": "#ffffff",
+        "white": "#f4f6fa",
+        "white_ink": "#151922"
+      },
+      "on_accent": "#000000",
+      "signal": {
+        "audio": "#63ffd1",
+        "control": "#93c5fd",
+        "trigger": "#ffd75f"
+      },
+      "state": {
+        "error": "#ff8a8a",
+        "warning": "#ffd75f"
+      },
+      "surfaces": [
+        "#000000",
+        "#101010",
+        "#202020",
+        "#303030"
+      ]
+    },
+    "Night Flight": {
+      "accent": "#63e6be",
+      "borders": [
+        "#0b1020",
+        "#35415f",
+        "#455373",
+        "#60718c"
+      ],
+      "boundary": "#768bac",
+      "focus": "#ffffff",
+      "ink": {
+        "bright": "#f7f9ff",
+        "disabled": "#6d778c",
+        "normal": "#f7f9ff",
+        "second": "#b9c3d6"
+      },
+      "keys": {
+        "black": "#171b23",
+        "black_ink": "#ffffff",
+        "white": "#f4f6fa",
+        "white_ink": "#151922"
+      },
+      "on_accent": "#0b1020",
+      "signal": {
+        "audio": "#63e6be",
+        "control": "#8cb4ff",
+        "trigger": "#ffd166"
+      },
+      "state": {
+        "error": "#ff808e",
+        "warning": "#ffd166"
+      },
+      "surfaces": [
+        "#0b1020",
+        "#151d31",
+        "#202a42",
+        "#2c3856"
+      ]
+    },
+    "Paper": {
+      "accent": "#00543f",
+      "borders": [
+        "#f4f2ec",
+        "#c9c5bb",
+        "#9ba0a8",
+        "#777e87"
+      ],
+      "boundary": "#6a7078",
+      "focus": "#15171a",
+      "ink": {
+        "bright": "#15171a",
+        "disabled": "#767c85",
+        "normal": "#15171a",
+        "second": "#3a3e44"
+      },
+      "keys": {
+        "black": "#171b23",
+        "black_ink": "#ffffff",
+        "white": "#f4f6fa",
+        "white_ink": "#151922"
+      },
+      "on_accent": "#ffffff",
+      "signal": {
+        "audio": "#00543f",
+        "control": "#0053b3",
+        "trigger": "#7a4a00"
+      },
+      "state": {
+        "error": "#a61b29",
+        "warning": "#8a5400"
+      },
+      "surfaces": [
+        "#f4f2ec",
+        "#ffffff",
+        "#e8e5de",
+        "#d8d4cb"
+      ]
+    },
+    "Tape": {
+      "accent": "#70e0c1",
+      "borders": [
+        "#171311",
+        "#473a32",
+        "#5d4c41",
+        "#806b5c"
+      ],
+      "boundary": "#9f8572",
+      "focus": "#fff8f1",
+      "ink": {
+        "bright": "#fff8f1",
+        "disabled": "#8a7768",
+        "normal": "#fff8f1",
+        "second": "#cdbeb0"
+      },
+      "keys": {
+        "black": "#171b23",
+        "black_ink": "#ffffff",
+        "white": "#f4f6fa",
+        "white_ink": "#151922"
+      },
+      "on_accent": "#171311",
+      "signal": {
+        "audio": "#70e0c1",
+        "control": "#93b8ff",
+        "trigger": "#ffca66"
+      },
+      "state": {
+        "error": "#ff8585",
+        "warning": "#ffca66"
+      },
+      "surfaces": [
+        "#171311",
+        "#241d1a",
+        "#332923",
+        "#43362e"
+      ]
+    }
+  },
+  "radius": {
+    "button": 5,
+    "node": 3,
+    "panel": 7
+  },
+  "space": {
+    "l": 16,
+    "m": 12,
+    "s": 8,
+    "xl": 24,
+    "xs": 4,
+    "xxl": 32
+  },
+  "type": {
+    "family": "AtkinsonHyperlegibleNext.ttf",
+    "mono": "AtkinsonHyperlegibleMono.ttf",
+    "sizes": {
+      "app_title": 21,
+      "body": 16,
+      "control": 16,
+      "node_title": 17
+    },
+    "weights": {
+      "medium": 500,
+      "regular": 400,
+      "semibold": 600
+    }
+  }
+}

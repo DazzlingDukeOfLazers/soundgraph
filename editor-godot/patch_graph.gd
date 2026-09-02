@@ -825,7 +825,17 @@ func _route_through(a: Vector2, b: Vector2, waypoint: Vector2) -> PackedVector2A
 	var joined := PackedVector2Array(first)
 	for i in range(1, second.size()):
 		joined.append(second[i])
-	return _simplify(joined)
+	var whole := _simplify(joined)
+	# Goal 4A's seam, closed for the waypoint path.
+	#
+	# Without this, `route_blocked_count(a, b)` would find nothing published for the pair
+	# and route it directly to answer — ignoring the waypoint, and describing the validity
+	# of a route the user is not looking at. Two halves that are each clear can also be
+	# blocked once joined and simplified, so the answer is measured on the finished shape
+	# rather than inferred from the pieces.
+	_route_clear["%.1f,%.1f>%.1f,%.1f" % [a.x, a.y, b.x, b.y]] = _blocked_count(
+		whole, _own_rects(a, b))
+	return whole
 
 
 # ---------------------------------------------------------------------------------

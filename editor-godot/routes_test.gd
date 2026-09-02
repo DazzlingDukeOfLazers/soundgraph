@@ -262,6 +262,34 @@ func _initialize() -> void:
 		"a reopened document routes identically (%d of %d cables differ)"
 			% [again, checked])
 
+	# ---- goal 4A: the validity seam cannot lie ----------------------------------------
+	#
+	# `_route_among` returns its least-blocked candidate when nothing is clear, which is a
+	# failure wearing the shape of a success, so every route now carries whether it is one.
+	# The only thing that makes that worth having is that the published answer is the truth
+	# about the published geometry — checked here by recomputing it, on every fixture,
+	# including the waypoint path where the two are computed in different places.
+	for path: String in ["res://qa/dense-graph-tidied.json",
+			"res://qa/babble-tidied.json",
+			"res://../examples/patches/first-synth.json"]:
+		await open_patch(path)
+		var lied := 0
+		var seen := 0
+		for route: Dictionary in main.graph_edit._routes():
+			var f: Array = route["fields"]
+			var ends: Array = main.graph_edit._endpoints({"from_node": f[0],
+				"from_port": f[1], "to_node": f[2], "to_port": f[3]})
+			if ends.is_empty():
+				continue
+			seen += 1
+			var truth: int = main.graph_edit._blocked_count(route["points"],
+				main.graph_edit._own_rects(ends[0], ends[1]))
+			if int(route["blocked"]) != truth:
+				lied += 1
+		check(seen > 0 and lied == 0,
+			"%s reports its own route validity truthfully (%d of %d)"
+				% [path.get_file().get_basename(), seen - lied, seen])
+
 	print("")
 	if failures == 0:
 		print("all route checks passed")

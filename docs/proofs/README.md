@@ -34,6 +34,7 @@ Run any of them against `editor-godot/qa/dense-graph.json` — the hostile speci
 | `route-locality.json` | `route_locality.gd` | routing goal 3: where every candidate channel comes from, and whether an obstacle the router never consulted can still move a cable |
 | `route-repair.json` | `route_repair.gd` | routing goal 3C: every reroute after a nudge, classified by whether the old route was still legal, broken in one place, or genuinely impossible to keep |
 | `route-legality.json` | `route_legality.gd` | routing goal 4A: every blocked route the router returns, and whether a clear one was demonstrably available — by its own candidate list, by a splice, or by a grid walk that owes it nothing |
+| `canonical/*.png` | `screenshot.gd --matrix canonical-shots.json` | the six shots the desktop is shown by: Graph, the cable-focus golden moment, a dense patch, Rack, Schematic and Face |
 
 ## The sheets, on demand
 
@@ -115,6 +116,13 @@ ROUTE_REPAIR_OUT=/tmp/p godot --headless --path editor-godot --script route_repa
 
 # when the router returns a blocked route, was a clear one available?
 ROUTE_LEGALITY_OUT=/tmp/p godot --headless --path editor-godot --script route_legality.gd
+```
+
+The canonical shots, and the design tokens a second implementation reads:
+
+```bash
+cd editor-godot && godot --path . --script screenshot.gd -- --matrix ../docs/proofs/canonical-shots.json
+godot --headless --path editor-godot --script design_tokens.gd
 ```
 
 `crossing_semantics.gd` is on the push gate as well, and writes its record only when the
