@@ -34,7 +34,8 @@
       "name": "Schematic \u2014 the signal path",
       "example": "Babble",
       "view": "Schematic",
-      "path": "../docs/proofs/canonical/schematic.png"
+      "path": "../docs/proofs/canonical/schematic.png",
+      "fit": true
     },
     {
       "name": "Face \u2014 the panel",

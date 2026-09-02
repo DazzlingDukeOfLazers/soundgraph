@@ -144,6 +144,13 @@ endif()
 if(SOUNDGRAPH_NODE)
     add_test(NAME web_onboarding_matches_its_patch
         COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/editor-web/verify-onboarding.mjs)
+
+    # The web page's colours are generated from the desktop's own token export, because a
+    # second implementation re-typing them by eye is exactly how the page came to draw its
+    # audio cables white against a desktop that settled on mint. Regenerating is one
+    # command; shipping a stale copy silently is what this refuses.
+    add_test(NAME web_tokens_match_desktop_export
+        COMMAND ${SOUNDGRAPH_NODE} ${CMAKE_SOURCE_DIR}/tools/gen-web-tokens.mjs --check)
 endif()
 
 # One demo patch per node type, and two different questions about them.

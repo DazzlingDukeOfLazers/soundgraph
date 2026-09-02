@@ -63,10 +63,25 @@ func _stage(main, shot: Dictionary) -> void:
 	# inherited the Outline tab from shot 21 and were six photographs of a text listing.
 	# Two of them are the large-patch pair, whose entire question is how a fifteen-node
 	# DX7 patch lays out at 100% and 63% — asked, rendered, filed, and never answered.
+	# Two vocabularies, and the miss was silent. "View" here can mean a lens — Rack,
+	# Graph, Schematic, Face — or a tab of `main.views`, which are Patch, Sandbox and
+	# Outline. The canonical shots asked for lenses, this loop only knew tabs, nothing
+	# matched, and rack.png and schematic.png shipped as two identical photographs of the
+	# Graph — found by the web funnel putting them side by side on a page, not by anything
+	# here. A name that matches neither vocabulary is now an error instead of a shrug.
 	var view := str(shot.get("view", "Graph"))
+	var lenses := {"rack": main.PatchView.RACK, "graph": main.PatchView.GRAPH,
+		"schematic": main.PatchView.SCHEMATIC, "face": main.PatchView.FACE}
+	var named := false
+	if lenses.has(view.to_lower()):
+		main._set_patch_view(int(lenses[view.to_lower()]))
+		named = true
 	for index in main.views.get_tab_count():
 		if main.views.get_tab_title(index).to_lower() == view.to_lower():
 			main.views.current_tab = index
+			named = true
+	if not named:
+		printerr("no lens or tab called '%s'" % view)
 	for i in 8:
 		await process_frame
 

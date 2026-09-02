@@ -28,7 +28,7 @@ export const SURFACES = [
         id: 'browser',
         name: 'In your browser',
         here: true,
-        summary: 'Hear a patch and change it. Nothing to install, and about 400 KB to load.',
+        summary: 'Hear a patch and change it. Nothing to install, and about 650 KB to load.',
         detail: 'Reads a graph, plays it, and lets you move any control the patch exposes.',
         url: null,
     },

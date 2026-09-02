@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SoundGraph — see the sound, change the sound</title>
 <link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./onboarding.css">
 </head>
 <body>
@@ -55,8 +56,16 @@
     </div>
     <div id="graph" class="graph"></div>
     <p class="hint">
-      Audio runs along the thick lines, control along the thin ones. Select a node to find
-      it in the patch source.
+      Audio runs along the thick lines, control along the thin ones. Rest your pointer on a
+      cable to follow one signal — click it to keep it. Select a node to find it in the
+      patch source.
+    </p>
+    <!-- Appears once, after the visitor has held a route or listened a while — never
+         before. A download banner over the first experience would be the wrong trade;
+         somebody who just followed a signal through the graph has earned the pointer. -->
+    <p id="whole-instrument" class="hint affordance" hidden>
+      Want the whole instrument? <a href="./editor/">Open the full editor</a> —
+      add nodes, drag cables, keep what you make.
     </p>
   </section>
 
@@ -76,6 +85,60 @@
 
     <div class="panel-head"><h2>What the graph is doing</h2></div>
     <div id="info" class="info"></div>
+  </section>
+
+  <section class="panel views">
+    <div class="panel-head"><h2>One instrument. Different ways to see it.</h2></div>
+    <p class="hint">
+      The desktop editor shows the same patch as a graph, a rack of hardware, a schematic,
+      or a performance panel — one file, four honest views of it. These are real
+      screenshots, not mockups.
+    </p>
+    <div class="view-grid">
+      <figure>
+        <img src="./assets/view-focus.webp" width="880" height="549" loading="lazy"
+             alt="The graph view with one signal route held bright while every other cable falls quiet">
+        <figcaption><strong>Graph</strong> — follow any signal; the rest steps back.</figcaption>
+      </figure>
+      <figure>
+        <img src="./assets/view-rack.webp" width="880" height="549" loading="lazy"
+             alt="The rack view: the same patch as modules and patch cables">
+        <figcaption><strong>Rack</strong> — the same patch as an instrument.</figcaption>
+      </figure>
+      <figure>
+        <img src="./assets/view-schematic.webp" width="880" height="549" loading="lazy"
+             alt="The schematic view: the signal path drawn as a diagram">
+        <figcaption><strong>Schematic</strong> — the signal path, drawn plainly.</figcaption>
+      </figure>
+      <figure>
+        <img src="./assets/view-face.webp" width="880" height="549" loading="lazy"
+             alt="The face view: just the performance controls the patch exposes">
+        <figcaption><strong>Face</strong> — only the controls that matter live.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="panel project">
+    <div class="panel-head"><h2>An open project</h2></div>
+    <div class="project-grid">
+      <div>
+        <h3>The source</h3>
+        <p>Everything on this page — the engine, the patches, the editors — is developed in
+        the open. Read it, build it, file what you find.</p>
+        <p><a href="https://github.com/TheMutantFactory/soundgraph">TheMutantFactory/soundgraph on GitHub</a></p>
+      </div>
+      <div>
+        <h3>The desktop application</h3>
+        <p>The full editor as an application is coming; there is no numbered release yet.
+        Joining the updates list is the way to hear when there is one.</p>
+        <p><button id="project-join" class="linkish">Join project updates</button></p>
+      </div>
+      <div>
+        <h3>Support the work</h3>
+        <p>SoundGraph is a Mutant Factory project. Right now the most helpful things are
+        ears and words: play it, join the list, tell one person who would care.</p>
+      </div>
+    </div>
   </section>
 
   <!-- Collapsed by default. The patch format is the product, so it stays one click away

@@ -43,6 +43,8 @@ export class GraphView extends EventTarget {
         this.registry = null;
         this.boxes = new Map();   // node id -> {x, y, node}
         this.focused = null;      // Set of node ids, or null meaning "everything"
+        this.route = null;        // hovered route family (a from-port key), or null
+        this.lockedRoute = null;  // the same, made persistent by a click
         this.active = null;       // the node whose parameter a control is driving
         this.svg = null;
     }
@@ -205,6 +207,27 @@ export class GraphView extends EventTarget {
             const cable = this.drawCable(connection);
             if (cable) cables.append(cable);
         }
+        // The golden moment, ported from the desktop's cable pass
+        // (docs/graph-cable-system.md): rest a pointer on a cable and every route that is
+        // not its family goes quiet, while the chosen one stays exactly as it was. A click
+        // makes it persistent; Esc, clicking it again, or clicking empty canvas lets go.
+        //
+        // Each visible cable gets an invisible wide twin to take the pointer — a few px of
+        // ink is not a target. The twins live INSIDE the cables group, below the nodes, so
+        // a cable passing under a node cannot be grabbed through it: the node wins there,
+        // which is the desktop's hit-testing rule arriving free with SVG paint order.
+        for (const cable of [...cables.querySelectorAll('.cable')]) {
+            const hit = element('path', { d: cable.getAttribute('d'), class: 'cable-hit' });
+            const family = cable.dataset.family;
+            hit.addEventListener('pointerenter', () => this.setRoute(family));
+            hit.addEventListener('pointerleave', () => this.setRoute(null));
+            hit.addEventListener('click', (event) => {
+                event.stopPropagation();
+                this.lockRoute(this.lockedRoute === family ? null : family);
+            });
+            cables.append(hit);
+        }
+        svg.addEventListener('click', () => this.lockRoute(null));
         for (const id of this.boxes.keys()) {
             nodes.append(this.drawNode(id));
         }
@@ -276,6 +299,9 @@ export class GraphView extends EventTarget {
         });
         path.dataset.from = connection.from.node;
         path.dataset.to = connection.to.node;
+        // Two cables leaving one output port are one signal fanning out, so they focus and
+        // quiet together — the desktop's port-family rule. The key is the output port.
+        path.dataset.family = `${connection.from.node}:${connection.from.port}`;
         return path;
     }
 
@@ -347,6 +373,22 @@ export class GraphView extends EventTarget {
         this.applyAttention();
     }
 
+    // Transient focus — the pointer resting on a route. Never fights a lock: while a route
+    // is locked, hovering elsewhere changes nothing, which is what "persistent" means.
+    setRoute(family) {
+        this.route = family ?? null;
+        this.applyAttention();
+    }
+
+    // Persistent focus. Locking and unlocking render identically to the transient kind —
+    // the desktop's rule that lock state gets no colour, border, glow or width of its own.
+    lockRoute(family) {
+        if (this.lockedRoute === (family ?? null)) return;
+        this.lockedRoute = family ?? null;
+        this.applyAttention();
+        if (this.lockedRoute !== null) this.onRouteLocked?.();
+    }
+
     applyAttention() {
         if (!this.svg) return;
         const lit = (id) => this.focused === null || this.focused.has(id);
@@ -356,8 +398,14 @@ export class GraphView extends EventTarget {
             group.classList.toggle('dim', !lit(id));
             group.classList.toggle('active', id === this.active);
         }
+        // Lock beats hover; nothing focused is the ordinary case and costs nothing.
+        // The chosen family is not restyled — everything else is quieted. Nodes are never
+        // suppressed, exactly as on the desktop.
+        const chosen = this.lockedRoute ?? this.route;
         for (const cable of this.svg.querySelectorAll('.cable')) {
             cable.classList.toggle('dim', !(lit(cable.dataset.from) && lit(cable.dataset.to)));
+            cable.classList.toggle('quiet',
+                chosen !== null && cable.dataset.family !== chosen);
             cable.classList.toggle('active',
                 this.active !== null && cable.dataset.from === this.active);
         }

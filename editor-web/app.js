@@ -655,7 +655,12 @@ async function startAudio() {
     }
 }
 
-ui.start.addEventListener('click', () => { startAudio().catch(() => {}); });
+ui.start.addEventListener('click', () => {
+    startAudio().catch(() => {});
+    // The second way to earn the "whole instrument" pointer: half a minute of actually
+    // listening. Anyone still here at thirty seconds is not a bounce.
+    setTimeout(() => earnAffordance(), 30000);
+});
 
 engine.addEventListener('loaded', (event) => {
     const { ok, diagnostics, info } = event.detail;
@@ -883,10 +888,30 @@ for (const [trigger, sheet] of [[ui.about, ui.aboutSheet], [ui.help, ui.helpShee
         if (event.target === sheet) closeSheet(sheet);
     });
 }
+// "Want the whole instrument?" appears exactly once, and only after the visitor has done
+// the thing this page exists to let them do: held a route, or listened for a while. It is
+// a pointer to the full editor, so it never appears anywhere the full editor is not
+// deployed — an affordance that 404s would be worse than none.
+const wholeInstrument = document.getElementById('whole-instrument');
+let affordanceShown = false;
+function earnAffordance() {
+    if (affordanceShown || !isReachable('full')) return;
+    affordanceShown = true;
+    wholeInstrument.hidden = false;
+}
+graph.onRouteLocked = () => earnAffordance();
+wholeInstrument.querySelector('a').addEventListener('click', (event) => {
+    event.preventDefault();
+    openFullEditor();
+});
+
 window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     closeSheet(ui.aboutSheet);
     closeSheet(ui.helpSheet);
+    // Escape also lets go of a locked route — the same gesture the desktop uses for
+    // "never mind", and it costs nothing when no route is locked.
+    graph.lockRoute(null);
 });
 
 document.getElementById('about-close').addEventListener('click', () => closeSheet(ui.aboutSheet));
@@ -895,6 +920,7 @@ document.getElementById('about-join').addEventListener('click', () => {
     closeSheet(ui.aboutSheet);
     tour.openMailingList();
 });
+document.getElementById('project-join').addEventListener('click', () => tour.openMailingList());
 document.getElementById('help-restart').addEventListener('click', () => {
     closeSheet(ui.helpSheet);
     tour.restart();
