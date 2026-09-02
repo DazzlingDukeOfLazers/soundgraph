@@ -176,10 +176,12 @@ func _build() -> void:
 	var qr := TextureRect.new()
 	toolbar_qr = qr
 	qr.visible = bool(Settings.fetch("qr_visible", true))
-	var qr_image := Image.load_from_file(
-		ProjectSettings.globalize_path("res://soundgraph_qr.png"))
-	if qr_image != null:
-		qr.texture = ImageTexture.create_from_image(qr_image)
+	# load(), not Image.load_from_file(): in an export the png lives inside the pck,
+	# where a globalized filesystem path points at nothing and load_from_file returns
+	# null — which is how the web editor shipped with a hole where the QR stands.
+	var qr_texture: Texture2D = load("res://soundgraph_qr.png")
+	if qr_texture != null:
+		qr.texture = qr_texture
 	# Ignore the texture's own size or the bar becomes 396px of quiet zone.
 	qr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	qr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -860,10 +862,11 @@ func _show_qr_large() -> void:
 	var dialog := AcceptDialog.new()
 	dialog.title = "mutantfactory.net/soundgraph"
 	var big := TextureRect.new()
-	var image := Image.load_from_file(
-		ProjectSettings.globalize_path("res://soundgraph_qr.png"))
-	if image != null:
-		big.texture = ImageTexture.create_from_image(image)
+	# Same rule as the toolbar's copy: the resource system reads from source and from
+	# the pck alike; a filesystem path only exists in one of those worlds.
+	var large_texture: Texture2D = load("res://soundgraph_qr.png")
+	if large_texture != null:
+		big.texture = large_texture
 	big.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	big.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	big.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
